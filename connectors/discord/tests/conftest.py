@@ -184,11 +184,16 @@ def clock() -> Clock:
     return Clock()
 
 
+def _no_gateway(url: str):
+    """A gateway a door starts (a pasted token) never reaches the network here."""
+    raise ConnectionRefusedError("no network in tests")
+
+
 @pytest.fixture
 def link(state, discord, clock) -> Link:
     lk = Link(state, clients=parse_clients(CLIENTS), interval=0,
               transport=discord.transport(),
-              sleep=lambda s: None, clock=clock)
+              sleep=lambda s: None, clock=clock, gateway_connect=_no_gateway)
     yield lk
     lk.rest.close()
 
