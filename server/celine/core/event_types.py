@@ -97,8 +97,6 @@ SOURCE_STATE = "source.state"
 
 TERMINAL_STATE = "terminal.state"
 
-TEXTS_DRAFT = "texts.draft"
-
 TOOL_DETACHED = "tool.detached"
 TOOL_DONE = "tool.done"
 TOOL_FORMING = "tool.forming"

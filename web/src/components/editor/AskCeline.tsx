@@ -1,11 +1,11 @@
 /* Ask Celine, beside every large editor: a box to ask it, then its draft beside the text as it
-   streams in (events `texts.draft`, the whole draft so far each time). The draft never touches
-   the text until Copy, Insert or Replace is pressed. The agent's face and name are its own. */
-import { useRef, useState } from 'react'
+   streams in (on the request that asked: what it adds, then the whole draft). The draft never
+   touches the text until Copy, Insert or Replace is pressed. The agent's face and name are its
+   own. */
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, RefreshCw } from 'lucide-react'
 import { Button, Card, ComposerBox, Dots, IconButton, Notice, useCopied } from '../../ui'
-import { useServerEvents } from '../../lib/bus'
-import { textsApi, type AskDraft, type TextOf } from '../../lib/texts'
+import { textsApi, type TextOf } from '../../lib/texts'
 import { errorText } from '../../lib/format'
 import { useName } from '../../lib/name'
 import { Portrait } from '../Portrait'
@@ -24,37 +24,31 @@ export function AskCeline({ of, text, label, hint, onInsert, onReplace }: {
   const name = useName()
   const [q, setQ] = useState('')
   const [asked, setAsked] = useState('')
-  const [id, setId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, copyIt] = useCopied()
 
-  // a draft's first events can come before its id does: the newest of each is kept
-  const seen = useRef(new Map<string, AskDraft>())
-  const show = (d: AskDraft) => {
-    setDraft(d.text)
-    if (d.error) setError(d.error)
-    if (d.done || d.error) setBusy(false)
-  }
-  useServerEvents(ev => {
-    if (ev.type !== 'texts.draft') return
-    const d = ev as unknown as AskDraft
-    if (d.id === id) show(d)
-    else if (!id) seen.current.set(d.id, d)
-  })
+  // the draft being written: a new ask, or the editor going away, ends it
+  const asking = useRef<AbortController | null>(null)
+  useEffect(() => () => asking.current?.abort(), [])
 
   const send = async (prompt: string) => {
     if (!prompt) return
+    asking.current?.abort()
+    const ask = asking.current = new AbortController()
     setAsked(prompt); setDraft(''); setError(null); setBusy(true); setQ('')
-    setId(null); seen.current.clear()
+    let sofar = ''
     try {
-      const { id: started } = await textsApi.ask({ of: of ?? 'new', prompt, text })
-      setId(started)
-      const early = seen.current.get(started)
-      if (early) show(early)
-      seen.current.clear()
-    } catch (e) { setError(errorText(e)); setBusy(false) }
+      await textsApi.ask({ of: of ?? 'new', prompt, text }, d => {
+        sofar = d.done ? d.text : sofar + d.text
+        setDraft(sofar)
+        if (d.error) setError(d.error)
+      }, ask.signal)
+    } catch (e) {
+      if (!ask.signal.aborted) setError(errorText(e))
+    }
+    if (!ask.signal.aborted) setBusy(false)
   }
 
   return (

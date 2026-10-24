@@ -130,6 +130,31 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return settle(res.status, await res.text().catch(() => ''))
 }
 
+/* An answer that streams as lines of JSON (POST /text-drafts): each line to `onLine` as it
+   lands. Before the first, the same errors as request(); a stream cut midway throws. */
+export async function requestLines(path: string, init: RequestInit,
+                                   onLine: (line: unknown) => void): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    return settle(0, '')
+  }
+  if (!res.ok || !res.body) return settle(res.status, await res.text().catch(() => ''))
+  reportApi(res.status)
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let rest = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    const lines = (rest + value).split('\n')
+    rest = lines.pop() ?? ''
+    for (const line of lines) if (line.trim()) onLine(JSON.parse(line))
+  }
+  if (rest.trim()) onLine(JSON.parse(rest))
+}
+
 /** a POST or a DELETE with no body */
 export const post = <T>(path: string) => request<T>(path, { method: 'POST' })
 export const del = <T>(path: string) => request<T>(path, { method: 'DELETE' })

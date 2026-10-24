@@ -1,6 +1,7 @@
 """History and Ask Celine of every long text (server/celine/texts.py, api/texts.py)."""
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -16,7 +17,6 @@ from celine.core import ids
 from celine.core.services import Services
 from celine.errors import install_error_handler
 
-from chat_fixtures import until
 
 pytestmark = pytest.mark.anyio
 T0 = "2026-10-16T20:00:00.000+00:00"
@@ -113,19 +113,29 @@ async def test_history_search_finds_the_change_or_who_wrote_it(c, app):
     assert [v["by"] for v in mine["versions"]] == [name]
 
 
+def lines(r: httpx.Response) -> list[dict]:
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("application/x-ndjson")
+    return [json.loads(line) for line in r.text.splitlines() if line]
+
+
 async def test_ask_streams_her_draft_until_done(c, app):
+    """The draft comes back on the request that asked, nowhere else: what it adds as it
+    writes, then the whole draft with done. Nothing goes on the global feed."""
     s = app.state.services
     fake = FakeBackend([TextDelta("Miso is "), TextDelta("the bakery cat \u2014 grey."),
                         Done(reason="stop")])
     s.dispatcher = SimpleNamespace(backend_factory=lambda: fake)
-    started = await ok(await c.post("/api/text-drafts", json={
+    got = lines(await c.post("/api/text-drafts", json={
         "of": "lore:none", "prompt": "create a cute kitty", "text": "Old text here."}))
-    mine = lambda: [e for e in s.events if e["id"] == started["id"]]  # noqa: E731
-    await until(lambda: any(e["done"] for e in mine()))
-    last = mine()[-1]
-    assert last == {"type": "texts.draft", "id": started["id"], "done": True, "error": None,
-                    "text": "Miso is the bakery cat \u2014 grey."}
-    assert all(e["type"] == "texts.draft" for e in mine())
+    assert got[-1] == {"done": True, "error": None,
+                       "text": "Miso is the bakery cat \u2014 grey."}
+    grew = [g["text"] for g in got[:-1]]
+    assert grew and got[-1]["text"].startswith("".join(grew)), "what it added, in order"
+    assert all(set(g) == {"text"} for g in got[:-1])
+    assert s.events == [], "a draft is not a feed row"
+    assert await s.store.read(lambda c: c.execute(
+        "SELECT count(*) FROM global_events").fetchone()[0]) == 0
     system, user = fake.calls[0]
     assert user == {"role": "user", "content": "create a cute kitty"}
     assert "write only that field" in system["content"] and "Old text here." in system["content"]
@@ -140,10 +150,9 @@ async def test_ask_fails_with_its_reason(c, app):
             raise BackendError("The model server is unreachable.")
 
     s.dispatcher = SimpleNamespace(backend_factory=lambda: Broken())
-    aid = (await ok(await c.post("/api/text-drafts", json={"of": "x", "prompt": "p"})))["id"]
-    await until(lambda: any(e["id"] == aid and e["done"] for e in s.events))
-    last = [e for e in s.events if e["id"] == aid][-1]
-    assert last["error"] == "The model server is unreachable." and last["text"] == "Half a"
+    last = lines(await c.post("/api/text-drafts", json={"of": "x", "prompt": "p"}))[-1]
+    assert last == {"done": True, "error": "The model server is unreachable.",
+                    "text": "Half a"}
 
 
 async def test_ask_without_a_chat_model_is_refused(c, app):
