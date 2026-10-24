@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
@@ -18,12 +19,16 @@ ENV_FILE = ROOT / ".env"
 # CELINE_STATIC_DIR: serve a web build from elsewhere
 STATIC_DIR = Path(os.environ.get("CELINE_STATIC_DIR") or Path(__file__).parent / "static")
 
+# where the code is (the AGPL's offer of it to everyone who uses the app); a fork names its own
+REPOSITORY = "https://github.com/LumiWasTaken/celine-net"
+
 
 @functools.cache
 def build() -> dict:
-    """Which build this is, for the rail's brand mark (GET /api/status `build`): the
-    image's CELINE_COMMIT and CELINE_BUILT (Dockerfile, its last layer), else git's commit
-    in a checkout and the time of the web build in STATIC_DIR."""
+    """Which build this is, for the rail's brand mark and Settings, General (GET
+    /api/status `build`): the image's CELINE_COMMIT and CELINE_BUILT (Dockerfile, its last
+    layer), else git's commit in a checkout and the time of the web build in STATIC_DIR;
+    `source`, its code: REPOSITORY at that commit when there is one."""
     commit = os.environ.get("CELINE_COMMIT")
     if not commit:
         try:
@@ -35,7 +40,10 @@ def build() -> dict:
     built = os.environ.get("CELINE_BUILT") or None
     if not built and (STATIC_DIR / "index.html").exists():
         built = datetime.fromtimestamp((STATIC_DIR / "index.html").stat().st_mtime, UTC).isoformat()
-    return {"commit": commit or "dev", "built": built}
+    commit = commit or "dev"
+    known = re.fullmatch(r"[0-9a-f]{7,40}", commit)
+    return {"commit": commit, "built": built,
+            "source": f"{REPOSITORY}/tree/{commit}" if known else REPOSITORY}
 
 
 def load_env(path: Path = ENV_FILE) -> list[str]:

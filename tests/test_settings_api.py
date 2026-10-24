@@ -207,3 +207,17 @@ async def test_an_advanced_value_is_saved_checked_and_read_at_once(api):
         r = await api.put("/api/settings", json={"general": bad})
         assert r.status_code == 400 and r.json()["error"]["detail"]["field"] == field, bad
     assert api.cfg.r("max_concurrent_turns") == 2, "a refused save changes nothing"
+
+
+async def test_status_links_the_source_of_this_build(api, monkeypatch):
+    """The AGPL's offer: GET /api/status `build.source` is the code this build runs, at its
+    commit when the commit is known."""
+    repo = "https://github.com/LumiWasTaken/celine-net"
+    try:
+        for commit, source in (("904475d", f"{repo}/tree/904475d"), ("dev", repo)):
+            monkeypatch.setenv("CELINE_COMMIT", commit)
+            config_mod.build.cache_clear()
+            build = (await api.get("/api/status")).json()["build"]
+            assert build["commit"] == commit and build["source"] == source
+    finally:
+        config_mod.build.cache_clear()

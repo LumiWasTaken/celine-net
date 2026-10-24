@@ -612,7 +612,7 @@ async def config_status(request: Request) -> dict:
     it (her.view: name, pronouns, color, portrait, named). `hosts`: each provider's
     host as the gateway's ping sees it ({state: up | down | null, since}); `hold`:
     {state: "paused", since} while it is paused, else null (event `her.hold`); `build`:
-    {commit, built} of this build (config.build); `vault_locked`: set up and locked."""
+    {commit, built, source} of this build (config.build); `vault_locked`: set up and locked."""
     from .. import her
     services = request.app.state.services
     cfg, router = services.cfg, getattr(services.llm, "router", None)
