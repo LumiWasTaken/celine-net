@@ -70,6 +70,8 @@ FIELDS: list[dict[str, Any]] = [
          "Kept once its turn is over."),
         ("backup_keep_days", "Backups kept", "days", 1, 3650, 7, None),
         ("max_attachments", "Attachments per message", None, 0, 1000, 10, None),
+        ("max_upload_mb", "Largest upload", "MB", 1, 1_000_000, 512,
+         "One file added to Documents."),
         ("max_attachment_bytes", "Largest attachment", "bytes", 1, 10_000_000_000,
          20_000_000, None),
         ("inline_text_max_bytes", "Largest text read inline", "bytes", 0, 100_000_000,

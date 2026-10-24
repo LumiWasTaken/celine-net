@@ -160,6 +160,31 @@ async def test_celines_tools_search_and_read_on(tmp_path, monkeypatch):
     assert "Tag 0:" in before.content and "None" not in before.content
 
 
+def test_the_largest_upload_is_an_advanced_setting(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from celine.api import documents as api
+    from celine.config import ROOT
+    from celine.errors import install_error_handler
+    from celine.kb import SOURCE_KEYS
+    assert "max_upload_mb" not in SOURCE_KEYS["documents"]
+    assert "max_upload_mb" not in (ROOT / "config" / "kb.toml").read_text(), "one source"
+    app = FastAPI()
+    cfg = load()
+    assert cfg.r("max_upload_mb") == 512
+    cfg.settings.general["max_upload_mb"] = 1
+    app.state.services = Services(cfg=cfg)
+    install_error_handler(app)
+    app.include_router(api.router)
+    app.state.services.kbs = _kbs(tmp_path)
+    app.state.services.store = SimpleNamespace(emit_global=lambda ev: None)
+    r = TestClient(app).post("/api/documents", files=[
+        ("files", ("big.txt", b"a" * (1024 * 1024 + 1), "text/plain"))]).json()
+    assert r["items"] == [] and r["rejected"] == [{
+        "name": "big.txt", "reason": "The file is larger than 1 MB, the Largest upload in "
+                                     "Settings, Advanced."}]
+
+
 def test_api_contract(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
