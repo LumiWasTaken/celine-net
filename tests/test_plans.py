@@ -218,7 +218,7 @@ async def test_her_routine_change_keeps_what_she_left_out_and_names_a_bad_field(
     assert services.cfg.schedules["evening"].cron == "0 22 * * 1"
 
     for args, field in (({"cron": "every night"}, "cron"), ({"prompt": " "}, "prompt"),
-                        ({"wall_minutes": 999}, "wall_minutes"),
+                        ({"wall_minutes": 0}, "wall_minutes"),
                         ({"time": "07:00", "cron": "0 7 * * *"}, "time")):
         bad = await skill.write(ctx, name="evening", **args)
         assert bad.is_error and bad.content.startswith(f"Not saved ({field}): "), bad.content

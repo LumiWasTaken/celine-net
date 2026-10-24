@@ -49,9 +49,9 @@ is `waiting` for it ("Waiting for <model>"), its conversation kept; when the Rou
 the model answer, the run starts again and continues that failed turn in the same
 conversation (turns/store.continue_turn: the stored context, no new prompt). Any other
 failure fails the run with the error, once: a model error, a tool error that ends its
-turn, its turn stopped, or its ceiling: CEILING (a schedule's own `wall_minutes` makes
-it shorter) counts from the run's start; a run that waited for its model starts with a
-new clock. A run that was running when the app stopped is running still at
+turn, its turn stopped, or its ceiling: the Routine time limit (Settings, Advanced, 0
+none; a schedule's own `wall_minutes` makes it shorter) counts from the run's start; a
+run that waited for its model starts with a new clock. A run that was running when the app stopped is running still at
 the next start: the dispatcher's sweep resumes its cut turn, the scheduler takes its
 answer once the conversation is quiet (a partner's talk that was cut ends there). `end`
 ends a waiting or running run with a reason: Stop in the run's drawer (`stopped`), its
@@ -78,7 +78,7 @@ from ..core.states import LIVE_SQL
 from ..skills import ToolContext
 from ..clock import zone
 from ..sub_agents.report import asked, last_answer, quiet
-from . import NONE, WALL_MAX, depth, fill, night_of, night_start, run_date, shown
+from . import NONE, depth, fill, night_of, night_start, run_date, shown
 from .variables import FROM_USER, extras
 from ..core.event_types import RUN_STATE
 
@@ -95,8 +95,6 @@ END = re.compile(r"\s*\bEND\s*$")
 MISSED = f"Missed while the app was off for more than {CATCH_UP_DAYS} days"
 DELETED = "Its schedule was deleted"
 STOPPED = "Stopped by {{username}}"
-CEILING = timedelta(minutes=WALL_MAX)   # a run at most
-OVERRAN = f"Ran over {WALL_MAX // 60} hours"
 IDLE_MINUTES = 30
 IN_USE = "The app was in use"
 PASSED = f"More than {IDLE_MINUTES} minutes late"
@@ -283,7 +281,7 @@ class Scheduler:
         self.current: str | None = None      # the run that runs, by id
         self._began: datetime | None = None   # when it started: its clock
         self._scope: anyio.CancelScope | None = None   # its work, for `end`
-        self._ceiling: tuple[timedelta, str] = (CEILING, OVERRAN)   # its own, for tick
+        self._ceiling: tuple[timedelta, str] | None = None   # its own, for tick
         self._turn_ended = anyio.Event()      # set and replaced at every turn or job end
         on_end = getattr(app.dispatcher, "on_end", None)
         if on_end is not None:               # a turn ended: a run may start or be over
@@ -345,7 +343,7 @@ class Scheduler:
         nxt = min((croniter(s.cron, at).get_next(datetime)
                    for s in self.schedules.values() if s.on), default=None)
         wait = TICK if nxt is None else min(TICK, max(0.0, (nxt - at).total_seconds()))
-        if self._began is not None:          # the running run's ceiling
+        if self._began is not None and self._ceiling:    # the running run's ceiling
             wait = min(wait, max(0.0, (self._began + self._ceiling[0] - at).total_seconds()))
         return wait
 
@@ -474,14 +472,15 @@ class Scheduler:
         """Run `r` runs now, in the task group."""
         s = self.schedules.get(r["schedule"])
         self.current, self._began = r["id"], self.now()
-        self._ceiling = (timedelta(minutes=s.wall_minutes),
-                         f"Ran over {s.wall_minutes} minutes") \
-            if s and s.wall_minutes else (CEILING, OVERRAN)
+        cap = [m for m in (s and s.wall_minutes, self.app.cfg.r("routine_max_minutes")) if m]
+        self._ceiling = (timedelta(minutes=min(cap)), f"Ran over {min(cap)} minutes") \
+            if cap else None
         self._tg.start_soon(self._execute, r["id"])
 
     async def _watch(self) -> None:
         """The running run's ceiling (module docstring) fails it."""
-        if self._began is not None and self.now() - self._began > self._ceiling[0]:
+        if self._began is not None and self._ceiling and \
+                self.now() - self._began > self._ceiling[0]:
             await self.end(self.current, "failed", self._ceiling[1], ("running",))
 
     def _idle_skip(self, r: dict, s, unused: bool) -> str | None:

@@ -48,6 +48,8 @@ FIELDS: list[dict[str, Any]] = [
         ("last_step_seconds", "Last answer time", "seconds", 1, 3600, 180,
          "After the turn time limit: one step without tools to answer with what is there."),
         ("tool_timeout_seconds", "Tool time limit", "seconds", 1, 86_400, 180, None),
+        ("routine_max_minutes", "Routine time limit", "minutes", 0, 100_000, 180,
+         "One routine run at most. 0: no cap."),
         ("job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
          "A tool that runs in the background is stopped after this."),
         ("history_messages", "Messages per request", "messages", 0, 100_000, 200,

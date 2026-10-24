@@ -9,7 +9,7 @@ from typing import Annotated
 
 from ..errors import CelineError
 from ..skills import ToolContext, ToolResult, guide, tool, described
-from . import WALL_MAX, shown
+from . import shown
 from .runs import view as run_view
 
 RUNS_SHOWN = 5
@@ -94,7 +94,7 @@ class Routines:
                                     "radar/{{date}}.md. Empty: none."] = None,
         after: Annotated[list[str] | None, "Names of the routines of the same night it "
                                            "runs after."] = None,
-        wall_minutes: Annotated[int | None, f"The minutes it may run, at most {WALL_MAX}."] = None,
+        wall_minutes: Annotated[int | None, "The minutes it may run; the Routine time limit in Settings caps it."] = None,
     ) -> ToolResult:
         """Make or change a Routine with the same checks as the Routines page. A change
         changes only what you give; everything else stays as it is. A new routine needs

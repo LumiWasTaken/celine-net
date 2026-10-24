@@ -14,7 +14,7 @@ config/schedules (settings/seed.py) and read only from there:
     on = true
     idle_only = false             # true: starts only when nobody used the app for 30 min,
                                   # else that run is skipped (never caught up)
-    wall_minutes = 10             # left out: the 3 hours every run has at most
+    wall_minutes = 10             # left out: the Routine time limit (Settings, Advanced)
     daytime = false               # true: its dates are the calendar date of its slot
     prompt = '''What happened in the world on {{day_before}}? ...'''
 
@@ -44,7 +44,6 @@ VARIABLES = ("date", "day_before", "weekday", "username", "name", "mood", "on_mi
 NONE = "(none)"
 PROMPT_MAX = 50_000          # characters
 ROUNDS_MAX = 30
-WALL_MAX = 180               # minutes: the 3 hours every run has at most (runs.CEILING)
 
 
 @dataclass(frozen=True)
@@ -153,9 +152,9 @@ def parse(name: str, raw: dict, partner_prompt: str | None) -> Schedule:
             raise _invalid(key, "This must be true or false.")
     wall = raw.get("wall_minutes")
     if wall is not None and (not isinstance(wall, int) or isinstance(wall, bool)
-                             or not 1 <= wall <= WALL_MAX):
-        raise _invalid("wall_minutes", f"The time it may run is a whole number of minutes "
-                                       f"from 1 to {WALL_MAX}, or none.")
+                             or wall < 1):
+        raise _invalid("wall_minutes", "The time it may run is a whole number of minutes, "
+                                       "or none.")
     return Schedule(name, label.strip(), " ".join(cron.split()), prompt.strip(),
                     tuple(dict.fromkeys(after)), partner,
                     (partner_prompt or "").strip() if partner else "", rounds,

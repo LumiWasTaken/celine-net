@@ -248,3 +248,19 @@ async def test_the_clock_starts_with_the_run_and_its_ceiling_wakes_the_scheduler
     assert await store.read(lambda c: tuple(c.execute(
         "SELECT state, error FROM runs WHERE id=?", (run["id"],)).fetchone())) == \
         ("failed", "Ran over 10 minutes")
+
+
+async def test_a_routine_time_limit_of_0_lets_a_run_go_on(store, cfg):
+    clock = SimpleNamespace(at=datetime(2026, 10, 10, 2, tzinfo=UTC))
+    cfg.settings.general["routine_max_minutes"] = 0
+    cfg.schedules = {"world": Schedule("world", "World", "0 2 * * *", "p")}
+    sched = Scheduler(_app(store, cfg), lambda: clock.at)
+    run = await sched.run_now("world")
+    sched._tg = SimpleNamespace(start_soon=lambda *a: None)
+    sched._start(run)
+    await store.write(lambda c: c.execute("UPDATE runs SET state='running' WHERE id=?",
+                                          (run["id"],)))
+    clock.at += timedelta(days=2)
+    await sched.tick()
+    assert await store.read(lambda c: c.execute(
+        "SELECT state FROM runs WHERE id=?", (run["id"],)).fetchone()[0]) == "running"
