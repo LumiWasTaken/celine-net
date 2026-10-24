@@ -318,6 +318,16 @@ async def test_a_missing_model_or_a_rejected_key_moves_on_but_an_overflow_does_n
         await collect(llm.bind(role="small", priority=B))
 
 
+async def test_a_chat_whose_model_is_gone_says_which_and_to_pick_another(
+        tmp_path, monkeypatch):
+    from celine.backends.router import NoModel
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
+    llm.cfg.settings.conversation_models["c1"] = "main/renamed"
+    with pytest.raises(NoModel, match=r"main/renamed no longer exists.*another model"):
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    assert nets["main/big"].calls == 0
+
+
 async def test_the_vision_twin_answers_an_image_and_everything_while_loaded(
         tmp_path, monkeypatch):
     """One name for the ticket, the queue events and the request: the twin for an

@@ -504,6 +504,10 @@ class QueuedBackend:
         while True:
             if self._cancelled():
                 raise QueueCancelled("stopped")
+            pick = router.s.conversation_models.get(self.conversation_id or "")
+            if self.role == "chat" and pick and router.s.model(pick) is None:
+                raise NoModel(f"This chat's model {pick} no longer exists. "
+                              f"Pick another model for this chat.")
             ordered: Ordered = await router.order(self.role,
                                                   conversation_id=self.conversation_id)
             if only:
