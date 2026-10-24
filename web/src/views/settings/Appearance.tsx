@@ -8,7 +8,7 @@
    the page; on a wide screen the preview stays beside them, on a phone it follows them. */
 import { useEffect, useRef, useState } from 'react'
 import { Activity, Brain, Copy, Eye, Plus, RefreshCw } from 'lucide-react'
-import { ACCENTS, GRAINS, previewAppearance, saveAppearance, useAppearance, type Appearance as Look } from '../../lib/appearance'
+import { ACCENTS, CONTRAST_MAX, GRAINS, previewAppearance, saveAppearance, useAppearance, type Appearance as Look } from '../../lib/appearance'
 import { errorText } from '../../lib/format'
 import { useHer } from '../../lib/her'
 import { capital, usePronouns } from '../../lib/name'
@@ -64,7 +64,7 @@ export function Appearance() {
           <Slider label={<span title="How much the accent colours the background and surfaces">Tint</span>}
                   value={look.tint} onChange={put('tint', 'soon')} min={0} max={300} step={25} format={pct} />
           <Slider label={<span title="The step in lightness between the background and surfaces">Contrast</span>}
-                  value={look.contrast} onChange={put('contrast', 'soon')} min={50} max={150} step={10} format={pct} />
+                  value={look.contrast} onChange={put('contrast', 'soon')} min={50} max={CONTRAST_MAX} step={10} format={pct} />
         </Section>
         <Section title="Background">
           <Field group label="Grain">
