@@ -29,6 +29,7 @@ export function SpeechProvider({ features, children }: { features?: Record<strin
   const [error, setError] = useState<string | null>(null)
   const [resume, setResume] = useState<(() => void) | null>(null)
   const work = useRef<AbortController | null>(null)
+  const player = useRef<HTMLAudioElement>(null)
   const input = features?.speech_input === true
   const output = features?.speech_output === true
   const stop = useCallback(() => { work.current?.abort(); work.current = null; setPlaying(null); setResume(null) }, [])
@@ -43,12 +44,18 @@ export function SpeechProvider({ features, children }: { features?: Record<strin
     void playSpeechQueue(chunks, {
       signal: controller.signal,
       generate: (t, signal) => speechApi.synthesize(t, prefs.voice, signal),
-      play: (blob, signal) => playSpeechAudio(blob, signal, retry => setResume(() => retry)),
+      play: (blob, signal) => {
+        if (!player.current) throw new Error('The audio player is not ready.')
+        return playSpeechAudio(blob, signal, retry => setResume(() => retry), player.current)
+      },
     }).catch(e => { if (!controller.signal.aborted) setError(errorText(e)) })
       .finally(() => { if (work.current === controller) { work.current = null; setPlaying(null) } })
   }, [output, prefs.voice, stop])
   const visible = (cid: string) => ('conversation' in nav.route && nav.route.conversation === cid)
-  return <Context.Provider value={{ input, output, prefs, setPrefs, playing, error, resume, stop, read, visible }}>{children}</Context.Provider>
+  return <Context.Provider value={{ input, output, prefs, setPrefs, playing, error, resume, stop, read, visible }}>
+    {children}
+    <audio ref={player} controls preload="auto" hidden={!playing} className="speech-player" aria-label="Reply audio" />
+  </Context.Provider>
 }
 
 export function SpeechControls({ conversation, active, disabled, onTranscript }: {

@@ -64,10 +64,12 @@ assert.equal(speechChunks('Short. Another sentence.').join(' '), 'Short. Another
   const oldAudio = globalThis.Audio, oldCreate = URL.createObjectURL, oldRevoke = URL.revokeObjectURL
   class AudioFake {
     attempts = 0; paused = false; removed = false
+    src = ''; loads = 0
     constructor() { instances.push(this) }
     async play() { if (++this.attempts === 1) throw new DOMException('Blocked', 'NotAllowedError') }
     pause() { this.paused = true }
     removeAttribute() { this.removed = true }
+    load() { this.loads++ }
   }
   globalThis.Audio = AudioFake
   URL.createObjectURL = () => 'blob:fixture'
@@ -75,19 +77,28 @@ assert.equal(speechChunks('Short. Another sentence.').join(' '), 'Short. Another
   try {
     const ready = deferred(), c = new AbortController()
     let resume
-    const work = playSpeechAudio(new Blob(['wave']), c.signal, retry => { resume = retry; if (retry) ready.resolve() })
+    const player = new AudioFake()
+    const work = playSpeechAudio(new Blob(['wave']), c.signal, retry => { resume = retry; if (retry) ready.resolve() }, player)
     await ready.promise
     assert.equal(instances[0].attempts, 1)
+    assert.equal(player.src, 'blob:fixture'); assert.equal(player.loads, 1)
     resume(); assert.equal(instances[0].attempts, 2)
     instances[0].onended(); await work
     assert.equal(resume, null); assert.ok(instances[0].paused && instances[0].removed)
     const blocked = deferred(), stop = new AbortController()
-    const stopped = playSpeechAudio(new Blob(['wave']), stop.signal, retry => { if (retry) { resume = retry; blocked.resolve() } })
+    const stopped = playSpeechAudio(new Blob(['wave']), stop.signal, retry => { if (retry) { resume = retry; blocked.resolve() } }, new AudioFake())
     await blocked.promise
     const staleRetry = resume
     stop.abort(); await assert.rejects(stopped, { name: 'AbortError' })
     staleRetry(); assert.equal(instances[1].attempts, 1)
     assert.ok(instances[1].paused && instances[1].removed); assert.equal(revoked.length, 2)
+    const bad = new AudioFake()
+    bad.play = async () => {}
+    bad.error = { code: 3, message: 'Output device unavailable' }
+    const failed = playSpeechAudio(new Blob(['wave']), new AbortController().signal, () => {}, bad)
+    bad.onerror()
+    await assert.rejects(failed, /media error 3: Output device unavailable/)
+    assert.ok(bad.paused && bad.removed)
   } finally {
     globalThis.Audio = oldAudio; URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke
   }

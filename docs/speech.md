@@ -70,6 +70,10 @@ tool output are not included. Fenced code, URLs, Markdown/HTML and speech contro
 are removed; prose is split at sentences or newlines into at most 900-character
 requests. One producer generates ahead, one request at a time, while clips play in
 order. Responses are limited to 20 MB; provider requests time out after three minutes.
+Chat uses a page-mounted native audio player, as the setup test does. Its controls
+appear during playback for manual play, pause and volume adjustments. Browser media
+errors include their diagnostic code instead of hiding the cause behind a generic
+playback error.
 
 Speech options holds the voice and optional automatic reading of new successful
 replies. Automatic reading is off by default and does not replay history, aborted or
