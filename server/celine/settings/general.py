@@ -65,6 +65,8 @@ FIELDS: list[dict[str, Any]] = [
         ("inline_text_max_bytes", "Largest text read inline", "bytes", 0, 100_000_000,
          200_000, "A larger text file is attached, not put into the message."),
         ("max_message_bytes", "Largest message", "bytes", 1, 100_000_000, 1_000_000, None),
+        ("requests_keep", "Model requests kept", "days", 0, 36_500, 0,
+         "What each step sent to its model. 0: kept forever."),
     )),
 ]
 _BY_KEY = {f["key"]: f for f in FIELDS}

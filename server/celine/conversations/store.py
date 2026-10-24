@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .. import homes
-from ..core.ids import new_id, now
+from ..core.ids import iso, new_id, now
 from ..core.states import LIVE_SQL
 from ..kb.chat import fts_candidates, is_query_error
 from . import tree
@@ -749,15 +749,21 @@ GLOBAL_KEEP = 20000     # rows of the global feed kept by prune_events (events.a
                         # adds one per tool call, turn and job end)
 
 
-async def prune_events(store, keep: int, cid: str | None = None) -> int:
+async def prune_events(store, keep: int, cid: str | None = None,
+                       requests_days: int = 0) -> int:
     """Drop all but the last `keep` events of every idle conversation, except what the
     snapshot reads back: the transcript's lasting lines (image notices) and which
     replies another model answered (`llm.queue` with `fallback`). A client resuming
     from below trim_below gets a resync instead of a gap. The global feed keeps its
-    newest GLOBAL_KEEP rows the same way (a client below the oldest gets a resync)."""
+    newest GLOBAL_KEEP rows the same way (a client below the oldest gets a resync).
+    `requests_days` (the requests_keep setting): the request bodies in log.db older
+    than that many days go too; 0 keeps them."""
     def fn(c: sqlite3.Connection) -> int:
         c.execute("DELETE FROM global_events WHERE id <= "
                   "(SELECT max(id) FROM global_events) - ?", (GLOBAL_KEEP,))
+        if requests_days > 0:
+            since = datetime.fromisoformat(now()) - timedelta(days=requests_days)
+            c.execute("DELETE FROM requests WHERE created_at < ?", (iso(since),))
         sql = ("SELECT id, next_seq FROM conversations WHERE id NOT IN "
                f"(SELECT conversation_id FROM turns WHERE state IN {LIVE_SQL})")
         args: list = []

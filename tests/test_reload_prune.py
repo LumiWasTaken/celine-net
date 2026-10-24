@@ -116,3 +116,25 @@ async def test_a_hand_edit_of_the_features_file_stops_the_runner(store, monkeypa
         monkeypatch.setattr(reload.boot, "load", lambda: fresh)
         await reload.file_changed(app)
         assert not app.runners["shellbox"].running
+
+
+async def test_request_bodies_past_requests_keep_days_go_with_the_prune(store, clock,
+                                                                         monkeypatch):
+    from celine.settings import general
+    assert general.value({}, "requests_keep") == 0, "kept forever unless the owner says"
+    monkeypatch.setattr(conversations, "now", clock.iso)
+
+    def add(c):
+        for mid, days in (("old", 8), ("new", 6)):
+            c.execute("INSERT INTO requests(message_id, step, turn_id, provider, model, "
+                      "body, created_at) VALUES(?, 0, 't', 'p', 'm', x'00', ?)",
+                      (mid, clock.iso(-days * 86400)))
+    await store.write(add)
+
+    def left():
+        return store.read(lambda c: [r[0] for r in c.execute(
+            "SELECT message_id FROM requests ORDER BY message_id")])
+    await conversations.prune_events(store, keep=500)
+    assert await left() == ["new", "old"]
+    await conversations.prune_events(store, keep=500, requests_days=7)
+    assert await left() == ["new"]

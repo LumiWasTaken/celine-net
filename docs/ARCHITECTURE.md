@@ -115,6 +115,7 @@ applies at once:
 | `max_attachment_bytes` | 20000000 | refused during upload |
 | `max_attachments` | 10 | per message |
 | `inline_text_max_bytes` | 200000 | larger text attachments become a note |
+| `requests_keep` | 0 | days a model request body is kept in log.db; 0 keeps it forever |
 
 `skills.toml` holds one section per skill (`[notebook]`, `[chat_archive]`,
 `[past_conversations]`, `[user_documents]`, `[sub_agents]`) with `enabled` and that
@@ -220,7 +221,8 @@ running`).
 After each turn, and at startup, `prune_events` drops all but the last `events_keep`
 entries of every idle conversation and raises `trim_below`, keeping what the snapshot
 reads back (`images.notice`, `llm.queue` with `fallback`); the global feed keeps its newest
-20000 rows (`GLOBAL_KEEP`). A client resuming from below gets `resync`.
+20000 rows (`GLOBAL_KEEP`). A client resuming from below gets `resync`. At startup it
+also drops the `requests` older than `requests_keep` days (0, the default, keeps them).
 
 ### The message tree
 
