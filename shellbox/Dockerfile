@@ -50,8 +50,8 @@ RUN npm install -g --no-fund --no-audit rea-agents@${REA_VERSION} \
 # opencode: the release binary, pinned by its sha256 (the app's Dockerfile pins bw the
 # same way). `agent opencode` runs it on a task; `opencode serve` is its coding agent's
 # server (shellbox/agents/opencode.py, the `code` skill), started by shellboxd as it.
-ARG OPENCODE_VERSION=1.19.3
-ARG OPENCODE_SHA256=13a8fb2978302071b86f9d7e00da9c8895f9cd846978379c3bdc6a5333536c9b
+ARG OPENCODE_VERSION=1.19.4
+ARG OPENCODE_SHA256=849bd6b3d959a1d2ef200ed1634a51c79a45ca236aa26665d75debd694805cce
 RUN python3 -c "import hashlib, io, os, tarfile, urllib.request; \
 v = os.environ['OPENCODE_VERSION']; \
 data = urllib.request.urlopen(f'https://github.com/anomalyco/opencode/releases/download/v{v}/opencode-linux-x64.tar.gz').read(); \
