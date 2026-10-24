@@ -88,8 +88,8 @@ def _proxy_problem(proxies) -> str | None:
             net = None
         if net is None or net.prefixlen == 0 or not (net.is_private or net.is_loopback):
             return (f"CELINE_TRUSTED_PROXIES has {p!r}: only the reverse proxy's own "
-                    f"address or private network (such as 172.18.0.0/16), never *, a "
-                    f"public range or everything (docs/DEPLOY.md).")
+                    f"address (such as 172.18.0.2), never *, a public range or "
+                    f"everything (docs/DEPLOY.md).")
     return None
 
 
