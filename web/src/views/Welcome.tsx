@@ -26,6 +26,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react'
 import { ApiError, type ConfigStatus } from '../lib/api'
 import { kbApi } from '../lib/kb'
+import { previewAppearance, saveAppearance, type Accent } from '../lib/appearance'
 import { COLORS } from '../lib/her'
 import { format, useNav } from '../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
@@ -168,11 +169,14 @@ function HerStep({ back, next }: StepNav) {
   const h = her.data
   const d = draft ?? (h ? { name: h.name, pronouns: h.pronouns, color: h.color, persona: h.persona, talk: h.talk ?? h.talk_shipped } : null)
   const set = (k: keyof HerDraft, v: string) => d && setDraft({ ...d, [k]: v })
+  // her colour is the app's accent: shown at once, saved with Appearance's own path
+  useEffect(() => { if (draft) previewAppearance({ accent: draft.color as Accent }) }, [draft?.color]) // eslint-disable-line react-hooks/exhaustive-deps
   const onNext = async () => {
     if (!h || !d) return
     setField(undefined); setError(null)
     try {
       await herApi.put(d, h.version)
+      await saveAppearance({ accent: d.color as Accent })
     } catch (e) {
       setField(fieldOf(e)); setError(e instanceof Error ? e.message : String(e))
       throw e

@@ -83,7 +83,7 @@ export function Chats({ active }: { active: boolean }) {
         )
         : resolveError ? <div className="list-page__note"><InlineError message={resolveError} /></div>
         : kb && chatId ? <Thread key={`${kb.id}:${chatId}`} kb={kb} chatId={chatId} jump={messageId} />
-        : <ChatList kbs={chatKbs} kbId={kbId} active={active} />}
+        : <ChatList key={kbId ?? ''} kbs={chatKbs} kbId={kbId} active={active} />}
     </Place>
   )
 }
