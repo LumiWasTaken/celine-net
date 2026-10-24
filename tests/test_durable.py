@@ -279,3 +279,31 @@ def test_a_cut_result_keeps_its_images():
     out = tools._capped(ToolResult(content="word " * 5000, images=["a1"]),
                         {"max_output_tokens": 100})
     assert "[cut:" in out.content and out.images == ["a1"]
+
+
+async def test_a_store_error_before_a_turn_runs_fails_that_turn_only(store, cfg, monkeypatch):
+    """The dispatcher's worker outlives a turn whose start raised (here: the role lookup)."""
+    import sqlite3
+    from celine.settings import roles
+    real = roles.resolve
+    bad = await conversations.create(store)
+    good = await conversations.create(store)
+
+    async def resolve(st, c, cid):
+        if cid == bad:
+            raise sqlite3.OperationalError("database is locked")
+        return await real(st, c, cid)
+    monkeypatch.setattr(roles, "resolve", resolve)
+    await user_says(store, bad, "hi")
+    await user_says(store, good, "hi")
+    async with anyio.create_task_group() as tg:
+        d = Dispatcher(store, cfg, EventBus(), lambda: Scripted([]),
+                       Registry())
+        await d.start(tg)
+        d.notify()
+        await until(lambda: ended(store, bad), 5)
+        await until(lambda: ended(store, good), 5)
+        await d.stop()
+        tg.cancel_scope.cancel()
+    assert (await view.snapshot(store, bad))["turn"]["state"] == "failed"
+    assert (await view.snapshot(store, good))["turn"]["state"] == "done"

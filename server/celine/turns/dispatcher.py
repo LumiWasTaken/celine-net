@@ -334,14 +334,17 @@ class Dispatcher:
         # turn that still runs (a model that hangs) is ended here
         wall = float(self.cfg.r("turn_wall_clock_seconds")) + \
             float(self.cfg.r("last_step_seconds"))
-        await roles.resolve(self.store, self.cfg, turn["conversation_id"])
-        label = await conversations.title(self.store, turn["conversation_id"]) or None
-        kind = await self.store.read(lambda c: (c.execute(
-            "SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
-        origin = metrics.origin_of(turn.get("origin"), kind)
-        metrics.TURNS_STARTED.labels(origin).inc()
+        origin = metrics.origin_of(turn.get("origin"), None)
         began = time.monotonic()
         try:
+            # a store error here fails this turn like one in the run: it never leaves
+            # the worker
+            await roles.resolve(self.store, self.cfg, cid)
+            label = await conversations.title(self.store, cid) or None
+            kind = await self.store.read(lambda c: (c.execute(
+                "SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
+            origin = metrics.origin_of(turn.get("origin"), kind)
+            metrics.TURNS_STARTED.labels(origin).inc()
             with anyio.move_on_after(wall) as clock:
                 run = await self.store.read(lambda c: self.run_binding(c, cid)) \
                     if self.run_binding is not None else None
@@ -373,13 +376,18 @@ class Dispatcher:
                 await self.jobs.cancel_for_turn(turn["id"])
         if self._stopping:
             return
-        await self._count(turn["id"], origin, time.monotonic() - began)
-        # what reached the conversation after the turn's last step lands now
-        await self.deliver_idle(turn["conversation_id"])
-        await self.ended(turn["conversation_id"], turn["id"])
-        await conversations.prune_events(self.store, int(self.cfg.r("events_keep")),
-                                         turn["conversation_id"])
-        # a work item: a title waits behind every turn in the model queue
-        if not await conversations.title(self.store, cid):
-            await self.work.put("title", {"conversation_id": cid}, conversation_id=cid,
-                                unique=True)
+        try:
+            await self._count(turn["id"], origin, time.monotonic() - began)
+            # what reached the conversation after the turn's last step lands now
+            await self.deliver_idle(cid)
+            await self.ended(cid, turn["id"])
+            await conversations.prune_events(self.store, int(self.cfg.r("events_keep")), cid)
+            # a work item: a title waits behind every turn in the model queue
+            if not await conversations.title(self.store, cid):
+                await self.work.put("title", {"conversation_id": cid}, conversation_id=cid,
+                                    unique=True)
+        except Exception:
+            if self._stopping:
+                raise
+            log.exception("turn end failed", extra={"event": "turn.after_failed",
+                                                    "turn": turn["id"]})
