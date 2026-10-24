@@ -90,7 +90,7 @@ An instance on a scratch data dir: `CELINE_DATA_DIR=DIR/data ./start.sh --port 8
 3. The server owns state: lists, counts, labels, paths and effective settings come from the server through explicit events. The client never guesses.
 4. Routes are plain REST: `/api/<plural-noun>[/{id}[/<sub-resource>]]`, kebab-case, a verb only as a trailing action (`/run`, `/stop`, `/test`), singular only for a singleton (`/api/agent`, `/api/status`), sockets under `/ws/`.
 5. A text a model reads lives beside the code that sends it (`prompts.text`), or in `config/` when a user is meant to edit it.
-6. A feature is one entry in `settings/features.py`; a service address is a setting with a probe; nothing needs a restart.
+6. A feature is one entry in `settings/features.py`; a service address is a setting with a probe.
 7. UI: draw with the kit in `web/src/ui`; words from `docs/ui/words.md` or an icon with a tooltip; no explainer text; every colour, size, radius, shadow and duration from `web/src/styles/tokens.css`; one design. A dropdown only for a list that can run to hundreds of entries (a provider's models).
 8. The page never scrolls: a screen fits the viewport and only inner regions scroll (a transcript, a list, a text box, a card body).
 9. No em dash, en dash or " · " in any text a user or a model sees. Code that needs one writes the escape. Text says what exists and what it does, never what does not exist. Comments get to the point with no preamble, in plain technical English that has one reading.
