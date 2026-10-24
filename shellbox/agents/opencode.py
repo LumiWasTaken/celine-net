@@ -64,7 +64,8 @@ INSTRUCTIONS = ("Keep your final answer short: what you changed and what you ran
 
 PASSWORD = ""               # read at boot; tests set it
 HOME: Path | None = None    # its home, from boot
-_state: dict = {"models": None, "proc": None, "as_her": {}, "llm_url": ""}
+_state: dict = {"models": None, "proc": None, "as_her": {}, "llm_url": "", "llm_key": "",
+               "cfg": None}
 
 
 class Problem(Exception):
@@ -81,8 +82,8 @@ def boot(home: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> Non
     """The agent's config and password, then the server in a thread of its own that restarts it
     whenever it exits."""
     global PASSWORD, HOME
-    HOME, _state["as_her"], _state["llm_url"] = home, as_her, llm_url
-    cfg = home / ".config" / "opencode"
+    HOME, _state["as_her"], _state["llm_url"], _state["llm_key"] = home, as_her, llm_url, llm_key
+    cfg = _state["cfg"] = home / ".config" / "opencode"
     pw = cfg / "server.password"
     if not pw.is_file() or not pw.read_text().strip():
         _put(pw, secrets.token_urlsafe(24) + "\n", "600")
@@ -160,7 +161,7 @@ def _serve(cfg: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> No
                 stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **as_her)
         _state["proc"] = proc
         while True:
-            due = RETRY if _state["models"] is None else REFRESH
+            due = REFRESH if _state["models"] else RETRY      # none yet: a fresh instance
             try:
                 proc.wait(timeout=max(looked + due - time.monotonic(), 0))
                 break
@@ -257,8 +258,17 @@ def start(dir: str, task: str, model: str, session: str | None = None) -> dict:
                       f"({_state['llm_url']}/v1/models) has not answered the box since it "
                       f"started. The box asks again every {RETRY} s.", 503)
     if model not in _state["models"]:
-        raise Problem(f"{model} is not one of the models. The models: "
-                      f"{', '.join(_state['models']) or 'none yet'}.")
+        models = _models(_state["llm_url"], _state["llm_key"])
+        models = models or _state["models"]
+        if models and model in models and not _busy():
+            _write_config(_state["cfg"], _state["llm_url"], _state["llm_key"], models)
+            _state["proc"].terminate()     # _serve starts it again on the new list
+            raise Problem(f"{model} is new to {NAME}: it restarts on the new model list. "
+                          f"Start again in {RESTART_WAIT + 5} s.", 503)
+        if not models:
+            raise Problem("The app has no chat model with a key yet: the user adds one in "
+                          "Settings, Models.", 503)
+        raise Problem(f"{model} is not one of the models. The models: {', '.join(models)}.")
     if session:
         info = _call("GET", f"/session/{session}", query=_q(folder))
         if _busy_one(session):

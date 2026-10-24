@@ -192,6 +192,20 @@ def test_a_missing_folder_an_empty_task_and_an_unknown_model_are_refused(box):
     assert not any("prompt_async" in s[1] for s in FakeOpencode.seen)
 
 
+def test_a_model_added_after_the_box_started_restarts_opencode_on_it(box, monkeypatch):
+    agent = box.daemon.CODE
+    agent._state["models"] = {}
+    code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "x", "model": "p/new"})
+    assert code == 503 and "Settings, Models" in res["error"]
+    written, stopped = [], []
+    monkeypatch.setattr(agent, "_models", lambda url, key: {"p/new": {}})
+    monkeypatch.setattr(agent, "_write_config", lambda *a: written.append(a[-1]))
+    agent._state["proc"] = type("P", (), {"terminate": lambda self: stopped.append(1)})()
+    code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "x", "model": "p/new"})
+    assert code == 503 and "restarts on the new model list" in res["error"]
+    assert written == [{"p/new": {}}] and stopped == [1]
+
+
 def test_a_second_start_carries_on_in_the_session_unless_it_is_busy(box):
     box.call("POST", "/code/session", {"dir": "proj", "task": "a", "model": "local/small"})
     code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "b",
