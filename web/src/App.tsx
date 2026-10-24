@@ -20,6 +20,7 @@ import type { RowState, Work } from './components/ConversationList'
 import { isIntercomEvent } from './lib/intercom'
 import { useResource } from './lib/useResource'
 import { useSlide } from './ui/slide'
+import { SectionBoundary } from './components/SectionBoundary'
 import { ServerDown } from './components/ServerDown'
 import { Portrait } from './components/Portrait'
 import { VaultBanner } from './components/VaultBanner'
@@ -208,7 +209,7 @@ function Shell() {
             const el = visited.has(v.id) && v.view({ ...shown, active: section === v.id })
             return el && (
               <section key={v.id} className="view" hidden={section !== v.id} aria-label={labelOf(v.id)}>
-                <Suspense fallback={<LoadingRow />}>{el}</Suspense>
+                <SectionBoundary><Suspense fallback={<LoadingRow />}>{el}</Suspense></SectionBoundary>
               </section>
             )
           })}
