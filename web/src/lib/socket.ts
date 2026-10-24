@@ -282,7 +282,8 @@ export const useConnection = () => useContext(Ctx)
 /** the server is gone: /api/health failed twice, or the socket stayed closed for 10 s */
 export function useServerDown(): boolean {
   const apiDown = useApiDown()
-  return apiDown || useContext(Ctx) === 'offline'
+  const connection = useContext(Ctx)
+  return apiDown || connection === 'offline'
 }
 
 /** false while the server can't be reached: send-like buttons disable themselves */

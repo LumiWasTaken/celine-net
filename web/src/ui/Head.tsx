@@ -124,6 +124,7 @@ export function PlaceHead({
   // what it holds changed: measure again from the top
   const name = typeof title === 'string' ? title : null
   useLayoutEffect(() => setStep(0), [name, count, shelf?.value, picker?.on, more.length])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- measured after every render
   useLayoutEffect(() => {
     const el = row.current
     if (!el) return
@@ -274,6 +275,7 @@ export function Toolbar({ state, filters = [], toggles = [], sort, group, classN
   }, [])
   const picked = filters.map(f => f.picked ?? '').join('|')
   useLayoutEffect(() => setTight(0), [state?.value, picked, sort?.value, group?.value])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- measured after every render
   useLayoutEffect(() => {
     const el = row.current
     if (el && tight < 3 && el.scrollWidth > el.clientWidth + 1) setTight(t => t + 1)

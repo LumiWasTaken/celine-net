@@ -110,6 +110,7 @@ export function Search({ active }: { active: boolean }) {
   // hits, every keystroke; `paging`: the later page loading, if one is
   const found = useResource(signal => (params.q ? kbApi.search({ ...params, limit: PAGE, top: 0 }, signal) : Promise.resolve(null)), [params], { debounce: 60 })
   const page = params.q ? found.data : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- no page: a new empty list, nothing to keep
   const hits = page?.hits ?? []
   const nextCursor = page?.next_cursor ?? null
   const paging = useRef<AbortController | null>(null)

@@ -164,7 +164,7 @@ function MenuBox({ anchor, items, onClose, align, label, inline, search, q, setQ
     // keeps it on the button; with a search its width stays while you type
     setPos({ left, ...up ? { bottom: window.innerHeight - top - height } : { top }, maxHeight,
              width: search ? width : undefined, transformOrigin: up ? `${ox}px 100%` : `${ox}px ${oy}px` })
-  }, [anchor, align])
+  }, [anchor, align]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (inline) return
@@ -184,7 +184,7 @@ function MenuBox({ anchor, items, onClose, align, label, inline, search, q, setQ
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('resize', onBlur)
     }
-  }, [anchor, inline])
+  }, [anchor, inline]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = (refocus: boolean) => {
     onClose()

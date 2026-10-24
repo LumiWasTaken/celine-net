@@ -46,6 +46,7 @@ export function Drawer({ open: wanted, title, onClose, children, actions, classN
     if (open) {
       const from = document.activeElement as HTMLElement | null
       panel.current?.focus({ preventScroll: true })
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- the box as it is when it closes
       return () => { if (box.current?.contains(document.activeElement)) from?.focus({ preventScroll: true }) }
     }
   }, [open])

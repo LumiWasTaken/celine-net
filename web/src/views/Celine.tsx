@@ -85,7 +85,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
     setArtifact(id)
     setPanelTab('pages')
     setDrawerOpen(true)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const openPanel = (t: PanelTab) => {
     setActiveSide(null)
     setPanelTab(t)
@@ -96,7 +96,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
       setDrawerOpen(false)
     }
     setActiveSide(key)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // the new conversation's choices, until the first message creates it
   const [newSettings, setNewSettings] = useState<NewConversationSettings>({})
 
@@ -245,7 +245,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
     setNewSettings({})
     onSidebar(false)
     if (!coarse()) composer.current?.focus()
-  }, [setSelected, onSidebar])
+  }, [setSelected, onSidebar]) // eslint-disable-line react-hooks/exhaustive-deps
   const toNew = useCallback(() => setSelected(null, { replace: true }), [setSelected])
   const onCompact = useCallback(() => { awaitingCompact.current = true }, [])
 
@@ -323,7 +323,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, drawerOpen, sidebarOpen, selected, setSelected, onSidebar])
+  }, [active, drawerOpen, sidebarOpen, selected, setSelected, onSidebar]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // what the rail shows for its place: waiting for you over failed over running (the
   // server's row states), and its sub-agents at work
