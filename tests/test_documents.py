@@ -322,3 +322,14 @@ def test_a_file_gone_while_reading_waits_and_is_not_a_failure(tmp_path):
     out = kb.process(ctx())
     assert (out["read"], out["failed"]) == (1, 0)
     assert kb.find_item("b.txt")["state"] == "pending", "the next run looks again"
+
+
+def test_a_scoped_search_narrows_before_the_result_cap(tmp_path):
+    kb = mk(tmp_path)
+    for i in range(30):
+        (kb.root / f"big{i}.txt").write_text("\n\n".join(f"segel {i} {j}" for j in range(100)))
+    (kb.root / "mine.txt").write_text("segel only here, once")
+    read_all(kb)
+    mine = kb.find_item("mine.txt")["id"]
+    hits = kb.search_segments("segel", item_ids=[mine])
+    assert [g["item"]["id"] for g in hits["items"]] == [mine]

@@ -1157,16 +1157,20 @@ class DocumentsKB:
         if expr is None:
             return {"items": [], "total_items": 0, "total_hits": 0}
         loose = match_any(q) if any_word else None
-        scope = ""
+        scope = fts_scope = ""
         args: list[Any] = [expr]
         if item_ids:
-            scope = f" AND s.item_id IN ({','.join(str(int(i)) for i in item_ids)})"
+            ids = ",".join(str(int(i)) for i in item_ids)
+            scope = f" AND s.item_id IN ({ids})"
+            # narrow before the cap, or a big library crowds the scoped hits out
+            fts_scope = (f" AND (f.rowid IN (SELECT id FROM segments WHERE item_id IN ({ids}))"
+                         f" OR -f.rowid IN ({ids}))")
 
         def run(conn: sqlite3.Connection) -> dict[str, Any]:
             try:
                 rows = conn.execute(
                     "SELECT f.rowid AS sid, bm25(search_fts) AS score FROM search_fts f "
-                    "WHERE search_fts MATCH ? ORDER BY score LIMIT 2000", args).fetchall()
+                    f"WHERE search_fts MATCH ?{fts_scope} ORDER BY score LIMIT 2000", args).fetchall()
             except sqlite3.OperationalError:
                 return {"items": [], "total_items": 0, "total_hits": 0}
             seg_ids = [r["sid"] for r in rows if r["sid"] > 0]
