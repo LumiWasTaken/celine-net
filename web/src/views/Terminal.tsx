@@ -204,11 +204,23 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
 
 /* ── the screen: xterm, the socket, the font that fills the room ── */
 
-/** the tokens as computed colours: a token's own text can be `oklch(from var(--accent) ...)`,
-    which xterm cannot read; computed, it is rgb() or a plain oklch() */
+/** the tokens as rgba(): a token's own text can be `oklch(from var(--accent) ...)`, which a
+    browser computes to oklch() or oklab(), none of which xterm reads; a canvas pixel turns
+    any colour into rgba. One probe per token: a reused one can answer with the colour of
+    the token before (Chrome did, so the text took the background's colour) */
 function theme() {
-  const probe = document.body.appendChild(document.createElement('i'))
-  const v = (n: string) => { probe.style.color = `var(${n})`; return getComputedStyle(probe).color }
+  const px = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+  const v = (n: string) => {
+    const probe = document.body.appendChild(document.createElement('i'))
+    probe.style.color = `var(${n})`
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    px.clearRect(0, 0, 1, 1)
+    px.fillStyle = color
+    px.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = px.getImageData(0, 0, 1, 1).data
+    return `rgba(${r}, ${g}, ${b}, ${Math.round(a! / 255 * 100) / 100})`
+  }
   const t = {
     background: v('--surface-sunk'), foreground: v('--text-primary'),
     cursor: v('--accent'), cursorAccent: v('--surface-sunk'), selectionBackground: v('--accent-wash-strong'),
@@ -218,7 +230,6 @@ function theme() {
     brightYellow: v('--ansi-bright-yellow'), brightBlue: v('--ansi-bright-blue'), brightMagenta: v('--ansi-bright-magenta'),
     brightCyan: v('--ansi-bright-cyan'), brightWhite: v('--ansi-bright-white'),
   }
-  probe.remove()
   return t
 }
 
