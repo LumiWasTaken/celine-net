@@ -25,6 +25,12 @@ async def upsert(store, path: str, summary: str, nbytes: int, body: str = "") ->
     await store.write(fn)
 
 
+def _under(prefix: str) -> tuple[str, tuple]:
+    """Paths under a folder, matched literally (LIKE would fold case and read `_` and `%`)."""
+    p = prefix.rstrip("/") + "/"
+    return "substr(path, 1, ?) = ?", (len(p), p)
+
+
 async def delete(store, path: str) -> None:
     def fn(c: sqlite3.Connection) -> None:
         c.execute("DELETE FROM notebook_index WHERE path=?", (path,))
@@ -39,8 +45,9 @@ async def list(store, folder: str | None = None,  # noqa: A001 - the module's wo
         sql = "SELECT path, summary, bytes, touched_at FROM notebook_index"
         args: list = []
         if folder:
-            sql += " WHERE path LIKE ?"
-            args.append(folder.rstrip("/") + "/%")
+            cond, a = _under(folder)
+            sql += f" WHERE {cond}"
+            args = [*a]
         sql += " ORDER BY touched_at DESC" if order == "touched" else " ORDER BY path"
         return [dict(r) for r in c.execute(sql, args)]
 
@@ -50,8 +57,9 @@ async def list(store, folder: str | None = None,  # noqa: A001 - the module's wo
 async def move(store, src: str, dst: str) -> int:
     """src may be a file or a folder prefix."""
     def fn(c: sqlite3.Connection) -> int:
-        rows = c.execute("SELECT path FROM notebook_index WHERE path=? OR path LIKE ?",
-                         (src, src.rstrip("/") + "/%")).fetchall()
+        cond, a = _under(src)
+        rows = c.execute(f"SELECT path FROM notebook_index WHERE path=? OR {cond}",
+                         (src, *a)).fetchall()
         for r in rows:
             new = dst if r["path"] == src else dst.rstrip("/") + r["path"][len(src.rstrip("/")):]
             c.execute("UPDATE notebook_index SET path=? WHERE path=?", (new, r["path"]))
@@ -63,10 +71,10 @@ async def move(store, src: str, dst: str) -> int:
 
 async def delete_prefix(store, path: str) -> int:
     def fn(c: sqlite3.Connection) -> int:
-        args = (path, path.rstrip("/") + "/%")
-        n = c.execute("DELETE FROM notebook_index WHERE path=? OR path LIKE ?",
-                      args).rowcount
-        c.execute("DELETE FROM notebook_fts WHERE path=? OR path LIKE ?", args)
+        cond, a = _under(path)
+        args = (path, *a)
+        n = c.execute(f"DELETE FROM notebook_index WHERE path=? OR {cond}", args).rowcount
+        c.execute(f"DELETE FROM notebook_fts WHERE path=? OR {cond}", args)
         return n
 
     return await store.write(fn)

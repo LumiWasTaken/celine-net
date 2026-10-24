@@ -256,3 +256,13 @@ async def test_the_apps_own_files_are_not_notes(store, cfg):
     for bad in (".index.db", ".versions/a.md", "x/.hidden.md"):
         with pytest.raises(ValueError, match="not in your notebook"):
             await nb.write(ctx, bad, "x", "x")
+
+
+async def test_index_paths_match_exactly(store):
+    for p in ("a_b/x.md", "aXb/x.md", "A_B/x.md", "a%b/x.md", "azb/x.md"):
+        await notebook_index.upsert(store, p, "s", 1)
+    assert [r["path"] for r in await notebook_index.list(store, "a_b")] == ["a_b/x.md"]
+    assert await notebook_index.move(store, "a_b", "moved") == 1
+    assert await notebook_index.delete_prefix(store, "a%b") == 1
+    left = [r["path"] for r in await notebook_index.list(store)]
+    assert left == ["A_B/x.md", "aXb/x.md", "azb/x.md", "moved/x.md"]
