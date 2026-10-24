@@ -323,3 +323,25 @@ async def test_a_server_the_account_left_is_not_subscribed(state):
     assert set(ws.sent[-1]["d"]["subscriptions"]) == {"G9"}
     assert gw.as_dict()["not_member"] == []
     await gw.stop()
+
+
+async def test_a_live_edit_names_mentions_like_the_sync(state):
+    """An edit journals the text with mentions as names, the way a message record does,
+    so the next REST sync of that message finds no difference."""
+    from discord_link.records import message
+    state.learn_channel("D1", kind="dm", type=1, enabled=1)
+    gw = Gateway(state)
+    gw.me_id = ME
+    w = gwmod.Writer(gw)
+    ana = [{"id": "333", "username": "ana", "global_name": "Ana"}]
+    m = msg(sid(T0 + 10 ** 9), "D1", "U2", "hey <@333>", mentions=ana)
+    w.apply("MESSAGE_CREATE", m)
+    w.apply("MESSAGE_UPDATE", {**m, "content": "hey <@333>"})
+    assert [r["kind"] for r in state.after(0, 100)] == ["message"], \
+        "the same text again is no edit"
+    edited = {**m, "content": "hey <@333>!", "edited_timestamp": m["timestamp"]}
+    w.apply("MESSAGE_UPDATE", edited)
+    edits = [r for r in state.after(0, 100) if r["kind"] == "edit"]
+    assert [r["text"] for r in edits] == ["hey @Ana!"]
+    state.journal([message(state, edited, ME)])          # the REST sync reads it again
+    assert [r for r in state.after(0, 100) if r["kind"] == "edit"] == edits

@@ -30,7 +30,7 @@ import uuid
 from typing import Any, Callable
 
 from . import policy
-from .records import DM, GROUP_DM, message, person
+from .records import DM, GROUP_DM, message, person, plain
 from .state import State, now_ms
 from .sync import learn_author_peer, learn_private
 
@@ -147,12 +147,13 @@ class Writer(threading.Thread):
             if d.get("author") and d.get("timestamp"):
                 self.create(d)               # an edit of a message never seen: keep it now
             return
-        if prev["text"] == d["content"]:
+        text = plain(d["content"] or "", d, self.state)      # as a message record keeps it
+        if prev["text"] == text:
             return
         self.state.journal([{"kind": "edit", "chat_key": cid, "message_key": mid,
-                             "ts": now_ms(), "text": d["content"]}])
+                             "ts": now_ms(), "text": text}])
         self.state.x("UPDATE seen SET text = ? WHERE kind = 'message' AND chat_key = ? "
-                     "AND message_key = ?", (d["content"], cid, mid))
+                     "AND message_key = ?", (text, cid, mid))
         self.gw.count(d.get("guild_id"))
 
     def delete(self, channel_id: str | None, ids: list, guild_id: str | None) -> None:
