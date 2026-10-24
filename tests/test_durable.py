@@ -309,6 +309,39 @@ async def test_a_store_error_before_a_turn_runs_fails_that_turn_only(store, cfg,
     assert (await view.snapshot(store, good))["turn"]["state"] == "done"
 
 
+@pytest.mark.parametrize("where", ["hold", "claim"])
+async def test_a_store_error_in_the_worker_loop_leaves_the_worker_alive(
+        store, cfg, monkeypatch, where):
+    """A store error before a turn is claimed (the hold check, the claim) is logged; the
+    worker looks again and runs the turn, the server stays up."""
+    import sqlite3
+    from celine.turns import dispatcher
+    monkeypatch.setattr(dispatcher, "HOLD_RECHECK", 0.05)
+    real = {"hold": dispatcher.her_hold, "claim": turns.claim}[where]
+    failed = []
+
+    async def flaky(*a, **kw):
+        if not failed:
+            failed.append(1)
+            raise sqlite3.OperationalError("database is locked")
+        return await real(*a, **kw)
+    if where == "hold":
+        monkeypatch.setattr(dispatcher, "her_hold", flaky)
+    else:
+        monkeypatch.setattr(turns, "claim", flaky)
+    cid = await conversations.create(store)
+    await user_says(store, cid, "hi")
+    async with anyio.create_task_group() as tg:
+        d = Dispatcher(store, cfg, EventBus(), lambda: Scripted([]), Registry())
+        await d.start(tg)
+        d.notify()
+        await until(lambda: ended(store, cid), 5)
+        await d.stop()
+        tg.cancel_scope.cancel()
+    assert failed
+    assert (await view.snapshot(store, cid))["turn"]["state"] == "done"
+
+
 async def test_a_turn_that_ended_during_shutdown_runs_its_end_hooks_at_the_next_start(
         store, cfg):
     cid = await conversations.create(store)
