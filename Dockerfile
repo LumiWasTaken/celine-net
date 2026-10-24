@@ -15,8 +15,8 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY web/ ./
-# No tsc here: test:web type checks every web change before this builds.
-RUN npx vite build --outDir /out/static --emptyOutDir
+# the whole build: the useReveal check, eslint and tsc first, then vite
+RUN npm run build -- --outDir /out/static --emptyOutDir
 
 # ---- python environment --------------------------------------------------------------
 FROM ghcr.io/astral-sh/uv:0.12.18 AS uv
