@@ -27,7 +27,10 @@ from .ollama import _arguments
 from .openai import OpenAIBackend, RawReply, _sse_data, http_error, read_chunk
 
 JSON_ONLY = "Answer with one JSON object and nothing else."
+# a reply cut off before its end (the token cap, the context window, a paused turn) is
+# "length", as max_tokens is
 _STOP = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
+         "model_context_window_exceeded": "length", "pause_turn": "length",
          "tool_use": "tool_calls", "refusal": "content_filter"}
 # an `error` event in the stream, as the status the same error has as an answer
 _ERROR_STATUS = {"overloaded_error": 529, "rate_limit_error": 429, "api_error": 500}

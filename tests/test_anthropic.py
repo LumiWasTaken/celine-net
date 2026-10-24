@@ -113,6 +113,18 @@ async def test_a_text_reply_with_its_usage(monkeypatch):
         {"type": "text", "text": "hi", "cache_control": cached}]}]
 
 
+@pytest.mark.parametrize("stop, reason", [
+    ("max_tokens", "length"), ("model_context_window_exceeded", "length"),
+    ("pause_turn", "length"), ("refusal", "content_filter"), ("tool_use", "tool_calls"),
+    ("stop_sequence", "stop")])
+async def test_every_stop_reason_has_its_meaning(monkeypatch, stop, reason):
+    b, _ = backend(monkeypatch, streamed(
+        start(1), block(0, "text", text=""), delta(0, "text_delta", text="x"),
+        {"type": "content_block_stop", "index": 0}, *end(stop, 1)))
+    events = await run(b, [{"role": "user", "content": "hi"}])
+    assert events[-1].reason == reason
+
+
 def breakpoints(body: dict) -> list[tuple[str, dict]]:
     """(where, cache_control) of every block that has one."""
     blocks = [("system", b) for b in body.get("system") or []] + [
