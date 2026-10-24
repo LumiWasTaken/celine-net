@@ -156,7 +156,8 @@ async def gated(v, turn, call, store, cfg, app):
         approvals = getattr(app, "approvals", None)
         try:
             no = await approvals.ask(v.ask["action"], v.ask["facts"], cid, v.ask["why"],
-                                     v.ask["short"], kind="gate", ref=v.ask["rid"]) \
+                                     v.ask["short"], kind="gate", ref=v.ask["rid"],
+                                     call=call.get("id")) \
                 if approvals is not None \
                 else f"{cfg.user} did not answer"
         except anyio.get_cancelled_exc_class():

@@ -1,6 +1,8 @@
 """The agent's self: `me__read` shows its persona, its
 talk and its slop list (its row, celine/her.py); `me__edit` changes its persona, its
-talk and its slop list (banned words, phrases, patterns). Every change goes through
+talk and its slop list (banned words, phrases, patterns). They are in every chat, so
+every change waits for the user's approval first (celine/approvals.py, kind `her`),
+whatever the guard is. Every change goes through
 her.write_sync as written by it, so it is in the text's History (her:persona, her:talk,
 her:voice; Settings, It) and in Events (the `her` source, events.py)."""
 from __future__ import annotations
@@ -13,6 +15,13 @@ from . import ToolContext, ToolResult, guide, tool, described
 from ..core.event_types import HER_CHANGED
 
 LISTS = {"banned": "banned", "phrases": "phrases", "patterns": "patterns"}
+# what an edit changes, as Settings and Events name it (the approval's words)
+NAMES = {"persona": "Persona", "talk": "Example lines", "banned": "Banned words",
+         "phrases": "Banned words", "patterns": "Banned words"}
+ASK = "change the {name}"
+WHY = "It changes how {{name}} comes across in every chat from now on."
+NOBODY = "Nothing was changed: nobody is here to approve it."
+FACT = 200          # characters of one argument in the request
 
 
 def _numbered(items: list[str]) -> str:
@@ -107,9 +116,10 @@ class Me:
         remove: Annotated[list[str], "banned, phrases, patterns: entries to "
                                      "remove."] = [],  # noqa: B006
     ) -> ToolResult:
-        """Change your persona, your talk or your slop list. Every change is kept in its
-        History, and {{username}} sees it in Settings and in Events; when you change your
-        persona, tell {{username}} in one line. Example:
+        """Change your persona, your talk or your slop list. Every change waits until
+        {{username}} approves it; denied or unanswered, nothing changes. Every change is
+        kept in its History, and {{username}} sees it in Settings and in Events; when you
+        change your persona, tell {{username}} in one line. Example:
         me__edit(what="phrases", add=["you were right"]), or me__edit(what="talk",
         old="short.", new="short, lowercase.").
         Returns: what changed."""
@@ -119,6 +129,9 @@ class Me:
             return ToolResult(content=got, is_error=True)
         body, said = got
         store, cfg = ctx.store, self.cfg
+        if no := await self._approved(ctx, what, old, new, list(add or []),
+                                      list(remove or [])):
+            return ToolResult(content=no, is_error=True)
 
         def fn(c) -> None:
             her.write_sync(c, cfg, body, "her")
@@ -130,3 +143,18 @@ class Me:
         await her.refresh(store, cfg)
         store.emit_global({"type": HER_CHANGED})
         return ToolResult(content=said, display={"what": what})
+
+    async def _approved(self, ctx: ToolContext, what: str, old: str, new: str,
+                        add: list[str], remove: list[str]) -> str | None:
+        """The user's answer to this edit (celine/approvals.py): None when approved, else
+        the sentence for its result. Its words are fixed and the call's own data."""
+        approvals = getattr(self.app, "approvals", None)
+        if approvals is None:
+            return NOBODY
+        facts = [f"{k}: {v[:FACT]}" for k, v in (("old", old), ("new", new)) if v] + \
+            [f"{k}: {', '.join(v)[:FACT]}" for k, v in (("add", add), ("remove", remove))
+             if v]
+        action = ASK.format(name=NAMES[what])
+        return await approvals.ask(action, facts, ctx.conversation_id,
+                                   self.cfg.substitute(WHY), action, kind="her",
+                                   call=ctx.tool_call_id or None)

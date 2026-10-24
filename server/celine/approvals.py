@@ -1,6 +1,6 @@
 """Approvals: what the user answers before something runs, from a logged-in session
 (GET /api/approvals, POST /api/approvals/{id}/answer; Settings, Vault shows the vault's) or with
-`!approve` / `!deny` in the bridged chat. One service, two kinds:
+`!approve` / `!deny` in the bridged chat. One service, three kinds:
 
 - `vault`, the vault's taps. Only the high-risk actions ask: the password into its
   shellbox (vault__get with shell), where everything in the box and the internet can
@@ -11,6 +11,9 @@
 - `gate`, Bastet's confirm rule (guard/rules.py): a tool the user listed waits for their
   answer every time. Bastet's words, no reason from her. Its `ref` is her row, so her
   banner in the chat answers it too (guard/banners.py).
+- `her`, an edit of herself (me__edit, skills/me.py): her persona, talk and slop list
+  are in every chat, so every edit waits for the user, guard or no guard. A call the
+  user already approved on Bastet's ask (`call`, its tool call id) is not asked again.
 
 The text the user reads is built from fixed sentences and the call's own data, never
 from its words. It also names the last tool that read something from outside (a page,
@@ -39,8 +42,9 @@ from .guard.sources import OUTSIDE   # skills whose results others wrote: one li
 log = logging.getLogger("celine.approvals")
 
 ASK_FOR = 120       # seconds a request waits for the user
-KINDS = ("vault", "gate")
-LABEL = {"vault": "Vault", "gate": "Bastet"}
+KINDS = ("vault", "gate", "her")
+LABEL = {"vault": "Vault", "gate": "Bastet", "her": "Persona"}
+APPROVED_KEPT = 64  # tool calls approved on Bastet's ask, kept so the tool asks no more
 
 SHELL = "put the password of {entry} into a file in the shellbox"
 ROTATE = "change the password of {entry}"
@@ -81,6 +85,7 @@ class Approvals:
         self.cfg, self.emit, self.ping, self.store = cfg, emit, ping, store
         self.waiting: dict[str, Ask] = {}
         self.read: dict[str, str] = {}      # conversation -> last outside tool
+        self.approved: dict[str, None] = {}  # calls approved on a gate ask, newest last
 
     # ---- what the runner tells it -------------------------------------------------------
 
@@ -101,10 +106,14 @@ class Approvals:
 
     async def ask(self, action: str, facts: list[str], conversation: str,
                   why: str = "", short: str = "", kind: str = "vault",
-                  ref: int | None = None) -> str | None:
+                  ref: int | None = None, call: str | None = None) -> str | None:
         """Wait for the user's answer. -> None when approved, else one sentence for its
         tool result: denied, no answer in time (it starts with `{user} did not answer`),
-        no reason given (vault), or another one waits."""
+        no reason given (vault), or another one waits. `call`: the tool call it is for;
+        one the user approved on Bastet's ask (a gate) is not asked again by its tool."""
+        if call and kind != "gate" and call in self.approved:
+            del self.approved[call]
+            return None
         now = time.time()
         user = self.cfg.user
         why = " ".join((why or "").split())[:WHY_MAX]
@@ -131,6 +140,10 @@ class Approvals:
             self.waiting.pop(ask.id, None)
             self._changed()
         if ok:
+            if call and kind == "gate":
+                self.approved[call] = None
+                while len(self.approved) > APPROVED_KEPT:
+                    del self.approved[next(iter(self.approved))]
             return None
         if ok is None:
             return f"{user} did not answer in {_minutes()}; nothing was done."
@@ -181,7 +194,8 @@ class Approvals:
 
     async def _notice(self, ask: Ask) -> None:
         """The app's notice (events.notice): it opens where the request is answered,
-        Settings, Vault for the vault's, her chat (Bastet's banner) for a gate."""
+        Settings, Vault for the vault's, her chat (Bastet's banner) for a gate, the chat
+        that asked for an edit of herself."""
         if self.store is None:
             return
         from . import homes

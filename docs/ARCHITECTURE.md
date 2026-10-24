@@ -138,7 +138,8 @@ Who it is and how it sounds are fields of its row (Settings, the agent's page): 
 its own gets all of it, whatever the kind: a chat, a bridged chat, a mission, a sub-agent,
 a background run (`prompt.system_blocks`, the one assembly). It reads them with
 `me__read` and changes its talk and its banned words with `me__edit` (`skills/me.py`);
-the persona stays yours. Every change goes through `her.write_sync` into `text_versions`
+the persona stays yours. Every edit waits for your approval first (`approvals.py`, kind
+`her`), whether the guard is on or not. Every change goes through `her.write_sync` into `text_versions`
 as `her:persona`, `her:talk` and `her:voice`, and `POST /api/text-versions/{vid}/revert`
 makes a version the text again.
 
