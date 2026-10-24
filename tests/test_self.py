@@ -19,7 +19,7 @@ from celine.core.services import Services
 from celine.errors import install_error_handler
 from celine.settings.files import Invalid
 from celine.skills import ToolContext
-from celine.skills.me import Me
+from celine.skills.me import Me, replaced
 from celine.turns import slop
 from celine.turns.prompt import VOICE_MAX, voice_line
 
@@ -133,6 +133,14 @@ async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
         "Changed the Persona", "Changed the Example lines", "Changed the Example lines",
         "Changed the Banned words"]
     assert rows["events"][0]["links"]["open"] == "/settings/agent/edit/persona/history"
+
+
+async def test_an_edit_keeps_every_placeholder_it_does_not_touch(cfg):
+    kept = "Hi {{username}}. Bye {{username}}."
+    assert replaced(cfg, kept, "Bye", "Ciao") == "Hi {{username}}. Ciao {{username}}."
+    assert replaced(cfg, kept, "Hi Joe.", "Hey Joe!") == "Hey Joe! Bye {{username}}."
+    assert replaced(cfg, kept, "Bye J", "See y") == "Hi {{username}}. See yoe.", \
+        "a placeholder cut by the edit keeps its outside part as it reads"
 
 
 async def test_a_wrong_edit_says_why_and_writes_nothing(store, cfg):
