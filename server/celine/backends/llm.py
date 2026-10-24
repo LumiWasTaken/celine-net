@@ -719,7 +719,9 @@ class QueuedBackend:
             if self._cancelled():
                 raise QueueCancelled("stopped") from None
             outcome = "error"
-            if yielded or not e.retryable:
+            # a request the model cannot take (too long, an image) is the same for the
+            # next one; a missing model, a rejected key, no credits are this model's
+            if yielded or e.code in ("context_overflow", "unsupported_input"):
                 raise
             if busy(e):                     # the model is fine: nothing to note
                 raise _Busy(e) from None

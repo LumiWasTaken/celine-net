@@ -539,7 +539,7 @@ through the same Router (below) but do not queue here.
 - **Your turn: one model.** A turn the user waits on (`fallback=False` on `LLM.bind`) runs
   on exactly the first model of its list. When that model fails, the turn fails with its
   error; no other model is tried. Only background work walks its list.
-- **Failure.** A failure before the first token marks the model and moves to the next one;
+- **Failure.** A failure before the first token (a request every model would refuse, too long or with an image it cannot take, fails the call as it is) marks the model and moves to the next one;
   after the first token, never. When every model failed with an error, the call fails with
   the last one; when they were unreachable, the call waits and tries whatever the Router
   offers next. A busy provider (status 429, 503 or 529; never a sentence in the body)

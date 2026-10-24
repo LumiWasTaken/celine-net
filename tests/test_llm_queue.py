@@ -301,6 +301,23 @@ async def test_an_error_moves_on_to_the_next_model(tmp_path, monkeypatch):
     assert nets["main/big"].calls == 2               # tried first again
 
 
+async def test_a_missing_model_or_a_rejected_key_moves_on_but_an_overflow_does_not(
+        tmp_path, monkeypatch):
+    from celine.backends.openai import http_error
+    llm, nets = routed(tmp_path, monkeypatch, {"small": {"chain": ["main/big", "far/small"]}})
+    for status in (404, 401):
+        nets["main/big"].fail = http_error("Main", "big", status, "")
+        assert not nets["main/big"].fail.retryable
+        out = await collect(llm.bind(role="small", priority=B))
+        assert isinstance(out[-1], Done)
+    assert nets["far/small"].calls == 2
+    llm, nets = routed(tmp_path, monkeypatch, {"small": {"chain": ["main/big", "far/small"]}})
+    nets["main/big"].fail = http_error("Main", "big", 400,
+                                           '{"error": {"code": "context_length_exceeded"}}')
+    with pytest.raises(BackendError):
+        await collect(llm.bind(role="small", priority=B))
+
+
 async def test_the_vision_twin_answers_an_image_and_everything_while_loaded(
         tmp_path, monkeypatch):
     """One name for the ticket, the queue events and the request: the twin for an
