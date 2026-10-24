@@ -146,6 +146,8 @@ async def test_start_returns_at_once_and_the_report_comes_later(store, cfg):
     snap = await view.snapshot(store, parent)
     tool_msg = [m for m in snap["messages"] if m["role"] == "tool"][0]
     assert tool_msg["content"].startswith("car scout started (brief #")
+    [start] = [tc for tcs in snap["tool_calls"].values() for tc in tcs]
+    assert start["display"]["link"] == f"/chat/{sub['id']}", "its Open goes where it lives"
     [landed] = [m for m in snap["messages"] if (m["intercom"] or {}).get("kind") == "report"]
     assert landed["created_at"] > tool_msg["created_at"], "the call did not wait for it"
     assert landed["content"].startswith("car scout done: ")

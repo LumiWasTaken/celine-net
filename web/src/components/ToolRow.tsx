@@ -80,6 +80,12 @@ function agentConversation(call: ToolCall): string | null {
   return typeof id === 'string' ? id : null
 }
 
+/** where the sub-agent's conversation opens, the server's (homes.py) */
+function agentLink(call: ToolCall): string | null {
+  const link = call.display?.link
+  return typeof link === 'string' ? link : null
+}
+
 /** the latest state of a sub-agent's turn, from `turn.state` on the feed; null
  *  until one arrives after the row is shown */
 function useAgentState(conversation: string | null): string | null {
@@ -182,6 +188,7 @@ function useView(call: ToolCall): View {
   const cancel = useAction((id: number) => intercomApi.cancel(id))
   // a sub-agent: its turn's state, as it changes; its step and report from agent.state
   const conversation = skill === 'sub_agents' ? agentConversation(call) : null
+  const link = skill === 'sub_agents' ? agentLink(call) : null
   const agentState = useAgentState(conversation)
   const agent = useContext(AgentsContext).find(x => x.id === conversation)
   const [stopping, setStopping] = useState(false)
@@ -265,13 +272,13 @@ function useView(call: ToolCall): View {
     words: rowWords(call),
     tone: working ? 'running' : agentState ? AGENT_TONE[agentState] ?? null : refused ? 'muted' : toneOf(call),
     meta: working ? agent!.step_words ?? 'Running' : outcome(call) ?? took(call),
-    actions: (working || conversation || jobId) && <>
+    actions: (working || link || jobId) && <>
       {working && (
         <Button size="sm" variant="ghost" aria-label={`Stop the sub-agent ${agent!.name}`}
                 onClick={() => void agentsApi.stop(agent!.id).catch(e => setStopError(errorText(e)))}>Stop</Button>
       )}
-      {conversation && (
-        <Button size="sm" variant="ghost" href={format({ section: 'celine', conversation })}
+      {link && (
+        <Button size="sm" variant="ghost" href={link}
                 aria-label={`Open the conversation of ${String(d?.name ?? 'the sub-agent')}`}>Open</Button>
       )}
       {jobId && (

@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 3
+LATEST = 4
 
 
 def _version(db) -> int:
@@ -176,4 +176,52 @@ def test_a_file_is_copied_before_a_migration_changes_it_and_the_last_copies_kept
     c = sqlite3.connect(tmp_path / "x.db.pre-6.bak")
     assert c.execute("PRAGMA user_version").fetchone() == (5,)
     assert [r[0] for r in c.execute("SELECT k FROM kv ORDER BY k")] == ["2", "3", "4", "5"]
+
+
+def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, monkeypatch):
+    """A sub-agent's call names where its conversation opens (homes.of), as its display
+    does from now on."""
+    import json
+    from celine import homes
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in ("0001_schema.sql", "0002_no_message_trash.sql", "0003_turn_end_hooks.sql"):
+        shutil.copy(MIGRATIONS_DIR / f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate(db) == 3
+    c = sqlite3.connect(db)
+    for cid, kind, agent_of, key, at in (
+            ("chat", "chat", None, None, "x"), ("mis", "mission", None, None, "x"),
+            ("run", "background", None, "run:r1:1", "x"),
+            ("task", "background", None, None, "2026-10-21T10:00:00+00:00"),
+            ("s-chat", "agent", "chat", None, "x"), ("s-mis", "agent", "mis", None, "x"),
+            ("s-run", "agent", "run", None, "x"), ("s-task", "agent", "task", None, "x")):
+        c.execute("INSERT INTO conversations(id, kind, agent_of, trigger_key, created_at, "
+                  "updated_at) VALUES(?, ?, ?, ?, ?, 'x')", (cid, kind, agent_of, key, at))
+    c.execute("INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
+              "created_at) VALUES('r1', 'diary', 'Diary', 's', '2026-10-22', 'done', 'run', 'x')")
+    c.execute("INSERT INTO messages(id, conversation_id, role, created_at) "
+              "VALUES('m', 'chat', 'assistant', 'x')")
+    subs = ("s-chat", "s-mis", "s-run", "s-task", "gone")
+    for i, sub in enumerate(subs):
+        c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state, display) "
+                  "VALUES(?, 'm', 'sub_agents__start', '{}', 'ok', ?)",
+                  (f"c{i}", json.dumps({"name": "helper", "conversation_id": sub})))
+    c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state, display) "
+              "VALUES('other', 'm', 'notebook__read', '{}', 'ok', ?)",
+              (json.dumps({"conversation_id": "chat"}),))
+    c.commit()
+    c.close()
+    shutil.copy(next(MIGRATIONS_DIR.glob("0004_*.sql")), d)
+    assert migrate(db) == 4
+    c = sqlite3.connect(db)
+    c.row_factory = sqlite3.Row
+    shown = [json.loads(r[0]) for r in c.execute(
+        "SELECT display FROM tool_calls WHERE id != 'other'")]
+    got = {x["conversation_id"]: x.get("link", "-") for x in shown}
+    assert got == {sub: homes.of(c, sub)["link"] for sub in subs}
+    assert got["s-run"] == "/routines/2026-10-22/task/s-run" and got["gone"] is None
+    assert "link" not in json.loads(c.execute(
+        "SELECT display FROM tool_calls WHERE id='other'").fetchone()[0]), "only hers"
     c.close()

@@ -127,7 +127,7 @@ class SubAgents:
                     f"are working, and it starts when one of them is done.")
         return ToolResult(content=f"{said} Its report comes here as a message.",
                           display={"name": row["name"], "conversation_id": sub,
-                                   "access": row["access"], "folder": row["folder"],
+                                   "link": row["link"], "access": row["access"], "folder": row["folder"],
                                    "model": row["model"], "cli": row["cli"],
                                    "resumed": resumed})
 
@@ -172,7 +172,7 @@ class SubAgents:
         else:
             lines.append("No report yet.")
         return ToolResult(content="\n".join(lines), display={
-            "name": sub["name"], "conversation_id": sub["id"],
+            "name": sub["name"], "conversation_id": sub["id"], "link": sub["link"],
             "state": state,
             # it read text others wrote: so does it now (guard/sources.py)
             **({"outside": True} if outside else {})})
@@ -190,7 +190,8 @@ class SubAgents:
             return refusal
         await self.stop_agent(sub["id"])
         return ToolResult(content=f"Stopped {sub['name']}.",
-                          display={"name": sub["name"], "conversation_id": sub["id"]})
+                          display={"name": sub["name"], "conversation_id": sub["id"],
+                                   "link": sub["link"]})
 
     async def _is_sub_agent(self, store, cid: str) -> bool:
         row = await store.read(lambda c: c.execute(
