@@ -20,4 +20,4 @@ the batch goes on.
 When to use: {{username}} asks you to compose music, make an instrumental or an
 ambient background, or write a song.
 
-The preset, with how it takes a style and an example, comes after the tools below.
+The preset, with how it takes a style and an example, comes at the end of this guide.

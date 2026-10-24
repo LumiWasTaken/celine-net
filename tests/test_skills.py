@@ -216,6 +216,27 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     assert not out.is_error and out.content == reg.index(cfg, carried)
 
 
+async def test_read_guide_brings_the_live_presets_and_the_guide_names_none(store, cfg,
+                                                                          monkeypatch):
+    """The image guide promises each preset's prompt rules: read_guide brings the
+    skill's docs, the presets chosen in Settings as they are now, after the guide. The
+    guide itself names no preset: the user picks and drops them."""
+    from celine.comfyui import presets as presets_mod
+    from celine.skills import images
+    shipped = presets_mod.of("images")
+    live = shipped["krea2-turbo"]
+    monkeypatch.setattr(images, "role_presets", lambda cfg, role: [live])
+    reg = build(Services(cfg=cfg))
+    cid = await conversations.create(store)
+    ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
+                      config=cfg, emit=None)
+    out = await reg.skills["skills"].read_guide(ctx, name="image_generator")
+    assert not out.is_error and presets_mod.docs(live, True) in out.content
+    assert "### `anima-turbo`" not in out.content
+    body = reg.skills["image_generator"].guide.body
+    assert [p for p in shipped if p in body] == []
+
+
 def test_a_source_without_its_account_is_not_connected():
     from types import SimpleNamespace as NS
 

@@ -31,33 +31,30 @@ An edit starts from an image you made, in any conversation, one {{username}}
 attached to this conversation, or someone's portrait (`portrait:<id>`, the id or name).
 
 Choosing a preset: without `preset`, an item takes the first preset for its task, or
-the one a `model` or `loras` you give belongs to. Pick by the look asked for:
-- Anime, manga, a character from an anime, game or manga, an "anime screenshot":
-  anima-turbo, in its tag format.
-- A realistic photo: krea2-turbo.
-- Readable text, exact layout, several people placed precisely: qwen2.1-smart or
-  moss-image.
-The presets, with how each takes a prompt, come after the tools below.
+the one a `model` or `loras` you give belongs to. Pick by the look asked for (anime, a
+realistic photo, readable text or an exact layout): each preset says what it is good
+at. The presets, with how each takes a prompt, come at the end of this guide; write
+each prompt the way its preset asks.
 
 Known characters (Frieren, Hatsune Miku, any named character from an anime, game or
 manga): name them, never describe them from memory. The models were trained on their
-names; a description draws a stranger. On anima-turbo that is the character tag and the
-series tag ("frieren, sousou no frieren"), plus at most the canonical hair and eye tags.
-Spend the prompt on what is new: the pose, the outfit if it differs, the place, the
+names; a description draws a stranger. In a tag format that is the character tag and
+the series tag ("frieren, sousou no frieren"), plus at most the canonical hair and eye
+tags. Spend the prompt on what is new: the pose, the outfit if it differs, the place, the
 light. Keep what {{username}} asked for and nothing invented: "Frieren as a background"
 is Frieren, a wide picture, and a scene that fits her, not a blanket, a mug and a lamp
 nobody asked for.
 
 Size and shape go in `width` and `height`, never in the prompt ("16:9", "widescreen",
-"4k" draw nothing or the wrong thing). A wallpaper or background is wide: on
-anima-turbo 1344x768; a phone wallpaper 768x1344.
+"4k" draw nothing or the wrong thing). A wallpaper or background is wide, a phone
+wallpaper tall; its preset gives the sizes it draws well.
 
 Someone with a portrait:
-- A picture of someone with a portrait: edit from source portrait:<id>. Photo look:
-  krea2-identity-edit. Anime look: qwen2.1-image-edit with the anime recipe. Say what
+- A picture of someone with a portrait: edit from source portrait:<id>, with the edit
+  preset that keeps a person's likeness in the look asked for (photo or anime). Say what
   changes: place, pose, clothes.
-- Two people with portraits: qwen2.1-image-edit or moss-image-edit, one in `source`,
-  the other in `source2`.
+- Two people with portraits: an edit preset that takes two images or more, one in
+  `source`, the other in `source2`.
 - Styles and extras: list_presets(kind="lora") first and add a LoRA the preset names.
 - Never two character LoRAs in one picture.
 
@@ -81,13 +78,8 @@ preset fails with the sentence why in its line: an unknown preset or variant, a 
 past the limits, a model or LoRA id that is none (the line names close ones), too many
 LoRAs, a field that is none. A line's "Note: ..." says what was left unused.
 
-Which editor:
-- krea2-identity-edit: the same person in a new pose, expression, outfit or scene.
-- qwen2.1-image-edit: removing things, text on signs, only the background or the light,
-  several people.
-- moss-image-edit: up to four images in one edit (`source` to `source4`): a person from
-  one in the outfit or place of another, colors, light, season, style. Name each image
-  by its number in the prompt.
+Which editor: each edit preset says what it is good at and how many images it takes
+(`source` to `source4`); with several, name each image by its number in the prompt.
 
 Plain words in every prompt: no slang or acronyms,
 the models do not know them. Describe what is seen; names of known characters, series
