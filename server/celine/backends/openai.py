@@ -90,6 +90,8 @@ class OpenAIBackend:
         usage: Usage | None = None
         finish = "stop"
         reply = RawReply()
+        ids: dict[str, int] = {}        # a call's id -> its index (_call_index)
+        opened: list[int] = []          # the index of the call the last delta added to
         async for payload in _sse_data(res):
             reply.last(payload)
             if payload == "[DONE]":
@@ -102,10 +104,12 @@ class OpenAIBackend:
                 err = http_error(self.cfg.label, self.model, 500, payload)
                 err.raw = reply.message("error")
                 raise err
+            # a null field reads as absent: OpenAI-compatible servers send null for
+            # what they do not fill in (usage counts, choices, a call's index)
             if u := chunk.get("usage"):
-                usage = Usage(int(u.get("prompt_tokens", 0)),
-                              int(u.get("completion_tokens", 0)))
-            for choice in chunk.get("choices", []):
+                usage = Usage(int(u.get("prompt_tokens") or 0),
+                              int(u.get("completion_tokens") or 0))
+            for choice in chunk.get("choices") or []:
                 delta = choice.get("delta") or {}
                 # llama.cpp --reasoning-format deepseek uses reasoning_content, OpenRouter uses reasoning
                 if think := (delta.get("reasoning_content") or delta.get("reasoning")):
@@ -116,7 +120,10 @@ class OpenAIBackend:
                     yield TextDelta(text)
                 for tc in delta.get("tool_calls") or []:
                     fn = tc.get("function") or {}
-                    index = int(tc.get("index", 0))
+                    index = int(_call_index(tc, fn, reply.calls, ids, opened))
+                    if tc.get("id"):
+                        ids.setdefault(tc["id"], index)
+                    opened[:] = [index]
                     reply.call(index, tc.get("id"), fn.get("name"), fn.get("arguments"))
                     yield ToolCallDelta(
                         index=index,
@@ -132,6 +139,20 @@ class OpenAIBackend:
                     finish = fr
         yield Done(reason=finish, usage=usage,  # type: ignore[arg-type]
                    raw=reply.message(finish))
+
+
+def _call_index(tc: dict, fn: dict, calls: dict[int, dict], ids: dict[str, int],
+                opened: list[int]):
+    """A streamed call's index; a server that leaves it out gets a running count: a call
+    that starts (an id not seen yet, or a name while the call before has one) takes the
+    next free index, a delta without either adds to the call before it."""
+    if tc.get("index") is not None:
+        return tc["index"]
+    if (cid := tc.get("id")) in ids:
+        return ids[cid]
+    if not opened or cid or (fn.get("name") and calls[opened[0]]["function"]["name"]):
+        return max(calls, default=-1) + 1
+    return opened[0]
 
 
 RAW_CAP = 256 * 1024

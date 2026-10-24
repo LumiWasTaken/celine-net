@@ -527,6 +527,28 @@ async def _left(store, cid: str, mid: str, parts, thinking, token) -> str | None
     return None if await tree.drop_empty(store, cid, mid) else mid
 
 
+_END = object()
+
+
+async def _next_event(events, backend):
+    """The adapter's next event, _END after its last. Anything else it raises (a reply
+    it could not read, a bug in it) comes out as a BackendError: the reply ends and the
+    turn fails with what it said, as for any model failure."""
+    try:
+        return await anext(events)
+    except StopAsyncIteration:
+        return _END
+    except BackendError:
+        raise
+    except Exception as exc:
+        log.error("model reply broke", exc_info=exc,
+                  extra={"event": "turn.backend_broke", "backend": backend.name})
+        e = BackendError(f"The reply from {backend.model} could not be read "
+                         f"({type(exc).__name__}: {exc}).", retryable=False)
+        e.raw = {"error": f"{type(exc).__name__}: {exc}"}
+        raise e from exc
+
+
 class _Overflow:
     """The request did not fit the window; nothing was recorded as a failure yet."""
 
@@ -621,7 +643,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
     try:
         # aclosing: a queued backend frees its model slot as soon as we stop reading
         async with closing(stoppable(backend, messages, tools, token)) as events:
-            async for ev in events:
+            while (ev := await _next_event(events, backend)) is not _END:
                 if token.cancelled:
                     break
                 if isinstance(ev, TextDelta):

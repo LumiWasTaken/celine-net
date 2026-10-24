@@ -77,6 +77,28 @@ async def test_backend_failure_lands_in_the_transcript(store, cfg):
     assert errors and "OpenRouter" in errors[0]["data"]["message"]
 
 
+async def test_an_adapter_that_breaks_mid_reply_finishes_it_and_fails_the_turn(store, cfg):
+    """Not a BackendError (a bug in an adapter, a reply it cannot read): the reply keeps
+    every word it streamed and ends (message.done), the turn fails with the reason."""
+    class Breaks(FakeBackend):
+        async def stream(self, messages, tools):
+            yield TextDelta("half ")
+            yield TextDelta("a reply")
+            raise TypeError("int() argument must be a string, not 'NoneType'")
+
+    cid = await conversations.create(store)
+    await _run(store, cfg, Breaks(), cid, "hi")
+    snap = await view.snapshot(store, cid)
+    assert snap["turn"]["state"] == "failed"
+    assert snap["messages"][-1]["content"] == "half a reply"
+    events = (await view.resume(store, cid, 0))["events"]
+    done = [e for e in events if e["type"] == "message.done"]
+    assert done and done[-1]["data"]["text"] == "half a reply"
+    errors = [e["data"] for e in events if e["type"] == "error"]
+    assert len(errors) == 1 and "TypeError" in errors[0]["message"]
+    assert "NoneType" in errors[0]["message"]
+
+
 async def test_resume_from_every_offset_reconstructs_the_same_transcript(store, cfg):
     def render(events) -> str:
         """Apply events the way the client does: append deltas, replace on done."""
