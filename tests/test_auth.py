@@ -117,6 +117,25 @@ def test_without_a_session_every_route_and_socket_is_an_unknown_route(app):
     assert 'id="celine-login"' in page.text and "/assets/" not in page.text
 
 
+def test_the_setup_code_is_never_readable_by_others(app, monkeypatch):
+    """The file is made 600, not written and then tightened."""
+    seen = []
+    real = os.write
+
+    def spy(fd, data):
+        seen.append(os.fstat(fd).st_mode & 0o777)
+        return real(fd, data)
+    monkeypatch.setattr(os, "write", spy)
+    old = os.umask(0o022)
+    try:
+        app.state.auth.announce_setup_code()
+    finally:
+        os.umask(old)
+    f = app.state.auth.setup_code_file
+    assert seen and set(seen) == {0o600}, "600 before the code is in it"
+    assert oct(f.stat().st_mode & 0o777) == "0o600" and f.read_text().strip()
+
+
 def test_the_first_passkey_with_the_setup_code(app, caplog):
     with caplog.at_level(logging.WARNING, logger="celine.auth"):
         app.state.auth.announce_setup_code()

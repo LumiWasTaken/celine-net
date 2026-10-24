@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 import secrets
 import time
 from collections import OrderedDict, defaultdict, deque
@@ -205,8 +206,12 @@ class Auth:
             return
         code = self.store.new_setup_code()
         try:
-            self.setup_code_file.write_text(code + "\n")
-            self.setup_code_file.chmod(0o600)
+            fd = os.open(self.setup_code_file, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+            try:
+                os.fchmod(fd, 0o600)            # a file from before keeps its mode
+                os.write(fd, (code + "\n").encode())
+            finally:
+                os.close(fd)
         except OSError as e:
             log.warning("setup code not written to %s: %s", self.setup_code_file, e.strerror,
                         extra={"event": "auth.setup_code_file_failed"})
