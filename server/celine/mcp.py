@@ -38,7 +38,7 @@ from .config import ROOT, Problem, checked
 from .core.ids import now
 from .kb.identity import REF
 from .errors import unreachable_words
-from .skills import GUIDES_DIR, Annotations, ToolContext, ToolResult, ToolSpec, guide
+from .skills import BUILTIN, GUIDES_DIR, META, Annotations, ToolContext, ToolResult, ToolSpec, guide
 
 log = logging.getLogger("celine.mcp")
 
@@ -89,13 +89,19 @@ def _env_ref(value: str, keys: dict[str, str]) -> str:
 
 def read_servers(file: str, raw: dict[str, Any], problems: list[Problem],
                  keys: dict[str, str]) -> dict[str, McpServerConfig]:
-    """mcp.toml `[servers.<id>]` blocks, every text value's `${...}` filled."""
+    """mcp.toml `[servers.<id>]` blocks, every text value's `${...}` filled. A block
+    named like a built-in skill would replace it in the registry: left out, said."""
     for name in raw:
         if name != "servers":
             problems.append(Problem(file, f"unknown table [{name}], ignored"))
     servers = raw.get("servers", {})
     out: dict[str, McpServerConfig] = {}
+    built_in = {META, *(name for name, _, _ in BUILTIN)}
     for sid, s in (servers if isinstance(servers, dict) else {}).items():
+        if sid in built_in:
+            problems.append(Problem(file, f"[servers.{sid}] is the name of a built-in skill; "
+                                          f"that server is not started"))
+            continue
         s = checked(file, f"servers.{sid}", s, KEYS, problems)
         if "class" in s:
             s["cls"] = s.pop("class")

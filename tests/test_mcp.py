@@ -123,3 +123,17 @@ def test_an_mcp_argument_named_like_a_python_keyword_keeps_its_name():
     async def mcp(ctx, **args): ...
     async def own(ctx, in_: str): ...
     assert _takes_any(mcp) and not _takes_any(own)
+
+
+def test_a_server_named_like_a_built_in_skill_is_refused_with_its_reason():
+    """[servers.notebook] would replace the notebook in the registry: it is left out, and
+    the config's problems say why. Another name is read."""
+    from celine.mcp import read_servers
+    from celine.skills import META
+    problems = []
+    raw = {"servers": {"notebook": {"command": "x"}, META: {"command": "x"},
+                       "my-tools": {"command": "x"}}}
+    assert list(read_servers("mcp.toml", raw, problems, {})) == ["my-tools"]
+    assert [p.message for p in problems] == [
+        "[servers.notebook] is the name of a built-in skill; that server is not started",
+        f"[servers.{META}] is the name of a built-in skill; that server is not started"]
