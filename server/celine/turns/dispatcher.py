@@ -75,6 +75,21 @@ class Dispatcher:
                 await fn(cid, turn_id)
             except Exception:
                 log.exception("end listener failed", extra={"event": "turn.end_failed"})
+        if turn_id is not None:      # a shutdown that cuts this off leaves it for replay_ended
+            await self.store.write(lambda c: c.execute(
+                "UPDATE turns SET ended_hooks=1 WHERE id=?", (turn_id,)))
+
+    async def replay_ended(self) -> None:
+        """At start: the end hooks of turns that ended without running them (the shutdown
+        came first, or the startup sweep ended them): what lands in the conversation, then
+        the listeners, as at any turn's end."""
+        rows = await self.store.read(lambda c: [(r[0], r[1]) for r in c.execute(
+            "SELECT id, conversation_id FROM turns WHERE ended_hooks=0 AND state IN "
+            "('done','aborted','failed','interrupted','capped') ORDER BY finished_at, "
+            "created_at")])
+        for tid, cid in rows:
+            await self.deliver_idle(cid)
+            await self.ended(cid, tid)
 
     async def start(self, tg: anyio.abc.TaskGroup) -> None:
         from ..jobs.jobs import Jobs
@@ -83,6 +98,7 @@ class Dispatcher:
         self._tg = tg
         self.resize()
         await self.work.start(tg)
+        tg.start_soon(self.replay_ended)
 
     def resize(self) -> None:
         """Workers up to max_concurrent_turns (Settings, Advanced; reload.py calls it on a

@@ -307,3 +307,33 @@ async def test_a_store_error_before_a_turn_runs_fails_that_turn_only(store, cfg,
         tg.cancel_scope.cancel()
     assert (await view.snapshot(store, bad))["turn"]["state"] == "failed"
     assert (await view.snapshot(store, good))["turn"]["state"] == "done"
+
+
+async def test_a_turn_that_ended_during_shutdown_runs_its_end_hooks_at_the_next_start(
+        store, cfg):
+    cid = await conversations.create(store)
+    await user_says(store, cid, "hi")
+    seen = []
+
+    async def hook(c, t):
+        seen.append((c, t))
+    async with anyio.create_task_group() as tg:
+        d = Dispatcher(store, cfg, EventBus(), lambda: Scripted([]), Registry())
+        d.on_end(hook)
+        await d.start(tg)
+        d.notify()
+        await until(lambda: ended(store, cid), 5)
+        await d.stop()                       # may cut the hooks off
+        tg.cancel_scope.cancel()
+    tid = (await view.snapshot(store, cid))["turn"]["id"]
+    await store.write(lambda c: c.execute("UPDATE turns SET ended_hooks=0 WHERE id=?", (tid,)))
+    seen.clear()
+    async with anyio.create_task_group() as tg:
+        d = Dispatcher(store, cfg, EventBus(), lambda: Scripted([]), Registry())
+        d.on_end(hook)
+        await d.start(tg)
+        await until(lambda: (cid, tid) in seen, 5)
+        flag = lambda c: c.execute("SELECT ended_hooks FROM turns WHERE id=?", (tid,)).fetchone()[0]
+        await until(lambda: store.read(flag), 5)
+        await d.stop()
+        tg.cancel_scope.cancel()
