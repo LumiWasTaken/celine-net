@@ -2,9 +2,8 @@
 
      Running, Pinned, Today, Yesterday, ...   the server's group of each row (`group`);
                     each row a real link with the title, its last line, a bare time, a
-                    dot for a failure or a wait (the server's `state`), the bridged
-                    source's glyph; a running row shows the server's step words (the dots
-                    while it writes) and Stop
+                    dot for a failure or a wait (the server's `state`); a running row
+                    shows the server's step words (the dots while it writes) and Stop
      sub-agents     always under the conversation that started them, no fold
      Found in messages   on a search: the titles the server ranked first, then the
                     messages with their snippet and the matched words marked
@@ -24,7 +23,7 @@ import { api, type ConversationSummary } from '../lib/api'
 import type { ChatHit } from '../lib/chat'
 import { groupByDate, listTime } from '../lib/format'
 import {
-  Button, coarse, Dot, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet, SourceGlyph,
+  Button, coarse, Dot, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet,
   VirtualList, useContextMenu, type DotTone, type MenuItem, type Picker, type Shelf,
 } from '../ui'
 
@@ -206,7 +205,6 @@ export function ConversationList({
   }
   const leading = (c: ConversationSummary) => {
     if (leadingOf) return leadingOf(c)
-    if (c.source) return <SourceGlyph source={c.source} />
     if (c.kind === 'chat') return undefined
     const Icon = kindIcon(c)
     return <Icon size={ICON.lg} aria-hidden />

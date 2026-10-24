@@ -25,9 +25,7 @@ import { useNav } from '../lib/nav'
 import { setPageName } from '../lib/title'
 import { AgentsContext, useAgents } from '../lib/agents'
 import { isOpen } from '../lib/missions'
-import type { ConnectorSummary } from '../lib/kb'
 import { fileUrl } from '../lib/media'
-import { lostWhen } from '../lib/sources'
 import { FirstRun } from './settings/FirstRun'
 import { ConversationReminders, remindersApi } from '../lib/reminders'
 import { snapshotAgain, useOnline, OFFLINE_TITLE } from '../lib/socket'
@@ -41,7 +39,7 @@ import { waitWords } from '../components/Status'
 import { PhotoViewer } from '../components/PhotoViewer'
 import { GalleryContext, collectGeneratedImages, madeDetails, type Made } from '../components/Batch'
 import {
-  Button, ConfirmDialog, EmptyState, IconButton, InlineEdit, InlineError, LoadingRow, Notice, Place, PlaceHead, SelectBar, SourceGlyph,
+  Button, ConfirmDialog, EmptyState, IconButton, InlineEdit, InlineError, LoadingRow, Notice, Place, PlaceHead, SelectBar,
   coarse, isNarrow, StatusLine, cx, usePicker, type Shelf,
 } from '../ui'
 import { usePref } from '../lib/prefs'
@@ -56,14 +54,12 @@ const place = 'celine' as const
 const chatsNoun = (n: number) => count(n, 'conversation')
 const exportUrl = (id: string) => `/api/conversations/${encodeURIComponent(id)}/export`
 
-export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }: {
+export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   active: boolean
   status: ConfigStatus | null
   /** the list over the chat on a phone */
   sidebarOpen: boolean
   onSidebar: (open: boolean) => void
-  /** sources whose login was lost: a bridged chat of one cannot answer */
-  lost: ConnectorSummary[]
   /** what each place has going on (the rail's dots) */
   onWork: (work: Work) => void
 }) {
@@ -368,8 +364,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
   const open = (id: string) => { setSelected(id); onSidebar(false) }
   const conversationTitle = current?.title || convo.conversation?.title || ''
   const isArchived = current ? !!current.archived_at : !!convo.conversation?.archived_at
-  // a bridged chat whose source lost its login cannot answer there
-  const bridgeLost = current?.trigger_key ? lost.find(l => current.trigger_key === `bridge:${l.kb}`) : undefined
   const headMore = current ? [
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(current.id) },
     ...(!current.agent_of ? [{ label: current.pinned ? 'Unpin' : 'Pin', icon: current.pinned ? PinOff : Pin, onSelect: () => void togglePin(current) }] : []),
@@ -438,7 +432,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
                        </span>
                      }
                      titleAttr={conversationTitle || undefined}
-                     detail={drawn && current?.source ? <SourceGlyph source={current.source} showLabel /> : undefined}
                      actions={<>
                        <PlanButton plan={convo.plan} />
                        {runningJobs > 0 && (
@@ -454,14 +447,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
           {offline && (
             <div className="chat-notice">
               <Notice tone="warn" action={selected ? { label: 'Retry', onClick: () => snapshotAgain(selected) } : undefined}>{OFFLINE_TITLE}</Notice>
-            </div>
-          )}
-          {bridgeLost && (
-            <div className="chat-notice">
-              <Notice tone="warn" action={{ label: 'Connect your phone',
-                                            onClick: () => nav.go({ section: 'settings', page: 'sources', sub: bridgeLost.kb }) }}>
-                {`${name} can't answer in ${bridgeLost.title}: your phone disconnected ${lostWhen(bridgeLost.login_lost_at!)}.`}
-              </Notice>
             </div>
           )}
 

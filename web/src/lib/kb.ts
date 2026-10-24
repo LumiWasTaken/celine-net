@@ -232,25 +232,12 @@ export type ConnectionRecord = {
   last_sync: number | null
   next_sync: number | null
 }
-export type BridgeState = {
-  /** the one chat the connector writes to (WhatsApp: Message yourself), null until known */
-  chat: string | null
-  chat_name: string | null
-  /** what its messages start with */
-  marker: string | null
-  on: boolean
-  /** this instance holds the bridge (another one may) */
-  held: boolean
-  error: string | null
-}
 export type ConnectorState = {
   platform: string
   connection: ConnectionRecord
   account: { id: string; name: string | null } | null
   /** when a login that worked was lost (the phone disconnected, Discord refused it) */
   login_lost_at: number | null
-  /** null: the connector has no chat it writes to (Discord) */
-  bridge: BridgeState | null
   /** Discord: the QR login in progress */
   login: DiscordSession | null
   /** WhatsApp: a QR code to connect the phone is ready (GET .../connector/qr.png) */
@@ -264,7 +251,6 @@ export type ConnectorSummary = {
   account: { id: string; name: string | null } | null
   login_lost_at: number | null
 }
-type BridgeSet = { on?: boolean; marker?: string }
 
 /* ── people across sources: person records in var/celine.db, not a kb file ── */
 /** an account in one source, as GET /people lists it; `handle` is the
@@ -368,9 +354,6 @@ export const kbApi = {
 
   connectors: () => request<{ connectors: ConnectorSummary[] }>('/connectors'),
   connector: (kb: string) => request<ConnectorState>(`/sources/${enc(kb)}/connector`),
-  /** the bridged chat switch, and the marker kept by the connection */
-  setBridge: (kb: string, body: BridgeSet) =>
-    request<ConnectorState>(`/sources/${enc(kb)}/bridge`, json('PUT', body)),
   /** the QR code while connecting the phone; `at` changes with each new code */
   qrUrl: (kb: string, at: number) => `/api/sources/${enc(kb)}/connector/qr.png?at=${at}`,
 }

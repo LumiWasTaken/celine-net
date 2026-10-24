@@ -1,5 +1,5 @@
 /* Message and ComposerBox: a conversation's two parts, the same in every place that has one
-   (Celine's chat, an Intercom thread, a bridged chat).
+   (Celine's chat, an Intercom thread).
 
    Message: one message. Its own on a warm surface with its face beside it, yours as a bubble
    at the right. Under it

@@ -104,7 +104,7 @@ function Shell() {
   const own = terminal || artifact || section === 'celine' ? pageName : ''
   useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread)
 
-  // a source that lost its login: a dot on Settings, and a line in its bridge conversation
+  // a source that lost its login: a dot on Settings
   const lost = useLostLogins()
   // a run at work or one that failed in the last two nights: a dot on Routines (the server's)
   const routines = useRoutinesAttention()
@@ -163,7 +163,7 @@ function Shell() {
   const moreHere = !bar.includes(section) && section !== 'artifact'
   const shown = {
     status, name, terminal: shownTerminal.current, reply, artifact,
-    celine: { sidebarOpen: list, onSidebar: setList, lost, onWork },
+    celine: { sidebarOpen: list, onSidebar: setList, onWork },
     onStatus: () => void loadStatus().catch(() => undefined),
   }
 

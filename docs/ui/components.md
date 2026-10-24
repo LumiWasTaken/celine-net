@@ -366,8 +366,7 @@ in it, the scrim, Escape and its X.
 **Don't:** make it a list pane (a place's list is its page); hand-build a sidebar.
 
 ### Message
-**When:** every message of a conversation: Celine's chat, an Intercom thread, a bridged
-chat.
+**When:** every message of a conversation: Celine's chat, an Intercom thread.
 **Props:** `mine`, `face`, `name`, `head` (beside the name: to whom), `before` (pictures and files above the text),
 children (the text), `time`, `versions` (`at`, `total`, `onPrev`, `onNext`), `actions` (the
 caller's buttons), `menu` (its "..." and right-click), `source` (where it came from, always
