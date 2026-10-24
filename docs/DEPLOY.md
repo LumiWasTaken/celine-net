@@ -413,9 +413,13 @@ a login writes a new setup code, and the old one stops working.
 **Recovery.** On the login screen, "Use a recovery code" takes a code and adds a new
 way to log in, any of the three. Each code works once. Settings, Security lists the
 passkeys, passwords and PINs, adds and removes them (never the last one; removing one
-ends its sessions), and makes new recovery codes (the old ones stop working).
+ends its sessions), and makes new recovery codes (the old ones stop working). Adding a
+way to log in, new recovery codes and a new API token ask you to confirm it is you
+(a passkey, your password or your PIN) unless you did in the last 5 minutes; logging in
+counts. It also lists the browsers logged in, each with when it logged in and when it
+was last seen, and logs out one or every other.
 
-**Stored** (`auth.db`, mode 600): the passkeys' public keys, the passwords and PINs as scrypt hashes, a SHA-256 of each session token, and the recovery and setup codes as scrypt hashes. **Sessions** end 30 days after last use and 90 days after login; the cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on https. **Limits:** two locks, each on its own: after 5 wrong setup or recovery codes, code entry locks for everyone for 6 hours, and after 5 wrong passwords or PINs from one client address, logging in with them from that address does (so nobody can lock you out from elsewhere); each further wrong one doubles that lock up to 30 days. A locked kind refuses even the right one, while the other kind still works. Failed logins of any kind are also limited to 10 per client address in 15 minutes.
+**Stored** (`auth.db`, mode 600): the passkeys' public keys, the passwords and PINs as scrypt hashes, a SHA-256 of each session token with its browser's user agent (trimmed), and the recovery and setup codes as scrypt hashes. **Sessions** end 30 days after last use and 90 days after login; the cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on https. **Limits:** two locks, each on its own: after 5 wrong setup or recovery codes, code entry locks for everyone for 6 hours, and after 5 wrong passwords or PINs from one client address, logging in with them from that address does (so nobody can lock you out from elsewhere); each further wrong one doubles that lock up to 30 days. A locked kind refuses even the right one, while the other kind still works. Failed logins of any kind are also limited to 10 per client address in 15 minutes.
 
 ## Behind a reverse proxy (https)
 

@@ -196,6 +196,18 @@ class AuthStore:
     def end_session(self, s: Session) -> None:
         self._x("DELETE FROM sessions WHERE token_hash = ?", (s.token_hash,))
 
+    def sessions(self) -> list[Session]:
+        """Every live session, the oldest first."""
+        return [Session(*r) for r in self._q(_SESSION + " WHERE expires_at > ? ORDER BY id",
+                                             (self.clock(),))]
+
+    def end_session_id(self, sid: int) -> bool:
+        return self._x("DELETE FROM sessions WHERE id = ?", (sid,)) > 0
+
+    def end_other_sessions(self, s: Session) -> int:
+        """Every session but this one ends; how many did."""
+        return self._x("DELETE FROM sessions WHERE id != ?", (s.id,))
+
     def proved(self, s: Session) -> None:
         """The owner proved it again in this session (auth/routes.py, reauth)."""
         self._x("UPDATE sessions SET proved_at = ? WHERE id = ?", (self.clock(), s.id))

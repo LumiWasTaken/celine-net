@@ -508,7 +508,7 @@ def test_a_trusted_proxy_whose_client_address_was_taken_is_not_logged(caplog):
     assert _proxy_lines(caplog) == []
 
 
-# ---- a fresh proof before adding a way in ---------------------------------------------
+# ---- a fresh proof before adding a way in, and the list of sessions -----------------
 
 def _guarded(c: TestClient) -> dict[str, int]:
     """What each route that needs a fresh proof answers now (POST /api/tokens too,
@@ -598,6 +598,54 @@ def test_with_the_login_off_there_is_nothing_to_prove():
     assert c.post("/api/auth/reauth", json={"method": "pin", "secret": "x"}).status_code == 404
 
 
+def test_the_sessions_list_names_each_browser_and_logs_them_out(app):
+    clock = app.state.auth.store.clock = Clock()
+    here = client(app)
+    here.headers["user-agent"] = ("Mozilla/5.0 (X11; Linux x86_64; rv:131.0) "
+                                  "Gecko/20100101 Firefox/131.0")
+    assert setup_password(app, here).status_code == 200
+    clock.t += 7200
+    phone = client(app)
+    phone.headers["user-agent"] = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+                                   "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 "
+                                   "Mobile/15E148 Safari/604.1")
+    assert phone.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                      ).status_code == 200
+    script = client(app)
+    script.headers["user-agent"] = "x" * 2000
+    assert script.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                       ).status_code == 200
+    clock.t += 3600
+    assert here.get("/api/health").status_code == 200           # the hourly refresh: seen
+    rows = here.get("/api/auth/sessions").json()["sessions"]
+    assert [(r["label"], r["this_session"]) for r in rows] == [
+        ("Firefox on Linux", True), ("Safari on iOS", False), ("x" * 80, False)]
+    assert rows[0]["created_at"] == clock.t - 3600 - 7200 and rows[0]["last_seen_at"] == clock.t
+    assert rows[1]["created_at"] == rows[1]["last_seen_at"] == clock.t - 3600
+    stored = Path(os.environ["CELINE_DATA_DIR"]) / "auth.db"
+    assert ("x" * 201).encode() not in stored.read_bytes()      # the user agent is trimmed
+    # one session out
+    assert here.delete(f"/api/auth/sessions/{rows[1]['id']}").json() == \
+        {"ok": True, "logged_out": False}
+    assert phone.get("/api/health").status_code == 404
+    assert here.delete(f"/api/auth/sessions/{rows[1]['id']}").status_code == 404
+    # every other one out, this one stays
+    again = client(app)
+    assert again.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                      ).status_code == 200
+    assert here.post("/api/auth/sessions/logout-others").json() == {"ok": True, "ended": 2}
+    assert script.get("/api/health").status_code == 404
+    assert again.get("/api/health").status_code == 404
+    [mine] = here.get("/api/auth/sessions").json()["sessions"]
+    assert mine["this_session"]
+    # this one out: the cookie goes with it
+    r = here.delete(f"/api/auth/sessions/{mine['id']}")
+    assert r.json() == {"ok": True, "logged_out": True}
+    assert 'celine_session=""' in r.headers["set-cookie"]
+    here.cookies.clear()
+    assert here.get("/api/health").status_code == 404
+
+
 def test_sessions_from_before_keep_working_and_must_prove(tmp_path):
     """auth.db at version 2: its sessions get an id and no proof."""
     import sqlite3
@@ -619,5 +667,6 @@ def test_sessions_from_before_keep_working_and_must_prove(tmp_path):
         live = s.session("a-token")
         assert live is not None and live.id and live.user_agent == ""
         assert not s.proven(live)
+        assert [(r.created_at, r.refreshed_at) for r in s.sessions()] == [(10, 20)]
     finally:
         s.close()

@@ -3,7 +3,7 @@
 `open_router` holds the routes reached without a session (the gate builds its list
 from it): logging in, and adding the first way to log in with the setup code or a
 new one with a recovery code. `router` holds the rest, reached only with a session
-(Settings, Security): the ways to log in and the proof.
+(Settings, Security): the ways to log in, the sessions, and the proof.
 
 The proof: adding a way to log in, new recovery codes and a named token need the owner
 to have proved it in this session within PROOF_SECONDS (api/deps.py `proven`, else 403
@@ -464,10 +464,66 @@ async def reauth_secret(request: Request, body: LoginIn):
     return {"ok": True}
 
 
+# ---- sessions: every browser logged in ------------------------------------------------
+
+_BROWSERS = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
+             ("FxiOS/", "Firefox"), ("CriOS/", "Chrome"), ("Chrome/", "Chrome"),
+             ("Safari/", "Safari"))
+_SYSTEMS = (("Android", "Android"), ("iPhone", "iOS"), ("iPad", "iOS"), ("CrOS", "ChromeOS"),
+            ("Windows", "Windows"), ("Mac OS X", "macOS"), ("Linux", "Linux"))
+LABEL_MAX = 80
+
+
+def device(user_agent: str) -> str:
+    """A session's name from its browser's user agent: "Firefox on Linux"; one it does
+    not know as it came, cut short; none, "Unknown device"."""
+    browser = next((name for mark, name in _BROWSERS if mark in user_agent), None)
+    system = next((name for mark, name in _SYSTEMS if mark in user_agent), None)
+    if browser and system:
+        return f"{browser} on {system}"
+    return user_agent.strip()[:LABEL_MAX] or "Unknown device"
+
+
+@router.get("/sessions")
+async def sessions(request: Request) -> dict:
+    """Every live session, the oldest first; `this_session` marks this browser's.
+    `last_seen_at` is to the hour (the cookie's refresh)."""
+    mine = _session(request)
+    return {"sessions": [{"id": s.id, "label": device(s.user_agent),
+                          "created_at": s.created_at, "last_seen_at": s.refreshed_at,
+                          "this_session": mine is not None and s.id == mine.id}
+                         for s in _auth(request).store.sessions()]}
+
+
+def _logged_out(auth: Auth, body: dict) -> JSONResponse:
+    res = JSONResponse(body, headers={"clear-site-data": '"cache", "cookies"'})
+    res.set_cookie(**auth.cookie("", 0))
+    return res
+
+
+@router.delete("/sessions/{sid}")
+async def end_session(request: Request, sid: int):
+    """Logs that browser out; `logged_out` when it was this one."""
+    auth = _auth(request)
+    if not auth.store.end_session_id(sid):
+        return _err("not_found", "That session has ended.", 404)
+    log.info("session ended", extra={"event": "auth.session_ended", "client": _client(request)})
+    if sid == _session(request).id:
+        return _logged_out(auth, {"ok": True, "logged_out": True})
+    return {"ok": True, "logged_out": False}
+
+
+@router.post("/sessions/logout-others")
+async def logout_others(request: Request) -> dict:
+    """Every session but this one ends; `ended`: how many."""
+    ended = _auth(request).store.end_other_sessions(_session(request))
+    log.info("other sessions ended", extra={"event": "auth.sessions_ended", "ended": ended,
+                                            "client": _client(request)})
+    return {"ok": True, "ended": ended}
+
+
 @router.post("/logout")
 async def logout(request: Request):
     auth = _auth(request)
     auth.store.end_session(_session(request))
-    res = JSONResponse({"ok": True}, headers={"clear-site-data": '"cache", "cookies"'})
-    res.set_cookie(**auth.cookie("", 0))
-    return res
+    return _logged_out(auth, {"ok": True})
