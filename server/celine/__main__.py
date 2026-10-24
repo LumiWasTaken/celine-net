@@ -100,6 +100,7 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
                     f"probably running.")
 
     made = keys.ensure(cfg.data_dir)      # the stack's own keys (keys.py)
+    set_secrets(keys.values(cfg.data_dir), "keys")
     if made:
         log.info("keys made", extra={"event": "keys.made", "files": made,
                                      "dir": str(cfg.data_dir / "keys")})
@@ -509,6 +510,7 @@ def main() -> None:
         from . import ops
         cfg = _load_config()
         set_secrets(cfg.secrets())
+        set_secrets(keys.values(cfg.data_dir), "keys")
         migrate_all(cfg.db_path)
         if argv.command == "doctor":
             raise SystemExit(ops.doctor(cfg))

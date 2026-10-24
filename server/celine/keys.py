@@ -39,6 +39,11 @@ def read(data_dir: Path, name: str) -> str:
     return _file(data_dir, f"{name}.key")
 
 
+def values(data_dir: Path) -> list[str]:
+    """Every key there is, for the redaction set (errors.set_secrets, source "keys")."""
+    return [v for name in NAMES if (v := read(data_dir, name))]
+
+
 def key_hash(data_dir: Path, name: str) -> str:
     """The sha256 of a key as its box checks it (<name>.hash): what a route shows, so the
     user puts it into a box that runs elsewhere. "" when ensure() never ran."""
