@@ -17,6 +17,8 @@ first that does not, in words:
 3. no turn a person waits on is live: a chat (not a trigger's), a bridged chat, a
    mission ("Waiting until your chat is done");
 4. no other run is running ("While Self-review runs"): one at a time, one model server.
+While it is frozen (guard/freeze.py) no run starts ("Frozen"); the run whose turn a
+freeze cut is `waiting` ("Frozen") and goes on in that turn after the unfreeze.
 A schedule with `idle_only` starts only when, besides, nobody used the app for
 IDLE_MINUTES (no user message, no turn a person waits on); otherwise, or when it could
 not start within IDLE_MINUTES of its slot, that run is `skipped` and never caught up.
@@ -97,6 +99,7 @@ DELETED = "Its schedule was deleted"
 STOPPED = "Stopped by {{username}}"
 IDLE_MINUTES = 30
 IN_USE = "The app was in use"
+FROZEN = "Frozen"            # a freeze cut its turn, or it may not start while frozen
 PASSED = f"More than {IDLE_MINUTES} minutes late"
 WAITED_ON = ("(c.kind = 'mission' OR (c.kind = 'chat' AND "
              "c.trigger_key IS NULL) OR c.trigger_key LIKE 'bridge:%')")
@@ -129,11 +132,13 @@ def final_words(note: str) -> str:
 
 class RunFailed(Exception):
     """The agent's conversation gave no answer; `stopped` True when someone stopped it: the run
-    fails, it never waits for its model then."""
+    fails, it never waits for its model then; `frozen` True when a freeze cut its turn: the
+    run waits for the unfreeze."""
 
-    def __init__(self, sentence: str, stopped: bool = False):
+    def __init__(self, sentence: str, stopped: bool = False, frozen: bool = False):
         super().__init__(sentence)
         self.stopped = stopped
+        self.frozen = frozen
 
 
 # ---- rows ---------------------------------------------------------------------------------
@@ -443,6 +448,8 @@ class Scheduler:
             return
         waiting.sort(key=lambda r: (r["night"], depth(schedules, r["schedule"]), r["slot"]))
         busy = await store.read(waited_on)
+        from ..guard.freeze import frozen
+        cold = await frozen(store) is not None
         unused = await store.read(lambda c: idle(c, self.now()))
         open_ = await store.read(lambda c: {(r["night"], r["schedule"]) for r in c.execute(
             "SELECT night, schedule FROM runs WHERE state IN ('waiting', 'running')")})
@@ -460,7 +467,7 @@ class Scheduler:
                     c, store, self.app.cfg, r["id"], state="skipped", reason=skip,
                     finished_at=now()))
                 continue
-            why = await self._why(r, s, open_, busy, models)
+            why = FROZEN if cold else await self._why(r, s, open_, busy, models)
             if why is None:
                 self._start(r)
                 continue
@@ -598,8 +605,9 @@ class Scheduler:
                 if note and not hers else None
         except Exception as e:                   # noqa: BLE001 - every failure ends it
             error = str(e) or type(e).__name__
-            why = None if getattr(e, "stopped", False) else await self._model_why(s.role)
-            if why:                              # its model is gone: the run waits for it
+            why = FROZEN if getattr(e, "frozen", False) else \
+                None if getattr(e, "stopped", False) else await self._model_why(s.role)
+            if why:              # its model is gone, or a freeze: the run waits for it
                 await store.write(lambda c: _set(c, store, cfg, rid, state="waiting",
                                                  reason=why))
             else:
@@ -618,9 +626,10 @@ class Scheduler:
         once everything there is quiet. Raises RunFailed as `_turn`."""
         from ..turns import store as turns
         last = await self.app.store.read(lambda c: c.execute(
-            "SELECT id, state FROM turns WHERE conversation_id = ? ORDER BY created_at "
-            "DESC LIMIT 1", (cid,)).fetchone())
-        if last is not None and last["state"] in ("failed", "interrupted"):
+            "SELECT id, state, reason_code FROM turns WHERE conversation_id = ? ORDER BY "
+            "created_at DESC LIMIT 1", (cid,)).fetchone())
+        if last is not None and (last["state"] in ("failed", "interrupted") or (
+                last["state"] == "aborted" and last["reason_code"] == "frozen")):
             try:
                 await turns.continue_turn(self.app.store, cid, last["id"],
                                           self.app.registry)
@@ -774,6 +783,8 @@ class Scheduler:
                 break
             await ended.wait()
         state, reason = await store.read(lambda c: outcome(c, cid))
+        if state == "aborted" and reason == "frozen":
+            raise RunFailed(FROZEN, frozen=True)
         if state == "aborted":
             raise RunFailed("Stopped", stopped=True)
         if state == "failed":

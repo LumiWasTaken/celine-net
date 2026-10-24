@@ -720,3 +720,44 @@ async def test_a_run_stopped_before_it_begins_stays_stopped_and_nothing_takes_th
     got = await store.read(lambda c: c.execute(
         "SELECT state FROM runs WHERE id = ?", (other["id"],)).fetchone()[0])
     assert got == "failed", "one running run at most, and no exception"
+
+
+class HangsOnce(FakeBackend):
+    """The first call waits until it is stopped; every later one answers."""
+
+    def __init__(self):
+        super().__init__(echo=True)
+        self.hung = False
+
+    async def stream(self, messages, tools, body=None):
+        if not self.hung:
+            self.hung = True
+            await anyio.sleep_forever()
+        async for ev in super().stream(messages, tools, body):
+            yield ev
+
+
+async def test_a_freeze_leaves_the_run_in_flight_waiting_and_the_unfreeze_runs_it_on(
+        store, cfg):
+    from celine.guard import freeze
+    from test_bastet import OWNER
+    cfg.schedules = {"world": _s("world")}
+    backend = HangsOnce()
+    app = _app(store, cfg, backend)
+    async with _scheduler(store, cfg, app, backend,
+                          Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))) as sched:
+        run = await sched.run_now("world")
+        await sched.tick()
+        await until(lambda: _live(store, run["id"]))
+        await freeze.freeze(app, by="user", why="a test")
+        await until(lambda: _state(store, run["id"], "waiting"))
+        await until(lambda: _idle(sched))
+        await sched.tick()
+        [row] = await _runs(store)
+        assert (row["state"], row["reason"]) == ("waiting", runs_mod.FROZEN), \
+            "it waits, not failed, and does not start while frozen"
+        await freeze.unfreeze(app, by=OWNER)
+        await sched.tick()
+        await until(lambda: _state(store, run["id"], "done"))
+    [row] = await _runs(store)
+    assert await _turns(store, row["conversation_id"]) == 1, "the cut turn went on"
