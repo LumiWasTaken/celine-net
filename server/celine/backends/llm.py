@@ -18,7 +18,7 @@ the user waits on (priority interactive) with code `busy`: the chat offers Switc
 provider and Keep waiting. Keep waiting (`keep_waiting`, a turn continued with
 `wait`) runs that one model and waits like background work does, until Stop; so does
 every model call made for that turn (a tool's vision, Writing or models__ask call, bound
-with the turn's id). A wait for a model is credited to the turn's clock and to the
+with the turn's id). A wait for a model stops the turn's clock and the
 time limit of the tool that waits (TOOL_CLOCKS).
 
 Priority belongs to the caller: the user's turn is interactive, trigger and job turns
@@ -62,6 +62,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import itertools
+import math
 import logging
 import time
 from typing import Any, Awaitable, Callable
@@ -102,14 +103,20 @@ TOOL_CLOCKS: contextvars.ContextVar[tuple] = contextvars.ContextVar("tool_clocks
                                                                     default=())
 
 
-def credit(clock, seconds: float) -> None:
-    """Time spent waiting for a model is not its work: `clock` (a turn's) and the
-    running tools' limits end that much later."""
-    if not seconds:
-        return
-    for c in (clock, *TOOL_CLOCKS.get()):
-        if c is not None:
-            c.deadline += seconds
+@contextlib.contextmanager
+def paused(clock):
+    """Time spent waiting for a model is not its work: while inside, `clock` (a turn's)
+    and the running tools' limits do not run, and they end that much later after."""
+    clocks = [c for c in (clock, *TOOL_CLOCKS.get()) if c is not None]
+    t0, was = time.monotonic(), [c.deadline for c in clocks]
+    for c in clocks:
+        c.deadline = math.inf
+    try:
+        yield
+    finally:
+        spent = time.monotonic() - t0
+        for c, d in zip(clocks, was):
+            c.deadline = d + spent
 
 
 def endpoint_key(backend) -> str:
@@ -282,8 +289,9 @@ class LLM:
                         priority=prio, lane=f"lease-{next(_leases)}", role=label,
                         label=label,
                         conversation_id=conversation_id, turn_id=turn_id, exclusive=True)
-        await self.scheduler.acquire(ticket, timeout=self.wait_timeout(prio), on_wait=on_wait)
-        credit(self.turn_clock.get(turn_id or ""), ticket.waited_ms / 1000)  # not its work
+        with paused(self.turn_clock.get(turn_id or "")):
+            await self.scheduler.acquire(ticket, timeout=self.wait_timeout(prio),
+                                         on_wait=on_wait)
         try:
             await self._unload(pid)
             yield
@@ -588,8 +596,7 @@ class QueuedBackend:
     async def _wait(self, until: Callable[[], Awaitable[None]]) -> None:
         """Until `until` returns, or Stop. The wait is not counted against the turn's
         wall clock."""
-        t0 = time.monotonic()
-        try:
+        with paused(self.clock):
             async with anyio.create_task_group() as tg:
                 async def wake() -> None:
                     await until()
@@ -600,8 +607,6 @@ class QueuedBackend:
                         await self.token.wait()
                         tg.cancel_scope.cancel()
                     tg.start_soon(stop)
-        finally:
-            credit(self.clock, time.monotonic() - t0)
         if self._cancelled():
             raise QueueCancelled("stopped")
 
@@ -646,16 +651,16 @@ class QueuedBackend:
                               "holder": sched.holder(endpoint), **held})
 
         try:
-            await sched.acquire(ticket, token=self.token,
-                                timeout=self.llm.wait_timeout(self.priority)
-                                if self.wait is None or self.priority == Priority.INTERACTIVE
-                                else self.wait, on_wait=on_wait)
+            with paused(self.clock):
+                await sched.acquire(ticket, token=self.token,
+                                    timeout=self.llm.wait_timeout(self.priority)
+                                    if self.wait is None or self.priority == Priority.INTERACTIVE
+                                    else self.wait, on_wait=on_wait)
         except BackendError as e:
             await self._send({"state": "left", "model": model, "endpoint": label,
                               "reason": "cancelled" if self._cancelled() else "timeout",
                               "message": str(e)})
             raise
-        credit(self.clock, ticket.waited_ms / 1000)   # waiting for a slot is not its work
         metrics.QUEUE_WAIT.labels(self.role, label).observe(ticket.waited_ms / 1000)
         if self.llm.exclusive(endpoint) and sched.streak.get(endpoint) == (model, 1) \
                 and model not in (loaded_then or ()):

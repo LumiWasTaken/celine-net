@@ -510,16 +510,29 @@ async def test_stop_ends_a_tool_call_waiting_for_a_keep_waiting_turn(tmp_path, m
     assert nets["main/big"].calls == 1
 
 
-async def test_a_wait_for_a_model_moves_the_turns_clock_and_the_tools_limits():
-    from celine.backends.llm import TOOL_CLOCKS, credit
+async def test_a_wait_for_a_model_stops_the_turns_clock_and_the_tools_limits():
+    import math
+    from celine.backends.llm import TOOL_CLOCKS, paused
     turn, tool = SimpleNamespace(deadline=100.0), SimpleNamespace(deadline=50.0)
     held = TOOL_CLOCKS.set((tool,))
     try:
-        credit(turn, 7.5)
+        with paused(turn):
+            assert (turn.deadline, tool.deadline) == (math.inf, math.inf)
     finally:
         TOOL_CLOCKS.reset(held)
-    credit(turn, 2.5)                       # outside the tool: the turn's clock alone
-    assert (turn.deadline, tool.deadline) == (110.0, 57.5)
+    assert 100.0 <= turn.deadline < 101.0 and 50.0 <= tool.deadline < 51.0
+
+
+async def test_a_tool_is_not_timed_out_while_it_waits_for_a_slot():
+    from celine.backends.llm import TOOL_CLOCKS, paused
+    with anyio.move_on_after(0.05) as scope:
+        held = TOOL_CLOCKS.set((scope,))
+        try:
+            with paused(None):
+                await anyio.sleep(0.15)
+        finally:
+            TOOL_CLOCKS.reset(held)
+    assert not scope.cancelled_caught
 
 
 async def test_a_load_failure_fails_the_users_turn_busy(tmp_path, monkeypatch):
