@@ -56,6 +56,13 @@ async def test_the_form_saves_write_only_and_says_how_the_vault_is(vault_app):
     assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == "vault.url"
 
 
+async def test_the_status_says_when_the_vault_is_locked(vault_app):
+    api = vault_app
+    assert (await api.get("/api/status")).json()["vault_locked"] is False
+    await api.post("/api/vault/lock")
+    assert (await api.get("/api/status")).json()["vault_locked"] is True
+
+
 async def test_the_master_password_is_typed_to_unlock_and_kept_nowhere(vault_app, store):
     """Unlock takes it once; nothing on disk holds it; lock and a new login forget the
     session; a wrong one says so; it gets "locked" until the user types it again."""

@@ -2,8 +2,8 @@
    EmptyState, LoadingRow, and Loaded, which picks one of them for a loaded resource. Principle: an error sits where it happened, with the
    action that fixes it, never in a toast. */
 import type { ReactNode } from 'react'
-import { CircleCheck, Info, LoaderCircle, RefreshCw, TriangleAlert, type LucideIcon } from 'lucide-react'
-import { Button } from './Button'
+import { CircleCheck, Info, LoaderCircle, RefreshCw, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { Button, IconButton } from './Button'
 import { cx } from './cx'
 import { ICON } from './icons'
 
@@ -12,7 +12,7 @@ const TONE_ICON: Record<Tone, LucideIcon> = { info: Info, warn: TriangleAlert, e
 
 export type NoticeAction = { label: string; onClick: () => void; icon?: LucideIcon; busy?: boolean }
 
-export function Notice({ tone = 'info', title, children, action, compact = false, className, icon }: {
+export function Notice({ tone = 'info', title, children, action, compact = false, className, icon, onDismiss, dismissLabel = 'Dismiss' }: {
   tone?: Tone
   title?: ReactNode
   children?: ReactNode
@@ -22,6 +22,9 @@ export function Notice({ tone = 'info', title, children, action, compact = false
   compact?: boolean
   className?: string
   icon?: LucideIcon
+  /** an X at the end that puts it away */
+  onDismiss?: () => void
+  dismissLabel?: string
 }) {
   const Icon = icon ?? TONE_ICON[tone]
   return (
@@ -39,6 +42,7 @@ export function Notice({ tone = 'info', title, children, action, compact = false
       {action && compact && (
         <Button variant="ghost" size="sm" onClick={action.onClick} disabled={action.busy}>{action.label}</Button>
       )}
+      {onDismiss && <IconButton size="sm" icon={X} label={dismissLabel} className="notice__action" onClick={onDismiss} />}
     </div>
   )
 }

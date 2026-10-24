@@ -24,6 +24,8 @@ export type ConfigStatus = {
   setup: boolean
   /** this build: its commit, and when it was built (null: unknown) */
   build: { commit: string; built: string | null }
+  /** the vault is set up and locked */
+  vault_locked: boolean
 }
 
 /** 'off', or a level the model accepts (from the server: `thinking_levels`), or any value typed by hand */

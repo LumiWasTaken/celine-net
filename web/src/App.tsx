@@ -22,6 +22,7 @@ import { useResource } from './lib/useResource'
 import { useSlide } from './ui/slide'
 import { ServerDown } from './components/ServerDown'
 import { Portrait } from './components/Portrait'
+import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
 import { Button, ConfirmDialog, ICON, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
@@ -168,7 +169,8 @@ function Shell() {
     <div className="app">
       {section === 'welcome' ? (
         <Suspense fallback={<LoadingRow />}><Welcome status={status} onSaved={shown.onStatus} /></Suspense>
-      ) : (
+      ) : (<>
+      <VaultBanner locked={!!status?.vault_locked} />
       <div className="frame">
         <nav ref={rail} className="rail" aria-label="Sections">
           {/* its face when it has one, the app's mark until then */}
@@ -212,7 +214,7 @@ function Shell() {
           })}
         </div>
       </div>
-      )}
+      </>)}
 
       {sheet === 'switch' && <Switcher onClose={() => setSheet(null)} />}
       {sheet === 'keys' && <Shortcuts onClose={() => setSheet(null)} />}

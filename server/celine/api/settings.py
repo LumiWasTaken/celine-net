@@ -612,7 +612,7 @@ async def config_status(request: Request) -> dict:
     it (her.view: name, pronouns, color, portrait, named). `hosts`: each provider's
     host as the gateway's ping sees it ({state: up | down | null, since}); `hold`:
     {state: "paused", since} while it is paused, else null (event `her.hold`); `build`:
-    {commit, built} of this build (config.build)."""
+    {commit, built} of this build (config.build); `vault_locked`: set up and locked."""
     from .. import her
     services = request.app.state.services
     cfg, router = services.cfg, getattr(services.llm, "router", None)
@@ -627,4 +627,6 @@ async def config_status(request: Request) -> dict:
                          for p in cfg.problems],
             "hosts": router.hosts() if router is not None else {},
             "hold": router.hold() if router is not None else None,
-            "build": config_build()}
+            "build": config_build(),
+            "vault_locked": (services.vault is not None and services.vault.session is None
+                             and vault_mod.account(cfg) is not None)}

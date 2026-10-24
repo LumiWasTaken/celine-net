@@ -8,6 +8,8 @@
   /* an installed app on a notched phone (viewport-fit=cover): clear of the edges */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
+/* the vault is locked: one line across the top, above the rail */
+.vault-banner { flex: none; max-width: none; border-radius: 0; align-items: center; }
 .frame {
   flex: 1; min-height: 0; display: grid;
   grid-template-columns: var(--rail-w) minmax(0, 1fr);
