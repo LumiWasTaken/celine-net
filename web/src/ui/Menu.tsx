@@ -176,13 +176,17 @@ function MenuBox({ anchor, items, onClose, align, label, inline, search, q, setQ
       closeRef.current()
     }
     const onBlur = () => closeRef.current()
+    // a new width moves its button away; a new height alone is the on-screen keyboard
+    // (its search field raised it), which leaves the menu where it is
+    const wide = window.innerWidth
+    const onResize = () => { if (window.innerWidth !== wide) closeRef.current() }
     document.addEventListener('mousedown', onDown, true)
     window.addEventListener('blur', onBlur)
-    window.addEventListener('resize', onBlur)
+    window.addEventListener('resize', onResize)
     return () => {
       document.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('blur', onBlur)
-      window.removeEventListener('resize', onBlur)
+      window.removeEventListener('resize', onResize)
     }
   }, [anchor, inline]) // eslint-disable-line react-hooks/exhaustive-deps
 
