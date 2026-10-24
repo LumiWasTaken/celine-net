@@ -506,3 +506,118 @@ def test_a_trusted_proxy_whose_client_address_was_taken_is_not_logged(caplog):
     with caplog.at_level(logging.WARNING, logger="celine.auth"):
         c.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9, 172.18.0.2"})
     assert _proxy_lines(caplog) == []
+
+
+# ---- a fresh proof before adding a way in ---------------------------------------------
+
+def _guarded(c: TestClient) -> dict[str, int]:
+    """What each route that needs a fresh proof answers now (POST /api/tokens too,
+    test_intercom.py)."""
+    return {
+        "credential": c.post("/api/auth/credentials",
+                             json={"kind": "pin", "secret": "22223333"}).status_code,
+        "passkey": c.post("/api/auth/passkeys/start").status_code,
+        "codes": c.post("/api/auth/recovery-codes").status_code,
+    }
+
+
+def test_adding_a_way_in_new_codes_and_a_token_need_a_proof_from_the_last_minutes(app):
+    auth = app.state.auth
+    clock = auth.store.clock = Clock()
+    c = client(app)
+    assert setup_password(app, c).status_code == 200
+    # the login is the first proof
+    assert set(_guarded(c).values()) == {200}
+    clock.t += store_mod.PROOF_SECONDS + 1
+    assert set(_guarded(c).values()) == {403}
+    stale = c.post("/api/auth/recovery-codes").json()["error"]
+    assert stale["code"] == "proof_needed" and stale["message"] == "Confirm access first."
+    # the hourly refresh of the cookie is no proof
+    assert c.get("/api/health").status_code == 200
+    assert c.post("/api/auth/recovery-codes").status_code == 403
+    # a wrong password is a failed login: it counts toward that address's lock
+    wrong = c.post("/api/auth/reauth", json={"method": "password", "secret": "not it, no"})
+    assert wrong.status_code == 401 and wrong.json()["error"]["message"] == "The password is wrong."
+    assert c.post("/api/auth/reauth", json={"method": "x", "secret": PASSWORD}).status_code == 400
+    assert c.post("/api/auth/reauth", json={"method": "password", "secret": PASSWORD}
+                  ).status_code == 200
+    assert set(_guarded(c).values()) == {200}
+    # a PIN proves too, for this session only
+    other = client(app)
+    assert other.post("/api/auth/login", json={"method": "pin", "secret": "22223333"}
+                      ).status_code == 200
+    clock.t += store_mod.PROOF_SECONDS + 1
+    assert c.post("/api/auth/reauth", json={"method": "pin", "secret": "22223333"}
+                  ).status_code == 200
+    assert c.post("/api/auth/recovery-codes").status_code == 200
+    assert other.post("/api/auth/recovery-codes").status_code == 403
+
+
+def test_wrong_proofs_lock_like_wrong_logins(app):
+    auth = app.state.auth
+    auth.store.clock = Clock()
+    c = client(app, address="198.51.100.7")
+    assert setup_password(app, c).status_code == 200
+    for n in range(store_mod.FREE_TRIES):
+        r = c.post("/api/auth/reauth", json={"method": "password", "secret": f"wrong one {n}"})
+    assert r.status_code == 429 and r.json()["error"]["code"] == "locked"
+    assert c.post("/api/auth/reauth", json={"method": "password", "secret": PASSWORD}
+                  ).status_code == 429
+    for _ in range(10 - store_mod.FREE_TRIES):
+        c.post("/api/auth/reauth/finish", json={"ceremony": "gone", "credential": {}})
+    assert c.post("/api/auth/reauth/start").json()["error"]["code"] == "rate_limited"
+
+
+def test_a_passkey_proves_in_the_session_that_asked(app):
+    auth = app.state.auth
+    clock = auth.store.clock = Clock()
+    pk = SoftPasskey()
+    c = client(app)
+    setup_first_passkey(app, c, pk)
+    other = client(app)
+    assert login(other, pk).status_code == 200
+    clock.t += store_mod.PROOF_SECONDS + 1
+    assert c.post("/api/auth/passkeys/start").status_code == 403
+    # a proof started in one session does not finish in another
+    start = c.post("/api/auth/reauth/start").json()
+    assert other.post("/api/auth/reauth/finish", json={
+        "ceremony": start["ceremony"], "credential": pk.get(start["options"])}).status_code == 401
+    start = c.post("/api/auth/reauth/start").json()
+    assert c.post("/api/auth/reauth/finish", json={
+        "ceremony": start["ceremony"], "credential": SoftPasskey().get(start["options"])}
+    ).status_code == 401                                         # not registered here
+    start = c.post("/api/auth/reauth/start").json()
+    assert c.post("/api/auth/reauth/finish", json={
+        "ceremony": start["ceremony"], "credential": pk.get(start["options"])}).status_code == 200
+    assert c.post("/api/auth/passkeys/start").status_code == 200
+    assert other.post("/api/auth/passkeys/start").status_code == 403
+
+
+def test_with_the_login_off_there_is_nothing_to_prove():
+    c = client(build_app(boot.load(), dev=False))
+    assert c.post("/api/auth/reauth", json={"method": "pin", "secret": "x"}).status_code == 404
+
+
+def test_sessions_from_before_keep_working_and_must_prove(tmp_path):
+    """auth.db at version 2: its sessions get an id and no proof."""
+    import sqlite3
+    from celine.db.migrate import migrate
+    db = tmp_path / "auth.db"
+    old = tmp_path / "old"
+    old.mkdir()
+    for f in sorted(store_mod.MIGRATIONS.glob("*.sql"))[:2]:
+        (old / f.name).write_text(f.read_text())
+    migrate(db, old)
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO credentials (kind, hash, label, created_at) "
+                     "VALUES ('pin', x'00', '', 1)")
+        conn.execute("INSERT INTO sessions (token_hash, credential_id, created_at, refreshed_at, "
+                     "expires_at) VALUES (?, 1, 10, 20, ?)",
+                     (store_mod.token_hash("a-token"), Clock.t + 86400))
+    s = store_mod.AuthStore(db, clock=Clock())
+    try:
+        live = s.session("a-token")
+        assert live is not None and live.id and live.user_agent == ""
+        assert not s.proven(live)
+    finally:
+        s.close()

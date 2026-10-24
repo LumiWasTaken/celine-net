@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..api.cursor import page_cursor, read_id
-from ..api.deps import person_only
+from ..api.deps import person_only, proven
 from ..core.ids import iso, parse_when
 from ..errors import CelineError, NotFound
 from ..clock import zone
@@ -281,9 +281,9 @@ class TokenIn(BaseModel):
     name: str
 
 
-@router.post("/tokens")
+@router.post("/tokens", dependencies=[Depends(proven)])
 async def make_token(request: Request, body: TokenIn) -> dict:
-    """The token is in this answer only."""
+    """The token is in this answer only; making one needs a fresh proof (api/deps.py)."""
     try:
         token = await request.app.state.services.store.write(lambda c: tokens.make(c, body.name.strip()))
     except ValueError as e:

@@ -191,6 +191,35 @@ def _gated_app(store):
     return app
 
 
+async def test_a_named_token_is_made_only_after_a_fresh_proof(store):
+    """POST /api/tokens needs a proof from the last minutes, as adding a way to log in
+    does (test_auth.py); with the login off there is nothing to prove."""
+    import httpx
+    from celine import auth as auth_mod
+    from celine.auth.store import PROOF_SECONDS
+    from celine.__main__ import build_app
+    app = _gated_app(store)
+    auth = app.state.auth
+    now = [1_800_000_000]
+    auth.store.clock = lambda: now[0]
+    rid = auth.store.add_credential("pin", "04815162", "")
+    base = "http://localhost:8766"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=base,
+                                 headers={"origin": base}, cookies={
+                                     auth_mod.COOKIE: auth.store.new_session(credential=rid)}
+                                 ) as http:
+        assert (await http.post("/api/tokens", json={"name": "cli"})).status_code == 200
+        now[0] += PROOF_SECONDS + 1
+        r = await http.post("/api/tokens", json={"name": "nightly"})
+        assert r.status_code == 403 and r.json()["error"]["code"] == "proof_needed"
+    cfg = boot.load()
+    off = build_app(cfg, dev=False)
+    off.state.services = Services(cfg=cfg, store=store, intercom=Intercom(store))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=off), base_url=base,
+                                 headers={"origin": base}) as http:
+        assert (await http.post("/api/tokens", json={"name": "nightly"})).status_code == 200
+
+
 async def test_a_named_token_does_not_act_as_the_user(store):
     """A token posts and reads; it does not read the user's messages for them, carry a
     thread into a chat, or cancel a message it did not send."""
