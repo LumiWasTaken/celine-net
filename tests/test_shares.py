@@ -164,6 +164,10 @@ async def _browser(cfg, client):
     return True
 
 
+async def _approved(*_, **__):
+    return None
+
+
 def test_a_port_needs_no_session_and_never_sees_the_cookie(app, web, monkeypatch):
     t = make(app, port=web)["token"]
     monkeypatch.setattr(shares, "from_browser", _browser)    # its own browser box
@@ -334,6 +338,7 @@ def test_the_owner_stops_a_share_for_both_sides(app, web, clock):
 def test_her_tools_share_list_and_end(app, web, clock):
     s = app.state.services
     shell = Shell(s.cfg)
+    shell.app = SimpleNamespace(approvals=SimpleNamespace(ask=_approved))   # a public one asks
     ctx = ToolContext("c1", "t", "call-1", s.store, s.cfg, None)  # type: ignore[arg-type]
     tz = zone(s.cfg)
 

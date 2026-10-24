@@ -2,7 +2,7 @@
 feed and snapshot after the message that made the call, Approve runs it, Deny gives the
 tool its denial, a Stop or an answer takes it away everywhere, a restart closes what the
 last run left open. In a turn the user waits on it waits for them and holds the turn's
-clock; anywhere else it keeps its time."""
+clock; anywhere else it keeps its time. A public share always waits for the user."""
 from __future__ import annotations
 
 import asyncio
@@ -13,9 +13,13 @@ import anyio
 import pytest
 from chat_fixtures import until
 
-from celine import approvals as ap
+from celine import approvals as ap, shares
+from celine.boot import load
 from celine.conversations import store as conversations, tree, view
+from celine.core.services import Services
 from celine.guard.owner import _SEAL, Owner
+from celine.skills import ToolContext
+from celine.skills.shell import Shell
 from celine.turns import waiting
 from celine.turns.cancel import Token, until_stop
 
@@ -170,3 +174,84 @@ async def test_a_restart_closes_what_the_last_run_left_open(store, monkeypatch):
     assert len(await _open(store, cid)) == 1
     assert await ap.close_left(store) == 1
     assert await _open(store, cid) == []
+
+
+# ---- a public share waits for the user, guard or no guard ------------------------------
+
+class Answers:
+    """The approvals of a user who answers `ok` to everything, every request kept."""
+
+    def __init__(self, ok: bool):
+        self.ok, self.asked = ok, []
+
+    async def ask(self, action, facts, conversation, why="", short="", kind="vault",
+                  ref=None, call=None):
+        self.asked.append((kind, action, facts, call))
+        return None if self.ok else "sam denied it; nothing was done."
+
+
+@pytest.fixture
+def shared(monkeypatch):
+    made: list[dict] = []
+
+    async def create(cfg, store, title, *, port=None, path=None, conversation_id=None,
+                     public=False, hours=None):
+        row = {"token": "tok", "title": title, "port": port, "path": path,
+               "public": public, "ends_at": "2026-10-24T15:00:00.000+00:00"}
+        made.append(row)
+        return row
+
+    async def state(cfg, store, row):
+        return "live"
+    monkeypatch.setattr(shares, "create", create)
+    monkeypatch.setattr(shares, "state", state)
+    monkeypatch.setattr(shares, "link", lambda cfg, row: "http://x/share/tok/")
+    return made
+
+
+def _shell(approvals):
+    cfg = load()
+    cfg.user = "sam"
+    shell = Shell(cfg)
+    shell.app = Services(cfg=cfg, approvals=approvals)
+    ctx = ToolContext("c1", "t1", "k1", None, cfg, None)  # type: ignore[arg-type]
+    return shell, ctx
+
+
+async def test_a_public_share_waits_for_the_user_and_runs_on_approve(shared):
+    yes = Answers(True)
+    shell, ctx = _shell(yes)
+    out = await shell.share(ctx, title="Snake", port=8000, public=True)
+    assert not out.is_error and shared and shared[0]["public"]
+    [(kind, action, facts, call)] = yes.asked
+    assert (kind, call) == ("share", "k1")
+    assert action == 'make "Snake" a public share anyone with the link opens'
+    assert facts == ["port 8000", "for 2 hours"]
+
+
+async def test_a_denied_public_share_is_not_made_and_says_so(shared):
+    shell, ctx = _shell(Answers(False))
+    out = await shell.share(ctx, title="Snake", port=8000, public=True)
+    assert out.is_error and out.content == "sam denied it; nothing was done."
+    assert shared == []
+
+
+async def test_a_private_share_asks_nothing(shared):
+    yes = Answers(True)
+    shell, ctx = _shell(yes)
+    out = await shell.share(ctx, title="Snake", port=8000)
+    assert not out.is_error and yes.asked == []
+
+
+async def test_a_public_share_with_nobody_to_ask_is_not_made(shared):
+    shell, ctx = _shell(None)
+    out = await shell.share(ctx, title="Snake", port=8000, public=True)
+    assert out.is_error and "nobody" in out.content and shared == []
+
+
+def test_she_knows_shares_are_private_and_a_public_one_waits_for_the_user():
+    from celine.skills.shell import Shell as S
+    guide = S.guide.body
+    doc = S.share.__doc__ + str(S.share.__annotations__["public"])
+    for text in (guide, doc):
+        assert "private" in text and "approv" in text, text

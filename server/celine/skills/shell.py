@@ -57,6 +57,9 @@ APT_INSTALL = re.compile(r"\bapt(?:-get)?\b.*\binstall\b")
 APT_ERROR = re.compile(r"^E:", re.M)      # apt failed, whatever exit a pipe reports
 FULL_LINE = ("A disk is full: `df -h ~ /tmp` shows which. Delete what you do not need; if your "
              "home needs more room, ask for it.")
+SHARE_ASK = "make \"{title}\" a public share anyone with the link opens"
+SHARE_WHY = "Anyone with the link opens it, not only {{username}}."
+SHARE_NOBODY = "Nothing was shared: nobody is here to approve a public share."
 NO_RUN_LINE = ("The shell there did not start it: shell__run needs bash with its run function "
                "(/etc/shellbox/run.sh, read by /etc/bash.bashrc). shell__type works in any "
                "shell.")
@@ -722,9 +725,10 @@ class Shell:
                                     "8000."] = None,
         path: Annotated[str | None, "Or a file or folder in your home, like "
                                     "\"~/out/clip.mp4\" or \"~/snake/dist\"."] = None,
-        public: Annotated[bool, "False (the default): only {{username}} opens it, logged in "
-                                "to the app. True: anyone with the link opens it; only when "
-                                "{{username}} asks for a link others can open."] = False,
+        public: Annotated[bool, "False (the default): private, only {{username}} opens it, "
+                                "logged in to the app. True: anyone with the link opens it; "
+                                "only when {{username}} explicitly asks for a link others "
+                                "can open, and it waits for their approval first."] = False,
         hours: Annotated[float | None, f"How long it runs: by default {shares.PRIVATE_HOURS} "
                                        f"hours, at most {shares.PRIVATE_MAX}; a public one "
                                        f"{shares.PUBLIC_HOURS} hours, at most "
@@ -733,7 +737,8 @@ class Shell:
         """Show {{username}} something in your shellbox: a server you run on a port (a web
         app, a game, a dashboard) or a file or folder in your home (a video, an image, a
         page, a built game). They see it as a card under your reply and open it in a tab of
-        its own. Returns: its id, its link and when it ends."""
+        its own. A share is private; a public one waits for their approval. Returns: its
+        id, its link and when it ends."""
         title = (title or "").strip()
         if (port is None) == (path is None or not str(path).strip()):
             return ToolResult(content="Give a port or a path, one of them.", is_error=True)
@@ -748,6 +753,9 @@ class Shell:
                                       f"{'public' if public else 'private'} share.",
                               is_error=True)
         rel = str(path).strip().rstrip("/") if port is None else None
+        what = f"port {port}" if port is not None else shellbox.home_short(rel)
+        if public and (no := await self._public(ctx, title, what, hours)):
+            return ToolResult(content=no, is_error=True)
         try:
             row = await shares.create(self.cfg, ctx.store, title, port=port, path=rel,
                                       conversation_id=ctx.conversation_id, public=public,
@@ -757,7 +765,6 @@ class Shell:
             return ToolResult(content=str(e), is_error=True)
         except httpx.HTTPError as e:
             return self._unreachable(None, e)
-        what = f"port {port}" if port is not None else shellbox.home_short(rel)
         who = "Anyone with the link opens it" if public else \
             f"Only {self.cfg.user} opens it, logged in to the app"
         lines = [f"Shared \"{title}\" ({what}) as share {row['token']}. {self.cfg.user} sees it "
@@ -770,6 +777,21 @@ class Shell:
                          f"server answers there.")
         return ToolResult(content="\n".join(lines),
                           display={"share": {"token": row["token"], "title": title}})
+
+    async def _public(self, ctx: ToolContext, title: str, what: str,
+                      hours: float | None) -> str | None:
+        """The user's approval of a public share (celine/approvals.py, kind `share`),
+        guard or no guard: None when approved, else the sentence for its result. Its
+        words are fixed and the call's own data."""
+        approvals = getattr(self.app, "approvals", None)
+        if approvals is None:
+            return SHARE_NOBODY
+        h = shares.PUBLIC_HOURS if hours is None else hours
+        action = SHARE_ASK.format(title=title)
+        return await approvals.ask(
+            action, [what, f"for {h:g} hour" + ("" if h == 1 else "s")],
+            ctx.conversation_id, self.cfg.substitute(SHARE_WHY), action, kind="share",
+            call=ctx.tool_call_id or None)
 
     @tool(read_only=False, destructive=False, open_world=True)
     async def unshare(
