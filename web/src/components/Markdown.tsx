@@ -97,7 +97,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, breaks
    whole words, parsed per block (blank lines outside code) with each finished block never
    parsed again; while it is written the last block has its open markers closed and its
    new words fade. `live`: tokens may still come. */
-export function StreamText({ text, live }: { text: string; live: boolean }) {
+export const StreamText = memo(function StreamText({ text, live }: { text: string; live: boolean }) {
   const shown = useReveal(text, live)
   const writing = live || shown.length < text.length
   const parts = blocks(shown)
@@ -105,7 +105,7 @@ export function StreamText({ text, live }: { text: string; live: boolean }) {
     const last = writing && i === parts.length - 1
     return <Block key={i} text={last ? closeOpen(b) : b} fade={last} />
   })}</>
-}
+})
 
 const Block = memo(function Block({ text, fade }: { text: string; fade: boolean }) {
   return (
