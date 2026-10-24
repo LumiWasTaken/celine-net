@@ -39,6 +39,14 @@ class SemanticError(Exception):
     pass
 
 
+class InputTooLong(SemanticError):
+    """The server refused an input for its length."""
+
+
+# what servers say when an input is over their context (llama.cpp, OpenAI, vLLM, TEI)
+_TOO_LONG = ("exceed", "too large", "too long", "context length", "context size", "truncat")
+
+
 # ---- one endpoint ----------------------------------------------------------------------
 
 def embed_sync(s: dict[str, Any], texts: list[str]) -> list[list[float]]:
@@ -49,8 +57,8 @@ def embed_sync(s: dict[str, Any], texts: list[str]) -> list[list[float]]:
     while True:
         try:
             vecs = _embed_once(s, [t[:limit] for t in texts])
-        except SemanticError as e:
-            if "exceed" in str(e) and limit > 400:
+        except InputTooLong:
+            if limit > 400:
                 limit //= 2
                 continue
             raise
@@ -85,7 +93,10 @@ def _embed_once(s: dict[str, Any], texts: list[str]) -> list[list[float]]:
             raise SemanticError(f"the embedding server at {_host(s)} has no model "
                                 f"{s.get('model')} (Settings, Models)")
         if r.status_code >= 400:
-            raise SemanticError(f"the embedding server at {_host(s)} answered {r.status_code}")
+            msg = f"the embedding server at {_host(s)} answered {r.status_code}"
+            if r.status_code in (400, 413, 422) and any(w in r.text.lower() for w in _TOO_LONG):
+                raise InputTooLong(f"{msg}: {r.text[:200]}")
+            raise SemanticError(msg)
         try:
             data = sorted(r.json()["data"], key=lambda d: d["index"])
             return [d["embedding"] for d in data]
