@@ -205,8 +205,9 @@ class Notebook:
         p = (self.root / path).resolve()
         if not p.is_relative_to(self.root.resolve()):
             raise ValueError(f"{path!r} is outside your notebook")
-        # deleted notes are the user's to bring back, not its own to read
-        if p.is_relative_to((self.root / ".trash").resolve()):
+        # the app's own files (.index.db, .versions, .trash: deleted notes are the
+        # user's to bring back) are not notes
+        if any(part.startswith(".") for part in p.relative_to(self.root.resolve()).parts):
             raise ValueError(f"{path!r} is not in your notebook")
         if folder and not p.is_relative_to((self.root / folder).resolve()):
             raise ValueError(f"{path!r} is outside your folder {folder}")

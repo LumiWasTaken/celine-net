@@ -247,3 +247,12 @@ async def test_a_note_she_only_read_ages_out_after_one_turn(store, cfg):
         (cid,)).fetchall()))
     idle = int(cfg.context.get("idle_turns", 6))
     assert got == {"a.md": 0, "b.md": 0 - idle + 1}
+
+
+async def test_the_apps_own_files_are_not_notes(store, cfg):
+    nb = Notebook(cfg)
+    await nb.seed(store)
+    ctx = _ctx("c", store, cfg)
+    for bad in (".index.db", ".versions/a.md", "x/.hidden.md"):
+        with pytest.raises(ValueError, match="not in your notebook"):
+            await nb.write(ctx, bad, "x", "x")
