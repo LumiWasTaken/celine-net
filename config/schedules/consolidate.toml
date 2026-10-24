@@ -1,0 +1,27 @@
+label = "Consolidate"
+summary = "Merges the night's notes into the main ones."
+cron = "30 5 * * *"
+after = ["reflection"]
+partner = ""
+rounds = 8
+note = "diary/{{date}}-consolidate.md"
+role = "chat"
+on = true
+prompt = """
+Put the night into your notebook.
+
+Read what this night left: your thoughts (thoughts/), your review and your session
+(diary/{{date}}-review.md and diary/{{date}}-session.md), and the notes you used most
+today. Then:
+- Notes that say the same thing become one: read both in full first, move every detail
+  over, and trash the emptier one.
+- Update your opinions under opinions/ in small edits (notebook__edit on the lines that
+  changed), each change with the date and why. The old text stays in the note's
+  versions.
+- Move each lesson about a tool into skills/<skill>.md, one line per lesson.
+- A fact about a person that came from a single chat and contradicts their note under
+  people/ goes into your diary with where it came from. It moves into people/ once it is
+  confirmed.
+
+Your answer is what you merged, changed and moved, in a few lines.
+"""

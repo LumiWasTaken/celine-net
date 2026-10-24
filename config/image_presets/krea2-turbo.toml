@@ -1,0 +1,71 @@
+# Krea 2 text to image. The workflow is the Krea 2 text to image one (8 steps, cfg 1.0,
+# euler, beta) in API format; the prompt enhancer node gets the size as manual width and
+# height, and its mode is the `mode` parameter.
+label = "Krea 2 turbo"
+family = "Krea 2"
+task = "generate"
+workflow = "krea2-turbo.json"
+good_at = "Realistic photos: real people, general scenes, cinematic light."
+prompting = """
+Krea 2 reads natural English through a vision-language encoder (Qwen3-VL 4B): grammar
+and spatial relations count. Write one paragraph of 2 to 4 sentences, 50 to 120 words, in
+this order: medium and framing, subject and action, clothing and textures, place and
+layout, light and lens.
+
+- Start with the medium and framing: "A 35mm film photograph of...", "A medium close-up
+  studio portrait of...", "Candid street photography of...". Name the shot distance and
+  the angle.
+- The subject: pose, expression, where the eyes look. Keep each modifier next to its
+  noun ("a man in a dark navy wool coat holding a brass lantern"), or attributes bleed.
+- Textures: skin pores, freckles, stray hairs, wood grain, woven linen, condensation.
+- Place: clear prepositions ("seated to the left of a rain-streaked window").
+- Light and lens: "soft directional key light", "warm golden hour sun from the upper
+  right", "85mm f/1.4, creamy bokeh", "subtle film grain".
+- Visible text goes in double quotes: a neon sign reading "CAFE".
+- Only what was asked for: no props, people or story nobody named.
+
+Krea draws every noun: "Instagram photo" draws the app, "phone photo" puts a phone in
+the picture, "camera" or "ring light" draws one. Describe the look instead ("direct
+flash, hard shadow behind her", "looking at the viewer"). Name a phone only when it
+should be seen, like in a mirror selfie. No tag lists (1girl, 8k). No quality words
+(masterpiece, photorealistic, ultra-detailed, award winning): they give a waxy CGI look.
+
+Plain words only: no slang, no acronyms. Describe what is seen.
+
+Variant: direct (the default) sends your prompt as written. expand lets Krea's enhancer
+write a full scene from a short brief; gently keeps your wording and adds little.
+
+Models: the turbo model runs 8 steps (about 10 to 15 s). model "krea2/krea2_raw_bf16"
+runs 40 steps at cfg 3.5 (about 50 s): use it for full quality, fine skin, or several
+people interacting. A model whose file name has no "turbo" gets the full settings by
+itself.
+"""
+example = "A 35mm candid portrait of a 26-year-old barista resting her chin on one hand behind a worn wooden counter. She wears a dark green canvas apron over a cream knit sweater, loose strands of brown hair across her forehead, natural skin with subtle freckles. Morning sun comes through the front windows of the busy coffee shop and lights the copper espresso pipes. Shot on an 85mm f/1.8 lens, shallow depth of field, gentle film grain."
+
+[parameters.prompt]
+inputs = [["2", "brief"]]
+
+[parameters.seed]
+inputs = [["2", "seed"], ["8", "seed"]]
+
+[parameters.width]
+inputs = [["2", "width"]]
+
+[parameters.height]
+inputs = [["2", "height"]]
+
+[parameters.model]
+inputs = [["3", "unet_name"]]
+
+[parameters.mode]
+inputs = [["2", "mode"]]
+choices = { direct = "passthrough (no rewrite)", expand = "expand", gently = "expand gently" }
+
+[catalog]
+models = ["krea2/"]
+loras = ["krea_2/"]
+lora_after = "3"
+sampler = "8"
+text = ["5", "text"]
+max_loras = 4
+full_settings = { steps = 40, cfg = 3.5 }

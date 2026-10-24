@@ -1,0 +1,59 @@
+# SearXNG for Celine web search (skills/web.py).
+# Fast, privacy-focused metasearch without tracking.
+use_default_settings: true
+
+general:
+  instance_name: "Celine Search"
+  enable_metrics: false
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  http_protocol_version: "1.1"
+  method: "GET"
+
+search:
+  safe_search: 0
+  autocomplete: "duckduckgo"
+  autocomplete_min: 2
+  favicon_resolver: ""
+  default_lang: "auto"
+  ban_time_on_fail: 10
+  max_ban_time_on_fail: 300
+  formats:
+    - html
+    - json
+
+ui:
+  query_in_title: true
+  default_theme: simple
+  center_alignment: true
+  theme_args:
+    simple_style: auto
+  results_on_new_tab: true
+  search_on_category_select: true
+  hotkeys: default
+  url_formatting: pretty
+
+outgoing:
+  request_timeout: 3.5
+  max_request_timeout: 7.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+
+engines:
+  - name: brave
+    weight: 1.5
+
+  - name: duckduckgo
+    weight: 1.2
+
+  - name: wikipedia
+    weight: 1.2
+
+  - name: qwant
+    weight: 0.8

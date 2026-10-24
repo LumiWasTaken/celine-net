@@ -1,0 +1,123 @@
+/* Three columns: conversations, the conversation, the side panel (.drawer). The panel
+   never covers the conversation where there is room: it takes its own column and the
+   conversation narrows (data-panel="beside", set by Celine.tsx while the conversation
+   keeps a readable width). Below that it floats over the conversation's right edge. */
+/* the two side columns are registered lengths. The list's column grows as a transition
+   of the grid; the panel's column changes once (the conversation re-wraps once) and the
+   panel slides in it by transform; closing, it slides out first and the column drops after */
+@property --shell-list { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --shell-panel { syntax: '<length>'; inherits: true; initial-value: 0px; }
+.shell {
+  --shell-list: var(--sidebar-w); --shell-panel: 0px;
+  display: grid;
+  grid-template-columns: var(--shell-list) minmax(0, 1fr) var(--shell-panel);
+  height: 100%;
+  /* clip, not hidden: nothing (a scrollIntoView, a live region) can scroll the frame */
+  overflow: clip;
+  position: relative;
+  transition: --shell-list var(--dur) var(--ease);
+}
+.shell[data-drawer='closed'] { transition: --shell-list var(--dur) var(--ease), --shell-panel 0s linear var(--dur); }
+.shell[data-sidebar='closed'] { --shell-list: 0px; }
+.shell[data-panel='beside'][data-drawer='open'] { --shell-panel: var(--drawer-w); }
+
+/* Celine's own layout: conversation sidebar, transcript, composer, drawer, tool rows,
+   its notebook. Kit pieces (buttons, fields, dialogs, menus) live in ui/ui.css. */
+
+/* ── sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  grid-column: 1;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  min-width: 0; overflow: hidden;
+}
+@media (min-width: 1024px) { .sidebar > * { width: var(--sidebar-w); } }
+/* ── conversation ────────────────────────────────────────────────────────── */
+.content { grid-column: 2; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+/* the list's toggle: in its head, and at the far left of the conversation's while it is hidden */
+/* positioned: what sits absolute inside (the live region) stays in the scroller */
+/* the scrollbar's room is always kept: one appearing never moves the text sideways */
+.transcript { flex: 1; overflow-y: auto; position: relative; overflow-anchor: none; scrollbar-gutter: stable; }
+.transcript__inner {
+  max-width: var(--bleed); margin: 0 auto; padding: var(--s-6) var(--s-4) var(--s-4);
+}
+
+/* ── composer ────────────────────────────────────────────────────────────── */
+.composer { flex: none; padding: var(--s-3) var(--s-4) var(--s-4); }
+.send-btn { border-radius: var(--r-full); }
+/* its face, its name in the display serif, and its last line from the latest evening */
+.greeting { max-width: var(--bleed); width: 100%; margin: 0 auto; padding: 0 var(--s-4) var(--s-5);
+  display: grid; justify-items: center; gap: var(--s-3); text-align: center; }
+.greeting__face { margin-bottom: var(--s-1); }
+.greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title);
+  font-weight: var(--fw-medium); color: var(--text-primary); }
+
+/* ── drawer ──────────────────────────────────────────────────────────────── */
+/* Floating, it is fixed to the window's right edge like the sidebar sheet: parked off
+   screen while closed, it then adds nothing the shell could scroll to. */
+.drawer {
+  background: var(--surface-1); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  position: fixed; top: 0; right: 0; bottom: var(--rail-bottom, 0); width: var(--drawer-w);
+  max-width: calc(100vw - var(--rail-left, 0px));
+  z-index: var(--z-sheet); box-shadow: var(--e-overlay);
+  transition: transform var(--dur) var(--ease), visibility 0s linear 0s;
+}
+/* beside the conversation: in its own column (it opens at once, see .shell), no shadow,
+   its content at the panel's width inside */
+.shell[data-panel='beside'][data-drawer] .drawer { grid-column: 3; grid-row: 1; position: relative; inset: auto; width: auto;
+  max-width: none; box-shadow: none; z-index: auto; }
+.shell[data-panel='beside'] .drawer > * { width: calc(var(--drawer-w) - 1px); }
+.shell[data-panel='beside'][data-drawer='closed'] .drawer { border-left-width: 0;
+  transition: transform var(--dur) var(--ease-exit), visibility 0s linear var(--dur), border-left-width 0s linear var(--dur); }
+/* closed: slid away and hidden once it is off screen (nothing to tab into) */
+.shell[data-drawer='closed'] .drawer {
+  transform: translateX(100%); visibility: hidden; box-shadow: none;
+  transition: transform var(--dur) var(--ease), visibility 0s linear var(--dur), box-shadow 0s linear var(--dur);
+}
+
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed; top: 0; left: var(--rail-left, 0); bottom: var(--rail-bottom, 0); width: var(--sidebar-w);
+    z-index: var(--z-sheet); box-shadow: var(--e-overlay);
+    transition: transform var(--dur) var(--ease);
+  }
+  .shell[data-sidebar] { --shell-list: 0px; }
+  .shell[data-sidebar='closed'] .sidebar { transform: translateX(-100%); visibility: hidden; box-shadow: none;
+    transition: transform var(--dur) var(--ease), visibility 0s linear var(--dur); }
+}
+
+@media (max-width: 767px) {
+  .sidebar, .drawer { width: calc(100vw - var(--rail-left, 0px)); }
+  .transcript__inner { padding: var(--s-4) var(--s-3); }
+  .composer { padding: var(--s-2) var(--s-3) var(--s-1); }
+}
+
+/* floats over the content; its own box, so it never pushes anything */
+.jump {
+  display: inline-flex; align-items: center; gap: var(--s-1); margin: 0 auto var(--s-2);
+  height: var(--h-sm); padding: 0 var(--s-3); border-radius: var(--r-full); font-size: var(--t-md);
+  background: var(--surface-3); color: var(--text-primary);
+  box-shadow: var(--e-float); position: relative; left: 50%; transform: translateX(-50%);
+}
+.jump:hover { background: var(--surface-4); color: var(--accent) }
+.composer { position: relative; }
+/* ── side panel: background jobs ──────────────────────────────────────────── */
+.job { min-width: 0 }
+.jobs:focus { outline: none }
+.jobs:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm) }
+
+/* ── the side panel: tabs Model / Tools / Pages / Context ─────────────────────── */
+.shell[data-wide] { --drawer-w: clamp(420px, 45vw, 960px); }
+.view > .shell { flex: 1; min-height: 0; }
+.panel .jobs { flex: none; }
+/* Tools: the exceptions, then "All tools" opening the whole list under it */
+/* Context: the window as one bar split by block (2 px gaps), a legend, the notes */
+.ctx { display: grid; gap: var(--s-5); align-content: start; }
+.greeting__note { max-width: var(--bleed); width: 100%; margin: 0 auto; padding: 0 var(--s-4) var(--s-3); }
+
+
+.send-btn svg { animation: fade var(--dur-fast) var(--ease); }
+
+

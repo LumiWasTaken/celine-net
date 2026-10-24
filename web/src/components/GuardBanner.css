@@ -1,0 +1,28 @@
+/* Bastet's banner between the messages (GuardBanner.tsx): a quiet row in her reply's
+   column, past its face (Transcript.css .msg-quiet); a freeze that holds is the one with
+   a tint, so it is not missed */
+.guard-banner {
+  margin: var(--s-2) 0 var(--s-3) calc(var(--face-sm) + var(--s-3)); padding: var(--s-1) var(--s-2); border-radius: var(--r-md);
+  background: var(--surface-1); color: var(--text-secondary); font-size: var(--t-md); line-height: var(--lh-ui);
+}
+.guard-banner--frozen { background: var(--error-wash); }
+.guard-banner__row { display: flex; align-items: center; gap: var(--s-2); min-height: var(--row-sm); }
+.guard-banner__icon { flex: none; display: inline-flex; color: var(--text-muted); }
+.guard-banner__icon--warn, .guard-banner__icon--ask, .guard-banner__icon--patrol { color: var(--warn); }
+.guard-banner__icon--stop, .guard-banner__icon--freeze { color: var(--error); }
+.guard-banner__line { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.guard-banner__line > b, .guard-banner__said > b { color: var(--text-primary); font-weight: var(--fw-medium); }
+.guard-banner__actions { flex: none; display: inline-flex; align-items: center; gap: var(--s-1); }
+.guard-banner__quiet { display: inline-flex; align-items: center; gap: var(--s-1); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.guard-banner:is(:hover, :focus-within, [data-shown]) .guard-banner__quiet { opacity: 1; }
+.guard-banner__thread { padding: var(--s-1) 0 var(--s-1) calc(var(--icon-sm) + var(--s-2)); animation: fade var(--dur) var(--ease); }
+.guard-banner__said { margin: 0; padding: var(--s-0) 0; color: var(--text-secondary); line-height: var(--lh-body); }
+.guard-banner__reply { margin: var(--s-1) 0; animation: fade var(--dur) var(--ease); }
+
+/* on a phone: the whole width, and the buttons (the labels, Reply) under the text */
+@media (max-width: 767px) {
+  .guard-banner { margin-left: 0; }
+  .guard-banner__row { flex-wrap: wrap; }
+  .guard-banner__row > .guard-banner__line { flex-basis: calc(100% - var(--icon-sm) - var(--s-2)); }
+  .guard-banner__row > .guard-banner__actions { margin-left: calc(var(--icon-sm) + var(--s-2)); }
+}

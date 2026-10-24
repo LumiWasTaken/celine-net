@@ -1,0 +1,273 @@
+/* Design tokens. Every colour, size, weight, radius, shadow, layer and duration in the
+   app comes from here.
+   Dark only, one theme. Its greys take the hue of the Appearance accent (rose greys for
+   rose, cool greys for sky), each at a fixed OKLCH lightness and chroma, so contrast is
+   the same for every accent. Appearance scales two things: the chroma of the greys
+   (--tint, 1 is the design) and the lightness step from the canvas to each surface
+   (--contrast, 1 is the design). Contrast ratios in comments are measured against the
+   surface named at both 1, and hold for every accent.
+
+   Structure:
+     :root                         type, space, sizes, radii, motion, layers (no colour)
+     :root, [data-theme="rose"]    the colours of the one theme
+     [data-accent], [data-grain], [data-text-size], --tint, --contrast, --grain-opacity
+                                   Appearance, set on <html> by lib/appearance.ts (and
+                                   public/theme.js before the first paint) */
+
+/* Fonts are bundled from npm (@fontsource-variable), never fetched from a CDN:
+   the app runs offline. The browser downloads a file only when a glyph needs it. */
+@import '@fontsource-variable/geist/index.css';
+@import '@fontsource-variable/geist/wght-italic.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
+@import '@fontsource-variable/literata/index.css';
+@import '@fontsource-variable/lora/index.css';
+@import '@fontsource-variable/lora/wght-italic.css';
+/* the two story fonts beside Lora on /parts */
+
+:root {
+  color-scheme: dark;
+
+  /* ── families ── */
+  --font-sans:  'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;   /* the whole UI */
+  --font-mono:  'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-story: 'Lora Variable', Georgia, serif;     /* the writing surface of the large editor: soft, smooth, made for long reading */
+  --font-serif: 'Literata Variable', Georgia, serif; /* initials on portraits */
+
+  /* ── type: ONE scale, five steps, fluid from a 380 to a 1600 px viewport, times the
+     Appearance text size. UI text is --t-md everywhere; smaller is only for meta, larger
+     only for prose and titles. Unitless line heights. ── */
+  --text-scale: 1;
+  --t-xs:  calc(clamp(0.75rem,   0.731rem + 0.082vw, 0.8125rem) * var(--text-scale));  /* 12 to 13: meta only */
+  --t-md:  calc(clamp(0.9063rem, 0.887rem + 0.082vw, 0.9688rem) * var(--text-scale));  /* 14.5 to 15.5: every piece of UI text */
+  --t-lg:  calc(clamp(1rem,      0.981rem + 0.082vw, 1.0625rem) * var(--text-scale));  /* 16 to 17: prose, composer, section titles */
+  --t-xl:  calc(clamp(1.125rem,  1.086rem + 0.164vw, 1.25rem)   * var(--text-scale));  /* 18 to 20: place, page and dialog titles */
+  --t-2xl: calc(clamp(1.5rem,    1.383rem + 0.492vw, 1.875rem)  * var(--text-scale));  /* 24 to 30: display */
+
+  --lh-micro: 1.35;   /* meta, one line */
+  --lh-ui:    1.4;    /* one-line UI text: rows, buttons, fields */
+  --lh-body:  1.55;   /* wrapping text: bubbles, prose, descriptions */
+  --lh-title: 1.2;    /* xl and 2xl */
+  --lh-story: 1.7;    /* the writing surface, at --t-lg in --font-story */
+
+  --fw-regular: 450;  /* body */
+  --fw-medium:  580;  /* labels, names, rows, titles */
+  --fw-strong:  600;  /* place titles */
+  --fw-bold:    700;  /* strong text, a display h1 */
+
+  --tracking-title: -0.005em;
+
+  /* ── space: ONE scale, static. s-3 between a row's parts, s-4 page padding on a
+     phone, s-5 between groups. ── */
+  --s-0: 2px;  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 24px; --s-6: 32px; --s-7: 48px;
+  --pad-section: var(--s-4);   /* 24 px from 768 px */
+  --gutter: var(--s-4);        /* a page's side edge: 16 px on a phone, 24 px from 768 px */
+
+  /* ── sizes: one control height scale ── */
+  --h-sm: 32px;   /* in-row actions only: row trailing, message toolbar, a chip with an action, the list Toolbar */
+  --h-md: 40px;   /* buttons, fields, menu items, tabs */
+  --h-lg: 44px;   /* composer send, the Go to field, touch */
+  --row-sm: 32px; --row-md: 44px; --row-lg: 68px;   /* tree rows, one-line rows, two-line rows */
+  --row-column: 12rem; --row-cell: 7.5rem; --row-time: 4.75rem;   /* a wide row's columns: a terminal's conversation, a word, the time */
+  --row-indent: 40px;                                /* one step of a row under its parent */
+  --header-h: 56px;                                  /* every head */
+  --header-line: calc(var(--header-h) + 1px);        /* a head with its hairline under it */
+  --status-h: 24px;                                  /* one quiet status line */
+  --hit-min: 24px;                                   /* the floor for anything clickable */
+  --icon-xs: 12px; --icon-sm: 14px; --icon-md: 16px; --icon-lg: 20px; /* mirrored in ui/icons.ts */
+  --icon-stroke: 1.7;
+  --dot: 8px;                                        /* the state dot */
+  --face-sm: 28px; --face-md: 40px; --face-lg: 96px; /* in a message; in a row or head; on a card */
+
+  --rail-w:    clamp(88px, 56px + 2vw, 96px);
+  --sidebar-w: clamp(300px, 26vw - 50px, 420px);
+  --drawer-w:  clamp(380px, 220px + 10vw, 420px);
+  --measure:        clamp(36rem, 34rem + 8vw, 45rem);    /* the chat column */
+  --chat-col:       calc(var(--measure) + var(--s-6) + var(--s-3)); /* the chat column and its face: the box's width */
+  --measure-prose:  clamp(40rem, 38rem + 6vw, 47.5rem);  /* notes, documents, the large editor */
+  --measure-form:   35rem;                               /* settings forms */
+  --bleed:          55rem;                               /* a transcript with its tool rows */
+  --measure-wide:   75rem;                               /* a page of cards */
+  --card-min:       clamp(10rem, 4rem + 12vw, 20rem);    /* the narrowest card in a grid: two on a phone, larger on a wide screen */
+  --dialog-sm: 440px; --dialog-md: 560px; --dialog-lg: 720px;   /* Dialog and Sheet widths */
+
+  /* ── radii ── */
+  --r-sm: 6px;     /* chips, small marks */
+  --r-md: 10px;    /* every text button, fields, rows, cards, menu items */
+  --r-lg: 16px;    /* menus, sections, toasts, pictures */
+  --r-xl: 24px;    /* dialogs, sheets, the composer */
+  --r-full: 999px; /* circles and pills */
+
+  /* ── motion. Enter is slower than exit; hover gets the short one.
+     Only opacity and transform animate. Reduced motion: base.css. ── */
+  --dur-fast: 120ms;        /* hover, press, small exits */
+  --dur:      220ms;        /* small enters, large exits */
+  --dur-slow: 320ms;        /* large enters: dialog, sheet, Viewer, composer glide */
+  --dur-pulse: 1200ms;      /* one beat of a working mark */
+  --dur-highlight: 2400ms;  /* the highlight after a jump */
+  --dur-shimmer: 3s;        /* one sweep of a running line's shimmer */
+  --delay-hover: 150ms;     /* a hover that reveals something */
+  --ease:      cubic-bezier(0.32, 0.72, 0, 1);    /* enter and move */
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);   /* leave */
+  --ease-spring: linear(0, .077, .247, .443, .625, .775, .886, .961, 1.006, 1.03, 1.038, 1.037, 1.031, 1.024, 1.017, 1.01, 1);  /* transforms only */
+  --rise: 4px;              /* how far a thing travels as it appears */
+  --push: var(--s-5);       /* the distance of a phone push */
+  --tip-delay: 500ms;       /* hover before the first tip */
+  --tip-skip:  300ms;       /* within this after a tip went, the next one shows at once */
+
+  /* ── layers ── */
+  --z-sticky: 1; --z-popover: 5; --z-sheet: 11; --z-rail: 12;
+  --z-dialog: 30; --z-toast: 35; --z-menu: 40; --z-block: 100;
+}
+
+/* ── the colours of the one theme: every neutral on the accent's OKLCH hue ── */
+:root, :root[data-theme='rose'] {
+  /* surfaces: elevation is lightness, each step 3 to 4 points of OKLCH lightness */
+  --bg-canvas:     oklch(from var(--accent) 0.161 calc(0.012 * var(--tint)) h);   /* the canvas, painted with --grain; #120B0D for rose, the theme colour of index.html and the manifest */
+  /* the grain on the canvas: grey noise (--grain-noise, one per Appearance pattern) under a
+     veil of the canvas, so --grain-opacity is how much of the noise shows. Painted as
+     `background: var(--grain) var(--bg-canvas)`. */
+  --grain: linear-gradient(var(--grain-veil), var(--grain-veil)), var(--grain-noise);
+  --grain-veil: color-mix(in srgb, var(--bg-canvas) calc((1 - var(--grain-opacity)) * 100%), transparent);
+  --grain-noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --surface-1:     oklch(from var(--accent) calc(0.161 + 0.034 * var(--contrast)) calc(0.015 * var(--tint)) h);   /* place sidebar, sections and cards on the canvas */
+  --surface-2:     oklch(from var(--accent) calc(0.161 + 0.075 * var(--contrast)) calc(0.016 * var(--tint)) h);   /* fields, dialogs, menus, cards in a section */
+  --surface-3:     oklch(from var(--accent) calc(0.161 + 0.114 * var(--contrast)) calc(0.018 * var(--tint)) h);   /* hover, secondary buttons */
+  --surface-4:     oklch(from var(--accent) calc(0.161 + 0.157 * var(--contrast)) calc(0.021 * var(--tint)) h);   /* hover on something already on surface-3; toasts */
+  --surface-sunk:  oklch(from var(--accent) calc(0.161 - 0.023 * var(--contrast)) calc(0.006 * var(--tint)) h);   /* code, terminals, wells */
+  --surface-scrim: oklch(from var(--accent) 0.110 calc(0.007 * var(--tint)) h / 0.62);   /* behind dialogs and sheets */
+  --shade:         rgb(0 0 0 / 0.2);    /* a darker spot on a tinted fill: a quote in your bubble, a chip's x */
+  --rail-bg:        oklch(from var(--accent) calc(0.161 + 0.014 * var(--contrast)) calc(0.013 * var(--tint)) h);
+  --rail-ink:       oklch(from var(--accent) 0.948 calc(0.012 * var(--tint)) h / 0.62);   /* 6.7:1 on the rail */
+  --rail-hover:     oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.04);
+  --rail-active:    var(--accent-wash);
+  --rail-active-ink: var(--accent);
+
+  --border:        oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.09);   /* hairlines only; most containers have none */
+  --border-strong: oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.36);   /* field and control edges, 3:1 on every surface */
+  --ring:          oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.08);   /* the 1 px edge of everything that floats */
+  --scroll-thumb:  oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.16);
+
+  /* text */
+  --text-primary:   oklch(from var(--accent) 0.951 calc(0.009 * var(--tint)) h);  /* 16.8:1 on canvas, 11.1:1 on surface-4 */
+  --text-secondary: oklch(from var(--accent) 0.820 calc(0.014 * var(--tint)) h);  /* 11.1:1 on canvas, 7.4:1 on surface-4 */
+  --text-muted:     oklch(from var(--accent) 0.700 calc(0.018 * var(--tint)) h);  /*  7.2:1 on canvas, 4.78:1 on surface-4 (the floor) */
+  --text-on-accent: oklch(from var(--accent) 0.215 0.048 h);  /*  8.3:1 or more on the accent fill */
+
+  /* accent: one hue for state and action, never decoration. Appearance changes
+     --accent; everything below follows it. */
+  --accent:             var(--char-rose);
+  --accent-fill:        var(--accent);
+  --accent-fill-hover:  color-mix(in oklch, var(--accent) 88%, black);
+  --accent-dim:         color-mix(in oklch, var(--accent) 80%, var(--bg-canvas));
+  --accent-wash:        color-mix(in oklch, var(--accent) 12%, transparent);   /* selected row, focus halo */
+  --accent-wash-strong: color-mix(in oklch, var(--accent) 22%, transparent);   /* hover on something washed */
+  --selected:           var(--accent-wash);
+  --running:      var(--accent);  /* it is at work: its colour, pulsing */
+  --running-wash: var(--accent-wash);
+
+  /* the chat, and the writing surface of the large editor */
+  --narration: var(--text-secondary);   /* the long text on its writing surface */
+  --bubble-mine:       oklch(from var(--accent) 0.322 0.049 h);
+  --bubble-mine-text:  oklch(from var(--accent) 0.957 0.010 h);
+  --bubble-mine-inset: var(--shade);    /* a quote or chip inside your bubble */
+  --bubble-theirs:     oklch(from var(--accent) calc(0.161 + 0.064 * var(--contrast)) calc(0.011 * var(--tint)) h);
+  --bubble-meta:       oklch(from var(--accent) 0.775 calc(0.032 * var(--tint)) h);
+  --mark-bg:           #6E5A1A;         /* a search hit in text; 6.1:1 with --mark-text */
+  --mark-text:         #FFF4DC;
+  --qr-bg:             #FFFFFF;         /* a QR code needs its white */
+  --opaque:            #000;            /* the solid stop of a mask */
+
+  /* its colour (Settings, its page), also the Appearance accent choices. All near
+     OKLCH L 80. */
+  --char-rose: #F29DB9;  --char-peach: #F5B49C;  --char-sage: #9BD4A8;
+  --char-teal: #8ED1CB;  --char-sky: #93B4EC;    --char-violet: #DCCBF2;
+  --char-miku: #3FD1D9;
+
+  /* state: never the only carrier of meaning. Danger is tonal: a wash with error text. */
+  --error:        #ED7665;  /* 5.9:1 on surface-2; far from the accent */
+  --error-wash:   rgb(237 118 101 / 0.16);
+  --error-strong: #F58A7A;  /* danger hover text, 4.9:1 on the strong wash */
+  --error-wash-strong: rgb(237 118 101 / 0.22);   /* a danger button's hover */
+  --success:      #9BD4A8;  --success-wash: rgb(155 212 168 / 0.12);
+  --warn:         #F5C076;  --warn-wash:    rgb(245 192 118 / 0.10);
+  /* a sentence that changed (History): its own gold, apart from --warn */
+  --change:       #D8BD51;  --change-wash:  rgb(216 189 81 / 0.10);
+
+
+  /* terminal: the 16 ansi colours (xterm reads them) */
+  --ansi-black:   #1F1A1E;        --ansi-bright-black:   #8C7D80;
+  --ansi-red:     var(--error);   --ansi-bright-red:     #F5A597;
+  --ansi-green:   #9BD4A8;        --ansi-bright-green:   #B6E3C0;
+  --ansi-yellow:  #F5C076;        --ansi-bright-yellow:  #F8D7A6;
+  --ansi-blue:    #93B4EC;        --ansi-bright-blue:    #B0C8F2;
+  --ansi-magenta: #F29DB9;        --ansi-bright-magenta: #F7B9CD;
+  --ansi-cyan:    #8ED1CB;        --ansi-bright-cyan:    #AEE0DB;
+  --ansi-white:   #CDC1C0;        --ansi-bright-white:   #F4EDEA;
+
+  /* initials of chat contacts: bg / fg pairs, all 4.5:1 or more */
+  --av-1-bg: #54342A; --av-1-fg: #F6CDBB;
+  --av-2-bg: #4E3D1E; --av-2-fg: #F3D9A4;
+  --av-3-bg: #37432A; --av-3-fg: #D3E4B4;
+  --av-4-bg: #24433C; --av-4-fg: #B8E1D4;
+  --av-5-bg: #2C3752; --av-5-fg: #C5D2F0;
+  --av-6-bg: #3F3052; --av-6-fg: #DCCBF2;
+  --av-7-bg: #52283A; --av-7-fg: #F5C6D7;
+  --av-8-bg: #45382D; --av-8-fg: #E6D4C2;
+
+  /* elevation: only floating things cast a shadow, and every shadow carries the ring */
+  --e-float:   0 0 0 1px var(--ring), 0 8px 28px rgb(0 0 0 / 0.45);   /* menus, popovers, face cards, tips */
+  --e-overlay: 0 0 0 1px var(--ring), 0 18px 48px rgb(0 0 0 / 0.55);  /* dialogs, sheets, drawers, toasts */
+  --focus-ring: 0 0 0 3px var(--accent-wash);
+  --focus-outline: 2px solid var(--accent);
+}
+
+/* ── Appearance: lib/appearance.ts sets these on <html> ── */
+:root { --tint: 1; --contrast: 1; --grain-opacity: 0.04; }
+:root[data-grain='coarse'] { --grain-noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.35' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+:root[data-grain='paper']  { --grain-noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 300 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+:root[data-grain='none']   { --grain: none; }
+:root[data-accent='peach']  { --accent: var(--char-peach); }
+:root[data-accent='sage']   { --accent: var(--char-sage); }
+:root[data-accent='teal']   { --accent: var(--char-teal); }
+:root[data-accent='sky']    { --accent: var(--char-sky); }
+:root[data-accent='violet'] { --accent: var(--char-violet); }
+:root[data-accent='miku']   { --accent: var(--char-miku); }
+:root[data-text-size='sm'] { --text-scale: 0.9; }
+:root[data-text-size='lg'] { --text-scale: 1.1; }
+:root[data-text-size='xl'] { --text-scale: 1.25; }
+
+@media (min-width: 768px) { :root { --pad-section: var(--s-5); --gutter: var(--s-5); } }
+
+/* Wide screens (1600 to 2560 px): type, measures and control sizes grow about 18 %
+   more, so nothing is small and far away on a 2560 px monitor. */
+@media (min-width: 1600px) {
+  :root {
+    --t-xs:  calc(clamp(0.8125rem, 0.5594rem + 0.253vw, 0.9645rem) * var(--text-scale));
+    --t-md:  calc(clamp(0.9688rem, 0.6668rem + 0.302vw, 1.1500rem) * var(--text-scale));
+    --t-lg:  calc(clamp(1.0625rem, 0.7313rem + 0.331vw, 1.2613rem) * var(--text-scale));
+    --t-xl:  calc(clamp(1.2500rem, 0.8600rem + 0.390vw, 1.4838rem) * var(--text-scale));
+    --t-2xl: calc(clamp(1.8750rem, 1.2917rem + 0.583vw, 2.2250rem) * var(--text-scale));
+    --measure:       clamp(720px, 280px + 28vw, 1000px);
+    --measure-prose: clamp(760px, 517px + 15.2vw, 851px);
+    --measure-form:  clamp(560px, 240px + 20vw, 752px);
+    --bleed:         clamp(880px, 420px + 28.75vw, 1156px);
+    --measure-wide:  clamp(75rem, 40rem + 30vw, 88rem);
+    --row-cell:      8.5rem;
+    --h-sm: clamp(32px, 18px + 0.9vw, 36px);
+    --h-md: clamp(40px, 22px + 1.12vw, 45px);
+    --h-lg: clamp(44px, 24px + 1.23vw, 49px);
+    --row-sm: clamp(32px, 18px + 0.9vw, 36px);
+    --row-md: clamp(44px, 24px + 1.23vw, 49px);
+    --row-lg: clamp(68px, 39px + 1.8vw, 76px);
+    --header-h: clamp(56px, 31px + 1.56vw, 63px);
+  }
+}
+
+/* Touch screens: every target 44 px; a mouse keeps the desktop density. */
+@media (pointer: coarse) {
+  :root { --h-sm: var(--h-lg); --h-md: var(--h-lg); --row-sm: var(--row-md); }
+}
+
+/* Breakpoints (CSS variables cannot be used in @media, so they are listed here):
+   767 phone (one pane, the bottom bar), 1023 laptop, 1279 desktop, 1600 wide. */

@@ -1,0 +1,29 @@
+/* A batch (Batch.tsx): its pictures (each a PictureBlock) or its tracks, in the batch's
+   order, one gap; a track's colour is its item's state, its words what the server says. */
+.batch { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: flex-start; }
+.batch--music { display: grid; grid-template-columns: minmax(0, 30rem); }
+
+.batch__tile {
+  position: relative; display: flex; align-items: center; justify-content: center; min-height: var(--row-lg);
+  border-radius: var(--r-md); background: var(--surface-1); overflow: hidden;
+  transition: background var(--dur) var(--ease);
+}
+.batch__tile--running { background: var(--running-wash); }
+.batch__tile--failed { background: var(--error-wash); }
+.batch__tile--done { background: none; }
+.batch__tile--stopped { opacity: 0.6; }
+
+.batch__words {
+  padding: var(--s-2) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-micro); text-align: center;
+  color: var(--text-muted); overflow-wrap: anywhere;
+}
+.batch__tile--running .batch__words { color: var(--running); animation: pulse var(--dur-pulse) linear infinite; }
+.batch__tile--failed .batch__words { color: var(--error); }
+
+.batch__track { display: grid; gap: var(--s-1); width: 100%; padding: var(--s-2) var(--s-3); background: var(--surface-1); }
+.batch__title { font-size: var(--t-md); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch__track audio { width: 100%; height: var(--h-md); }
+
+@media (prefers-reduced-motion: reduce) {
+  .batch__tile--running .batch__words { animation: none; }
+}

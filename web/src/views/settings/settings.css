@@ -1,0 +1,257 @@
+/* Settings: the left list, the page frame, and the pieces of its pages. Tokens only.
+   What a component outside Settings also shows lives in that component's own file. */
+
+/* ── frame: list on the left, page on the right ─────────────────────────── */
+.settings { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+.settings__nav {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background: var(--surface-1); border-right: 1px solid var(--border);
+}
+.settings__nav-error { padding: var(--s-2) var(--s-4) 0; }
+.settings__list { padding: var(--s-2) 0; }
+.settings__filter { padding: var(--s-1) 0; }
+.settings__icon { width: var(--icon-lg); display: inline-flex; justify-content: flex-start; flex: none; color: var(--text-muted); }
+.settings__list [aria-current='true'] .settings__icon, .settings__list [aria-current='true'] .settings__icon > * { color: var(--accent); }
+.settings__off { font-size: var(--t-xs); color: var(--text-muted); }
+
+.settings__page { container: settings-page / inline-size; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--grain) var(--bg-canvas); }
+
+/* one centred column of card sections, roomy, each card drawn by its hairline; the page
+   title stays at the pane's edge on every page, as in every place, so it never jumps */
+.settings__content .settings__col { max-width: calc(var(--measure-form) + 2 * var(--s-7)); gap: var(--s-5); padding-top: var(--s-6); }
+.settings__content .settings__col--wide { max-width: calc(var(--measure-wide) + 2 * var(--s-5)); }
+.settings__col section { padding: var(--s-6); gap: var(--s-5); }
+
+
+/* ── page pieces ─────────────────────────────────────────────────────────── */
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); align-content: start; }
+.stack--loose { gap: var(--s-6); }
+.config-line { display: grid; gap: var(--s-1); }
+.rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-0); }
+/* row text lines up with the section heading; the hover background reaches past it */
+.rows { margin-inline: calc(-1 * var(--s-3)); }
+/* boxed lists and the tool list likewise: their first column lines up with the heading */
+.people__table { margin-inline: calc(-1 * var(--s-4)); }
+.server-list { margin-inline: calc(-1 * var(--s-3)); }
+.src-state { display: flex; align-items: flex-start; gap: var(--s-4); flex-wrap: wrap; }
+.src-state__text { flex: 1; min-width: 240px; margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); }
+.src-state__action { flex: none; }
+.src-line { margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); }
+.src-line a { color: var(--accent); }
+
+.facts { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-2) var(--s-5);
+  font-size: var(--t-md); line-height: var(--lh-body); }
+.facts dt { color: var(--text-muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.plain-list { margin: var(--s-2) 0 0; padding-left: var(--s-5); font-size: var(--t-md); color: var(--text-secondary); }
+
+.qr { width: 196px; height: 196px; padding: var(--s-4); margin-top: var(--s-3); background: var(--qr-bg); border-radius: var(--r-md); }
+.qr svg { width: 100%; height: 100%; display: block; }
+
+/* the generic settings form: one column */
+.schema-form { display: grid; gap: var(--s-4); }
+.schema-form__control { display: flex; align-items: center; gap: var(--s-2); }
+.schema-form__unit { font-size: var(--t-md); color: var(--text-muted); }
+
+/* a task: one quiet line where it was started */
+.task { display: grid; gap: var(--s-1); }
+.task__line { display: flex; align-items: center; gap: var(--s-2); min-height: var(--status-h); font-size: var(--t-md); color: var(--text-secondary); }
+.task__line > :is(button, a) { margin-block: calc((var(--status-h) - var(--h-sm)) / 2); } /* a button keeps the line's height */
+.task__text { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: var(--lh-body); }
+.task__count { flex: none; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.task__icon { flex: none; }
+.task--done .task__icon { color: var(--success); }
+.task--failed .task__icon, .task--failed .task__text { color: var(--warn); }
+.task--running .task__text { color: var(--running); }
+
+/* People: rows without headers; each row's "..." shows on hover (space kept) */
+/* the search field, then one line for the sources and, once two are picked, the action */
+.people__bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); }
+.people__line { display: flex; align-items: center; gap: var(--s-3); min-height: var(--h-md); min-width: 0; }
+.people__line > :first-child:not(.btn) { flex: 0 1 auto; min-width: 0; } /* the source tabs scroll inside themselves when narrow */
+.people__line > .btn { flex: none; margin-left: auto; }
+/* the rows follow the page's scroll; a narrow section puts the account under the name */
+.people { container: people / inline-size; }
+/* the list stops widening past what a row needs, so a wide screen shows no empty middle */
+.settings__content .settings__col--wide:has(> .people) { max-width: calc(64rem + 2 * var(--s-5)); }
+/* one person: its line, and a line per account when it is a same person (LINE in People.tsx) */
+.people__person { border-bottom: 1px solid var(--border); }
+.people__person.is-picked { background: var(--selected); }
+/* name and account side by side at the left, what they are to you takes the rest, the date
+   and "..." at the end; the name and account columns stop growing on a wide screen */
+.people__row { height: var(--row-md); display: grid;
+  grid-template-columns: var(--icon-lg) minmax(10rem, 20rem) minmax(9rem, 14rem) minmax(0, 1fr) 6rem var(--h-sm);
+  align-items: center; gap: var(--s-4); padding: 0 var(--s-4); font-size: var(--t-md); }
+.people__row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the box's cell is the row's height and reaches into the gaps: the whole of it toggles */
+.people__pick { align-self: stretch; display: flex; align-items: center; justify-content: center;
+  margin-inline: calc(-1 * var(--s-2)); padding-inline: var(--s-2); cursor: pointer; }
+.people__source { display: flex; align-items: center; gap: var(--s-2); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.people__source > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.people__when { text-align: right; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.people__name { align-self: stretch; display: flex; align-items: center; gap: var(--s-3); }
+.people__indent { flex: none; width: var(--face-sm); } /* the face's width, so names line up */
+/* the name is its own rename button, as tall as the row */
+.people__rename { min-width: 0; flex: 0 1 auto; justify-content: flex-start; color: var(--text-primary); overflow: hidden; }
+.people__row--account .people__rename { font-weight: var(--fw-regular); }
+.people__aka { min-width: 0; flex: 0 4 auto; overflow: hidden; text-overflow: ellipsis; font-size: var(--t-xs); color: var(--text-muted); }
+.people__about-cell { align-self: stretch; display: flex; align-items: center; min-width: 0; }
+.people__about { max-width: 100%; min-width: 0; justify-content: flex-start; overflow: hidden; }
+.people__more { display: flex; justify-content: flex-end; overflow: visible; }
+@media (hover: hover) {
+  .people__more { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+  .people__row:hover .people__more, .people__row:focus-within .people__more { opacity: 1; }
+}
+.people__about-form { display: flex; flex-direction: column; gap: var(--s-4); }
+@container people (max-width: 40rem) {
+  /* the name line is a full target (44 px on touch); the box's cell spans both lines */
+  .people__row { height: auto; min-height: var(--row-lg); padding-block: 0 var(--s-2); row-gap: 0;
+    grid-template-columns: var(--icon-lg) minmax(0, 1fr) auto var(--h-sm); grid-template-areas: 'pick name when more' 'pick source source more'; }
+  .people__row > :first-child { grid-area: pick; }
+  .people__name { grid-area: name; min-height: var(--h-sm); }
+  .people__source { grid-area: source; padding-left: calc(var(--face-sm) + var(--s-3)); font-size: var(--t-xs); }
+  .people__about-cell { display: none; } /* About: in the row's "..." */
+  .people__when { grid-area: when; }
+  .people__more { grid-area: more; }
+}
+
+/* lists inside a box: gaps, dialog pickers, channels */
+.boxed-list { display: flex; flex-direction: column; min-height: 0; background: var(--surface-1); border-radius: var(--r-md); overflow: hidden; }
+/* as tall as its rows, at most 360 px or half the window, then it scrolls (virtual) */
+.boxed-list--dialog { height: min(360px, 50vh, calc(var(--rows, 8) * var(--row-md))); }
+.pick-row { height: 100%; display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-3); cursor: pointer; font-size: var(--t-md); }
+.pick-row:hover { background: var(--surface-3); }
+.pick-row__name { flex: 1; min-width: 0; display: grid; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row__meta { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Discord servers: one row each; the channels pop-up lists a server's channels by category */
+.server-list { display: flex; flex-direction: column; height: min(70vh, calc(var(--rows) * var(--row-md) + 2px)); min-height: calc(2 * var(--row-md));
+  background: var(--surface-1); border-radius: var(--r-lg); overflow: hidden; }
+.server { border-bottom: 1px solid var(--border); }
+.server__row { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-md); padding: var(--s-1) var(--s-3); }
+.server__spacer { width: 36px; flex: none; } /* the switch's width, so names line up */
+.server__name { flex: 1; min-width: 0; text-align: left; font-weight: var(--fw-medium); color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.server__name--on { color: var(--text-primary); }
+.server__meta { flex: none; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.server__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); padding: 0 var(--s-4) var(--s-3) calc(var(--s-3) + 36px + var(--s-3)); }
+.channels__cat { font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); }
+.channels__row { padding-left: calc(var(--s-3) + var(--s-5)); }
+
+/* Models: each role's ordered list of models (a chain), then the providers */
+/* a chain sits in its section's padding by a row's inset, so its rows' hover reaches past
+   the heading's edge while their text lines up with it; one hairline between chains */
+.chain { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3);
+  margin-inline: calc(-1 * var(--s-3)); padding-inline: var(--s-3); }
+.chain + .chain { padding-top: var(--s-5);
+  background: linear-gradient(var(--border), var(--border)) var(--s-3) 0 / calc(100% - 2 * var(--s-3)) 1px no-repeat; }
+.chain__empty { margin: 0; font-size: var(--t-md); color: var(--text-muted); }
+.chain__problem { color: var(--warn); }
+/* a provider's reachability, a dot and a word, in a fixed column so the dots of every row line up */
+.reach { display: inline-flex; align-items: center; gap: var(--s-2); width: var(--row-cell); font-size: var(--t-xs); color: var(--text-muted); }
+
+/* Images and music (Presets.tsx): a card per preset, the ones it uses numbered in its
+   order; the open one shows its editor beside its form under the cards; the newest
+   batches below, a card each */
+.batches__one { gap: var(--s-3); padding: var(--s-4); background: var(--surface-2); } /* the kit card's padding (card__press) */
+.preset__about { font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.preset-open { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-6); padding: var(--s-5);
+  border-radius: var(--r-md); background: var(--surface-2); animation: fade var(--dur) var(--ease); }
+@media (max-width: 1023px) { .preset-open { grid-template-columns: minmax(0, 1fr); } }
+.preset-open__edit { display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
+.preset-open__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.generate { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-content: start; }
+.generate__numbers { display: flex; flex-wrap: wrap; gap: var(--s-4); }
+.generate__go { display: flex; justify-content: flex-end; padding-top: var(--s-4); border-top: 1px solid var(--border); }
+.generate__sources { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s-2); }
+.batches { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); margin-inline: calc(-1 * var(--s-3)); padding-inline: var(--s-3); } /* the inset of .chain */
+.presets, .batches__grid { --card-min: 15rem; }
+.batches__grid { align-items: start; } /* a batch card is as tall as its pictures, not its row */
+.batches__head { display: flex; align-items: center; gap: var(--s-3); min-height: var(--h-sm); font-size: var(--t-md); }
+.batches__time { flex: none; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+a.batches__time { color: var(--accent); text-decoration: none; }
+a.batches__time:hover { text-decoration: underline; }
+.batches__what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.batches__count { flex: none; font-size: var(--t-xs); font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.batches__count--running { color: var(--running); }
+.key-input { max-width: 320px; }
+.key-form { display: flex; align-items: flex-end; gap: var(--s-2); flex-wrap: wrap; }
+.key-form > .field-group { flex: 1; min-width: 12rem; }
+
+/* ── widths ──────────────────────────────────────────────────────────────── */
+/* below 1024 px the list and the page take turns: one column, the page's head leads back */
+@media (max-width: 1023px) {
+  .settings { grid-template-columns: minmax(0, 1fr); }
+  .settings[data-pane='list'] .settings__page { display: none; }
+  .settings[data-pane='page'] .settings__nav { display: none; }
+  .settings__nav { border-right: 0; }
+}
+@media (max-width: 767px) {
+  .server__meta { display: none; }
+  .server__body { padding-left: var(--s-4); }
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 0 var(--s-5); }
+  .facts dd { margin-bottom: var(--s-2); }
+}
+
+/* a narrow page (a phone, or a tablet beside the settings list): the 16 px gutter, the
+   title over the cards' edge, slimmer cards; people's rows reach the card's edge */
+@container settings-page (max-width: 40rem) {
+  .settings__content .settings__col { padding-inline: var(--s-4); }
+  .settings__col section { padding: var(--s-4) var(--s-3); }
+
+  .people__table { margin-inline: calc(-1 * var(--s-3)); }
+  .people__row { padding-inline: var(--s-3); }
+}
+
+/* A QR code to scan (Discord login, WhatsApp pairing) */
+.qr img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+
+/* Security: passkeys and recovery codes */
+.passkey-row { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-md);
+  padding: var(--s-2) 0; border-bottom: 1px solid var(--border); }
+.passkey-row__text { flex: 1; min-width: 0; display: grid; gap: var(--s-0); }
+.passkey-row__name { font-size: var(--t-md); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.passkey-row__meta { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.recovery { display: grid; gap: var(--s-3); }
+.recovery__codes { margin: 0; padding: var(--s-3) var(--s-4) var(--s-3) var(--s-7); background: var(--surface-2);
+  border-radius: var(--r-md); font: var(--t-md) / 1.8 var(--font-mono); }
+
+/* Security: the named tokens */
+.token-make { align-items: flex-end; }
+.token-once { padding-left: var(--s-4); overflow-wrap: anywhere; }
+
+/* ── its page (Her.tsx): its picture whole in the portrait's 4:5 (a click shows it big), its
+   "..." over its corner; without one its initial on its colour in the same box ── */
+.her-pic { position: relative; width: 100%; max-width: calc(min(40dvh, 22rem) * 4 / 5); margin-inline: auto; }
+.her-pic__frame { display: grid; place-items: center; aspect-ratio: 4 / 5; border-radius: var(--r-lg); overflow: hidden; cursor: zoom-in; }
+.her-pic__frame:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.her-pic__img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.her-pic__more { position: absolute; top: var(--s-2); right: var(--s-2); }
+/* a long text on its surface, its first lines whole, the last ending in "..." (the space
+   above and below is border, so no clipped line shows in it): a click opens it in the
+   large editor */
+.her-text { display: grid; gap: var(--s-1); }
+.her-label { font-size: var(--t-xs); line-height: var(--lh-micro); font-weight: var(--fw-medium); color: var(--text-muted); }
+.her-preview {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 12; overflow: hidden; padding: 0 var(--s-4); border-block: var(--s-3) solid transparent; border-radius: var(--r-md);
+  background: var(--surface-1); color: var(--text-primary); text-decoration: none; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-size: var(--t-lg); line-height: var(--lh-body);
+  transition: background var(--dur-fast) var(--ease);
+}
+.her-preview:hover { background: var(--surface-2); }
+.her-preview:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.her-preview--mono { -webkit-line-clamp: 6; font-family: var(--font-mono); font-size: var(--t-md); }
+.her-preview__empty { color: var(--text-muted); }
+
+/* ── Features: a row is its switch and, with a setup form, Edit; the form opens under it.
+   A greyed switch (blocked, or the Later card's) says why on a second line; the click lands
+   on the row, which shows the sentence as a toast ── */
+.feature-about { display: block; font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.feature-line { display: flex; align-items: center; gap: var(--s-2); }
+.feature-line > .feature-row { flex: 1; min-width: 0; }
+.feature-row--off .switch-row { pointer-events: none; }
+.feature-setup { display: grid; gap: var(--s-4); padding: var(--s-3) 0 var(--s-4) var(--s-6); }
+.settings__caps { display: flex; align-items: center; gap: var(--s-4); }

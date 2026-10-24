@@ -1,0 +1,5 @@
+/* under a picture Celine made: its prompt, whole */
+.photo-viewer__prompt {
+  margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-primary);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}

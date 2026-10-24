@@ -1,0 +1,500 @@
+{
+ "prompt": {
+  "class_type": "PrimitiveStringMultiline",
+  "inputs": {
+   "value": "A weathered brass compass resting on a folded nautical chart, soft window light from the left, shallow depth of field, fine paper texture."
+  },
+  "_meta": {
+   "title": "Prompt"
+  }
+ },
+ "negative": {
+  "class_type": "PrimitiveStringMultiline",
+  "inputs": {
+   "value": ""
+  },
+  "_meta": {
+   "title": "Negative prompt (only with cfg above 1)"
+  }
+ },
+ "image": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "qwen21_blank.png"
+  },
+  "_meta": {
+   "title": "Image in (reference for edit, or start image)"
+  }
+ },
+ "use_reference": {
+  "class_type": "PrimitiveBoolean",
+  "inputs": {
+   "value": false
+  },
+  "_meta": {
+   "title": "Edit: use the image as reference"
+  }
+ },
+ "from_image": {
+  "class_type": "PrimitiveBoolean",
+  "inputs": {
+   "value": false
+  },
+  "_meta": {
+   "title": "Image to image: start from the image"
+  }
+ },
+ "denoise": {
+  "class_type": "PrimitiveFloat",
+  "inputs": {
+   "value": 1.0
+  },
+  "_meta": {
+   "title": "Denoise (1.0 = from noise; 0.5 to 0.8 for image to image)"
+  }
+ },
+ "turbo": {
+  "class_type": "PrimitiveBoolean",
+  "inputs": {
+   "value": false
+  },
+  "_meta": {
+   "title": "Turbo (8 steps, fixed schedule) instead of raw"
+  }
+ },
+ "steps": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 40
+  },
+  "_meta": {
+   "title": "Steps (raw only; turbo ignores)"
+  }
+ },
+ "anime": {
+  "class_type": "PrimitiveFloat",
+  "inputs": {
+   "value": 0.0
+  },
+  "_meta": {
+   "title": "Anime LoRA strength (0 = off, 1.0 = on; raw only)"
+  }
+ },
+ "width": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 1024
+  },
+  "_meta": {
+   "title": "Width (text to image)"
+  }
+ },
+ "height": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 1024
+  },
+  "_meta": {
+   "title": "Height (text to image)"
+  }
+ },
+ "seed": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 0
+  },
+  "_meta": {
+   "title": "Seed"
+  }
+ },
+ "unet_raw": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "qwen_image_2.1_bf16.safetensors",
+   "weight_dtype": "default"
+  },
+  "_meta": {
+   "title": "Raw model"
+  }
+ },
+ "unet_turbo": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "qwen2.1/qwen_image_2.1_turbo_bf16.safetensors",
+   "weight_dtype": "default"
+  },
+  "_meta": {
+   "title": "Turbo model"
+  }
+ },
+ "model_switch": {
+  "class_type": "ComfySwitchNode",
+  "inputs": {
+   "switch": [
+    "turbo",
+    0
+   ],
+   "on_false": [
+    "unet_raw",
+    0
+   ],
+   "on_true": [
+    "unet_turbo",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "raw / turbo"
+  }
+ },
+ "lora": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "model_switch",
+    0
+   ],
+   "lora_name": "qwen2.1/anime-style.safetensors",
+   "strength_model": [
+    "anime",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Anime LoRA"
+  }
+ },
+ "cache": {
+  "class_type": "QwenImage21Cache",
+  "inputs": {
+   "model": [
+    "lora",
+    0
+   ],
+   "device": "auto",
+   "dtype": "default"
+  },
+  "_meta": {
+   "title": "KV cache"
+  }
+ },
+ "clip": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen2.1/qwen3-vl-8b_bf16.safetensors",
+   "type": "qwen_image",
+   "device": "default"
+  },
+  "_meta": {
+   "title": "Text encoder"
+  }
+ },
+ "vae": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+  },
+  "_meta": {
+   "title": "VAE"
+  }
+ },
+ "encode_text": {
+  "class_type": "TextEncodeQwenImage21",
+  "inputs": {
+   "clip": [
+    "clip",
+    0
+   ],
+   "prompt": [
+    "prompt",
+    0
+   ],
+   "negative_prompt": [
+    "negative",
+    0
+   ],
+   "resolution": 1024
+  },
+  "_meta": {
+   "title": "Encode (no reference)"
+  }
+ },
+ "encode_ref": {
+  "class_type": "TextEncodeQwenImage21",
+  "inputs": {
+   "clip": [
+    "clip",
+    0
+   ],
+   "prompt": [
+    "prompt",
+    0
+   ],
+   "negative_prompt": [
+    "negative",
+    0
+   ],
+   "resolution": 1024,
+   "images.image_1": [
+    "image",
+    0
+   ],
+   "vae": [
+    "vae",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Encode (with reference)"
+  }
+ },
+ "pos_switch": {
+  "class_type": "ComfySwitchNode",
+  "inputs": {
+   "switch": [
+    "use_reference",
+    0
+   ],
+   "on_false": [
+    "encode_text",
+    0
+   ],
+   "on_true": [
+    "encode_ref",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "positive"
+  }
+ },
+ "neg_switch": {
+  "class_type": "ComfySwitchNode",
+  "inputs": {
+   "switch": [
+    "use_reference",
+    0
+   ],
+   "on_false": [
+    "encode_text",
+    1
+   ],
+   "on_true": [
+    "encode_ref",
+    1
+   ]
+  },
+  "_meta": {
+   "title": "negative"
+  }
+ },
+ "size": {
+  "class_type": "EmptyLatentImage",
+  "inputs": {
+   "width": [
+    "width",
+    0
+   ],
+   "height": [
+    "height",
+    0
+   ],
+   "batch_size": 1
+  },
+  "_meta": {
+   "title": "Empty latent"
+  }
+ },
+ "encode_image": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "image",
+    0
+   ],
+   "vae": [
+    "vae",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Image latent"
+  }
+ },
+ "latent_edit": {
+  "class_type": "ComfySwitchNode",
+  "inputs": {
+   "switch": [
+    "use_reference",
+    0
+   ],
+   "on_false": [
+    "size",
+    0
+   ],
+   "on_true": [
+    "encode_ref",
+    2
+   ]
+  },
+  "_meta": {
+   "title": "size: own / reference's"
+  }
+ },
+ "latent_switch": {
+  "class_type": "ComfySwitchNode",
+  "inputs": {
+   "switch": [
+    "from_image",
+    0
+   ],
+   "on_false": [
+    "latent_edit",
+    0
+   ],
+   "on_true": [
+    "encode_image",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "start: noise / image"
+  }
+ },
+ "sched_raw": {
+  "class_type": "BasicScheduler",
+  "inputs": {
+   "model": [
+    "cache",
+    0
+   ],
+   "scheduler": "simple",
+   "steps": [
+    "steps",
+    0
+   ],
+   "denoise": 1.0
+  },
+  "_meta": {
+   "title": "Raw schedule"
+  }
+ },
+ "sigmas_turbo": {
+  "class_type": "ManualSigmas",
+  "inputs": {
+   "sigmas": "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0.0"
+  },
+  "_meta": {
+   "title": "Turbo schedule (from the checkpoint)"
+  }
+ },
+ "sigma_switch": {
+  "class_type": "ComfySwitchNode",
+  "inputs": {
+   "switch": [
+    "turbo",
+    0
+   ],
+   "on_false": [
+    "sched_raw",
+    0
+   ],
+   "on_true": [
+    "sigmas_turbo",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "raw / turbo"
+  }
+ },
+ "sigmas": {
+  "class_type": "SplitSigmasDenoise",
+  "inputs": {
+   "sigmas": [
+    "sigma_switch",
+    0
+   ],
+   "denoise": [
+    "denoise",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Denoise"
+  }
+ },
+ "euler": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "euler"
+  },
+  "_meta": {
+   "title": "Euler"
+  }
+ },
+ "sampler": {
+  "class_type": "SamplerCustom",
+  "inputs": {
+   "model": [
+    "cache",
+    0
+   ],
+   "add_noise": true,
+   "noise_seed": [
+    "seed",
+    0
+   ],
+   "cfg": 1.0,
+   "positive": [
+    "pos_switch",
+    0
+   ],
+   "negative": [
+    "neg_switch",
+    0
+   ],
+   "sampler": [
+    "euler",
+    0
+   ],
+   "sigmas": [
+    "sigmas",
+    1
+   ],
+   "latent_image": [
+    "latent_switch",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Sampler"
+  }
+ },
+ "decode": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "sampler",
+    0
+   ],
+   "vae": [
+    "vae",
+    0
+   ]
+  }
+ },
+ "save": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "decode",
+    0
+   ],
+   "filename_prefix": "Qwen2.1/smart/%year%-%month%-%day%/img"
+  },
+  "_meta": {
+   "title": "Output"
+  }
+ }
+}

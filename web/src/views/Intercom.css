@@ -1,0 +1,31 @@
+/* The Intercom (views/Intercom.tsx): the list of threads, one thread as a chat history with
+   the reply pinned at its foot, New message. Tokens only. */
+
+.intercom-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.intercom-who { color: var(--text-secondary); }
+.intercom-meta { display: inline-flex; align-items: center; gap: var(--s-2); }
+/* a mission's flag, the app's mark, everyone: a glyph on a quiet round surface */
+.intercom-face { flex: none; width: var(--s-6); height: var(--s-6); border-radius: var(--r-full); display: inline-grid; place-items: center;
+  background: var(--surface-3); color: var(--text-secondary); }
+
+/* a thread: a chat history at the chat measure, the reply pinned at its foot */
+.intercom-thread__scroll { display: flex; flex-direction: column; }
+.intercom-thread__col { width: 100%; max-width: calc(var(--measure) + 2 * var(--s-5)); margin: 0 auto;
+  padding: var(--s-5) var(--s-5) var(--s-6); display: grid; gap: var(--s-4); }
+.intercom-thread__item { display: grid; gap: var(--s-4); }
+.intercom-event { justify-self: center; max-width: 100%; }
+.intercom-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.intercom-msg--pending { opacity: 0.8; }
+.intercom-msg--cancelled { opacity: 0.55; }
+.intercom-reply { flex: none; width: 100%; max-width: calc(var(--measure) + 2 * var(--s-5)); margin: 0 auto;
+  padding: 0 var(--s-5) var(--s-4); display: grid; gap: var(--s-2); }
+
+/* New message */
+.intercom-form { display: grid; gap: var(--s-4); }
+.intercom-when { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.intercom-when__value { flex: 1; min-width: 8rem; }
+
+@media (max-width: 767px) {
+  .intercom-thread__col { padding: var(--s-4) var(--s-4) var(--s-5); }
+  .intercom-reply { padding: 0 var(--s-4) var(--s-3); }
+}

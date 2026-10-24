@@ -1,0 +1,13 @@
+
+# shellbox: the marks its terminals read (C before a command runs, D;<exit code> before
+# each prompt) and the run function shell__run types. shellboxd writes the file at start.
+[ -r /etc/shellbox/run.sh ] && . /etc/shellbox/run.sh
+
+# The user's own terminal carries their name in the prompt, magenta. Set before every
+# prompt, so it wins over its ~/.bashrc, which sets the celine prompt after this file.
+if [ -n "$SHELLBOX_OWNER" ] && [ "$SHELLBOX_OWNER" != celine ]; then
+    __shellbox_prompt() {
+        PS1='\[\e[01;35m\]'"$SHELLBOX_OWNER"'@\h\[\e[00m\]:\[\e[01;34m\]\w\[\e[00m\]\$ '
+    }
+    PROMPT_COMMAND+=(__shellbox_prompt)
+fi

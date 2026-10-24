@@ -1,0 +1,64 @@
+# The package boundaries of server/celine, checked by tests/test_imports.py. An ignore here is
+# debt: the change that fixes one deletes its line. New lines are never added to make a change pass.
+[importlinter]
+root_package = celine
+include_external_packages = False
+
+[importlinter:contract:bottom]
+name = The platform's bottom (config, keys, core, errors, clock, db) imports no feature
+type = forbidden
+source_modules =
+    celine.config
+    celine.core
+    celine.errors
+    celine.keys
+    celine.clock
+    celine.db
+    celine.prompts
+forbidden_modules =
+    celine.__main__
+    celine.api
+    celine.approvals
+    celine.artifacts
+    celine.attachments
+    celine.auth
+    celine.backends
+    celine.boot
+    celine.commands
+    celine.box_files
+    celine.bridge
+    celine.browser
+    celine.bugreports
+    celine.comfyui
+    celine.conversations
+    celine.events
+    celine.guard
+    celine.her
+    celine.hold
+    celine.homes
+    celine.image_catalog
+    celine.intercom
+    celine.jobs
+    celine.kb
+    celine.leftovers
+    celine.logs
+    celine.mcp
+    celine.metrics
+    celine.missions
+    celine.ops
+    celine.plans
+    celine.reload
+    celine.schedules
+    celine.settings
+    celine.shares
+    celine.shellbox
+    celine.skills
+    celine.sub_agents
+    celine.terminals
+    celine.texts
+    celine.triggers
+    celine.turns
+    celine.vault
+    celine.vision
+    celine.work
+allow_indirect_imports = True

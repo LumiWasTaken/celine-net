@@ -1,0 +1,40 @@
+/* Documents (views/Documents.tsx): the list page (head, toolbar, folder cards, rows), a
+   document's page, the drop that uploads, and the upload dialog. */
+.doc-main, .doc-page { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+
+/* a folder's folders, as cards above its documents; a card or All documents a drag lands on */
+.doc-folders { display: grid; gap: var(--s-2); padding-bottom: var(--s-4); }
+.doc-card, .doc-all { border-radius: var(--r-lg); transition: box-shadow var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+.doc-drop-on { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); }
+.doc-uploads { display: grid; margin-bottom: var(--s-4); }
+
+/* files dragged in from outside: the place under a calm wash, Upload to (folder) */
+.doc-drop { position: absolute; inset: var(--s-3); z-index: var(--z-dialog); display: grid; place-items: center; border-radius: var(--r-lg);
+  background: linear-gradient(var(--accent-wash), var(--accent-wash)), var(--bg-canvas); box-shadow: inset 0 0 0 2px var(--accent); }
+.doc-drop > * { pointer-events: none; }
+
+/* one document */
+.doc-image { max-width: 100%; max-height: 70vh; border-radius: var(--r-md); background: var(--surface-2); }
+.doc-text { min-width: 0; }
+/* a text file as it is, on the section's surface, its long lines wrapped */
+.doc-plain { margin: 0; font-family: var(--font-mono); font-size: var(--t-md); line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.doc-quiet { margin: 0; color: var(--text-muted); }
+.doc-edit { display: grid; gap: var(--s-3); min-width: 0; }
+.doc-edit__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); }
+.doc-edit__state { flex: 1; min-width: 0; color: var(--text-muted); font-size: var(--t-md); }
+.doc-passages { display: grid; gap: var(--s-3); justify-items: start; min-width: 0; }
+.doc-passages > div { width: 100%; }
+.doc-details { display: grid; gap: var(--s-4); }
+.doc-ai { margin: 0; line-height: var(--lh-body); overflow-wrap: anywhere; }
+.doc-ai__row { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin-top: var(--s-2); }
+.doc-links { display: inline-flex; flex-wrap: wrap; gap: var(--s-2); }
+
+/* the upload dialog: one row per file, its mode at the end */
+.doc-picked { display: grid; gap: var(--s-2); max-height: 50vh; overflow-y: auto; }
+.doc-picked__row { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.doc-picked__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 767px) {
+  .doc-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+  .doc-picked__row { flex-wrap: wrap; }
+}

@@ -1,0 +1,347 @@
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+)
+
+func decode(t *testing.T, r *http.Response) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestClientsParse(t *testing.T) {
+	c, err := parseClients("live:" + ownerKey + ":owner, test:" + readerKey + ":reader\n")
+	if err != nil || c[ownerKey].Name != "live" || c[readerKey].Role != "reader" {
+		t.Fatal(c, err)
+	}
+	for _, bad := range []string{"", "a:b:owner", "a:" + ownerKey + ":admin", "nokey"} {
+		if _, err := parseClients(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestEveryDoorNeedsAKeyAndOwnerDoorsNeedAnOwner(t *testing.T) {
+	setup(t)
+	s := server(t)
+	for _, p := range []string{"/feed", "/admin/status", "/admin/info", "/admin/qr", "/mcp"} {
+		if got := req(t, s, "GET", p, "", "").StatusCode; got != 401 {
+			t.Errorf("%s without key: %d", p, got)
+		}
+		if got := req(t, s, "GET", p, "wrong-key-0123456789", "").StatusCode; got != 401 {
+			t.Errorf("%s with a wrong key: %d", p, got)
+		}
+	}
+	if r := req(t, s, "PUT", "/admin/bridge", readerKey, `{"marker":"X: "}`); r.StatusCode != 403 {
+		t.Fatalf("reader changed the marker: %d", r.StatusCode)
+	}
+	if r := req(t, s, "POST", "/admin/bridge/lease", readerKey, ""); r.StatusCode != 403 {
+		t.Fatalf("reader took the lease: %d", r.StatusCode)
+	}
+	if r := req(t, s, "GET", "/admin/status", readerKey, ""); r.StatusCode != 200 {
+		t.Fatalf("reader can't read status: %d", r.StatusCode)
+	}
+}
+
+func TestStatusInfoMarkerAndLease(t *testing.T) {
+	setup(t)
+	s := server(t)
+	st := decode(t, req(t, s, "GET", "/admin/status", readerKey, ""))
+	conn := st["connection"].(map[string]any)
+	if conn["state"] != "connected" || conn["error"] != nil ||
+		st["account"].(map[string]any)["id"] != OWN+"@s.whatsapp.net" {
+		t.Fatalf("status %v", st)
+	}
+	update(func(s *Status) { s.State = "pairing"; s.QR = "2@abc"; s.QRAt = 5 })
+	st = decode(t, req(t, s, "GET", "/admin/status", readerKey, ""))
+	if st["connection"].(map[string]any)["state"] != "needs_login" || st["qr_at"] != float64(5) {
+		t.Fatalf("pairing %v", st)
+	}
+	if r := req(t, s, "GET", "/admin/qr", readerKey, ""); r.StatusCode != 200 ||
+		r.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("qr %d", r.StatusCode)
+	}
+	update(func(s *Status) { s.State = "disconnected"; s.QR = ""; s.Error = "The connection to WhatsApp dropped." })
+	conn = decode(t, req(t, s, "GET", "/admin/status", readerKey, ""))["connection"].(map[string]any)
+	if conn["state"] != "unreachable" || conn["error"] != "The connection to WhatsApp dropped." {
+		t.Fatalf("unreachable %v", conn)
+	}
+	if r := req(t, s, "GET", "/admin/qr", readerKey, ""); r.StatusCode != 404 {
+		t.Fatalf("qr without a code: %d", r.StatusCode)
+	}
+
+	info := decode(t, req(t, s, "GET", "/admin/info", readerKey, ""))
+	if info["write_chat"] != OWN+"@s.whatsapp.net" || info["marker"] != "Celine: " ||
+		info["write_chat_name"] != "Message yourself" || info["part_chars"] != float64(partChars) {
+		t.Fatalf("info %v", info)
+	}
+	for _, bad := range []string{`{"marker":""}`, `{"marker":"   "}`, `{"marker":"` + strings.Repeat("x", 41) + `"}`, `{}`} {
+		if r := req(t, s, "PUT", "/admin/bridge", ownerKey, bad); r.StatusCode != 400 {
+			t.Errorf("%s: %d", bad, r.StatusCode)
+		}
+	}
+	info = decode(t, req(t, s, "PUT", "/admin/bridge", ownerKey, `{"marker":"C: "}`))
+	if info["marker"] != "C: " || marker() != "C: " {
+		t.Fatalf("marker %v", info)
+	}
+
+	base := time.Unix(1_800_000_000, 0)
+	clock = func() time.Time { return base }
+	if r := req(t, s, "POST", "/admin/bridge/lease", ownerKey, ""); r.StatusCode != 200 {
+		t.Fatalf("claim %d", r.StatusCode)
+	}
+	r := req(t, s, "POST", "/admin/bridge/lease", owner2Key, "")
+	if r.StatusCode != 409 || decode(t, r)["error"] != "Another instance holds the bridge." {
+		t.Fatal("a second owner took a held lease")
+	}
+	b := decode(t, req(t, s, "GET", "/admin/info", readerKey, ""))["bridge"].(map[string]any)
+	if b["holder"] != "live" {
+		t.Fatalf("bridge %v", b)
+	}
+	clock = func() time.Time { return base.Add(61 * time.Second) }
+	if r := req(t, s, "POST", "/admin/bridge/lease", owner2Key, ""); r.StatusCode != 200 {
+		t.Fatalf("after the TTL: %d", r.StatusCode)
+	}
+	if decode(t, req(t, s, "DELETE", "/admin/bridge/lease", ownerKey, ""))["released"] != false {
+		t.Fatal("a non-holder released the lease")
+	}
+	if decode(t, req(t, s, "DELETE", "/admin/bridge/lease", owner2Key, ""))["released"] != true {
+		t.Fatal("the holder could not release")
+	}
+}
+
+// ---- the feed -------------------------------------------------------------------------------
+
+func readLines(t *testing.T, r *http.Response, n int) []string {
+	t.Helper()
+	sc := bufio.NewScanner(r.Body)
+	var out []string
+	for len(out) < n && sc.Scan() {
+		out = append(out, sc.Text())
+	}
+	return out
+}
+
+func TestFeedFromAnyCursorThenLiveThenHeartbeat(t *testing.T) {
+	setup(t)
+	loadFixtures(t)
+	head := jr.Head()
+	s := server(t)
+	all := readLines(t, req(t, s, "GET", "/feed?after=0", readerKey, ""), int(head))
+	if len(all) != int(head) {
+		t.Fatalf("after=0 gave %d of %d", len(all), head)
+	}
+	for i, l := range all {
+		var m map[string]any
+		if json.Unmarshal([]byte(l), &m) != nil || m["seq"] != float64(i+1) || m["kind"] == nil {
+			t.Fatalf("line %d: %s", i, l)
+		}
+	}
+	// a second client at another cursor gets the same rows from there
+	part := readLines(t, req(t, s, "GET", "/feed?after=10", ownerKey, ""), int(head)-10)
+	if len(part) != int(head)-10 || part[0] != all[10] {
+		t.Fatal("cursor 10")
+	}
+	// a stream stays open: new rows arrive, then heartbeats
+	old := heartbeat
+	heartbeat = 50 * time.Millisecond
+	defer func() { heartbeat = old }()
+	r := req(t, s, "GET", "/feed?after="+itoa(head), readerKey, "")
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		emit(Rec{"kind": "person", "person": Rec{"key": "4915550000009@s.whatsapp.net", "push_name": "new"}})
+	}()
+	got := readLines(t, r, 2)
+	if !strings.Contains(got[0], `"seq":`+itoa(head+1)) || got[1] != "" {
+		t.Fatalf("live then heartbeat: %q", got)
+	}
+	// nothing was pruned
+	if n := len(readLines(t, req(t, s, "GET", "/feed?after=0", readerKey, ""), int(head)+1)); n != int(head)+1 {
+		t.Fatalf("journal lost rows: %d", n)
+	}
+	if req(t, s, "GET", "/feed?after=x", readerKey, "").StatusCode != 400 {
+		t.Fatal("bad cursor accepted")
+	}
+}
+
+func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+// ---- older messages and media ---------------------------------------------------------------
+
+func TestOlderAnchorsOnTheOldestKnownMessageAndIsRateLimited(t *testing.T) {
+	log := setup(t)
+	loadFixtures(t)
+	s := server(t)
+	r := req(t, s, "POST", "/admin/older", readerKey, `{"chat":"`+ALEX+`","count":500}`)
+	if r.StatusCode != 202 || decode(t, r)["request_id"] != "REQ1" {
+		t.Fatalf("older %d", r.StatusCode)
+	}
+	h := log.history[0].GetProtocolMessage().GetPeerDataOperationRequestMessage().GetHistorySyncOnDemandRequest()
+	if h.GetChatJID() != ALEX || h.GetOldestMsgID() != "A2" || !h.GetOldestMsgFromMe() ||
+		h.GetOldestMsgTimestampMS() != (T0+60_000)/1000 || h.GetOnDemandMsgCount() != 50 {
+		t.Fatalf("request %v", h)
+	}
+	if pm := log.history[0].GetProtocolMessage(); pm.GetType() != waE2E.ProtocolMessage_PEER_DATA_OPERATION_REQUEST_MESSAGE {
+		t.Fatal("not a peer data request")
+	}
+	r = req(t, s, "POST", "/admin/older", readerKey, `{"chat":"`+ALEX+`"}`)
+	if r.StatusCode != 429 || decode(t, r)["retry_after_ms"] == nil {
+		t.Fatal("a second request right away went out")
+	}
+	historyLast = time.Time{}
+	if req(t, s, "POST", "/admin/older", readerKey, `{"chat":"4999@s.whatsapp.net"}`).StatusCode != 404 {
+		t.Fatal("a chat without messages")
+	}
+	body := `{"chat":"` + ALEX + `","before":{"id":"X9","from_me":false,"ts":1780000000}}`
+	if req(t, s, "POST", "/admin/older", readerKey, body).StatusCode != 202 {
+		t.Fatal("explicit anchor")
+	}
+	isConnected = func() bool { return false }
+	historyLast = time.Time{}
+	r = req(t, s, "POST", "/admin/older", readerKey, body)
+	if r.StatusCode != 503 || decode(t, r)["error"] != "WhatsApp is not reachable." {
+		t.Fatal("offline")
+	}
+	if len(log.history) != 2 {
+		t.Fatalf("sent %d requests", len(log.history))
+	}
+}
+
+func TestMediaDownloadKeepsTheFileAndRetryAnswersAreListed(t *testing.T) {
+	log := setup(t)
+	s := server(t)
+	if req(t, s, "POST", "/admin/media/download", readerKey, `{}`).StatusCode != 400 {
+		t.Fatal("empty ref")
+	}
+	r := req(t, s, "POST", "/admin/media/download", readerKey, `{"direct_path":"/v/x","media_key":"a2V5","mtype":"photo"}`)
+	data, _ := io.ReadAll(r.Body)
+	sha := r.Header.Get("X-Sha256")
+	if r.StatusCode != 200 || string(data) != "picture" || len(sha) != 64 {
+		t.Fatalf("download %d %q", r.StatusCode, data)
+	}
+	r = req(t, s, "GET", "/admin/media/"+sha, readerKey, "")
+	data, _ = io.ReadAll(r.Body)
+	if r.StatusCode != 200 || string(data) != "picture" {
+		t.Fatal("kept file")
+	}
+	// the mux cleans a dot-dot path before any handler runs, so the handler's own check
+	// is driven directly with the raw path
+	esc := httptest.NewRecorder()
+	handleMediaFile(esc, &http.Request{Method: "GET", URL: &url.URL{Path: "/admin/media/../journal.db"}})
+	if esc.Code != 404 || !strings.Contains(esc.Body.String(), "no such file") {
+		t.Fatalf("path escape %d %s", esc.Code, esc.Body.String())
+	}
+	key := strings.Repeat("A", 43) + "="
+	for body, want := range map[string]int{
+		`{}`: 400,
+		`{"message_id":"X","chat":"1@s.whatsapp.net","media_key":"a2V5"}`:        400,
+		`{"message_id":"X","chat":"1-2@g.us","media_key":"` + key + `"}`:         400,
+		`{"message_id":"X","chat":"1@s.whatsapp.net","media_key":"` + key + `"}`: 202,
+	} {
+		if got := req(t, s, "POST", "/admin/media/retry", readerKey, body).StatusCode; got != want {
+			t.Errorf("%s: %d, want %d", body, got, want)
+		}
+	}
+	if _, retries, _ := log.kinds(); retries != 1 {
+		t.Fatalf("retries %d", retries)
+	}
+	onMediaRetry(&events.MediaRetry{MessageID: "NOT-OURS"})
+	onMediaRetry(&events.MediaRetry{MessageID: "X", Error: &events.MediaRetryError{Code: 2}})
+	ans := decode(t, req(t, s, "GET", "/admin/media/retry", readerKey, ""))["answers"].(map[string]any)
+	if len(ans) != 1 || ans["X"].(map[string]any)["result"] != "ERROR" {
+		t.Fatalf("answers %v", ans)
+	}
+	if len(retryPending) != 0 {
+		t.Fatal("answered request still pending")
+	}
+	_ = types.JID{}
+}
+
+func TestAnExpiredQRCodeRestartsForANewOne(t *testing.T) {
+	setup(t)
+	exited := make(chan int, 1)
+	oldExit, oldDelay := exitFn, restartDelay
+	exitFn, restartDelay = func(code int) { exited <- code }, time.Millisecond
+	defer func() { exitFn, restartDelay = oldExit, oldDelay }()
+	codes := make(chan whatsmeow.QRChannelItem, 2)
+	codes <- whatsmeow.QRChannelItem{Event: whatsmeow.QRChannelEventCode, Code: "2@abc"}
+	codes <- whatsmeow.QRChannelTimeout
+	close(codes)
+	watchQR(codes)
+	select {
+	case code := <-exited:
+		if code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("wa-link stayed up without a code to scan")
+	}
+	if s := snapshot(); s.QR != "" || s.Error != "The QR code expired. A new one comes up in a moment." {
+		t.Fatalf("status %+v", s)
+	}
+}
+
+func TestRecordsOfOneChatForAChatIncludedAgain(t *testing.T) {
+	setup(t)
+	loadFixtures(t)
+	s := server(t)
+	var chat string
+	var n int
+	if err := jr.db.QueryRow(`SELECT chat_key, COUNT(*) FROM journal WHERE kind = 'message'
+		GROUP BY chat_key ORDER BY COUNT(*) DESC LIMIT 1`).Scan(&chat, &n); err != nil {
+		t.Fatal(err)
+	}
+	var want int
+	if err := jr.db.QueryRow(`SELECT COUNT(*) FROM journal WHERE chat_key = ?
+		OR (kind = 'person' AND message_key = ?)`, chat, chat).Scan(&want); err != nil {
+		t.Fatal(err)
+	}
+	lines := readLines(t, req(t, s, "GET", "/admin/records?chat="+chat, readerKey, ""), want)
+	last := 0.0
+	messages := 0
+	for _, l := range lines {
+		var m map[string]any
+		if json.Unmarshal([]byte(l), &m) != nil || m["seq"].(float64) <= last {
+			t.Fatalf("not in seq order: %s", l)
+		}
+		last = m["seq"].(float64)
+		if m["kind"] == "message" {
+			messages++
+			if m["chat"].(map[string]any)["key"] != chat {
+				t.Fatalf("another chat's record: %s", l)
+			}
+		}
+	}
+	if messages != n {
+		t.Fatalf("%d of %d messages", messages, n)
+	}
+	// the stream ends after the last record
+	r := req(t, s, "GET", "/admin/records?chat="+chat, readerKey, "")
+	body, _ := io.ReadAll(r.Body)
+	if got := strings.Count(string(body), "\n"); got != want {
+		t.Fatalf("%d lines, want %d", got, want)
+	}
+	if req(t, s, "GET", "/admin/records", readerKey, "").StatusCode != 400 {
+		t.Fatal("no chat accepted")
+	}
+	if req(t, s, "GET", "/admin/records?chat="+chat, "", "").StatusCode != 401 {
+		t.Fatal("no key accepted")
+	}
+}

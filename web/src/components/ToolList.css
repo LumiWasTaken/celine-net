@@ -1,0 +1,2 @@
+/* The side panel's Tools: the search, then each group's blocks (ToolBlock). Tokens only. */
+.tools { display: grid; gap: var(--s-3); min-width: 0; max-width: var(--measure-form); }

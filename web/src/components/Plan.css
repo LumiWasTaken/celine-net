@@ -1,0 +1,10 @@
+/* its plan: the head's button and the Plan dialog (components/Plan.tsx) */
+.plan-button { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.plan-dialog__text { margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-dialog__steps { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.plan-dialog__step { display: flex; align-items: center; gap: var(--s-2); min-width: 0; font-size: var(--t-md); line-height: var(--lh-ui); color: var(--text-secondary); }
+.plan-dialog__step.is-current { color: var(--text-primary); }
+.plan-dialog__step.is-done { color: var(--text-muted); }
+.plan-dialog__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.plan-dialog__ask { display: inline-flex; flex: none; }
+.plan-dialog__time { flex: none; margin-left: auto; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }

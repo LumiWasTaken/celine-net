@@ -1,0 +1,10 @@
+# The agent's shipped base (server/celine/her.py): a fresh install's `her` row starts from this
+# file, persona.md, talk.md and voice.toml beside it (her.seed); from then on the row is
+# what counts, changed in Settings.
+name = "Celine"
+pronouns = "she"
+color = "rose"
+# its mood (server/celine/skills/mind.py, the PAD model): where it rests on its three
+# axes from -1 to 1, and the hours it takes to fade halfway back there
+mood_baseline = [0.2, 0.2, 0.3]
+mood_half_life_h = 6

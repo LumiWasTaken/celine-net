@@ -1,0 +1,132 @@
+"""The agent's self: `me__read` shows its persona, its
+talk and its slop list (its row, celine/her.py); `me__edit` changes its persona, its
+talk and its slop list (banned words, phrases, patterns). Every change goes through
+her.write_sync as written by it, so it is in the text's History (her:persona, her:talk,
+her:voice; Settings, It) and in Events (the `her` source, events.py)."""
+from __future__ import annotations
+
+from typing import Annotated, Literal
+
+from .. import her
+from ..settings.files import Invalid
+from . import ToolContext, ToolResult, guide, tool, described
+from ..core.event_types import HER_CHANGED
+
+LISTS = {"banned": "banned", "phrases": "phrases", "patterns": "patterns"}
+
+
+def _numbered(items: list[str]) -> str:
+    return "\n".join(f"- {x!r}" if x != x.strip() else f"- {x}" for x in items) or "(none)"
+
+
+def read_text(cfg) -> str:
+    """The agent's persona, talk and slop list as it reads them."""
+    h = cfg.her
+    v = h.voice
+    return "\n\n".join([
+        "## persona (who you are; yours to change, and you tell {{username}} when you do)\n"
+        + her.shown(cfg, h).strip(),
+        "## talk (yours: how you talk, in every chat)\n" + h.talk_text,
+        f"## slop list (yours; {'on' if v['on'] else 'off'})\n"
+        f"banned words, steered away from as you write ({len(v['banned'])}):\n"
+        + _numbered(v["banned"])
+        + f"\n\nphrases, found in what you write ({len(v['phrases'])}):\n"
+        + _numbered(v["phrases"])
+        + f"\n\npatterns, regexes found in what you write ({len(v['patterns'])}):\n"
+        + _numbered(v["patterns"])])
+
+
+def edited(cfg, what: str, old: str, new: str, add: list[str],
+           remove: list[str]) -> tuple[dict, str] | str:
+    """(the body for her.write_sync, what changed in words), or the sentence why not.
+    The persona and the talk are edited as it reads them, the names filled in, and
+    kept with them as {{name}} and {{username}} again (her.stored), so a rename carries."""
+    h = cfg.her
+    if what in ("persona", "talk"):
+        text = cfg.substitute(h.talk_text if what == "talk" else h.persona)
+        if add or remove:
+            return f"For the {what}, use old and new, not add or remove."
+        if not old:
+            if not new.strip():
+                return f"new is the text to add at the end of your {what}."
+            text = text.rstrip() + "\n\n" + new.strip() + "\n"
+            said = f"Added to your {what}."
+        elif (n := text.count(old)) != 1:
+            return (f"old is in your {what} {n} times; it has to be there once, word for "
+                    f"word, as me__read shows it.")
+        else:
+            text, said = text.replace(old, new, 1), f"Changed your {what}."
+        if what == "persona":
+            said += f" Tell {cfg.user} in one line."
+        return {what: her.stored(cfg, h, text)}, said
+    if old or new:
+        return f"For {what}, use add and remove, not old and new."
+    items = list(h.voice[LISTS[what]])
+    missing = [x for x in remove if x not in items]
+    if missing:
+        return f"Not in your {what}: {', '.join(repr(x) for x in missing)}."
+    items = [x for x in items if x not in remove]
+    items += [x for x in add if x not in items]
+    if not add and not remove:
+        return "add or remove names the entries to change."
+    return ({"voice": {**h.voice, LISTS[what]: items}},
+            f"Your {what}: {len(add)} added, {len(remove)} removed, {len(items)} now.")
+
+
+class Me:
+    name = "me"
+    guide = guide("me")
+    description = described()
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.app = None
+
+    @tool()
+    async def read(self, ctx: ToolContext) -> ToolResult:
+        """Read all of yourself as the app keeps it: your persona (who you are), your
+        talk (how you talk in every chat) and your slop list (banned words, phrases,
+        patterns). Returns: the three, as they are now."""
+        return ToolResult(content=self.cfg.substitute(read_text(self.cfg)))
+
+    @tool(read_only=False, destructive=False)
+    async def edit(
+        self,
+        ctx: ToolContext,
+        what: Annotated[Literal["persona", "talk", "banned", "phrases", "patterns"],
+                        "persona: who you are. talk: how you talk. banned: words kept out "
+                        "of what you write, "
+                        "one word each, with a leading space when it starts a word "
+                        "(\" delve\"). phrases: plain text kept out of what you write. "
+                        "patterns: regexes found in what you write."],
+        old: Annotated[str, "persona, talk: the exact text to replace, once in the "
+                            "text; empty adds new at the end."] = "",
+        new: Annotated[str, "persona, talk: the text in its place (empty deletes old), "
+                            "or the text to add."] = "",
+        add: Annotated[list[str], "banned, phrases, patterns: entries to add."] = [],  # noqa: B006
+        remove: Annotated[list[str], "banned, phrases, patterns: entries to "
+                                     "remove."] = [],  # noqa: B006
+    ) -> ToolResult:
+        """Change your persona, your talk or your slop list. Every change is kept in its
+        History, and {{username}} sees it in Settings and in Events; when you change your
+        persona, tell {{username}} in one line. Example:
+        me__edit(what="phrases", add=["you were right"]), or me__edit(what="talk",
+        old="short.", new="short, lowercase.").
+        Returns: what changed."""
+        from .. import events
+        got = edited(self.cfg, what, old, new, list(add or []), list(remove or []))
+        if isinstance(got, str):
+            return ToolResult(content=got, is_error=True)
+        body, said = got
+        store, cfg = ctx.store, self.cfg
+
+        def fn(c) -> None:
+            her.write_sync(c, cfg, body, "her")
+            events.added(store, c, "her")
+        try:
+            await store.write(fn)
+        except Invalid as e:
+            return ToolResult(content=str(e), is_error=True)
+        await her.refresh(store, cfg)
+        store.emit_global({"type": HER_CHANGED})
+        return ToolResult(content=said, display={"what": what})

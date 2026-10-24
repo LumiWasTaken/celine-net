@@ -1,0 +1,346 @@
+# celine-net as a service. docs/DEPLOY.md explains every part.
+#
+#   docker compose up -d      builds the images, or pulls them from CELINE_IMAGES
+#
+# No keys to type: the app makes the stack's own keys into the volume at its start
+# (app/keys/, server/celine/keys.py), and every other service waits until it is healthy.
+# The boxes get only a key's sha256, the connectors their clients list, SearXNG its
+# settings file with the secret filled in, each mounted read-only from the volume.
+# .env.example lists what .env may set; it works empty.
+#
+# Only the app's port is published. The connectors and the search engine are reached
+# by service name on this project's network.
+#
+# Optional services are compose profiles: shellbox (its computer and its morning reset),
+# browser, discord, whatsapp, web (search), reranker. COMPOSE_PROFILES in .env picks
+# them; the app starts without any. Model servers are added in the app (Settings,
+# Models), never here.
+#
+# All state is on one volume, `data`, one folder per service:
+#   app/            the app: archive, settings, keys typed into Settings, characters,
+#                   and keys/ (the stack's own keys)
+#   discord-link/   the Discord login, its journal
+#   wa-link/        the WhatsApp linked device and its journal
+#   reranker/       the reranker's model (only with the profile "reranker")
+#   shellbox/       Celine's home, in its shellbox and its browser
+# The app makes the folders and sees the whole volume; every other service sees only its
+# own folder, and the browser shares the shellbox's.
+
+# Celine's uid and gid in its shellbox and its browser, the owner of its home (shellbox/):
+# named here once. Both boxes are built with it, the app gives its home to it.
+x-her-uid: &her-uid "1000"
+
+services:
+  celine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${CELINE_IMAGES:-celine}/celine-app:${CELINE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      # loopback by default; CELINE_PUBLISH=8766 (or a LAN address) opens it to the
+      # network, then set CELINE_PUBLIC_ORIGIN too
+      - "${CELINE_PUBLISH:-127.0.0.1:8766}:8766"
+    environment:
+      CELINE_PUBLIC_ORIGIN: ${CELINE_PUBLIC_ORIGIN:-}
+      CELINE_TRUSTED_PROXIES: ${CELINE_TRUSTED_PROXIES:-}
+      DISCORD_LINK_URL: http://discord-link:8768/mcp
+      WA_LINK_URL: http://wa-link:8767/mcp
+      CELINE_SEARXNG_URL: http://searxng:8080
+      CELINE_SHELL_URL: http://shellbox:8770
+      CELINE_BROWSER_URL: http://browser:8771
+      HER_UID: *her-uid
+      TZ: ${TZ:-UTC}
+    # the whole volume: at its start (as root, docker-entrypoint in the Dockerfile) the app
+    # makes the folders the other services mount and gives its home to its uid, then runs
+    # as celine with no capabilities, its data in app/; it makes its keys before it is
+    # healthy, which is what the others wait for
+    volumes:
+      - data:/data
+    # default: the connectors and the search engine; shellbox: its shellbox; browser: its
+    # browser. Naming networks here drops the default one unless it is listed too.
+    networks: [default, shellbox, browser]
+    cap_drop: [ALL]
+    # only for its start: the folders, its home's owner, then the switch to celine
+    cap_add: [CHOWN, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+
+  # Celine's shellbox: its own little Linux computer, where its shell commands run. It
+  # is `celine` with sudo, so it can install anything. Only its home is kept; the rest
+  # resets whenever the container is recreated (every morning, DEPLOY.md "Shellbox").
+  # Nothing of the app's data is in here, and nothing in here can stop the app. It sits
+  # on its own network: the app reaches it, the connectors and the search engine are
+  # out of its reach; the internet and the LAN stay open to it.
+  shellbox:
+    profiles: [shellbox]
+    build:
+      context: .
+      dockerfile: shellbox/Dockerfile
+      args:
+        HER_UID: *her-uid
+    image: ${CELINE_IMAGES:-celine}/celine-shellbox:${CELINE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      celine:
+        condition: service_healthy
+    # a tiny init as PID 1 reaps the orphans of its background programs
+    init: true
+    hostname: shellbox
+    networks: [shellbox]
+    environment:
+      # its models through the app (OPENAI_BASE_URL and OPENAI_API_KEY in its terminals):
+      # the proxy's own key (mounted below), never a provider's
+      SHELLBOX_LLM_URL: http://celine:8766/llm
+      # its home's size in GB: past it it is told so (DEPLOY.md "Shellbox"); empty: none
+      SHELLBOX_HOME_GB: ${SHELLBOX_HOME_GB:-}
+      # the hour of the morning reset, for its greeting (shellbox-manager resets it)
+      SHELLBOX_RESET_AT: &reset-at ${SHELLBOX_RESET_AT:-04:00}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - type: volume
+        source: data
+        target: /home/celine
+        volume:
+          subpath: shellbox
+      # only the app's key's sha256: the box checks the key, it never holds it
+      - type: volume
+        source: data
+        target: /etc/shellbox/key.hash
+        read_only: true
+        volume:
+          subpath: app/keys/shell.hash
+      - type: volume
+        source: data
+        target: /etc/shellbox/llm.key
+        read_only: true
+        volume:
+          subpath: app/keys/shellbox-llm.key
+    # /tmp in memory, at most 2 GB (it counts against its 4 GB); gone with every restart
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    healthcheck:
+      test: ["CMD", "/usr/bin/curl", "-fs", "http://127.0.0.1:8770/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    # sudo needs setuid, so no cap_drop and no no-new-privileges here: Docker's default
+    # container isolation, plus limits so it can't take the machine down with it.
+    # SYS_PTRACE: shellboxd reads what a quiet program is blocked in (waiting for input,
+    # or sleeping and downloading), from /proc/<pid>/syscall
+    cap_add: [SYS_PTRACE]
+    mem_limit: 4g
+    pids_limit: 1024
+    cpus: 2
+
+  # Celine's browser: one Brave on a screen of its own (Xvnc), driven by
+  # browser/browserd.py. Everything in it runs as celine with its home mounted, so its
+  # profile (~/.browser) and downloads (~/Downloads) are its own, and the morning reset of
+  # its shellbox leaves it running. Its own network: the app reaches it, nothing else
+  # does; the internet and the LAN stay open to it.
+  browser:
+    profiles: [browser]
+    build:
+      context: .
+      dockerfile: browser/Dockerfile
+      args:
+        HER_UID: *her-uid
+    image: ${CELINE_IMAGES:-celine}/celine-browser:${CELINE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      celine:
+        condition: service_healthy
+    # reaps what Brave and a killed browserd leave behind
+    init: true
+    networks: [browser]
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - type: volume
+        source: data
+        target: /home/celine
+        volume:
+          subpath: shellbox
+      # only the key's sha256, as in the shellbox
+      - type: volume
+        source: data
+        target: /etc/browser/key.hash
+        read_only: true
+        volume:
+          subpath: app/keys/browser.hash
+    # /tmp in memory: Brave's shared memory and cache; counts against the 3 GB
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8771/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    # Brave's own sandbox needs user namespaces, which Docker's seccomp profile
+    # blocks. Never apparmor:unconfined: where unprivileged user namespaces are
+    # restricted (Ubuntu 24.04), Docker's default AppArmor profile is what allows them.
+    security_opt: ["seccomp:unconfined"]
+    mem_limit: 3g
+    pids_limit: 1024
+    cpus: 2
+
+  # The shellbox's morning reset (shellbox-manager/manager.sh): at SHELLBOX_RESET_AT
+  # (default 04:00) it recreates the shellbox. It holds the Docker socket for that, so it
+  # has no network and runs nothing else.
+  shellbox-manager:
+    profiles: [shellbox]
+    build:
+      context: .
+      dockerfile: shellbox-manager/Dockerfile
+    image: ${CELINE_IMAGES:-celine}/celine-shellbox-manager:${CELINE_TAG:-latest}
+    restart: unless-stopped
+    network_mode: none
+    environment:
+      # a host folder for its home's snapshots (DEPLOY.md "Shellbox"); empty: beside its home
+      SHELLBOX_SNAPSHOTS: ${SHELLBOX_SNAPSHOTS:-}
+      # the hour of the reset, HH:MM in TZ
+      SHELLBOX_RESET_AT: *reset-at
+      TZ: ${TZ:-UTC}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/stack:ro
+    security_opt: ["no-new-privileges:true"]
+
+  # The Discord connector: owns the account. Logged in from the app (Settings, Discord).
+  discord-link:
+    profiles: [discord]
+    build:
+      context: .
+      dockerfile: connectors/discord/Dockerfile
+    image: ${CELINE_IMAGES:-celine}/celine-discord-link:${CELINE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      celine:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - type: volume
+        source: data
+        target: /data
+        volume:
+          subpath: discord-link
+      # who may connect: the app's key with the owner role (keys/connector-clients)
+      - type: volume
+        source: data
+        target: /data/connector-clients
+        read_only: true
+        volume:
+          subpath: app/keys/connector-clients
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # The WhatsApp connector: owns the linked device. Paired from the app (Settings,
+  # WhatsApp). Only one process may use a device, so never run a second copy on it.
+  wa-link:
+    profiles: [whatsapp]
+    build:
+      context: .
+      dockerfile: wa-link/Dockerfile
+    image: ${CELINE_IMAGES:-celine}/celine-wa-link:${CELINE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      celine:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - type: volume
+        source: data
+        target: /data
+        volume:
+          subpath: wa-link
+      # who may connect: the app's key with the owner role (keys/connector-clients)
+      - type: volume
+        source: data
+        target: /data/connector-clients
+        read_only: true
+        volume:
+          subpath: app/keys/connector-clients
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # The reranker for archive search: bge-reranker-v2-m3 on llama.cpp's llama-server
+  # (POST /v1/rerank). Optional: it starts only with the profile "reranker"
+  # (COMPOSE_PROFILES=reranker in .env). Leave it out when the reranker runs on a GPU
+  # machine elsewhere (DEPLOY.md, "Reranker"). Runs on the CPU; docker-compose.gpu.yml
+  # puts it on a GPU. The first start downloads the model (about 0.6 GB) into the
+  # volume's reranker/ folder. In the app: Settings, Models, a llama-server provider at
+  # http://reranker:8080.
+  reranker:
+    image: ghcr.io/ggml-org/llama.cpp:server-b11151
+    profiles: [reranker]
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      celine:
+        condition: service_healthy
+    command: ["-hf", "${RERANKER_MODEL:-gpustack/bge-reranker-v2-m3-GGUF:Q8_0}",
+              "--alias", "bge-reranker-v2-m3", "--reranking",
+              "-c", "8192", "-b", "2048", "-ub", "2048"]
+    environment:
+      LLAMA_CACHE: /models
+      HF_HOME: /models
+    volumes:
+      - type: volume
+        source: data
+        target: /models
+        volume:
+          subpath: reranker
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10m          # the first start downloads the model
+      retries: 3
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # Web search for Celine's web skill: a private SearXNG (no API keys, no tracking).
+  # json output on, limiter off (one client); settings in config/searxng/, served from the
+  # volume with the secret filled in (app/keys/searxng-settings.yml).
+  searxng:
+    profiles: [web]
+    image: docker.io/searxng/searxng:2026.9.23-3cd69d30e
+    restart: unless-stopped
+    depends_on:
+      celine:
+        condition: service_healthy
+    environment:
+      FORCE_OWNERSHIP: "false"      # leave the mounted settings file alone
+    volumes:
+      - type: volume
+        source: data
+        target: /etc/searxng/settings.yml
+        read_only: true
+        volume:
+          subpath: app/keys/searxng-settings.yml
+      - ./config/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--header=X-Forwarded-For: 127.0.0.1", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+
+volumes:
+  data:
+
+networks:
+  # only the app and the shellbox. Both networks reach the internet and your LAN, so
+  # whatever runs in the box or the browser can too. For a stricter setup, uncomment
+  # `internal: true` on either: it then reaches only the app (no internet, no LAN, no
+  # package installs or web pages from that container).
+  shellbox:
+    # internal: true
+  # only the app and the browser
+  browser:
+    # internal: true

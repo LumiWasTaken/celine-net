@@ -1,0 +1,33 @@
+# A routine. Copy this to <name>.toml (name: lowercase letters, digits, - or _, starting
+# with a letter). The file name is the routine's name. Only label, cron and prompt are
+# required. This file ends in .example so it is never loaded as a routine.
+
+label = "My routine"              # the name shown in Routines, 1 to 60 characters
+summary = "Writes a digest."      # one sentence under its name in the onboarding, at most
+                                  # 120 characters; leave out for none
+cron = "0 2 * * *"                # minute hour day month weekday, in the app's time zone
+                                  # "0 2 * * *" every day 02:00, "0 10-23/2 * * *" every
+                                  # two hours from 10:00, "0 7 * * 0" Sundays 07:00
+after = []                        # names of routines it follows on the same night
+partner = ""                      # a .md prompt beside this file it talks with first
+                                  # (like mentor.md); "" for none
+rounds = 8                        # the partner's lines at most, 1 to 30
+note = "diary/{{date}}-mine.md"   # notebook path (.md) its answer is written to; "" for none
+role = "chat"                     # the model role its turns run on
+on = true                         # false: it never starts by itself
+idle_only = false                 # true: starts only if nobody used the app for 30 minutes,
+                                  # else that run is skipped
+wall_minutes = 10                 # most minutes a run may take, 1 to 180; leave out for 180
+daytime = false                   # true: {{date}} is the calendar date of the slot, not
+                                  # the night's date (for routines that run in the day)
+
+# The prompt (and the partner file, and note) can hold:
+#   {{date}} {{day_before}} {{weekday}}  dates of the run
+#   {{username}} {{name}}, and pronouns {{she}} {{her}} {{herself}} {{them}}
+#   {{result:<routine>}}  the answer of another routine from the same night
+#   {{mood}} {{on_mind}} {{tool_failures}} {{voice_counts}}  filled when the run starts
+prompt = """
+What happened in the world on {{day_before}}?
+
+Write a short digest for {{username}}.
+"""

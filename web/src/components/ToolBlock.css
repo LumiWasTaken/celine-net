@@ -1,0 +1,18 @@
+/* A skill's block (ToolBlock): its switch and name, a muted word, its line; its tools
+   under a fold, each a switch with its line under the name. Tokens only. */
+.tool-blocks { display: grid; gap: var(--s-2); }
+.tool-block { display: grid; gap: var(--s-1); padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--surface-2); }
+.tool-block__head { display: flex; align-items: center; gap: var(--s-3); }
+.tool-block__head > .tool-block__switch { flex: 1; min-width: 0; }
+.tool-block__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); font-weight: var(--fw-medium); }
+.tool-block__state { flex: none; font-size: var(--t-xs); color: var(--text-muted); }
+.tool-block__line { margin: 0; font-size: var(--t-xs); line-height: var(--lh-body); color: var(--text-secondary); }
+.tool-block__fold { margin-top: var(--s-1); }
+.tool-rows { display: grid; gap: var(--s-0); margin-inline: calc(-1 * var(--s-2)); }
+.tool-row { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2); border-radius: var(--r-md); }
+.tool-row > .tool-row__switch { flex: 1; min-width: 0; }
+.tool-row__name, .tool-row__line { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-row__name { font-size: var(--t-md); font-weight: var(--fw-medium); }
+.tool-row__line { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+/* changes data: a quiet pen after the name, the words in its tip */
+.tool-row__writes { flex: none; display: inline-flex; color: var(--text-muted); }

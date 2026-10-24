@@ -1,0 +1,89 @@
+/* The chat page (views/Celine.tsx, components/Talk.tsx) and its composer (Composer.tsx):
+   the reading column, the head with its mood, the box as the one raised object, the side
+   panel's tabs. Only chat- classes; every value is a token. */
+
+.chat {
+  flex: 1; min-height: 0; display: flex; overflow: clip; position: relative;
+}
+.chat-main {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative;
+  container: chat-main / inline-size;
+}
+.chat-main--drop { box-shadow: inset 0 0 0 2px var(--accent-dim); }
+
+/* ── the head: its face, its name and its mood ── */
+/* its name, its mood, then the conversation's title. They get the head's whole width but
+   what the head's other parts take: its padding, its face and the gaps, and its buttons
+   (--acts of them, Celine.tsx: the panel, More, Plan, "running" and Restore as they show). The
+   title gives way first, down to a few letters; then its mood ends in an ellipsis. */
+.chat-who {
+  display: flex; align-items: baseline; gap: var(--s-2); min-width: 0; overflow: hidden;
+  max-width: calc(100cqi - var(--s-5) - var(--face-sm) - var(--s-2) - var(--s-1) - var(--s-3) - var(--acts, 2) * (var(--s-2) + var(--h-md)));
+}
+.chat-mood {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-lg); font-weight: var(--fw-regular); letter-spacing: 0.02em; cursor: default;
+}
+.chat-head__title { flex: 0 100 auto; min-width: 4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-md); font-weight: var(--fw-regular); letter-spacing: 0; color: var(--text-muted); }
+.chat-jobs { color: var(--text-secondary); }
+.chat-notice { flex: none; padding: 0 var(--s-4) var(--s-2); }
+
+/* ── the transcript's scroll ── */
+.chat-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; position: relative; scrollbar-gutter: stable both-edges;
+  mask-image: linear-gradient(to bottom, transparent 0, var(--opaque) var(--s-5), var(--opaque) calc(100% - var(--s-4)), transparent 100%);
+}
+.chat-col { width: min(100% - 2 * var(--s-4), var(--chat-col)); margin: 0 auto; }
+/* the lines of its life after the messages: every reminder of this conversation, one line
+   each, in from the edge like the transcript's quiet lines */
+.chat-events { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1);
+  padding: 0 0 var(--s-4) calc(var(--face-sm) + var(--s-3)); }
+@container chat-main (min-width: 0) { .chat-events { width: min(100cqi - 2 * var(--s-4), var(--chat-col)); } }
+
+/* a new conversation: its face, its name and its mood above the box */
+.chat-scroll--empty { display: flex; flex-direction: column; justify-content: flex-end; }
+.chat-greeting { display: grid; justify-items: center; gap: var(--s-2); padding: 0 var(--s-4) var(--s-5); text-align: center; }
+.chat-greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title); font-weight: var(--fw-medium); }
+.chat-greeting .chat-mood { font-size: var(--t-xl); max-width: 100%; }
+
+/* ── the composer ── */
+.chat-composer { flex: none; padding: var(--s-2) 0 var(--s-4); }
+.chat-composer--empty { flex: 1; }
+.chat-col--composer { position: relative; display: grid; gap: var(--s-2); }
+/* New messages and the command list: on the box's top edge, over the transcript */
+.chat-composer__float {
+  position: absolute; bottom: calc(100% + var(--s-2)); left: 0; right: 0; z-index: 1;
+  display: flex; justify-content: center; pointer-events: none;
+}
+.chat-composer__float > * { pointer-events: auto; box-shadow: var(--e-overlay); animation: rise var(--dur) var(--ease); }
+.chat-composer__float--start { justify-content: flex-start; }
+.chat-composer__float > [role='menu'] { width: 100%; max-width: none; max-height: 50vh; overflow-y: auto; }
+/* a command's outcome above the box, with Dismiss */
+.chat-note { display: flex; align-items: center; gap: var(--s-2); padding-inline: var(--s-2); }
+/* a quoted message or a page in the box, with its x */
+.chat-ref { display: inline-flex; align-items: center; gap: var(--s-1); }
+
+/* ── the side panel ── */
+.chat-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-content: start; }
+.chat-ctx { display: grid; gap: var(--s-2); padding: 0 var(--s-2) var(--s-2); }
+.chat-ctx__total { font-size: var(--t-md); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.chat-ctx__total b { color: var(--text-primary); font-weight: var(--fw-medium); }
+/* its notes and the loaded tools: a name over its tokens, apart from the next */
+.chat-ctx__list { display: grid; gap: var(--s-2); }
+.chat-ctx__add { justify-self: start; }
+/* the conversation's list in the place sidebar */
+.chat-list { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* ── a narrow column and a phone ── */
+@media (max-width: 767px) {
+  .chat-col { width: calc(100% - 2 * var(--s-4)); }
+  /* a phone's head: the list button before its face, no gap between its buttons */
+  .chat-who { max-width: calc(100cqi - 2 * var(--s-3) - var(--h-md) - var(--face-sm) - 2 * var(--s-2) - var(--s-1) - var(--acts, 2) * var(--h-md)); }
+  .chat-events { padding-left: 0; }
+  .chat-greeting .chat-mood { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+  .chat-head__title { display: none; }
+}
+
+/* where Activity and Thoughts open: their Drawer is a column of the chat's row */
+.chat-side { display: contents; }

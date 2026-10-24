@@ -1,0 +1,20 @@
+#!/bin/sh
+# shellbox: curl, wget and git are themselves, and every file they bring from the net is
+# tagged with where it came from (net-tag). Installed as /usr/local/bin/curl, wget and git.
+tool=${0##*/}
+real=/usr/bin/$tool
+if [ "$tool" = git ]; then
+    # only these bring files from the net; any other git runs as itself, at once
+    skip= net=
+    for a; do
+        if [ -n "$skip" ]; then skip=; continue; fi
+        case $a in
+            -C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env) skip=1 ;;
+            -*) ;;
+            clone|pull|fetch|submodule) net=1; break ;;
+            *) break ;;
+        esac
+    done
+    [ -n "$net" ] || exec "$real" "$@"
+fi
+exec python3 -I /usr/local/lib/shellbox/net-tag "$real" "$@"

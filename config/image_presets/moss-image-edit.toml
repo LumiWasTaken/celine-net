@@ -1,0 +1,58 @@
+# MOSS Image Edit (chinoll/Moss-Image-Edit), an editing LoRA on MOSS-Image-SFT, through
+# the ComfyUI-Moss-Image-Edit nodes: one MossImageEdit node with 1 to
+# 4 reference images. The author's settings: 30 steps, cfg 4, shift 5, references at most
+# 512 px on the long edge. The author's output is 512x512; this preset asks for 1024x1024
+# (MOSS-Image draws best at 1 to 2 megapixels). A reference that is not given loses its
+# LoadImage node and the input to it (the node takes reference_2 to 4 as optional).
+# The paths in moss-image-edit.json (/models/MOSS-Image-SFT and /models/Moss-Image-Edit)
+# must be changed to where the models live on the ComfyUI server.
+label = "MOSS-Image edit"
+family = "MOSS-Image"
+task = "edit"
+workflow = "moss-image-edit.json"
+good_at = "Edits from up to four images: colors, outfits, objects, light, season, style; a person from one image in the outfit or place of another."
+prompting = """
+One instruction in plain English (Chinese works too): say the change, then what stays.
+"Change the background to a sunny beach, preserving the person." "Make it winter, snow
+on the roofs, keep the composition."
+
+- With several images, name each by its number in the order given: `source` is image 1,
+  `source2` image 2, up to `source4` image 4. Say the role of each: "Dress the person in
+  image 1 in the outfit from image 2. Preserve the person's identity and pose." "Put the
+  woman from image 1 and the man from image 2 side by side on the bench in image 3."
+- One change per instruction; for a second change edit the result again.
+- Name what stays by role ("preserving the person", "keep her face and hair"); do not
+  describe it again.
+- Width and height set the output, in steps of 16. Empty: the first image's shape at
+  about 1 megapixel.
+- A negative prompt works (cfg 4): "blurry, distorted face, extra fingers".
+"""
+example = "Dress the person in image 1 in the outfit from image 2. Preserve the person's identity and pose."
+size = { step = 16, max_pixels = 2100000 }
+
+[parameters.prompt]
+inputs = [["6", "prompt"]]
+
+[parameters.negative]
+inputs = [["6", "negative_prompt"]]
+
+[parameters.image]
+inputs = [["2", "image"]]
+
+[parameters.image2]
+inputs = [["3", "image"]]
+
+[parameters.image3]
+inputs = [["4", "image"]]
+
+[parameters.image4]
+inputs = [["5", "image"]]
+
+[parameters.seed]
+inputs = [["6", "seed"]]
+
+[parameters.width]
+inputs = [["6", "width"]]
+
+[parameters.height]
+inputs = [["6", "height"]]

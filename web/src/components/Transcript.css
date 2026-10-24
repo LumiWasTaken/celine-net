@@ -1,0 +1,147 @@
+/* The transcript (Transcript.tsx), drawn by the kit's Message: its replies on their surface
+   beside its face, yours as the bubble at the right, the quiet lines between. Only what the
+   kit does not draw is here. Tokens only. */
+/* the chat's reading column: the composer's (Composer.css --chat-col), its face inside its
+   left edge, your bubble on its right edge */
+.is-transcript { max-width: calc(var(--measure) + var(--s-6) + var(--s-3) + 2 * var(--s-4)); margin-inline: auto; }
+/* in its place the column is the composer's to the pixel: the same width of the chat
+   (Composer.css .chat-col), not of the scroll inside its scrollbar gutters, and the 16 px
+   gutter on a phone */
+@container chat-main (min-width: 0) {
+  .is-transcript { max-width: none; width: min(100cqi - 2 * var(--s-4), var(--chat-col)); padding-inline: 0; margin-inline: auto; }
+}
+.msg-hers, .msg-yours { position: relative; }
+.msg-yours + .msg-yours { margin-top: calc(-1 * var(--s-1)); }
+.msg__face { display: inline-flex; }
+
+/* its reply: its steps, its thinking above them, at the rhythm of its paragraphs */
+.reply { display: grid; gap: var(--s-3); min-width: 0; }
+.step { display: grid; gap: var(--s-2); min-width: 0; }
+.step:empty { display: none; }
+
+/* a line between messages: a reminder, a brief, a note about images, a summary */
+.msg-event { margin: var(--s-2) 0 var(--s-3); }
+.msg-quiet { display: grid; gap: var(--s-2); margin: 0 0 var(--s-3); padding-left: calc(var(--face-sm) + var(--s-3)); }
+.msg-yours > .image-note { max-width: min(36rem, 85%); margin: 0 0 var(--s-2) auto; }
+
+/* your text: markdown with real type at the bubble's size (an *action* is italic) */
+.msg__text p, .msg__text ul, .msg__text ol, .msg__text pre, .msg__text blockquote { margin: 0 0 var(--s-2); }
+.msg__text > :last-child { margin-bottom: 0; }
+.msg__text ul, .msg__text ol { padding-left: var(--s-5); }
+.msg__text code { padding: 0 var(--s-1); border-radius: var(--r-sm); background: var(--bubble-mine-inset); font-family: var(--font-mono); }
+.msg__text pre { padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--bubble-mine-inset); white-space: pre-wrap; }
+.msg__text pre code { padding: 0; background: none; }
+.msg__text a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.msg__text blockquote { margin-left: 0; padding-left: var(--s-3); border-left: 2px solid var(--bubble-meta); }
+.msg__picture { width: min(100%, 18rem); }
+.msg__file, .msg__audio {
+  display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.msg__file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.step > .msg__file { width: min(100%, 26rem); }
+.msg__file-size { flex: none; font-size: var(--t-xs); color: var(--text-muted); }
+.msg__audio { flex-direction: column; align-items: stretch; gap: var(--s-1); width: min(30rem, 100%); }
+.msg__audio-title { font-weight: var(--fw-medium); }
+.msg__audio audio { width: 100%; height: var(--h-md); }
+
+/* its prose: markdown with real type */
+.msg__prose { font-size: var(--t-lg); line-height: var(--lh-body); color: var(--text-primary); overflow-wrap: anywhere; }
+.msg__prose > :first-child { margin-top: 0; }
+.msg__prose > :last-child { margin-bottom: 0; }
+.msg__prose p, .msg__prose ul, .msg__prose ol, .msg__prose pre, .msg__prose blockquote, .msg__prose table { margin: 0 0 var(--s-3); }
+.msg__prose ul, .msg__prose ol { padding-left: var(--s-5); }
+.msg__prose li { margin: var(--s-1) 0; }
+.msg__prose li::marker { color: var(--text-muted); }
+.msg__prose li > p { margin: 0; }
+.msg__prose h1, .msg__prose h2, .msg__prose h3, .msg__prose h4 {
+  margin: var(--s-5) 0 var(--s-2); line-height: var(--lh-title); letter-spacing: var(--tracking-title); color: var(--text-primary);
+}
+.msg__prose h1 { font-size: var(--t-2xl); }
+.msg__prose h2 { font-size: var(--t-xl); }
+.msg__prose h3 { font-size: var(--t-lg); }
+.msg__prose h4 { font-size: var(--t-lg); font-weight: var(--fw-medium); color: var(--text-secondary); }
+.msg__prose strong { font-weight: var(--fw-strong); }
+.msg__prose a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim);
+  text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.msg__prose a:hover { text-decoration-color: var(--accent); }
+.msg__prose code { padding: 1px var(--s-1); border-radius: var(--r-sm); background: var(--surface-3); font-family: var(--font-mono); }
+/* code wraps: a long line is never cut at the edge */
+.msg__prose pre {
+  padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: var(--t-md); line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.msg__prose pre code { padding: 0; background: none; font-size: inherit; color: var(--text-secondary); }
+.msg__prose blockquote { margin-left: 0; margin-right: 0; padding: 0 0 0 var(--s-4); border-left: 2px solid var(--accent); color: var(--text-secondary); }
+.msg__prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--t-md); }
+.msg__prose th, .msg__prose td { padding: var(--s-2) var(--s-5) var(--s-2) 0; border-bottom: 1px solid var(--border); text-align: left; }
+.msg__prose th { font-weight: var(--fw-medium); color: var(--text-muted); }
+.msg__prose tr:last-child td { border-bottom: 0; }
+.msg__prose hr { margin: var(--s-5) 0; border: 0; border-top: 1px solid var(--border); }
+
+/* the reply being written: the dots take the height of its first line, so the text comes in their place */
+.status { display: flex; align-items: center; gap: var(--s-2); min-height: calc(var(--t-lg) * var(--lh-body));
+  font-size: var(--t-md); line-height: var(--lh-ui); color: var(--text-muted); }
+.status__dots { display: inline-flex; align-items: center; padding: 0 var(--s-1); cursor: default; }
+.status--queued { color: var(--text-muted); }
+
+/* where the answer would be when it did not come: soft words and one way on */
+.turn-end {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3); min-height: var(--h-md);
+  margin: var(--s-2) 0; animation: fade var(--dur) var(--ease);
+}
+.turn-end__text { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: var(--t-md); color: var(--text-secondary); }
+.turn-end__text b { font-weight: var(--fw-medium); color: var(--text-primary); }
+.turn-end--error { padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4); border-radius: var(--r-md); background: var(--error-wash); }
+
+/* a summary, read in its Sheet */
+.compaction__text { margin: 0; color: var(--text-secondary); line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* its thoughts, read whole */
+.thoughts { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Edit: the text in a box where the message was, Cancel and Save under it */
+.msg__edit { display: grid; gap: var(--s-2); width: min(100%, var(--measure)); }
+.msg__edit-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-2); }
+
+/* Activity and Thoughts: a drawer at the window's right edge (a sheet on a phone) */
+.transcript-side { position: fixed; inset: 0 0 0 auto; z-index: var(--z-sheet); display: flex; pointer-events: none; }
+.transcript-side[data-open] { pointer-events: auto; }
+.transcript-refused { margin-top: var(--s-1); padding-left: var(--s-4); }
+
+/* "What it saw": each step's request and raw answer, each in its own box */
+.dialog.sheet.saw { width: min(45rem, 100%); }
+.saw__label { flex: none; font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); }
+.saw__step { display: grid; gap: var(--s-1); }
+.saw__head { display: flex; gap: var(--s-2); margin: var(--s-2) 0 0; font-size: var(--t-xs); color: var(--text-muted); }
+.saw__head b { font-weight: var(--fw-medium); color: var(--text-secondary); }
+
+/* ── Settings, Appearance: the choices and the live preview beside them, the preview on the
+   real canvas with a strip of the conversation list on surface-1 ── */
+.appearance { display: grid; grid-template-columns: minmax(0, var(--measure-form)) minmax(0, var(--measure-prose)); justify-content: center;
+  align-items: start; gap: var(--s-5); }
+.appearance__choices { display: grid; gap: var(--s-5); min-width: 0; }
+.appearance__preview { position: sticky; top: var(--s-5); display: grid; grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  border-radius: var(--r-lg); overflow: hidden; background: var(--grain) var(--bg-canvas); box-shadow: inset 0 0 0 1px var(--border); }
+.appearance__list { display: grid; align-content: start; gap: var(--s-0); padding: var(--s-3) var(--s-2); background: var(--surface-1);
+  border-right: 1px solid var(--border); }
+.appearance__chat { display: grid; gap: var(--s-4); padding: var(--pad-section); min-width: 0; }
+@media (max-width: 1279px) {
+  .appearance { grid-template-columns: minmax(0, var(--measure-form)); }
+  .appearance__preview { position: static; }
+}
+@media (max-width: 767px) {
+  .appearance__preview { grid-template-columns: minmax(0, 1fr); }
+  .appearance__list { display: none; }
+}
+/* beside the settings list (768 to 1279) the column is narrow: the section's own padding,
+   so Text size holds its four words in one row */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .settings__col .appearance__choices > section { padding: var(--pad-section); }
+}
+
+@media (max-width: 767px) {
+  .msg-quiet { padding-left: 0; }
+}
+

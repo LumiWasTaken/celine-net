@@ -1,0 +1,56 @@
+# The Krea 2 identity edit workflow: the krea2_identity_edit_v2 LoRA, ref_boost 4, 12 steps
+# (the face-detail end of the card's 8-12), cfg 1.0, euler, simple, grounding 1024. The
+# source image is uploaded to ComfyUI's input folder for each edit.
+label = "Krea 2 identity edit"
+family = "Krea 2"
+task = "edit"
+workflow = "krea2-identity-edit.json"
+good_at = "Restaging a person from one photo while keeping her face and likeness: new scene, pose, angle, outfit, light, expression."
+prompting = """
+One short instruction. To restage, start with "Create a photo of this woman ...": "Create
+a photo of this woman sitting in a dark cinema seat, her face lit by the screen." For a
+change to the picture, name only the change: "Change her outfit to a red raincoat.",
+"Relight the scene with warm golden hour sunlight." It keeps the face, skin, hair and
+everything not mentioned.
+
+- Say what stays first, then the change: "Keep her face, and hair exactly the
+  same. She now wears a red summer dress."
+- Say how much of her is seen (head and shoulders, waist up, full body), describe a new
+  outfit concretely and say what goes ("no jacket"): clothes from the source persist.
+- Light by where it lands: "warm light across her cheekbones".
+- Backgrounds leak from the source: command a full replacement, "she is now on a sunny
+  beach; replace the whole room and background completely".
+- Removals redraw the object instead of deleting it: remove objects, change text, light
+  or only the background with qwen2.1-image-edit.
+- Plain words, never slang or acronyms.
+- No character LoRA here: the face comes from the source image, a second one fights it.
+"""
+example = "give her a black leather jacket"
+size = { step = 16, max_pixels = 2100000 }
+
+[parameters.prompt]
+inputs = [["10", "prompt"]]
+
+[parameters.image]
+inputs = [["4", "image"]]
+
+[parameters.seed]
+inputs = [["12", "seed"]]
+
+[parameters.width]
+inputs = [["7", "width"]]
+
+[parameters.height]
+inputs = [["7", "height"]]
+
+[parameters.model]
+inputs = [["2", "unet_name"]]
+
+[catalog]
+models = ["krea2/"]
+loras = ["krea_2/"]
+lora_after = "6"
+sampler = "12"
+text = ["10", "prompt"]
+max_loras = 3
+full_settings = { steps = 28, cfg = 3.5 }

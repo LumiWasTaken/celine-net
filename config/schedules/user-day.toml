@@ -1,0 +1,29 @@
+label = "{{username}}'s day"
+summary = "Reads what you did the day before from your chats and mail."
+cron = "0 3 * * *"
+after = ["world"]
+partner = ""
+rounds = 8
+note = "diary/{{date}}-{{username}}.md"
+role = "chat"
+on = false
+prompt = """
+What did {{username}} do on {{day_before}}?
+
+Look at everything you can see of that day:
+- their chats in the Messages archive, Discord and WhatsApp:
+  chat_archive__count(by="chat", scope=["all"], when="{{day_before}}") lists the chats
+  written in that day, then chat_archive__read_period(chat=..., when="{{day_before}}")
+  for each one that matters;
+- their mail of that day, if you have it (email__search with since);
+- your own conversations with them that day: past_conversations__list_day(date="{{day_before}}");
+- events and activities they told you about or planned, in your notebook.
+
+Your answer is an account of their day: what they did, with whom, what happened, how
+they seemed, in order. Cite the messages you rely on. Say plainly what you could not
+see.
+
+The news of that day, from your digest:
+
+{{result:world}}
+"""

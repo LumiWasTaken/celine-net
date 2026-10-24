@@ -1,0 +1,64 @@
+# MCP servers. Each becomes a skill in the Skills tab, named after its key here,
+# with one tool per tool the server advertises.
+#
+# A server that fails to start is reported in the Skills tab and its tools are
+# not offered that session. It does not take the rest of Celine down.
+#
+# Celine is only ever a client. Two servers here are connectors: they own the Discord
+# account and the WhatsApp linked device, feed the archive named by `kb` and give its
+# read tools. `command` next to `url`: started when the url
+# does not answer, never otherwise; the process outlives this app. In Docker the
+# connectors are services of their own and *_COMMAND is set to "" (never started here). The keys are the
+# stack's own (server/celine/keys.py): CONNECTOR_KEY is this app's keys/connector.key,
+# CONNECTOR_CLIENTS_FILE its keys/connector-clients ("name:key:owner" or "name:key:reader",
+# one per line or comma separated); an environment variable of the same name wins. The bridged chat
+# (WhatsApp's own chat, the one chat wa-link writes to) is set up on its source page, not here.
+#
+# Bastet (server/celine/guard/facts.py) reads two keys per server: `class`, who may see
+# its results (public, informal, nsfw, sensitive; default sensitive), and `sends`, where
+# its writing tools send (public, people, house; default public).
+
+[servers.discord]
+enabled   = true
+transport = "http"
+url       = "${DISCORD_LINK_URL:-http://127.0.0.1:8768/mcp}"
+kb        = "discord"
+command   = "${DISCORD_LINK_COMMAND-.venv/bin/python}"
+args      = ["-m", "discord_link", "--state", "var/discord-link",
+             "--listen", "127.0.0.1:8768", "--clients-file", "${CONNECTOR_CLIENTS_FILE}"]
+
+[servers.discord.env]
+PYTHONPATH = "connectors/discord"
+
+[servers.discord.headers]
+Authorization = "Bearer ${CONNECTOR_KEY}"
+
+[servers.whatsapp]
+enabled   = true
+transport = "http"
+url       = "${WA_LINK_URL:-http://127.0.0.1:8767/mcp}"
+kb        = "whatsapp"
+sends     = "people"
+command   = "${WA_LINK_COMMAND-wa-link/wa-link}"
+args      = ["-store", "var/wa-link/store.db", "-state", "var/wa-link/state",
+             "-listen", "127.0.0.1:8767", "-clients-file", "${CONNECTOR_CLIENTS_FILE}"]
+
+[servers.whatsapp.headers]
+Authorization = "Bearer ${CONNECTOR_KEY}"
+
+[servers.filesystem]
+enabled   = false
+transport = "stdio"
+sends     = "house"
+command   = "npx"
+args      = ["-y", "@modelcontextprotocol/server-filesystem", "~/projects"]
+
+[servers.filesystem.env]
+
+[servers.github]
+enabled   = false
+transport = "http"
+url       = "https://api.githubcopilot.com/mcp/"
+
+[servers.github.headers]
+# Authorization = "Bearer ghp_..."

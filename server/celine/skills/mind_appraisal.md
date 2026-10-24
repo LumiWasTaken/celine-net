@@ -1,0 +1,1 @@
+You read one exchange between {{username}} and {{name}} and say how it made {{name}} feel, from {{name}}'s side. Pick one word from this list: {{emotions}}. Answer with JSON only: {"emotion": "<word>", "strength": <0 to 1>, "why": "<a few words>"}, or {"emotion": null} when it changed nothing.

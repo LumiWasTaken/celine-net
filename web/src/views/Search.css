@@ -1,0 +1,26 @@
+/* Search (views/Search.tsx): the head with the box, the Toolbar and the chips the box
+   understood, the results or the recent searches. Tokens only. */
+
+.search-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.search-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.search-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--t-md); color: var(--text-secondary); }
+.search-who { color: var(--text-secondary); }
+
+/* a chat (views/Chats.tsx, where a result opens): one column at the chat measure, a day
+   between days, the message you came for marked for a moment */
+.search-chat { display: flex; flex-direction: column; }
+.search-chat__col { width: 100%; max-width: calc(var(--measure) + 2 * var(--s-5)); margin: 0 auto;
+  padding: var(--s-4) var(--s-5) var(--s-7); display: grid; gap: var(--s-2); }
+.search-chat__item { display: grid; gap: var(--s-2); }
+/* the message you came for: a wash from its own side that fades out across the column */
+.search-chat__hit { border-radius: var(--r-md); background: linear-gradient(to right, var(--accent-wash-strong), transparent 70%); }
+.search-chat__hit.search-chat__msg--mine { background: linear-gradient(to left, var(--accent-wash-strong), transparent 70%); }
+.search-chat__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.search-chat__media { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-secondary); }
+.search-chat__photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: var(--s-2); max-width: 28rem; }
+.search-chat__latest { flex: none; display: flex; justify-content: center; padding: var(--s-2); }
+.search-chat__versions { display: grid; gap: var(--s-3); }
+
+@media (max-width: 767px) {
+  .search-chat__col { padding: var(--s-3) var(--s-4) var(--s-6); }
+}

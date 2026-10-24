@@ -1,0 +1,20 @@
+label = "World news"
+summary = "Searches the news of the day before and writes a digest."
+cron = "0 2 * * *"
+after = []
+partner = ""
+rounds = 8
+note = "diary/{{date}}-world.md"
+role = "chat"
+on = true
+prompt = """
+What happened in the world on {{day_before}}?
+
+Search the web for the news of that day (web__search, then web__read_page for the
+stories that matter). Look at world events, politics, science and technology, and
+anything {{username}} cares about that you know of from your notes.
+
+Your answer is a short digest of {{day_before}}: the five to ten stories that matter,
+each in two or three plain sentences in your own words, no links or sources. Leave out
+what you could not check.
+"""

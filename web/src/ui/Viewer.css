@@ -1,0 +1,41 @@
+/* Viewer (Viewer.tsx): the whole window; the picture fits, the bar over it, the caption under it */
+.viewer {
+  position: fixed; inset: 0; z-index: var(--z-dialog); display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--surface-scrim); backdrop-filter: blur(6px); outline: none;
+  animation: grow var(--dur-slow) var(--ease);
+}
+.viewer__bar { position: relative; display: flex; align-items: center; gap: var(--s-3); min-height: var(--header-h);
+  padding: 0 calc(var(--h-md) + var(--s-5)) 0 var(--s-5); color: var(--text-secondary); }
+.viewer__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.viewer__count { flex: none; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.viewer__actions { display: flex; gap: var(--s-0); margin-left: auto; }
+.viewer__bar .close-x { top: calc((var(--header-h) - var(--h-md)) / 2); }
+.viewer__stage { --edge: 0 var(--s-6) var(--s-4); position: relative; display: grid; place-items: center; min-height: 0;
+  padding: var(--edge); overflow: hidden; }
+/* the picture whole inside the stage's edges, whatever its shape and the screen's */
+.viewer__img {
+  position: absolute; inset: var(--edge); margin: auto; max-width: calc(100% - 2 * var(--s-6)); max-height: calc(100% - var(--s-4));
+  object-fit: contain; border-radius: var(--r-md); box-shadow: var(--e-overlay);
+  transform-origin: 0 0; touch-action: none; user-select: none;
+  transition: filter var(--dur) var(--ease);
+}
+/* the picture comes in sharp from a blurred start */
+.viewer__img.is-loading { filter: blur(12px); }
+.viewer__failed { display: grid; justify-items: center; gap: var(--s-3); color: var(--text-secondary); }
+.viewer__nav { position: absolute; top: 50%; translate: 0 -50%; border-radius: var(--r-full); box-shadow: var(--e-float); }
+.viewer__nav--prev { left: var(--s-3); }
+.viewer__nav--next { right: var(--s-3); }
+.viewer__caption { display: grid; gap: var(--s-3); max-width: 70ch; width: 100%; justify-self: center; padding: 0 var(--s-5) var(--s-5); }
+@media (max-width: 767px) {
+  .viewer__stage { --edge: 0 var(--s-2) var(--s-3); }
+  .viewer__img { max-width: calc(100% - 2 * var(--s-2)); max-height: calc(100% - var(--s-3)); }
+}
+/* a panel beside the picture: its prompt and settings; under it on a phone */
+.viewer__main { display: grid; min-height: 0; }
+.viewer__main--panel { grid-template-columns: minmax(0, 1fr) min(24rem, 34vw); }
+.viewer__panel { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--s-4);
+  margin: 0 var(--s-4) var(--s-4) 0; padding: var(--s-4); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--e-float); }
+@media (max-width: 767px) {
+  .viewer__main--panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .viewer__panel { max-height: 40dvh; margin: 0 var(--s-2) var(--s-2); }
+}

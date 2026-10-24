@@ -1,0 +1,32 @@
+/* Routines (views/Routines.tsx): the list pages (a day's runs, the schedules, the
+   triggers), a run, a schedule, what a trigger started. Tokens only. */
+
+.routines-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* the fourteen days: Earlier, the days (each its date and a mark per schedule), Later */
+.routines-days { display: flex; align-items: center; gap: var(--s-1); min-width: 0; }
+/* one row that scrolls sideways, never wraps */
+.routines-days .routines-days__strip { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.routines-day { display: inline-flex; align-items: center; gap: var(--s-1); white-space: nowrap; }
+.routines-day__marks { display: inline-flex; gap: var(--s-0); min-height: var(--s-1); }
+.routines-mark { width: var(--s-1); height: var(--s-1); border-radius: var(--r-full); background: var(--text-muted); }
+.routines-mark--ok { background: var(--success); }
+.routines-mark--error { background: var(--error); }
+.routines-mark--running { background: var(--accent); }
+.routines-mark--off { background: var(--surface-4); }
+
+.routines-prose { margin: 0; line-height: var(--lh-body); color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.routines-prose--quiet { color: var(--text-secondary); }
+.routines-mono { font-family: var(--font-mono); font-size: var(--t-md); }
+.routines-preview { padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--surface-sunk); }
+.routines-label { font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); }
+.routines-link { display: inline-flex; align-items: center; gap: var(--s-1); min-width: 0; overflow-wrap: anywhere; }
+.routines-rows { display: grid; margin: 0 calc(-1 * var(--s-3)); }
+.routines-form { display: grid; gap: var(--s-4); }
+.routines-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--s-2) var(--s-4); }
+.routines-when { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.routines-when__value { flex: 0 1 12rem; min-width: 8rem; }
+.routines-talk { display: grid; gap: var(--s-4); }
+.routines-kids { flex: none; display: grid; padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--border); }
+.routines-work { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+

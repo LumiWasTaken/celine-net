@@ -1,0 +1,53 @@
+/* The Terminals place (views/Terminals.tsx: the list and the commands) and one terminal
+   (views/Terminal.tsx: its screen beside the box to send a message and its commands). */
+
+/* ── a list page: the head and toolbar over the rows ── */
+.term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* under the head, as wide as the rows */
+.terms-notice { max-width: none; }
+.terms-error, .term-note { flex: none; padding: var(--s-2) var(--s-5) 0; }
+
+/* ── one terminal: its screen, and beside it the box and its commands ── */
+.term-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--drawer-w); gap: var(--s-4); padding: var(--s-4) var(--s-5); }
+.term-screen { min-height: 0; }
+.term-side { min-height: 0; overflow-y: auto; display: grid; gap: var(--s-4); align-content: start; }
+.term-send { display: grid; gap: var(--s-2); }
+/* Send to: one menu button, its words on the box's edge; a long conversation name ends in an ellipsis */
+.term-to { justify-self: start; max-width: 100%; margin-inline-start: calc(-1 * var(--s-4)); }
+.term-to__name { display: block; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
+.term-box-line { display: flex; align-items: flex-end; gap: var(--s-2); }
+.term-box-line__text { flex: 1; min-width: 0; display: grid; }
+.term-rows { display: grid; margin: 0 calc(-1 * var(--s-3)); }
+
+/* the box fills the screen and the font fills the box (Terminal.tsx), from its top left as in
+   any terminal; past the largest font the rest is the screen's own black */
+.term-box {
+  position: relative; height: 100%; min-width: 0; overflow: auto; display: flex;
+  align-items: flex-start; background: var(--surface-sunk); padding: var(--s-3);
+}
+.term-box--yours:focus-within { box-shadow: inset 0 0 0 2px var(--accent-wash-strong); }
+/* overflow: xterm keeps its scrollbar track at the old height after a font change until
+   the next scroll or line of output */
+.term-xterm { flex: none; overflow: hidden; font-size: var(--t-xs); transition: opacity var(--dur) var(--ease); } /* the kit's mono size (ui.css .mono) is the terminal's floor (Terminal.tsx fontMin) */
+.term-xterm--dim { opacity: 0.55; }
+.term-xterm .xterm { padding: 0; }
+.term-lost {
+  position: absolute; left: var(--s-4); right: var(--s-4); bottom: var(--s-3); padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md); background: var(--surface-2); color: var(--text-secondary); font-size: var(--t-md); line-height: var(--lh-body);
+}
+
+@media (max-width: 767px) {
+  .term-body { padding: var(--s-3) var(--s-4); }
+}
+
+/* the page's own width decides (beside the place sidebar a laptop is narrow too): below the
+   room for it 120 by 40 at a readable size and the side column beside it, the side goes
+   under the screen and the box takes the screen's shape, as wide as the page */
+.term { container-type: inline-size; }
+@container (max-width: 80rem) {
+  .term-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: max-content; overflow-y: auto; }
+  .term-side { overflow: visible; }
+  /* the screen's shape, short enough that the box to send stays in view under it; at the
+     smallest font it grows to it 40 lines and the screen scrolls sideways */
+  .term-box { height: auto; aspect-ratio: 3 / 2; overflow: visible; max-height: calc(100dvh - var(--header-line) - 14rem); }
+}

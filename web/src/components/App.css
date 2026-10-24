@@ -1,0 +1,206 @@
+/* celine-net shell and the sections' own layouts. Shell.css keeps Celine's layout;
+   kit pieces (buttons, fields, dialogs, chips, notices, lists) live in ui/ui.css. */
+
+/* ── frame and rail ───────────────────────────────────────────────────────── */
+.app {
+  height: 100%; display: flex; flex-direction: column; overflow: clip;
+  --rail-left: var(--rail-w); --rail-bottom: 0px;
+  /* an installed app on a notched phone (viewport-fit=cover): clear of the edges */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.frame {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+}
+.rail {
+  position: relative; isolation: isolate;
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-1);
+  padding: var(--s-4) 0; overflow-y: auto; scrollbar-width: none;
+  background: var(--rail-bg);
+  z-index: var(--z-rail);
+}
+/* the one pill under the open section, sliding from item to item */
+.rail[data-slide]::before {
+  content: ''; position: absolute; z-index: -1; left: 0; top: 0; border-radius: var(--r-lg); background: var(--rail-active);
+  width: var(--slide-w); height: var(--slide-h); transform: translate(var(--slide-x), var(--slide-y));
+}
+.rail[data-slide='live']::before { transition: transform var(--dur) var(--ease-spring), width var(--dur) var(--ease), height var(--dur) var(--ease); }
+/* its mark: its portrait, or the app's mark on its colour, the size of a row's avatar */
+.rail__brand {
+  flex: none; width: var(--h-md); height: var(--h-md); border-radius: var(--r-full); display: grid; place-items: center;
+  background: var(--accent-wash); color: var(--accent); margin-bottom: var(--s-3);
+}
+.rail__face { width: 100%; height: 100%; }
+.rail__item {
+  flex: none; width: calc(var(--rail-w) - 2 * var(--s-1)); min-height: var(--header-h); padding: 0 var(--s-1); border-radius: var(--r-lg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-1);
+  color: var(--rail-ink); position: relative; text-decoration: none;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.rail__item:hover { background: var(--rail-hover); color: var(--text-secondary); }
+.rail__item[aria-current='page'] { background: var(--rail-active); color: var(--rail-active-ink); }
+.rail[data-slide] .rail__item[aria-current='page'] { background: none; }
+.rail__item:active { transform: scale(0.98); }
+/* Log out and More are the kit's Button in the rail item's look */
+.rail__item.btn { height: auto; padding: 0 var(--s-1); gap: var(--s-1); border-radius: var(--r-lg); background: none; color: var(--rail-ink); }
+.rail__item.btn:hover:not([aria-disabled='true']) { background: var(--rail-hover); color: var(--text-secondary); }
+.rail__item.btn[aria-current='page'] { color: var(--rail-active-ink); }
+.rail__item > .btn__label { display: contents; }
+/* the phone's More: only in the bottom bar */
+.rail__more { display: none; }
+.rail__frozen.btn, .rail__frozen.btn:hover:not([aria-disabled='true']) { color: var(--error); }
+/* something to fix (a lost login): one dot, on Settings and on More */
+.rail__dot { position: absolute; top: var(--s-2); right: calc(50% - var(--s-4)); width: var(--dot); height: var(--dot);
+  border-radius: var(--r-full); background: var(--warn); }
+/* the other place at work, failed or waiting for you */
+.rail__dot--running { background: var(--running); animation: pulse var(--dur-pulse) linear infinite; }
+.rail__dot--failed { background: var(--error); }
+.rail__label { font-size: var(--t-xs); line-height: var(--lh-micro); font-weight: var(--fw-medium); letter-spacing: 0; white-space: nowrap; }
+.rail__spacer { flex: 1; min-height: var(--s-2); }
+.rail__count {
+  position: absolute; top: var(--s-1); right: var(--s-3); min-width: var(--icon-lg); padding: 0 var(--s-1);
+  border-radius: var(--r-full); background: var(--accent-fill); color: var(--text-on-accent);
+  font-size: var(--t-xs); line-height: var(--icon-lg); text-align: center; font-variant-numeric: tabular-nums;
+}
+.rail__door.btn:hover:not([aria-disabled='true']) { color: var(--accent); }
+/* its name, until the status is in */
+.rail__wait { display: block; width: 4em; height: 1em; border-radius: var(--r-sm); background: var(--surface-3);
+  animation: skeleton calc(var(--dur-pulse) * 4 / 3) var(--ease) infinite; }
+/* a short screen (a 1366x768 laptop): every place still fits, each as tall as a touch target */
+@media (max-height: 860px) { .rail__item { min-height: var(--h-lg); } }
+/* a phone on its side: icons only, a narrower rail */
+@media (pointer: coarse) and (max-height: 500px) and (min-width: 768px) {
+  .app { --rail-w: var(--header-h); }
+  .rail__label, .rail__brand { display: none; }
+  .rail__item { min-height: var(--h-lg); }
+}
+
+.sections { min-width: 0; min-height: 0; position: relative; }
+.view { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--grain) var(--bg-canvas); }
+.view[hidden] { display: none !important; }
+/* switching place: the place fades in; a chat, file or settings page: a quick fade, nothing slides */
+.view:not([hidden]) { animation: fade var(--dur) var(--ease); }
+.thread, .settings__content { animation: fade var(--dur-fast) var(--ease); }
+
+/* ── shared bits ──────────────────────────────────────────────────────────── */
+/* the switcher (Ctrl+K), the shortcuts (?) and More */
+.switcher { display: grid; max-height: min(60vh, calc(10 * var(--row-md))); overflow-y: auto; margin: 0 calc(-1 * var(--s-2)); }
+.switcher__icon { color: var(--text-muted); }
+.switcher__field { height: var(--h-lg); font-size: var(--t-lg); border-radius: var(--r-md); }
+.switcher__row:has(.list-row__subtitle) { min-height: calc(var(--row-md) + var(--s-3)); }
+.shortcuts { display: grid; grid-template-columns: max-content 1fr; margin: 0; }
+.shortcuts > div { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; gap: var(--s-4);
+  min-height: var(--row-md); border-bottom: 1px solid var(--border); }
+.shortcuts > div:last-child { border-bottom: 0; }
+.shortcuts dt { display: flex; gap: var(--s-1); }
+.shortcuts dd { margin: 0; color: var(--text-secondary); }
+kbd { display: inline-block; min-width: 1.75em; padding: 0 0.4em; margin-right: var(--s-1); border-radius: var(--r-sm);
+  background: var(--surface-3); box-shadow: inset 0 -1px 0 var(--border-strong); font-family: var(--font-sans); font-size: var(--t-xs);
+  line-height: 1.6; text-align: center; color: var(--text-primary); }
+.more { display: grid; margin: 0 calc(-1 * var(--s-2)); }
+/* in the More sheet a mark sits on its row, at its right end */
+.more :is(.rail__dot, .rail__count) { position: static; }
+.muted { color: var(--text-muted); }
+/* a row of buttons under a form or a card */
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+a { color: var(--accent); }
+/* inline code: one size everywhere, a step under the text around it */
+code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-sunk);
+  border-radius: var(--r-sm); padding: 0 var(--s-1); }
+
+input[type='file'] { font-size: var(--t-md); color: var(--text-secondary); }
+input[type='file']::file-selector-button {
+  font: inherit; font-weight: var(--fw-medium); margin-right: var(--s-3); height: var(--h-sm); padding: 0 var(--s-3); cursor: pointer;
+  border-radius: var(--r-sm); border: 0; background: var(--surface-3); color: var(--text-primary);
+}
+input[type='file']::file-selector-button:hover { background: var(--surface-4); }
+
+/* ── split: list pane + main pane ─────────────────────────────────────────── */
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+
+/* ── thread ───────────────────────────────────────────────────────────────── */
+.thread { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.bubble {
+  max-width: min(560px, 78%); min-width: 64px;
+  background: var(--bubble-theirs); color: var(--text-primary);
+  border-radius: var(--r-lg);
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--t-md); line-height: var(--lh-body);
+  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.bubble::after { content: ''; display: block; clear: both; }
+
+/* prose: a document, a note, a page it wrote. Headings on the type scale, a list's
+   items apart, code on the sunk surface, tables on hairlines, quotes beside a rule */
+.prose { font-size: var(--t-lg); line-height: var(--lh-body); color: var(--text-primary); overflow-wrap: anywhere; }
+.prose > :first-child { margin-top: 0; }
+.prose > :last-child { margin-bottom: 0; }
+.prose p, .prose ul, .prose ol, .prose pre, .prose blockquote, .prose table { margin: 0 0 var(--s-4); }
+.prose ul, .prose ol { padding-left: var(--s-5); }
+.prose li + li, .prose li > ul, .prose li > ol { margin-top: var(--s-1); }
+.prose li > ul, .prose li > ol { margin-bottom: 0; }
+.prose li::marker { color: var(--text-muted); }
+.prose h1, .prose h2, .prose h3, .prose h4 { font-weight: var(--fw-medium);
+  line-height: var(--lh-title); margin: var(--s-6) 0 var(--s-3); letter-spacing: var(--tracking-title);
+}
+.prose h1 { font-size: var(--t-2xl); font-weight: var(--fw-bold); }
+.prose h2 { font-size: var(--t-xl); padding-bottom: var(--s-2); border-bottom: 1px solid var(--border); }
+.prose h3 { font-size: var(--t-lg); }
+.prose h4 { font-size: var(--t-md); color: var(--text-secondary); }
+.prose strong { font-weight: var(--fw-bold); }
+.prose a { color: var(--accent); text-underline-offset: 2px; }
+.prose pre { background: var(--surface-sunk); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); overflow-x: auto;
+  font-size: var(--t-md); line-height: var(--lh-body); }
+.prose pre code { background: none; padding: 0; font-size: inherit; }
+.prose blockquote { border-left: 3px solid var(--accent-dim); padding: var(--s-1) 0 var(--s-1) var(--s-4); margin-left: 0; color: var(--text-secondary); }
+.prose blockquote > :last-child { margin-bottom: 0; }
+.prose hr { border: 0; border-top: 1px solid var(--border); margin: var(--s-6) 0; }
+.prose img { max-width: 100%; border-radius: var(--r-md); }
+.prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--t-md); line-height: var(--lh-ui); }
+.prose th, .prose td { border-bottom: 1px solid var(--border); padding: var(--s-2) var(--s-3); text-align: left; vertical-align: top; }
+.prose th { font-weight: var(--fw-medium); color: var(--text-secondary); border-bottom-color: var(--border-strong); }
+.prose input[type='checkbox'] { accent-color: var(--accent-fill); margin: 0 var(--s-2) 0 0; vertical-align: -2px; }
+.prose .contains-task-list { padding-left: var(--s-0); }
+.prose .task-list-item { list-style: none; }
+
+/* ── responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  :root { --sidebar-w: 280px; }
+}
+
+@media (max-width: 767px) {
+  /* the bottom bar: a row of place icons and More, each with its word under it; a row
+     wider than the phone scrolls sideways; clear of the home indicator */
+  .app { --rail-left: 0px; --rail-bottom: calc(var(--header-h) + env(safe-area-inset-bottom)); padding-bottom: 0; }
+  .frame { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .rail {
+    grid-row: 2; flex-direction: row; justify-content: flex-start; gap: 0; height: var(--rail-bottom);
+    padding: 0 var(--s-2) env(safe-area-inset-bottom);
+    overflow: auto hidden; overscroll-behavior-x: contain; border-right: 0; border-top: 1px solid var(--border);
+  }
+  .rail__brand, .rail__spacer, .rail__item--more { display: none; }
+  .rail__more { display: flex; }
+  .rail__item, .rail__item.btn { flex: 1 0 auto; min-width: calc(var(--h-lg) + var(--s-4)); min-height: var(--h-lg); width: auto; gap: var(--s-0); }
+  .rail__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .rail__count { right: calc(50% - var(--s-5)); }
+  .sections { grid-row: 1; }
+  /* an on-screen keyboard is up (main.tsx): the bar steps aside for it */
+  :root[data-keyboard] .app { --rail-bottom: 0px; }
+  :root[data-keyboard] .rail { display: none; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .bubble { max-width: 86%; }
+  .search__filters { display: none; }
+  .search__sheet-btn { display: inline-flex; }
+  /* the order says its word in its tooltip; a row with no chips takes no room */
+  .search__sort { width: var(--h-md); padding: 0; }
+  .search__sort .btn__label { display: none; }
+  .search__chips:empty { display: none; }
+}
+
+/* the server is gone (components/ServerDown): the whole window, nothing else */
+.server-down {
+  position: fixed; inset: 0; z-index: var(--z-block); background: var(--grain) var(--bg-canvas); outline: none;
+  animation: fade var(--dur) var(--ease);
+}
+.server-down__dots { margin-left: var(--s-1); }
+.server-down__title { margin: 0; font: inherit; }

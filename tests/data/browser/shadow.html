@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Shadow login</title>
+<style>body{font:16px sans-serif;margin:0}</style></head>
+<body>
+<h1>Shadow login</h1>
+<button>Continue with Google</button>
+<auth-flow-manager>
+  <template shadowrootmode="open">
+    <faceplate-form onclick="">
+      <template shadowrootmode="open">
+        <div role="dialog" aria-modal="true" aria-label="Log In" style="position:fixed;top:120px;left:300px;width:400px;padding:16px;border:1px solid #888;background:#fff">
+          <h2>Log In</h2>
+          <faceplate-text-input>
+            <template shadowrootmode="open">
+              <label>Username <input name="username" type="text"></label>
+            </template>
+          </faceplate-text-input>
+          <faceplate-text-input>
+            <template shadowrootmode="closed">
+              <label>Password <input name="password" type="password"></label>
+            </template>
+          </faceplate-text-input>
+          <slot></slot>
+        </div>
+      </template>
+      <button>Log In</button>
+    </faceplate-form>
+  </template>
+</auth-flow-manager>
+</body></html>

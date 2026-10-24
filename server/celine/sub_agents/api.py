@@ -1,0 +1,69 @@
+"""The agent's sub-agents over HTTP: the overview, start one, stop one. The same code its
+tools run (skill.py begin, stop_agent), so the API and it see one thing."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, ConfigDict, Field
+
+from ..errors import CelineError, NotFound
+from .skill import agents_of
+
+router = APIRouter(prefix="/api")
+
+
+class AgentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    brief: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=80)
+    access: str | None = None        # read | work
+    folder: str | None = None
+    model: str | None = None         # one of its models (settings/her_models.py)
+    cli: str | None = None           # an agent CLI in its shellbox (cli.py CLIS)
+
+
+def _skill(request: Request):
+    reg = request.app.state.services.registry
+    skill = reg.skills.get("sub_agents") if reg is not None else None
+    if skill is None:
+        raise CelineError("unavailable", "Sub-agents are switched off.", 409)
+    return skill
+
+
+@router.get("/sub-agents")
+async def list_agents(request: Request, conversation: str | None = None) -> dict:
+    """The sub-agents of one conversation, or every one not in the archive, newest
+    first: id, parent, name, access, folder, model, cli, working, the step at
+    work, the latest report, its last words."""
+    store = request.app.state.services.store
+    return {"agents": await store.read(lambda c: agents_of(c, conversation))}
+
+
+@router.post("/conversations/{cid}/sub-agents")
+async def start_agent(request: Request, cid: str, body: AgentIn) -> dict:
+    """Start a sub-agent of conversation `cid` with a brief, like its
+    sub_agents__start: the name of one that is done gives it the brief (resumed). A
+    sub-agent starts none (depth 1)."""
+    store = request.app.state.services.store
+    row = await store.read(lambda c: c.execute(
+        "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
+    if row is None:
+        raise NotFound("conversation")
+    if row["agent_of"]:
+        raise CelineError("refused", "A sub-agent cannot start sub-agents.", 409)
+    sub, refusal, resumed, _ = await _skill(request).begin(
+        store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli)
+    if refusal:
+        raise CelineError("refused", refusal, 409)
+    return {"conversation_id": sub, "resumed": resumed}
+
+
+@router.post("/sub-agents/{sub}/stop")
+async def stop_agent(request: Request, sub: str) -> dict:
+    """Stop a sub-agent: its turn, its jobs, and what it scheduled."""
+    store = request.app.state.services.store
+    if await store.read(lambda c: c.execute(
+            "SELECT 1 FROM conversations WHERE id=? AND agent_of IS NOT NULL",
+            (sub,)).fetchone()) is None:
+        raise NotFound("agent")
+    await _skill(request).stop_agent(sub)
+    return {"stopped": True}

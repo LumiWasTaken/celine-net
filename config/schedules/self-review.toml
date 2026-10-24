@@ -1,0 +1,45 @@
+label = "Self-review"
+summary = "Reviews the day's conversations at night."
+cron = "0 4 * * *"
+after = ["user-day"]
+partner = ""
+rounds = 8
+note = "diary/{{date}}-review.md"
+role = "chat"
+on = true
+prompt = """
+Review this night's conversations, those of {{day_before}} and of {{date}} so far: what
+went well and what did not.
+
+Work like this, so the whole night fits:
+1. past_conversations__list_day(date="{{day_before}}") and
+   past_conversations__list_day(date="{{date}}") give the index: each conversation with
+   its turns, the tools it called and the calls that failed.
+2. The failed tool calls of the night, counted for you:
+
+{{tool_failures}}
+
+3. Give groups of conversations to sub-agents (sub_agents__start with read access), each
+   with a brief to read them with past_conversations__read and report a short digest:
+   per conversation what was asked, what you did, what went wrong, with message
+   numbers. Wait for their reports and work from the digests. Read a conversation
+   yourself where a digest leaves a question open, and a tool call in full
+   (past_conversations__read_tool_call) only when its arguments or result matter.
+
+Look for answers that were wrong or vague, tools that failed and why, what you should
+have done and did not, where {{username}} was unhappy, and what went well and should
+stay.
+
+Lessons about a tool go into your notebook at skills/<skill>.md, one line per lesson.
+When a lesson there is confirmed again, add "(seen N times)" to its line. Remove a lesson
+that proved wrong.
+A problem with the app itself (a tool that fails or misleads, a limit that is wrong,
+something you miss) goes to bugreport__file, one report per problem.
+
+Your answer is the review: what went well and what did not, each with the conversation
+it happened in, and what you will do differently.
+
+What you found about {{username}}'s day:
+
+{{result:user-day}}
+"""

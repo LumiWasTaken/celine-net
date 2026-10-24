@@ -1,0 +1,36 @@
+# YuE2 3B in ComfyUI (YuE2GenerateMusic, KSampler 32 steps, the YuE2 VAE). Node 14 holds
+# the instrumental LoRA (yue2_instrumental_lora at 0.75): `instrumental` turns it on or off.
+# The track is saved as mp3 under ComfyUI's output folder, audio/out*.
+label = "YuE2"
+family = "YuE"
+workflow = "yue2.json"
+good_at = "Instrumental tracks and ambient soundscapes, and songs with vocals and lyrics."
+prompting = """
+The style is one comma-separated line, in this order:
+1. Genre and mode: dark ambient, pure instrumental
+2. Instruments, acoustic or synthesized: waterphone, ghostly theremin, sparse distant soft piano
+3. Tempo and rhythm: extremely slow, 40 BPM, almost no rhythm, no drums
+4. Space and resonance: long metallic resonances, enormous natural reverb
+5. Mood: cold lonely haunting atmosphere
+6. An instrumental style ends with: no vocals
+
+A song: instrumental false, the lyrics with section tags ([Verse 1], [Chorus],
+[Bridge], [Outro]), and the voice in the style, like "ethereal female vocals" or
+"raspy male voice".
+"""
+example = "dark ambient, pure instrumental, waterphone, ghostly theremin, sparse distant soft piano, extremely slow, 40 BPM, almost no rhythm, no drums, no bass pulse, long metallic liquid resonances, enormous natural reverb, deep ambient space, cold lonely haunting immersive atmosphere, no vocals"
+
+[parameters.style]
+inputs = [["10", "style"]]
+
+[parameters.lyrics]
+inputs = [["10", "lyrics"]]
+
+[parameters.seed]
+inputs = [["10", "seed"], ["5", "seed"]]
+
+[parameters.duration]
+inputs = [["10", "max_duration"]]
+
+[parameters.instrumental]
+inputs = [["14", "lora_1", "on"]]

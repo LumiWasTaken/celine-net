@@ -1,0 +1,67 @@
+/* What it did with a tool (ToolRow.tsx): in the stream one shimmering line at work; in a
+   reply's Activity one list row per call, its colour its state; opened (a Sheet), the call
+   and its result in sunk blocks. Tokens only. */
+.tool-list { display: grid; gap: var(--s-1); min-width: 0; }
+.tool { min-width: 0; }
+.tool__meta { display: inline-flex; align-items: center; gap: var(--s-1); }
+.tool__body {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3);
+}
+.tool__part { display: grid; gap: var(--s-1); min-width: 0; }
+.tool__part-label { font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); }
+.tool__body code { padding: 0; background: none; font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-secondary); }
+.tool__body pre {
+  margin: 0; padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--surface-sunk);
+  font-family: var(--font-mono); font-size: var(--t-xs); line-height: var(--lh-body); color: var(--text-secondary);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%;
+}
+.tool__body a { color: var(--accent); }
+.tool__none { color: var(--text-muted); }
+.tool__args { margin: 0; display: grid; gap: var(--s-2); }
+.tool__args dt { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-muted); }
+.tool__args dd { margin: var(--s-1) 0 0; min-width: 0; }
+.tool__chats { margin: 0; padding-left: var(--s-4); display: grid; gap: var(--s-0); }
+.tool__log { overflow-wrap: anywhere; color: var(--text-muted); }
+
+/* a browser call's shots: a strip, one per step with its words under it, full size on click */
+.tool__shots { display: flex; gap: var(--s-3); overflow-x: auto; padding-bottom: var(--s-1); }
+.tool__step { flex: none; margin: 0; width: calc(10 * var(--s-5)); display: grid; gap: var(--s-1); align-content: start; }
+.tool__shot { position: relative; }
+.tool__step figcaption { display: grid; gap: var(--s-0); font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-secondary); }
+.tool__step figcaption code { font-family: var(--font-mono); color: var(--text-primary); }
+.tool__step.is-idle figcaption { color: var(--text-muted); }
+.tool__step.is-idle .tool__shot { opacity: 0.7; }
+/* the point a look answered with: a ring where it is */
+.tool__point { position: absolute; width: var(--s-5); height: var(--s-5); margin: calc(-1 * var(--s-5) / 2) 0 0 calc(-1 * var(--s-5) / 2);
+  border-radius: var(--r-full); box-shadow: 0 0 0 2px var(--accent), 0 0 0 4px var(--surface-sunk); pointer-events: none; }
+
+/* a batch in the stream: its pictures or tracks */
+.tool__batch { margin: var(--s-2) 0; }
+/* a sub-agent's latest report, one muted line under its row once it is done */
+.tool__report { padding: 0 0 var(--s-2) var(--s-3); font-size: var(--t-xs); color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* what it is still writing, in its Sheet: the end of its text so far */
+.tool__forming {
+  margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--surface-sunk);
+  font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* the images it looked at in its shellbox */
+.tool__files { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-1) 0 var(--s-2); }
+.tool__file-image { max-width: min(480px, 100%); max-height: 360px; border-radius: var(--r-md); }
+
+/* a page it wrote: one card per page under its reply */
+.artcards { display: grid; gap: var(--s-2); margin: var(--s-3) 0 0; }
+.artcard {
+  display: flex; align-items: center; gap: var(--s-3); width: min(100%, 26rem); min-height: var(--row-lg);
+  padding: 0 var(--s-4); border-radius: var(--r-md); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-primary); text-decoration: none; transition: background var(--dur-fast) var(--ease);
+}
+.artcard[href]:hover, .artcard[href]:focus-visible { background: var(--surface-2); }
+.sharecard { display: flex; align-items: center; gap: var(--s-2); }
+.artcard__icon { flex: none; color: var(--accent); }
+.artcard__main { flex: 1; min-width: 0; display: grid; gap: var(--s-0); }
+.artcard__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.artcard__sub { font-size: var(--t-xs); color: var(--text-muted); }
+.artcard__open { flex: none; color: var(--text-muted); }

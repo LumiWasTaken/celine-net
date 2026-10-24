@@ -1,0 +1,58 @@
+# Qwen-Image 2.1, text to image, on the Smart API graph (the Qwen 2.1 Smart workflow).
+# `mode` picks the model: raw (qwen_image_2.1_bf16, 40 steps, euler, simple) or turbo
+# (qwen_image_2.1_turbo_bf16, 8 steps on the checkpoint's saved schedule). cfg 1.0 either
+# way. An anime LoRA is a catalog LoRA (qwen2.1/...), chained after node "lora".
+label = "Qwen 2.1"
+family = "Qwen Image"
+task = "generate"
+workflow = "qwen2.1-smart.json"
+good_at = "Prose prompts with exact layout, legible text in the image, several people in one scene, high resolution. Turbo for quick drafts, raw for the final; anime with an anime LoRA."
+prompting = """
+Qwen reads natural English through a vision-language encoder: write one or two paragraphs
+of prose in this order: medium and framing, subject and action, clothing and textures,
+place and layout, light. Keep each modifier next to its noun. Text that should appear in
+the image goes in double quotes with where it sits and how it looks: a red neon sign
+reading "OPEN" in the upper left. No tag lists, no quality words. 80 to 200 words: a
+short prompt comes out generic, and past about 500 tokens the rest is cut off. A known
+character: her name and series, then her look, since Qwen knows only the famous ones.
+
+Variant: raw (the default) is the full model, 40 steps, about a minute at 2K. turbo is the
+8-step checkpoint, about 5x faster, good for drafts and most finals. The negative prompt
+has no effect at cfg 1, so leave it empty.
+
+Size: native is 2048x2048 (4 MP); 1024x1024 is four times faster. Presets: 1:1 2048x2048,
+4:3 2400x1792, 3:4 1792x2400, 3:2 2528x1696, 2:3 1696x2528, 16:9 2752x1536, 9:16 1536x2752.
+
+Anime: variant raw, the LoRA "qwen2.1/anime-style" at 1.0, and
+start the prompt with "anime style." followed by structured blocks: [TASK: TEXT_TO_IMAGE]
+[Subject] ... [Appearance] ... [Pose] ... [Expression] ... [Composition] ...
+[Environment] ... [Lighting] ... [Style] Anime-style illustration ... Blocks may be left
+out. The LoRA does not work on turbo.
+"""
+example = "A 35mm film photograph of a woman in her late twenties reading on a train by the window, a worn paperback in both hands, dark hair tucked behind one ear, a mustard wool coat. Outside the window a blurred winter field passes by. Soft grey daylight from the left, shallow depth of field, gentle grain."
+size = { step = 32, max_pixels = 4300000 }
+
+[parameters.prompt]
+inputs = [["prompt", "value"]]
+
+[parameters.negative]
+inputs = [["negative", "value"]]
+
+[parameters.seed]
+inputs = [["seed", "value"]]
+
+[parameters.width]
+inputs = [["width", "value"]]
+
+[parameters.height]
+inputs = [["height", "value"]]
+
+[parameters.mode]
+inputs = [["turbo", "value"]]
+choices = { raw = false, turbo = true }
+
+[catalog]
+loras = ["qwen2.1/"]
+lora_after = "lora"
+text = ["prompt", "value"]
+max_loras = 2

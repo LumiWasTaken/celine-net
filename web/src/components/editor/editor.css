@@ -1,0 +1,79 @@
+/* The large editor, its History and Ask Celine (components/editor): only their own led- classes, only tokens. The
+   led-row, led-who, led-acts, led-now and led-grid classes lay out what a caller puts above or after the texts. */
+
+.led-grow { flex: 1; }
+
+/* ── the editor: Celine's box, then the sheet with its fields and text, one scroll; on a
+   wide screen Celine beside the sheet and the text scrolls inside it. The sheet holds the
+   text at the prose measure, so a line stays readable on a wide screen ── */
+.led-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-4);
+  width: 100%; max-width: calc(var(--measure-prose) + 4 * var(--s-5)); margin: 0 auto; padding: var(--s-4) var(--s-5) 0; }
+.led-main { display: flex; flex-direction: column; }
+.led-sheet { display: flex; flex-direction: column; gap: var(--s-5); min-height: 100%; padding: var(--s-5); border-radius: var(--r-lg);
+  background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+.led-top { display: grid; gap: var(--s-4); }
+.led-field { gap: var(--s-2); }
+.led-field--fill { flex: 1; display: flex; flex-direction: column; }
+
+/* the writing surface: the story font, no box inside the sheet, a hairline over it */
+.led-text { display: block; width: 100%; min-width: 0; resize: none; field-sizing: content; min-height: 3lh; outline: none;
+  padding: var(--s-3) 0 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none;
+  font-family: var(--font-story); font-size: var(--t-lg); line-height: var(--lh-story); color: var(--narration); caret-color: var(--accent); }
+.led-text:focus { border-top-color: var(--accent); }
+.led-field--fill > .led-text { min-height: 16lh; }
+
+.led-foot { flex: none; position: sticky; bottom: 0; z-index: var(--z-sticky); display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--s-2); padding: var(--s-3) 0 var(--s-4); background: var(--grain) var(--bg-canvas); }
+.led-unsaved { flex: 1; min-height: 1lh; color: var(--text-muted); font-size: var(--t-md); }
+
+@media (min-width: 1200px) {
+  .led-body { overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) clamp(20rem, 22vw, 28rem); gap: var(--s-5);
+    max-width: calc(var(--measure-prose) + 2 * var(--s-5) + 28rem + 3 * var(--s-5)); }
+  .led-main { min-height: 0; }
+  .led-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .led-field--fill > .led-text { flex: 1; overflow-y: auto; field-sizing: fixed; }
+  .led-foot { position: static; background: none; }
+}
+
+/* ── Ask Celine ── */
+.led-celine { order: -1; display: flex; flex-direction: column; gap: var(--s-3); }
+@media (min-width: 1200px) { .led-celine { order: 0; min-height: 0; overflow-y: auto; padding-bottom: var(--s-4); } }
+.led-draft__text { white-space: pre-wrap; font-family: var(--font-story); font-size: var(--t-lg); line-height: var(--lh-story); color: var(--narration); }
+.led-dots { margin-left: var(--s-2); vertical-align: middle; }
+
+/* ── History ── */
+.led-hist { flex: 1; min-height: 0; display: flex; width: 100%; max-width: calc(var(--measure-wide) + 2 * var(--s-5)); margin: 0 auto; padding: var(--s-3) var(--s-5) 0; }
+.led-hist > .led-hist__rows, .led-hist__list > .led-hist__rows { flex: 1; min-height: 0; }
+.led-hist__empty { flex: 1; display: grid; place-items: center; }
+.led-hist__list { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.led-hist--open { max-width: none; gap: var(--s-5); }
+.led-hist--open > .led-hist__list { flex: 0 0 clamp(18rem, 24vw, 30rem); }
+.led-cmp { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4); align-content: start; padding-bottom: var(--s-5); }
+.led-cmp__col { display: grid; gap: var(--s-4); align-content: start; padding: var(--s-5); border-radius: var(--r-lg);
+  background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+.led-cmp__col--now { background: none; }
+.led-cmp__head { display: flex; align-items: center; gap: var(--s-1); min-height: var(--h-md); }
+.led-cmp__who { flex: 1; min-width: 0; display: grid; gap: var(--s-0); }
+.led-cmp__who b { font-weight: var(--fw-medium); }
+.led-cmp__who span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--t-md); }
+.led-cmp__change { margin: 0; color: var(--text-secondary); font-size: var(--t-md); }
+.led-cmp__text { display: grid; gap: var(--s-3); font-family: var(--font-story); font-size: var(--t-lg); line-height: var(--lh-story); color: var(--narration); }
+.led-cmp__text > p { margin: 0; }
+.led-cmp__diff { color: var(--change); background: var(--change-wash); border-radius: var(--s-0); }
+.led-cmp__foot { display: flex; justify-content: flex-end; }
+
+/* ── narrower than a desktop: the fields one under the other, the History list or one version ── */
+@media (max-width: 1199px) {
+  .led-body { gap: var(--s-3); padding: var(--s-3) var(--s-4) 0; }
+  .led-sheet { padding: var(--s-4); gap: var(--s-4); }
+  .led-field--fill > .led-text { min-height: 8lh; }
+  /* the list stays laid out under the open version, so Close finds it where it was */
+  .led-hist { position: relative; }
+  .led-hist--open > .led-hist__list { position: absolute; inset: 0; visibility: hidden; }
+  .led-cmp { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 767px) {
+  .led-hist { padding: var(--s-2) var(--s-4) 0; }
+  .led-cmp__col { padding: var(--s-4); }
+}

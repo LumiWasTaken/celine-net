@@ -1,0 +1,4 @@
+/* The model chooser (Settings, Models; a place's Change model): the list's height in the
+   dialog, and a provider's problem under its name. Tokens only. */
+.chooser { height: 55vh; display: flex; flex-direction: column; min-height: 0; }
+.chooser__problem { margin: 0; padding: 0 var(--s-2) var(--s-1); font-size: var(--t-xs); color: var(--text-muted); }

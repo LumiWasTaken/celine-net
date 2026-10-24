@@ -1,0 +1,77 @@
+{
+  "1": {
+    "inputs": {
+      "snapshot_dir": "/models/MOSS-Image-SFT",
+      "adapter_dir": "/models/Moss-Image-Edit"
+    },
+    "class_type": "MossImageEditLoader"
+  },
+  "2": {
+    "inputs": {
+      "image": "reference.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "3": {
+    "inputs": {
+      "image": "reference.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "4": {
+    "inputs": {
+      "image": "reference.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "5": {
+    "inputs": {
+      "image": "reference.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "6": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "reference_1": [
+        "2",
+        0
+      ],
+      "reference_2": [
+        "3",
+        0
+      ],
+      "reference_3": [
+        "4",
+        0
+      ],
+      "reference_4": [
+        "5",
+        0
+      ],
+      "prompt": "",
+      "negative_prompt": "",
+      "width": 1024,
+      "height": 1024,
+      "steps": 30,
+      "cfg": 4.0,
+      "seed": 42,
+      "reference_max_edge": 512,
+      "inference_shift": 5.0
+    },
+    "class_type": "MossImageEdit"
+  },
+  "7": {
+    "inputs": {
+      "images": [
+        "6",
+        0
+      ],
+      "filename_prefix": "MOSS-Image-Edit/out"
+    },
+    "class_type": "SaveImage"
+  }
+}

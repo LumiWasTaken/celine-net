@@ -1,0 +1,76 @@
+/* References in Markdown (Markdown.tsx): a message card, a chip in a sentence with its
+   preview, a link to a document by name. */
+.refcard {
+  display: flex; align-items: flex-start; gap: var(--s-2); margin: var(--s-2) 0; max-width: 560px;
+  padding: var(--s-2) var(--s-3); border-radius: var(--r-md); cursor: pointer; text-align: left;
+  background: var(--surface-2); color: var(--text-primary); font-size: var(--t-md); line-height: var(--lh-body);
+  text-decoration: none; transition: background var(--dur-fast) var(--ease);
+}
+.refcard:hover { background: var(--surface-3); }
+.refcard__icon { flex: none; margin-top: 2px; color: var(--text-secondary); }
+.refcard--loading, .refcard--missing {
+  display: inline-flex; align-items: center; gap: var(--s-1); cursor: default; color: var(--text-muted);
+  font-family: var(--font-mono); font-size: var(--t-xs); margin: 0 var(--s-0); padding: 1px var(--s-2);
+}
+.refcard--loading:hover, .refcard--missing:hover { background: var(--surface-2); }
+.refcard__retry { margin-left: var(--s-1); color: var(--accent); }
+.refcard__main { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: var(--s-0); }
+.refcard__head { display: flex; align-items: baseline; gap: var(--s-2); min-width: 0; font-size: var(--t-xs); }
+.refcard__head b { font-weight: var(--fw-medium); white-space: nowrap; }
+.refcard__chat { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.refcard__time { color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.refcard__text { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: pre-wrap; }
+.doclink, .msg__prose a.doclink { color: var(--accent); text-decoration: none; border-bottom: 1px dashed var(--accent-dim); }
+.doclink:hover { border-bottom-style: solid; }
+
+.refblock { margin: 0 0 var(--s-3); display: grid; gap: var(--s-2); }
+.refblock .refcard { margin: 0; }
+.refchips {
+  display: inline-flex; flex-wrap: wrap; gap: var(--s-0); vertical-align: 1px; margin: 0 1px;
+}
+.refchip {
+  position: relative; display: inline-flex; align-items: center; gap: var(--s-1); cursor: pointer;
+  height: var(--hit-min); padding: 0 var(--s-2); border-radius: var(--r-full); white-space: nowrap;
+  font-size: var(--t-xs); line-height: 1; font-weight: var(--fw-medium); color: var(--accent);
+  background: var(--accent-wash);
+  transition: background var(--dur-fast) var(--ease);
+}
+.refchip:hover, .refchip:focus-visible { background: var(--accent-wash-strong); }
+a.refchip, a.refchip:hover { text-decoration: none; }
+.refchip__who { color: var(--text-secondary); font-weight: var(--fw-medium); }
+.refchip--quiet { cursor: default; color: var(--text-muted); background: var(--surface-3); font-weight: var(--fw-regular); }
+.refchip--invalid { cursor: default; color: var(--text-muted); background: var(--surface-3);
+  font-family: var(--font-mono); font-weight: var(--fw-regular); text-decoration: line-through;
+  text-decoration-color: var(--text-muted); }
+/* The preview is out of the layout until it shows (display: none), so a chip near the
+   right edge never gives the conversation a sideways scrollbar. */
+.refchip__pop {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: var(--z-popover); width: min(420px, 80vw);
+  max-width: calc(100vw - 2 * var(--s-4));
+  white-space: normal; font-weight: var(--fw-regular); pointer-events: none;
+  display: none; opacity: 0; transform: translateY(-3px);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), display var(--dur-fast) allow-discrete;
+}
+:is(.msg-yours, .refchips:last-child, .refchip:last-child) .refchip__pop {
+  left: auto; right: 0;
+}
+.refchip:hover .refchip__pop, .refchip:focus-visible .refchip__pop {
+  display: block; opacity: 1; transform: none; transition-delay: var(--delay-hover);
+}
+@starting-style {
+  .refchip:hover .refchip__pop, .refchip:focus-visible .refchip__pop { opacity: 0; transform: translateY(-3px); }
+}
+.refchip__pop .refcard { margin: 0; max-width: none; box-shadow: var(--e-float); }
+
+/* a word of a reply being written fades in as it is shown (StreamText) */
+.w { animation: fade var(--dur) var(--ease); }
+
+.msg__prose .refblock { margin: 0 0 var(--s-4); }
+/* a citation in a sentence: a small ref in the accent, no pill */
+.msg__prose .refchip { height: auto; padding: 0; gap: var(--s-0); border-radius: 0; background: none;
+  border-bottom: 1px dotted var(--accent-dim); vertical-align: baseline; line-height: inherit; }
+.msg__prose .refchip:hover, .msg__prose .refchip:focus-visible { background: none; border-bottom-color: var(--accent); }
+.msg__prose .refchip__who, .msg__prose .refchip__date { color: var(--accent); }
+.msg__prose .refchips { gap: var(--s-2); vertical-align: baseline; }
+
+

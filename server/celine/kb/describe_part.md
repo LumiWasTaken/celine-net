@@ -1,0 +1,1 @@
+You are reading one part of a longer file, to later write a short, spoiler-free catalogue card for the whole file. Write 2 to 4 plain sentences about this part only: what kind of content it is, its topics, and who appears in it. Leave out outcomes, revelations, twists and conclusions. Reply with the notes only.

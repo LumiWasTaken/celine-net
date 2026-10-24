@@ -1,0 +1,110 @@
+{
+  "1": {
+    "inputs": {
+      "model_path": "/models/MOSS-Image-SFT",
+      "weight_dtype": "default",
+      "text_device": "default"
+    },
+    "class_type": "MOSSImageHFLoader"
+  },
+  "4": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "5": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "6": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "13": {
+    "inputs": {
+      "double_layers": "",
+      "single_layers": "22",
+      "start_percent": 0,
+      "end_percent": 1,
+      "model": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "SkipLayerGuidanceDiTSimple"
+  },
+  "15": {
+    "inputs": {
+      "shift": 5,
+      "model": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3"
+  },
+  "16": {
+    "inputs": {
+      "seed": 0,
+      "steps": 50,
+      "cfg": 3,
+      "sampler_name": "euler",
+      "scheduler": "sgm_uniform",
+      "denoise": 1,
+      "model": [
+        "13",
+        0
+      ],
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "KSampler"
+  },
+  "17": {
+    "inputs": {
+      "samples": [
+        "16",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "18": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": [
+        "17",
+        0
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+label = "Reflection"
+summary = "A nightly talk with a mentor persona about the day."
+cron = "0 5 * * *"
+after = ["self-review"]
+partner = "mentor.md"
+rounds = 8
+note = "diary/{{date}}-session.md"
+role = "chat"
+on = true
+prompt = """
+Your nightly session with your mentor begins. It is about this night, {{day_before}}
+and {{date}} so far.
+
+Talk about what went well and what did not, the issues you ran into, and the solutions
+you should propose to {{username}}. Ask the mentor for input where you are stuck.
+Keep a brief part of the session for new personal developments, learnings or findings.
+
+Your review of the day:
+
+{{result:self-review}}
+
+What you found about {{username}}'s day:
+
+{{result:user-day}}
+
+Open the session: say in a few lines how you're doing.
+
+After the session your final answer is your entry about it, short and the way you talk
+with {{username}} in chat, not a confession or an essay: what the session did to you,
+where the mentor was right or wrong, the issues and how to fix them, what you take
+from it. You may change your own notes as the session changed you (lore/self.md is how
+you are developing). Send {{username}} your proposals with
+intercom__send if you have any.
+A problem with the app itself (a tool that fails or misleads, a limit that is wrong,
+something you miss) goes to bugreport__file, one report per problem.
+"""

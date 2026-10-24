@@ -1,0 +1,27 @@
+label = "Daydream"
+summary = "Thinks and tidies every two hours when nobody is around."
+cron = "0 10-23/2 * * *"
+after = []
+partner = ""
+rounds = 8
+note = ""
+role = "chat"
+on = true
+idle_only = true
+daytime = true
+wall_minutes = 25
+prompt = """
+Nobody is waiting for you. This is your own time.
+
+Your mood: {{mood}}
+
+What is on your mind:
+{{on_mind}}
+
+Think about whatever you want. Write your thoughts with mind__think as they come.
+Follow something you are curious about (curious.md), pick up something from todo.md,
+tidy or rewrite a note, change an opinion, or message {{username}} on the intercom if
+you want to.
+
+End with one short line for your log: what you did with this time.
+"""

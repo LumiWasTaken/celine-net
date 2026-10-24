@@ -1,0 +1,58 @@
+# Anima.json with capanima_turbo11 and its author's settings (euler_ancestral, 12 steps,
+# cfg 1, 832x1216), first pass only. Node 5 holds a fixed negative prompt; at cfg 1 it has
+# no effect, so the preset takes none.
+label = "Anima turbo"
+family = "Anima"
+task = "generate"
+workflow = "anima-turbo.json"
+good_at = "Anime, manga and 2D illustration; fantasy features like animal ears, horns, glowing eyes."
+prompting = """
+Two lines. Line 1: 25 to 40 Danbooru tags, lowercase, comma separated. Line 2: 2 to 4
+sentences of prose for placement and light.
+
+Line 1, in this order:
+- Start with: masterpiece, best quality, then the rating tag the picture needs.
+- Cast: 1girl, solo / 1boy, solo / 2girls.
+- Character and series: a known character is her Danbooru tag and her series tag,
+  "frieren, sousou no frieren", "hatsune miku, vocaloid", with the canonical hair and
+  eye tags beside the name. Never a description in their place.
+  Where Danbooru and Gelbooru tags differ, the Gelbooru one. Two or more characters:
+  each name with its own hair, eyes and outfit tags, or they blend.
+- Outfit, expression, gaze: looking at viewer, smug, white collared shirt.
+- Exactly one framing (portrait, upper body, cowboy shot, full body) and one angle (from
+  below, from above, straight-on, from side). Mixed options distort the body.
+- End with: anime coloring, anime screenshot, newest, absurdres. A wallpaper adds
+  wallpaper and scenery; its size goes in width and height, never in the prompt.
+- Spaces, never underscores (looking at viewer). No score_ tags: this is an aesthetic
+  turbo model, they push it to a glossy look.
+- Weights from 1.4 to 2.0, like (red scarf:1.5), at most four. Artists with @: @artistname.
+- Animal ears on a human: animal ears, cat ears, animal ear fluff, cat tail. Never
+  furry, furry female, body fur or snout: they give an animal face.
+
+Line 2, at least two sentences (shorter prose gives random results), starts with the
+character's name ("Frieren stands centered..."): where the body
+and limbs are, where the weight rests, where the light comes from. Do not repeat tags.
+
+Anima draws photography words as objects: camera, lens, tripod, viewfinder and photo
+each put one in the picture. Say viewer and picture instead; for perspective use the
+angle tags and passive prose ("Seen from a low angle at hip height"). Text in the
+image: one word at most. The whole prompt stays under about 300 words; past that it is
+cut off. Size: 512x512 to 1536x1536 in pixels; portrait 832x1216, wallpaper 1344x768
+or 1536x864.
+"""
+example = """
+masterpiece, best quality, safe, 1girl, solo, frieren, sousou no frieren, elf, pointy ears, white hair, long hair, twintails, green eyes, white capelet, holding staff, standing, looking away, expressionless, cowboy shot, straight-on, forest, dappled sunlight, anime coloring, anime screenshot, newest, absurdres
+Frieren stands centered in an ancient forest clearing with her wooden staff planted in the grass beside her. Seen straight-on at chest height. Soft dappled sunlight filters through the canopy from the upper right and lights her hair and shoulders.
+"""
+
+[parameters.prompt]
+inputs = [["4", "text"]]
+
+[parameters.seed]
+inputs = [["7", "seed"]]
+
+[parameters.width]
+inputs = [["6", "width"]]
+
+[parameters.height]
+inputs = [["6", "height"]]

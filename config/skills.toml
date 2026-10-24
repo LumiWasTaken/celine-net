@@ -1,0 +1,178 @@
+# Built-in skills. `enabled` here is the global default; the Skills tab in a
+# conversation overrides it for that conversation only.
+#
+# Turning a tool off does not hide it from Celine. It still sees it listed and
+# is told you turned it off, so it can say so instead of pretending it never
+# existed.
+
+[notebook]
+enabled = true
+# The agent's notes. Real files in var/notebook, in whatever format it picks.
+# An index it maintains is injected into every system prompt, capped both ways:
+index_max_entries = 10        # it is told this number
+index_max_bytes   = 4000      # and the budget, so 10 essays cannot blow the prompt
+# Notes loaded in full (by need, var/settings/context.toml, turns/loads.py) are
+# left out of the index.
+# Files it can read and never write or delete. identity.md is yours: it goes into
+# every system prompt in full, so editing it is how you edit who it is. The two
+# READMEs keep opinions/ and appearance/ in place and tell it what goes there.
+# All three are created once, at startup, if missing. Edit them in its notebook,
+# var/notebook/.
+protected = ["identity.md", "opinions/README.md", "appearance/README.md"]
+
+[mind]
+enabled = true
+# The agent's mind (skills/mind.py): its own block (the time, its mood), its thoughts.
+
+[shell]
+enabled = true
+# The agent's terminals in its shellbox (its address in Settings, Features; shellbox/shellboxd.py). No knobs: the
+# numbers are named constants at the top of server/celine/skills/shell.py and
+# shellbox/shellboxd.py, and its guide quotes them.
+
+[code]
+enabled = true
+# The agent's coding agent in its shellbox (skills/code.py; the box runs the backend CODING_AGENT
+# names, shellbox/agents/, default opencode): a task in a folder of its own, in the
+# background, with a model it picks from models__list.
+poll_seconds = 20      # how long it waits between two code__status looks (it is told)
+result_chars = 2000    # characters of the agent's last answer code__result carries
+
+[bugreport]
+enabled = true
+# The agent's bug reports about the app (server/celine/bugreports): bugreport__file any time,
+# each one a thread to you on the intercom at once. Off: no tool.
+
+[artifacts]
+enabled = true
+# The agent's pages for you (server/celine/artifacts): apps, games, charts, tables. No knobs: the
+# limits are named constants in server/celine/artifacts/store.py and page.py.
+
+[me]
+enabled = true
+# Self (skills/me.py): it reads its persona, talk and slop list, and changes its talk
+# and slop list; every change is in its History (Settings, the agent's page) and in Events.
+
+[appearance]
+enabled = true
+# The agent's portrait, set by it from one of its images or a document image
+# (skills/appearance.py); you set it in Settings too.
+
+[intercom]
+enabled = true
+# The agent's messages to you, to itself or to a conversation, now or later (a reminder is a
+# message to itself with a time).
+
+[missions]
+enabled = true
+# Your briefs, each in a conversation of its own; missions__update records where it
+# stands, missions__wait pauses one until a time. missions__list lists them from anywhere.
+
+[plan]
+enabled = true
+# The agent's plan for a conversation (server/celine/plans): steps, the one it is on, where it
+# asks you. Pinned at the top of the chat.
+
+[routines]
+enabled = true
+# The agent's hand on the Routines (server/celine/schedules/skill.py): list, read, write and run
+# them, with the same checks as the Routines page; its changes show as its own.
+
+[past_conversations]
+enabled       = true
+# Word search over its own earlier conversations, without the current one.
+max_results   = 20
+snippet_chars = 240
+
+[sub_agents]
+enabled = true
+# The agent's sub-agents (sub_agents/skill.py): a brief in a new conversation of its own.
+max_running = 4               # per conversation, at once; a start over it is queued
+
+[chat_archive]
+enabled = true
+# {{username}}'s Messages archive, every source in kb.toml with kind = "chat".
+# search (semantic topic search + word search, reranked, match windows), count,
+# read_session, read_period, scroll, get_messages, look_up, mark_same_person.
+# Which tools are on by default: Settings, Tools (var/settings/tools.toml).
+scroll_max_messages = 20  # scroll(ref): the most new messages per side in one call
+scroll_max_tokens = 4000  # scroll(ref): one result, both sides together
+get_max_refs = 50         # get_messages(refs): the most messages one call returns
+# No search or token limit per turn: open questions are answered in waves of many
+# searches and reads; the context builder (turns/context.py) shortens old results.
+session_max_tokens  = 4000     # read_session(ref): a longer session is cut around it
+period_max_tokens   = 40000    # read_period(chat, when): a period up to this comes back whole
+max_tokens_cap      = 100000   # the most it may ask for with max_tokens
+search_max_tokens     = 7000   # one search result, mode=best
+search_max_tokens_all = 14000  # mode=all
+# Retrieval (kb/retrieve): query embeddings (the Topic Search role's query model), then
+# a cross-encoder reranker (the Reranking role; empty turns reranking off). Both are
+# chosen in Settings, Models.
+candidates        = 50         # reranked per search
+rerank_floor      = -4.0       # below: not about it (dropped for order first/last, mode all)
+episode_gap_minutes = 30
+# After its final answer: every [[kb:id]] must have been shown by a tool, quotes and
+# speakers must match; a wrong ref is marked [[kb:id|invalid]] in its text.
+verify_citations = true
+
+[user_documents]
+enabled = true
+# {{username}}'s Documents (kind = "documents" in kb.toml), the drawer they share: list
+# a folder (title, their description, the AI description, the mode), search, read, and
+# write a text file into it. Not its notebook.
+
+[image_generator]
+enabled = true
+# New images from a text prompt, and edits of images, with ComfyUI, in batches
+# (skills/images.py, comfyui/). The presets are files in config/image_presets/; which
+# ones it uses, in which order, is the Image generation role in Settings, Models.
+# Models and LoRAs come from the ComfyUI server over HTTP (image_catalog.py): ComfyUI's
+# lists and LoRA-Manager's metadata (names, notes, tags such as celine-hidden, strength).
+
+[music_generator]
+enabled = true
+# Songs and instrumental tracks with ComfyUI, in batches (skills/music.py, comfyui/). The
+# presets are files in config/music_presets/; which one it uses is the Music generation
+# role in Settings, Models.
+
+
+[models]
+enabled = true
+# The agent's own model access (skills/models.py): the models it may use (Settings, its models)
+# and one request to one of them.
+
+[writer]
+enabled = true
+# The agent's posts, comments and messages written in its own voice by the Writing model
+# (Settings, Models): server/celine/skills/writer.py.
+
+[web]
+enabled = true
+# The public web: search through a self-hosted SearXNG (docker compose service
+# `searxng`; no API keys, no tracking), read pages and PDFs with a local extractor.
+# Queries and fetched URLs leave this machine; it is told never to put archive
+# content into them unless you asked. Only public http(s) addresses are fetched.
+results       = 8          # search results by default (it may ask for up to 20)
+search_timeout = 15        # seconds
+read_tokens   = 6000       # one part of a long page; it pages with part=
+timeout       = 20         # seconds for one fetch, redirects included
+max_bytes     = 5000000    # HTML/text
+pdf_max_bytes = 25000000
+# user_agent = "..."       # default names Celine as a self-hosted personal assistant
+
+[email]
+enabled = true
+# One email account over IMAP that it manages (skills/mail.py). The server, user and password
+# are set in Settings, Email (var/settings/email.toml, var/secrets/email.key).
+
+[browser]
+enabled = true
+# The agent's own Brave in the browser box (its address in Settings, Features; browser/browserd.py). No knobs:
+# the numbers are named constants at the top of server/celine/skills/browser.py and
+# browser/browserd.py, and its guide quotes them.
+
+[vault]
+enabled = true
+# The agent's passwords on your Vaultwarden through the bw program (server/celine/vault). The
+# server, the API key and the master password are set in Settings, Vault
+# (var/settings/vault.toml, var/secrets/vault-api.key and vault.key).

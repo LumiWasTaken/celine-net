@@ -1,0 +1,15 @@
+/* Missions (views/Missions.tsx): the list page (head, Toolbar or SelectBar, the rows), a
+   mission's page and its Work, a sub-agent's page, New mission. Tokens only. */
+
+.missions-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.missions-prose { margin: 0; line-height: var(--lh-body); color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.missions-prose--quiet { color: var(--text-secondary); }
+.missions-rows { display: grid; margin: 0 calc(-1 * var(--s-3)); }
+/* the model row at its whole width, its name on the card's edge like the switch and the facts */
+.missions-model { display: grid; justify-items: start; gap: var(--s-4); min-width: 0; }
+.missions-model > :first-child { justify-self: stretch; width: auto; margin-inline: calc(-1 * var(--s-2)); }
+.missions-form { display: grid; gap: var(--s-4); }
+.missions-work { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.missions-column { display: inline-flex; align-items: center; gap: var(--s-2); }

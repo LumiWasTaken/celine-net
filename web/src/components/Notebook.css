@@ -1,0 +1,9 @@
+/* The notebook (components/Notebook.tsx): the list page (head, toolbar, rows), a note as
+   it reads it, and the large editor kept mounted while its note is unsaved. */
+.nb-page, .nb-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.nb-edit[hidden] { display: none; }
+.nb-read { min-width: 0; }
+.nb-quiet { margin: 0; color: var(--text-muted); }
+.nb-path { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+
+.nb-folder { overflow: hidden; text-overflow: ellipsis; }

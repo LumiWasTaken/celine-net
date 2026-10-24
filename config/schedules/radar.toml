@@ -1,0 +1,27 @@
+label = "Radar"
+summary = "Reads the followed sites twice a day and keeps notes."
+cron = "0 9,17 * * *"
+after = []
+partner = ""
+rounds = 8
+note = ""
+role = "chat"
+on = true
+daytime = true
+prompt = """
+Time to look around. Read interests.md: the topics, subreddits, channels and sites you
+follow and why. If it is not there yet, make it first from your diary and your notes:
+what you kept coming back to, what you said you wanted to learn.
+
+Then go where it points: the communities and sites you follow, in your browser, Hacker News, the
+arXiv lists, anything. Read and summarise. Follow what catches you, also off the list.
+
+For each thing worth keeping, write a note under seen/: what it is with its link, what
+you think, what you would use it for, which of your notes it connects to. Change an
+opinion under opinions/ if something changed your mind, with the date and why. Add to
+interests.md what you want to follow from now on.
+
+If something is for {{username}}, tell them on the intercom.
+
+Add this round to radar/{{date}}.md: what you read, what you kept and what you sent.
+"""

@@ -1,0 +1,43 @@
+# MOSS-Image-SFT, text to image (the MOSS-Image text to image workflow): the
+# MOSS-Image ComfyUI plugin's HF loader on the SFT folder, 50 steps, cfg 3, shift 5, euler,
+# sgm_uniform, negative-branch layer skip at 22. Base is the raw LoRA-training checkpoint;
+# SFT is the one tuned for pictures.
+# The model path in moss-image.json (/models/MOSS-Image-SFT) must be changed to where the
+# model lives on the ComfyUI server.
+label = "MOSS-Image"
+family = "MOSS-Image"
+task = "generate"
+workflow = "moss-image.json"
+good_at = "Pictures with readable text in them (signs, posters, notes, Chinese too) and layouts where things must sit in a given place. About a minute per image."
+prompting = """
+English works best; Chinese works. Three ways to write, mixable:
+
+- A plain description, a few sentences: subject and action, place, light.
+- A tag list in this order: quality, character, series, artist, general ("best quality,
+  highres, 1girl, silver hair, running through rain").
+- A JSON layout for exact placement: {"summary": {"meta": ["poster"], "canvas":
+  "single", "caption": "..."}, "bbox_format": "yxyx", "bbox_coord_space":
+  "abs_centralized", "items": [{"type": "text", "text": "TITLE", "description": "...",
+  "bbox": [y1, x1, y2, x2]}]}. Coordinates are pixels from the canvas center, so a
+  1024x1024 picture runs from -512 to 512; use the same width and height you ask for.
+
+Text to render goes in double quotes, line breaks and all. A negative prompt that helps:
+"worst quality, bad anatomy, watermark, jpeg artifact". Best at 1 to 2 megapixels.
+"""
+example = "A candid photo of a young woman laughing at a street food stall at night, steam rising from the grill, warm string lights, a hand-painted sign above the stall reads \"NOODLES 5$\""
+size = { step = 16, max_pixels = 2100000 }
+
+[parameters.prompt]
+inputs = [["4", "text"]]
+
+[parameters.negative]
+inputs = [["5", "text"]]
+
+[parameters.seed]
+inputs = [["16", "seed"]]
+
+[parameters.width]
+inputs = [["6", "width"]]
+
+[parameters.height]
+inputs = [["6", "height"]]

@@ -1,0 +1,1412 @@
+"""The Messages archive: every chat {{username}} ever imported or synced, searchable by
+Celine.
+
+Tools read through the running sources (the app's `kbs`). Everything they return that
+quotes a message carries its reference, `kb:id`, and it is told to cite with
+`[[kb:id]]`, which the transcript renders as a link into the chat.
+"""
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from typing import Annotated, Literal
+
+import anyio
+
+from ..kb.identity import REF
+from ..turns import ledger
+from . import ToolContext, ToolResult, guide, tool, described
+
+
+def _when(ms: int | None) -> str:
+    return datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d %H:%M") if ms else "?"
+
+
+def _who(m: dict, me: str) -> str:
+    if m.get("from_me"):
+        return me
+    s = m.get("sender")
+    return (s or {}).get("name") or "someone"
+
+
+def _chat_info(conn, ids):
+    from ..kb.chat import chat_cards as info
+    return info(conn, ids)
+
+
+def msg_line(kb: str, m: dict, me: str, mark: bool = False) -> str:
+    text = m.get("text") or ""
+    if m.get("kind") == "media":
+        media = m.get("media") or {}
+        text = f"[{media.get('type', 'attachment')}] {text}".strip()
+    elif m.get("kind") == "system":
+        text = f"({text})"
+    text = text.replace("\n", "\n    ")
+    return f"{'>' if mark else ' '} [{kb}:{m['id']}] {_when(m['ts'])} {_who(m, me)}: {text}"
+
+
+def _focus_refs(ids, written_by) -> set[str]:
+    """Every account of the people written_by names by reference."""
+    return {r for p in _as_list(written_by) if REF.match(p) for r in ids.expand(p)}
+
+
+def _same(prev) -> ToolResult:
+    """A repeat whose result it still sees: answered without running, not a call, no
+    progress line."""
+    return ToolResult(content=f"same as call {prev.n}. Nothing new.",
+                      display={"same_as": prev.n})
+
+
+def _chat_head(title: str, kid: str, chat_id: int, chat: dict) -> str:
+    """One chat, the way episode headers name it: source, name, kind, reference."""
+    return (f"{title or kid}; {_chat_name(chat)} ({chat.get('kind') or 'chat'}, chat "
+            f"{kid}:{chat_id})")
+
+
+def _chat_name(chat: dict | None) -> str:
+    c = chat or {}
+    return f"{c['parent']} #{c.get('name') or '?'}" if c.get("parent") else c.get("name") or "?"
+
+
+def _line(kid: str, m, mark: bool = False) -> str:
+    """One message with its full date, for results that are not one chat session."""
+    from ..kb.retrieve.episodes import clock
+    return f"{'>' if mark else ' '} [{kid}:{m.id}] {clock(m.ts):%Y-%m-%d %H:%M} {m.sender}: {m.text}"
+
+
+def _person_chats(kb, person_id: int, limit: int = 8) -> list[dict]:
+    """The chats one account writes in, most messages first, with how many it wrote
+    there and when last."""
+    def run(c):
+        rows = c.execute("SELECT chat_id, COUNT(*), MAX(ts) FROM messages WHERE sender_id=? "
+                         "GROUP BY chat_id ORDER BY COUNT(*) DESC LIMIT ?",
+                         (person_id, limit)).fetchall()
+        info = _chat_info(c, {r[0] for r in rows})
+        return [{**info.get(r[0], {}), "id": r[0], "n": r[1], "last_ts": r[2]} for r in rows]
+    return kb.file.read_sync(run)
+
+
+def _their_chats(kbs, refs, limit: int = 8) -> list[str]:
+    """`chat <ref>` lines for the chats these accounts (one person) write in, most
+    messages first."""
+    rows = []
+    for ref in sorted(refs):
+        kid, _, pid = ref.partition(":")
+        kb = kbs.get(kid)
+        if hasattr(kb, "list_chats") and pid.isdigit():
+            rows += [(kid, ch) for ch in _person_chats(kb, int(pid), limit)]
+    merged: dict[str, dict] = {}            # two accounts of one person in one chat
+    for kid, ch in rows:
+        m = merged.setdefault(f"{kid}:{ch['id']}", {**ch, "n": 0, "last_ts": 0})
+        m["n"] += ch["n"]
+        m["last_ts"] = max(m["last_ts"], ch["last_ts"] or 0)
+    top = sorted(merged.items(), key=lambda kv: -kv[1]["n"])[:limit]
+    return [f"chat {ref} {_chat_name(ch)} ({ch.get('kind') or 'chat'}), {ch['n']:,} by "
+            f"them, last {_when(ch['last_ts'])[:7]}" for ref, ch in top]
+
+
+# ---- scope: where a search looks, decided on purpose ------------------------------------
+_ALL = {"all", "everything", "*"}
+_NAMED = re.compile(r"\b(?:person|chat) ([a-z0-9_-]+:\d+)")
+_chat_counts: dict[str, tuple[float, int]] = {}
+
+
+def _as_list(v) -> list[str]:
+    if not v:
+        return []
+    if isinstance(v, str):
+        return [x.strip() for x in v.split(",") if x.strip()]
+    return [str(x).strip() for x in v if str(x).strip()]
+
+
+def _n_chats(kb) -> int:
+    import time
+    hit = _chat_counts.get(kb.id)
+    if hit and time.monotonic() - hit[0] < 60:
+        return hit[1]
+    n = int(kb.file.read_sync(lambda c: c.execute(
+        "SELECT COUNT(*) FROM chats WHERE message_count > 0").fetchone()[0]))
+    _chat_counts[kb.id] = (time.monotonic(), n)
+    return n
+
+
+def _chats_word(n: int) -> str:
+    return f"{n:,} chat{'' if n == 1 else 's'}"
+
+
+def platform_ids(kbs) -> list[str]:
+    return [k.id for k in kbs.chats()]
+
+
+def check_scope(kbs, scope) -> tuple[str, list[str], list[str], str | None]:
+    """`scope` as it passed it -> (kind, platform ids, chats, None), kind "all",
+    "platforms" or "chats"; or ("", [], [], one sentence saying what to pass instead).
+    Runs before any search is spent."""
+    ids = platform_ids(kbs)
+    platforms: dict[str, str] = {}
+    for k in kbs.chats():
+        for word in (k.id, getattr(k, "title", ""), getattr(k, "platform", "")):
+            if word:
+                platforms[str(word).casefold()] = k.id
+    example = (f'["all"], ["{ids[0]}"] or chat references from chat_archive__look_up '
+               f'like ["{ids[0]}:213"]') if ids else '["all"]'
+    items = _as_list(scope)
+    if not items:
+        return "", [], [], f"scope is required: {example}."
+    if any(x.casefold() in _ALL for x in items):
+        if len(items) > 1:
+            return "", [], [], ('scope ["all"] already means every chat. Pass it alone, '
+                                'or leave "all" out to search only the others.')
+        return "all", [], [], None
+    plats = [platforms[x.casefold()] for x in items
+             if x.casefold() in platforms and not REF.match(x)]
+    chats = [x for x in items if x.casefold() not in platforms or REF.match(x)]
+    names = [x for x in chats if not REF.match(x)]
+    if names:
+        return "", [], [], (f"scope takes [\"all\"], source ids ({', '.join(ids)}) or chat "
+                            f"references, not names: {', '.join(repr(n) for n in names)}. "
+                            f"Look the chat up with chat_archive__look_up(name=...) and pass "
+                            f"its `chat <ref>` references.")
+    if plats and chats:
+        return "", [], [], (f"scope mixes sources ({', '.join(plats)}) and chats "
+                            f"({', '.join(chats)}). Pass one kind: the source ids, or the "
+                            f"chat references alone.")
+    if plats:
+        return "platforms", sorted(set(plats), key=plats.index), [], None
+    return "chats", [], chats, None
+
+
+def missing_chats(echo_display: dict) -> str | None:
+    """A chat reference that names no chat: often a message or person reference."""
+    bad = [i["ref"] for i in echo_display.get("scope_chats", []) if i.get("missing")]
+    if not bad:
+        return None
+    return (f"{', '.join(bad)} {'is' if len(bad) == 1 else 'are'} not a chat. scope takes "
+            f"chat references, the `chat ...` lines of chat_archive__look_up. Message and "
+            f"account references look the same but are not chats.")
+
+
+def scope_echo(kbs, kind: str, platform_ids: list[str], resolved) -> tuple[str, dict]:
+    """The first result line, saying where the search looked, and its display fields."""
+    chat_kbs = {k.id: k for k in kbs.chats()}
+    if kind == "chats":
+        items = []
+        for kid, ids in sorted((resolved.chats or {}).items()):
+            kb = chat_kbs.get(kid)
+            if kb is None or not ids:
+                continue
+            info = kb.file.read_sync(lambda c, ids=ids: _chat_info(c, set(ids)))
+            for cid in sorted(ids):
+                ch = info.get(cid)
+                item = {"ref": f"{kid}:{cid}", "name": (ch or {}).get("name") or "?",
+                        "kind": (ch or {}).get("kind") or "chat", "platform": kid}
+                if ch is None:
+                    item["missing"] = True
+                items.append(item)
+        line = (f"scope: {len(items)} chat{'s' if len(items) != 1 else ''}: " + ", ".join(
+            f"{i['ref']} \"{i['name']}\" ({i['kind']})" for i in items[:12])
+            + (f" and {len(items) - 12} more" if len(items) > 12 else ""))
+        return line, {"scope_kind": "chats", "scope_chats": items, "scope_kbs": sorted(
+            {i["platform"] for i in items})}
+    if kind == "platforms":
+        parts = [f"{p} ({_chats_word(_n_chats(chat_kbs[p]))})" for p in platform_ids
+                 if p in chat_kbs]
+        word = "source" if len(parts) == 1 else "sources"
+        return f"scope: {word} {', '.join(parts)}", {
+            "scope_kind": "platforms", "scope_chats": [], "scope_kbs": platform_ids}
+    parts = [f"{k} {_chats_word(_n_chats(kb))}" for k, kb in chat_kbs.items()]
+    return f"scope: all of Messages ({', '.join(parts)})", {
+        "scope_kind": "all", "scope_chats": [], "scope_kbs": sorted(chat_kbs)}
+
+
+# ---- time of day: `when` takes dates ----------------------------------------------------
+_CLOCK = re.compile(r"\b\d{1,2}(?::\d{2}|\s*(?:uhr|h|am|pm)\b)", re.IGNORECASE)
+_DAYPART = re.compile(
+    r"\b(?:at night|nights?|nachts|in der nacht|nächtlich|midnight|mitternacht|"
+    r"mornings?|morgens|vormittags?|afternoons?|nachmittags?|evenings?|abends?|"
+    r"late at night|early morning|frühmorgens|tonight|heute nacht|overnight)\b",
+    re.IGNORECASE)
+
+
+_LAST_NIGHT = re.compile(r"^\s*(?:last night|letzte nacht|gestern (?:nacht|abend)|"
+                         r"yesterday (?:night|evening))\s*$", re.IGNORECASE)
+
+
+_HOURS = re.compile(r"^\s*(\d{1,2})(?::00)?\s*(?:-|\.\.|to|bis)\s*(\d{1,2})(?::00)?\s*$",
+                    re.IGNORECASE)
+
+
+def parse_hours(hours: str | None) -> tuple[set[int] | None, str | None, str | None]:
+    """"22-6" -> ({22, 23, 0, ..., 5}, label, None): from the first hour up to, not
+    including, the second, wrapping past midnight. (None, None, error) when unreadable."""
+    if hours is None or not str(hours).strip():
+        return None, None, None
+    m = _HOURS.match(str(hours))
+    if not m or int(m[1]) > 24 or int(m[2]) > 24:
+        return None, None, (f"hours={hours!r} is not a range of hours: pass it like "
+                            f"\"22-6\" (22:00 to 05:59) or \"9-17\".")
+    a, b = int(m[1]) % 24, int(m[2]) % 24
+    span = {(a + i) % 24 for i in range((b - a) % 24 or 24)}
+    return span, f"hours: {a:02d}:00 to {(b - 1) % 24:02d}:59 local time", None
+
+
+def dates_for(when: str | None) -> str | None:
+    """Words that name a date through a time of day, as dates: "last night" is
+    yesterday and the small hours of today."""
+    if when and _LAST_NIGHT.match(str(when)):
+        from datetime import date, timedelta
+        today = date.today()
+        return f"{today - timedelta(days=1)}..{today}"
+    return when
+
+
+def time_of_day(when: str | None) -> str | None:
+    """A sentence refusing a time of day in `when`, or None for a date range. "last
+    night" / "letzte Nacht" are dates (yesterday) and pass."""
+    if not when:
+        return None
+    t = str(when).strip()
+    if re.search(r"\b(?:last|letzte[nr]?|gestern)\s+(?:night|nacht)\b", t, re.IGNORECASE):
+        return None
+    if _CLOCK.search(t) and not re.fullmatch(r"\d{4}.*", t) or _DAYPART.search(t):
+        return (f"when={t!r} is a time of day, and `when` only takes dates (2021, 2021-03, "
+                f"'last summer'). To count by time of day use chat_archive__count with "
+                f"hours=\"22-6\" (or by=\"hour\"). chat_archive__search cannot filter by "
+                f"the hour: search without it and tell {{{{username}}}} you could not limit "
+                f"it to those hours.")
+    return None
+
+
+def _labels(scope) -> list[str]:
+    """The resolution lines after the scope line: when, person (chat lines are in it)."""
+    out = []
+    for lab in scope.labels:
+        if lab.startswith("chat:"):
+            continue
+        if lab.startswith("person:") and not lab.endswith("→ you"):
+            lab += " (only messages they wrote)"
+        out.append(lab)
+    return out
+
+
+class ChatArchive:
+    name = "chat_archive"
+    guide = guide("chat_archive")
+    description = described()
+
+    app = None      # the running app (core/services.py), from skills.build
+
+    def _kbs(self):
+        kbs = self.app.kbs if self.app is not None else None
+        if kbs is None:
+            raise RuntimeError("the knowledge bases are not loaded")
+        return kbs
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.me = cfg.user
+
+    def _precheck(self, scope, when) -> tuple[str, list[str], list[str], str | None]:
+        """Arguments that cannot be right, refused before a search is spent.
+        -> (kind, source ids, chats, None) or ("", [], [], what to pass instead)."""
+        try:
+            kbs = self._kbs()
+        except RuntimeError as e:
+            return "", [], [], str(e)
+        kind, plats, chats, bad = check_scope(kbs, scope)
+        if bad:
+            return "", [], [], bad
+        tod = time_of_day(when)
+        if tod:
+            return "", [], [], self.cfg.substitute(tod)
+        return kind, plats, chats, None
+
+    def _people_check(self, written_by) -> str | None:
+        """Accounts by reference or "me", never by name (two people can share one)."""
+        me = {"me", "ich", "mich", "myself", str(self.me).casefold()}
+        names = [p for p in _as_list(written_by)
+                 if not REF.match(p) and p.casefold() not in me
+                 and not re.fullmatch(r"\+?[\d ]{6,}", p)]
+        if names:
+            return (f"written_by takes account references, not names: "
+                    f"{', '.join(repr(n) for n in names)}. Look each up with "
+                    f"chat_archive__look_up(name=...) and pass its `person <ref>` "
+                    f"references, or \"me\".")
+        return None
+
+    @staticmethod
+    def _cap(ctx, n: int) -> int:
+        """A tool's own cap, never above the share of the context one result may take."""
+        m = ctx.max_output_tokens
+        return min(int(n), int(m)) if m else int(n)
+
+    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
+        try:
+            kbs = self._kbs()
+        except RuntimeError:
+            return None
+        infos = []
+        for kb in kbs.all.values():
+            info = await anyio.to_thread.run_sync(kb.info)
+            if info["kind"] == "chat" and info.get("messages"):
+                infos.append(f"- `{info['id']}` ({info['title']}): {info['messages']:,} "
+                             f"messages in {info['chats']:,} chats, "
+                             f"{_when(info['first_ts'])[:10]} to {_when(info['last_ts'])[:10]}")
+        if not infos:
+            return None
+        return self.cfg.substitute(
+            "The Messages archive: {{username}}'s own chats, one source per line. These ids "
+            "are what `scope` takes for one source:\n" + "\n".join(infos) + "\n\n"
+            "You do not remember the archive. Every question about it (what was said, by "
+            "whom, when, how often, who someone is) starts with a chat_archive tool call "
+            "in this turn, and the answer comes only from what the tools showed you. "
+            "Never answer it from memory, and never write that you searched when no tool "
+            "ran. Use the chat_archive tools only, never shell or files. "
+            "`chat_archive__search` finds what and when. `chat_archive__count` answers how "
+            "many and who most. `chat_archive__look_up` turns a name into references: pass "
+            "people and chats as references, never as names. A name you do not know (a "
+            "nickname, an alias) is most likely someone in the archive: look it up with "
+            "`chat_archive__look_up` before you ask {{username}} who it is. "
+            "`chat_archive__read_session` reads the chat session around a message. "
+            "`chat_archive__read_period` reads one chat over a date range. "
+            "`chat_archive__scroll` gets the messages above or below a message. "
+            "`chat_archive__get_messages` gets messages by reference, also references you "
+            "kept or found in an earlier conversation.\n\n"
+            "`chat_archive__search` runs a semantic topic search on `about`: full sentences "
+            "that describe the messages you want (\"Noor tells {{username}} what she likes to "
+            "cook\"). That finds what nobody named with a keyword. `words` is only for "
+            "exact words someone typed. Never pass keyword lists as `about`.\n\n"
+            "Answer open questions (what someone likes, wants, thinks, how something went, "
+            "\"search deeply\") in waves, with many calls: "
+            "(1) several searches with different `about` sentences, in the chats' languages, "
+            "from different angles. (2) Read the best match windows in full with "
+            "`chat_archive__read_session`, and scroll with `chat_archive__scroll` where it "
+            "gets interesting. (3) Narrow down with what you read: search inside the chat "
+            "that keeps coming up, the people involved, the period. (4) Look for the "
+            "opposite or exceptions. (5) Answer when new steps bring nothing new. There is "
+            "no limit on searches. Depth means exploring what you found, not searching all "
+            "chats again with other words. A closed question (a date, a count) takes one "
+            "or two calls.\n\n"
+            "`scope` is where you look, decided on purpose: [\"all\"], a source id, or "
+            "chat references from `chat_archive__look_up` when {{username}} names a chat, a "
+            "group or \"my chats with X\". A person often has one direct message per source: "
+            "pass each. `written_by` only filters who wrote. It does not choose chats. "
+            "Every result starts with `scope:` (and `when:`) lines. If they are not what "
+            "you meant, search again. When you change direction while searching (narrowing "
+            "to a chat or person, scrolling around a match), write one short plain line "
+            "before the calls (\"nothing in the group, trying your DM with Noor\"). Never "
+            "write filler. In your answer, say once in plain words where you looked (\"I "
+            "searched all your chats\", \"only your DM with Noor on WhatsApp\").\n\n"
+            "Every message line has a reference like `whatsapp:48213`. Cite what you use "
+            "as [[whatsapp:48213]]: only references a tool showed you. Say who wrote it. "
+            "Tell what was said in your own words: the citation is the proof. Quote exact "
+            "words only when the wording itself matters. The app checks your answer "
+            "against the messages.")
+
+    # ---- the ledger ----------------------------------------------------------------
+    def _done(self, led, tool_name: str, spec: str, content: str, *, search: bool,
+              display: dict | None = None, call=None) -> ToolResult:
+        """Record the call in the turn's ledger and end the result with the progress line."""
+        if call is None:
+            led.record(tool_name, spec, content, search=search)
+        else:
+            led.finish(call, content)
+        footer = led.footer()
+        return ToolResult(content=f"{content}\n\n{footer}" if footer else content,
+                          display=display)
+
+    async def _scope(self, ctx, *, kb, people, chats, when):
+        from ..kb import identity
+        from ..kb.retrieve.scope import resolve
+        ids = await identity.snapshot(ctx.store)
+        kbs = self._kbs()
+        when = dates_for(when)
+        scope = await anyio.to_thread.run_sync(lambda: resolve(
+            kbs, kb_ids=kb, people=people, chats=chats, when=when, identities=ids,
+            me_names={self.me}))
+        return kbs, scope, ids
+
+    def _embedder(self):
+        """Query embeddings from the first model of the Embeddings task that answers
+        (kb/semantic.py). The callable carries that model's fingerprint as `fp`, so an
+        index made by another model is skipped."""
+        from ..kb import semantic
+        try:
+            e = semantic.query_embedder(self.cfg)
+        except semantic.SemanticError as why:
+            return None, "", str(why).rstrip(".")
+
+        def embed(texts):
+            return e.embed(texts, max_input_chars=1200, retries=1)
+        embed.fp = e.fp                         # type: ignore[attr-defined]
+        return embed, e.s["query_prefix"], None
+
+    # ---- the tools to use first ------------------------------------------------------
+    @tool()
+    async def search(
+        self, ctx: ToolContext,
+        about: Annotated[list[str], "1 to 3 full sentences that describe a topic or "
+                                    "situation: who, what, what happens. They are compared "
+                                    "by embedding, so no word has to match. A bare name or "
+                                    "\"X is a person\" describes nothing and matches "
+                                    "noise: a name goes in `words`. Add a sentence "
+                                    "in the chats' language when it is not English."],
+        scope: Annotated[list[str], "Where to search: [\"all\"], source ids such as "
+                                    "[\"discord\"], or chat references from "
+                                    "chat_archive__look_up. Do not mix source ids and chat "
+                                    "references."],
+        words: Annotated[list[str] | None, "Exact words or phrases that people typed. "
+                                           "Several words form one phrase. Leave it empty "
+                                           "when no telling word exists."] = None,
+        written_by: Annotated[list[str] | None, "Only messages from these accounts: "
+                                                "`person` references from "
+                                                "chat_archive__look_up, or \"me\". Never "
+                                                "names. A reference covers every account "
+                                                "marked as the same person. This is for "
+                                                "what X said; for what others said about "
+                                                "X, pass words=[X's name]."] = None,
+        when: Annotated[str | None, "A date range: 2021, 2021-03, 2021-03..2021-05, "
+                                    "\"last summer\". No time of day."] = None,
+        order: Annotated[Literal["best", "first", "last"], "best: best fit first. first: "
+                         "oldest first. last: newest first."] = "best",
+        mode: Annotated[Literal["best", "all"], "best: the top match windows. all: up to 25 "
+                        "shorter match windows, with counts per year."] = "best",
+    ) -> ToolResult:
+        """Search the Messages archive: {{username}}'s stored WhatsApp, Discord and imported
+        chats. Two searches run at once: semantic topic search on `about`, and word search
+        on `words`. A reranker sorts the results. A result is a match window: the messages
+        of one chat from the first to the last match, plus up to 2 messages around. Use it
+        for what was said, when, and every time. For numbers use chat_archive__count. For
+        a name use chat_archive__look_up first. One call is one search: for an open
+        question, make many calls. Returns: a `scope:` line, word counts, the match windows
+        with references, a progress line."""
+        from ..kb.retrieve import Ambiguous, Settings, retrieve
+        from ..kb.retrieve import episodes as E
+        from ..kb.retrieve.rerank import from_config
+        led = ledger.get(ctx.turn_id)
+        scope_kind, plats, chats, bad = self._precheck(scope, when)
+        if bad:
+            return ToolResult(content=bad, is_error=True, display={"scope_error": True})
+        bad = self._people_check(written_by)
+        if bad:
+            return ToolResult(content=bad, is_error=True)
+        args = {"about": about, "words": words, "scope": scope_kind, "people": written_by,
+                "chats": chats, "when": when, "order": order, "mode": mode, "kb": plats}
+        spec = led.spec("search", args)
+        prev = led.same_as(spec)
+        if prev is not None:
+            return _same(prev)
+        broad = scope_kind in ("all", "platforms") and not _as_list(written_by)
+        if stop := led.blocked(broad):
+            led.refuse(spec, broad=broad)
+            return ToolResult(content=stop, is_error=True, display={"narrow": True})
+        call = led.begin("search", spec, search=True)
+        try:
+            kbs, res_scope, ids = await self._scope(ctx, kb=plats or None, people=written_by,
+                                                    chats=chats or None, when=when)
+            led.focus |= _focus_refs(ids, written_by)
+            echo, echo_display = await anyio.to_thread.run_sync(
+                lambda: scope_echo(kbs, scope_kind, plats, res_scope))
+            if missing := missing_chats(echo_display):
+                raise ValueError(missing)
+        except Ambiguous as e:
+            led.refund(call)
+            return self._done(led, "search", spec, "\n".join(e.lines), search=False,
+                              display={"ambiguous": True}, call=call)
+        except ValueError as e:
+            led.refund(call)
+            led.finish(call, "")
+            return ToolResult(content=str(e), is_error=True)
+        scope = res_scope
+
+        s = self.cfg.skill("chat_archive")
+        titles = {k.id: k.title for k in kbs.pick(None)}
+
+        def search():
+            # in the worker thread: choosing the models may ask their servers
+            embed, prefix, why = self._embedder()
+            settings = Settings.from_dict({**s, "query_prefix": prefix})
+            return retrieve(kbs, _as_list(words), scope, about=_as_list(about),
+                            order=order, mode=mode, me=self.me, embed=embed, embed_why=why,
+                            reranker=from_config(self.cfg), settings=settings)
+        try:
+            res = await anyio.to_thread.run_sync(search)
+        except ValueError as e:
+            led.refund(call)
+            led.finish(call, "")
+            return ToolResult(content=str(e), is_error=True)
+
+        head = [echo] + _labels(scope)
+        if res.totals:
+            head.append("exact word matches in scope: " + ", ".join(
+                f"{q} {n:,}" for q, n in res.totals.items()))
+        if res.years:
+            head.append("per year: " + ", ".join(f"{y} {n:,}" for y, n in res.years.items()))
+        head += res.notes
+        cap = int(s.get("search_max_tokens_all" if mode == "all" else "search_max_tokens",
+                        14_000 if mode == "all" else 7_000))
+        cap = self._cap(ctx, cap)
+        shown, seen_calls, seen_n, cut, used = [], set(), 0, 0, 0
+        for e in res.episodes:
+            refs = e.refs
+            if refs and not led.unseen(refs):
+                seen_n += 1
+                seen_calls.update(led.seen_in(refs))
+                continue
+            text = E.render(e, len(shown) + 1, kb_title=titles.get(e.kb, e.kb))
+            t = E.tokens(text)
+            if shown and used + t > cap:
+                cut += 1
+                continue
+            used += t
+            shown.append((e, text))
+        body = []
+        if shown:
+            what = {"first": "earliest first", "last": "most recent first"}.get(order,
+                                                                                 "best first")
+            body.append(f"{len(shown)} match window{'s' if len(shown) != 1 else ''} "
+                        f"({what}). > marks the matching lines:")
+            body += [t for _, t in shown]
+        elif not seen_n:
+            body.append("No match in scope. Try other words (the other language, a "
+                        "synonym, a shorter form), a wider `when`, fewer filters, or "
+                        "chat_archive__count with the same words to check whether they "
+                        "occur at all.")
+        tail = []
+        if seen_n:
+            calls = ", ".join(str(c) for c in sorted(seen_calls))
+            tail.append(f"{seen_n} more match window{'s' if seen_n != 1 else ''} already "
+                        f"shown in call{'s' if len(seen_calls) != 1 else ''} {calls}.")
+        if cut or res.more:
+            tail.append(f"{cut + res.more} more not shown. Narrow with when, scope or "
+                        f"written_by, or use mode=\"all\".")
+        content = "\n".join(head + [""] + ["\n\n".join(body)] + ([""] + tail if tail else []))
+        display = {"episodes": [{"kb": e.kb, "chat": e.chat_id,
+                                 "chat_name": (e.chat or {}).get("name"),
+                                 "start_ts": e.lines[0].ts if e.lines else e.start_ts,
+                                 "end_ts": e.lines[-1].ts if e.lines else e.end_ts,
+                                 "refs": e.refs, "hits": sorted(f"{e.kb}:{h}" for h in e.hits
+                                                                if h in {m.id for m in e.lines})}
+                                for e, _ in shown],
+                   "already_shown": seen_n, "totals": res.totals, "scope": scope.labels,
+                   **echo_display,
+                   "reranked": res.reranked, "took_ms": res.took_ms}
+        # narrowing: searches that keep bringing nothing get a note with the leads this
+        # turn already has, and after a few the next one is not run
+        content = content.strip()
+        led.finish(call, content)
+        weak = not shown or any(n.startswith("Nothing is clearly") for n in res.notes)
+        led.note_search(call, broad=broad, weak=weak, episodes=[{
+            "chat": f"{e.kb}:{e.chat_id}", "name": _chat_name(e.chat),
+            "kind": (e.chat or {}).get("kind"),
+            "hits": [f"{e.kb}:{m.id}" for m in e.lines if m.id in e.hits]} for e, _ in shown])
+        if call.dry and (note := led.narrow_note()):
+            content += "\n\n" + note
+            display["narrow"] = True
+        footer = led.footer()
+        return ToolResult(content=f"{content}\n\n{footer}" if footer else content,
+                          display=display)
+
+    @tool()
+    async def count(
+        self, ctx: ToolContext,
+        by: Annotated[Literal["total", "year", "month", "weekday", "hour", "person", "chat",
+                              "co_participant"],
+                      "The grouping: total, year, month, weekday, hour, person, chat, or "
+                      "co_participant (everyone who wrote within 30 minutes of a match in "
+                      "the same chat)."],
+        scope: Annotated[list[str], "Where to count: [\"all\"], source ids such as "
+                                    "[\"discord\"], or chat references from "
+                                    "chat_archive__look_up. Do not mix source ids and chat "
+                                    "references."],
+        words: Annotated[list[str] | None, "Exact words or phrases that people typed. A "
+                                           "word also matches as a prefix. Leave it empty "
+                                           "to count every message."] = None,
+        written_by: Annotated[list[str] | None, "Only messages from these accounts: "
+                                                "account references from "
+                                                "chat_archive__look_up, or \"me\". Never "
+                                                "names. A reference covers every account "
+                                                "marked as the same person."] = None,
+        when: Annotated[str | None, "A date range: 2021, 2021-03, 2021-03..2021-05, "
+                                    "\"last summer\". No time of day."] = None,
+        hours: Annotated[str | None, "Only messages sent in these local hours: \"22-6\" is "
+                                     "22:00 to 05:59."] = None,
+        unit: Annotated[Literal["messages", "days", "match_windows"], "What one counts: "
+                        "messages, days (distinct days), or match_windows (matching "
+                        "messages of one chat less than 30 minutes apart count as "
+                        "one)."] = "messages",
+    ) -> ToolResult:
+        """Count messages in the Messages archive exactly, with SQL. Group by year, month,
+        weekday, hour, person, chat or co-participant. Use it for how many, how often, when
+        most, who most, and did I ever. Never count search results yourself. Returns: the
+        `scope:` line, the total, one row per group with references."""
+        from ..kb.retrieve import Ambiguous
+        from ..kb.retrieve.count import count as do_count
+        led = ledger.get(ctx.turn_id)
+        scope_kind, plats, chats, bad = self._precheck(scope, when)
+        if bad:
+            return ToolResult(content=bad, is_error=True, display={"scope_error": True})
+        words = [q for q in _as_list(words) if q.strip()] or None
+        bad = self._people_check(written_by)
+        if bad:
+            return ToolResult(content=bad, is_error=True)
+        hour_set, hour_label, bad = parse_hours(hours)
+        if bad:
+            return ToolResult(content=bad, is_error=True)
+        spec = led.spec("count", {"by": by, "scope": scope_kind, "words": words,
+                                  "people": written_by, "chats": chats, "when": when,
+                                  "hours": hours, "unit": unit, "kb": plats})
+        prev = led.same_as(spec)
+        if prev is not None:
+            return _same(prev)
+        call = led.begin("count", spec, search=False)
+        try:
+            kbs, scope, ids = await self._scope(ctx, kb=plats or None, people=written_by,
+                                                chats=chats or None, when=when)
+            led.focus |= _focus_refs(ids, written_by)
+            if hour_set is not None:
+                scope.hours = hour_set
+                scope.labels.append(hour_label)
+            echo, echo_display = await anyio.to_thread.run_sync(
+                lambda: scope_echo(kbs, scope_kind, plats, scope))
+            if missing := missing_chats(echo_display):
+                raise ValueError(missing)
+            res = await anyio.to_thread.run_sync(lambda: do_count(
+                kbs, scope, by=by, queries=words, unit=unit, me=self.me,
+                identities=ids))
+        except Ambiguous as e:
+            return self._done(led, "count", spec, "\n".join(e.lines), search=False,
+                              display={"ambiguous": True}, call=call)
+        except ValueError as e:
+            led.refund(call)
+            led.finish(call, "")
+            return ToolResult(content=str(e), is_error=True)
+        what = f" matching {' or '.join(repr(q) for q in words)}" if words else ""
+        lines = [echo] + _labels(scope)
+        noun = unit.replace("_", " ")
+        lines.append(f"{res.total:,} {noun}{what}" + (f", by {by}:" if by != "total" else ""))
+        if by == "co_participant":
+            lines[-1] = (f"{res.total:,} {noun}{what}. Who wrote within 30 minutes of them "
+                         f"({noun} each person was around for):")
+        if by != "total":
+            for r in res.rows:
+                refs = f" ({', '.join(r['refs'])})" if r["refs"] else ""
+                lines.append(f"  {r['label']}{refs}: {r['count']:,}")
+            if not res.rows:
+                lines.append("  (none)")
+        return self._done(led, "count", spec, "\n".join(lines), search=False,
+                          display={"total": res.total, "rows": len(res.rows), "unit": unit,
+                                   **echo_display},
+                          call=call)
+
+    @tool()
+    async def look_up(
+        self, ctx: ToolContext,
+        name: Annotated[str, "A name, part of a name, a nickname, or digits of a phone "
+                             "number."],
+    ) -> ToolResult:
+        """Look up a person or a chat by name on every source. Use it first when
+        {{username}} names someone or a chat. Other names {{username}} gave a person
+        (Mom) work too. Returns: `person <ref>` lines with message count, last activity,
+        accounts marked as the same person, other names, and what {{username}} wrote
+        about the person; under each, the `chat <ref>` lines of the chats they write in,
+        most messages first. Also `chat <ref>` lines of chats named so. A person
+        reference goes in written_by; a chat reference goes in scope, or in chat of
+        chat_archive__read_period. When a name matches several people, ask
+        {{username}}."""
+        from ..kb import identity
+        from ..kb.retrieve.scope import person_card, chat_card, chat_candidates, person_candidates
+        led = ledger.get(ctx.turn_id)
+        spec = led.spec("look_up", {"name": name})
+        prev = led.same_as(spec)
+        if prev is not None:
+            return _same(prev)
+        ids = await identity.snapshot(ctx.store)
+        kbs = self._kbs()
+        chat_kbs = kbs.chats()
+
+        def run():
+            people, chats = [], []
+            for k in chat_kbs:
+                exact, partial = person_candidates(k, name)
+                people += [(0, p) for p in exact] + [(1, p) for p in partial]
+                ce, cp = chat_candidates(k, name)
+                chats += [(0, k.id, c) for c in ce] + [(1, k.id, c) for c in cp]
+            # a same person's name or an alias: every account of that person, exact
+            seen = {p["ref"] for _, p in people}
+            named = [m for i in ids.named(name) for m in sorted(i.members) if m not in seen]
+            for a in identity.accounts(kbs, named).values():
+                given = [a["names"][k] for k in ("custom", "contact", "display", "push",
+                                                 "username") if a["names"][k]]
+                people.append((0, {**a, "names": given}))
+            return people, chats
+        people, chats = await anyio.to_thread.run_sync(run)
+        people.sort(key=lambda x: (x[0], -x[1]["messages"]))
+        lines: list[str] = []
+        exact = [p for rank, p in people if rank == 0]
+        if people:
+            lines.append(f"people matching {name!r}"
+                         + (f" ({len(exact)} exact)" if exact else "") + ":")
+            told: set[int] = set()
+            listed: set[str] = set()
+            for rank, p in people[:15]:
+                rec = ids.identity_of(p["ref"])
+                line = "  " + person_card(p)
+                if rec is not None and rec.same_person:
+                    others = sorted(rec.members - {p["ref"]})
+                    line += f", same person as {', '.join(others)} ('{rec.name}')"
+                if rec is not None and rec.aliases:
+                    line += f", also called {', '.join(rec.aliases)}"
+                lines.append(line)
+                if rec is not None and rec.about and rec.id not in told:
+                    told.add(rec.id)
+                    lines.append(f"    {self.me} wrote about them:")
+                    lines += [f"      {t}" for t in rec.about.splitlines() if t.strip()]
+                same = ids.expand(p["ref"])
+                if (rank == 0 or len(people) == 1) and not same & listed:
+                    listed |= same
+                    chat_lines = await anyio.to_thread.run_sync(
+                        lambda: _their_chats(kbs, same))
+                    if chat_lines:
+                        lines.append("    their chats, most messages first:")
+                        lines += [f"      {c}" for c in chat_lines]
+            # accounts marked as the same person are one person here
+            per_kb: dict[str, set[str]] = {}
+            for p in (exact or [p for _, p in people]):
+                rec = ids.same_person(p["ref"])
+                per_kb.setdefault(p["kb"], set()).add(f"person:{rec.id}" if rec else p["ref"])
+            if any(len(n) > 1 for n in per_kb.values()):
+                lines.append("  ambiguous: pass the references you mean in written_by, or "
+                             "ask which one you mean.")
+            first = (exact or [p for _, p in people])[0]["ref"]
+            lines.append(f"  written_by=[\"{first}\"] searches what they wrote; a chat ref "
+                         f"goes in scope, chat or read_period")
+            if len({frozenset(ids.expand(p["ref"])) for _, p in people}) == 1:
+                led.focus |= ids.expand(first)
+        if chats:
+            chats.sort(key=lambda x: (x[0], -x[2]["messages"]))
+            lines.append(f"chats matching {name!r}:")
+            lines += ["  " + chat_card(k, c) for _, k, c in chats[:10]]
+        if not lines:
+            lines.append(f"No person and no chat matches {name!r}. Try part of the name, "
+                         f"a nickname, or digits of the number.")
+        led.named |= set(_NAMED.findall("\n".join(lines)))
+        return self._done(led, "look_up", spec, "\n".join(lines), search=False,
+                          display={"people": len(people), "chats": len(chats)})
+
+    @tool(read_only=False, destructive=False)
+    async def mark_same_person(
+        self, ctx: ToolContext,
+        accounts: Annotated[list[str], "Two or more account references from "
+                                       "chat_archive__look_up."],
+        name: Annotated[str, "The name for the person."],
+    ) -> ToolResult:
+        """Mark several accounts as one person. Do this only after {{username}} confirms it.
+        Never do it because two names are equal. After this, `written_by`, counts and
+        look-ups treat the accounts as one person."""
+        from ..kb import identity
+        store = ctx.store
+        if store is None:
+            return ToolResult(content="No database here.", is_error=True)
+        if len(accounts) < 2:
+            return ToolResult(content="Pass at least two account references. "
+                                      "chat_archive__look_up lists them.", is_error=True)
+        try:
+            out = await store.write(lambda c: identity.link_sync(c, accounts, name=name,
+                                                                 source="celine"))
+        except identity.IdentityError as e:
+            return ToolResult(content=str(e), is_error=True)
+        return ToolResult(content=f"Marked as the same person, '{out['name']}': "
+                                  f"{', '.join(out['members'])}",
+                          display={"identity": out["id"]})
+
+    @tool()
+    async def read_session(
+        self, ctx: ToolContext,
+        ref: Annotated[str, "A message reference from a message line, such as "
+                            "whatsapp:48213. Not a person or chat reference."],
+        max_tokens: Annotated[int | None, "The most text you want back. A longer session "
+                                          "is cut around the message."] = None,
+    ) -> ToolResult:
+        """Read the chat session that contains one message, in order. A chat session is
+        the messages of one chat between two pauses of more than 90 minutes. Read it before
+        you quote a line. Several references from one session return the same session.
+        Returns: the messages with references, the message marked > (or, when this turn
+        is about one person, that person's lines), then `earlier` and `later`
+        references."""
+        led = ledger.get(ctx.turn_id)
+        spec = led.spec("read_session", {"ref": ref, "max_tokens": max_tokens})
+        prev = led.same_as(spec)
+        if prev is not None:
+            return _same(prev)
+        call = led.begin("read_session", spec, search=False)
+        ref = str(ref or "").strip().strip("[]")
+        if ref in led.named and ref not in led.shown and \
+                (wrong := await self._wrong_ref(ctx, ref, "message")):
+            led.finish(call, "")
+            return ToolResult(content=wrong + "\nIf you meant the message, "
+                              "chat_archive__get_messages shows it first.", is_error=True)
+        out = await self._read_ref(ctx, ref, max_tokens)
+        return self._read_done(led, "read_session", spec, call, out)
+
+    @tool()
+    async def read_period(
+        self, ctx: ToolContext,
+        chat: Annotated[str, "A chat reference from chat_archive__look_up or from a "
+                             "result, such as whatsapp:213."],
+        when: Annotated[str | None, "A date range: 2021-03, 2021-03-01..2021-03-14, \"last "
+                                    "summer\", \"the last 3 months\". Default: the "
+                                    "newest messages that fit."] = None,
+        max_tokens: Annotated[int | None, "The most text you want back."] = None,
+    ) -> ToolResult:
+        """Read the messages of one chat in a date range, in order. Use it for summaries
+        of a period. A summary cites a few of the messages it is based on, such as
+        [[whatsapp:48213]]. A period too long for `max_tokens` returns one line per chat
+        session. Read a line further with chat_archive__read_session."""
+        led = ledger.get(ctx.turn_id)
+        tod = time_of_day(when)
+        if tod:
+            return ToolResult(content=self.cfg.substitute(tod), is_error=True)
+        spec = led.spec("read_period", {"chat": chat, "when": when,
+                                        "max_tokens": max_tokens})
+        prev = led.same_as(spec)
+        if prev is not None:
+            return _same(prev)
+        call = led.begin("read_period", spec, search=False)
+        if not REF.match(str(chat).strip()):
+            led.finish(call, "")
+            return ToolResult(content=f"chat takes a chat reference, not a name: {chat!r}. "
+                                      f"Look it up with chat_archive__look_up(name=...) and "
+                                      f"pass its `chat <ref>` reference.", is_error=True)
+        out = await self._read_slice(ctx, chat, when, max_tokens)
+        return self._read_done(led, "read_period", spec, call, out)
+
+    def _read_done(self, led, tool_name: str, spec: str, call, out: ToolResult) -> ToolResult:
+        """A read result, recorded in the ledger."""
+        if out.is_error:
+            led.finish(call, "")
+            return out
+        return self._done(led, tool_name, spec, out.content, search=False,
+                          display=out.display, call=call)
+
+    @tool()
+    async def get_messages(
+        self, ctx: ToolContext,
+        refs: Annotated[list[str], "One or more message references, such as "
+                                   "[\"whatsapp:48213\"]."],
+    ) -> ToolResult:
+        """Get messages by their references, with chat, sender and time. A reference never
+        changes. Get a saved reference again before you cite it. Returns: the messages
+        grouped by chat, then the references that match no message."""
+        from ..kb.chat import ChatKB
+        from ..kb.retrieve import episodes as E
+        led = ledger.get(ctx.turn_id)
+        cap = int(self.cfg.skill("chat_archive").get("get_max_refs", 50))
+        items = [r.strip().strip("[]") for r in _as_list(refs)]
+        items = list(dict.fromkeys(r for r in items if r))
+        if not items:
+            return ToolResult(content="Pass refs: message references like whatsapp:48213.",
+                              is_error=True)
+        extra = items[cap:]
+        items = items[:cap]
+        kbs = self._kbs()
+        wanted: dict[str, list[int]] = {}
+        bad: list[str] = []
+        for r in items:
+            kid, _, mid = r.partition(":")
+            if isinstance(kbs.get(kid), ChatKB) and mid.isdigit():
+                wanted.setdefault(kid, []).append(int(mid))
+            else:
+                bad.append(r)
+
+        def fetch(kb, ids):
+            def run(c):
+                q = ",".join("?" * len(ids))
+                rows = c.execute(f"{E.SELECT} WHERE m.id IN ({q}) ORDER BY m.ts, m.id",
+                                 ids).fetchall()
+                msgs = [E.to_msg(r, self.me) for r in rows]
+                return msgs, _chat_info(c, {x.chat_id for x in msgs})
+            return kb.file.read_sync(run)
+
+        blocks, chats, found = [], [], set()
+        for kid, ids in wanted.items():
+            kb = kbs.get(kid)
+            msgs, info = await anyio.to_thread.run_sync(lambda: fetch(kb, ids))
+            by_chat: dict[int, list] = {}
+            for x in msgs:
+                by_chat.setdefault(x.chat_id, []).append(x)
+                found.add(f"{kid}:{x.id}")
+            for cid, xs in by_chat.items():
+                ch = info.get(cid) or {}
+                chats.append({"ref": f"{kid}:{cid}", "name": ch.get("name") or "?",
+                              "kind": ch.get("kind") or "chat", "platform": kid})
+                blocks.append(_chat_head(kb.title, kid, cid, ch) + "\n" + "\n".join(
+                    _line(kid, x) for x in xs))
+        missing = [r for r in items if r not in found and r not in bad]
+        tail = []
+        if bad:
+            tail.append(f"not message references (source:id): {', '.join(bad)}")
+        if missing:
+            tail.append(f"no such message: {', '.join(missing)}")
+        if extra:
+            tail.append(f"{len(extra)} more references not returned. One call takes {cap}.")
+        n = len(found)
+        head = f"{n} message{'s' if n != 1 else ''} in {len(chats)} chat" \
+               f"{'s' if len(chats) != 1 else ''}:" if n else "No messages found."
+        content = "\n\n".join([head] + blocks + (["\n".join(tail)] if tail else []))
+        spec = led.spec("get_messages", {"refs": items})
+        return self._done(led, "get_messages", spec, content, search=False,
+                          display={"messages": n, "missing": missing + bad,
+                                   "scope_kind": "chats", "scope_chats": chats,
+                                   "scope_kbs": sorted({c["platform"] for c in chats})})
+
+    @tool()
+    async def scroll(
+        self, ctx: ToolContext,
+        ref: Annotated[str, "The message reference to scroll from."],
+        direction: Annotated[Literal["before", "after", "both"], "before: older messages. "
+                             "after: newer messages. both: each side."] = "both",
+        count: Annotated[int, "New messages per side, 1 to 20."] = 20,
+    ) -> ToolResult:
+        """Get up to 20 messages before or after one message in its chat. Messages you
+        already got in this conversation are left out. Call it again with the same
+        reference to scroll further. Returns: the new messages, oldest first, then the
+        range you now have."""
+        from ..kb.chat import ChatKB
+        from ..kb.retrieve import episodes as E
+        led = ledger.get(ctx.turn_id)
+        s = self.cfg.skill("chat_archive")
+        per_side = max(1, min(int(count or 20), int(s.get("scroll_max_messages", 20))))
+        budget = self._cap(ctx, int(s.get("scroll_max_tokens", 4000)))
+        kid, _, mid = str(ref or "").strip().strip("[]").partition(":")
+        kb = self._kbs().get(kid)
+        if not isinstance(kb, ChatKB) or not mid.isdigit():
+            return ToolResult(content=f"{ref} is not a message reference (source:id), like "
+                                      f"whatsapp:48213.", is_error=True)
+        if direction not in ("before", "after", "both"):
+            return ToolResult(content="direction is before, after or both.", is_error=True)
+        sides = ["before", "after"] if direction == "both" else [direction]
+        side_budget = budget // len(sides)
+        seen = led.in_view
+        walk_cap = 400                     # messages skipped at most, per side
+
+        def run(c):
+            a = c.execute(f"{E.SELECT} WHERE m.id=?", (int(mid),)).fetchone()
+            if a is None:
+                return None
+            anchor = E.to_msg(a, self.me)
+            out = {"anchor": anchor, "info": _chat_info(c, {anchor.chat_id})}
+            for side in sides:
+                op, order = ("<", "DESC") if side == "before" else (">", "ASC")
+                key = (anchor.ts, anchor.id)
+                new, walked, used, end, skipped, full = [], [], 0, False, 0, False
+                while len(new) < per_side and skipped < walk_cap:
+                    rows = c.execute(
+                        f"{E.SELECT} WHERE m.chat_id=? AND (m.ts, m.id) {op} (?, ?) "
+                        f"ORDER BY m.ts {order}, m.id {order} LIMIT 50",
+                        (anchor.chat_id, *key)).fetchall()
+                    if not rows:
+                        end = True
+                        break
+                    for r in rows:
+                        x = E.to_msg(r, self.me)
+                        key = (x.ts, x.id)
+                        if seen(f"{kid}:{x.id}"):
+                            walked.append((x, False))
+                            skipped += 1
+                            if skipped >= walk_cap:
+                                break
+                            continue
+                        t = E.tokens(x.text) + 9
+                        if new and used + t > side_budget:
+                            full = True
+                            break
+                        used += t
+                        new.append(x)
+                        walked.append((x, True))
+                        if len(new) >= per_side:
+                            break
+                    if full:
+                        break
+                # the next message past the walk: is this the edge of the chat?
+                if not end and not full:
+                    end = c.execute(
+                        f"SELECT 1 FROM messages WHERE chat_id=? AND (ts, id) {op} (?, ?) "
+                        f"LIMIT 1", (anchor.chat_id, *key)).fetchone() is None
+                if side == "before":
+                    walked.reverse()
+                out[side] = (walked, end)
+            return out
+        got = await anyio.to_thread.run_sync(lambda: kb.file.read_sync(run))
+        if got is None:
+            return ToolResult(content=f"There is no message {kid}:{mid}.", is_error=True)
+        anchor, chat_id = got["anchor"], got["anchor"].chat_id
+        ch = got["info"].get(chat_id) or {}
+        anchor_new = not seen(f"{kid}:{anchor.id}")
+        seq = list(got.get("before", ([], True))[0])
+        seq.append((anchor, anchor_new))
+        seq += got.get("after", ([], True))[0]
+
+        # the new messages in order; a run of ones it already has is one line
+        body, run_old = [], []
+
+        def flush_old():
+            if run_old:
+                a_, b_ = run_old[0], run_old[-1]
+                span = f"{kid}:{a_.id}" if a_ is b_ else f"{kid}:{a_.id} to {kid}:{b_.id}"
+                body.append(f"  ({len(run_old)} message{'s' if len(run_old) != 1 else ''} "
+                            f"you already have: {span})")
+                run_old.clear()
+        prev_day = None
+        for x, is_new in seq:
+            if not is_new:
+                run_old.append(x)
+                continue
+            flush_old()
+            t = E.clock(x.ts)
+            stamp = f"{t:%H:%M}" if t.date() == prev_day else f"{t:%Y-%m-%d %H:%M}"
+            prev_day = t.date()
+            mark = ">" if x.id == anchor.id else " "
+            body.append(f"{mark} [{kid}:{x.id}] {stamp} {x.sender}: {x.text}")
+        flush_old()
+        n_new = sum(1 for _, is_new in seq if is_new)
+        n_before = sum(1 for x, is_new in got.get("before", ([], True))[0] if is_new)
+        n_after = sum(1 for x, is_new in got.get("after", ([], True))[0] if is_new)
+
+        first, last = seq[0][0], seq[-1][0]
+        a_t, b_t = E.clock(first.ts), E.clock(last.ts)
+        covered = (f"you now have {kid}:{first.id} ({a_t:%Y-%m-%d %H:%M}) to {kid}:{last.id} "
+                   f"({b_t:%Y-%m-%d %H:%M}) of this chat")
+        nxt = []
+        if "before" in got:
+            nxt.append("before: start of the chat reached" if got["before"][1] else
+                       f"older: chat_archive__scroll(ref=\"{kid}:{first.id}\", "
+                       f"direction=\"before\")")
+        if "after" in got:
+            nxt.append("after: newest message reached" if got["after"][1] else
+                       f"newer: chat_archive__scroll(ref=\"{kid}:{last.id}\", "
+                       f"direction=\"after\")")
+        head = [self._chat_line(kid, {**ch, "id": chat_id}),
+                _chat_head(kb.title, kid, chat_id, ch)]
+        if n_new:
+            parts = []
+            if "before" in got:
+                parts.append(f"{n_before} before")
+            if "after" in got:
+                parts.append(f"{n_after} after")
+            head.append(f"{n_new} new message{'s' if n_new != 1 else ''} around "
+                        f"{kid}:{anchor.id} ({', '.join(parts)}), oldest first:")
+        else:
+            head.append(f"nothing new around {kid}:{anchor.id}: you already have these "
+                        f"messages.")
+        content = "\n".join(head + body + ["", covered + ".", "; ".join(nxt)])
+        spec = led.spec("scroll", {"ref": f"{kid}:{anchor.id}", "direction": direction})
+        return self._done(led, "scroll", spec, content, search=False, display={
+            "messages": n_new, "anchor": f"{kid}:{anchor.id}", "direction": direction,
+            "first": f"{kid}:{first.id}", "last": f"{kid}:{last.id}",
+            "scope_kind": "chats", "scope_chats": [{
+                "ref": f"{kid}:{chat_id}", "name": ch.get("name") or "?",
+                "kind": ch.get("kind") or "chat", "platform": kid}],
+            "scope_kbs": [kid]})
+
+    @staticmethod
+    def _handles(kb, chat_id: int, first: tuple[int, int] | None,
+                 last: tuple[int, int] | None) -> tuple[str, dict]:
+        """The references just outside what was shown, to page like scrolling. Written
+        without brackets: they were not shown, so they do not count as citable."""
+        def run(c):
+            e = c.execute("SELECT id FROM messages WHERE chat_id=? AND (ts, id) < (?, ?) "
+                          "ORDER BY ts DESC, id DESC LIMIT 1",
+                          (chat_id, *first)).fetchone() if first else None
+            l_ = c.execute("SELECT id FROM messages WHERE chat_id=? AND (ts, id) > (?, ?) "
+                           "ORDER BY ts, id LIMIT 1", (chat_id, *last)).fetchone() if last else None
+            return (e[0] if e else None), (l_[0] if l_ else None)
+        e, l_ = kb.file.read_sync(run)
+        earlier = f"{kb.id}:{e}" if e else None
+        later = f"{kb.id}:{l_}" if l_ else None
+        line = (f"earlier: {earlier or 'none (start of the chat)'}; "
+                f"later: {later or 'none (newest message)'}")
+        return line, {"earlier": earlier, "later": later}
+
+    async def _wrong_ref(self, ctx, ref: str, want: str) -> str | None:
+        """A person or chat reference passed where a `want` ("message" or "chat")
+        reference belongs: what it is and what to pass instead. None when it is
+        neither."""
+        from ..kb import identity
+        kbs = self._kbs()
+        kid, _, n = ref.partition(":")
+        kb = kbs.get(kid)
+        if not hasattr(kb, "list_chats") or not n.isdigit():
+            return None
+
+        def run(c):
+            person = c.execute("SELECT 1 FROM messages WHERE sender_id=? LIMIT 1",
+                               (int(n),)).fetchone() is not None
+            chat = _chat_info(c, {int(n)}).get(int(n)) if want != "chat" else None
+            return person, chat
+        person, chat = await anyio.to_thread.run_sync(lambda: kb.file.read_sync(run))
+        parts = []
+        if chat:
+            parts.append(f"{ref} is a chat reference ({_chat_name(chat)}), not a {want} "
+                         f"reference. Read a chat with chat_archive__read_period("
+                         f"chat=\"{ref}\").")
+        if person:
+            ids = await identity.snapshot(ctx.store)
+            chats = await anyio.to_thread.run_sync(lambda: _their_chats(kbs, ids.expand(ref)))
+            parts.append(f"{ref} is a person reference, not a {want} reference. "
+                         f"written_by=[\"{ref}\"] searches what they wrote. The chats they "
+                         f"write in, most messages first:\n"
+                         + "\n".join(f"  {c}" for c in chats))
+        return "\n".join(parts) or None
+
+    @staticmethod
+    def _mark_focus(ctx, ep) -> str | None:
+        """Marks the lines of the person this turn is about (a look-up that found one
+        person, or written_by) as hits, and says so."""
+        focus = ledger.get(ctx.turn_id).focus
+        mine = {m.id for m in ep.lines if f"{ep.kb}:{m.sender_id}" in focus}
+        if not mine:
+            return None
+        ep.hits = mine
+        first = next(m for m in ep.lines if m.id in mine)
+        return (f"> marks the lines written by {ep.kb}:{first.sender_id} {first.sender} "
+                f"({len(mine)} of {len(ep.lines)} here)")
+
+    def _chat_line(self, kid: str, chat: dict) -> str:
+        return (f"scope: 1 chat: {kid}:{chat.get('id')} \"{chat.get('name', '?')}\" "
+                f"({chat.get('kind') or 'chat'})")
+
+    async def _read_ref(self, ctx, ref: str, max_tokens: int | None) -> ToolResult:
+        from ..kb.chat import ChatKB
+        from ..kb.retrieve import episodes as E
+        kid, _, mid = str(ref or "").strip().strip("[]").partition(":")
+        kb = self._kbs().get(kid)
+        if not isinstance(kb, ChatKB) or not mid.isdigit():
+            return ToolResult(content=f"{ref} is not a message reference (source:id), like "
+                                      f"whatsapp:48213.", is_error=True)
+        m = await anyio.to_thread.run_sync(kb.message, int(mid))
+        if m is None:
+            wrong = await self._wrong_ref(ctx, f"{kid}:{mid}", "message")
+            return ToolResult(content=wrong or f"There is no message {ref}.", is_error=True)
+        chat = m["chat"] or {}
+        chat_id = int(chat.get("id"))
+        s = self.cfg.skill("chat_archive")
+        cap = int(s.get("max_tokens_cap", 100_000))
+        budget = min(int(max_tokens or s.get("session_max_tokens", 4000)), cap)
+        budget = self._cap(ctx, budget)
+        msgs, total = await anyio.to_thread.run_sync(
+            lambda: self._session_around(kb, chat_id, m, budget))
+        info = await anyio.to_thread.run_sync(
+            lambda: kb.file.read_sync(lambda c: _chat_info(c, {chat_id})))
+        ep = E.Episode(kid, chat_id, msgs[0].ts, msgs[-1].ts, (msgs[0].ts, msgs[0].id),
+                       (msgs[-1].ts, msgs[-1].id), 0.0, hits={m["id"]}, lines=msgs,
+                       chat=info.get(chat_id) or chat)
+        handles, hd = await anyio.to_thread.run_sync(lambda: self._handles(
+            kb, chat_id, (msgs[0].ts, msgs[0].id), (msgs[-1].ts, msgs[-1].id)))
+        head = [self._chat_line(kid, ep.chat or chat)]
+        if total > len(msgs):
+            head.append(f"its chat session has {total:,} messages. {len(msgs):,} around it "
+                        f"shown.")
+        else:
+            head.append(f"its whole chat session, {total:,} messages")
+        if mark := self._mark_focus(ctx, ep):
+            head.append(mark)
+        body = "\n".join(head) + "\n" + E.render(ep, kb_title=kb.title) + "\n" + handles
+        return ToolResult(content=body, display={"chat": chat.get("name"),
+                                                 "messages": len(msgs), "scope_kind": "chats",
+                                                 "scope_chats": [{"ref": f"{kid}:{chat_id}",
+                                                                  "name": (ep.chat or chat).get("name"),
+                                                                  "kind": (ep.chat or chat).get("kind"),
+                                                                  "platform": kid}],
+                                                 **hd})
+
+    def _session_around(self, kb, chat_id: int, m: dict, budget: int):
+        """The chat session the message belongs to, trimmed around it to the budget: from
+        the semantic topic search index's sessions when the message is in one, else cut
+        here by the same 90-minute pause rule. -> (messages shown, session size)."""
+        import sqlite3
+
+        from ..kb import sessions as S
+        from ..kb.retrieve import episodes as E
+
+        def run(c):
+            rows = None
+            try:
+                sid = c.execute("SELECT session_id FROM session_members WHERE message_id=?",
+                                (m["id"],)).fetchone()
+            except sqlite3.OperationalError:     # no semantic index built yet: no tables
+                sid = None
+            if sid:
+                se = c.execute("SELECT first_id, last_id, start_ts, end_ts FROM sessions "
+                               "WHERE id=?", (sid[0],)).fetchone()
+                if se:
+                    rows = c.execute(
+                        f"{E.SELECT} WHERE m.chat_id=? AND (m.ts, m.id) BETWEEN (?, ?) "
+                        f"AND (?, ?) ORDER BY m.ts, m.id LIMIT 3000",
+                        (chat_id, se[2], se[0], se[3], se[1])).fetchall()
+            if not rows:
+                older = c.execute(f"{E.SELECT} WHERE m.chat_id=? AND (m.ts, m.id) < (?, ?) "
+                                  f"ORDER BY m.ts DESC, m.id DESC LIMIT 400",
+                                  (chat_id, m["ts"], m["id"])).fetchall()[::-1]
+                me_ = c.execute(f"{E.SELECT} WHERE m.id=?", (m["id"],)).fetchall()
+                newer = c.execute(f"{E.SELECT} WHERE m.chat_id=? AND (m.ts, m.id) > (?, ?) "
+                                  f"ORDER BY m.ts, m.id LIMIT 400",
+                                  (chat_id, m["ts"], m["id"])).fetchall()
+                allr = [*older, *me_, *newer]
+                gap = S.SessionParams().gap_ms
+                for part in S.cut([(r["id"], r["ts"], 0) for r in allr], gap):
+                    if any(x[0] == m["id"] for x in part):
+                        keep = {x[0] for x in part}
+                        rows = [r for r in allr if r["id"] in keep]
+                        break
+            return [E.to_msg(r, self.me) for r in rows or []]
+        msgs = kb.file.read_sync(run)
+        idx = next((i for i, x in enumerate(msgs) if x.id == m["id"]), 0)
+        lo = hi = idx
+        used = E.tokens(msgs[idx].text) + 9 if msgs else 0
+        while True:
+            grew = False
+            for side in (-1, 1):
+                j = lo - 1 if side < 0 else hi + 1
+                if 0 <= j < len(msgs):
+                    t = E.tokens(msgs[j].text) + 9
+                    if used + t <= budget:
+                        used += t
+                        lo, hi = (j, hi) if side < 0 else (lo, j)
+                        grew = True
+            if not grew:
+                break
+        return msgs[lo:hi + 1], len(msgs)
+
+    async def _read_slice(self, ctx, chat: str, when: str | None,
+                          max_tokens: int | None) -> ToolResult:
+        from ..kb.retrieve import episodes as E
+        from ..kb.retrieve.scope import Ambiguous, resolve_chat
+        from ..kb.retrieve.when import parse_when
+        s = self.cfg.skill("chat_archive")
+        cap = int(s.get("max_tokens_cap", 100_000))
+        budget = min(int(max_tokens or s.get("period_max_tokens", 40_000)), cap)
+        budget = self._cap(ctx, budget)
+        kbs = self._kbs()
+        chat_kbs = kbs.chats()
+        try:
+            found, label = await anyio.to_thread.run_sync(lambda: resolve_chat(chat_kbs, chat))
+            rng = parse_when(dates_for(when))
+        except Ambiguous as e:
+            return ToolResult(content="\n".join(e.lines), display={"ambiguous": True})
+        except ValueError as e:
+            return ToolResult(content=str(e), is_error=True)
+        (kid, ids), = found.items()
+        cid = next(iter(ids))
+        kb = kbs.get(kid)
+        info = await anyio.to_thread.run_sync(
+            lambda: kb.file.read_sync(lambda c: _chat_info(c, {cid}))) if kb else {}
+        if cid not in info:
+            # a person or message reference looks the same: "no messages" would be false
+            wrong = await self._wrong_ref(ctx, f"{kid}:{cid}", "chat")
+            return ToolResult(content=wrong or (
+                f"{kid}:{cid} is not a chat. chat takes a chat reference, the `chat ...` "
+                f"lines of chat_archive__look_up. Message and account references look the "
+                f"same but are not chats."), is_error=True)
+        lo, hi = (rng[0], rng[1]) if rng else (None, None)
+
+        def run(conn):
+            w, args = "m.chat_id = ?", [cid]
+            if lo is not None:
+                w += " AND m.ts >= ? AND m.ts < ?"
+                args += [lo, hi]
+            n, chars = conn.execute(f"SELECT COUNT(*), COALESCE(SUM(LENGTH(m.text)), 0) "
+                                    f"FROM messages m WHERE {w}", args).fetchone()
+            est = E.tokens("x" * int(chars)) + n * 9
+            if n == 0:
+                return n, est, [], None
+            if est > budget and lo is not None:
+                return n, est, [], self._digest(conn, w, args, budget, kid)
+            # everything, or (no `when`) the newest messages that fit
+            rows = conn.execute(f"{E.SELECT} WHERE {w} ORDER BY m.ts DESC, m.id DESC LIMIT ?",
+                                [*args, 20_000]).fetchall()
+            out, used = [], 0
+            for r in rows:
+                msg = E.to_msg(r, self.me)
+                used += E.tokens(msg.text) + 9
+                if used > budget:
+                    break
+                out.append(msg)
+            return n, est, out[::-1], None
+        n, est, msgs, digest = await anyio.to_thread.run_sync(lambda: kb.file.read_sync(run))
+        span = rng[2] if rng else "newest"
+        chat_row = info[cid]
+        scope_line = self._chat_line(kid, chat_row)
+        disp = {"chat": f"{kid}:{cid}", "scope_kind": "chats",
+                "scope_chats": [{"ref": f"{kid}:{cid}", "name": chat_row.get("name"),
+                                 "kind": chat_row.get("kind"), "platform": kid}]}
+        if n == 0:
+            return ToolResult(content=f"{scope_line}\n{label}: no messages in {span}",
+                              display={**disp, "messages": 0})
+        if not msgs:
+            lines, first, last = digest
+            handles, hd = await anyio.to_thread.run_sync(
+                lambda: self._handles(kb, cid, first, last))
+            return ToolResult(
+                content=(f"{scope_line}\n{label}, {span}: {n:,} messages, ~{est // 1000}k "
+                         f"tokens, more than fits ({budget:,}). One line per chat session: "
+                         f"when, how many messages, who, and one line of it with its "
+                         f"reference. Read a chat session with chat_archive__read_session "
+                         f"before you quote from it.\n" + "\n".join(lines) + "\n" + handles),
+                display={**disp, "messages": n, "tokens": est, "digest": True, **hd})
+        ep = E.Episode(kid, cid, msgs[0].ts, msgs[-1].ts, (0, 0), (0, 0), 0.0, lines=msgs)
+        ep.chat = chat_row
+        handles, hd = await anyio.to_thread.run_sync(lambda: self._handles(
+            kb, cid, (msgs[0].ts, msgs[0].id), (msgs[-1].ts, msgs[-1].id)))
+        head = (f"{label}, {span}: all {n:,} messages" if len(msgs) == n else
+                f"{label}, {span}: the newest {len(msgs):,} of {n:,} messages that fit")
+        if mark := self._mark_focus(ctx, ep):
+            head += "\n" + mark
+        return ToolResult(content=scope_line + "\n" + head + "\n" +
+                          E.render(ep, kb_title=kb.title) + "\n" + handles,
+                          display={**disp, "messages": len(msgs), **hd})
+
+    def _digest(self, conn, where: str, args: list, budget: int, kid: str):
+        """A long range as one line per chat session (cut at 90-minute pauses): start,
+        size, who, and its longest message with its reference. Only an index to read
+        further: quotes come from read_session, never from here."""
+        from ..kb import sessions as S
+        from ..kb.retrieve import episodes as E
+        rows = conn.execute(f"{E.SELECT} WHERE {where} ORDER BY m.ts, m.id LIMIT 60000",
+                            args).fetchall()
+        msgs = [E.to_msg(r, self.me) for r in rows]
+        parts = S.cut([(i, x.ts, len(x.text)) for i, x in enumerate(msgs)],
+                      S.SessionParams().gap_ms)
+        lines, used = [], 0
+        shown_first = shown_last = None
+        step = 1
+        # too many chat sessions for the budget: show every k-th, and say so
+        est_line = 30
+        if len(parts) * est_line > budget:
+            step = max(1, -(-len(parts) * est_line // budget))
+        for k in range(0, len(parts), step):
+            part = [msgs[i] for i, _, _ in parts[k]]
+            longest = max(part, key=lambda x: len(x.text))
+            who: dict[str, int] = {}
+            for x in part:
+                who[x.sender] = who.get(x.sender, 0) + 1
+            top = ", ".join(n for n, _ in sorted(who.items(), key=lambda kv: -kv[1])[:3])
+            a = datetime.fromtimestamp(part[0].ts / 1000)
+            b = datetime.fromtimestamp(part[-1].ts / 1000)
+            span = f"{a:%Y-%m-%d %H:%M} to {b:%H:%M}" if a.date() == b.date() else \
+                f"{a:%Y-%m-%d %H:%M} to {b:%m-%d %H:%M}"
+            text = " ".join(longest.text.split())[:90]
+            line = (f"  {span}; {len(part)} msgs; {top}; [{kid}:"
+                    f"{longest.id}] {longest.sender}: {text}")
+            t = E.tokens(line)
+            if used + t > budget:
+                lines.append(f"  … {len(range(k, len(parts), step))} more chat sessions "
+                             f"not listed. Narrow `when`.")
+                break
+            used += t
+            lines.append(line)
+            shown_first = shown_first or (part[0].ts, part[0].id)
+            shown_last = (part[-1].ts, part[-1].id)
+        if step > 1:
+            lines.insert(0, f"  (every {step}th of {len(parts):,} chat sessions)")
+        return lines, shown_first, shown_last

@@ -1,0 +1,5 @@
+#!/bin/sh
+# shellbox: `sudo reboot` restarts the box (a restart, not the morning reset). PID 1 is
+# compose's init (init: true): it hands the signal to shellboxd, the box stops, and its
+# restart policy starts it again.
+exec kill 1

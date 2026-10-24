@@ -1,0 +1,73 @@
+# Qwen-Image 2.1 image edit on the Smart API graph with the reference switch on: the source
+# is the reference image (TextEncodeQwenImage21 image_1) and the output takes its shape at
+# about 1 megapixel (width and height are read only for text to image). `mode` picks raw
+# (40 steps) or turbo (8 steps, saved schedule); cfg 1.0. An anime LoRA is a catalog
+# LoRA (qwen2.1/...), chained after node "lora", for reference-to-image in anime style.
+label = "Qwen 2.1 edit"
+family = "Qwen Image"
+task = "edit"
+workflow = "qwen2.1-image-edit.json"
+good_at = "Precise instruction edits: clothes, backgrounds, adding or removing objects, light, text on signs; a character drawn into a new scene."
+prompting = """
+Lead with the operation: "Change the shirt to deep red.", "Replace the wooden chair with
+a modern leather armchair.", "Change the background to a rainy neon-lit Tokyo alley at
+night." Not a description of the finished image.
+
+- Refer to things plainly: the shirt, the background. With one image, never write <image1>
+  in a normal edit (only the anime recipe below uses it, as written).
+- Two people with portraits: the second one's picture goes in `source2`. Name them
+  "the woman in <image1>" and "the woman in <image2>", and say what changes: the place,
+  the pose, the clothes.
+- Width and height are not read: the edit comes out in the source's shape at about 1
+  megapixel.
+- Best editor for removals, text on signs, the background or the light alone, and
+  groups. For a person's face in a new pose or outfit use krea2-identity-edit.
+- One direct change per instruction; changes to a person stay subtle. "Make it look
+  better" or a whole restyle drifts the face.
+- Name what stays by role, do not describe it ("Keep the woman's face, hair and pose
+  unchanged."): describing a kept subject makes the model redraw it. End with "Keep
+  everything else unchanged."
+- No reframing or outpainting: zooming out regenerates the whole image.
+- Text: "Replace the text "COFFEE" on the sign with "BAKERY", keeping the font, color and
+  perspective."
+
+Variant: raw (the default, 40 steps) or turbo (8 steps, about 5x faster).
+
+Anime (variant raw, LoRA "qwen2.1/anime-style" at 1.0): start with
+"anime style. [TASK: REFERENCE_TO_IMAGE] [Reference guidance] Preserve the recognizable
+identity and defining visual features of the character in <image1>." then the scene as
+[Subject] [Pose] [Composition] [Environment] [Lighting] [Style] blocks.
+"""
+example = "Change the background to a rainy neon-lit Tokyo alley at night. Keep the woman's face, hair, pose and clothes unchanged. Keep everything else unchanged."
+size = { step = 32, max_pixels = 4300000 }
+
+[parameters.prompt]
+inputs = [["prompt", "value"]]
+
+[parameters.negative]
+inputs = [["negative", "value"]]
+
+[parameters.image]
+inputs = [["image", "image"]]
+
+[parameters.image2]
+inputs = [["image2", "image"]]
+
+[parameters.seed]
+inputs = [["seed", "value"]]
+
+[parameters.width]
+inputs = [["width", "value"]]
+
+[parameters.height]
+inputs = [["height", "value"]]
+
+[parameters.mode]
+inputs = [["turbo", "value"]]
+choices = { raw = false, turbo = true }
+
+[catalog]
+loras = ["qwen2.1/"]
+lora_after = "lora"
+text = ["prompt", "value"]
+max_loras = 2

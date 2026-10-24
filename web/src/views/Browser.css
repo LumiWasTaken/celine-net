@@ -1,0 +1,29 @@
+/* The agent's browser (views/Browser.tsx): the lists (its tabs, its calls) and a tab's page with the
+   live screen, the shots of its latest call and the console. */
+.brw-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.brw-notice { margin: var(--s-3) var(--s-5) 0; }
+.brw-quiet { margin: 0; color: var(--text-muted); }
+
+/* the live screen keeps the box's shape (its size comes with the status, browserd.py);
+   before it is known, 16 by 10 */
+.brw-col { display: grid; gap: var(--s-4); }
+.brw-frame { position: relative; width: 100%; aspect-ratio: var(--ar, 1.6); background: var(--surface-sunk); }
+.brw-live { position: absolute; inset: 0; display: flex; }
+.brw-off { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--s-4); text-align: center;
+  color: var(--text-secondary); font-size: var(--t-lg); font-weight: var(--fw-medium); }
+
+/* Tools: a tool, its arguments, Run; its text beside the shots */
+.brw-console { display: grid; gap: var(--s-3); }
+.brw-console__foot { display: flex; justify-content: flex-end; }
+.brw-answer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-3); align-items: start; margin-top: var(--s-3); }
+.brw-text {
+  margin: 0; padding: var(--s-3); border-radius: var(--r-md); background: var(--surface-2); max-height: calc(12 * var(--h-sm));
+  overflow: auto; font-family: var(--font-mono); font-size: var(--t-xs); line-height: var(--lh-body);
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary);
+}
+.brw-text--error { color: var(--warn); }
+
+@media (max-width: 767px) {
+  .brw-notice { margin: var(--s-2) var(--s-4) 0; }
+  .brw-answer { grid-template-columns: minmax(0, 1fr); }
+}

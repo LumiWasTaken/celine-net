@@ -1,0 +1,18 @@
+/* The agent's artifacts: one artifact (the full page and the side panel), its frame, a document,
+   and the panel's list. */
+.art { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* the place head; in the side panel it starts at the back arrow */
+.drawer .art__head { padding-left: var(--s-2); }
+.art__error { flex: none; padding: var(--s-2) var(--s-5) 0; }
+.art__empty { flex: 1; display: grid; place-items: center; padding: var(--s-6) var(--s-4); }
+
+/* its page in a frame like a terminal's screen or the browser's: on the stage, rounded,
+   a hairline where the app ends and its page begins */
+.art__stage { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--s-3); }
+.art__frame { flex: 1; min-height: 0; width: 100%; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-sunk); }
+
+/* the Pages tab: which pages, then its pages as rows */
+.artlist { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.artlist__bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4) var(--s-2); }
+.artlist__rows { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-2) var(--s-3); }
+.artlist__empty { flex: 1; display: grid; place-items: center; padding: var(--s-6) var(--s-4); }

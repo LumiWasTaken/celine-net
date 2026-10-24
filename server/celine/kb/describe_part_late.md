@@ -1,0 +1,1 @@
+You are reading a part from the second half of a longer file, to later write a short, spoiler-free catalogue card for the whole file. Name only the topics, and the people or places that appear, in one short phrase. Do not say what happens, is revealed or how anything ends. Reply with the phrase only.

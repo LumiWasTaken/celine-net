@@ -1,0 +1,48 @@
+/* the onboarding (Welcome.tsx): "Step 4 of 16" and its percentage centred at the top with a
+   thin bar under them (Back to Settings at the right), the step's card in the form column
+   under them, its foot with Back at the left and Skip and Next at the right (the error
+   between them) */
+.onb { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--grain) var(--bg-canvas); }
+.onb__top { flex: none; display: grid; grid-template-columns: auto 1fr; align-items: center; row-gap: var(--s-2); column-gap: var(--s-3);
+  padding: var(--s-4) var(--gutter) 0; }
+.onb__steps { grid-column: 2; display: flex; justify-content: center; gap: var(--s-3); font-size: var(--t-md); color: var(--text-secondary); }
+.onb__count { font-weight: var(--fw-medium); color: var(--text-primary); }
+.onb__bar { grid-column: 2; display: flex; width: 100%; max-width: var(--measure-form); margin: 0 auto; }
+.onb__back { grid-column: 1; grid-row: 1 / span 2; }
+/* with room, Back to Settings sits at the left edge and the count stays centred on the page */
+@media (min-width: 768px) {
+  .onb__top { position: relative; grid-template-columns: 1fr; }
+  .onb__back { position: absolute; left: var(--gutter); top: var(--s-4); }
+}
+.onb__about { margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); }
+/* the page never scrolls: the card takes the column's height; its head and foot stay, only
+   its body scrolls when a form is taller than the room; its text boxes take the body's room */
+.onb__page { overflow: hidden; }
+.onb__col { height: 100%; padding-top: var(--s-6); padding-bottom: var(--s-6); display: flex; flex-direction: column; }
+.onb__col section { padding: var(--s-6); gap: var(--s-5); grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; min-height: 0; }
+.onb__card { display: flex; flex-direction: column; }
+.onb__card > .onb__body { flex: 1 1 auto; }
+.onb__body { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-4); }
+.onb__body > * { flex: none; }
+.onb__body > .onb__texts { flex: 1 1 auto; min-height: calc(3lh + var(--s-6)); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4); }
+.onb__textfield { grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.onb__texts .onb__text { height: 100%; min-height: 0; resize: none; padding-block: var(--s-2); line-height: var(--lh-body); }
+.onb__foot { display: flex; align-items: center; gap: var(--s-3); }
+.onb__gap { flex: 1; min-width: 0; display: flex; justify-content: flex-end; }
+.onb__line { margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); }
+.onb__check { display: flex; align-items: center; gap: var(--s-3); min-height: var(--status-h); }
+.onb__state { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-md); color: var(--text-secondary); }
+.onb__detail { min-width: 0; line-height: var(--lh-body); }
+/* a routine's row: its switch with its label and summary, its time at the right */
+.onb__routine { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); }
+.onb__time { width: var(--row-column); }
+/* a cron no time field can say, read-only beside the switch */
+.onb__cron { font-size: var(--t-xs); color: var(--text-muted); white-space: nowrap; }
+/* the Key hash and its Copy on one line */
+.onb__hash { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-2); }
+@media (max-width: 767px) {
+  .onb__col { padding-top: var(--s-4); padding-bottom: var(--s-4); }
+  .onb__col section { padding: var(--s-4); }
+  .onb__texts { grid-template-columns: minmax(0, 1fr); }
+  .onb__top, .onb__foot { flex-wrap: wrap; }
+}

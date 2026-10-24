@@ -1,0 +1,46 @@
+# Development without Docker for the app: its boxes and the search engine in containers,
+# the app on the host (./start.sh). The app's first start makes var/keys/ (keys.py); this
+# file hands the boxes those files instead of the volume's and publishes the ports on
+# loopback (the shellbox 8770, the browser 8771 and its screen 5900, SearXNG 8888). With
+# no app container to wait for and to make the volume's folders, its home is a volume of
+# its own, `home`, which Docker fills from the image (its home, its own):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d shellbox browser searxng
+#   ./start.sh
+#
+# The app finds the boxes at those loopback ports on its own (settings/services.py
+# DEFAULTS) and Setup offers them. The shellbox calls the app's model proxy on the port
+# the app runs on: export CELINE_PORT (default 8766, what ./start.sh --port means) in the
+# shell that runs this compose too. docs/dev.md "Boxes".
+services:
+  shellbox:
+    depends_on: !reset {}
+    ports:
+      - "127.0.0.1:8770:8770"
+    environment:
+      SHELLBOX_LLM_URL: http://host.docker.internal:${CELINE_PORT:-8766}/llm
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - home:/home/celine
+      - ./var/keys/shell.hash:/etc/shellbox/key.hash:ro
+      - ./var/keys/shellbox-llm.key:/etc/shellbox/llm.key:ro
+
+  browser:
+    depends_on: !reset {}
+    ports:
+      - "127.0.0.1:8771:8771"
+      - "127.0.0.1:5900:5900"
+    volumes:
+      - home:/home/celine
+      - ./var/keys/browser.hash:/etc/browser/key.hash:ro
+
+  searxng:
+    depends_on: !reset {}
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./var/keys/searxng-settings.yml:/etc/searxng/settings.yml:ro
+
+volumes:
+  home:

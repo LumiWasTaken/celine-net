@@ -1,0 +1,19 @@
+# Celine - how the app is served. Read at start: a change here needs a restart, and
+# CELINE_HOST, CELINE_PORT, CELINE_LOGIN, CELINE_PUBLIC_ORIGIN, CELINE_TRUSTED_PROXIES,
+# CELINE_HEALTH_PORT, CELINE_METRICS_PORT and CELINE_DATA_DIR win over it.
+#
+# Everything else is in the app, stored in var/settings/: providers, models, tools, your
+# name, the time zone, and under Settings, Advanced the time limits and sizes.
+
+[server]
+# host = "127.0.0.1"
+# port = 8766
+# login = "off"                 # "on": the login, needed off loopback
+# public_origin = "https://celine.example.org"
+# allowed_hosts = []
+# trusted_proxies = []
+# health_port = 0              # 0: none
+# metrics_port = 0             # 0: none
+
+[paths]
+# data = "var"                  # sqlite, notebook files, logs; relative to the repo root

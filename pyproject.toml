@@ -1,0 +1,57 @@
+[project]
+name = "celine"
+version = "1.0.0"
+description = "A self-hosted AI agent with its own memory, schedule, Linux box and browser"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "httpcore>=1.0",
+    "websockets>=15",
+    "pydantic>=2.9",
+    "watchfiles>=0.24",
+    "croniter>=3.0",
+    "mcp>=1.2",
+    "anyio>=4.6",
+    "sqlite-vec>=0.1.9",
+    "phonenumbers>=9.0.39",
+    "python-multipart>=0.0.32",
+    "rapidfuzz>=3.14.6",
+    "dateparser>=1.4.3",
+    "pypdf>=6.19.0",
+    "python-docx>=1.2.0",
+    "trafilatura>=2.0",
+    "webauthn>=2.7",
+    "prometheus-client>=0.26.0",
+]
+
+[project.scripts]
+celine = "celine.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server/celine"]
+
+[dependency-groups]
+# cryptography and segno: the Discord connector's tests run in this environment too
+dev = [
+    "pytest>=8.3",
+    "cryptography>=50.0.1",
+    "segno>=1.6.6",
+    "pytest-xdist>=3.8.0",
+    "import-linter>=2.15",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "connectors/discord/tests"]
+pythonpath = ["server", "connectors/discord", "."]
+addopts = "-q -n auto --dist worksteal -m 'not live and not shellbox and not browser'"
+markers = [
+    "live: needs a real backend; opt in with -m live",
+    "shellbox: needs docker and the local shellbox image; opt in with -m shellbox",
+    "browser: needs docker and the local browser image; opt in with -m browser",
+]

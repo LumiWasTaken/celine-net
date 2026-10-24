@@ -1,0 +1,20 @@
+label = "Tidy notebook"
+summary = "Merges and links the notes on Sundays."
+cron = "30 6 * * 0"
+after = ["practice"]
+partner = ""
+rounds = 8
+note = "diary/{{date}}-tidy.md"
+role = "chat"
+on = true
+prompt = """
+Tidy your notebook. Look through seen/, howto/ and opinions/:
+- Notes that say the same thing become one. Read both in full first, then move the
+  details over and keep every one of them.
+- Related notes get a line pointing to each other.
+- A fact that is no longer true gets "outdated since <date>: <why>" next to it.
+
+Edit lines (notebook__edit) instead of rewriting whole notes.
+
+Your answer is what you merged, linked and marked.
+"""

@@ -1,0 +1,14 @@
+# Only on a machine with an NVIDIA GPU and the NVIDIA Container Toolkit, with the
+# reranker in the stack (COMPOSE_PROFILES=reranker in .env):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# The reranker then runs on the GPU (llama-server offloads every layer that fits).
+services:
+  reranker:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b11151
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

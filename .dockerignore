@@ -1,0 +1,22 @@
+# never in an image: your data, secrets, local environments, build output
+var/
+.env
+.env.*
+*.token
+*.key
+**/.venv/
+**/node_modules/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+web/dist/
+web/tsconfig.tsbuildinfo
+server/celine/static/
+wa-link/wa-link
+wa-link/wa-link.*
+wa-link/testdata/
+connectors/discord/tests/
+tests/
+docs/
+.git/

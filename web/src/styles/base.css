@@ -1,0 +1,132 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+/* the app is one screen; panes scroll, the page never does (clip, so not even
+   scrollIntoView can move it) */
+/* --vh: the visible height (main.tsx), which shrinks under an on-screen keyboard on
+   every browser, iOS too */
+html { height: var(--vh, 100dvh); }
+html, body, #root { overflow: clip; }
+body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--grain) var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--t-md);
+  line-height: var(--lh-ui);
+  font-weight: var(--fw-regular);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
+         cursor: pointer; }
+input, textarea, select { font: inherit; color: inherit; }
+
+/* weights: 700 only for a display h1 (the greeting, a document's h1), names, rows and
+   titles 580, labels 580 muted, body 450 */
+h1, h2, h3, h4 {
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-title);
+  line-height: var(--lh-title);
+}
+
+/* times keep their width as they change; .num is a number column, right-aligned */
+time { font-variant-numeric: tabular-nums; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+mark {
+  background: var(--mark-bg); color: var(--mark-text);
+  border-radius: var(--r-sm); padding: 0 var(--s-0); margin: 0 calc(-1 * var(--s-0));
+}
+
+/* one stroke width for every lucide icon, whatever the call site passed */
+svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
+
+:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+::selection { background: var(--accent-wash); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb); border-radius: var(--r-full);
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong);
+  background-clip: content-box; }
+* { scrollbar-color: var(--scroll-thumb) transparent; scrollbar-width: thin; }
+
+/* a touch screen never zooms into a field (iOS zooms below 16 px) */
+@media (pointer: coarse) { input, textarea, select { font-size: max(1rem, var(--t-md)); } }
+
+[disabled], [aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── motion ──
+   fade      a word of a reply, a tip, a body that loads, a status changing words
+   rise      what arrives in a list while you look: a message, a row, a toast
+   grow      from its origin (the pointer, the trigger, the picture): menus, cards, dialogs, the Viewer
+   pulse     the one working mark: the typing dots, a running dot, a speaking face's ring
+   push      a phone's list to detail
+   sheet-up  a phone sheet from the bottom edge
+   spin, skeleton, highlight   a busy button, a loading row, the message you jumped to
+   Exits play on a copy of the element (ui/motion.ts useLeave), never by keyframes here. */
+@keyframes fade     { from { opacity: 0 } }
+@keyframes rise     { from { opacity: 0; transform: translateY(var(--rise)) } }
+@keyframes grow     { from { opacity: 0; transform: scale(0.96) } }
+@keyframes pulse    { 50% { opacity: 0.4 } }
+@keyframes push     { from { opacity: 0; transform: translateX(var(--push)) } }
+@keyframes sheet-up { from { transform: translateY(100%) } }
+@keyframes spin     { to { transform: rotate(360deg) } }
+@keyframes skeleton { 50% { opacity: 0.5 } }
+@keyframes shimmer  { from { background-position: 100% 0 } to { background-position: -100% 0 } }
+@keyframes highlight {
+  0%, 30% { box-shadow: 0 0 0 3px var(--mark-bg); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+.spin { animation: spin var(--dur-pulse) linear infinite; }
+
+/* the copy an exit plays on: still, untouchable, its own enter never replays */
+.ghost { pointer-events: none !important; }
+.ghost, .ghost * { animation: none !important; transition: none !important; }
+
+/* view transitions (a list reorder): only the named rows move, on the tokens; the page
+   itself never crossfades */
+:root { view-transition-name: none; }
+::view-transition { pointer-events: none; }
+::view-transition-group(*) { animation-duration: var(--dur); animation-timing-function: var(--ease); }
+::view-transition-old(*):only-child { animation-duration: var(--dur-fast); animation-timing-function: var(--ease-exit); }
+
+/* Collapsibles open and close by height (a tool row's body, a thinking block, an event
+   line): `interpolate-size` lets `auto` transition */
+:root { interpolate-size: allow-keywords; }
+details::details-content {
+  height: 0; overflow: clip;
+  transition: height var(--dur) var(--ease), content-visibility var(--dur) allow-discrete;
+}
+details[open]::details-content { height: auto; }
+
+/* Reduced motion: every change is instant, except the one keep-alive list of working marks, so
+   nothing that still works looks done. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spin, .dot--pulse, .dots i, .face.is-speaking::after, .progress__bar--indeterminate, .chip--busy > svg:first-child, .rail__dot--running, .nmark--running, .event-line--running .event-line__text {
+    animation-duration: calc(2 * var(--dur-pulse)) !important; animation-iteration-count: infinite !important;
+  }
+}

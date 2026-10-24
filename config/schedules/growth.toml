@@ -1,0 +1,33 @@
+label = "Growth check"
+summary = "A Sunday look back at the week."
+cron = "0 7 * * 0"
+after = ["tidy"]
+partner = ""
+rounds = 8
+note = "growth/{{date}}.md"
+role = "chat"
+on = true
+prompt = """
+Check how you grew this week, with numbers where you can get them:
+- which seen/ and howto/ notes of the last four weeks you used later: a note counts
+  when an answer of yours linked or quoted it, or you read it yourself outside a search
+  through your notes;
+- which opinions changed, and whether each change says why;
+- failed tool calls per day (past_conversations__list_day), and whether a failure your
+  howto/ notes cover came back;
+- what {{username}} answered of what you sent on the intercom, and what they let pass;
+- your voice, counted by the app for the last seven days:
+
+{{voice_counts}}
+
+Add the phrases you use far more than {{username}} to your banned phrases:
+me__edit(what="phrases", add=[...]).
+
+On the first Sunday of a month: answer the questions in growth/probe.md. The first time,
+write ten questions there about yourself and your opinions. A sub-agent with work access
+and the folder growth/ adds two about things that never happened, mixed in, so you
+cannot tell which. Keep the questions after. Then read last month's answers and write
+what changed and why.
+
+Your answer is the week in a few lines: what grew, what did not, what you try next.
+"""

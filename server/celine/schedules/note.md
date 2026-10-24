@@ -1,0 +1,1 @@
+, and it is written to {{path}} as it is: the facts in your own words, no citations and no list of sources or links. A note you write there yourself with notebook__write is the result instead, and nothing is written over it

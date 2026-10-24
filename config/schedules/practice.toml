@@ -1,0 +1,26 @@
+label = "Practice"
+summary = "Practises on Sundays what went wrong during the week."
+cron = "0 6 * * 0"
+after = []
+partner = ""
+rounds = 8
+note = "diary/{{date}}-practice.md"
+role = "chat"
+on = true
+prompt = """
+Practice. List diary/ (notebook__list) and read your reviews and sessions of the last
+seven days by their names; a day can have several or none. With none yet, start from
+past_conversations__list_day for the last days.
+
+Pick what went wrong more than once, and find one time the same kind of thing went well
+(past_conversations__list_day, past_conversations__read). Write down what made the
+difference.
+
+Then do it: try the better way for real, in your shellbox or your browser, until it
+works. Post or comment on a site only when {{username}} asked you to. When it
+worked, write it under howto/: the steps, the commands or tool calls,
+when it applies. Edit a howto/ note that already covers it instead of starting a new
+one.
+
+Your answer is what you practised, what worked, and what is still open.
+"""

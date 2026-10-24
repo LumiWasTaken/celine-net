@@ -1,0 +1,97 @@
+# Sources. One block each; the block name is the id..
+#
+# Every source is its own SQLite file under paths.data/kb/<id>.db. Copying that file
+# copies the source. Adding a block and restarting creates an empty
+# one; removing a block hides it and leaves the file alone.
+#
+#   kind = "chat"    a message archive.
+#   kind = "documents"  a folder of your files. The files are the content;
+#                    the .db next to it holds ids, your titles/descriptions, the AI
+#                    descriptions, hidden folders and the search index.
+
+[whatsapp]
+kind     = "chat"
+title    = "WhatsApp"
+platform = "whatsapp"
+# Live messages come from the WhatsApp connection (wa-link, a linked device; the
+# `whatsapp` server in config/mcp.toml). Pairing is a QR code on the WhatsApp page.
+
+[discord]
+kind     = "chat"
+title    = "Discord"
+platform = "discord"
+# Live messages come from the Discord connection (discord-link; the `discord` server in
+# config/mcp.toml). Logging in, the direct messages and the servers are chosen on the
+# Discord page and kept by the connector.
+
+# Documents: your files of any kind (notes, text, PDF, Word, HTML, subtitles, EPUB,
+# code, images, anything). Celine reads them, and writes only its own files
+# (user_documents__write), never one of yours. Each file gets an
+# AI description in the background (the queue, background priority). A document is
+# chunked (passages in the word search and semantic topic search index) or full file
+# (read as one piece)..
+[documents]
+kind  = "documents"
+title = "Documents"
+path  = "documents"      # relative to paths.data; an absolute path works too (a vault)
+max_upload_mb = 512      # per file, uploads through the API
+chunk_over_kb = 32       # default mode: a text file larger than this is chunked, else full file
+describe = true          # write AI descriptions in the background
+embed    = true          # passages into the semantic index ([embeddings] below)
+# describe_part_chars = 8000   # a longer file is summarised in parts of this size
+# describe_max_parts  = 12     # at most this many parts, spread over the file
+
+# Semantic topic search.
+[embeddings]
+# Which model makes the vectors is the Topic Search role in Settings, Models. This block
+# is the index shape. An index remembers what its model produces (a fingerprint); a
+# model that produces other vectors, or another `dims`, rebuilds it.
+batch      = 128
+max_input_chars = 12000   # the server gives each input 4096 tokens; longer ones are cut
+# query_prefix and dims fit Qwen3-Embedding (qwen3-embedding:8b): it wants an instruction
+# on the query side only, and makes 4096 dims. Another model: query_prefix = "" unless its
+# card names one, and dims = its vector size (fewer dims are smaller and a little less exact).
+query_prefix = "Instruct: Given a question, retrieve chat messages that answer it\nQuery: "
+workers = 4               # requests in flight during a build
+dims    = 4096            # stored as int8 plus sign bits; a model with fewer keeps all of its own
+# The semantic index: sessions (cut at pauses) -> overlapping passages..
+# Changing any of these re-cuts every chat on the next build; unchanged passages keep
+# their vectors.
+session_gap_minutes  = 90   # a pause this long starts a new session
+session_merge_hours  = 6    # a tiny session (<3 msgs / <60 chars) joins a neighbour this close
+session_max_messages = 120  # longer sessions split at their largest pause
+passage_messages = 8        # a passage holds at most this many messages
+passage_chars    = 450      # or this much message text
+passage_overlap  = 2        # messages shared with the passage before
+embed_header     = false    # embed the header (chat, people, date) too; it is always in FTS.
+# How often new messages are embedded is Settings, General (Update the index every).
+
+# Attachment files and photo descriptions (kb/media.py).
+# Files live in <data>/kb/<kb>.media/<sha256>. Image files without a photo description
+# are described by the Photo descriptions role in Settings, Models, newest first; the
+# photo description and any visible text become searchable (word search and semantic
+# topic search: "[photo: a
+# red car ...]"). Every call waits in the LLM queue (config/llm.toml) at background
+# priority.
+[media]
+# Whether the queue runs on its own (every poll_minutes) is Settings, General (Describe
+# new chat photos); off, only POST /api/sources/{sid}/captions/run starts it.
+types    = ["photo", "sticker"]   # message media types whose image files get photo descriptions
+rate_per_minute = 0     # images started per minute; 0 = no limit
+batch    = 20           # images picked per database read
+max_attempts = 3        # a failing image is tried this often, then left alone
+max_mb   = 15           # larger files are skipped
+poll_minutes = 5        # with auto: how often to look for new images
+# A decrypted msgstore.db: exact file hashes and phone file names for the folder matcher
+# (POST /api/sources/whatsapp/media/scan) and CDN references for wa-link downloads. Read only.
+# Empty: none.
+msgstore = ""
+# wa-link (wa-link/media.go): POST /api/sources/whatsapp/media/fetch downloads photos without a
+# file from WhatsApp's CDN. With {"retry": true} a photo whose CDN copy expired is asked
+# from YOUR OWN phone (a media retry receipt to your account, never to a contact).
+# Nothing runs on its own: every fetch is started by hand.
+wa_download    = true
+wa_media_retry = true
+wa_retry_per_run = 20            # requests to the phone per fetch, at most
+wa_retry_interval_seconds = 3    # between two requests
+wa_retry_wait_seconds = 120      # how long a fetch waits for the phone's answers

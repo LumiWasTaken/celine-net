@@ -1,0 +1,110 @@
+# Banned words: assistant-speak and purple-prose words its chat models are pushed
+# away from, all at one Bias (-8: nearly never, still possible when nothing else fits;
+# -100 bans outright). The dashes are on the list too: its replies are never rewritten,
+# this is what keeps them out. Everyday words (core, ensure, journey, whisper) are not
+# here on purpose: a banned word goes in every sense of it. Copied into the character's
+# row when it is made; edit it there (its page, Banned words).
+#
+# How a banned word works: on tabbyAPI (its chat) every banned word and every phrase
+# goes to the engine as a banned string, plain text matched case-insensitively as it
+# writes, any length; the engine backs up and writes on without it. On llama-server each
+# string is turned into tokens and every one of them gets the weight below, so there a
+# banned word is best one token, written with its leading space (" delve"); the form at
+# the start of a line (no space) is a separate entry (" Moreover", "Moreover").
+#
+# `phrases` are the longer things it says that are not its own: plain text, found by
+# server/celine/turns/slop.py and banned on tabbyAPI as it writes. `patterns` are
+# regexes, case-insensitive, that are only counted: shapes of a sentence or a list.
+
+on = true
+bias = -8.0
+banned = [
+  # the dashes
+  "\u2014", "\u2013",
+  # assistant-speak
+  " delve", " leverage", " leveraging", " harness", " robust", " seamless",
+  " seamlessly", " unlock", " unlocking", " testament",
+  " embark",
+  " embarked", " elevate", " foster", " fostering", " crucial", " vibrant",
+  " intricate", " meticulous", " meticulously", " utilize",
+  " utilizing", " utilized", " utilise",
+  " transformative", " underscore", " underscores", " pivotal", " showcase",
+  " showcasing", " paramount", " plethora", " myriad", " nuanced", " holistic",
+  " synergy", " streamline", " empower", " empowering", " invaluable", " cornerstone",
+  " groundbreaking", " unparalleled", " noteworthy", " embodies", " encompasses",
+  " resonate", " beacon", " bolster", " tirelessly",
+  # connectives and openers
+  " moreover", " Moreover", "Moreover", " furthermore", " Furthermore", "Furthermore",
+  " additionally", " Additionally", "Additionally", " Certainly", "Certainly",
+
+  # purple prose
+  " nestled", " ozone", " orbs", " bustling", " visceral", " poignant", " amidst", " smirk",
+]
+
+phrases = [
+  # chatbot
+  "it is important to note", "I hope this helps", "great question", "as an AI",
+  "as of my last update", "I'm here to", "doing a lot of work", "want me to",
+  "feel free to", "let me know if", "happy to help", "honest accounting", "like you asked",
+  "here's the breakdown", "in today's rapidly evolving",
+  # generic-assistant candour: owning up as a performance
+  "you caught me", "not gonna lie", "not going to lie", "not gonna dress it up", "not gonna dress that up", "not gonna sugarcoat",
+  "a real miss", "you could've given me", "you could have given me",
+  "let me get to work", "before I answer", "wrong about being wrong",
+  # validation talk and groveling
+  "you were right", "you're absolutely right", "my call was right",
+  "I apologize", "my apologies", "I'm so sorry", "great catch", "good catch",
+  # purple prose
+  "couldn't help but", "the weight of", "let out a breath", "barely above a whisper",
+  "sent shivers", "a mix of", "knuckles white", "the kind that",
+]
+patterns = [
+  # "not X, but Y" and its family (Antislop, appendix L)
+  '\bnot (?:just |only |merely )?[^,.;:!?\n]{1,40}, but\b',
+  '\bit[\u2019\x27]?s not (?:about |just )?[^,.;:!?\n]{1,40}[,;] it[\u2019\x27]?s\b',
+  '\b(?:isn|wasn|aren)[\u2019\x27]?t (?:just |about )?[^,.;:!?\n]{1,40}[,;] (?:it|that|they)[\u2019\x27]?(?:s|re)?\b',
+  '\bnot because [^,.;:!?\n]{1,60}, but because\b',
+  '\benough that [^,.;:!?\n]{1,40}, not so much that\b',
+  # paired contrasts: "short but clear, plain but not dull"
+  '\b\w+ but (?:not )?\w+, \w+ but (?:not )?\w+\b',
+  # a menu as a question: "do you want to vent or a distraction?"
+  '\bdo you want (?:to )?[^?\n]{1,40} or [^?\n]{1,40}\?',
+  # owning up as a performance: "the best mission you could've given me", "let me
+  # check what ran before I answer"
+  '\bthe best \w+ you could(?:[\u2019\x27]ve| have) (?:given|asked) me\b',
+  '\blet me (?:\w+ )?(?:check|look)[^.!?\n]{0,80} before i answer\b',
+  # keeping score: "you did X and my call was right", "turns out I was right"
+  '\b(?:my|your|the) (?:call|guess|read) was (?:right|correct|spot on)\b',
+  '\b(?:turns out|so) (?:i|you) (?:was|were) right\b',
+  # a line that starts with a bold label
+  '^\*\*[^*\n]{1,40}:\*\*',
+  # a menu of options on two lines: (a) (b), a) b), 1) 2)
+  '^[ \t]*\(?a\)[^\n]*\n[ \t]*\(?b\)',
+  '^[ \t]*1\)[^\n]*\n[ \t]*2\)',
+  # sales copy: the same word opens three parts ("your X, your Y, your Z", "no X. no Y.
+  # no Z.")
+  '\b(your|no|zero|every|more|less|same) [^,.;:!?\n]{1,30}[,.!] \1 [^,.;:!?\n]{1,30}(?:[,.!] |,? (?:and|or) )\1 [^,.;:!?\n]{1,30}',
+  # a closer that restates: "that's it." alone at the end of a line, "simple as that"
+  '(?:^|(?<=[.!?] ))(?:and )?that[\u2019\x27]?s it[.!]*[ \t]*$',
+  '\b(?:(?:as )?(?:simple|easy) as that|it[\u2019\x27]?s that (?:simple|easy)|done and dusted|there you have it|end of story(?=[.!?]|[ \t]*$))(?![-\w])',
+  # a setup before the point: "here's the thing:", "the kicker:", "bottom line:"
+  '\bhere[\u2019\x27]?s the (?:thing|deal|kicker|catch|twist|truth)(?![-\w])',
+  '\b(?:the (?:kicker|catch|twist|short version|short answer|real answer|real question)|bottom line|long story short|tl;?dr)[ \t]*:',
+  # tics: counted, never cut, so no other word takes their place
+  '\bhonestly,|(?:^|(?<=[.!?] ))honestly(?![-\w])',
+  '\bgenuinely(?![-\w])',
+  '\bi caught myself(?![-\w])',
+  '\bto be (?:fair|honest|clear)(?![-\w])',
+  # toppers: the second beat that one-ups the line
+  '\b(?:and )?i[\u2019\x27]?m not (?:gonna|going to) be (?:shy|nice|subtle|quiet|sorry) about it(?=[.!?]|[ \t]*$)',
+  '\byou[\u2019\x27]?re welcome(?=[.!?]|[ \t]*$)',
+  '\b(?:you owe me|deal with it|cry about it|not sorry|no apologies|i said what i said|change my mind)(?=[.!?]|[ \t]*$)',
+  '\b(?:and i[\u2019\x27]?d do it again|get back here|mic drop|don[\u2019\x27]?t say i never)(?=[.!?]|[ \t]*$)',
+  '\band that[\u2019\x27]?s (?:on (?:you|me|him|her|them)|that)(?=[.!?]|[ \t]*$)',
+  '\bthat[\u2019\x27]?s me being (?:nice|generous)(?=[.!?]|[ \t]*$)',
+  '\b(?:fight|sue) me(?=[.!?]|[ \t]*$)',
+  '(?:^|(?<=[.!?] ))(?:cope|period)[.!]+[ \t]*$',
+  '\bit[\u2019\x27]?s perfect[.!]*[ \t]*$',
+  # a button: a last sentence of one to three words after one of eight or more
+  '(?:^|(?<=[.!?]\s))(?:[^\s.!?]+ ){7,}[^\s.!?]+[.!?]\s+(?:[^\s.!?]+ ){0,2}[^\s.!?]+[.!]?\s*\Z',
+]
