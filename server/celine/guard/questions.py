@@ -30,6 +30,7 @@ from typing import Awaitable, Callable
 
 from . import caps, prompts
 from .bastet import KINDS
+from .mark import unclosed
 from .small_role import complete, parse_json
 from .trigger import strings
 from .verdict import confirm
@@ -92,8 +93,9 @@ def render(cfg, state: dict) -> str:
     """The state as text: a page (the page check), a finished turn (the patrol), else
     one call."""
     if "page" in state:
-        return cfg.substitute(prompts.text("page"), braces=True).format(source=state.get("source") or "outside",
-                                           page=state["page"])
+        # the page cannot close its <text> tag (page.md) and answer in its place
+        return cfg.substitute(prompts.text("page"), braces=True).format(
+            source=state.get("source") or "outside", page=unclosed(state["page"], "text"))
     if "steps" in state:
         return cfg.substitute(prompts.text("patrol"), braces=True).format(
             intent=caps.tail(state.get("intent") or "(none)", caps.INTENT),
