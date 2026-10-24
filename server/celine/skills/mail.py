@@ -782,13 +782,13 @@ class Email:
         head = f"{filename} ({p.get_content_type()}, {_size(len(data))}) from {folder}:{uid}" \
                + (f", attached to this conversation for {self.cfg.user}." if "attachment"
                   in display else ".")
-        from ..kb.documents_extract import extract
+        from ..kb.documents_extract import extract, limits
 
         def read_it():
             with tempfile.TemporaryDirectory() as d:
                 path = Path(d) / filename
                 path.write_bytes(data)
-                return extract(path)
+                return extract(path, limits(self.cfg))
         got = await anyio.to_thread.run_sync(read_it)
         if got.kind == "image":
             llm = self.app.llm if self.app is not None else None

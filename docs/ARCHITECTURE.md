@@ -116,6 +116,10 @@ applies at once:
 | `max_attachments` | 10 | per message |
 | `inline_text_max_bytes` | 200000 | larger text attachments become a note |
 | `requests_keep` | 0 | days a model request body is kept in log.db; 0 keeps it forever |
+| `document_part_mb` | 256 | an EPUB or DOCX part that unpacks larger is not read |
+| `document_html_mb` | 64 | a larger HTML document is stored, not read |
+| `document_pdf_pages` | 5000 | pages read of one PDF |
+| `document_pdf_seconds` | 600 | time spent reading one PDF, looked at between pages |
 
 `skills.toml` holds one section per skill (`[notebook]`, `[chat_archive]`,
 `[past_conversations]`, `[user_documents]`, `[sub_agents]`) with `enabled` and that

@@ -45,9 +45,10 @@ class FakeModel(list):
 
 
 def _kbs(tmp_path):
+    from celine.settings import general
     kbs = KBs(SimpleNamespace(data_dir=tmp_path, problems=[], kb={
-        "documents": {"kind": "documents", "title": "Documents", "chunk_over_kb": 0}}),
-        lambda *a: None)
+        "documents": {"kind": "documents", "title": "Documents", "chunk_over_kb": 0}},
+        r=lambda key: general.value({}, key)), lambda *a: None)
     kbs.documents().describer = FakeModel()
     return kbs
 

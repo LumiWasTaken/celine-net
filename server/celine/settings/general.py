@@ -79,6 +79,12 @@ FIELDS: list[dict[str, Any]] = [
         ("max_message_bytes", "Largest message", "bytes", 1, 100_000_000, 1_000_000, None),
         ("requests_keep", "Model requests kept", "days", 0, 36_500, 0,
          "What each step sent to its model. 0: kept forever."),
+        # kb/documents_extract.py: what one document may cost to read
+        ("document_part_mb", "Largest part in a document", "MB", 1, 100_000, 256,
+         "An EPUB or Word file with a larger part unpacked is not read whole."),
+        ("document_html_mb", "Largest web page document", "MB", 1, 100_000, 64, None),
+        ("document_pdf_pages", "PDF pages read", "pages", 1, 1_000_000, 5000, None),
+        ("document_pdf_seconds", "PDF read time limit", "seconds", 1, 86_400, 600, None),
     )),
     # Advanced switches, read where they are used (schedules, missions)
     *({"key": k, "label": label, "type": "bool", "default": d, "advanced": True,

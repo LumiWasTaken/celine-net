@@ -17,6 +17,7 @@ import html
 import logging
 import posixpath
 import re
+import time
 import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -39,6 +40,36 @@ HTML = {".html", ".htm", ".xhtml"}
 SUBS = {".srt", ".vtt"}
 IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".bmp", ".tif", ".tiff"}
 MAX_TEXT_BYTES = 200 * 1024 * 1024     # a text file larger than this is stored, not read
+MB = 1024 * 1024
+TOO_LARGE = "too large to read as text"
+PART_TOO_LARGE = "a part of it is too large to read"
+_clock = time.monotonic
+
+
+def _setting(key: str) -> int:
+    from ..settings import general
+    return int(general.value({}, key))
+
+
+@dataclass(frozen=True)
+class Limits:
+    """What reading one document may cost (the Advanced settings `document_*`): the
+    largest part of a zip-based file (EPUB, DOCX) unpacked, the largest HTML file, and
+    the pages and seconds a PDF is read for. The defaults are the settings' defaults."""
+    part_bytes: int = field(default_factory=lambda: _setting("document_part_mb") * MB)
+    html_bytes: int = field(default_factory=lambda: _setting("document_html_mb") * MB)
+    pdf_pages: int = field(default_factory=lambda: _setting("document_pdf_pages"))
+    pdf_seconds: float = field(default_factory=lambda: _setting("document_pdf_seconds"))
+
+
+def limits(cfg) -> Limits:
+    """The limits as saved now (`cfg.r`), the defaults without a cfg."""
+    if cfg is None:
+        return Limits()
+    return Limits(part_bytes=int(cfg.r("document_part_mb")) * MB,
+                  html_bytes=int(cfg.r("document_html_mb")) * MB,
+                  pdf_pages=int(cfg.r("document_pdf_pages")),
+                  pdf_seconds=float(cfg.r("document_pdf_seconds")))
 
 
 @dataclass
@@ -92,17 +123,21 @@ MIME = {"note": "text/markdown", "text": "text/plain", "code": "text/plain",
         "subtitles": "text/plain", "epub": "application/epub+zip"}
 
 
-def extract(path: Path) -> Extracted:
+def extract(path: Path, lim: Limits | None = None) -> Extracted:
+    """The file's text, within `lim` (limits(cfg); the defaults when None)."""
+    lim = lim or Limits()
     kind = kind_of(path)
     if kind == "file" and _looks_textual(path):
         kind = "text"
     fn = {"note": _markdown, "text": _plain, "code": _code, "data": _code, "html": _html_file,
-          "pdf": _pdf, "docx": _docx, "subtitles": _subtitles, "epub": _epub}.get(kind)
+          "pdf": lambda p: _pdf(p, lim), "docx": lambda p: _docx(p, lim),
+          "subtitles": _subtitles, "epub": lambda p: _epub(p, lim)}.get(kind)
     if fn is None:
         return Extracted(kind=kind)
     if kind in ("note", "text", "code", "data", "subtitles") and \
-            path.stat().st_size > MAX_TEXT_BYTES:
-        return Extracted(kind=kind, error="too large to read as text")
+            path.stat().st_size > MAX_TEXT_BYTES or \
+            kind == "html" and path.stat().st_size > lim.html_bytes:
+        return Extracted(kind=kind, error=TOO_LARGE)
     out = fn(path)
     out.kind = kind
     return out
@@ -311,7 +346,7 @@ def _html_file(path: Path) -> Extracted:
 
 # ---- pdf --------------------------------------------------------------------------------
 
-def _pdf(path: Path) -> Extracted:
+def _pdf(path: Path, lim: Limits) -> Extracted:
     from pypdf import PdfReader
     try:
         r = PdfReader(str(path))
@@ -332,7 +367,12 @@ def _pdf(path: Path) -> Extracted:
     except Exception:
         log.debug("pdf title unreadable", exc_info=True, extra={"event": "documents.pdf_title_failed"})
     segs: list[Segment] = []
+    start, read = _clock(), 0
     for i, page in enumerate(r.pages, 1):
+        # the budget is looked at between pages: one page pypdf spins on runs to its end
+        if i > lim.pdf_pages or _clock() - start > lim.pdf_seconds:
+            break
+        read = i
         try:
             text = page.extract_text() or ""
         except Exception:
@@ -341,7 +381,9 @@ def _pdf(path: Path) -> Extracted:
             continue
         segs.extend(_pdf_page(text, i))
     out = Extracted(kind="pdf", title=title or None, pages=pages, segments=segs)
-    if not segs and pages:
+    if read < pages:
+        out.error = f"only the first {read} of {pages} pages were read"
+    elif not segs and pages:
         out.error = "this PDF has no text layer"
     return out
 
@@ -377,7 +419,19 @@ def _pdf_page(text: str, page: int) -> list[Segment]:
 
 # ---- docx -------------------------------------------------------------------------------
 
-def _docx(path: Path) -> Extracted:
+def _too_large(z: zipfile.ZipFile, lim: Limits) -> bool:
+    """A part of the zip unpacks larger than the limit (the size its header names, which
+    zipfile holds a part to when it reads it)."""
+    return any(i.file_size > lim.part_bytes for i in z.infolist())
+
+
+def _docx(path: Path, lim: Limits) -> Extracted:
+    try:
+        with zipfile.ZipFile(path) as z:
+            if _too_large(z, lim):
+                return Extracted(kind="docx", error=PART_TOO_LARGE)
+    except (OSError, zipfile.BadZipFile):
+        pass                                   # python-docx says what is wrong below
     try:
         import docx
         d = docx.Document(str(path))
@@ -467,19 +521,32 @@ def subtitles_text(text: str) -> Extracted:
 
 # ---- epub -------------------------------------------------------------------------------
 
-def _epub(path: Path) -> Extracted:
+def _epub(path: Path, lim: Limits) -> Extracted:
     try:
         with zipfile.ZipFile(path) as z:
-            return _epub_zip(z)
+            return _epub_zip(z, lim)
     except (OSError, zipfile.BadZipFile) as e:
         return Extracted(kind="epub", error=f"cannot read the EPUB: {type(e).__name__}")
 
 
-def _epub_zip(z: zipfile.ZipFile) -> Extracted:
+class _PartTooLarge(Exception):
+    pass
+
+
+def _part(z: zipfile.ZipFile, name: str, lim: Limits) -> str:
+    """One part of the zip as text; _PartTooLarge when it unpacks over the limit."""
+    if z.getinfo(name).file_size > lim.part_bytes:
+        raise _PartTooLarge(name)
+    return z.read(name).decode("utf-8", "replace")
+
+
+def _epub_zip(z: zipfile.ZipFile, lim: Limits) -> Extracted:
     try:
-        container = z.read("META-INF/container.xml").decode("utf-8", "replace")
+        container = _part(z, "META-INF/container.xml", lim)
         opf_path = re.search(r'full-path="([^"]+)"', container).group(1)
-        opf = z.read(opf_path).decode("utf-8", "replace")
+        opf = _part(z, opf_path, lim)
+    except _PartTooLarge:
+        return Extracted(kind="epub", error=PART_TOO_LARGE)
     except Exception as e:                     # noqa: BLE001
         return Extracted(kind="epub", error=f"cannot read the EPUB: {type(e).__name__}")
     base = posixpath.dirname(opf_path)
@@ -495,16 +562,21 @@ def _epub_zip(z: zipfile.ZipFile) -> Extracted:
     tm = re.search(r"<dc:title[^>]*>(.*?)</dc:title>", opf, re.S)
     title = html.unescape(tm.group(1)).strip() if tm else None
     segs: list[Segment] = []
+    error = None
     for i, ref in enumerate(spine, 1):
         name = manifest.get(ref)
         if not name:
             continue
         try:
-            doc = z.read(name).decode("utf-8", "replace")
+            doc = _part(z, name, lim)
         except KeyError:
+            continue
+        except _PartTooLarge:
+            error = PART_TOO_LARGE             # left out; the other chapters are read
             continue
         part = html_text(doc)
         for s in part.segments:
             s.page = i                         # the chapter file, as a "page"
             segs.append(s)
-    return Extracted(kind="epub", title=title, pages=len(spine) or None, segments=segs)
+    return Extracted(kind="epub", title=title, pages=len(spine) or None, segments=segs,
+                     error=error)
