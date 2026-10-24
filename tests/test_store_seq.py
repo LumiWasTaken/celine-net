@@ -69,3 +69,8 @@ async def test_orphans_resume_only_without_a_step_in_flight(store):
     assert row["state"] == "queued" and row["worker_id"] is None
     row = await state(busy)
     assert row["state"] == "interrupted" and "shell__run_command" in row["reason"]
+
+async def test_reads_reuse_their_connections(store):
+    for _ in range(3):
+        await store.read(lambda c: c.execute("SELECT 1").fetchone())
+    assert store._idle.qsize() == 1, "one read at a time needs one connection"

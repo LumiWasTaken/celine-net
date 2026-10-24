@@ -8,6 +8,7 @@ import contextvars
 import json
 import logging
 import math
+import queue
 import sqlite3
 import threading
 from collections.abc import Callable
@@ -81,9 +82,9 @@ class Store:
         self._thread: int | None = None
         # one read connection per worker thread, opened once (pragmas, ATTACHes) and
         # kept: a read is a transaction on it, not a new connection
-        self._readers = threading.local()
-        self._opened: list[sqlite3.Connection] = []
-        self._opened_lock = threading.Lock()
+        # idle reader connections: a read takes one and gives it back, so there are never
+        # more than reads at once (a thread-local one was left open when its thread ended)
+        self._idle: queue.SimpleQueue[sqlite3.Connection] = queue.SimpleQueue()
 
     async def start(self, task_group: anyio.abc.TaskGroup) -> None:
         self._conn = connect(self.db_path)
@@ -97,19 +98,11 @@ class Store:
         self._closed = True
         if self._tx is not None:
             await self._tx.aclose()
-        with self._opened_lock:
-            for conn in self._opened:
-                conn.close()
-            self._opened.clear()
-        self._readers = threading.local()
-
-    def _reader(self) -> sqlite3.Connection:
-        conn = getattr(self._readers, "conn", None)
-        if conn is None:
-            conn = self._readers.conn = connect(self.db_path)
-            with self._opened_lock:
-                self._opened.append(conn)
-        return conn
+        while True:
+            try:
+                self._idle.get_nowait().close()
+            except queue.Empty:
+                break
 
     async def _writer(self) -> None:
         """The single writer. Serialises every write in arrival order."""
@@ -161,7 +154,10 @@ class Store:
     async def read(self, fn: Callable[[sqlite3.Connection], T]) -> T:
         """Run fn in a worker thread inside ONE deferred read transaction."""
         def run() -> T:
-            conn = self._reader()
+            try:
+                conn = self._idle.get_nowait()
+            except queue.Empty:
+                conn = connect(self.db_path)
             conn.execute("BEGIN DEFERRED")
             try:
                 out = fn(conn)
@@ -171,6 +167,8 @@ class Store:
                 if conn.in_transaction:
                     conn.execute("ROLLBACK")
                 raise
+            finally:
+                self._idle.put(conn)
 
         return await anyio.to_thread.run_sync(run)
 
