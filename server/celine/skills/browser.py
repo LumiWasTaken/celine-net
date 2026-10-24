@@ -1,9 +1,9 @@
 """The agent's browser: one Brave in the browser box (browser/browserd.py), used like a person
 at a screen.
 
-Five tools. browser__open loads a page in a named tab; browser__scroll scrolls it and
-browser__close closes it (reading tools, as open and look: a sub-agent that only reads
-may browse); browser__act runs steps on it
+Five tools. browser__open loads a page in a named tab and browser__close closes it
+(each has effects: a GET can log out or start a download); browser__scroll scrolls it
+(a reading tool, as look); browser__act runs steps on it
 (click, type, select, hover, press, find, back, forward, reload, upload, accept,
 dismiss, restart, and locate: a click or hover where the Screen reading model
 boxes what it names); browser__look reads the page: the view again, the whole page
@@ -54,7 +54,7 @@ POINT = re.compile(r"^(\d+)\s*,\s*(\d+)$")      # a point of the view, x,y in px
 ID = re.compile(r"^e?(\d+)$", re.I)
 NAME_RULE = ("A tab name is up to 16 lowercase letters, digits, - or _, starting with a "
              "letter or digit, like tab=\"jobs\".")
-# scroll and close are browser__scroll and browser__close, which a reading sub-agent has
+# scroll and close are tools of their own, browser__scroll and browser__close
 DOES = ("click", "type", "select", "hover", "press", "find", "wait", "back",
         "forward", "reload", "upload", "accept", "dismiss", "restart", "locate")
 NEEDS_TARGET = {"click", "hover", "select", "upload"}
@@ -256,7 +256,7 @@ class Browser:
 
     # ---- the tools ------------------------------------------------------------------------
 
-    @tool(read_only=True, open_world=True, terminal_arg="tab")       # a sub-agent that only reads may browse
+    @tool(read_only=False, destructive=False, open_world=True, terminal_arg="tab")
     async def open(
         self,
         ctx: ToolContext,
@@ -449,7 +449,7 @@ class Browser:
             return self._error(str(e) or "amount is a number of pixels.", tab)
         return await self._steps(ctx, name, [step], show=show)
 
-    @tool(read_only=True, open_world=True, terminal_arg="tab")
+    @tool(read_only=False, destructive=False, open_world=True, terminal_arg="tab")
     async def close(
         self,
         ctx: ToolContext,

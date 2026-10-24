@@ -13,9 +13,13 @@ from celine.skills.browser import Browser
 pytestmark = pytest.mark.anyio
 
 
-async def test_scroll_and_close_are_reading_tools(monkeypatch):
-    for name in ("open", "scroll", "close", "look"):
+async def test_open_and_close_have_effects_scroll_and_look_read(monkeypatch):
+    """A GET can log out or download, a close drops a tab: neither is reading."""
+    for name in ("scroll", "look"):
         assert getattr(Browser, name).__celine_tool__["annotations"].read_only
+    for name in ("open", "close"):
+        hints = getattr(Browser, name).__celine_tool__["annotations"]
+        assert not hints.read_only and not hints.destructive
     assert not Browser.act.__celine_tool__["annotations"].read_only
     sent = []
 

@@ -97,8 +97,8 @@ class SubAgents:
                              "conversation. The name of one that is done gives it this "
                              "brief."],
         access: Annotated[Literal["read", "work"] | None,
-                          "read: it changes nothing (in a browser it opens and looks, "
-                          "and cannot act). work: it may write and act. Default: read, "
+                          "read: it changes nothing (in a browser it looks and "
+                          "scrolls, and cannot open or act). work: it may write and act. Default: read, "
                           "or work when you give a folder."] = None,
         folder: Annotated[str | None, "A notebook folder, such as agents/scout. It sees "
                                       "and writes only that folder."] = None,
