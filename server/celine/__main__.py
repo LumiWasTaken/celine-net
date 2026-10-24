@@ -61,6 +61,19 @@ def _load_config(load=boot.load) -> config_mod.Config:
         _refuse(str(e))
 
 
+def own_data_dir(data_dir: Path) -> None:
+    """What the app writes is its user's alone: umask 077 for this process, the data dir
+    made 0700, or closed when it is its own and was open. What another container reads
+    from the volume (keys/*.hash, connector-clients, searxng-settings.yml) is mounted as
+    a file of its own, with the mode keys.py gives it, so the closed folder above it
+    changes nothing there."""
+    os.umask(0o077)
+    data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    st = data_dir.stat()
+    if st.st_uid == os.getuid() and st.st_mode & 0o077:
+        data_dir.chmod(0o700)
+
+
 def preflight(argv: argparse.Namespace) -> config_mod.Config:
     # a second worker process means a second writer and broken event sequencing
     if int(os.environ.get("WEB_CONCURRENCY", "1")) != 1:
@@ -76,7 +89,8 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
         cfg.server.update(reload.CLI_SERVER)
 
     try:
-        for p in (cfg.data_dir, cfg.blobs_dir, cfg.data_dir / "logs"):
+        own_data_dir(cfg.data_dir)
+        for p in (cfg.blobs_dir, cfg.data_dir / "logs"):
             p.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         _refuse(f"The data dir {cfg.data_dir} is not writable ({e.strerror}). Set "
@@ -512,6 +526,7 @@ def main() -> None:
         cfg = _load_config()
         set_secrets(cfg.secrets())
         set_secrets(keys.values(cfg.data_dir), "keys")
+        own_data_dir(cfg.data_dir)
         migrate_all(cfg.db_path)
         if argv.command == "doctor":
             raise SystemExit(ops.doctor(cfg))

@@ -111,7 +111,10 @@ folder.
 
 Nothing secret is in an image or in the compose file. The keys in `.env` reach the
 containers as environment variables; everything typed into the app stays on the volume.
-The passkeys, sessions and recovery codes are in `app/auth.db` (mode 600).
+The passkeys, sessions and recovery codes are in `app/auth.db` (mode 600). The app's
+folder (`app/`, or `var/` without Docker) is mode 700 and what the app writes there is
+its user's alone (umask 077); the files other containers mount from `app/keys/` keep
+their own modes.
 
 Hand-written configuration (`config/*.toml`, its shipped base in `config/her/` and the
 schedules copied once into `app/settings/`) is part of the app image. Settings changed
