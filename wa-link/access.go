@@ -3,8 +3,9 @@
 // Every door needs `Authorization: Bearer <key>`. The keys come from the clients file
 // (-clients-file, the app's keys/connector-clients: "name:key:role", comma or line
 // separated; role owner or reader). An owner may send into the own chat
-// (with the bridge lease), change the marker and hold the lease; a reader may read the
-// feed, call the read tools, fetch media and ask the phone for older messages.
+// (with the bridge lease), change the marker, hold the lease and delete and ignore a
+// chat (/admin/ignored); a reader may read the feed, call the read tools, fetch media
+// and ask the phone for older messages.
 //
 // The bridge lease: one app instance at a time answers in the bridge chat. The holder
 // renews it every 20 s; it lapses 60 s after the last renewal.

@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -346,50 +348,70 @@ func TestAnExpiredQRCodeRestartsForANewOne(t *testing.T) {
 	}
 }
 
-func TestRecordsOfOneChatForAChatIncludedAgain(t *testing.T) {
+// mediaMsg: a message record in chat with a file whose plain sha256 is sha.
+func mediaMsg(chat, key, sha string, ts int64) Rec {
+	return Rec{"kind": "message", "chat": Rec{"key": chat, "kind": "group"},
+		"message": Rec{"key": key, "ts": ts, "type": "media", "text": "",
+			"media": Rec{"type": "photo", "ref": Rec{"file_sha256": sha}}}}
+}
+
+func TestDeleteAndIgnoreTakesAChatOutOfTheJournalForGood(t *testing.T) {
 	setup(t)
 	loadFixtures(t)
 	s := server(t)
-	var chat string
-	var n int
-	if err := jr.db.QueryRow(`SELECT chat_key, COUNT(*) FROM journal WHERE kind = 'message'
-		GROUP BY chat_key ORDER BY COUNT(*) DESC LIMIT 1`).Scan(&chat, &n); err != nil {
-		t.Fatal(err)
+	other := BEA
+	shaOf := func(b string) string { sum := sha256.Sum256([]byte(b)); return hex.EncodeToString(sum[:]) }
+	gone, kept, shared := keepFile([]byte("group photo")), keepFile([]byte("bea photo")),
+		keepFile([]byte("forwarded"))
+	if gone != shaOf("group photo") {
+		t.Fatal("kept files are named by their sha256")
 	}
-	var want int
-	if err := jr.db.QueryRow(`SELECT COUNT(*) FROM journal WHERE chat_key = ?
-		OR (kind = 'person' AND message_key = ?)`, chat, chat).Scan(&want); err != nil {
-		t.Fatal(err)
-	}
-	lines := readLines(t, req(t, s, "GET", "/admin/records?chat="+chat, readerKey, ""), want)
-	last := 0.0
-	messages := 0
-	for _, l := range lines {
-		var m map[string]any
-		if json.Unmarshal([]byte(l), &m) != nil || m["seq"].(float64) <= last {
-			t.Fatalf("not in seq order: %s", l)
-		}
-		last = m["seq"].(float64)
-		if m["kind"] == "message" {
-			messages++
-			if m["chat"].(map[string]any)["key"] != chat {
-				t.Fatalf("another chat's record: %s", l)
-			}
+	for _, r := range []Rec{mediaMsg(GROUP, "G1", gone, T0+1), mediaMsg(GROUP, "G2", shared, T0+2),
+		mediaMsg(other, "B1", kept, T0+3), mediaMsg(other, "B2", shared, T0+4)} {
+		if _, err := jr.Append(r); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if messages != n {
-		t.Fatalf("%d of %d messages", messages, n)
+	body := `{"chats":["` + GROUP + `"]}`
+	if r := req(t, s, "POST", "/admin/ignored", readerKey, body); r.StatusCode != 403 {
+		t.Fatalf("a reader deleted a chat: %d", r.StatusCode)
 	}
-	// the stream ends after the last record
-	r := req(t, s, "GET", "/admin/records?chat="+chat, readerKey, "")
-	body, _ := io.ReadAll(r.Body)
-	if got := strings.Count(string(body), "\n"); got != want {
-		t.Fatalf("%d lines, want %d", got, want)
+	own := `{"chats":["` + OWN + `@s.whatsapp.net"]}`
+	if r := req(t, s, "POST", "/admin/ignored", ownerKey, own); r.StatusCode != 400 {
+		t.Fatalf("the bridged chat was deleted: %d", r.StatusCode)
 	}
-	if req(t, s, "GET", "/admin/records", readerKey, "").StatusCode != 400 {
-		t.Fatal("no chat accepted")
+	r := req(t, s, "POST", "/admin/ignored", ownerKey, body)
+	if r.StatusCode != 200 || decode(t, r)["deleted"].(float64) < 2 {
+		t.Fatalf("ignore: %d", r.StatusCode)
 	}
-	if req(t, s, "GET", "/admin/records?chat="+chat, "", "").StatusCode != 401 {
-		t.Fatal("no key accepted")
+	for _, rec := range journalRecs(t) {
+		if k, chat, _, _ := recordKeys(rec); chat == GROUP {
+			t.Fatalf("a %s record of the chat is left", k)
+		}
+	}
+	files := func(sha string) bool { _, err := os.Stat(filepath.Join(stateDir, "media", sha)); return err == nil }
+	if files(gone) || !files(kept) || !files(shared) {
+		t.Fatalf("files: its own %v, another chat's %v, shared %v", files(gone), files(kept), files(shared))
+	}
+	// what the phone sends again of it, a history sync or a live message, stays out
+	if seq, err := jr.Append(mediaMsg(GROUP, "G3", gone, T0+5)); seq != 0 || err != nil {
+		t.Fatalf("journaled again: %d %v", seq, err)
+	}
+	loadFixtures(t)
+	for _, rec := range journalRecs(t) {
+		if _, chat, _, _ := recordKeys(rec); chat == GROUP {
+			t.Fatal("a history sync brought it back")
+		}
+	}
+	got := decode(t, req(t, s, "GET", "/admin/ignored", ownerKey, ""))["chats"].([]any)
+	if len(got) != 1 || got[0] != GROUP {
+		t.Fatalf("ignored %v", got)
+	}
+	// included again: what comes from now on is journaled
+	if r := req(t, s, "DELETE", "/admin/ignored?chat="+url.QueryEscape(GROUP), ownerKey, ""); r.StatusCode != 200 {
+		t.Fatalf("include again: %d", r.StatusCode)
+	}
+	if seq, _ := jr.Append(mediaMsg(GROUP, "G4", gone, T0+6)); seq == 0 {
+		t.Fatal("still ignored")
 	}
 }

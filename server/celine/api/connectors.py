@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from ..errors import CelineError
 from ..kb.connectors import Refused
-from ..kb.ignore import delete_and_ignore, include_again, replay
+from ..kb.ignore import delete_and_ignore, include_again
 from ..kb.importers import Unreachable
 from .deps import in_thread
 from .kb import chat_kb, kb_changed
@@ -168,20 +168,12 @@ class IncludeBody(BaseModel):
 @router.post("/sources/{sid}/ignored-chats/include")
 async def include(request: Request, sid: str, body: IncludeBody) -> dict:
     """Include an ignored chat again. Discord: the connector reads it from the start
-    (task kind `sync`). WhatsApp: what wa-link's journal has of it is applied (task
-    kind `include`). `{"task": id|null}`."""
+    (task kind `sync`). WhatsApp: what comes of it from now on lands; wa-link deleted
+    its history. `{"task": id|null}`."""
     kb = chat_kb(request, sid)
     c = _optional_connector(request, sid)
-    name = next((x["name"] for x in await anyio.to_thread.run_sync(kb.ignored_chats)
-                 if x["key"] == body.key), None) or body.key
     job = await _ignoring(include_again, kb, body.key, c)
-    task = None
-    if job:
-        task = _follow(request, sid, "sync", "Discord sync", job)
-    elif c is not None and kb.platform == "whatsapp":
-        task = request.app.state.services.kbs.tasks.start(
-            sid, f"include:{body.key}", f"Restoring {name}",
-            lambda ctx: replay(kb, c, body.key, ctx)).id
+    task = _follow(request, sid, "sync", "Discord sync", job) if job else None
     kb_changed(request, sid)
     return {"task": task}
 

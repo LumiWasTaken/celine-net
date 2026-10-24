@@ -1,5 +1,5 @@
 // The app's doors (/admin/*). Readers may look, ask for older messages and fetch
-// media; owners may also change the marker and hold the bridge lease.
+// media; owners may also change the marker, hold the bridge lease and delete chats.
 //
 //	GET    /admin/status        the connection record and counts
 //	GET    /admin/qr            the current pairing code as PNG, 404 when none
@@ -8,7 +8,7 @@
 //	POST   /admin/bridge/lease  claim or renew (owner), 409 when another holds it
 //	DELETE /admin/bridge/lease  release (owner)
 //	POST   /admin/older         history.go
-//	GET    /admin/records       every record of one chat, NDJSON (journal.go)
+//	GET|POST|DELETE /admin/ignored  deleted and ignored chats (owner, journal.go)
 //	POST   /admin/media/download, GET|POST /admin/media/retry, GET /admin/media/<sha256>
 package main
 
@@ -167,7 +167,7 @@ func registerAdmin(mux *http.ServeMux, clients map[string]Client) {
 	mux.HandleFunc("/admin/bridge", authed(clients, true, handleBridge))
 	mux.HandleFunc("/admin/bridge/lease", authed(clients, true, handleLease))
 	mux.HandleFunc("/admin/older", authed(clients, false, handleOlder))
-	mux.HandleFunc("/admin/records", authed(clients, false, get(jr.handleRecords)))
+	mux.HandleFunc("/admin/ignored", authed(clients, true, jr.handleIgnored))
 	mux.HandleFunc("/admin/media/download", authed(clients, false, handleDownload))
 	mux.HandleFunc("/admin/media/retry", authed(clients, false, handleRetry))
 	mux.HandleFunc("/admin/media/", authed(clients, false, get(handleMediaFile)))
