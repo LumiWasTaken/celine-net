@@ -59,3 +59,14 @@ async def test_streamed_logprobs_reach_the_judges_probability():
             if isinstance(e, Done)][0]
     p = p_deny(done.raw, "A")
     assert 0.4 < p < 0.5
+
+
+def test_a_flagged_command_between_long_echoes_stays_in_what_the_judge_reads_and_its_evidence():
+    from celine.guard import facts, questions
+    cmd = f"echo {'a' * 2000}; rm -rf ~/thesis; echo {'b' * 2000}"
+    call = {"name": "shell__run", "args": {"command": cmd}}
+    found = {"damage": {"fact": facts.damage(call)}}
+    state = questions.call_state(call, "house", "", found)
+    assert "rm -rf ~/thesis" in json.dumps(state["call"]["arguments"])
+    assert "characters left out" in state["call"]["arguments"]["command"]
+    assert questions.confirm("rm -rf ~/thesis", questions.evidence(state))[0] is not None

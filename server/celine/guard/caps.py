@@ -37,35 +37,44 @@ def tail(s: str, n: int) -> str:
     return mark(len(s) - n) + " " + s[len(s) - n:].lstrip()
 
 
-def head_tail(s: str, n: int, tail_share: float = 1 / 3) -> str:
-    """The head and the tail of s around the marker, n characters of s in all."""
+def head_tail(s: str, n: int, tail_share: float = 1 / 3, keep: tuple[str, ...] = ()) -> str:
+    """The head and the tail of s around the marker, n characters of s in all. `keep`: a
+    text code flagged; found in the middle, a window around it stays too, so a judge
+    never judges a call with the flagged part cut out."""
     if len(s) <= n:
         return s
+    for k in keep:
+        i, w = s.find(k), n // 3
+        if k and i >= w and i + len(k) <= len(s) - w:
+            a = max(w, i - max(0, w - len(k)) // 2)
+            b = min(len(s) - w, a + max(w, len(k)))
+            return (s[:w].rstrip() + " " + mark(a - w) + " " + s[a:b].strip() + " "
+                    + mark(len(s) - w - b) + " " + s[len(s) - w:].lstrip())
     t = int(n * tail_share)
     h = n - t
     return s[:h].rstrip() + " " + mark(len(s) - n) + " " + s[len(s) - t:].lstrip()
 
 
-def _values(v, n: int):
+def _values(v, n: int, keep: tuple[str, ...]):
     if isinstance(v, str):
-        return head_tail(v, n)
+        return head_tail(v, n, keep=keep)
     if isinstance(v, dict):
-        return {k: _values(x, n) for k, x in v.items()}
+        return {k: _values(x, n, keep) for k, x in v.items()}
     if isinstance(v, list):
-        return [_values(x, n) for x in v]
+        return [_values(x, n, keep) for x in v]
     return v
 
 
-def fit(a, n: int = ARGS):
+def fit(a, n: int = ARGS, keep: tuple[str, ...] = ()):
     """The arguments within about n characters of JSON: each long string value cut
     first (the JSON stays valid, a short url, address or command stays whole); still
-    too long, the JSON text itself, head and tail."""
+    too long, the JSON text itself, head and tail. `keep`: see head_tail."""
     a = a or {}
     if len(json.dumps(a, ensure_ascii=False)) <= n:
         return a
-    cut = _values(a, min(VALUE, n))
+    cut = _values(a, min(VALUE, n), keep)
     text = json.dumps(cut, ensure_ascii=False)
-    return cut if len(text) <= n + 2 * len(MARK) else head_tail(text, n)
+    return cut if len(text) <= n + 2 * len(MARK) else head_tail(text, n, keep=keep)
 
 
 def args(a, n: int = ARGS) -> str:

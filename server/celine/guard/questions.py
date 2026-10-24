@@ -70,10 +70,14 @@ def call_state(call: dict, sink: str, her: str, found: dict) -> dict:
         f = found["persist"]
         lines.append(f"stopped before, at {f['at']}: a {f['tool']} call ({f['prev']}: "
                      f"{f['what']}); this call has the same {f['same']}")
+    # what code flagged in the command stays in what the judge reads, and so in the
+    # evidence its quote is held to
+    keep = tuple(found[r]["fact"].removeprefix("the command has ")
+                 for r in ("escape", "damage") if r in found)
     return {"intent": her, "call": {"tool": call["name"],
                                     "what": " ".join(str(call.get("description") or "")
                                                      .split("\n")[0].split())[:200],
-                                    "arguments": caps.fit(call.get("args"))},
+                                    "arguments": caps.fit(call.get("args"), keep=keep)},
             "sink": sink, "facts": lines}
 
 
@@ -100,7 +104,7 @@ def render(cfg, state: dict) -> str:
     return cfg.substitute(prompts.text("question"), braces=True).format(
         intent=caps.tail(state.get("intent") or "(none)", caps.INTENT), tool=call["tool"],
         what=str(call.get("what") or "").replace('"', "'"),
-        arguments=caps.args(call.get("arguments")),
+        arguments=json.dumps(call.get("arguments"), ensure_ascii=False),
         sink=state.get("sink") or "house", facts=facts)
 
 
