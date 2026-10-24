@@ -354,6 +354,7 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
       <PlaceHead level={1} crumbs={work ? [...crumbs, page] : crumbs} title={work ? 'Conversation' : m.name} titleAttr={work ? undefined : m.name}
                  detail={<Dot tone={convo.running ? 'running' : stateTone(m.status)} pulse={convo.running || m.status === 'active'} text={STATE_WORD[m.status]} />}
                  actions={<>
+                   {work && !gone && <ModelRow cid={m.conversation_id} live={convo.settings} head />}
                    {work && <PlanButton plan={convo.plan} />}
                    {!work && <Button icon={MessagesSquare} onClick={() => setWork(true)}>Open conversation</Button>}
                    {isOpen(m.status) && !gone && <Button icon={CircleStop} onClick={() => setStopping(true)}>Stop</Button>}
