@@ -42,9 +42,11 @@ facts; the app (server/celine/skills/shell.py) words them.
                    bytes both ways to localhost:<n> in its box, until either side ends
                    (a share: server/celine/shares.py); 502 when nothing listens there.
                    The app sends nothing before the 101.
-    POST /code/session {"dir", "task", "model", "session"?} -> the coding agent works on
-                   the task in its folder, in a new session or the given one;
-                   {"session", "state": "running", "dir", "model"}
+    POST /code/session {"dir", "task", "model", "session"?, "websearch"?} -> the coding
+                   agent works on the task in its folder, in a new session or the given
+                   one; {"session", "state": "running", "dir", "model", "terminal",
+                   "terminal_id"}: the terminal code-<id> shows the session live
+                   (or "terminal_error")
     GET  /code/session/<id>                      -> {"session", "agent", "state": running,
                    done or failed, "error"?, "dir", "title", "updated"}
     GET  /code/session/<id>/result               -> the same plus "text" (its last answer),
@@ -1464,6 +1466,19 @@ def check_owner(owner) -> str:
     return owner
 
 
+def watch_session(session: str) -> dict:
+    """A coding session shown live: its terminal code-<end of its id> runs the agent's
+    attach command; one that is open is reused. -> {"terminal", "terminal_id"}, or
+    {"terminal_error"}: the session itself is running either way."""
+    name = "code-" + re.sub(r"[^a-z0-9]", "", session.lower())[-8:]
+    try:
+        if not exists(name):
+            type_call({"terminal": name, "text": CODE.attach(session), "owner": "celine"})
+        return {"terminal": name, "terminal_id": known(name).id}
+    except Problem as e:
+        return {"terminal_error": str(e)}
+
+
 def type_call(body: dict) -> dict:
     name = check_name(body.get("terminal") or "main")
     text, keys = body.get("text") or "", body.get("keys") or []
@@ -2132,10 +2147,10 @@ class Handler(BaseHTTPRequestHandler):
             if parts[1:] == ["sessions"] and body is None:
                 return self.send_json({"sessions": CODE.list()})
             if parts[1:] == ["session"] and body is not None:
-                return self.send_json(CODE.start(str(body.get("dir") or "."),
-                                                 str(body.get("task") or ""),
-                                                 str(body.get("model") or ""),
-                                                 body.get("session") or None))
+                res = CODE.start(str(body.get("dir") or "."), str(body.get("task") or ""),
+                                 str(body.get("model") or ""), body.get("session") or None,
+                                 bool(body.get("websearch")))
+                return self.send_json({**res, **watch_session(res["session"])})
             if len(parts) == 3 and parts[1] == "session" and body is None:
                 return self.send_json(CODE.status(parts[2]))
             if len(parts) == 4 and parts[1:2] == ["session"] and parts[3] == "result" \

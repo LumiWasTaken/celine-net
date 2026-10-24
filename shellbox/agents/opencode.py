@@ -5,7 +5,8 @@ standard library only; shellboxd loads the one CODING_AGENT names (default openc
 serves it on /code/* (see shellboxd.py). Another agent is another file here.
 
     boot(home, env, as_her, llm_url, llm_key)   write its config, start and supervise it
-    start(dir, task, model, session)            -> {"session", "state": "running"}
+    start(dir, task, model, session, websearch) -> {"session", "state": "running"}
+    attach(session)                             -> the shell command that shows it live
     status(session)                             -> {"session", "state", "error"?}
     result(session)                             -> status + "text", "tool_output", "files"
     abort(session)                              -> {"session", "aborted": bool}
@@ -43,6 +44,7 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+import shlex
 import subprocess
 import threading
 import time
@@ -65,7 +67,7 @@ INSTRUCTIONS = ("Keep your final answer short: what you changed and what you ran
 PASSWORD = ""               # read at boot; tests set it
 HOME: Path | None = None    # its home, from boot
 _state: dict = {"models": None, "proc": None, "as_her": {}, "llm_url": "", "llm_key": "",
-               "cfg": None}
+               "cfg": None, "websearch": False}
 
 
 class Problem(Exception):
@@ -132,7 +134,8 @@ def _write_config(cfg: Path, llm_url: str, llm_key: str, models: dict | None) ->
             "npm": "@ai-sdk/openai-compatible", "name": "Celine",
             "options": {"baseURL": f"{llm_url}/v1", "apiKey": llm_key},
             "models": {m: {"name": m, "limit": limit} for m, limit in (models or {}).items()}}},
-        "permission": "allow",
+        # websearch is Exa's hosted search (a third party), only when the app's setting is on
+        "permission": {"*": "allow", "websearch": "allow"} if _state["websearch"] else "allow",
         "instructions": [str(cfg / "celine.md")],
         "mcp": {"rea": {"type": "local", "command": ["rea", "mcp"], "enabled": True}},
         "autoupdate": False,
@@ -157,7 +160,8 @@ def _serve(cfg: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> No
         with open(LOG, "ab") as out:
             proc = subprocess.Popen(
                 ["opencode", "serve", "--hostname", "127.0.0.1", "--port", str(PORT)],
-                cwd=str(HOME), env={**env, "OPENCODE_SERVER_PASSWORD": PASSWORD},
+                cwd=str(HOME), env={**env, "OPENCODE_SERVER_PASSWORD": PASSWORD,
+                     **({"OPENCODE_ENABLE_EXA": "1"} if _state["websearch"] else {})},
                 stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **as_her)
         _state["proc"] = proc
         while True:
@@ -246,8 +250,10 @@ def _q(folder: str) -> str:
     return "directory=" + urllib.request.quote(folder, safe="")
 
 
-def start(dir: str, task: str, model: str, session: str | None = None) -> dict:
-    """A new session in `dir`, or the given one, told `task`; it works in the background."""
+def start(dir: str, task: str, model: str, session: str | None = None,
+          websearch: bool = False) -> dict:
+    """A new session in `dir`, or the given one, told `task`; it works in the background.
+    `websearch` is the app's setting: when it changed, the server restarts with it."""
     folder = _dir(dir)
     if not task.strip():
         raise Problem("The task is empty.")
@@ -257,6 +263,15 @@ def start(dir: str, task: str, model: str, session: str | None = None) -> dict:
         raise Problem(f"{NAME} has no models yet: the app's model proxy "
                       f"({_state['llm_url']}/v1/models) has not answered the box since it "
                       f"started. The box asks again every {RETRY} s.", 503)
+    if bool(websearch) != _state["websearch"]:
+        if _busy():
+            raise Problem(f"The web search setting changed and {NAME} restarts on it, but a "
+                          f"session is working; start again when none is.", 409)
+        _state["websearch"] = bool(websearch)
+        _write_config(_state["cfg"], _state["llm_url"], _state["llm_key"], _state["models"])
+        _state["proc"].terminate()         # _serve starts it again with the new environment
+        raise Problem(f"The web search setting changed: {NAME} restarts on it. "
+                      f"Start again in {RESTART_WAIT + 5} s.", 503)
     if model not in _state["models"]:
         models = _models(_state["llm_url"], _state["llm_key"])
         models = models or _state["models"]
@@ -282,6 +297,13 @@ def start(dir: str, task: str, model: str, session: str | None = None) -> dict:
           {"model": {"providerID": "celine", "modelID": model},
            "parts": [{"type": "text", "text": task}]}, query=_q(folder))
     return {"session": session, "state": "running", "dir": folder, "model": model}
+
+
+def attach(session: str) -> str:
+    """The command that shows a session live (`opencode attach`); the password goes by
+    the environment, read from its file, so it is never in the command line."""
+    return (f"OPENCODE_SERVER_PASSWORD=$(cat {shlex.quote(str(_state['cfg'] / 'server.password'))})"
+            f" opencode attach {URL} --session {shlex.quote(session)}")
 
 
 def _busy_one(session: str) -> bool:

@@ -62,7 +62,8 @@ async def test_start_sends_dir_task_model_and_session_with_the_key(code, box):
                     "model": "m/x"}]
     out = await code.start(ctx(), dir="p", task="fix it", model="m/x")
     assert box.sent == [("POST", "/code/session", {"dir": "p", "task": "fix it",
-                                                   "model": "m/x", "session": None})]
+                                                   "model": "m/x", "session": None,
+                                                   "websearch": False})]
     assert box.headers[0]["authorization"] == "Bearer " + "k" * 24
     assert out.content.startswith("Session ses_1 is running in /home/celine/p with m/x. Look "
                                   "with code__status(session_id=\"ses_1\") in about 20 s;")
@@ -171,3 +172,21 @@ async def test_a_box_that_drops_the_call_or_has_no_address_says_so(code, box, mo
     assert skill.status == "down" and "has no address yet" in skill.error
     out = await skill.list(ctx())
     assert out.is_error and "has no address yet" in out.content
+
+
+async def test_the_session_terminal_is_listed_under_the_conversation_and_websearch_is_sent(
+        code, box, monkeypatch):
+    from celine.terminals import store as terminals
+    calls = []
+
+    async def upsert(store, id, name, owner, opened_at, opened_by=None):
+        calls.append((id, name, owner, opened_by))
+    monkeypatch.setattr(terminals, "upsert", upsert)
+    code.cfg.settings.general["code_websearch"] = True
+    box.answers = [{"session": "ses_1", "dir": "/h/p", "terminal": "code-abc",
+                    "terminal_id": "t1abc2"}]
+    c = ctx()
+    c.store = object()
+    await code.start(c, dir="p", task="x", model="m/x")
+    assert box.sent[0][2]["websearch"] is True
+    assert calls == [("t1abc2", "code-abc", "celine", "c")]

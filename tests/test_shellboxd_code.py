@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import threading
+import types
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,14 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).parent.parent
+types_ns = types.SimpleNamespace
+
+
+def box_agent():
+    spec = importlib.util.spec_from_file_location("oc_w", ROOT / "shellbox" / "agents" / "opencode.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
 KEY = "test-key-" + "k" * 16
 PW = "opencode-pw"
 NOW = 1792779829922
@@ -138,6 +147,7 @@ def box(tmp_path):
     agent._state["models"] = dict.fromkeys(["local/small", "openrouter/anthropic/claude-opus-5.5"], {})
     (tmp_path / "proj").mkdir()
     d.CODE = agent
+    d.watch_session = lambda session: {}        # its terminal needs tmux: tested below
     d.STATUS["code"] = {"agent": "opencode", "error": None}
     server = ThreadingHTTPServer(("127.0.0.1", 0), d.Handler)
     server.daemon_threads = True
@@ -177,6 +187,56 @@ def test_start_opens_a_session_in_her_folder_and_prompts_it_with_the_model(box):
     code, res = box.call("GET", "/code/session/ses_1")
     assert code == 200 and res["state"] == "running" and res["agent"] == "opencode"
     assert res["dir"] == str(box.home / "proj") and res["title"] == "fix the tests"
+
+
+def test_the_attach_command_shows_a_session_live_without_the_password_in_argv(box):
+    agent = box.daemon.CODE
+    agent._state["cfg"] = box.home / ".config" / "opencode"
+    cmd = agent.attach("ses_1")
+    assert cmd.endswith(f"opencode attach {agent.URL} --session ses_1")
+    assert cmd.startswith("OPENCODE_SERVER_PASSWORD=$(cat ") and PW not in cmd
+
+
+def test_a_session_gets_one_terminal_named_after_it_and_reuses_it(box, monkeypatch):
+    typed, open_now = [], set()
+    spec = importlib.util.spec_from_file_location("shellboxd_w", ROOT / "shellbox" / "shellboxd.py")
+    w = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(w)
+    w.CODE = types_ns(attach=lambda s: f"attach {s}")
+    w.exists = lambda n: n in open_now
+    w.type_call = lambda b: (typed.append(b), open_now.add(b["terminal"]))
+    w.known = lambda n: types_ns(id="abc123")
+    assert w.watch_session("ses_2fA9-b3c1d4e5") == {"terminal": "code-b3c1d4e5",
+                                                    "terminal_id": "abc123"}
+    assert typed == [{"terminal": "code-b3c1d4e5", "text": "attach ses_2fA9-b3c1d4e5",
+                      "owner": "celine"}]
+    w.watch_session("ses_2fA9-b3c1d4e5")
+    assert len(typed) == 1
+
+
+def test_websearch_changes_restart_opencode_and_allow_the_tool(box, monkeypatch):
+    agent = box.daemon.CODE
+    agent._state["cfg"] = box.home / ".config" / "opencode"
+    stopped, written = [], []
+    agent._state["proc"] = types_ns(terminate=lambda: stopped.append(1))
+    monkeypatch.setattr(agent, "_write_config", lambda *a: written.append(agent._state["websearch"]))
+    body = {"dir": "proj", "task": "x", "model": "local/small", "websearch": True}
+    code, res = box.call("POST", "/code/session", body)
+    assert code == 503 and "web search setting changed" in res["error"]
+    assert stopped == [1] and written == [True]
+    code, res = box.call("POST", "/code/session", body)      # restarted: no change now
+    assert code == 200 and stopped == [1]
+
+
+def test_the_config_allows_websearch_only_when_it_is_on(tmp_path, monkeypatch):
+    agent = box_agent()
+    monkeypatch.setattr(agent, "_put", lambda path, text, mode="644": written.append(text))
+    written: list[str] = []
+    agent._state["cfg"] = tmp_path
+    for on, want in ((False, "allow"), (True, {"*": "allow", "websearch": "allow"})):
+        agent._state["websearch"] = on
+        agent._write_config(tmp_path, "http://x", "k", {})
+        assert json.loads(written[-1])["permission"] == want
 
 
 def test_a_missing_folder_an_empty_task_and_an_unknown_model_are_refused(box):

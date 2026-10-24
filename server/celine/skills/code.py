@@ -21,6 +21,9 @@ import httpx
 
 from . import ToolContext, ToolResult, guide, tool, described
 from .. import shellbox
+from ..settings import general
+from ..core.ids import now
+from ..terminals import store as terminals
 from ..errors import ToolRefused, not_set_up, unreachable_words
 
 POLL_SECONDS = 20          # config/skills.toml [code] poll_seconds: between two code__status
@@ -87,7 +90,9 @@ class Code:
         try:
             status, res = await self._call("POST", "/code/session",
                                            {"dir": dir, "task": task, "model": model,
-                                            "session": session_id})
+                                            "session": session_id,
+                                            "websearch": general.value(
+                                                self.cfg.settings.general, "code_websearch")})
         except ToolRefused as e:
             return self._refused(str(e), session_id)
         except httpx.HTTPError as e:
@@ -95,9 +100,14 @@ class Code:
         if status == 404:
             return self._unknown(session_id, res)
         sid = str(res.get("session") or "")
+        if ctx.store is not None and res.get("terminal_id"):
+            await terminals.upsert(ctx.store, str(res["terminal_id"]), str(res["terminal"]),
+                                   "celine", now(), ctx.conversation_id)
         content = (f"Session {sid} is running in {res.get('dir') or dir} with {model}. Look "
                    f"with code__status(session_id=\"{sid}\") in about {self.poll} s; "
                    f"code__result brings its answer once it says done.")
+        if res.get("terminal_error"):
+            content += f" Its live terminal did not open: {res['terminal_error']}"
         return ToolResult(content=content, display={"session": sid, "state": "running",
                                                     "dir": res.get("dir") or dir,
                                                     "model": model, "task": task})

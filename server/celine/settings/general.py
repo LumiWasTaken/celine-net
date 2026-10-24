@@ -28,6 +28,8 @@ FIELDS: list[dict[str, Any]] = [
      "type": "bool",
      "help": "The photo description makes a photo searchable by what it shows.",
      "default": False},
+    {"key": "code_websearch", "label": "Web search for the coding agent", "type": "bool",
+     "help": "Its searches go to Exa, a third party.", "default": False},
     # server/celine/guard: read at every call, so a change applies at once; off is the
     # Guard feature switch (Settings, Features)
     {"key": "guard", "label": "Guard mode", "type": "choice",
