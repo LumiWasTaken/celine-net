@@ -60,6 +60,18 @@ The map of the code and the rules it follows.
 | `lib/` | api clients, socket and bus, `nav.tsx`, `prefs.ts` (this device's conveniences in localStorage), hooks (`useResource`, `useAction`, `useReveal`, `useConversation`) |
 | `styles/` | `tokens.css` (every value), `base.css` (keyframes, resets) |
 
+## Words
+
+| Word | Means |
+|---|---|
+| her, she | the agent (`her.py` holds its row; the pronoun is a setting, the code keeps "her") |
+| the box | shellbox, the agent's Linux container |
+| the house | the app itself and what runs inside it |
+| outside | text from anyone but the user: web pages, mail, chats; untrusted |
+| lands | a row or event arrives where it belongs |
+| Bastet | the guard (`guard/`) |
+| run, mission, job | a routine's one try; a goal she works on with sub-agents; a step that outlives its turn |
+
 ## Gates
 
 ```sh
