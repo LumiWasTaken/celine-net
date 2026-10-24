@@ -748,7 +748,7 @@ async def test_a_freeze_leaves_the_run_in_flight_waiting_and_the_unfreeze_runs_i
                           Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))) as sched:
         run = await sched.run_now("world")
         await sched.tick()
-        await until(lambda: _live(store, run["id"]))
+        await until(lambda: backend.hung)          # its turn streams
         await freeze.freeze(app, by="user", why="a test")
         await until(lambda: _state(store, run["id"], "waiting"))
         await until(lambda: _idle(sched))
