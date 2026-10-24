@@ -21,6 +21,7 @@ from . import notebook_index
 from .web import linked
 from .anchors import Edit, EditRefused, apply, is_stamp, lines_of, numbered, plan
 from ..clock import zone
+from ..errors import ToolRefused
 
 # the seeds ship as config/notebook_seed/<rel>, copied once, its own from then on
 SEEDS = {
@@ -201,16 +202,17 @@ class Notebook:
 
     def _resolve(self, path: str, folder: str | None = None) -> Path:
         """Confine to the notebook root, symlinks included, and to `folder` when the
-        conversation is limited to one."""
+        conversation is limited to one. ToolRefused, the tool's answer, when not."""
         p = (self.root / path).resolve()
         if not p.is_relative_to(self.root.resolve()):
-            raise ValueError(f"{path!r} is outside your notebook")
+            raise ToolRefused(f"{path} is outside your notebook.")
         # the app's own files (.index.db, .versions, .trash: deleted notes are the
         # user's to bring back) are not notes
         if any(part.startswith(".") for part in p.relative_to(self.root.resolve()).parts):
-            raise ValueError(f"{path!r} is not in your notebook")
+            raise ToolRefused(f"{path} is not in your notebook: notebook__list shows your "
+                              f"notes.")
         if folder and not p.is_relative_to((self.root / folder).resolve()):
-            raise ValueError(f"{path!r} is outside your folder {folder}")
+            raise ToolRefused(f"{path} is outside your folder {folder}.")
         return p
 
     def _place(self, path: str, folder: str | None) -> tuple[Path, str]:
@@ -237,7 +239,10 @@ class Notebook:
         {{username}}'s notes. Head lines right under the first line steer a note:
         `keys: ram, laptop` loads it when one comes up, `load: always`, `class:
         public, informal, nsfw or sensitive`."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="tools/ is not part of your notebook.", is_error=True)
         if self._owned_by_user(path):
@@ -265,7 +270,10 @@ class Notebook:
         """Read one note. Each line comes as `<n>:<hash>| <text>`. `n:hash` is the anchor
         for notebook__edit. Line 1, Last changed, comes plain: the app keeps it. A long
         note comes in parts. You can read {{username}}'s notes too."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="Skill guides are not notes in your notebook. "
                                       "skills__read_guide(name=\"<skill>\") shows a skill's "
@@ -321,7 +329,10 @@ class Notebook:
         """Change lines of one note by their anchors from notebook__read. Read the note
         first. All edits in one call refer to the note as you read it. If an anchor does
         not match, nothing changes and you get the current lines."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="tools/ is not part of your notebook.", is_error=True)
         if self._owned_by_user(path):
@@ -424,7 +435,10 @@ class Notebook:
         limit = await folder_of(ctx)
         if limit:
             if folder:
-                self._resolve(folder, limit)
+                try:
+                    self._resolve(folder, limit)
+                except ToolRefused as e:
+                    return ToolResult(content=str(e), is_error=True)
             else:
                 folder = limit
         rows = await notebook_index.list(ctx.store, folder)
@@ -444,7 +458,10 @@ class Notebook:
         path: Annotated[str, "The path of the note."],
     ) -> ToolResult:
         """Delete one of your notes. {{username}}'s notes cannot be deleted."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="tools/ is not part of your notebook.", is_error=True)
         if self._owned_by_user(path):
@@ -469,7 +486,10 @@ class Notebook:
         """Change the path of a note or a folder. Your index follows. {{username}}'s notes
         do not move."""
         folder = await folder_of(ctx)
-        (a, src), (b, dst) = self._place(src, folder), self._place(dst, folder)
+        try:
+            (a, src), (b, dst) = self._place(src, folder), self._place(dst, folder)
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         for rel in (src, dst):
             if rel == "tools" or rel.startswith("tools/"):
                 return ToolResult(content="tools/ is not part of your notebook.",

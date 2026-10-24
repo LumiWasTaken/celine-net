@@ -67,10 +67,11 @@ async def test_a_limited_conversation_stays_inside_its_folder(store, cfg):
                  lambda p: nb.write(ctx, p, "overwritten", "x"),
                  lambda p: nb.edit(ctx, p, [{"op": "delete", "start": a[2]}])):
         for bad in ("plans/secret.md", "agents/other.md", "agents/scout/../../x.md"):
-            with pytest.raises(ValueError, match="outside your folder"):
-                await call(bad)
-    with pytest.raises(ValueError, match="outside your folder"):
-        await nb.move(ctx, "agents/scout/new.md", "x.md")
+            out = await call(bad)
+            assert out.is_error and out.content == (
+                f"{bad} is outside your folder agents/scout."), bad
+    out = await nb.move(ctx, "agents/scout/new.md", "x.md")
+    assert out.is_error and out.content == "x.md is outside your folder agents/scout."
     assert (cfg.her.notebook / "plans/secret.md").read_text() == f"{STAMP}\nthe big plan"
     assert "plans/" not in (await nb.list(ctx, None)).content
     assert "secret" not in (await nb.search(ctx, "plan")).content
@@ -92,8 +93,8 @@ async def test_her_notes_move_and_the_users_and_tools_stay(store, cfg):
     assert list((cfg.her.notebook / ".versions/sorted/cars.md").iterdir()), \
         "the history follows the move"
     assert "sorted/cars.md" in (await nb.search(ctx, "blue")).content
-    with pytest.raises(ValueError, match="outside your notebook"):
-        await nb.move(ctx, "sorted/cars.md", "../cars.md")
+    out = await nb.move(ctx, "sorted/cars.md", "../cars.md")
+    assert out.is_error and out.content == "../cars.md is outside your notebook."
 
     ident = (cfg.her.notebook / "identity.md").read_text()
     top = _anchors((await nb.read(ctx, "identity.md")).content)[1]
@@ -250,12 +251,17 @@ async def test_a_note_she_only_read_ages_out_after_one_turn(store, cfg):
 
 
 async def test_the_apps_own_files_are_not_notes(store, cfg):
+    """A refusal is the tool's answer, never a crash: no tool raises on a path."""
     nb = Notebook(cfg)
     await nb.seed(store)
     ctx = _ctx("c", store, cfg)
     for bad in (".index.db", ".versions/a.md", "x/.hidden.md"):
-        with pytest.raises(ValueError, match="not in your notebook"):
-            await nb.write(ctx, bad, "x", "x")
+        for out in (await nb.write(ctx, bad, "x", "x"), await nb.read(ctx, bad),
+                    await nb.edit(ctx, bad, [{"op": "delete", "start": "1:aa"}]),
+                    await nb.delete(ctx, bad), await nb.move(ctx, bad, "y.md"),
+                    await nb.move(ctx, "identity.md", bad)):
+            assert out.is_error and out.content == (
+                f"{bad} is not in your notebook: notebook__list shows your notes."), bad
 
 
 async def test_index_paths_match_exactly(store):
