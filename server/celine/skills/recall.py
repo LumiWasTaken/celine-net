@@ -3,7 +3,8 @@
 Candidates: the notes whose `keys:` line comes up in the talk (the message and the first
 turns/loads.KEY_REPLY characters of its last reply before it; loads.key_in: a whole
 word or phrase, any case), cut into sections at their `## ` headings (the lines before
-the first heading are a section too). Each section is graded by the cosine similarity of
+the first heading are a section too), at most NOTE_SECTIONS of one note and CANDIDATES in
+all, taken from every note alike. Each section is graded by the cosine similarity of
 its embedding to the talk's (the Embeddings task, kb/semantic.query_embedder, one call
 for the talk and every section). A section comes back only at or over `memory_floor`,
 the best first, at most `memory_sections` of them in at most `memory_tokens` tokens
@@ -34,6 +35,7 @@ from datetime import datetime
 HEAD = "[your memory]"
 SECTION_CHARS = 2000     # a longer section is cut there, with where the rest is
 CANDIDATES = 40          # the most sections graded for one message
+NOTE_SECTIONS = 8        # the most of them from one note, so every note gets a chance
 EMBED_SECONDS = 10.0
 SHOWN = "shown"
 BELOW = "below the floor"
@@ -136,13 +138,15 @@ async def block(cfg, store, cid: str, tid: str, message: dict
             date = f"{datetime.fromtimestamp((root / rel).stat().st_mtime):%-d %b %Y}"
         except OSError:
             continue
-        for heading, part in sections(cfg.substitute(text)):
+        for i, (heading, part) in enumerate(sections(cfg.substitute(text))[:NOTE_SECTIONS]):
             sid = f"{rel}#{heading}" if heading else rel
-            found.append({"id": sid, "key": key, "date": date,
+            found.append({"id": sid, "key": key, "date": date, "nth": i,
                           "text": _cut(part, rel), "hash": _hash(part)})
     if not found:
         return None
-    found = found[:CANDIDATES]
+    # each note's first section, then each one's second, and so on: the cut takes from
+    # every note alike (a stable sort keeps the notes' order within one rank)
+    found = sorted(found, key=lambda x: x["nth"])[:CANDIDATES]
     report: dict = {"query": talk, "floor": s["memory_floor"],
                     "candidates": [], "shown": []}
     try:

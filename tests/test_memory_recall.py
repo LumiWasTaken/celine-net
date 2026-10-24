@@ -146,3 +146,17 @@ async def test_an_embedding_model_that_does_not_answer_is_said(store, tmp_path,
     text, report = await _say(store, cfg, cid, "noor")
     assert text == f"{recall.HEAD} not available now: No embedding model is set."
     assert report["error"] and len(report["candidates"]) == 3
+
+
+async def test_one_long_note_leaves_room_for_every_other(store, tmp_path):
+    """Sections are capped per note before the cut, so a note with many sections does
+    not crowd out the other notes its keys brought up."""
+    cfg = _cfg(tmp_path)
+    long = "keys: noor\n\n" + "".join(f"## Day {i}\nA friend.\n\n" for i in range(60))
+    await write_notes(store, cfg, {"a/diary.md": long, "people/noor.md": NOOR})
+    cid = await conversations.create(store)
+    text, report = await _say(store, cfg, cid, "noor climbing")
+    ids = [c["id"] for c in report["candidates"]]
+    assert sum(i.startswith("a/diary.md") for i in ids) == recall.NOTE_SECTIONS
+    assert "people/noor.md#Climbing" in ids and "### people/noor.md#Climbing" in text
+    assert len(ids) <= recall.CANDIDATES
