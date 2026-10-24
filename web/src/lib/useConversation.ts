@@ -95,17 +95,24 @@ export function useConversation(conversationId: string | null) {
     if (!conversationId) return
     const cid = conversationId
     let held: TextFrame[] = []
-    let timer = 0
+    // a frame id and a timeout id are separate counters: each is cancelled only as itself
+    let frame = 0, timeout = 0
+    const cancel = () => {
+      if (frame) cancelAnimationFrame(frame)
+      if (timeout) clearTimeout(timeout)
+      frame = 0; timeout = 0
+    }
     const flush = () => {
-      cancelAnimationFrame(timer); clearTimeout(timer); timer = 0
+      cancel()
       if (!held.length) return
       const evs = joinText(held)
       held = []
       setState(s => evs.reduce(apply, s))
     }
     const later = () => {
-      if (timer) return
-      timer = document.hidden ? window.setTimeout(flush, HIDDEN_FLUSH_MS) : requestAnimationFrame(flush)
+      if (frame || timeout) return
+      if (document.hidden) timeout = window.setTimeout(flush, HIDDEN_FLUSH_MS)
+      else frame = requestAnimationFrame(flush)
     }
     const stop = follow(cid, {
       seq: () => seq.current,
@@ -125,7 +132,7 @@ export function useConversation(conversationId: string | null) {
         setState(s => apply(s, ev))
       },
     })
-    return () => { cancelAnimationFrame(timer); clearTimeout(timer); stop() }
+    return () => { cancel(); stop() }
   }, [conversationId])
 
   // the render before the reset above still holds the last conversation's: none of it
