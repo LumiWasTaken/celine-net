@@ -3,9 +3,9 @@
    title moves into data-tip, so the browser's own tooltip never shows), so every view gets
    the same tips without changes. After --tip-delay on hover, at once on keyboard focus and
    within --tip-skip of the last one; one at a time; pointer down, Escape and scrolling hide
-   it. A touch screen has no hover: a long press on an icon button shows its tip, and the
-   tap that ends the press does nothing else (a row's long press is its menu, so not in a
-   row). A disabled kit button is aria-disabled, so the reason in its tip still shows.
+   it. A touch screen has no hover: a long press on an icon button (or a head's button that
+   lost its words) shows its tip, and the tap that ends the press does nothing else (a
+   row's long press is its menu, so not in a row). A disabled kit button is aria-disabled, so the reason in its tip still shows.
    Text: starts with a verb, about 70 characters at most. */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -75,7 +75,7 @@ export function TipLayer() {
       held = null
       if (e.pointerType !== 'touch') return
       const el = find(e.target)
-      if (!el || !el.matches('.btn--icon') || el.closest('.list-row')) return
+      if (!el || !el.matches('.btn--icon, [data-tip-words]') || el.closest('.list-row')) return
       press = window.setTimeout(() => { held = el; open(el, true) }, LONG_PRESS_MS)
     }
     const lift = () => clearTimeout(press)

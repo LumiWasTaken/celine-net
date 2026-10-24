@@ -7,7 +7,9 @@
    the buttons lose their words, then Select, Archive and Trash move into More, then New
    becomes a round "+", then the title ends in an ellipsis, and last the caller's own
    actions take their own line under the row. In a narrow head (a list column, a phone)
-   Search takes its own row under it. On a shelf New keeps its place, unseen, so nothing
+   Search takes its own row under it, and the buttons have no words. A touch screen has no
+   hover to show a tip, so there the words stay one step longer: Select, Archive and Trash
+   move into More first, then the words go, at every width. On a shelf New keeps its place, unseen, so nothing
    the user just clicked moves. */
 import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 import {
@@ -18,6 +20,7 @@ import { Button, IconButton } from './Button'
 import { cx } from './cx'
 import { SearchField } from './Form'
 import { ICON } from './icons'
+import { coarse } from './phone'
 import { Menu, MenuButton, useContextMenu, type MenuItem } from './Menu'
 import { usePlace } from './Place'
 import type { Picker } from './Select'
@@ -106,6 +109,7 @@ export function PlaceHead({
   const [narrow, setNarrow] = useState(false)
   const [moreAt, setMoreAt] = useState<HTMLElement | null>(null)
   const width = useRef(0)
+  const [touch] = useState(coarse)
 
   // a new width starts from the roomiest step; the effect below steps down until it fits
   useLayoutEffect(() => {
@@ -134,19 +138,20 @@ export function PlaceHead({
     if (step < STEPS && (over || sticks)) setStep(s => s + 1)
   })
 
+  const words = touch ? step < 2 : step < 1 && !narrow
+  const shelvesInMore = step >= (touch ? 1 : 2)
+
   // a page's own buttons lose their words with the rest; the words become their tip
   useLayoutEffect(() => {
     const head = row.current?.parentElement
     if (!head) return
     for (const b of head.querySelectorAll<HTMLElement>(':is(.place-head__acts, .place-head__own) > .btn:not(.btn--icon, .place-head__new)')) {
-      if (step >= 1 || narrow) { if (!b.dataset.tip) { b.dataset.tip = b.textContent ?? ''; b.dataset.tipWords = '' } }
+      if (!words) { if (!b.dataset.tip) { b.dataset.tip = b.textContent ?? ''; b.dataset.tipWords = '' } }
       else if (b.dataset.tipWords !== undefined) { delete b.dataset.tip; delete b.dataset.tipWords }
     }
   })
 
   const open = shelf && shelf.value !== 'list' ? shelf.value : null
-  const words = step < 1 && !narrow
-  const shelvesInMore = step >= 2
   const roundNew = step >= 3 || narrow
   const clip = step >= 4
   const actsBelow = step >= 5 && !!actions
