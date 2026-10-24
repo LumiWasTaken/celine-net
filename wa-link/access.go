@@ -1,14 +1,10 @@
-// Who may use wa-link, and the bridge lease.
+// Who may use wa-link.
 //
 // Every door needs `Authorization: Bearer <key>`. The keys come from the clients file
 // (-clients-file, the app's keys/connector-clients: "name:key:role", comma or line
-// separated; role owner or reader). An owner may send into the own chat
-// (with the bridge lease), change the marker, hold the lease and delete and ignore a
-// chat (/admin/ignored); a reader may read the feed, call the read tools, fetch media
-// and ask the phone for older messages.
-//
-// The bridge lease: one app instance at a time answers in the bridge chat. The holder
-// renews it every 20 s; it lapses 60 s after the last renewal.
+// separated; role owner or reader). An owner may also delete and ignore a chat
+// (/admin/ignored); a reader may read the feed, call the tools, fetch media and ask the
+// phone for older messages.
 package main
 
 import (
@@ -19,9 +15,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"syscall"
-	"time"
 )
 
 type Client struct {
@@ -86,57 +80,6 @@ func lookup(clients map[string]Client, r *http.Request) (Client, bool) {
 func caller(ctx context.Context) (Client, bool) {
 	c, ok := ctx.Value(clientKey{}).(Client)
 	return c, ok
-}
-
-// ---- the lease -------------------------------------------------------------------------
-
-var clock = time.Now // tests move time
-
-const leaseTTL = 60 * time.Second
-
-type Lease struct {
-	mu      sync.Mutex
-	holder  string
-	expires time.Time
-}
-
-var errLeaseHeld = errors.New("Another instance holds the bridge.")
-
-func (l *Lease) Claim(name string) (string, time.Time, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := clock()
-	if l.holder != "" && l.holder != name && now.Before(l.expires) {
-		return l.holder, l.expires, errLeaseHeld
-	}
-	l.holder, l.expires = name, now.Add(leaseTTL)
-	return l.holder, l.expires, nil
-}
-
-func (l *Lease) Release(name string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.holder != name {
-		return false
-	}
-	l.holder, l.expires = "", time.Time{}
-	return true
-}
-
-// Holds: the named client holds a lease that has not lapsed.
-func (l *Lease) Holds(name string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.holder == name && clock().Before(l.expires)
-}
-
-func (l *Lease) State() (string, int64) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.holder == "" || !clock().Before(l.expires) {
-		return "", 0
-	}
-	return l.holder, l.expires.UnixMilli()
 }
 
 // ---- one process per state directory -------------------------------------------------------

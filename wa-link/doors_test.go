@@ -46,7 +46,7 @@ func TestClientsParse(t *testing.T) {
 func TestEveryDoorNeedsAKeyAndOwnerDoorsNeedAnOwner(t *testing.T) {
 	setup(t)
 	s := server(t)
-	for _, p := range []string{"/feed", "/admin/status", "/admin/info", "/admin/qr", "/mcp"} {
+	for _, p := range []string{"/feed", "/admin/status", "/admin/qr", "/mcp"} {
 		if got := req(t, s, "GET", p, "", "").StatusCode; got != 401 {
 			t.Errorf("%s without key: %d", p, got)
 		}
@@ -54,18 +54,22 @@ func TestEveryDoorNeedsAKeyAndOwnerDoorsNeedAnOwner(t *testing.T) {
 			t.Errorf("%s with a wrong key: %d", p, got)
 		}
 	}
-	if r := req(t, s, "PUT", "/admin/bridge", readerKey, `{"marker":"X: "}`); r.StatusCode != 403 {
-		t.Fatalf("reader changed the marker: %d", r.StatusCode)
-	}
-	if r := req(t, s, "POST", "/admin/bridge/lease", readerKey, ""); r.StatusCode != 403 {
-		t.Fatalf("reader took the lease: %d", r.StatusCode)
+	if r := req(t, s, "GET", "/admin/ignored", readerKey, ""); r.StatusCode != 403 {
+		t.Fatalf("reader read the ignored chats: %d", r.StatusCode)
 	}
 	if r := req(t, s, "GET", "/admin/status", readerKey, ""); r.StatusCode != 200 {
 		t.Fatalf("reader can't read status: %d", r.StatusCode)
 	}
+	// nothing writes a chat: no info door, no marker, no lease
+	for _, d := range [][2]string{{"GET", "/admin/info"}, {"PUT", "/admin/bridge"},
+		{"POST", "/admin/bridge/lease"}} {
+		if r := req(t, s, d[0], d[1], ownerKey, `{"marker":"C: "}`); r.StatusCode != 404 {
+			t.Errorf("%s %s: %d", d[0], d[1], r.StatusCode)
+		}
+	}
 }
 
-func TestStatusInfoMarkerAndLease(t *testing.T) {
+func TestStatusAndQR(t *testing.T) {
 	setup(t)
 	s := server(t)
 	st := decode(t, req(t, s, "GET", "/admin/status", readerKey, ""))
@@ -90,45 +94,6 @@ func TestStatusInfoMarkerAndLease(t *testing.T) {
 	}
 	if r := req(t, s, "GET", "/admin/qr", readerKey, ""); r.StatusCode != 404 {
 		t.Fatalf("qr without a code: %d", r.StatusCode)
-	}
-
-	info := decode(t, req(t, s, "GET", "/admin/info", readerKey, ""))
-	if info["write_chat"] != OWN+"@s.whatsapp.net" || info["marker"] != "Celine: " ||
-		info["write_chat_name"] != "Message yourself" || info["part_chars"] != float64(partChars) {
-		t.Fatalf("info %v", info)
-	}
-	for _, bad := range []string{`{"marker":""}`, `{"marker":"   "}`, `{"marker":"` + strings.Repeat("x", 41) + `"}`, `{}`} {
-		if r := req(t, s, "PUT", "/admin/bridge", ownerKey, bad); r.StatusCode != 400 {
-			t.Errorf("%s: %d", bad, r.StatusCode)
-		}
-	}
-	info = decode(t, req(t, s, "PUT", "/admin/bridge", ownerKey, `{"marker":"C: "}`))
-	if info["marker"] != "C: " || marker() != "C: " {
-		t.Fatalf("marker %v", info)
-	}
-
-	base := time.Unix(1_800_000_000, 0)
-	clock = func() time.Time { return base }
-	if r := req(t, s, "POST", "/admin/bridge/lease", ownerKey, ""); r.StatusCode != 200 {
-		t.Fatalf("claim %d", r.StatusCode)
-	}
-	r := req(t, s, "POST", "/admin/bridge/lease", owner2Key, "")
-	if r.StatusCode != 409 || decode(t, r)["error"] != "Another instance holds the bridge." {
-		t.Fatal("a second owner took a held lease")
-	}
-	b := decode(t, req(t, s, "GET", "/admin/info", readerKey, ""))["bridge"].(map[string]any)
-	if b["holder"] != "live" {
-		t.Fatalf("bridge %v", b)
-	}
-	clock = func() time.Time { return base.Add(61 * time.Second) }
-	if r := req(t, s, "POST", "/admin/bridge/lease", owner2Key, ""); r.StatusCode != 200 {
-		t.Fatalf("after the TTL: %d", r.StatusCode)
-	}
-	if decode(t, req(t, s, "DELETE", "/admin/bridge/lease", ownerKey, ""))["released"] != false {
-		t.Fatal("a non-holder released the lease")
-	}
-	if decode(t, req(t, s, "DELETE", "/admin/bridge/lease", owner2Key, ""))["released"] != true {
-		t.Fatal("the holder could not release")
 	}
 }
 
@@ -264,7 +229,7 @@ func TestMediaDownloadKeepsTheFileAndRetryAnswersAreListed(t *testing.T) {
 			t.Errorf("%s: %d, want %d", body, got, want)
 		}
 	}
-	if _, retries, _ := log.kinds(); retries != 1 {
+	if _, retries := log.kinds(); retries != 1 {
 		t.Fatalf("retries %d", retries)
 	}
 	onMediaRetry(&events.MediaRetry{MessageID: "NOT-OURS"})
@@ -376,9 +341,8 @@ func TestDeleteAndIgnoreTakesAChatOutOfTheJournalForGood(t *testing.T) {
 	if r := req(t, s, "POST", "/admin/ignored", readerKey, body); r.StatusCode != 403 {
 		t.Fatalf("a reader deleted a chat: %d", r.StatusCode)
 	}
-	own := `{"chats":["` + OWN + `@s.whatsapp.net"]}`
-	if r := req(t, s, "POST", "/admin/ignored", ownerKey, own); r.StatusCode != 400 {
-		t.Fatalf("the bridged chat was deleted: %d", r.StatusCode)
+	if r := req(t, s, "POST", "/admin/ignored", ownerKey, `{"chats":[""]}`); r.StatusCode != 400 {
+		t.Fatalf("an empty chat key: %d", r.StatusCode)
 	}
 	r := req(t, s, "POST", "/admin/ignored", ownerKey, body)
 	if r.StatusCode != 200 || decode(t, r)["deleted"].(float64) < 2 {
@@ -413,5 +377,27 @@ func TestDeleteAndIgnoreTakesAChatOutOfTheJournalForGood(t *testing.T) {
 	}
 	if seq, _ := jr.Append(mediaMsg(GROUP, "G4", gone, T0+6)); seq == 0 {
 		t.Fatal("still ignored")
+	}
+}
+
+func TestAJournalFromTheBridgeForgetsWhatOnlyTheBridgeKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.db")
+	j, err := OpenJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.db.Exec(`CREATE TABLE sent (message_key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+		INSERT INTO kv (key, value) VALUES ('marker', 'Celine: '), ('retry:X', '{}')`); err != nil {
+		t.Fatal(err)
+	}
+	j.Close()
+	if j, err = OpenJournal(path); err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	var n int
+	_ = j.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'sent'").Scan(&n)
+	if n != 0 || j.Get("marker", "") != "" || j.Get("retry:X", "") != "{}" {
+		t.Fatalf("sent table %d, marker %q", n, j.Get("marker", ""))
 	}
 }

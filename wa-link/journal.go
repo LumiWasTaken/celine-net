@@ -2,9 +2,8 @@
 // <state>/journal.db. Never pruned but by the user: it is the device's complete copy and
 // the only source any app instance needs (GET /feed?after=0 gives the whole history),
 // except the chats the user deleted and ignored (`ignored`: their records and files are
-// gone, and nothing of them is journaled again until they are included again). The
-// `sent` table holds every message id wa-link itself sent (the bridge's loop guard);
-// `kv` holds the connector's own settings (the marker).
+// gone, and nothing of them is journaled again until they are included again). `kv`
+// holds the phone's answers to media retries (media.go).
 package main
 
 import (
@@ -22,8 +21,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go.mau.fi/whatsmeow/types"
 )
 
 const journalSchema = `
@@ -38,9 +35,11 @@ CREATE TABLE IF NOT EXISTS journal (
 );
 CREATE INDEX IF NOT EXISTS journal_key ON journal (kind, chat_key, message_key, seq);
 CREATE INDEX IF NOT EXISTS journal_chat_ts ON journal (chat_key, ts);
-CREATE TABLE IF NOT EXISTS sent (message_key TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS ignored (chat_key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+-- what the chat bridge kept, in a journal from before it was removed
+DROP TABLE IF EXISTS sent;
+DELETE FROM kv WHERE key = 'marker';
 `
 
 type Journal struct {
@@ -126,8 +125,8 @@ func recordKeys(r Rec) (kind, chat, msg string, ts int64) {
 	return
 }
 
-// Append journals a record unless it is already there (see below). A message wa-link
-// sent itself carries "from_link": true. Returns the seq (0 when nothing was appended).
+// Append journals a record unless it is already there (see below). Returns the seq (0
+// when nothing was appended).
 func (j *Journal) Append(r Rec) (int64, error) {
 	kind, chat, msg, ts := recordKeys(r)
 	if kind == "" {
@@ -139,14 +138,6 @@ func (j *Journal) Append(r Rec) (int64, error) {
 		var one int
 		if j.db.QueryRow("SELECT 1 FROM ignored WHERE chat_key = ?", chat).Scan(&one) == nil {
 			return 0, nil // deleted and ignored: the phone's history of it stays out
-		}
-	}
-	if kind == "message" && msg != "" {
-		if m := obj(r, "message"); m != nil && truthy(m, "from_me") {
-			var one int
-			if j.db.QueryRow("SELECT 1 FROM sent WHERE message_key = ?", msg).Scan(&one) == nil {
-				m["from_link"] = true
-			}
 		}
 	}
 	body, err := json.Marshal(r)
@@ -309,8 +300,7 @@ func (j *Journal) Ignored() ([]string, error) {
 //
 //	GET    /admin/ignored              -> {"chats": [...]}
 //	POST   /admin/ignored {"chats"}    -> {"deleted": n}: their records and files go, and
-//	                                      nothing of them is journaled again; never the
-//	                                      bridged chat
+//	                                      nothing of them is journaled again
 //	DELETE /admin/ignored?chat=<key>   -> {"ok": true}: included again
 func (j *Journal) handleIgnored(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -329,10 +319,9 @@ func (j *Journal) handleIgnored(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "need chats"})
 			return
 		}
-		own, _ := ownJID()
 		for _, c := range body.Chats {
-			if c == "" || (own.User != "" && c == own.User+"@"+types.DefaultUserServer) {
-				writeJSON(w, 400, map[string]string{"error": "This is the bridged chat. You cannot delete it."})
+			if c == "" {
+				writeJSON(w, 400, map[string]string{"error": "need chats"})
 				return
 			}
 		}
@@ -358,21 +347,7 @@ func (j *Journal) handleIgnored(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ---- sent ids and settings ------------------------------------------------------------
-
-func (j *Journal) MarkSent(id string, at int64) error {
-	_, err := j.db.Exec("INSERT OR IGNORE INTO sent (message_key, at) VALUES (?, ?)", id, at)
-	return err
-}
-
-func (j *Journal) Unsent(id string) {
-	_, _ = j.db.Exec("DELETE FROM sent WHERE message_key = ?", id)
-}
-
-func (j *Journal) IsSent(id string) bool {
-	var one int
-	return j.db.QueryRow("SELECT 1 FROM sent WHERE message_key = ?", id).Scan(&one) == nil
-}
+// ---- settings ----------------------------------------------------------------------------
 
 func (j *Journal) Get(key, def string) string {
 	var v string
