@@ -159,8 +159,11 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                 done_msg["reasoning"], messages, kbs, hidden)
         await turns.transition(store, tid, cid, "done", honor_abort=False)
         return
+    # a reply continued in place: the stored partial reply leaves the history, and what
+    # continues it (the prefill or the note) goes with its one step only
+    reopen_tail: list[dict] = []
     if reopen:
-        messages = _reopen_request(messages, reopen, backend, cfg, cid, tid)
+        messages, reopen_tail = _reopen_request(messages, reopen, backend, cfg, cid, tid)
 
     # the instructions and tools alone do not fit the model's context: no request can
     # succeed, and compacting cannot help
@@ -217,9 +220,10 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             ledger.view(tid, messages)
         grown = False
 
-        step_tools, step = (wire_tools, messages) if note is None else ([], messages + [
-            {"role": "user", "content": cfg.substitute(note[1]),
-             ORIGIN: context.origin(cid, turn=tid, note=note[0])}])
+        step_tools, step = (wire_tools, messages + reopen_tail) if note is None else (
+            [], messages + reopen_tail + [
+                {"role": "user", "content": cfg.substitute(note[1]),
+                 ORIGIN: context.origin(cid, turn=tid, note=note[0])}])
         if bare:
             step_tools = []
         if why := context.malformed(step, cid):
@@ -231,7 +235,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         await prompt.keep_request(cfg, cid, pieces, step, step_tools)
         out = await _stream_one(store, cid, tid, parent, backend, step, step_tools,
                                 token, iteration, reopen=reopen, quiet=quiet)
-        reopen = None
+        reopen, reopen_tail = None, []
         if isinstance(out, _Overflow) and emergency:
             # still too long after the emergency pass: nothing is left to shorten
             await _too_small(store, tid, cid, cfg, backend, out.n_prompt,
@@ -414,27 +418,26 @@ _NO_SPACE_BEFORE = ".,;:!?)]}'\"\u2019\u201d\u2026"
 
 
 def _reopen_request(messages: list[dict], reopen: dict, backend, cfg, cid: str,
-                    tid: str) -> list[dict]:
-    """The request that continues a cut-off reply in the same message. With prefill it
-    ends with the partial reply itself (the stored reply, taken off the history first);
-    otherwise with a note quoting its end."""
+                    tid: str) -> tuple[list[dict], list[dict]]:
+    """The request that continues a cut-off reply in the same message: -> (the history
+    with the stored partial reply taken off, what ends the continuing step). With
+    prefill that is the partial reply itself; otherwise a note quoting its end. The end
+    goes with that one step: the reply, once whole, joins the history as stored."""
     text = reopen.get("text") or ""
     if not text:
-        return messages                       # died before the first token: a new step
+        return messages, []                   # died before the first token: a new step
     mid = reopen["message_id"]
     out = [m for m in messages if not (m.get("role") == "assistant" and not m.get(
         "tool_calls") and any(o.get("message") == mid for o in m.get(ORIGIN) or ()))]
     if prompt.supports_prefill(backend):
-        out.append({"role": "assistant", "content": text,
-                    ORIGIN: context.origin(cid, turn=tid, message=mid)})
-        return out
+        return out, [{"role": "assistant", "content": text,
+                      ORIGIN: context.origin(cid, turn=tid, message=mid)}]
     tail = text[-200:]
-    out.append({"role": "user", "content": cfg.substitute(
+    return out, [{"role": "user", "content": cfg.substitute(
         f"(Automatic note, not written by {{{{username}}}}.) Your previous reply was cut "
         f"off after: \"…{tail}\". Continue it from exactly there, without repeating "
         f"anything and without a preface."), ORIGIN: context.origin(cid, turn=tid,
-                                                                   note="continue")})
-    return out
+                                                                   note="continue")}]
 
 
 async def _record_usage(store, cid, tid, iteration, backend, counter, estimate,
