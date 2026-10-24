@@ -61,7 +61,7 @@ Then the lifespan starts the parts in order: the store; the LLM queue and its Ro
 (before anything that may ask a model); the knowledge bases and their schedulers; the
 skills; the MCP supervisor and the connectors; the sweep of turns a crash or restart
 left behind (see Durable execution); the dispatcher's workers; the intercom and its
-timer; triggers; the scheduler; the terminal sync; the bridge; the config watcher; the
+timer; triggers; the scheduler; the terminal sync; the config watcher; the
 login's sessions; the health port.
 
 Everything the app runs is one `Services` object (`core/services.py`), made with the app
@@ -139,7 +139,7 @@ conversation can pick its own (`PATCH /api/conversations/{cid}/settings`).
 
 Who it is and how it sounds are fields of its row (Settings, the agent's page): `persona`, `talk`
 (null: the shipped `config/her/talk.md`) and its Banned words (`voice`). Every turn of
-its own gets all of it, whatever the kind: a chat, a bridged chat, a mission, a sub-agent,
+its own gets all of it, whatever the kind: a chat, a mission, a sub-agent,
 a background run (`prompt.system_blocks`, the one assembly). It reads them with
 `me__read` and changes its talk and its banned words with `me__edit` (`skills/me.py`);
 the persona stays yours. Every edit waits for your approval first (`approvals.py`, kind
@@ -684,8 +684,6 @@ only write rows; a closed gate still holds), `on`.
 - `POST /api/guard/banners/{id}/replies` `{text}` or `{button: approve | deny | unfreeze | once |
   pass}`; 503 `bastet_away` when the reader cannot answer
 - `GET /api/approvals`, `POST /api/approvals/{id}/answer` `{ok}` (`api/approvals.py`)
-- the bridged chat: `!freeze <why>`, `!unfreeze`, `!approve`, `!deny` from your own
-  messages only.
 
 **What code enforces** (`tests/test_gates_hold.py`): the floor under Bastet's judgement.
 - A closed gate never opens.
@@ -693,9 +691,7 @@ only write rows; a closed gate still holds), `on`.
   no model call through the proxy, no action with a named token.
 - Only you unfreeze, make a pass and answer an approval or a banner: those functions take
   an `Owner` (`guard/owner.py`), made only from a logged-in session (`guard/api.py`,
-  `api/approvals.py`) or
-  your own bridged message (`bridge/service.py`). No tool, model, intercom message or
-  Bastet's chat holds one.
+  `api/approvals.py`). No tool, model, intercom message or Bastet's chat holds one.
 - The agent's tools cannot reach the rule file, the database, the decisions, passes or freezes:
   file tools resolve every path inside their root, and the shellbox and the browser see
   only the shellbox folder of the data volume.
@@ -963,11 +959,11 @@ not built (the catalog's `tools`) and `/share/` and the open route answer 404 fo
 share, even one that still runs, which shows as not running.
 
 `intercom` (`intercom/skill.py`, guide `guides/intercom.md`, always loaded): its side of the
-intercom (see Intercom). `send(text, to, subject, reply_to, in, at, until, urgent, wait)`
+intercom (see Intercom). `send(text, to, subject, reply_to, in, at, until, wait)`
 writes to `user`, `me`, `parent`, `team`, `all`, a sub-agent's or mission's name or a
 conversation id; `in` or `at` make it land later (to `me`, a reminder that starts its turn);
-`until` on a message to `all` makes it an announcement; `urgent` also posts it in the
-bridged chat (`Bridge.say`). `read(thread, unread)` lists its threads or reads
+`until` on a message to `all` makes it an announcement. `read(thread, unread)` lists its
+threads or reads
 one; `cancel(id)` cancels a message it scheduled. Sub-agents in read mode have these tools
 too.
 
@@ -1098,22 +1094,15 @@ App side:
 - `kb/ignore.py`: "Delete and ignore". One list for every source, `ignored_chats`, which
   every Sink keeps to.
 - `mcp.py`: a block with `command` next to `url` is started only when the url does not
-  answer; it outlives the app. A connector's tools that are not read-only are hidden from
-  Celine; `Supervisor.call` reaches them for the bridge. Tool results' records are
-  archived and rendered as Messages archive lines, so they are citable.
-- `bridge/`: a connector bridges when its `/admin/info` names a `write_chat` (wa-link:
-  "Message yourself"; `part_chars` the longest message). Prompts there become intercom
-  messages to "Bridge (WhatsApp)", read from the archive after a cursor (kv
-  `bridge_cursor`) once the lease is held (60 s, renewed every 20 s). The agent's answer (the
-  turn's last reply without a tool call, `conversations/tree.final_words`) goes back from
-  the dispatcher's turn-end hook as it wrote it, only the markdown WhatsApp would show
-  as raw symbols in WhatsApp's own syntax (`bridge/render.py`), every part in order.
-  `say` sends its `intercom__send(to="user", urgent)`.
+  answer; it outlives the app. A connector only reads: a tool of its that is not
+  read-only is never offered to Celine. Tool results' records are archived and rendered
+  as Messages archive lines, so they are citable.
 - `api/connectors.py`: the source pages' routes.
 
 Write scope, enforced in the connectors and proven by their tests: discord-link's REST
-client refuses any method but GET and nothing else writes to Discord; wa-link writes only
-into the account's own "Message yourself" chat.
+client refuses any method but GET and nothing else writes to Discord; wa-link sends no
+message, only two requests to the account's own phone (older messages of one chat, a
+media retry receipt).
 
 ### Semantic
 

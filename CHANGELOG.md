@@ -29,6 +29,10 @@ the release as their tag (`CELINE_TAG=v1.2`, docs/DEPLOY.md "CI").
 - The terminal reads its colours from the theme.
 - opencode 1.19.4 in the shellbox; it picks up models added after the box started.
 
+### Removed
+
+- The WhatsApp chat bridge: she no longer answers or writes in your "Message yourself" chat, and approvals, freezes and Bastet's notes reach you in the app only. Bridged conversations become ordinary chats. The Discord and WhatsApp archives stay.
+
 ### Fixed
 
 - A missing model or a rejected key moves on to the next model; a chat whose model is gone says which.

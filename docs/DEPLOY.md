@@ -21,7 +21,7 @@ GPU). Every other service except `celine` is optional too: see Profiles.
 |---|---|---|
 | `celine` | `celine-app` | The server and the web UI. |
 | `discord-link` | `celine-discord-link` | Owns the Discord login, keeps a journal, serves Celine's Discord read tools. |
-| `wa-link` | `celine-wa-link` | Owns the WhatsApp linked device, keeps a journal, serves Celine's WhatsApp tools and the bridged chat. |
+| `wa-link` | `celine-wa-link` | Owns the WhatsApp linked device, keeps a journal, serves Celine's WhatsApp read tools. |
 | `searxng` | `searxng/searxng` | A private metasearch engine for Celine's web skill. |
 | `reranker` | `ggml-org/llama.cpp:server` | bge-reranker-v2-m3 on llama-server, for the Reranking task. Only with the profile `reranker`. |
 | `shellbox` | `celine-shellbox` | Celine's own Debian computer, where its terminals run. |
@@ -81,8 +81,6 @@ the app, in this order:
    Settings, Linked devices, Link a device). The phone then sends its history.
    It is an unofficial client, which WhatsApp does not allow and may ban the number
    for; use it at your own risk.
-5. **The bridged chat** (optional), on the WhatsApp page: the switch. You then text
-   Celine in your own "Message yourself" chat.
 
 A connector with no internet access is a normal state: the source page says so, and
 "Sync now" catches up by hand once it is back.
@@ -455,7 +453,7 @@ process keeps running when the app stops. In Docker they are services of their o
 
 - Keys: the clients file (`-clients-file`, in Docker `/data/connector-clients`, the
   app's `keys/connector-clients` mounted read-only) lists who may connect, `name:key:role`
-  one per line or comma separated. `owner` may change the account and hold the bridged chat;
+  one per line or comma separated. `owner` may change the account and delete chats;
   `reader` may only read (a second app instance). The app uses `keys/connector.key`,
   which `celine keys` writes into that file as `live`. The connectors' health checks use
   the first key in the file.

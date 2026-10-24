@@ -44,7 +44,7 @@ The map of the code and the rules it follows.
 | `attachments.py`, `box_files.py` | files on a message; files between the app and the box |
 | `comfyui/`, `image_catalog.py`, `vision.py` | images and music; the model catalog; one question about one image |
 | `terminals/`, `browser/`, `vault/`, `artifacts/`, `shares.py` | terminals, browser, vault (bw), pages, and shares of its box at /share/<token>/ |
-| `bridge/`, `mcp.py` | the bridged chat (WhatsApp); MCP servers as skills |
+| `mcp.py` | MCP servers as skills |
 | `auth/` | login: passkey, password, PIN |
 | `api/` | HTTP routes and the WebSocket |
 | `clock.py`, `errors.py`, `logs.py`, `ops.py`, `keys.py` | time zone; errors; logging; `celine doctor/export/purge/keys` |
