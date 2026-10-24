@@ -2,13 +2,14 @@
    (your name, time zone, what you write about you), each saved when you leave it; Chats
    (Lock archived chats, Describe new chat photos), saved on change. How the app looks is
    Appearance; its name is its own (Her.tsx). Source code: the code this build runs, its
-   commit on the link (the server's `build`, the AGPL's offer). Advanced: the time limits and sizes (the
-   server's `advanced` fields), each saved on change (lib/useAutosave). */
+   commit on the link (the server's `build`, the AGPL's offer). Advanced: the time limits and
+   sizes (the server's `advanced` fields; a skill's own under its label), each saved on change
+   (lib/useAutosave). */
 import { useEffect } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import type { ConfigStatus } from '../../lib/api'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
-import { settingsApi } from '../../lib/settingsApi'
+import { settingsApi, type FieldSchema } from '../../lib/settingsApi'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
 import { Button, Field, InlineError, Input, Section, TextArea } from '../../ui'
@@ -46,16 +47,14 @@ export function General({ status }: { status: ConfigStatus | null }) {
 export function Advanced() {
   return (
     <Page title="Advanced">
-      <Section>
-        <GeneralFields advanced />
-      </Section>
+      <GeneralFields advanced />
     </Page>
   )
 }
 
-/* The general settings from the server's schema: the ones named, or the Advanced ones.
-   Several pages show a few of them; each save sends the whole object back (the API
-   replaces it). */
+/* The general settings from the server's schema: the ones named, or the Advanced ones
+   (the app's own, then one section per skill, by the server's `group`). Several pages
+   show a few of them; each save sends the whole object back (the API replaces it). */
 export function GeneralFields({ only, advanced = false }: { only?: string[]; advanced?: boolean }) {
   const online = useOnline()
   const res = useResource(() => settingsApi.general(), [],
@@ -65,15 +64,26 @@ export function GeneralFields({ only, advanced = false }: { only?: string[]; adv
     res.set(d => d && { ...d, general: r.general })
   })
   if (res.data === undefined && !res.error) return null
-  if (!res.data) return <InlineError compact message={res.error} onRetry={res.reload} />
+  if (!res.data) {
+    const error = <InlineError compact message={res.error} onRetry={res.reload} />
+    return advanced ? <Section>{error}</Section> : error
+  }
   const schema = res.data.fields.filter(f => only ? only.includes(f.key) : advanced && f.advanced)
   if (schema.length === 0) return null
-  return (
+  const values = { ...res.data.general, ...auto.pending }
+  const form = (fields: FieldSchema[], withError = false) => (
     <div title={online ? undefined : OFFLINE_TITLE}>
-      <SchemaForm schema={schema} values={{ ...res.data.general, ...auto.pending }} disabled={!online}
-                  onChange={(k, v) => auto.set(k, v)} />
-      {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
+      <SchemaForm schema={fields} values={values} disabled={!online} onChange={(k, v) => auto.set(k, v)} />
+      {withError && auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
     </div>
+  )
+  if (!advanced) return form(schema, true)
+  const groups = [...new Set(schema.map(f => f.group).filter((g): g is string => !!g))]
+  return (
+    <>
+      <Section>{form(schema.filter(f => !f.group), true)}</Section>
+      {groups.map(g => <Section key={g} title={g}>{form(schema.filter(f => f.group === g))}</Section>)}
+    </>
   )
 }
 

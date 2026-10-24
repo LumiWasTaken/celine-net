@@ -63,7 +63,7 @@ class CliBackend:
             raise BackendError("There is no brief to work on.", retryable=False)
         term = await terminals.default_terminal(store, self.cid)
         folder = f"agents/{term}"
-        minutes = float(self.services.cfg.skill("sub_agents").get("cli_minutes", 120))
+        minutes = float(self.services.cfg.r("sub_agents.cli_minutes"))
         if self.clock is not None:          # the CLI's minutes are its own, not the turn's
             self.clock.deadline = max(self.clock.deadline,
                                       anyio.current_time() + minutes * 60 + 300)

@@ -1,7 +1,7 @@
 """The web: search through a self-hosted SearXNG, read pages with a local extractor.
 
-Nothing here needs an API key or an account. Search goes to SearXNG (config/skills.toml
-the address in Settings, Features, Web search: settings/services.py; docker-compose.yml runs one), which
+Nothing here needs an API key or an account. Search goes to SearXNG (the address in
+Settings, Features, Web search: settings/services.py; docker-compose.yml runs one), which
 asks the public engines on its behalf without cookies or tracking. `read_page` fetches the
 page itself and extracts the readable text with trafilatura (HTML) or pypdf (PDF).
 
@@ -36,7 +36,7 @@ import anyio
 import httpx
 
 from ..turns.compact import one_line
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, knob, tool, described
 from ..errors import ToolRefused, unreachable_words
 from ..settings import services as services_mod
 
@@ -44,8 +44,19 @@ DEFAULT_UA = ("Mozilla/5.0 (compatible; Celine/0.1; self-hosted personal assista
               "reads pages on request of its user)")
 MAX_REDIRECTS = 5
 SNIPPET_CHARS = 260
-READ_TOKENS = 6000                  # one part of a page, before the result cap
 PROBE_EVERY = 60.0                  # seconds a SearXNG check answers for
+# Settings, Advanced, read at use (cfg.r)
+KNOBS = (
+    knob("web.results", "Search results", None, 1, 20, 8,
+         "By default; it may ask for up to 20."),
+    knob("web.search_timeout", "Search time limit", "seconds", 1, 3600, 15),
+    knob("web.read_tokens", "Page part", "tokens", 100, 1_000_000, 6000,
+         "A longer page is read in parts."),
+    knob("web.timeout", "Page time limit", "seconds", 1, 3600, 20,
+         "One fetch, redirects included."),
+    knob("web.page_max_mb", "Largest page", "MB", 1, 10_000, 5),
+    knob("web.pdf_max_mb", "Largest PDF", "MB", 1, 10_000, 25),
+)
 
 
 def search_down_text(endpoint: str, e: Exception | int) -> str:
@@ -482,10 +493,6 @@ class Web:
             return why.rstrip() + " Your browser is on: search there."
         return why
 
-    def _c(self, key: str, default):
-        v = self.cfg.skill("web").get(key)
-        return default if v in (None, "") else v
-
     @property
     def endpoint(self) -> str:
         return services_mod.url(self.cfg, "searxng") or services_mod.default("searxng")
@@ -522,7 +529,7 @@ class Web:
         q = " ".join((query or "").split())
         if not q:
             return ToolResult(content="The query is empty.", is_error=True)
-        want = max(1, min(int(limit or self._c("results", 8)), 20))
+        want = max(1, min(int(limit or self.cfg.r("web.results")), 20))
         params: dict[str, Any] = {"q": q, "format": "json", "pageno": max(1, int(page or 1))}
         if time_range:
             if time_range not in ("day", "week", "month", "year"):
@@ -531,7 +538,7 @@ class Web:
             params["time_range"] = time_range
         if language:
             params["language"] = language.strip()
-        timeout = float(self._c("search_timeout", 15))
+        timeout = float(self.cfg.r("web.search_timeout"))
         try:
             async with httpx.AsyncClient(transport=self.transport, trust_env=False,
                                          timeout=timeout) as client:
@@ -639,16 +646,15 @@ class Web:
         else:
             try:
                 page = await fetch(
-                    raw, ua=str(self._c("user_agent", DEFAULT_UA)),
-                    timeout=float(self._c("timeout", 20)),
-                    max_bytes=int(self._c("max_bytes", 5_000_000)),
-                    pdf_max_bytes=int(self._c("pdf_max_bytes", 25_000_000)),
+                    raw, ua=DEFAULT_UA, timeout=float(self.cfg.r("web.timeout")),
+                    max_bytes=int(self.cfg.r("web.page_max_mb")) * 1024 * 1024,
+                    pdf_max_bytes=int(self.cfg.r("web.pdf_max_mb")) * 1024 * 1024,
                     transport=self.transport, check_addresses=self.check_addresses)
             except ToolRefused as e:
                 return ToolResult(content=f"not read: {e}", is_error=True)
             except (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError):
                 return ToolResult(content=f"could not fetch {raw}: the site did not answer "
-                                          f"within {float(self._c('timeout', 20)):g} s.",
+                                          f"within {self.cfg.r('web.timeout')} s.",
                                   is_error=True)
             except httpx.ConnectError:
                 return ToolResult(content=f"could not fetch {raw}: the site refused the "
@@ -671,7 +677,7 @@ class Web:
 
         n = _number(table, raw)
         table.setdefault(_canon(final), n)
-        budget = int(self._c("read_tokens", READ_TOKENS))
+        budget = int(self.cfg.r("web.read_tokens"))
         if ctx.max_output_tokens:
             budget = max(800, min(budget, int(ctx.max_output_tokens) - 200))
         text = (doc.get("text") or "").strip()

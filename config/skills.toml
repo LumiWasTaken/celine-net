@@ -4,21 +4,21 @@
 # Turning a tool off does not hide it from Celine. It still sees it listed and
 # is told you turned it off, so it can say so instead of pretending it never
 # existed.
+#
+# A skill's numbers (result sizes, time limits, caps) are on Settings, Advanced, under
+# the skill's name: each skill declares them beside its code (`KNOBS`).
 
 [notebook]
 enabled = true
 # The agent's notes. Real files in var/notebook, in whatever format it picks.
-# An index it maintains is injected into every system prompt, capped both ways:
-index_max_entries = 10        # it is told this number
-index_max_bytes   = 4000      # and the budget, so 10 essays cannot blow the prompt
-# Notes loaded in full (by need, var/settings/context.toml, turns/loads.py) are
-# left out of the index.
-# Files it can read and never write or delete. identity.md is yours: it goes into
-# every system prompt in full, so editing it is how you edit who it is. The two
+# An index it maintains is injected into every system prompt, capped both ways
+# (Settings, Advanced). Notes loaded in full (by need, var/settings/context.toml,
+# turns/loads.py) are left out of the index.
+# Files it can read and never write or delete: identity.md is yours, it goes into
+# every system prompt in full, so editing it is how you edit who it is; the two
 # READMEs keep opinions/ and appearance/ in place and tell it what goes there.
-# All three are created once, at startup, if missing. Edit them in its notebook,
-# var/notebook/.
-protected = ["identity.md", "opinions/README.md", "appearance/README.md"]
+# All three are created once, at startup, if missing (skills/notebook.py SEEDS). Edit
+# them in its notebook, var/notebook/.
 
 [mind]
 enabled = true
@@ -35,8 +35,6 @@ enabled = true
 # The agent's coding agent in its shellbox (skills/code.py; the box runs the backend CODING_AGENT
 # names, shellbox/agents/, default opencode): a task in a folder of its own, in the
 # background, with a model it picks from models__list.
-poll_seconds = 20      # how long it waits between two code__status looks (it is told)
-result_chars = 2000    # characters of the agent's last answer code__result carries
 
 [bugreport]
 enabled = true
@@ -79,15 +77,12 @@ enabled = true
 # them, with the same checks as the Routines page; its changes show as its own.
 
 [past_conversations]
-enabled       = true
+enabled = true
 # Word search over its own earlier conversations, without the current one.
-max_results   = 20
-snippet_chars = 240
 
 [sub_agents]
 enabled = true
 # The agent's sub-agents (sub_agents/skill.py): a brief in a new conversation of its own.
-max_running = 4               # per conversation, at once; a start over it is queued
 
 [chat_archive]
 enabled = true
@@ -95,25 +90,9 @@ enabled = true
 # search (semantic topic search + word search, reranked, match windows), count,
 # read_session, read_period, scroll, get_messages, look_up, mark_same_person.
 # Which tools are on by default: Settings, Tools (var/settings/tools.toml).
-scroll_max_messages = 20  # scroll(ref): the most new messages per side in one call
-scroll_max_tokens = 4000  # scroll(ref): one result, both sides together
-get_max_refs = 50         # get_messages(refs): the most messages one call returns
-# No search or token limit per turn: open questions are answered in waves of many
-# searches and reads; the context builder (turns/context.py) shortens old results.
-session_max_tokens  = 4000     # read_session(ref): a longer session is cut around it
-period_max_tokens   = 40000    # read_period(chat, when): a period up to this comes back whole
-max_tokens_cap      = 100000   # the most it may ask for with max_tokens
-search_max_tokens     = 7000   # one search result, mode=best
-search_max_tokens_all = 14000  # mode=all
 # Retrieval (kb/retrieve): query embeddings (the Topic Search role's query model), then
 # a cross-encoder reranker (the Reranking role; empty turns reranking off). Both are
 # chosen in Settings, Models.
-candidates        = 50         # reranked per search
-rerank_floor      = -4.0       # below: not about it (dropped for order first/last, mode all)
-episode_gap_minutes = 30
-# After its final answer: every [[kb:id]] must have been shown by a tool, quotes and
-# speakers must match; a wrong ref is marked [[kb:id|invalid]] in its text.
-verify_citations = true
 
 [user_documents]
 enabled = true
@@ -152,13 +131,6 @@ enabled = true
 # `searxng`; no API keys, no tracking), read pages and PDFs with a local extractor.
 # Queries and fetched URLs leave this machine; it is told never to put archive
 # content into them unless you asked. Only public http(s) addresses are fetched.
-results       = 8          # search results by default (it may ask for up to 20)
-search_timeout = 15        # seconds
-read_tokens   = 6000       # one part of a long page; it pages with part=
-timeout       = 20         # seconds for one fetch, redirects included
-max_bytes     = 5000000    # HTML/text
-pdf_max_bytes = 25000000
-# user_agent = "..."       # default names Celine as a self-hosted personal assistant
 
 [email]
 enabled = true

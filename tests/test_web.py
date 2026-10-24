@@ -65,8 +65,9 @@ async def test_private_and_local_addresses_are_refused(monkeypatch):
 
 
 async def test_read_refuses_local_urls_and_redirects_to_them():
+    from celine.settings import general
     cfg = SimpleNamespace(user="sam", name="Celine", substitute=lambda s: s,
-                          skill=lambda n: {"enabled": True},
+                          skill=lambda n: {"enabled": True}, r=lambda key: general.value({}, key),
                           settings=SimpleNamespace(services={}),
                           skill_enabled=lambda n: n == "web")
     hosts: list[str] = []

@@ -15,7 +15,34 @@ import anyio
 
 from ..kb.identity import REF
 from ..turns import ledger
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, knob, tool, described
+
+# Settings, Advanced, read at use (cfg.r). No search or token limit per turn: open
+# questions are answered in waves of searches and reads, and the context builder
+# (turns/context.py) shortens old results.
+KNOBS = (
+    knob("chat_archive.search_max_tokens", "Search result length", "tokens", 100,
+         10_000_000, 7000),
+    knob("chat_archive.search_max_tokens_all", "Search result length, all matches",
+         "tokens", 100, 10_000_000, 14_000),
+    knob("chat_archive.candidates", "Reranked per search", None, 1, 10_000, 50),
+    knob("chat_archive.rerank_floor", "Rerank floor", None, -1000.0, 1000.0, -4.0,
+         "A match the reranker scores below this is not about the search."),
+    knob("chat_archive.episode_gap_minutes", "Episode gap", "minutes", 1, 100_000, 30,
+         "A longer silence starts a new episode."),
+    knob("chat_archive.session_max_tokens", "Session length", "tokens", 100, 10_000_000,
+         4000, "A longer session is cut around the message."),
+    knob("chat_archive.period_max_tokens", "Date range length", "tokens", 100, 10_000_000,
+         40_000, "A date range up to this comes back whole."),
+    knob("chat_archive.max_tokens_cap", "Longest read", "tokens", 100, 10_000_000,
+         100_000, "The most one read may ask for."),
+    knob("chat_archive.scroll_max_messages", "Messages per scroll", None, 1, 10_000, 20,
+         "On each side, in one call."),
+    knob("chat_archive.scroll_max_tokens", "Scroll length", "tokens", 100, 10_000_000,
+         4000),
+    knob("chat_archive.get_max_refs", "Messages per lookup", None, 1, 10_000, 50,
+         "By reference, in one call."),
+)
 
 
 def _when(ms: int | None) -> str:
@@ -519,13 +546,16 @@ class ChatArchive:
             return ToolResult(content=str(e), is_error=True)
         scope = res_scope
 
-        s = self.cfg.skill("chat_archive")
+        r = self.cfg.r
         titles = {k.id: k.title for k in kbs.pick(None)}
 
         def search():
             # in the worker thread: choosing the models may ask their servers
             embed, prefix, why = self._embedder()
-            settings = Settings.from_dict({**s, "query_prefix": prefix})
+            settings = Settings(candidates=int(r("chat_archive.candidates")),
+                                rerank_floor=float(r("chat_archive.rerank_floor")),
+                                episode_gap_minutes=int(r("chat_archive.episode_gap_minutes")),
+                                query_prefix=prefix)
             return retrieve(kbs, _as_list(words), scope, about=_as_list(about),
                             order=order, mode=mode, me=self.me, embed=embed, embed_why=why,
                             reranker=from_config(self.cfg), settings=settings)
@@ -543,8 +573,8 @@ class ChatArchive:
         if res.years:
             head.append("per year: " + ", ".join(f"{y} {n:,}" for y, n in res.years.items()))
         head += res.notes
-        cap = int(s.get("search_max_tokens_all" if mode == "all" else "search_max_tokens",
-                        14_000 if mode == "all" else 7_000))
+        cap = int(r("chat_archive.search_max_tokens_all" if mode == "all"
+                    else "chat_archive.search_max_tokens"))
         cap = self._cap(ctx, cap)
         shown, seen_calls, seen_n, cut, used = [], set(), 0, 0, 0
         for e in res.episodes:
@@ -901,7 +931,7 @@ class ChatArchive:
         from ..kb.chat import ChatKB
         from ..kb.retrieve import episodes as E
         led = ledger.get(ctx.turn_id)
-        cap = int(self.cfg.skill("chat_archive").get("get_max_refs", 50))
+        cap = int(self.cfg.r("chat_archive.get_max_refs"))
         items = [r.strip().strip("[]") for r in _as_list(refs)]
         items = list(dict.fromkeys(r for r in items if r))
         if not items:
@@ -975,9 +1005,9 @@ class ChatArchive:
         from ..kb.chat import ChatKB
         from ..kb.retrieve import episodes as E
         led = ledger.get(ctx.turn_id)
-        s = self.cfg.skill("chat_archive")
-        per_side = max(1, min(int(count or 20), int(s.get("scroll_max_messages", 20))))
-        budget = self._cap(ctx, int(s.get("scroll_max_tokens", 4000)))
+        most = int(self.cfg.r("chat_archive.scroll_max_messages"))
+        per_side = max(1, min(int(count or most), most))
+        budget = self._cap(ctx, int(self.cfg.r("chat_archive.scroll_max_tokens")))
         kid, _, mid = str(ref or "").strip().strip("[]").partition(":")
         kb = self._kbs().get(kid)
         if not isinstance(kb, ChatKB) or not mid.isdigit():
@@ -1190,9 +1220,8 @@ class ChatArchive:
             return ToolResult(content=wrong or f"There is no message {ref}.", is_error=True)
         chat = m["chat"] or {}
         chat_id = int(chat.get("id"))
-        s = self.cfg.skill("chat_archive")
-        cap = int(s.get("max_tokens_cap", 100_000))
-        budget = min(int(max_tokens or s.get("session_max_tokens", 4000)), cap)
+        cap = int(self.cfg.r("chat_archive.max_tokens_cap"))
+        budget = min(int(max_tokens or self.cfg.r("chat_archive.session_max_tokens")), cap)
         budget = self._cap(ctx, budget)
         msgs, total = await anyio.to_thread.run_sync(
             lambda: self._session_around(kb, chat_id, m, budget))
@@ -1283,9 +1312,8 @@ class ChatArchive:
         from ..kb.retrieve import episodes as E
         from ..kb.retrieve.scope import Ambiguous, resolve_chat
         from ..kb.retrieve.when import parse_when
-        s = self.cfg.skill("chat_archive")
-        cap = int(s.get("max_tokens_cap", 100_000))
-        budget = min(int(max_tokens or s.get("period_max_tokens", 40_000)), cap)
+        cap = int(self.cfg.r("chat_archive.max_tokens_cap"))
+        budget = min(int(max_tokens or self.cfg.r("chat_archive.period_max_tokens")), cap)
         budget = self._cap(ctx, budget)
         kbs = self._kbs()
         chat_kbs = kbs.chats()

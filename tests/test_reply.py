@@ -31,7 +31,8 @@ class KBs:
 
 
 def cfg():
-    return SimpleNamespace(user="Joe", skill=lambda name: {})
+    from celine.settings import general
+    return SimpleNamespace(user="Joe", r=lambda key: general.value({}, key))
 
 
 async def test_the_chain_in_order():

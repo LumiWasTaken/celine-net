@@ -16,14 +16,22 @@ from typing import Annotated, Literal
 from ..turns import ledger
 from ..config import CONFIG_DIR
 from ..turns.compact import one_line
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, knob, tool, described
 from . import notebook_index
 from .web import linked
 from .anchors import Edit, EditRefused, apply, is_stamp, lines_of, numbered, plan
 from ..clock import zone
 from ..errors import ToolRefused
 
-# the seeds ship as config/notebook_seed/<rel>, copied once, its own from then on
+# Settings, Advanced, read at use (cfg.r): the index in every system prompt, capped both
+# ways, and both caps are told to it
+KNOBS = (
+    knob("notebook.index_max_entries", "Notes in the index", None, 1, 10_000, 10,
+         "The index of its notebook in every system prompt."),
+    knob("notebook.index_max_chars", "Index length", "characters", 100, 1_000_000, 4000),
+)
+# the seeds ship as config/notebook_seed/<rel>, copied once, its own from then on; it reads
+# them and never writes or deletes them (owner "config")
 SEEDS = {
     "identity.md": "who you are, written by {{username}}",
     "opinions/README.md": "what goes under opinions/",
@@ -51,8 +59,7 @@ class Notebook:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        protected = cfg.skill("notebook").get("protected")
-        self.protected = {str(p) for p in (protected if protected is not None else SEEDS)}
+        self.protected = set(SEEDS)
         # the notes the user marked as theirs, toggled from the browser (kv)
         self.marked: set[str] = set()
 
@@ -785,9 +792,8 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
     only entries inside the folder are shown. The notes `loaded` in full are left out:
     they are in its request already (the always ones in the system prompt, the others
     in the tail)."""
-    nb = cfg.skill("notebook")
-    max_entries = int(nb.get("index_max_entries", 10))
-    max_bytes = int(nb.get("index_max_bytes", 4000))
+    max_entries = int(cfg.r("notebook.index_max_entries"))
+    max_chars = int(cfg.r("notebook.index_max_chars"))
 
     rows = [r for r in await notebook_index.list(store, folder, order="touched")
             if r["path"] not in loaded]
@@ -803,7 +809,7 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
         if shown >= max_entries:
             break
         line = f"    {row['path']} - {row['summary']}{tag(row['path'])}"
-        if used + len(line) > max_bytes:
+        if used + len(line) > max_chars:
             crowded += 1
             continue
         lines.append(line)
@@ -822,7 +828,7 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
                    f"not shown. notebook__search finds them.")
     if crowded:
         out.append(f"{crowded} did not fit in your index budget "
-                   f"({max_bytes} bytes). Shorter summaries let more of them fit.")
+                   f"({max_chars} characters). Shorter summaries let more of them fit.")
     return "\n".join(out)
 
 

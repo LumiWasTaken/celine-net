@@ -14,9 +14,14 @@ from ..conversations import store as conversations, tree
 from ..core.ids import iso
 from ..conversations.store import locked_sql
 from ..turns.compact import one_line
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, knob, tool, described
 from ..clock import zone
 
+# Settings, Advanced, read at use (cfg.r)
+KNOBS = (
+    knob("past_conversations.max_results", "Matches per search", None, 1, 1000, 20),
+    knob("past_conversations.snippet_chars", "Snippet length", "characters", 40, 10_000, 240),
+)
 READ_TOKENS = 8000          # one read, before the result cap
 LINE = 120                  # characters of a first or last line in the day's index
 
@@ -84,9 +89,6 @@ class PastConversations:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        s = cfg.skill("past_conversations")
-        self.max_results = int(s.get("max_results", 20))
-        self.snippet_chars = int(s.get("snippet_chars", 240))
 
     def _who(self, role: str, author: str | None = None) -> str:
         if author == "intercom":
@@ -110,10 +112,12 @@ class PastConversations:
         The current conversation is left out. Do not use it for their WhatsApp or Discord
         chats: use chat_archive. Returns: one line per match: date, title, conversation
         id, author, snippet. An archived conversation is over: leave its tasks."""
-        n = min(int(limit or self.max_results), self.max_results)
+        most = int(self.cfg.r("past_conversations.max_results"))
+        n = min(int(limit or most), most)
+        chars = int(self.cfg.r("past_conversations.snippet_chars"))
         hits = await conversations.search(
             ctx.store, query, exclude=ctx.conversation_id, limit=n,
-            snippet_tokens=max(8, min(64, self.snippet_chars // 5)))
+            snippet_tokens=max(8, min(64, chars // 5)))
         if not hits:
             return ToolResult(content=f"No earlier conversation contains {query!r}. For "
                                       f"their chats, use the Messages archive.")

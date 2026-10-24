@@ -154,6 +154,8 @@ export type FieldSchema = {
   editable?: boolean
   /** on the Advanced page (general settings) */
   advanced?: boolean
+  /** an Advanced field's skill, by its label: a section of its own */
+  group?: string
   /** a text of several lines: a text box */
   long?: boolean
 }

@@ -49,7 +49,7 @@ async def stored(store, cfg, cid: str, mid: str, text: str | None, messages, hid
     text = web.normalize(text)
     if not text or not verify.citations(text):
         return text
-    if kbs is None or not bool(cfg.skill("chat_archive").get("verify_citations", True)):
+    if kbs is None or not cfg.r("verify_citations"):
         return web.link(text, web_shown)
     try:
         chat_kbs = kbs.citable()      # the chat sources and Documents

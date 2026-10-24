@@ -29,7 +29,7 @@ import anyio
 from .. import homes, metrics, prompts
 from ..conversations import store as conversations, tree
 from ..core.ids import now
-from ..skills import ToolContext, ToolResult, guide, tool, described
+from ..skills import ToolContext, ToolResult, guide, knob, tool, described
 from ..settings import her_models
 from ..skills import words
 from ..skills.gating import overrides_for
@@ -41,6 +41,13 @@ from ..core.event_types import AGENT_STATE
 MIN_NAME = 5
 MAX_NAME = 60
 MAX_WAIT = 600      # seconds `read` waits for a sub-agent at most
+# Settings, Advanced, read at use (cfg.r)
+KNOBS = (
+    knob("sub_agents.max_running", "Sub-agents at once", None, 1, 1000, 4,
+         "Per conversation; a start over it waits its turn."),
+    knob("sub_agents.cli_minutes", "Agent CLI time limit", "minutes", 1, 100_000, 120,
+         "One sub-agent that works through an agent CLI in its shellbox."),
+)
 
 
 async def model_for_sub_agent(store, parent_cid: str) -> dict:
@@ -352,7 +359,7 @@ class SubAgents:
 
 def max_running(cfg) -> int:
     """How many sub-agents of one parent run at once; the others wait queued."""
-    return int(cfg.skill("sub_agents").get("max_running", 4))
+    return int(cfg.r("sub_agents.max_running"))
 
 
 def agents_of(c: sqlite3.Connection, parent: str | None = None, *,

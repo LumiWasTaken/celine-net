@@ -212,7 +212,7 @@ async def test_a_stop_sticks_a_stopped_sub_agent_reports_quietly_and_its_schedul
 
 async def test_a_start_over_max_running_is_queued_and_starts_when_one_is_done(store, cfg):
     """More sub-agents than the limit are queued, not refused."""
-    cfg.skills["sub_agents"] = {**cfg.skills.get("sub_agents", {}), "max_running": 1}
+    cfg.settings.general["sub_agents.max_running"] = 1
     parent = await conversations.create(store, "p")
     d = Dispatcher(store, cfg, EventBus(), lambda: None, Registry())
     app = Services(cfg=cfg, store=store, dispatcher=d, intercom=Intercom(store, d.notify))
@@ -265,7 +265,7 @@ async def test_a_mission_starts_no_more_sub_agents_than_advanced_allows(store, c
 
 
 async def test_stopping_a_queued_sub_agent_drops_its_brief(store, cfg):
-    cfg.skills["sub_agents"] = {**cfg.skills.get("sub_agents", {}), "max_running": 0}
+    cfg.settings.general["sub_agents.max_running"] = 0
     parent = await conversations.create(store, "p")
     d = Dispatcher(store, cfg, EventBus(), lambda: None, Registry())
     app = Services(cfg=cfg, store=store, dispatcher=d, intercom=Intercom(store, d.notify))

@@ -5,9 +5,15 @@ Your name lives here (its own name and pronouns are its own, celine.her); how th
 served (host, port, login) stays in config/celine.toml. Each field here has a schema the
 UI renders as a generic form; an `advanced` one is on the Advanced page. Every reader
 asks `cfg.r(key)` (or `value`) when it runs, so a save applies at once.
+
+A skill's own numbers are not here: each skill declares them beside its code (`KNOBS`,
+skills.knob), and `fields()` adds those of every skill that is there, keyed
+`<skill>.<name>` and grouped under the skill's label. var/settings/general.toml keeps them
+in a table per skill; a table of a skill that is gone is dropped with it.
 """
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 from .files import Invalid
@@ -86,7 +92,7 @@ FIELDS: list[dict[str, Any]] = [
         ("document_pdf_pages", "PDF pages read", "pages", 1, 1_000_000, 5000, None),
         ("document_pdf_seconds", "PDF read time limit", "seconds", 1, 86_400, 600, None),
     )),
-    # Advanced switches, read where they are used (schedules, missions)
+    # Advanced switches, read where they are used (schedules, missions, answers)
     *({"key": k, "label": label, "type": "bool", "default": d, "advanced": True,
        "help": tip}
       for k, label, d, tip in (
@@ -94,23 +100,54 @@ FIELDS: list[dict[str, Any]] = [
          "A routine waits while a mission goes on by itself."),
         ("missions_resume_after_unfreeze", "Continue missions after Unfreeze", True,
          "A mission that a freeze stopped continues automatically after Unfreeze."),
+        # turns/reply.py: the [[kb:id]] citations of an answer
+        ("verify_citations", "Check citations", True,
+         "Every message or document an answer cites must be one a tool showed."),
     )),
 ]
-_BY_KEY = {f["key"]: f for f in FIELDS}
+
+
+@functools.cache
+def schema() -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], frozenset[str]]:
+    """(every field: FIELDS, then each skill's knobs, advanced and under the skill's
+    label; the same by key; the skills that are there). Read once: a skill comes or goes
+    with the code, never while it runs."""
+    from ..skills import BUILTIN, knob_fields, module
+    from .tools_meta import SKILLS, humanize
+    out = [*FIELDS, *({**f, "advanced": True,
+                       "group": SKILLS.get(name, {}).get("label") or humanize(name)}
+                      for name, f in knob_fields())]
+    there = frozenset(name for name, mod, _ in BUILTIN if module(mod) is not None)
+    return out, {f["key"]: f for f in out}, there
+
+
+def fields() -> list[dict[str, Any]]:
+    return schema()[0]
 
 
 def value(general: dict[str, Any], key: str) -> Any:
     """A general setting, or its default when it was never saved."""
-    return general.get(key, _BY_KEY[key]["default"])
+    return general.get(key, schema()[1][key]["default"])
 
 
 def validate(data: Any) -> dict[str, Any]:
+    """Flat keys in, flat keys out; a skill's table (`[web]` in the file) is read as its
+    `web.<name>` keys."""
     if not isinstance(data, dict):
         raise Invalid("general", "General settings are an object.")
-    out: dict[str, Any] = {}
+    _, by_key, there = schema()
+    flat: dict[str, Any] = {}
     for k, v in data.items():
-        f = _BY_KEY.get(k)
+        if isinstance(v, dict):
+            flat.update({f"{k}.{name}": x for name, x in v.items()})
+        else:
+            flat[k] = v
+    out: dict[str, Any] = {}
+    for k, v in flat.items():
+        f = by_key.get(k)
         path = f"general.{k}"
+        if f is None and "." in k and k.partition(".")[0] not in there:
+            continue                # the knob of a skill that is gone: gone with it
         if f is None:
             raise Invalid(path, f"'{k}' is not a general setting.")
         if v is None:
@@ -123,7 +160,10 @@ def validate(data: Any) -> dict[str, Any]:
                 raise Invalid(path, "This must be one of " +
                               ", ".join(c[0] for c in f["choices"]) + ".")
         elif f["type"] == "number":
-            if not isinstance(v, int) or isinstance(v, bool):
+            if isinstance(f["default"], float):
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    raise Invalid(path, "This must be a number.")
+            elif not isinstance(v, int) or isinstance(v, bool):
                 raise Invalid(path, "This must be a whole number.")
             if v < f.get("min", v) or v > f.get("max", v):
                 raise Invalid(path, f"This must be between {f['min']} and {f['max']}.")

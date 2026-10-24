@@ -500,30 +500,10 @@ class Registry:
 
 
 # every built-in skill but `skills` (it reads the live registry and is added last), in
-# the order they are listed: (name, module relative to this package, class). `build` and the config reload both
-# go through this one list.
-# config/skills.toml: one table per built-in skill (BUILTIN; tests keep the two equal),
-# `enabled` plus the knobs its class reads, and the type of each (config.checked)
-KNOBS: dict[str, dict[str, str]] = {
-    "notebook": {"index_max_entries": "int", "index_max_bytes": "int", "protected": "list"},
-    "past_conversations": {"max_results": "int", "snippet_chars": "int"},
-    "sub_agents": {"max_running": "int", "cli_minutes": "num"},
-    "code": {"poll_seconds": "int", "result_chars": "int"},
-    "chat_archive": {"scroll_max_messages": "int", "scroll_max_tokens": "int",
-                     "get_max_refs": "int", "session_max_tokens": "int",
-                     "period_max_tokens": "int", "max_tokens_cap": "int",
-                     "search_max_tokens": "int", "search_max_tokens_all": "int",
-                     "candidates": "int", "rerank_floor": "num",
-                     "episode_gap_minutes": "num", "verify_citations": "bool"},
-    "web": {"results": "int", "search_timeout": "num",
-            "read_tokens": "int", "timeout": "num", "max_bytes": "int",
-            "pdf_max_bytes": "int", "user_agent": "str"},
-    **{k: {} for k in ("mind", "shell", "bugreport", "artifacts", "me", "appearance",
-                       "intercom", "missions", "plan", "routines", "user_documents",
-                       "image_generator", "music_generator", "models", "writer", "email",
-                       "browser", "vault")},
-}
-
+# the order they are listed: (name, module relative to this package, class). `build`, the
+# config reload and the knobs (knob_fields) all go through this one list, and each skips a
+# skill whose module is gone: removing a skill's module or folder removes the skill.
+# config/skills.toml has one table per built-in skill, `enabled` and nothing else.
 BUILTIN = (
     ("notebook", "notebook", "Notebook"),
     ("mind", "mind", "Mind"),
@@ -562,15 +542,14 @@ def build(app) -> Registry:
     """Only enabled skills are constructed. A skill that is off globally is not. Every
     skill gets the running app as `self.app` (core/services.py) and reads what it needs
     from it when a tool runs."""
-    import importlib
     from .meta import Skills
 
     cfg = app.cfg
     reg = Registry(cfg, app=app)
-    for name, module, cls_name in BUILTIN:
-        if not cfg.skill_enabled(name):
+    for name, mod_name, cls_name in BUILTIN:
+        if not cfg.skill_enabled(name) or (mod := module(mod_name)) is None:
             continue
-        cls = getattr(importlib.import_module(f".{module}", __name__), cls_name)
+        cls = getattr(mod, cls_name)
         skill = cls(cfg)
         skill.app = app
         reg.add(skill)
@@ -578,3 +557,40 @@ def build(app) -> Registry:
     meta.app = app
     reg.add(meta)
     return reg
+
+
+def module(name: str) -> types.ModuleType | None:
+    """A BUILTIN skill's module (`name` relative to this package), None when its file or
+    its folder is gone. Any other import error is raised: a broken skill refuses the
+    start."""
+    import importlib
+    import importlib.util
+    full = importlib.util.resolve_name(f".{name}", __name__)
+    try:
+        return importlib.import_module(full)
+    except ModuleNotFoundError as e:
+        if e.name and (full == e.name or full.startswith(e.name + ".")):
+            return None
+        raise
+
+
+def knob(key: str, label: str, unit: str | None, lo: float, hi: float, default: float,
+         help: str | None = None) -> dict[str, Any]:
+    """One number a skill reads at use, `cfg.r(key)`: declared in its module's `KNOBS`
+    (key `<skill>.<name>`, the default the constant), shown on Settings, Advanced under
+    the skill's label, kept in var/settings/general.toml in the skill's table. A float
+    default takes any number, an int one whole numbers."""
+    return {"key": key, "label": label, "type": "number", "unit": unit, "min": lo,
+            "max": hi, "default": default, **({"help": help} if help else {})}
+
+
+def knob_fields() -> list[tuple[str, dict[str, Any]]]:
+    """(skill, field) for every knob of every BUILTIN skill whose module is there."""
+    out = []
+    for name, mod_name, _ in BUILTIN:
+        mod = module(mod_name)
+        for f in getattr(mod, "KNOBS", ()) if mod is not None else ():
+            if not f["key"].startswith(name + "."):
+                raise ValueError(f"{mod_name}: knob {f['key']} is not {name}.<name>")
+            out.append((name, f))
+    return out

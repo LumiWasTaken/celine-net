@@ -19,15 +19,22 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, knob, tool, described
 from .. import shellbox
 from ..settings import general
 from ..core.ids import now
 from ..terminals import store as terminals
 from ..errors import ToolRefused, not_set_up, unreachable_words
 
-POLL_SECONDS = 20          # config/skills.toml [code] poll_seconds: between two code__status
-RESULT_CHARS = 2000        # [code] result_chars: of the agent's last answer
+POLL_SECONDS = 20          # between two code__status looks (it is told)
+RESULT_CHARS = 2000        # of the agent's last answer code__result carries
+# Settings, Advanced, read at use (cfg.r)
+KNOBS = (
+    knob("code.poll_seconds", "Status look every", "seconds", 1, 3600, POLL_SECONDS,
+         "How long it waits between two looks at a coding task."),
+    knob("code.result_chars", "Answer length", "characters", 100, 1_000_000, RESULT_CHARS,
+         "Of the coding agent's last answer."),
+)
 # a test summary in the agent's output: pytest's "3 passed, 1 failed in 0.4s", npm's
 # (jest, vitest) "Tests: 3 passed, 1 failed, 4 total", go's "ok" and "FAIL" lines
 TESTS = re.compile(r"(?m)^(?:=+ )?((?:\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed)"
@@ -52,10 +59,9 @@ class Code:
     def __init__(self, cfg, transport: httpx.AsyncBaseTransport | None = None):
         self.cfg = cfg
         self.transport = transport                  # tests: a fake shellbox
-        knobs = cfg.skill("code")
-        self.poll = int(knobs.get("poll_seconds", POLL_SECONDS))
-        self.chars = int(knobs.get("result_chars", RESULT_CHARS))
-        self.guide = guide("code", poll=self.poll, chars=self.chars)   # quotes the knobs
+        # quotes the knobs; a save in Settings rebuilds the skill (reload.py)
+        self.guide = guide("code", poll=cfg.r("code.poll_seconds"),
+                           chars=cfg.r("code.result_chars"))
 
     @property
     def status(self) -> str:
@@ -104,7 +110,8 @@ class Code:
             await terminals.upsert(ctx.store, str(res["terminal_id"]), str(res["terminal"]),
                                    "celine", now(), ctx.conversation_id)
         content = (f"Session {sid} is running in {res.get('dir') or dir} with {model}. Look "
-                   f"with code__status(session_id=\"{sid}\") in about {self.poll} s; "
+                   f"with code__status(session_id=\"{sid}\") in about "
+                   f"{self.cfg.r('code.poll_seconds')} s; "
                    f"code__result brings its answer once it says done.")
         if res.get("terminal_error"):
             content += f" Its live terminal did not open: {res['terminal_error']}"
@@ -132,7 +139,8 @@ class Code:
         return ToolResult(content=self._state_line(res) + (
             f" code__result(session_id=\"{session_id}\") brings its answer."
             if res.get("state") == "done" else
-            f" Look again in about {self.poll} s." if res.get("state") == "running" else ""),
+            f" Look again in about {self.cfg.r('code.poll_seconds')} s."
+            if res.get("state") == "running" else ""),
             display={"session": session_id, "state": res.get("state"), "agent": res.get("agent"),
                      "error": res.get("error")})
 
@@ -155,8 +163,9 @@ class Code:
         if status == 404:
             return self._unknown(session_id, res)
         text = str(res.get("text") or "")
-        cut = len(text) > self.chars
-        shown = text[:self.chars].rstrip() + (f"\n[cut at {self.chars} characters]" if cut else "")
+        most = int(self.cfg.r("code.result_chars"))
+        cut = len(text) > most
+        shown = text[:most].rstrip() + (f"\n[cut at {most} characters]" if cut else "")
         lines = [self._state_line(res), shown or "(no answer text yet)"]
         files = [f for f in res.get("files") or [] if isinstance(f, dict) and f.get("path")]
         if res.get("files_error"):

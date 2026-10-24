@@ -54,14 +54,6 @@ class Settings:
     max_episode_lines: int = 40
     query_prefix: str = ""
 
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Settings":
-        s = cls()
-        for k in s.__dataclass_fields__:
-            if k in d:
-                setattr(s, k, type(getattr(s, k))(d[k]))
-        return s
-
 
 @dataclass
 class Result:

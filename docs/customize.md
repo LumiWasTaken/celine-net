@@ -39,6 +39,18 @@ request, what is kept, attachment sizes) are Settings, Advanced, saved in
 `var/settings/general.toml` and applied at once. `config/celine.toml` holds only how the
 app is served (host, port, login, the data folder) and is read at start.
 
+Below the app's own, each skill's numbers have a section under the skill's name: Web
+(search results, time limits, the largest page and PDF in MB), Messages (result lengths,
+reranking), Notebook (the index in every prompt), Past conversations, Code, Sub-agents.
+Each skill declares them beside its code, so a skill you remove takes its section with
+it. `general.toml` keeps them in a table per skill:
+
+```toml
+[web]
+results = 10
+pdf_max_mb = 50
+```
+
 ## Routines
 
 A routine is `config/schedules/<name>.toml`: lowercase letters, digits, `-` or `_`,
@@ -119,13 +131,16 @@ in `.env`.
 ## Skills and MCP
 
 `config/skills.toml` has one section per built-in skill, such as `[shell]`, with
-`enabled = true` or `false` as the global default (a conversation can override it).
+`enabled = true` or `false` as the global default (a conversation can override it), and
+nothing else: a skill's numbers are on Settings, Advanced. A skill whose module (or
+folder) is removed is skipped: no tools, no Advanced section, and its saved numbers are
+dropped.
 
 `[code]` is its coding agent: a coding agent server in its shellbox (opencode by default;
 the box picks the backend with the `CODING_AGENT` environment variable, one module in
 `shellbox/agents/`) that works on a folder of its own in the background with a model it
-picks from the ones you allow it. `poll_seconds` is how long it waits between two
-looks at a session, `result_chars` how much of its answer it reads. It is part of the
+picks from the ones you allow it. Settings, Advanced, Code: how long it waits between two
+looks at a session, how much of its answer it reads. It is part of the
 Shellbox feature: off with it.
 `config/mcp.toml` adds MCP servers; each becomes a skill named after its key:
 

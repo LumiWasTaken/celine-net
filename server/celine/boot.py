@@ -15,7 +15,7 @@ from .db.migrate import read_only
 from .kb import read_config as read_kb
 from .mcp import read_servers
 from .settings import seed
-from .skills import KNOBS
+from .skills import BUILTIN
 from .turns import loads
 
 
@@ -33,7 +33,7 @@ def load() -> Config:
     cfg.media = kb.pop("media", {})
     cfg.kb = kb
     cfg.skills = tables(*file("skills.toml"),
-                        {k: {"enabled": "bool", **v} for k, v in KNOBS.items()}, p)
+                        {name: {"enabled": "bool"} for name, _, _ in BUILTIN}, p)
     cfg.llm = tables(*file("llm.toml"), {"queue": QUEUE_KEYS}, p)
     for kind in presets.FOLDERS:
         cfg.presets[kind], found = presets.load(kind)
