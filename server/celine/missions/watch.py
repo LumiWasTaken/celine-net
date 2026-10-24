@@ -11,7 +11,7 @@ is not locked (conversations/store.locked), its plan (plans/) decides:
   PAST;
 - it asked at a checkpoint (the plan waits): Needs you, the note WAITING;
 - every step is done, or no line follows: Needs you, the note NOTE.
-A turn a freeze cut (guard/freeze.py) is no Stop: with Missions go on after Unfreeze
+A turn a freeze cut (guard/freeze.py) is no Stop: with Continue missions after Unfreeze
 (Settings, Advanced, on by default) the mission stays active, and after the unfreeze
 that turn goes on (`thaw`, looked at every LOOK seconds; a turn that cannot be
 continued gets KEEP_GOING). Switched off, it is a Stop as above.
@@ -183,7 +183,7 @@ async def ceilings(app, at: datetime) -> list[str]:
 
 
 async def thaw(app) -> list[str]:
-    """After an unfreeze (Missions go on after Unfreeze on): every active mission that is
+    """After an unfreeze (Continue missions after Unfreeze on): every active mission that is
     stuck with its latest turn cut by the freeze goes on in that turn, or with KEEP_GOING
     when it cannot be continued. -> the missions that did."""
     from ..conversations import tree

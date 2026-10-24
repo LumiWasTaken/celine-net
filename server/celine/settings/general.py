@@ -92,8 +92,8 @@ FIELDS: list[dict[str, Any]] = [
       for k, label, d, tip in (
         ("routines_wait_for_missions", "Routines wait for missions", False,
          "A routine waits while a mission goes on by itself."),
-        ("missions_resume_after_unfreeze", "Missions go on after Unfreeze", True,
-         "A mission a freeze stopped carries on by itself."),
+        ("missions_resume_after_unfreeze", "Continue missions after Unfreeze", True,
+         "A mission that a freeze stopped continues automatically after Unfreeze."),
     )),
 ]
 _BY_KEY = {f["key"]: f for f in FIELDS}
