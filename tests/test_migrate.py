@@ -156,3 +156,24 @@ def test_0002_drops_the_message_trash_and_keeps_what_followed(tmp_path, monkeypa
     assert "trashed_at" not in {r[1] for r in c.execute("PRAGMA table_info(messages)")}
     assert c.execute("SELECT active_leaf_id FROM conversations").fetchone() == ("m4",)
     c.close()
+
+
+def test_a_file_is_copied_before_a_migration_changes_it_and_the_last_copies_kept(
+        tmp_path, monkeypatch):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("CREATE TABLE kv(k TEXT PRIMARY KEY, v TEXT);\n")
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "x.db"
+    assert migrate(db) == 1
+    assert not list(tmp_path.glob("x.db.pre-*")), "a new file has nothing to keep"
+    for n in range(2, 7):
+        (d / f"{n:04d}_step.sql").write_text(f"INSERT INTO kv VALUES('{n}', 'x');\n")
+        assert migrate(db) == n
+    assert migrate(db) == 6, "nothing to apply, nothing copied"
+    assert sorted(p.name for p in tmp_path.glob("x.db.pre-*")) == \
+        [f"x.db.pre-{n}.bak" for n in range(6 - m.COPIES_KEPT + 1, 7)]
+    c = sqlite3.connect(tmp_path / "x.db.pre-6.bak")
+    assert c.execute("PRAGMA user_version").fetchone() == (5,)
+    assert [r[0] for r in c.execute("SELECT k FROM kv ORDER BY k")] == ["2", "3", "4", "5"]
+    c.close()

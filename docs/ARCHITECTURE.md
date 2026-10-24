@@ -180,8 +180,8 @@ and a read joins across them in one SQL; the attached files have no foreign keys
 celine.db, so a purge deletes their rows by name (`conversations/store.py`,
 `terminals/store.py`). WAL, foreign keys on, busy timeout 5 s. A file older than its
 first migration stops the server; later numbered migrations apply on top, in one
-transaction each ([dev.md](dev.md)). No copy is made before migrating: the nightly
-backups are the backups (`schedules/backups.py`, one `.db.xz` per file).
+transaction each ([dev.md](dev.md)). Before a migration changes a file with data, the
+file is copied beside it as `<file>.pre-<version>.bak`; the last three are kept.
 
 Main tables: `conversations`, `messages`, `tool_calls`, `turns`, `events`,
 `global_events`, `jobs`, `compactions`, `context_state`, `attachments`, `blobs`,
