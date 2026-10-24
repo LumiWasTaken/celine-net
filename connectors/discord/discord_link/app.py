@@ -3,7 +3,7 @@
     POST /mcp            Celine's tools (tools.py)
     GET  /feed?after=N   the journal as NDJSON from seq N, then live; an empty line
                          every 15 s while idle
-    /admin/...           status, info, login, logout, chats included or left out,
+    /admin/...           status, login, logout, chats included or left out,
                          server channels, subscriptions, sync, jobs, media
 
 An unknown key gets 401. A reader key gets 403 on anything that changes the account
@@ -116,10 +116,6 @@ def build(link: Link):
     @route("/admin/status", ["GET"])
     async def status(request: Request) -> Response:
         return JSONResponse(link.status())
-
-    @route("/admin/info", ["GET"])
-    async def info(request: Request) -> Response:
-        return JSONResponse(link.info())
 
     @route("/admin/login", ["GET", "POST"])
     async def login(request: Request) -> Response:

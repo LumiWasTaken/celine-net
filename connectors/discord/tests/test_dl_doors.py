@@ -79,7 +79,7 @@ async def test_keys_and_roles(link, discord):
             assert (await c.post("/mcp", json={})).status_code == 401
         async with s.http(READER) as c:
             assert (await c.get("/admin/status")).status_code == 200
-            assert (await c.get("/admin/info")).json() == {"platform": "discord"}
+            assert (await c.get("/admin/info")).status_code == 404, "no info door"
             for method, path, body in [
                     ("POST", "/admin/logout", None), ("PUT", "/admin/token", {"token": "x"}),
                     ("PUT", "/admin/targets", {"set": {}}),
