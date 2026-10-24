@@ -1158,6 +1158,9 @@ class Browser:
             return self._error(f"Nothing was typed {into(f.get('target'))}. A password field "
                                f"takes a vault entry: vault__set(name) makes one, "
                                f"vault__get(name) gives the text to type.", tab)
+        if code == "not_password":
+            return self._error(f"Nothing was typed {into(f.get('target'))}. A vault entry is "
+                               f"typed only into a password field.", tab)
         if code == "no_back":
             return self._error(where + f"There is no earlier page in tab {tab}.", tab)
         if code == "no_forward":

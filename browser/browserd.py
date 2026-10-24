@@ -22,7 +22,7 @@ returns facts; the app (server/celine/skills/browser.py) words them.
         click, hover (target: an id, e14, or a point of the view, x,y in px), type (text;
         target?: the field, its text replaced, or kept with mode append; a newline in the
         text presses Enter; secret: true, a vault entry the app filled in, the only text
-        a password field takes, leaves no draft and no shot), select (target: a select, text: the option), wait (text:
+        a password field takes and typed only into one, leaves no draft and no shot), select (target: a select, text: the option), wait (text:
         until those words are on the page, WAIT_MAX s), press (text: keys and chords
         separated by spaces: Enter, Control+a, Shift+Tab, x), scroll (text: down, up (a
         view's height), top, bottom or px, signed; target?: scrolls there or inside it),
@@ -67,7 +67,9 @@ returns facts; the app (server/celine/skills/browser.py) words them.
 A refusal is {"error": code, "done": steps run, "effects": theirs, ...facts}: 400 bad
 (what; screens with what screen), no_back, no_forward, no_dialog, no_option (options),
 no_select (role), no_file (file), password_field (target, none at the cursor: text that
-is not secret, into a password field; nothing of it was typed), wrong_site (site: the
+is not secret, into a password field; nothing of it was typed), not_password (target,
+none at the cursor: a vault entry into anything but an <input type=password>; nothing of
+it was typed), wrong_site (site: the
 page's origin, or none: a vault entry into a page that is not one of the step's sites,
 a field in a frame of another site, or a page still loading; nothing of it was typed);
 401 key; 404 no_tab (tabs); 409 busy, tabs_full
@@ -682,14 +684,15 @@ def crashed_note(tab: Tab, here: list[str]) -> None:
 def run_steps(tab: Tab, steps: list[dict], show: str = "all") -> dict:
     """The steps in order, each with its effect (effect()) and a shot of the view after
     it for the user. Text that is not a vault entry, into a password field of its last
-    outline, is refused before anything runs."""
+    outline, and a vault entry into any other field of it, are refused before anything
+    runs."""
     for step in steps:
-        if step["do"] == "type" and not step.get("secret") and step.get("target") is not None:
+        if step["do"] == "type" and step.get("target") is not None:
             m = ID.fullmatch(str(step["target"]).strip())
             node = tab.nodes.get(int(m[1])) if m else None
-            if node is not None and node.password:
-                raise Problem(400, "password_field", target=str(step["target"]), done=0,
-                              effects=[])
+            if node is not None and node.password != bool(step.get("secret")):
+                raise Problem(400, "not_password" if step.get("secret") else "password_field",
+                              target=str(step["target"]), done=0, effects=[])
     here: list[str] = []
     crashed_note(tab, here)
     effects: list[dict] = []
@@ -751,7 +754,8 @@ def run_step(tab: Tab, step: dict) -> tuple[dict, tuple | None]:
 PASSWORD = re.compile(r"^\s*- password field\b")
 
 # the origin of the page and of the document that holds the cursor, through frames of
-# the same site; a frame of another site holds it -> frame null
+# the same site; a frame of another site holds it -> frame null; and whether the cursor
+# is in an <input type=password>
 SITE_JS = """(() => {
   let d = document;
   for (let i = 0; i < 10; i++) {
@@ -759,10 +763,12 @@ SITE_JS = """(() => {
     if (!a || !/^I?FRAME$/.test(a.tagName)) break;
     let c = null;
     try { c = a.contentDocument; } catch (e) {}
-    if (!c) return {top: location.href, frame: null};
+    if (!c) return {top: location.href, frame: null, password: false};
     d = c;
   }
-  return {top: location.href, frame: d.location.href};
+  const a = d.activeElement;
+  return {top: location.href, frame: d.location.href,
+          password: !!a && a.tagName === "INPUT" && a.type === "password"};
 })()"""
 
 
@@ -779,10 +785,11 @@ def origin_of(url: str | None) -> str | None:
     return f"https://{u.hostname.lower().rstrip('.')}:{port}"
 
 
-def on_its_site(tab: Tab, sites: list[str]) -> None:
+def on_its_site(tab: Tab, sites: list[str], target: str | None) -> None:
     """Right before a vault entry is typed: the page, and the frame that holds the
-    cursor, are one of the entry's sites, and nothing is loading. Problem wrong_site
-    when not, before a key goes out."""
+    cursor, are one of the entry's sites, and nothing is loading, else Problem
+    wrong_site; the cursor is in an <input type=password>, else Problem not_password.
+    Both before a key goes out."""
     got = {}
     if not tab.loading:
         try:
@@ -793,6 +800,8 @@ def on_its_site(tab: Tab, sites: list[str]) -> None:
     top, frame = origin_of(got.get("top")), origin_of(got.get("frame"))
     if tab.loading or top is None or top not in sites or frame != top:
         raise Problem(400, "wrong_site", site=top or "none")
+    if got.get("password") is not True:
+        raise Problem(400, "not_password", **({} if target is None else {"target": target}))
 
 
 def act(tab: Tab, step: dict, parents: dict, focus: str | None = None) -> tuple | None:
@@ -838,7 +847,7 @@ def act(tab: Tab, step: dict, parents: dict, focus: str | None = None) -> tuple 
             else:
                 key_event(tab, "End", modifiers=2)                         # to the end
         if secret:
-            on_its_site(tab, step.get("sites") or [])
+            on_its_site(tab, step.get("sites") or [], None if target is None else str(target))
         if len(text) > KEYS_ONE_BY_ONE or secret:
             cdp("Input.insertText", {"text": text.rstrip("\n")}, s)
             if text.endswith("\n"):

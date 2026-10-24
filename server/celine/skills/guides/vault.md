@@ -10,8 +10,8 @@ in a note, a script, a message or a reply. A note keeps the vault name, never th
 - `vault__set(name, username, url)` makes an entry with a new password. Name it after
   the site, like example-shop.
 - `vault__get(name)` gives the step for a form, like {"do": "type", "target": "e14",
-  "text": "vault:example-shop/password"}. Your browser types the real one in; a password
-  field takes nothing else.
+  "text": "vault:example-shop/password"}. Your browser types the real one in, into a
+  password field only; a password field takes nothing else.
 - A script reads the file `vault__get(name, shell=true)` writes, ~/.vault/<name>/password,
   never an env var or a command line: your terminal is logged.
 - `vault__rotate(name)` changes a password; a change-password form gets the old one as
