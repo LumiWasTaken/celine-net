@@ -10,6 +10,11 @@ subscribed, with their settings: the include list (threads follow their channel)
 attachments; never messages of blocked users, never an ignored chat. Edits become edit
 records, deletions delete records; the archive keeps the old text.
 
+Spans (spans.py): the writer keeps, per chat it reads along, the newest message id this
+session has seen (`live`). A new message joins the span below it when the session saw
+the one before; READY starts over (RESUMED replays, so it keeps them), with the DMs'
+last messages, since every DM message comes live. A message left out is a hole.
+
 When a session that was connected drops and a new one gets READY (not RESUMED, which
 replays), `on_back` runs: the REST catch-up for what happened in between. A start of
 the process counts as a drop once a sync has run, so what happened while it was down is
@@ -64,6 +69,7 @@ class Writer(threading.Thread):
         self.gw = gw
         self.state = gw.state
         self.q: queue.Queue = queue.Queue()
+        self.live: dict[str, int] = {}
 
     def put(self, event: str, data: dict) -> None:
         self.q.put((event, data))
@@ -85,7 +91,9 @@ class Writer(threading.Thread):
 
     def apply(self, event: str, d: dict) -> None:
         g = self.gw
-        if event in ("CHANNEL_CREATE", "CHANNEL_UPDATE", "THREAD_CREATE", "THREAD_UPDATE"):
+        if event == "session":
+            self.live = {k: int(v) for k, v in d.items()}
+        elif event in ("CHANNEL_CREATE", "CHANNEL_UPDATE", "THREAD_CREATE", "THREAD_UPDATE"):
             g.learn_channel(d, d.get("guild_id"))
         elif event == "THREAD_LIST_SYNC":
             for t in d.get("threads") or []:
@@ -105,7 +113,7 @@ class Writer(threading.Thread):
         elif event == "MESSAGE_DELETE_BULK":
             self.delete(d.get("channel_id"), d.get("ids") or [], d.get("guild_id"))
 
-    def _scope(self, d: dict) -> tuple[bool, dict | None]:
+    def scope(self, d: dict) -> tuple[bool, dict | None]:
         """(wanted, settings); settings is None for a DM."""
         gid = d.get("guild_id")
         cid = str(d.get("channel_id"))
@@ -115,15 +123,23 @@ class Writer(threading.Thread):
         sub = policy.synced_channel(self.state, self.gw.subs, cid)
         return (sub is not None), (sub["settings"] if sub else None)
 
-    def create(self, d: dict) -> None:
+    def create(self, d: dict, live: bool = True) -> None:
+        """A new message. `live`: it just came (MESSAGE_CREATE), so it is the chat's
+        newest; an edit of a message never seen is not."""
         cid = str(d.get("channel_id"))
         if not d.get("guild_id") and self.state.channel(cid) is None:
             # a DM that started while connected: unticked, like the REST sync's pickup
             self.state.learn_channel(cid, kind="dm", type=DM, enabled=0)
         if not d.get("guild_id"):
             learn_author_peer(self.state, cid, d, self.gw.me_id or "")
-        wanted, settings = self._scope(d)
-        if not wanted or not policy.keep_message(settings, d, self.gw.blocked):
+        wanted, settings = self.scope(d)
+        mid = int(d["id"])
+        prev = self.live.pop(cid, None) if live else None
+        if not wanted:
+            return
+        if not policy.keep_message(settings, d, self.gw.blocked):
+            if live:                         # a hole: what comes next joins after it
+                self.live[cid] = max(mid, prev or 0)
             return
         files = None
         if settings is not None and settings["include_attachments"] and d.get("attachments"):
@@ -132,10 +148,14 @@ class Writer(threading.Thread):
         if r is not None:
             self.state.journal([r])
             self.state.learn_channel(cid, kind=r["chat"]["kind"], last_message_id=str(d["id"]))
+        if live:
+            if prev is None or prev < mid:
+                self.state.cover(cid, mid if prev is None else prev + 1, mid)
+            self.live[cid] = max(mid, prev or 0)
         self.gw.count(d.get("guild_id"))
 
     def update(self, d: dict) -> None:
-        wanted, settings = self._scope(d)
+        wanted, settings = self.scope(d)
         if not wanted:
             return
         if "content" not in d:
@@ -145,7 +165,7 @@ class Writer(threading.Thread):
                               "AND message_key = ?", (cid, mid))
         if prev is None:
             if d.get("author") and d.get("timestamp"):
-                self.create(d)               # an edit of a message never seen: keep it now
+                self.create(d, live=False)   # an edit of a message never seen: keep it now
             return
         text = plain(d["content"] or "", d, self.state)      # as a message record keeps it
         if prev["text"] == text:
@@ -157,7 +177,7 @@ class Writer(threading.Thread):
         self.gw.count(d.get("guild_id"))
 
     def delete(self, channel_id: str | None, ids: list, guild_id: str | None) -> None:
-        wanted, _ = self._scope({"channel_id": channel_id, "guild_id": guild_id})
+        wanted, _ = self.scope({"channel_id": channel_id, "guild_id": guild_id})
         if not wanted:
             return
         keys = [str(i) for i in ids if i]
@@ -222,6 +242,17 @@ class Gateway:
             guild_id=gid, guild_name=policy.guild_name_of(self.state, gid) if gid else None,
             parent_id=str(ch["parent_id"]) if ch.get("parent_id") else None,
             last_message_id=ch.get("last_message_id"))
+
+    def live(self, chat: str) -> int | None:
+        """The newest message id this session has seen of a chat it reads along: every
+        message after it would have come live, so the chat's span holding it reaches the
+        present. None when not connected."""
+        w = self.writer
+        if self.state_name != "connected" or w is None:
+            return None
+        ch = self.state.channel(chat)
+        wanted, _ = w.scope({"channel_id": chat, "guild_id": (ch or {}).get("guild_id")})
+        return w.live.get(str(chat)) if wanted else None
 
     def count(self, guild_id: str | None) -> None:
         self.events += 1
@@ -388,6 +419,10 @@ class Gateway:
 
     async def _dispatch(self, t: str, d: dict) -> None:
         if t == "READY":
+            if self.writer is not None:          # in order with the events still queued
+                self.writer.put("session", {str(c["id"]): str(c["last_message_id"])
+                                            for c in d.get("private_channels") or []
+                                            if c.get("last_message_id")})
             self.session_id = d.get("session_id")
             self.resume_url = d.get("resume_gateway_url")
             me = d.get("user") or {}

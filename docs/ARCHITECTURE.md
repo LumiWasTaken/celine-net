@@ -1077,9 +1077,11 @@ the app is their MCP client (it is never an MCP server).
 
 - `connectors/discord/discord_link/` (Python, `python -m discord_link --state
   var/discord-link --listen 127.0.0.1:8768`): `state.py` (one SQLite file: the journal,
-  dedupe, channels, cursors), `rest.py` (GET only), `gateway.py` (live messages, edits,
-  deletes, catch-up after a drop), `sync.py`, `login.py`, `tools.py` (MCP read tools),
-  `app.py`. It never writes to Discord.
+  dedupe, channels, cursors, spans), `rest.py` (GET only), `gateway.py` (live messages,
+  edits, deletes, catch-up after a drop), `sync.py`, `spans.py` (the message id ranges the
+  journal holds all of: a read tool answers those from the journal and asks Discord only
+  for the gaps), `login.py`, `tools.py` (MCP read tools), `app.py`. It never writes to
+  Discord.
 - `wa-link/` (Go, whatsmeow): pairs as a linked device, journals history and live messages
   as the same records, serves the same doors, downloads media on request, asks the phone
   for older messages. On `LoggedOut` it exits and starts again with a new code.

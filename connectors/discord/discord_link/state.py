@@ -10,6 +10,9 @@
   (kv `ignored`). Nothing of theirs is journaled, and the feed skips what the journal
   already has of them.
 - cursors: incremental REST sync per chat.
+- spans: per chat, the message id ranges (lo to hi, both included) the journal holds
+  all of: Discord's ids rise with time, so a read answers a covered range from the
+  journal and asks Discord only for the rest (spans.py). lo 0 is the chat's start.
 - subscriptions: the servers that are read along, with their settings (policy.py).
 - kv: account, server list, blocked users, sync times.
 
@@ -65,6 +68,12 @@ CREATE TABLE IF NOT EXISTS cursors (
     oldest     TEXT,
     backfilled INTEGER NOT NULL DEFAULT 0,
     synced_at  INTEGER
+);
+CREATE TABLE IF NOT EXISTS spans (
+    chat_key TEXT NOT NULL,
+    lo       INTEGER NOT NULL,
+    hi       INTEGER NOT NULL,
+    PRIMARY KEY (chat_key, lo)
 );
 CREATE TABLE IF NOT EXISTS subscriptions (
     guild_id      TEXT PRIMARY KEY,
@@ -287,13 +296,82 @@ class State:
                 self.set("ignored", sorted(left))
 
     def forget(self, key: str) -> None:
-        """Drop the chat's cursor and what was seen of it, so including it again reads
-        and journals it from the start (the app deleted its messages)."""
+        """Drop the chat's cursor, its spans and what was seen of it, so including it
+        again reads and journals it from the start (the app deleted its messages)."""
         with self._mu:
             self.conn.execute("DELETE FROM cursors WHERE chat_key = ?", (str(key),))
+            self.conn.execute("DELETE FROM spans WHERE chat_key = ?", (str(key),))
             self.conn.execute("DELETE FROM seen WHERE chat_key = ? AND kind <> 'person'",
                               (str(key),))
             self.conn.commit()
+
+    # ---- spans: the id ranges the journal holds all of ---------------------------------
+    def spans(self, chat: str) -> list[tuple[int, int]]:
+        return [(r[0], r[1]) for r in self.q(
+            "SELECT lo, hi FROM spans WHERE chat_key = ? ORDER BY lo", (str(chat),))]
+
+    def span_of(self, chat: str, mid: int) -> tuple[int, int] | None:
+        """The span that holds the id, if any."""
+        r = self.one("SELECT lo, hi FROM spans WHERE chat_key = ? AND lo <= ? AND hi >= ?",
+                     (str(chat), mid, mid))
+        return (r[0], r[1]) if r else None
+
+    def cover(self, chat: str, lo: int, hi: int) -> None:
+        """Every message of the chat from lo to hi is journaled now. Spans that overlap
+        or touch it become one. A chat left out keeps none: nothing of it is journaled."""
+        if lo > hi:
+            return
+        with self._mu:
+            if self.is_ignored(chat):
+                return
+            try:
+                rows = self.conn.execute(
+                    "SELECT lo, hi FROM spans WHERE chat_key = ? AND lo <= ? AND hi >= ?",
+                    (str(chat), hi + 1, lo - 1)).fetchall()
+                lo = min([lo, *(r[0] for r in rows)])
+                hi = max([hi, *(r[1] for r in rows)])
+                self.conn.execute("DELETE FROM spans WHERE chat_key = ? AND lo >= ? AND "
+                                  "hi <= ?", (str(chat), lo, hi))
+                self.conn.execute("INSERT INTO spans (chat_key, lo, hi) VALUES (?, ?, ?)",
+                                  (str(chat), lo, hi))
+                self.conn.commit()
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def top(self, chat: str) -> int:
+        """The newest message id the connector knows of the chat (0: none)."""
+        r = self.one("SELECT MAX(CAST(message_key AS INTEGER)) FROM seen WHERE kind = "
+                     "'message' AND chat_key = ?", (str(chat),))
+        ch = self.one("SELECT last_message_id FROM channels WHERE key = ?", (str(chat),))
+        return max(int(r[0] or 0), int(ch[0] or 0) if ch else 0)
+
+    def archived(self, chat: str, lo: int, hi: int, limit: int, *,
+                 newest: bool) -> list[dict[str, Any]]:
+        """The chat's journaled messages from lo to hi as records with their seq, at
+        most `limit` from the newest or the oldest end, oldest first. A message deleted
+        since is left out, and one edited since has its latest text, as Discord would
+        answer now."""
+        rows = self.q(
+            f"""SELECT s.text, j.seq, j.body FROM seen s JOIN journal j ON j.seq = s.seq
+                WHERE s.kind = 'message' AND s.chat_key = ?
+                  AND CAST(s.message_key AS INTEGER) BETWEEN ? AND ?
+                  AND s.message_key NOT IN (
+                      SELECT k.value FROM journal d, json_each(d.body, '$.message_keys') k
+                      WHERE d.kind = 'delete' AND d.chat_key = ?)
+                ORDER BY CAST(s.message_key AS INTEGER) {'DESC' if newest else 'ASC'}
+                LIMIT ?""", (str(chat), lo, hi, str(chat), limit))
+        out = []
+        for r in rows:
+            rec = {"seq": r["seq"], **json.loads(r["body"])}
+            m = rec["message"]
+            if r["text"] is not None and r["text"] != m.get("text"):
+                m["text"] = r["text"]
+                m["edited"] = True
+                if (m.get("media") or {}).get("caption") is not None:
+                    m["media"]["caption"] = r["text"]
+            out.append(rec)
+        return out[::-1] if newest else out
 
     # ---- channels ----------------------------------------------------------------------
     def channel(self, key: str) -> dict[str, Any] | None:
