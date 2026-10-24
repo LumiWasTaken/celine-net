@@ -242,6 +242,7 @@ def build(link: Link):
     async def media_refresh(request: Request) -> Response:
         """Read one message again (its attachment links expire) and download its
         files into the media folder: {"chat", "message", "max_mb"}."""
+        owner(request)
         b = await body(request)
         chat, mid = str(b.get("chat") or ""), str(b.get("message") or "")
         if not chat.isdigit() or not mid.isdigit():

@@ -244,4 +244,4 @@ async def test_ids_are_checked_before_anything_is_asked(link, discord):
             assert (await h.get("/admin/guilds/x/channels")).status_code == 400
             r = await h.post("/admin/media/refresh",
                              json={"chat": "1", "message": "2", "max_mb": "lots"})
-            assert r.status_code == 400
+            assert r.status_code == 403, "downloading files is the owner's"
