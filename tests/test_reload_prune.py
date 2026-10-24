@@ -54,6 +54,48 @@ async def test_prune_keeps_the_tail_and_forces_a_resync_below_it(store):
     assert len((await view.resume(store, cid, after_seq=25))["events"]) == 5
 
 
+async def test_the_logs_are_pruned_on_a_timer_not_at_a_turns_end(store, monkeypatch):
+    """A turn's end writes no prune (a big one would hold up the writes behind it); the
+    app's loop prunes every so often, with events_keep as it is then."""
+    import anyio
+    from chat_fixtures import Scripted, until, user_says
+    from celine.core.bus import EventBus
+    from celine.skills import Registry
+    from celine.turns.dispatcher import Dispatcher
+    cfg = load()
+    cfg.settings.general.update({"events_keep": 10})
+    cid = await conversations.create(store)
+    for i in range(30):
+        await store.append_event(cid, "note", {"i": i})
+
+    pruned = []
+    real = conversations.prune_events
+
+    async def counted(*a, **kw):
+        pruned.append(1)
+        return await real(*a, **kw)
+    monkeypatch.setattr(conversations, "prune_events", counted)
+    await user_says(store, cid, "hi")
+    async with anyio.create_task_group() as tg:
+        d = Dispatcher(store, cfg, EventBus(), lambda: Scripted([]), Registry())
+        await d.start(tg)
+        d.notify()
+        await until(lambda: store.read(lambda c: c.execute(
+            "SELECT ended_hooks FROM turns WHERE conversation_id=?", (cid,)).fetchone()[0]), 5)
+        await d.stop()
+        tg.cancel_scope.cancel()
+    assert not pruned, "a turn's end pruned the log"
+
+    async def trimmed() -> bool:
+        return await store.read(lambda c: c.execute(
+            "SELECT trim_below FROM conversations WHERE id=?", (cid,)).fetchone()[0]) > 1
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(conversations.keep_pruned, store, cfg, 0.01)
+        await until(trimmed, 5)
+        tg.cancel_scope.cancel()
+    assert (await view.resume(store, cid, after_seq=5)).get("resync") == "history_trimmed"
+
+
 async def test_a_reload_keeps_what_the_shell_told_her_and_moves_the_clock(store, monkeypatch):
     cfg = load()
     app = Services(cfg=cfg, store=store)

@@ -218,7 +218,7 @@ transaction; a caller cannot await mid-transaction. Events of a write are publis
 the `EventBus` after COMMIT. A write after the store closed raises (`store is not
 running`).
 
-After each turn, and at startup, `prune_events` drops all but the last `events_keep`
+At startup and every ten minutes after (`keep_pruned`), `prune_events` drops all but the last `events_keep`
 entries of every idle conversation and raises `trim_below`, keeping what the snapshot
 reads back (`images.notice`, `llm.queue` with `fallback`); the global feed keeps its newest
 20000 rows (`GLOBAL_KEEP`). A client resuming from below gets `resync`. At startup it

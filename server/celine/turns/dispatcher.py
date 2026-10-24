@@ -421,7 +421,6 @@ class Dispatcher:
             # what reached the conversation after the turn's last step lands now
             await self.deliver_idle(cid)
             await self.ended(cid, turn["id"])
-            await conversations.prune_events(self.store, int(self.cfg.r("events_keep")), cid)
             # a work item: a title waits behind every turn in the model queue
             if not await conversations.title(self.store, cid):
                 await self.work.put("title", {"conversation_id": cid}, conversation_id=cid,

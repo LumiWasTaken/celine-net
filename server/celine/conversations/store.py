@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
+
+import anyio
 
 from .. import homes
 from ..core.ids import iso, new_id, now
@@ -24,6 +27,8 @@ from ..core.event_types import (
     IMAGES_NOTICE,
     MESSAGE_PURGED,
 )
+
+log = logging.getLogger("celine.conversations")
 
 
 async def create(store, title: str = "", trigger_key: str | None = None,
@@ -747,6 +752,20 @@ async def note_images(store, cid: str, model: str, describer: str | None) -> Non
 
 GLOBAL_KEEP = 20000     # rows of the global feed kept by prune_events (events.added
                         # adds one per tool call, turn and job end)
+PRUNE_EVERY = 600.0     # seconds between two prunes of the app's loop (keep_pruned)
+
+
+async def keep_pruned(store, cfg, every: float = PRUNE_EVERY) -> None:
+    """The app's loop: the event logs pruned every `every` seconds, with events_keep as
+    it is then (the startup prunes once before). Off the turns' path: a large prune
+    holds up the writes behind it once in a while, not at every turn's end."""
+    while True:
+        await anyio.sleep(every)
+        try:
+            await prune_events(store, int(cfg.r("events_keep")),
+                               requests_days=int(cfg.r("requests_keep")))
+        except Exception:
+            log.exception("prune failed", extra={"event": "events.prune_failed"})
 
 
 async def prune_events(store, keep: int, cid: str | None = None,

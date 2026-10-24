@@ -260,6 +260,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             await attachments.gc(cfg, store)
             await conversations.prune_events(store, keep=int(cfg.r("events_keep")),
                                              requests_days=int(cfg.r("requests_keep")))
+            tg.start_soon(conversations.keep_pruned, store, cfg)    # and every so often
             swept = await turns.sweep(store, registry)
             from .guard import store as guard_rows
             await guard_rows.close_asked(store)     # Bastet's asks of the last run
