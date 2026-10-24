@@ -259,6 +259,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             swept = await turns.sweep(store, registry)
             from .guard import store as guard_rows
             await guard_rows.close_asked(store)     # Bastet's asks of the last run
+            from .approvals import close_left
+            await close_left(store)                 # the chats' requests of the last run
             if swept["total"]:
                 log.info("swept orphans", extra={"event": "startup.swept",
                                                  "count": swept["total"],

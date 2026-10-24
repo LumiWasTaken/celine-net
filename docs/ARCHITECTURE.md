@@ -683,7 +683,10 @@ only write rows; a closed gate still holds), `on`.
 - `GET /api/guard/freeze`, `POST /api/guard/freeze` `{why}`, `DELETE /api/guard/freeze`
 - `POST /api/guard/banners/{id}/replies` `{text}` or `{button: approve | deny | unfreeze | once |
   pass}`; 503 `bastet_away` when the reader cannot answer
-- `GET /api/approvals`, `POST /api/approvals/{id}/answer` `{ok}` (`api/approvals.py`)
+- `GET /api/approvals`, `POST /api/approvals/{id}/answer` `{ok}` (`api/approvals.py`); every request but a
+  gate also waits in its chat, after the message that made the call, with Approve and Deny
+  (snapshot `approvals`, events `approval.asked`, `approval.closed`); in your own turn it
+  waits for your answer or Stop and holds the turn's clock, elsewhere `ASK_FOR` seconds
 
 **What code enforces** (`tests/test_gates_hold.py`): the floor under Bastet's judgement.
 - A closed gate never opens.
@@ -1606,7 +1609,8 @@ Conversation events: `snapshot`, `turn.state`, `message.created`, `message.delta
 `message.reasoning`, `message.done` (once, with its text), `message.rewritten` (once, when
 the text changed after that), `message.purged`, `message.reopened`, `message.attachments`,
 `tool.started`, `tool.progress`, `tool.done`, `tool.gated`, `tool.detached`, `tool.reset`,
-`job.state`, `guard.banner`, `images.batch`, `music.batch`, `version.changed`,
+`job.state`, `guard.banner`, `approval.asked`, `approval.closed`, `images.batch`,
+`music.batch`, `version.changed`,
 `overrides.changed`, `llm.queue`, `context.*` (see Context), `conversation.settings`,
 `citations.checked`, `terminal.state`, `error`. `turn.state` carries the conversation's live
 `queue`, `message.created` the message's `meta`.

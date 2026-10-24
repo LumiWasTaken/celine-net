@@ -16,7 +16,7 @@ from ..skills import words
 from ..skills.gating import overrides_for
 from ..intercom import deliver
 from ..plans import flow as plan_flow
-from . import context, ledger, loads, message_context, prompt, reply, tokens
+from . import context, ledger, loads, message_context, prompt, reply, tokens, waiting
 from . import store as turns
 from .compact import SummaryFailed, closing, stoppable
 from .tools import NOT_RUN_ANSWER, run_tool_calls
@@ -43,7 +43,21 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
     answers with what it has when its time is up."""
     # the ledger is rebuilt from this turn's stored tool calls, so a turn resumed after
     # a restart or a Continue keeps its counts and its repeat detection
+    from .cancel import Token
     tid = turn["id"]
+    token = token if token is not None else Token(tid)
+    if clock is None:
+        # a turn's clock without the dispatcher (tests): the same limits,
+        # kept by the runner alone (never entered). The dispatcher's clock is the cancel
+        # scope that also stops a turn that hangs; the model queue moves its deadline by
+        # the time spent waiting for a model.
+        clock = anyio.CancelScope(deadline=anyio.current_time() +
+                                  float(cfg.r("last_step_seconds")) +
+                                  float(cfg.r("turn_wall_clock_seconds")))
+    # what a wait for the user inside it needs (approvals.py): the user's own turn
+    # waits for their answer, its clock held meanwhile
+    waits = waiting.TURN.set(waiting.Turn(
+        interactive=(turn.get("origin") or "user") == "user", clock=clock, token=token))
     ledger.open_for(tid, await ledger.records_for(store, tid))
     try:
         await _run_turn(turn, store, cfg, backend, bus, token, registry, jobs, clock)
@@ -54,22 +68,14 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
                       f"The older messages could not be summarised: {e}", True)
     finally:
         ledger.close(tid)
+        waiting.TURN.reset(waits)
 
 
 async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
-                    token=None, registry=None, jobs=None, clock=None) -> None:
-    from .cancel import Token
+                    token, registry, jobs, clock) -> None:
     tid, cid = turn["id"], turn["conversation_id"]
-    token = token if token is not None else Token(tid)
     kbs = prompt.kbs(registry)
     last_step = float(cfg.r("last_step_seconds"))
-    if clock is None:
-        # a turn's clock without the dispatcher (tests): the same limits,
-        # kept by the runner alone (never entered). The dispatcher's clock is the cancel
-        # scope that also stops a turn that hangs; the model queue moves its deadline by
-        # the time spent waiting for a model.
-        clock = anyio.CancelScope(deadline=anyio.current_time() + last_step +
-                                  float(cfg.r("turn_wall_clock_seconds")))
 
     def time_left() -> float:
         """Seconds of work left in this turn; the last step's room is not counted."""

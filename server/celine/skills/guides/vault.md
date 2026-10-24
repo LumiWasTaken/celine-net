@@ -18,7 +18,8 @@ in a note, a script, a message or a reply. A note keeps the vault name, never th
   vault:<name>/previous.
 - An entry is typed only on its own site, the address it has in the vault; any other
   page gets nothing and {{username}} hears about it. Give `vault__set` the site's url.
-- Two things are high risk and wait for {{username}}'s tap, up to 2 minutes: a file for
+- Two things are high risk and wait for {{username}}'s tap in the chat (in a routine or
+  a mission, up to 2 minutes): a file for
   a script (`shell=true`) and a new password (`vault__rotate`). Both need `why`: one real
   sentence {{username}} can judge, which script or site and what for. No reason, no
   request. A denial or silence means nothing was done. Ask only when you need it.
