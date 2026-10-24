@@ -58,6 +58,8 @@ FIELDS: list[dict[str, Any]] = [
          "0: no cap."),
         ("job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
          "A tool that runs in the background is stopped after this."),
+        ("embed_query_timeout_seconds", "Search embedding time limit", "seconds", 1,
+         3600, 60, "A search waits this long for its embedding model."),
         ("busy_retry_seconds", "Busy model wait", "seconds", 1, 86_400, 10,
          "Background work asks a busy model again after this, twice as long each time."),
         ("busy_retry_max_seconds", "Longest busy model wait", "seconds", 1, 86_400, 600,

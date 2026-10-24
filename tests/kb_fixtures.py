@@ -137,7 +137,7 @@ def embed_cfg(model="fake", **extra):
                                                      "caps": ["embeddings"]}}}},
                  roles={"embeddings": {"chain": [f"p/{model}"]}})
     return SimpleNamespace(embeddings={"batch": 3, "dims": 64, "workers": 2, **extra},
-                           settings=s, skills={})
+                           settings=s, skills={}, r=s.value)
 
 
 H = 3_600_000

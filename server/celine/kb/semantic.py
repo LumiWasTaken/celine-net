@@ -63,9 +63,10 @@ def _shape(cfg) -> dict[str, Any]:
 
 
 class Embedder:
-    """One model of the Embeddings task: its request settings and its fingerprint."""
+    """One model of the Embeddings task: its request settings and its fingerprint.
+    `timeout`: the most seconds one request may take (a query's), else the client's."""
 
-    def __init__(self, cfg, ref: str):
+    def __init__(self, cfg, ref: str, timeout: float | None = None):
         from ..backends.router import app_router
         self.router = app_router(cfg)
         bc = self.router.backend_config(ref)
@@ -73,7 +74,8 @@ class Embedder:
             raise SemanticError(f"{ref} is not a model in Settings.")
         self.ref = ref
         self.s = {**_shape(cfg), "url": f"{bc.base_url}/embeddings", "key": bc.api_key,
-                  "headers": dict(bc.headers), "model": bc.model}
+                  "headers": dict(bc.headers), "model": bc.model,
+                  **({"timeout": timeout} if timeout else {})}
         try:
             self.fp = fingerprint(self.s, _embed)
         except SemanticError as e:
@@ -96,12 +98,15 @@ def _usable(cfg):
 
 
 def query_embedder(cfg) -> Embedder:
-    """The first model of the Embeddings task that answers now."""
+    """The first model of the Embeddings task that answers now, each request bounded by
+    the Search embedding time limit (Settings, Advanced): a search does not wait on a
+    server that stalls as long as a build may."""
     ordered, _ = _usable(cfg)
     last: Exception | None = None
+    timeout = float(cfg.r("embed_query_timeout_seconds"))
     for ref in ordered.refs:
         try:
-            return Embedder(cfg, ref)
+            return Embedder(cfg, ref, timeout)
         except SemanticError as e:
             last = e
     raise SemanticError(ordered.sentence() if not ordered.refs else
