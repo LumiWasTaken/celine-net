@@ -24,6 +24,8 @@ class Handle:
     state: str = "running"
     owner: str | None = None
     stopped_by: str | None = None       # 'user' | 'turn' once stopped
+    finishing: anyio.CancelScope | None = None   # its finish as a job, for a Stop
+    finished: bool = False              # its row has its end
 
 
 STOPPED_BY = {"user": "{user} stopped it", "turn": "its reply was stopped"}
@@ -91,19 +93,13 @@ class Jobs:
         # no await between publishing the result and reading the owner
         handle.result, handle.state = result, state
         handle.done.set()
-        self.handles.pop(handle.id, None)   # whoever owns it holds the handle itself
         owner = handle.owner
+        if owner == "job":
+            await self._finish(handle)   # in `handles` until its row has its end
+            return
+        self.handles.pop(handle.id, None)   # whoever owns it holds the handle itself
         if owner is None:
             handle.owner = "turn"        # the turn is still inside its window
-            return
-        if owner == "job":
-            try:
-                await self._finish_as_job(handle)
-            except Exception:
-                # never up into the lifespan task group: that takes the app down
-                log.warning("job could not be finished",
-                            extra={"event": "job.finish_failed", "job": handle.id},
-                            exc_info=True)
 
     async def promote(self, handle: Handle) -> str:
         """The step outlived the wait window: give it a job row so it is visible."""
@@ -111,6 +107,33 @@ class Jobs:
             self.store, handle.id, handle.turn["conversation_id"], handle.turn["id"],
             handle.call["id"], handle.call["name"])
         return handle.id
+
+    async def _finish(self, handle: Handle) -> None:
+        """_finish_as_job, and its row always gets its end: a finish that raises ends it
+        failed with the error, a Stop while it is being finished ends it cancelled.
+        Nothing raises up into the lifespan task group: that takes the app down."""
+        try:
+            with anyio.CancelScope() as handle.finishing:
+                await self._finish_as_job(handle)
+            if handle.finishing.cancel_called and not handle.finished:
+                handle.result, handle.state = _stopped(handle, self.cfg.user), "cancelled"
+                await self._post(handle, handle.result, "cancelled")
+        except Exception as e:
+            log.warning("job could not be finished",
+                        extra={"event": "job.finish_failed", "job": handle.id},
+                        exc_info=True)
+            if not handle.finished:
+                handle.result = ToolResult(content=f"failed: {type(e).__name__}: {e}",
+                                           is_error=True)
+                handle.state = "failed"
+                try:
+                    await self._post(handle, handle.result, "failed")
+                except Exception:
+                    log.warning("job could not be ended",
+                                extra={"event": "job.end_failed", "job": handle.id},
+                                exc_info=True)
+        finally:
+            self.handles.pop(handle.id, None)
 
     async def _finish_as_job(self, handle: Handle) -> None:
         """The agent's tool row keeps what it read; the result reaches it once, as a `job`
@@ -128,11 +151,16 @@ class Jobs:
                       guard.enabled(self.cfg, handle.turn["conversation_id"])),
             handle.turn, handle.call, self.store, self.cfg,
             getattr(self.registry, "app", None))
+        await self._post(handle, result, state)
+
+    async def _post(self, handle: Handle, result: ToolResult, state: str) -> None:
+        """Its row and its call get their end, its conversation the `job` message."""
         settled = "cancelled" if state == "cancelled" else \
             ("error" if result.is_error else "ok")
         quiet = state == "cancelled" or bool((result.display or {}).get("quiet"))
         sent = await rows.finish(self.store, handle.id, handle.call, result, settled, state,
                                  stopped_by=handle.stopped_by, wake=not quiet)
+        handle.finished = True
         if not sent:
             log.info("job result has nowhere to go",
                      extra={"event": "job.orphaned", "job": handle.id})
@@ -141,9 +169,9 @@ class Jobs:
             await self.on_end(handle.turn["conversation_id"])
 
     async def cancel(self, job_id: str) -> bool:
-        """The user's Stop, from the row or the panel."""
+        """The user's Stop, from the row or the panel: the step, or its finish."""
         handle = self.handles.get(job_id)
-        if handle is None or handle.done.is_set():
+        if handle is None or not _stoppable(handle):
             return False
         await self._stop(handle, "user")
         return True
@@ -166,11 +194,20 @@ class Jobs:
     async def cancel_for_conversation(self, cid: str) -> int:
         n = 0
         for handle in list(self.handles.values()):
-            if handle.turn["conversation_id"] == cid and not handle.done.is_set():
+            if handle.turn["conversation_id"] == cid and _stoppable(handle):
                 await self._stop(handle, "user")
                 n += 1
         return n
 
     async def _stop(self, handle: Handle, by: str) -> None:
         handle.stopped_by = by
-        handle.scope.cancel()
+        if not handle.done.is_set():
+            handle.scope.cancel()
+        elif handle.finishing is not None:
+            handle.finishing.cancel()
+
+
+def _stoppable(handle: Handle) -> bool:
+    """Its step runs, or its finish as a job does (a page check may wait on a model)."""
+    return not handle.done.is_set() or (handle.finishing is not None
+                                        and not handle.finished)
