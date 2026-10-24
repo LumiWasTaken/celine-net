@@ -101,6 +101,7 @@ class Settings:
     guard: dict[str, Any] = field(default_factory=dict)       # guard/rules.py
     features: dict[str, bool] = field(default_factory=dict)   # settings/features.py
     services: dict[str, dict[str, Any]] = field(default_factory=dict)  # settings/services.py
+    speech: dict[str, dict[str, str]] = field(default_factory=dict)  # settings/speech.py
     saved: dict[str, bool] = field(default_factory=dict)   # section -> var/settings file
     problems: list[Problem] = field(default_factory=list)
     secrets_root: Any = None

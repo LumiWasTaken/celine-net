@@ -1,0 +1,95 @@
+import assert from 'node:assert/strict'
+import { speechChunks, playSpeechQueue } from './speechText.ts'
+import { playSpeechAudio } from './speechAudio.ts'
+
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+
+assert.deepEqual(speechChunks('Hello **world**.\n```js\nsecret()\n```\n[Read this](https://example.test) <|speaker_id_0|> https://hidden.test'), ['Hello world.', 'Read this'])
+assert.deepEqual(speechChunks('```unfinished code'), [])
+const long = 'x'.repeat(1900)
+const split = speechChunks(long)
+assert.ok(split.every(s => s.length <= 900))
+assert.equal(split.join(''), long)
+assert.equal(speechChunks('Short. Another sentence.').join(' '), 'Short. Another sentence.')
+
+// Generation runs ahead while the first clip is held; never two requests in flight.
+{
+  const first = deferred(), second = deferred(), release = deferred()
+  const generated = [], played = []
+  let flight = 0, max = 0
+  const c = new AbortController()
+  const work = playSpeechQueue(['one', 'two', 'three'], {
+    signal: c.signal,
+    generate: async text => {
+      flight++; max = Math.max(max, flight); generated.push(text); flight--
+      if (text === 'two') second.resolve()
+      return text
+    },
+    play: async value => { played.push(value); if (value === 'one') { first.resolve(); await release.promise } },
+  })
+  await first.promise; await second.promise
+  assert.deepEqual(played, ['one'])
+  assert.ok(generated.includes('two'))
+  release.resolve(); await work
+  assert.deepEqual(played, ['one', 'two', 'three']); assert.equal(max, 1)
+}
+
+// Abort during lookahead, even when an upstream ignores cancellation.
+{
+  const started = deferred(), late = deferred(), c = new AbortController()
+  const played = [], generated = []
+  const work = playSpeechQueue(['one', 'two'], {
+    signal: c.signal,
+    generate: async text => { generated.push(text); started.resolve(); await late.promise; return text },
+    play: async value => { played.push(value) },
+  })
+  await started.promise; c.abort()
+  await assert.rejects(work, { name: 'AbortError' })
+  late.resolve(); await Promise.resolve(); await Promise.resolve()
+  assert.deepEqual(played, []); assert.deepEqual(generated, ['one'])
+}
+
+// Failed playback cancels lookahead and cannot play buffered clips.
+{
+  const c = new AbortController(), played = []
+  await assert.rejects(playSpeechQueue(['one', 'two'], {
+    signal: c.signal, generate: async text => text,
+    play: async value => { played.push(value); throw new Error('blocked') },
+  }), /blocked/)
+  assert.deepEqual(played, ['one'])
+}
+// Browser audio denial offers a real-gesture retry and Stop invalidates even that retry.
+{
+  const instances = [], revoked = []
+  const oldAudio = globalThis.Audio, oldCreate = URL.createObjectURL, oldRevoke = URL.revokeObjectURL
+  class AudioFake {
+    attempts = 0; paused = false; removed = false
+    constructor() { instances.push(this) }
+    async play() { if (++this.attempts === 1) throw new DOMException('Blocked', 'NotAllowedError') }
+    pause() { this.paused = true }
+    removeAttribute() { this.removed = true }
+  }
+  globalThis.Audio = AudioFake
+  URL.createObjectURL = () => 'blob:fixture'
+  URL.revokeObjectURL = url => revoked.push(url)
+  try {
+    const ready = deferred(), c = new AbortController()
+    let resume
+    const work = playSpeechAudio(new Blob(['wave']), c.signal, retry => { resume = retry; if (retry) ready.resolve() })
+    await ready.promise
+    assert.equal(instances[0].attempts, 1)
+    resume(); assert.equal(instances[0].attempts, 2)
+    instances[0].onended(); await work
+    assert.equal(resume, null); assert.ok(instances[0].paused && instances[0].removed)
+    const blocked = deferred(), stop = new AbortController()
+    const stopped = playSpeechAudio(new Blob(['wave']), stop.signal, retry => { if (retry) { resume = retry; blocked.resolve() } })
+    await blocked.promise
+    const staleRetry = resume
+    stop.abort(); await assert.rejects(stopped, { name: 'AbortError' })
+    staleRetry(); assert.equal(instances[1].attempts, 1)
+    assert.ok(instances[1].paused && instances[1].removed); assert.equal(revoked.length, 2)
+  } finally {
+    globalThis.Audio = oldAudio; URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke
+  }
+}
+console.log('speech text, queue and audio: ok')

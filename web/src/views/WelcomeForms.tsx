@@ -28,6 +28,7 @@ import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Switch, cop
 import { reach } from './settings/Models'
 import { SchemaForm } from './settings/parts'
 import './Welcome.css'
+import { speechApi, type Direction, type SpeechEndpoint } from '../lib/speechApi'
 
 export type SaveRef = MutableRefObject<(() => Promise<void>) | null>
 type FormProps<T> = {
@@ -42,7 +43,34 @@ type FormProps<T> = {
 /** the form of a `setup` id; an id not here shows no form */
 export const FORMS: Record<string, (p: FormProps<any>) => ReactElement> = {
   comfyui: ComfyuiForm, email: EmailForm, vault: VaultForm, search: SearchForm, guard: GuardForm, service: ServiceForm, address: AddressForm,
-  routines: RoutinesForm,
+  routines: RoutinesForm, speech: SpeechForm,
+}
+
+type SpeechDraft = { endpoint: SpeechEndpoint; key: string; clear: boolean }
+function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<SpeechDraft>) {
+  const direction: Direction = feature.id === 'speech_input' ? 'input' : 'output'
+  const res = useResource(signal => speechApi.settings(direction, signal), [direction])
+  const d = value ?? (res.data ? { endpoint: res.data.endpoint, key: '', clear: false } : null)
+  const save = async () => {
+    if (!d || !res.data) return
+    const saved = await speechApi.save(direction, d.endpoint, res.data.version, d.clear ? null : d.key || undefined)
+    res.set(saved)
+    onChange({ ...d, key: '', clear: false })
+  }
+  saveRef.current = save
+  const action = useAction(async () => { await save(); await reprobe() })
+  if (!d) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : <LoadingRow label="Loading" />
+  return <>
+    <SchemaForm plain schema={res.data?.fields ?? []} values={d.endpoint}
+      onChange={(k, v) => onChange({ ...d, endpoint: { ...d.endpoint, [k]: v } })} />
+    <Field label="API key"><Input type="password" autoComplete="off" value={d.key}
+      placeholder={res.data?.key.state === 'set' ? 'Saved' : 'Optional'}
+      onChange={e => onChange({ ...d, key: e.target.value, clear: false })} /></Field>
+    {res.data?.key.state === 'set' && <Switch label="Clear saved key" checked={d.clear}
+      onChange={clear => onChange({ ...d, clear, key: '' })} />}
+    <CheckRow label="Save" busy={action.busy} disabled={!d.endpoint.url?.trim() || !d.endpoint.model?.trim()}
+      error={action.error} onClick={() => void action.run()} />
+  </>
 }
 
 /** the Check row: the one button of a form, and the error of its last run */

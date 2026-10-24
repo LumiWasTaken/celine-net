@@ -11,6 +11,8 @@ on its own; routines on a schedule; missions over days with sub-agents; an inter
 between you, the agent and its work; terminals in its own Linux container; a browser of
 its own with a live view; images and music through ComfyUI; a searchable archive of your
 Discord and WhatsApp history and your documents; a guard model that checks risky actions.
+Optional [dictation and read-aloud](docs/speech.md) use your OpenAI-compatible speech
+providers, configured in Settings or during onboarding. No speech engine is bundled.
 
 ## Run
 

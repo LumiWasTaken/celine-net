@@ -50,6 +50,7 @@ forbidden_modules =
     celine.schedules
     celine.settings
     celine.shares
+    celine.speech
     celine.shellbox
     celine.skills
     celine.sub_agents
