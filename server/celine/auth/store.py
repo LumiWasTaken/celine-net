@@ -37,6 +37,9 @@ FREE_TRIES = 5                   # wrong tries of one kind before its lock
 FIRST_LOCK = 6 * 3600            # the first lock: 6 hours
 MAX_LOCK = 30 * 86400            # each further failure doubles it, up to 30 days
 LOCKS = ("code", "secret")
+PIN_FAILS = 20                   # wrong PINs from any address within PIN_WINDOW pause PIN login for all
+PIN_WINDOW = 3600
+PIN_PAUSE = 3600
 
 
 def _now() -> int:
@@ -66,6 +69,9 @@ class AuthStore:
             os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
         os.chmod(path, 0o600)
         self._lock = threading.Lock()
+        # ponytail: in memory, a restart forgets it; a table if that is ever abused
+        self._pin_fails: list[int] = []
+        self._pin_until = 0
         migrate(path, MIGRATIONS)
         self._db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self._db.execute("PRAGMA foreign_keys = ON")
@@ -238,6 +244,20 @@ class AuthStore:
             self._db.execute("INSERT OR REPLACE INTO locks (kind, addr, failures, locked_until) "
                              "VALUES (?, ?, ?, ?)", (kind, addr, failures, until))
         return until, failures
+
+    def pin_paused(self) -> int:
+        """Until when PIN login is paused for every address (0: it is not). A PIN is short,
+        and per-address locks do not stop one who rotates addresses."""
+        with self._lock:
+            return self._pin_until if self._pin_until > self.clock() else 0
+
+    def pin_failed(self) -> None:
+        """Counts a wrong PIN from anywhere; PIN_FAILS within PIN_WINDOW pause PIN login."""
+        now = self.clock()
+        with self._lock:
+            self._pin_fails = [t for t in self._pin_fails if now - t < PIN_WINDOW] + [now]
+            if len(self._pin_fails) >= PIN_FAILS:
+                self._pin_until, self._pin_fails = now + PIN_PAUSE, []
 
     def succeeded(self, kind: str, addr: str = "") -> None:
         self._x("DELETE FROM locks WHERE kind = ? AND addr = ?", (kind, addr))

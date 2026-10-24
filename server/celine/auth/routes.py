@@ -123,7 +123,8 @@ def _invalid(kind: str, secret: str) -> str | None:
 # ---- the two locks: one try, checked against stored hashes ------------------------------
 
 _LOCKED = {"code": "Too many wrong codes. Code entry is locked.",
-           "secret": "Too many wrong passwords or PINs from here. Logging in with them is locked."}
+           "secret": "Too many wrong passwords or PINs from here. Logging in with them is locked.",
+           "pin": "Too many wrong PINs. PIN login is paused."}
 
 
 async def _try(request: Request, lock: str, kind: str, typed: str,
@@ -133,11 +134,15 @@ async def _try(request: Request, lock: str, kind: str, typed: str,
     auth = _auth(request)
     login = lock == "secret"
     addr = _client(request) if login else ""
+    if kind == "pin" and (until := auth.store.pin_paused()):
+        return _reject(request, kind, "locked", _locked("pin", until))
     until, failures = auth.store.attempt(lock, addr)
     if not failures:
         return _reject(request, kind, "locked", _locked(lock, until))
     ref = await anyio.to_thread.run_sync(cred.first_match, typed, rows, at_least)
     if ref is None:
+        if kind == "pin":
+            auth.store.pin_failed()
         if until:
             log.warning("locked", extra={
                 "event": "auth.locked", "lock": lock, "failures": failures, "until": until,

@@ -442,3 +442,24 @@ def test_a_missing_config_is_a_one_line_refusal(tmp_path):
                            capture_output=True, text=True, timeout=60,
                            cwd=Path(__file__).resolve().parents[1])
         assert r.returncode == 2 and r.stderr.startswith("celine: no config/celine.toml")
+
+
+def test_wrong_pins_from_many_addresses_pause_pin_login_for_everyone_not_the_password(app):
+    auth = app.state.auth
+    clock = auth.store.clock = Clock()
+    recovery = setup_password(app, client(app)).json()["recovery_codes"]
+    assert client(app).post("/api/auth/register/credential", json={
+        "code": recovery[0], "kind": "pin", "secret": "04815162"}).status_code == 200
+    for n in range(store_mod.PIN_FAILS):                        # a new address every time
+        r = client(app, address=f"2001:db8::{n + 1:x}").post(
+            "/api/auth/login", json={"method": "pin", "secret": "11111111"})
+    assert r.status_code == 401
+    other = client(app, address="2001:db8:1::1")
+    paused = other.post("/api/auth/login", json={"method": "pin", "secret": "04815162"})
+    assert paused.status_code == 429
+    assert paused.json()["error"]["locked_until"] == clock.t + store_mod.PIN_PAUSE
+    assert other.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                      ).status_code == 200
+    clock.t += store_mod.PIN_PAUSE + 1
+    assert client(app, address="2001:db8:2::1").post(
+        "/api/auth/login", json={"method": "pin", "secret": "04815162"}).status_code == 200
