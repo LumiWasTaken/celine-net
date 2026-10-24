@@ -74,3 +74,22 @@ async def test_reads_reuse_their_connections(store):
     for _ in range(3):
         await store.read(lambda c: c.execute("SELECT 1").fetchone())
     assert store._idle.qsize() == 1, "one read at a time needs one connection"
+
+
+async def test_the_store_says_while_its_writer_runs():
+    import anyio as _anyio
+    import tempfile
+    from pathlib import Path
+    from celine.core.store import Store
+    from celine.db.migrate import migrate_all
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "celine.db"
+        migrate_all(path)
+        s = Store(path)
+        assert not s.alive
+        async with _anyio.create_task_group() as tg:
+            await s.start(tg)
+            await s.write(lambda c: None)
+            assert s.alive
+            await s.aclose()
+        assert not s.alive, "a writer that ended is no longer alive: the health check says 503"

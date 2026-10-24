@@ -73,6 +73,7 @@ class Store:
     def __init__(self, db_path: Path, bus=None):
         self.db_path = db_path
         self.bus = bus
+        self.alive = False          # the writer task runs
         self._pending: list[tuple[str, dict]] = []
         self._conn: sqlite3.Connection | None = None
         self._tx: MemoryObjectSendStream[_Job] | None = None
@@ -107,6 +108,13 @@ class Store:
     async def _writer(self) -> None:
         """The single writer. Serialises every write in arrival order."""
         assert self._rx is not None and self._conn is not None
+        self.alive = True
+        try:
+            await self._serve()
+        finally:
+            self.alive = False      # the health check says so: nothing can be written now
+
+    async def _serve(self) -> None:
         async with self._rx:
             async for job in self._rx:
                 self._pending.clear()

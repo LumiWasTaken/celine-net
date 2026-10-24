@@ -323,7 +323,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                 auth.announce_setup_code()       # no passkey yet: a one-time code
             if cfg.server.get("health_port"):
                 from .auth import health
-                tg.start_soon(health.serve, int(cfg.server["health_port"]))
+                tg.start_soon(health.serve, int(cfg.server["health_port"]), lambda: store.alive)
             if cfg.server.get("metrics_port"):
                 from . import metrics
                 tg.start_soon(metrics.serve, int(cfg.server["metrics_port"]))
