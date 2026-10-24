@@ -227,6 +227,30 @@ async def test_check_ins_go_where_it_reports_on_its_cadence(store):
     assert quiet not in await watch.check_ins(app, start + timedelta(hours=5))
 
 
+async def test_past_the_mission_time_limit_of_advanced_it_stops_with_the_reason(store):
+    intercom = Intercom(store)
+    cfg = load()
+    cfg.settings.general["mission_max_hours"] = 2
+    aborted = []
+
+    async def abort(cid):
+        aborted.append(cid)
+    app = SimpleNamespace(store=store, intercom=intercom, cfg=cfg, terminals=None,
+                          dispatcher=SimpleNamespace(abort_conversation=abort))
+    cid = await _mission(store, intercom)
+    start = datetime.fromisoformat((await missions.get(store, cid))["created_at"])
+    assert await watch.ceilings(app, start + timedelta(hours=2)) == []
+    assert await watch.ceilings(app, start + timedelta(hours=2, seconds=1)) == [cid]
+    row = await missions.get(store, cid)
+    assert (row["status"], row["note"]) == ("stopped", "Ran over 2 hours")
+    assert aborted == [cid], "its turn and its sub-agents are stopped"
+    assert await watch.ceilings(app, start + timedelta(hours=3)) == [], "once"
+
+    cfg.settings.general["mission_max_hours"] = 0
+    await _mission(store, intercom)
+    assert await watch.ceilings(app, start + timedelta(days=999)) == [], "0: no ceiling"
+
+
 async def test_a_reply_of_the_user_makes_a_waiting_mission_active_again(store):
     intercom = Intercom(store)
     app = SimpleNamespace(store=store, intercom=intercom)

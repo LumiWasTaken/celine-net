@@ -244,10 +244,6 @@ async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
 
 @router.post("/missions/{cid}/stop")
 async def stop_mission(request: Request, cid: str) -> dict:
-    services = request.app.state.services
     await _mission(request, cid)
-    await skill.record(services, services.store, cid, "stopped", None)
-    await services.dispatcher.abort_conversation(cid)
-    from .. import leftovers             # no turn ran: nothing else closes its terminals
-    await leftovers.on_end(services, cid)
+    await skill.stop(request.app.state.services, cid, None)
     return {"ok": True}

@@ -40,14 +40,24 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
     if word != "active" and row["report_to"]:
         # a report the user reads in that conversation; it starts no turn there
         from ..intercom.addresses import Refused
+        said = "stopped" if word == "stopped" and note else WORDS[word]   # not by them
         try:
             await app.intercom.send(
                 f"agent:{cid}", f"agent:{row['report_to']}", app.cfg.substitute(
-                    f"Mission {row['name']} {WORDS[word]}" + (f": {note}" if note else ".")),
+                    f"Mission {row['name']} {said}" + (f": {note}" if note else ".")),
                 kind="report", wake=False, data={"mission": cid})
         except Refused:
             pass                       # that chat is locked: it takes no report
     return await missions.get(store, cid)
+
+
+async def stop(app, cid: str, note: str | None) -> None:
+    """The mission stops (the user's Stop, note None, or its ceiling, the note why): its
+    status, its turns and sub-agents aborted, its terminals and tabs closed."""
+    await record(app, app.store, cid, "stopped", note)
+    await app.dispatcher.abort_conversation(cid)
+    from .. import leftovers             # no turn ran: nothing else closes its terminals
+    await leftovers.on_end(app, cid)
 
 
 async def report_title(store, row: dict) -> str | None:

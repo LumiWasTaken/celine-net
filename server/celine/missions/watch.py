@@ -15,6 +15,10 @@ A move to Needs you is reported as its own status change is (missions/skill.reco
 A turn the user started ends a Needs you: the mission is active again, and the rule above
 goes on from there.
 
+The ceiling: the Mission time limit (Settings, Advanced; 0 none) counts from its start;
+past it an active mission is stopped, its note why (`ceilings`, looked at every LOOK
+seconds), as a routine past its own.
+
 Check-ins: every `check_in` minutes while a mission is active, a short line on where it
 stands (the step of its plan, its note) goes where it reports, else to the user
 (check_ins). It is the app's, not its own: it costs its no turn.
@@ -31,7 +35,7 @@ import anyio
 from ..core import ids
 from . import store as missions
 from ..plans import flow, store as plans
-from .skill import record
+from .skill import record, stop
 
 log = logging.getLogger("celine.missions")
 LOOK = 60.0         # seconds between two looks for a check-in that is due
@@ -146,14 +150,37 @@ async def check_ins(app, at: datetime) -> list[str]:
     return out
 
 
+def _over(hours: int) -> str:
+    return f"Ran over {hours} hour{'' if hours == 1 else 's'}"
+
+
+async def ceilings(app, at: datetime) -> list[str]:
+    """Every active mission that started more than the Mission time limit before `at`
+    stops, its note why. -> the missions stopped."""
+    hours = app.cfg.r("mission_max_hours")
+    if not hours:
+        return []
+    out = []
+    for row in await missions.list(app.store, "active"):
+        if at - datetime.fromisoformat(row["created_at"]) > timedelta(hours=hours):
+            await stop(app, row["conversation_id"], _over(hours))
+            log.info("mission over its ceiling", extra={
+                "event": "missions.ceiling", "conversation": row["conversation_id"]})
+            out.append(row["conversation_id"])
+    return out
+
+
 async def run(app) -> None:
-    """The app's loop: a look for due check-ins every LOOK seconds."""
+    """The app's loop: every LOOK seconds a look for due check-ins and for missions past
+    their ceiling."""
     while True:
-        try:
-            await check_ins(app, datetime.now(timezone.utc))
-        except Exception:
-            log.exception("mission check-ins failed",
-                          extra={"event": "missions.check_in_failed"})
+        at = datetime.now(timezone.utc)
+        for look, what in ((check_ins, "check_in"), (ceilings, "ceiling")):
+            try:
+                await look(app, at)
+            except Exception:
+                log.exception(f"mission {what} failed",
+                              extra={"event": f"missions.{what}_failed"})
         await anyio.sleep(LOOK)
 
 
