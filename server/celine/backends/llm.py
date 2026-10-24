@@ -38,8 +38,11 @@ starting it, or said the start failed), or the model answered with an error. Not
 is remembered on a timer.
 
 Every other call treats a busy provider as no failure and never moves to the next
-model: it waits for the answer's Retry-After (at most RETRY_AFTER_MAX; else RETRY_AFTER)
-and asks the same model again, as often as it takes, until Stop. A turn says so
+model: it waits and asks the same model again, as often as it takes, until Stop. A Keep
+waiting turn waits for the answer's Retry-After (at most RETRY_AFTER_MAX; else
+RETRY_AFTER); background work (any priority but interactive) backs off: the Busy model
+wait (Settings, Advanced) doubled at each try, the Longest busy model wait at most, and
+never shorter than the Retry-After (`backoff`). A turn says so
 ("waiting" with reason `busy`, "Waiting for <model>.") and the wait does not count
 against its wall clock. Only the status says busy: a load failure's text (out of
 memory) is a could-not-load failure, never waited on.
@@ -139,6 +142,16 @@ def retry_after(e: BaseException) -> float:
     RETRY_AFTER."""
     secs = getattr(e, "retry_after", None)
     return RETRY_AFTER if secs is None else min(float(secs), RETRY_AFTER_MAX)
+
+
+def backoff(e: BaseException, tries: int, cfg) -> float:
+    """Seconds background work waits before it asks a busy model again after `tries`
+    waits: the Busy model wait doubled at each, the Longest busy model wait at most
+    (Settings, Advanced), never shorter than the answer's Retry-After (capped)."""
+    first, most = float(cfg.r("busy_retry_seconds")), float(cfg.r("busy_retry_max_seconds"))
+    secs = min(most, first * 2 ** min(tries, 32))
+    given = getattr(e, "retry_after", None)
+    return secs if given is None else max(secs, min(float(given), RETRY_AFTER_MAX))
 
 
 class LLM:
@@ -580,6 +593,7 @@ class QueuedBackend:
         instead. Raises _Moved when the model failed before its first token. `ref`
         None: the fixed backend."""
         backend = self.fixed if ref is None else self.llm.make(ref, thinking, voice)
+        tries = 0                           # busy waits so far: background backs off
         while True:
             loaded = None if ref is None else \
                 self.llm.router.provider_state(ref.partition("/")[0]).loaded
@@ -593,7 +607,8 @@ class QueuedBackend:
                 if self._interactive():
                     b.error.code = "busy"
                     raise b.error from None
-                await self._wait_busy(b.error, backend)
+                await self._wait_busy(b.error, backend, tries)
+                tries += 1
             finally:                        # a consumer that stops early frees the slot
                 await one.aclose()
 
@@ -618,13 +633,15 @@ class QueuedBackend:
         """Until the router says something changed, a recheck is due, or Stop."""
         await self._wait(lambda: self.llm.router.wait_change(RECHECK))
 
-    async def _wait_busy(self, e: BackendError, backend) -> None:
-        """The provider's Retry-After (else RETRY_AFTER), or Stop. The UI hears why."""
+    async def _wait_busy(self, e: BackendError, backend, tries: int) -> None:
+        """The provider's Retry-After (else RETRY_AFTER) for a Keep waiting turn, the
+        backoff after `tries` waits for background work; or Stop. The UI hears why."""
         await self._send({"state": "waiting", "reason": "busy",
                           "message": f"Waiting for {backend.model}.",
                           "model": backend.model, "endpoint": provider_label(backend),
                           "priority": self.priority.name.lower()})
-        secs = retry_after(e)
+        secs = retry_after(e) if self.priority == Priority.INTERACTIVE else \
+            backoff(e, tries, self.llm.cfg)
         await self._wait(lambda: anyio.sleep(secs))
 
     async def _one(self, backend, ref: str | None, messages, tools, *, head: str | None,

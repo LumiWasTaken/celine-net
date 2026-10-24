@@ -58,6 +58,10 @@ FIELDS: list[dict[str, Any]] = [
          "0: no cap."),
         ("job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
          "A tool that runs in the background is stopped after this."),
+        ("busy_retry_seconds", "Busy model wait", "seconds", 1, 86_400, 10,
+         "Background work asks a busy model again after this, twice as long each time."),
+        ("busy_retry_max_seconds", "Longest busy model wait", "seconds", 1, 86_400, 600,
+         None),
         ("history_messages", "Messages per request", "messages", 0, 100_000, 200,
          "The most messages one request carries. 0: no cap."),
         ("events_keep", "Log entries per chat", "entries", 0, 1_000_000, 500,
@@ -131,4 +135,7 @@ def validate(data: Any) -> dict[str, Any]:
     if value(out, "job_timeout_seconds") <= value(out, "tool_timeout_seconds"):
         raise Invalid("general.job_timeout_seconds", "The job time limit must be longer "
                                                       "than the tool time limit.")
+    if value(out, "busy_retry_max_seconds") < value(out, "busy_retry_seconds"):
+        raise Invalid("general.busy_retry_max_seconds", "The longest busy model wait "
+                                                         "must be at least the first.")
     return out
