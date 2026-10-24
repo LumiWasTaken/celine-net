@@ -467,6 +467,12 @@ other branches build nothing. A push runs only the jobs whose files changed.
   `$CI_REGISTRY_IMAGE/celine-*`, tagged with the branch or tag slug and `:latest` on
   master.
 
+GitHub Actions: `.github/workflows/test.yml` runs the gates on every push and pull
+request; `images.yml` builds the six images on master and on a `v*` tag and pushes them
+to `ghcr.io/<owner>/celine-net/celine-*`, tagged `latest` (master), the tag as pushed
+(`v1.2`) and the commit. `CELINE_TAG=v1.2` keeps a machine on a release; `CHANGELOG.md`
+says what each one changed.
+
 To pull them, set `CELINE_IMAGES=<registry>` in `.env` (the project's
 `$CI_REGISTRY_IMAGE`, for example `registry.example.net/you/celine-net`) and
 `CELINE_TAG` when not `latest`, then `docker login <registry>`. To build one yourself
