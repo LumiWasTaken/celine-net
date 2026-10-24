@@ -29,6 +29,9 @@ def _notebook_path(ch, rel: str) -> Path:
     p = (root / rel).resolve()
     if rel in ("", ".") or not p.is_relative_to(root) or p == root:
         raise CelineError("bad_request", f"{rel!r} is outside {ch.name}'s notebook.", 400)
+    # the app's own files (.index.db, .versions, .trash) are not notes, as for the tools
+    if any(part.startswith(".") for part in p.relative_to(root).parts):
+        raise CelineError("bad_request", f"{rel!r} is not a note.", 400)
     return p
 
 
