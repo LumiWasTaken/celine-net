@@ -1,0 +1,57 @@
+# The gates (AGENT.md "Gates") on every push and pull request: the Python tests (in
+# parallel, then in one process) and ruff, the web build (useReveal check, eslint, tsc,
+# vite) and the WhatsApp connector's tests. images.yml builds the images.
+name: test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.14"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.18"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run pytest
+      - run: uv run pytest -n0
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.3"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+  wa-link:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wa-link
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: wa-link/go.mod
+          cache-dependency-path: wa-link/go.sum
+      - run: go test ./...
+      - run: go vet ./...

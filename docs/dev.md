@@ -30,7 +30,7 @@ The shellbox calls the app's model proxy on `CELINE_PORT` (default 8766): export
 
 ## Gates
 
-Every push passes all of these; the exit code is the check.
+Every push passes all of these; the exit code is the check. GitHub runs them on every push and pull request (`.github/workflows/test.yml`).
 
 ```sh
 uv run pytest -q                     # the app and the Discord connector, on fakes, in parallel
