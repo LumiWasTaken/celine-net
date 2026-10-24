@@ -982,6 +982,8 @@ class Shell:
         if res.get("outside"):             # shellboxd: it reached the net or read a file from there
             display["outside"] = {"source": sources.shell_source(res.get("outside_from")),
                                   "by": None}
+        if res.get("net"):                 # shellboxd: it reached the net (the guard's sink)
+            display["net"] = res["net"]
         if ctx.store is not None and res.get("id"):
             mine = res.get("opened") and owner == "celine" and ctx.conversation_id
             await terminals.upsert(ctx.store, str(res["id"]), name, owner, now(),

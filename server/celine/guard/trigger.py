@@ -23,12 +23,21 @@ ALWAYS = {"notebook__write", "notebook__edit", "notebook__delete", "notebook__mo
 # read-only, but data can leave in the URL or the query
 OUT_IN_URL = {"browser__open": "url", "web__read_page": "url", "web__search": "query"}
 
-# shell commands with egress: data leaves the box, or code comes in to run
+# shell commands with egress: data leaves the box, or code comes in to run. Read before
+# a call runs; once it ran, the box's own verdict (display "net", facts.sink) counts
 EGRESS = re.compile(
     r"(?<![\w.-])(?:curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|telnet|ftp)(?![\w.-])"
     r"|\bgit\s+push\b"
     r"|\b(?:pip3?|pipx|uv\s+pip|npm|pnpm|yarn|cargo|gem|go)\s+(?:install|add|get|i)\b"
-    r"[^\n;&|]*(?:https?://|git\+)",
+    r"[^\n;&|]*(?:https?://|git\+)"
+    # an interpreter given its code inline or on stdin: python -c, python3 - <<EOF,
+    # node -e, perl -e, php -r, ruby -e; a raw socket; a shell running a script file
+    r"|(?<![\w.-])python[\d.]*(?:\s+-[a-z]+)*?\s+-c?(?![\w-])"
+    r"|(?<![\w.-])(?:node|nodejs)(?:\s+-[\w-]+)*?\s+(?:-e|--eval|-p|--print)(?![\w-])"
+    r"|(?<![\w.-])(?:perl|ruby)(?:\s+-\w+)*?\s+-[a-z]*e(?![\w-])"
+    r"|(?<![\w.-])php(?:\s+-\w+)*?\s+-r(?![\w-])"
+    r"|\bopenssl\s+s_client\b|/dev/(?:tcp|udp)/"
+    r"|(?<![\w.-])(?:ba|da|z)?sh(?:\s+-(?![a-z]*c)[a-z]+)*\s+(?![-<>|;&])[^\s;&|<>]+",
     re.I)
 
 URL = re.compile(r"https?://[^\s\"'<>()\[\]]+", re.I)

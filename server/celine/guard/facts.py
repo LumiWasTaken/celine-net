@@ -5,7 +5,7 @@
   public; an MCP server its `class` in mcp.toml (default sensitive).
 - sinks: where a call sends text. public: a web search's query, the address of a page
   it opens, what it types or uploads into a page, a shell command that reaches the
-  net, an MCP tool that writes with `sends = "public"` (the default); people: a message
+  net (the box's verdict once it ran, trigger.EGRESS before), an MCP tool that writes with `sends = "public"` (the default); people: a message
   to anyone but the owner, an MCP tool with `sends = "people"`; everything else stays in
   the house, never looked at by the leak rule (only a closed house gate looks).
 - the private corpus: the notes it carries this turn and the classed results in the
@@ -82,7 +82,10 @@ def sink(call: dict) -> tuple[str, list[str]]:
         return "public", t
     if name in ("shell__run", "shell__type"):
         t = " ".join(texts(args))
-        return ("public" if EGRESS.search(t) else "house"), [t]
+        # once it ran, the box's verdict that it reached the net (shellboxd reaches_net,
+        # display "net"); before, the command's words
+        net = (call.get("display") or {}).get("net") or EGRESS.search(t)
+        return ("public" if net else "house"), [t]
     if name == "intercom__send" and not to_house(args):
         return "people", strings(args)
     if call.get("sends") in ("public", "people") and not call.get("read_only"):

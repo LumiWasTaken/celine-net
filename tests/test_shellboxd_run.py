@@ -262,8 +262,10 @@ def test_a_run_says_whether_its_output_came_from_the_net(box):
     assert (mine["output"], mine["outside"], mine["outside_from"]) == ("hers", False, None)
     read = box.run("cat post.html")
     assert (read["outside"], read["outside_from"]) == (True, "https://reddit.com/r/x")
+    assert (mine["net"], read["net"]) == (None, None), "reading a page is not reaching out"
     net = box.run("curl -s --max-time 1 http://127.0.0.1:9/ || true")
     assert (net["outside"], net["outside_from"]) == (True, "http://127.0.0.1:9/")
+    assert net["net"] == "http://127.0.0.1:9/", "its verdict: it reached the net"
     assert box.read(**{"from": 0})["outside"] is True
 
 

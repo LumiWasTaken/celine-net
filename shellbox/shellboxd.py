@@ -1309,6 +1309,8 @@ def run_answer(t: Terminal, name: str, cid: str, state: str, notes: list[str],
         head, tail, cut, size = excerpt(cmd_log(cid), chars)
         res.update(output=head, tail=tail, cut=cut, size=size)
     res["outside"], res["outside_from"] = outside(res["command"], res.get("cwd"))
+    # the guard's egress fact: the URL or program by which it reached the net
+    res["net"] = reaches_net(res["command"]) if res["command"] else None
     her_notes(name, notes)
     return res
 
