@@ -98,6 +98,23 @@ async def test_the_start_gate_sees_a_live_mission(store):
     assert await store.read(waited_on)
 
 
+async def test_a_mission_that_goes_on_by_itself_holds_no_routine_unless_asked(store, cfg):
+    from celine.intercom import send
+    scene = await conversations.create(store, "mission", kind="mission")
+    await send(store, "system:app", f"agent:{scene}", "Do the next step.", kind="notice")
+    assert not await store.read(waited_on), "its own turn: nobody waits on it"
+    assert await store.read(lambda c: waited_on(c, missions=True))
+
+    cfg.schedules = {"world": Schedule("world", "World", "0 2 1 1 *", "p")}
+    sched = Scheduler(_app(store, cfg))
+    run = await sched.run_now("world")
+    cfg.settings.general["routines_wait_for_missions"] = True
+    await sched.tick()
+    assert await store.read(lambda c: c.execute(
+        "SELECT reason FROM runs WHERE id=?", (run["id"],)).fetchone()[0]) == \
+        "Waiting until your chat is done", "Advanced: routines wait for missions"
+
+
 async def test_an_idle_only_run_is_skipped_while_the_app_is_in_use(store, cfg):
     clock = SimpleNamespace(at=datetime.now(UTC))
     # its own time is next month, so only the runs started here wait

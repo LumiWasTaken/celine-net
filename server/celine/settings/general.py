@@ -68,6 +68,13 @@ FIELDS: list[dict[str, Any]] = [
         ("requests_keep", "Model requests kept", "days", 0, 36_500, 0,
          "What each step sent to its model. 0: kept forever."),
     )),
+    # Advanced switches, read where they are used (schedules, missions)
+    *({"key": k, "label": label, "type": "bool", "default": d, "advanced": True,
+       "help": tip}
+      for k, label, d, tip in (
+        ("routines_wait_for_missions", "Routines wait for missions", False,
+         "A routine waits while a mission goes on by itself."),
+    )),
 ]
 _BY_KEY = {f["key"]: f for f in FIELDS}
 

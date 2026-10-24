@@ -15,7 +15,9 @@ first that does not, in words:
 2. the model of its role can answer now, the Router says ("Waiting for <model>"); it
    starts by itself when the model comes back, the same night or days later;
 3. no turn a person waits on is live: a chat (not a trigger's), a bridged chat, a
-   mission ("Waiting until your chat is done");
+   turn the user started in a mission ("Waiting until your chat is done"); a mission's
+   turns that go on by themselves hold no run unless Routines wait for missions is on
+   (Settings, Advanced);
 4. no other run is running ("While Self-review runs"): one at a time, one model server.
 While it is frozen (guard/freeze.py) no run starts ("Frozen"); the run whose turn a
 freeze cut is `waiting` ("Frozen") and goes on in that turn after the unfreeze.
@@ -101,7 +103,7 @@ IDLE_MINUTES = 30
 IN_USE = "The app was in use"
 FROZEN = "Frozen"            # a freeze cut its turn, or it may not start while frozen
 PASSED = f"More than {IDLE_MINUTES} minutes late"
-WAITED_ON = ("(c.kind = 'mission' OR (c.kind = 'chat' AND "
+WAITED_ON = ("((c.kind = 'mission' AND {mission}) OR (c.kind = 'chat' AND "
              "c.trigger_key IS NULL) OR c.trigger_key LIKE 'bridge:%')")
 
 RULE = ("This runs in the background: {{username}} is not here and reads nothing of it "
@@ -217,18 +219,21 @@ def results(c: sqlite3.Connection, night: str) -> dict[str, str]:
     return out
 
 
-def waited_on(c: sqlite3.Connection) -> bool:
-    """A turn a person waits on is live (WAITED_ON)."""
+def waited_on(c: sqlite3.Connection, missions: bool = False) -> bool:
+    """A turn a person waits on is live (WAITED_ON): in a mission the turns the user
+    started, every one of its turns with `missions` (Routines wait for missions)."""
+    mission = "1" if missions else "t.origin = 'user'"
     return c.execute(
         f"SELECT 1 FROM turns t JOIN conversations c ON c.id = t.conversation_id "
-        f"WHERE {WAITED_ON} AND t.state IN {LIVE_SQL} LIMIT 1").fetchone() is not None
+        f"WHERE {WAITED_ON.format(mission=mission)} AND t.state IN {LIVE_SQL} LIMIT 1"
+    ).fetchone() is not None
 
 
-def idle(c: sqlite3.Connection, at: datetime) -> bool:
+def idle(c: sqlite3.Connection, at: datetime, missions: bool = False) -> bool:
     """Nobody used the app for IDLE_MINUTES before `at`: no turn a person waits on is
-    live, and no user message came."""
+    live (waited_on, `missions` as there), and no user message came."""
     since = iso(at - timedelta(minutes=IDLE_MINUTES))
-    return not waited_on(c) and c.execute(
+    return not waited_on(c, missions) and c.execute(
         f"SELECT 1 FROM messages m WHERE {FROM_USER} AND m.created_at >= ? LIMIT 1",
         (since,)).fetchone() is None
 
@@ -447,10 +452,11 @@ class Scheduler:
         if not waiting:
             return
         waiting.sort(key=lambda r: (r["night"], depth(schedules, r["schedule"]), r["slot"]))
-        busy = await store.read(waited_on)
+        missions = bool(self.app.cfg.r("routines_wait_for_missions"))
+        busy = await store.read(lambda c: waited_on(c, missions))
         from ..guard.freeze import frozen
         cold = await frozen(store) is not None
-        unused = await store.read(lambda c: idle(c, self.now()))
+        unused = await store.read(lambda c: idle(c, self.now(), missions))
         open_ = await store.read(lambda c: {(r["night"], r["schedule"]) for r in c.execute(
             "SELECT night, schedule FROM runs WHERE state IN ('waiting', 'running')")})
         models: dict[str, str | None] = {}
