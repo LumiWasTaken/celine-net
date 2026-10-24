@@ -35,7 +35,8 @@ read-only tools of READS) and it alternate up to `rounds` lines, the partner may
 sooner with END alone on its last line; then it is asked for its final answer. The agent's
 final answer is the result. With `note` the app writes it to that notebook path; a note
 that is there already gets it appended under "## <date> <label>" (run_date). A note it
-wrote itself is the result instead, and the app writes nothing over it (only what it
+wrote itself (a notebook__write or notebook__edit of that path that ended ok in the run)
+is the result instead, and the app writes nothing over it (only what it
 added, when it added to its end). The agent's words beside the write are a lead-in, not the
 result (a turn ends with that step, skills.ToolSpec needs_answer). The run is over
 when its conversation and its sub-agents are quiet and every sub-agent has reported
@@ -61,6 +62,7 @@ from __future__ import annotations
 
 import json
 import logging
+import posixpath
 import re
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
@@ -574,7 +576,7 @@ class Scheduler:
                 answer = await self._turn(cid, "system:schedules", "\n\n".join(
                     [prompt, cfg.substitute(RULE.replace("{final}", where))]), "trigger",
                     {"run": rid})
-            answer, hers = self._take(note, start, answer)
+            answer, hers = self._take(note, start, answer, await self._wrote(cid, note))
             failed_note = await self._write_note(cid, note, answer, s, day.isoformat()) \
                 if note and not hers else None
         except Exception as e:                   # noqa: BLE001 - every failure ends it
@@ -658,16 +660,37 @@ class Scheduler:
         return p is not None and p.is_file() and datetime.fromtimestamp(
             p.stat().st_mtime, timezone.utc) >= datetime.fromisoformat(since)
 
-    def _take(self, note: str, start: str | None, answer: str) -> tuple[str, bool]:
-        """(the result, it wrote it): the note when it holds more than `start` (what
-        was there before its turns), and the app writes nothing over it; only what it
-        added when it added to `start`. Else its answer."""
+    def _take(self, note: str, start: str | None, answer: str,
+              wrote: bool) -> tuple[str, bool]:
+        """(the result, it wrote it): when it wrote `note` itself (`wrote`), the note, and
+        the app writes nothing over it; only what it added when it added to `start` (what
+        was there before its turns). Else its answer."""
         from ..skills.notebook import unstamped
         text = self._note_text(note)
-        now_, was = (unstamped(t or "").strip() for t in (text, start))
-        if not note or text is None or now_ == was:
+        if not note or not wrote or text is None:
             return answer, False
-        return (now_[len(was):].strip() if was and now_.startswith(was) else now_), True
+        now_, was = (unstamped(t or "").strip() for t in (text, start))
+        return (now_[len(was):].strip() if was and now_.startswith(was) and now_ != was
+                else now_), True
+
+    async def _wrote(self, cid: str, note: str) -> bool:
+        """The run wrote `note` itself: a notebook__write or notebook__edit of that path
+        that ended ok in its conversation."""
+        if not note:
+            return False
+        rows = await self.app.store.read(lambda c: c.execute(
+            "SELECT tc.arguments FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
+            "WHERE m.conversation_id=? AND tc.state='ok' AND tc.name IN "
+            "('notebook__write', 'notebook__edit')", (cid,)).fetchall())
+        want = posixpath.normpath(note)
+        for (args,) in rows:
+            try:
+                path = json.loads(args).get("path")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(path, str) and posixpath.normpath(path) == want:
+                return True
+        return False
 
     async def _write_note(self, cid: str, path: str, answer: str, s, day: str) -> str | None:
         """The agent's answer into the notebook at `path`: a note there already gets it appended

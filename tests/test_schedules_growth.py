@@ -143,8 +143,8 @@ async def test_a_note_she_touched_since_the_run_began_is_hers_whole(store, cfg):
     os.utime(note, (at.timestamp(), at.timestamp()))
     assert not sched._note_touched("diary/w.md", "2026-10-17T02:30:00+00:00")
     assert sched._note_touched("diary/w.md", "2026-10-17T01:30:00+00:00")
-    assert sched._take("diary/w.md", None, "Done.") == ("# World\n\nThe news.", True)
-    assert sched._take("diary/w.md", "# World\n\nThe news.\n", "Done.") == ("Done.", False)
+    assert sched._take("diary/w.md", None, "Done.", True) == ("# World\n\nThe news.", True)
+    assert sched._take("diary/w.md", None, "Done.", False) == ("Done.", False)
 
 
 def test_the_nightly_backups_are_made_once_a_night_and_seven_kept(tmp_path):

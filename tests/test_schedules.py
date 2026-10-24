@@ -626,6 +626,32 @@ async def test_a_new_note_gets_her_answer_whole(store, cfg):
     assert len(backend.calls) == 1, "its first final answer is the result: no second ask"
 
 
+async def test_a_note_she_wrote_again_keeps_its_text_not_the_closing_line(store, cfg):
+    """The note was there with the same text she writes: her write still makes it hers,
+    her closing line is not appended."""
+    review = "# Self-review\n\nWent well: the search."
+    note = cfg.her.notebook / "diary" / "2026-10-10-review.md"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text(review)
+    backend = Writer({"Review the night": [TextDelta("Got the whole picture now."),
+                                           *_write("diary/2026-10-10-review.md", review)]})
+    row = await _one_run(store, cfg, backend)
+    from celine.skills.notebook import unstamped
+    assert unstamped(note.read_text()) == review, "the note she wrote stays as she wrote it"
+    assert row["result"] == review
+
+
+async def test_a_note_she_did_not_write_gets_her_answer_appended(store, cfg):
+    note = cfg.her.notebook / "diary" / "2026-10-10-review.md"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("# Reviews\n")
+    backend = Writer({"Review the night": [TextDelta("Went well: the search."),
+                                           Done(reason="stop")]})
+    row = await _one_run(store, cfg, backend)
+    assert note.read_text().endswith("Went well: the search.\n")
+    assert row["result"] == "Went well: the search."
+
+
 async def test_a_log_note_she_adds_to_gives_only_what_she_added(store, cfg):
     note = cfg.her.notebook / "diary" / "2026-10-10-review.md"
     note.parent.mkdir(parents=True, exist_ok=True)
