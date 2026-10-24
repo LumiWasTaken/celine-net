@@ -91,7 +91,7 @@ function Ask({ ask, busy, onAnswer }: { ask: VaultAsk; busy: boolean; onAnswer: 
       {ask.facts.map(f => <p key={f} className="src-line">{f}</p>)}
       <p className="src-line">{capital(p.possessive)} reason, {p.possessive} words: <em>{ask.why}</em></p>
       {ask.read && <p className="src-line">Right before, {p.subject} read from outside with {ask.read}.</p>}
-      <p className="src-line">Waits {Math.ceil(ask.expires_in / 60)} min more.</p>
+      {ask.expires_in !== null && <p className="src-line">Waits {Math.ceil(ask.expires_in / 60)} min more.</p>}
       <div className="key-form">
         <Button variant="primary" disabled={busy} onClick={() => onAnswer(true)}>Approve</Button>
         <Button disabled={busy} onClick={() => onAnswer(false)}>Deny</Button>

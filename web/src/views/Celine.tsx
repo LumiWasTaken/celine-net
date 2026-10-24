@@ -461,7 +461,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                               running={convo.running} error={convo.error}
                               pending={shownPending} compactions={convo.compactions} onRetry={regenerate}
                               live={convo.live} switched={convo.switched}
-                              imageNotices={convo.imageNotices} banners={convo.banners} forming={convo.forming}
+                              imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
                               waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue}
                               note={null} assistant={name}
                               user={status?.user ?? ''} />

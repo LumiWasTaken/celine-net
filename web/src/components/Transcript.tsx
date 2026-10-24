@@ -10,8 +10,9 @@
    default. While it thinks and has no words yet, one shimmering "Thinking" line. The agent's
    settled tool calls sit under its words as their rows (hidden with Hide tool calls,
    leaving Activity in "..."). Bastet's banners sit after the reply whose call she
-   decided on (GuardBanner). Never hidden: Retry, Continue, Stop, reminders, intercom
-   lines and Bastet's banners. */
+   decided on (GuardBanner), and so does a request of hers that waits for you
+   (ApprovalAsk). Never hidden: Retry, Continue, Stop, reminders, intercom lines,
+   Bastet's banners and her requests. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   conversationApi, type Attachment, type Compaction, type ImageNotice, type Live, type Message, type Queued, type Switched,
@@ -34,7 +35,9 @@ import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
 import { ArtifactCards, FormingRow, ShareCards, ToolLines, artifactsOf, sharesOf } from './ToolRow'
 import { GuardBanner } from './GuardBanner'
+import { ApprovalAsk } from './ApprovalAsk'
 import { useFrozen, type GuardBanner as Banner } from '../lib/guard'
+import type { ChatApproval } from '../lib/settingsApi'
 import './Transcript.css'
 
 /** when it was written: the local time, the full date on hover */
@@ -119,6 +122,8 @@ type Props = {
   imageNotices: ImageNotice[]
   /** Bastet's banners, after the messages that made their calls */
   banners?: Banner[]
+  /** her requests that wait for you, after the messages that made their calls */
+  approvals?: ChatApproval[]
   /** tool calls it is still writing, shown under their message */
   forming?: Forming[]
   /** what a slash command said, last in the transcript */
@@ -141,7 +146,7 @@ type T = {
 
 export function Transcript(
   { conversationId, messages, toolCalls, turn, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
-    forming = [], note, assistant, user, onRetry, closed = false }: Props,
+    approvals = [], forming = [], note, assistant, user, onRetry, closed = false }: Props,
 ) {
   const streaming = running && turn?.state === 'streaming'
   const frozen = useFrozen()
@@ -311,6 +316,8 @@ export function Transcript(
 
   const bannersAfter = (ids: string[]) => banners.filter(b => b.message_id && ids.includes(b.message_id))
     .map(b => <GuardBanner key={`guard-${b.id}`} banner={b} user={user} />)
+  const asksAfter = (ids: string[]) => approvals.filter(a => a.message_id && ids.includes(a.message_id))
+    .map(a => <ApprovalAsk key={`ask-${a.id}`} ask={a} />)
 
   // Where the next reply lands before it exists (your message sent, a turn queued or
   // getting ready): its face and the dots.
@@ -337,7 +344,7 @@ export function Transcript(
     <div className="transcript__inner is-transcript">
       {segments.map(seg => {
         const ids = seg.kind === 'msg' ? [seg.m.id] : seg.msgs.map(m => m.id)
-        return [renderSegment(seg), ...divider(ids), ...noticesAfter(ids), ...bannersAfter(ids)]
+        return [renderSegment(seg), ...divider(ids), ...noticesAfter(ids), ...bannersAfter(ids), ...asksAfter(ids)]
       })}
 
       {pending && (

@@ -1,7 +1,7 @@
 import type { GuardBanner } from './guard'
 import type { Her } from './her'
 import { reportApi } from './health'
-import type { ConversationSettings, Feature } from './settingsApi'
+import type { ChatApproval, ConversationSettings, Feature } from './settingsApi'
 import type { Kind } from './intercom'
 import type { BulkResult } from '../ui'
 
@@ -516,6 +516,8 @@ export type Snapshot = {
   image_notices: ImageNotice[]
   /** Bastet's banners (lib/guard.ts) */
   guard: GuardBanner[]
+  /** her requests that wait for you here, after the messages that made their calls */
+  approvals: ChatApproval[]
   /** its plan here (event plan.state), null when it has none */
   plan: Plan | null
   seq: number

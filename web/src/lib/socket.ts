@@ -30,7 +30,7 @@ import {
 } from './api'
 import { emit, type ServerEvent } from './bus'
 import type { GuardBanner } from './guard'
-import type { ConversationSettings } from './settingsApi'
+import type { ChatApproval, ConversationSettings } from './settingsApi'
 import {
   createContext, createElement, useContext, useEffect, useState, type ReactNode,
 } from 'react'
@@ -91,6 +91,8 @@ export type Frame =
   | ({ type: 'version.changed' | 'message.purged' } & Of)
   | ({ type: 'images.notice' } & ImageNotice & Of)
   | ({ type: 'guard.banner'; banner: GuardBanner } & Of)
+  | ({ type: 'approval.asked'; approval: ChatApproval } & Of)
+  | ({ type: 'approval.closed'; id: string } & Of)
   | ({ type: 'attachment.described'; message_id: string; attachment_id: string } & Pick<Attachment, 'description' | 'described_by' | 'described_for'> & Of)
   | ({ type: 'message.attachments'; message_id: string; attachments: Attachment[] } & Of)
   | ({ type: 'message.created'; ts: string; message_id: string; parent_id: string | null; role: Message['role']; content?: string; ordinal?: number
