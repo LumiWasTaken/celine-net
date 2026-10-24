@@ -85,6 +85,13 @@ type Parsed = { route: Route; redirect?: boolean }
 
 const num = (s?: string) => (s && /^\d+$/.test(s) ? Number(s) : undefined)
 
+/** a YYYY-MM-DD that names a real day (2025-02-30 and 2025-13-45 do not) */
+function realDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const d = new Date(`${s}T12:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(s)
+}
+
 /* Path (+ query) → route. `redirect` says the URL should be replaced by format(route). */
 function parse(pathname: string, search = ''): Parsed {
   const parts = pathname.split('/').filter(Boolean).map(p => { try { return decodeURIComponent(p) } catch { return p } })
@@ -103,7 +110,7 @@ function parse(pathname: string, search = ''): Parsed {
       return a ? { route: { section: 'missions', conversation: a } } : { route: { section: 'missions' }, redirect: true }
     case 'routines': {
       // a real date, else tonight (the server's)
-      const night = a && /^\d{4}-\d{2}-\d{2}$/.test(a) && new Date(`${a}T12:00:00Z`).toISOString().startsWith(a) ? a : undefined
+      const night = a && realDate(a) ? a : undefined
       if (!night) return { route: { section: 'routines' }, redirect: !!a }
       if (b === 'run' && c) return { route: { section: 'routines', night, run: c } }
       if (b === 'schedule' && c) {
