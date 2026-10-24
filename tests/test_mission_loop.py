@@ -236,3 +236,24 @@ async def test_a_reply_of_the_user_makes_a_waiting_mission_active_again(store):
     await store.write(lambda c: c.execute("UPDATE turns SET origin='user' WHERE id=?", (tid,)))
     assert await watch.check(app, cid, tid) == "line", "active again, so it goes on"
     assert (await missions.get(store, cid))["status"] == "active"
+
+
+async def test_a_stopped_sub_agent_lets_the_watch_move_its_mission_on(store):
+    """The mission's own turn ended while its sub-agent still ran (not stuck). When the
+    sub-agent's turn ends, the watch looks at the mission again."""
+    intercom = Intercom(store)
+    hooks = []
+    app = SimpleNamespace(store=store, intercom=intercom,
+                          dispatcher=SimpleNamespace(on_end=hooks.append))
+    watch.start(app)
+    cid = await _mission(store, intercom)
+    await plans.save(store, cid, "", plans.clean([{"title": "Read", "state": "done"}]))
+    sub = await conversations.create(store, "Helper", agent_of=cid)
+    stid = (await intercom.send("user", f"agent:{sub}", "go", kind="brief"))["turn_id"]
+    await _ended_turn(store, intercom, cid, tool=True)
+    assert (await missions.get(store, cid))["status"] == "active"
+    await store.write(lambda c: c.execute("UPDATE turns SET state='aborted' WHERE id=?",
+                                          (stid,)))
+    await hooks[0](sub, stid)                       # the Stop's turn end
+    row = await missions.get(store, cid)
+    assert (row["status"], row["note"]) == ("needs_you", watch.NOTE)

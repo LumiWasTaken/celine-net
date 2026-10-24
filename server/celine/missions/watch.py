@@ -161,5 +161,15 @@ def start(app) -> None:
     """Hooks the rule onto the dispatcher's turn ends (app.dispatcher.on_end). Called
     once at startup, before the workers start."""
     async def on_end(cid: str, turn_id: str | None) -> None:
+        # a sub-agent's end can be what leaves its mission quiet: look at the mission,
+        # after its own latest turn
+        parent = await app.store.read(lambda c: (c.execute(
+            "WITH RECURSIVE up(id, p) AS (SELECT id, agent_of FROM conversations WHERE id=? "
+            "UNION ALL SELECT s.id, s.agent_of FROM conversations s JOIN up ON s.id = up.p) "
+            "SELECT id FROM up WHERE p IS NULL", (cid,)).fetchone() or [cid])[0])
+        if parent != cid:
+            cid, turn_id = parent, await app.store.read(lambda c: (c.execute(
+                "SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC "
+                "LIMIT 1", (parent,)).fetchone() or [None])[0])
         await check(app, cid, turn_id)
     app.dispatcher.on_end(on_end)
