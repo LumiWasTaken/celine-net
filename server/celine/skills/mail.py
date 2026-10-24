@@ -587,7 +587,7 @@ class Email:
         meta, raw = await self._run(run)
         return folder, uid, _meta(meta), _parse(raw)
 
-    @tool(open_world=True)
+    @tool(read_only=False, destructive=False, open_world=True)     # reading marks it \Seen
     async def read(self, ctx: ToolContext,
                    id: Annotated[str, "A message id from email__list or email__search, "
                                       "such as INBOX:4521."],

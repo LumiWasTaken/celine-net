@@ -326,3 +326,12 @@ async def test_she_marks_moves_and_deletes(api, caps):
 def test_a_line_break_in_a_search_cannot_end_the_imap_command():
     from celine.skills.mail import _q
     assert _q('x"\r\nA1 DELETE INBOX') == '"x\\"  A1 DELETE INBOX"'
+
+
+def test_reading_marks_read_so_it_is_not_a_reading_tool():
+    """email__read sets \\Seen: a replay after a restart or a read-only sub-agent would
+    change the unread state, so it has effects; list and search only read."""
+    hints = mail.Email.read.__celine_tool__["annotations"]
+    assert not hints.read_only and not hints.destructive
+    for name in ("list", "search"):
+        assert getattr(mail.Email, name).__celine_tool__["annotations"].read_only
