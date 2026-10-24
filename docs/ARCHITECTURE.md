@@ -2,7 +2,7 @@
 
 ## Shape
 
-One Python process. Celine's state is one SQLite file with one writer task; every
+One Python process. Celine's state is one SQLite file with one writer thread; every
 knowledge base is another SQLite file of its own (see Knowledge bases). A React app served as static
 files from the same process, or by Vite in dev. Turns run server side and survive the
 browser going away. The WebSocket is a tail of a durable event log; closing it changes
@@ -202,7 +202,9 @@ with every message after it in its branch; there is no message trash.
 
 ### The event logs
 
-Two durable logs, both written only by the single writer (`core/store.py`):
+Two durable logs, both written only by the single writer (`core/store.py`, a thread of
+its own; the loop queues a write and awaits it, and the write's events are published on
+the loop after its commit):
 
 - A conversation's: `events(conversation_id, seq)` is unique and gapless per
   conversation. The counter is `conversations.next_seq`, bumped in the same transaction
