@@ -23,7 +23,6 @@ import {
 import { api, type ConversationSummary } from '../lib/api'
 import type { ChatHit } from '../lib/chat'
 import { groupByDate, listTime } from '../lib/format'
-import { format } from '../lib/nav'
 import {
   Button, coarse, Dot, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet, SourceGlyph,
   VirtualList, useContextMenu, type DotTone, type MenuItem, type Picker, type Shelf,
@@ -34,6 +33,8 @@ export type WorkItem = {
   key: string
   /** the conversation it opens */
   open: string
+  /** the path that opens it, the server's (homes.py) */
+  link: string
   name: string
   icon: LucideIcon
   /** what it does now, in words */
@@ -79,7 +80,7 @@ const byTitle = (c: ConversationSummary, q: string) => c.title.toLowerCase().inc
 export function ConversationList({
   conversations, archived = NO_ROWS, deleted = NO_ROWS, shelf = 'list', picker, onRestore, hits = NO_HITS, titles, query,
   selected, renaming, onOpen, onRename, onStartRename, onPin, onArchive, onDelete, onStop, onExport, stateOf, working = NO_WORK,
-  away = null, onAway, onClearSearch, groups, matches = byTitle, hrefOf, leadingOf, label = 'Conversations', deletedHeads = NO_HEADS,
+  away = null, onAway, onClearSearch, groups, matches = byTitle, leadingOf, label = 'Conversations', deletedHeads = NO_HEADS,
 }: {
   conversations: ConversationSummary[]
   /** the archived ones, on the Archive shelf */
@@ -122,7 +123,6 @@ export function ConversationList({
   /** the place's own groups of the (searched) conversations; default: the server's, else the days */
   groups?: (list: ConversationSummary[], filtering: boolean) => ListGroup[]
   matches?: (c: ConversationSummary, q: string) => boolean
-  hrefOf?: (id: string) => string
   leadingOf?: (c: ConversationSummary) => ReactNode
   label?: string
 }) {
@@ -183,7 +183,6 @@ export function ConversationList({
 
   const ctx = useContextMenu()
   const touch = useMemo(coarse, [])
-  const href = hrefOf ?? ((id: string) => format({ section: 'celine', conversation: id }))
   const actions = (c: ConversationSummary): MenuItem[] => {
     const running = c.state ? c.state.tone === 'running' : !!c.active_state
     return [
@@ -231,7 +230,7 @@ export function ConversationList({
                      if (r.type === 'work') {
                        const w = r.w
                        return (
-                         <ListRow density="lg" href={href(w.open)} selected={w.open === selected}
+                         <ListRow density="lg" href={w.link} selected={w.open === selected}
                                   leading={<w.icon size={ICON.lg} aria-hidden />} title={w.name} tooltip={w.name}
                                   subtitle={<EventLine running quiet>{w.step}</EventLine>}
                                   onClick={click(() => onOpen(w.open))} trailingAlways
@@ -241,7 +240,7 @@ export function ConversationList({
                      if (r.type === 'hit') {
                        const h = r.h
                        return (
-                         <ListRow density="lg" href={href(h.conversation_id)} title={h.title || 'Untitled'} tooltip={h.title}
+                         <ListRow density="lg" href={h.link} title={h.title || 'Untitled'} tooltip={h.title}
                                   body={<Snippet text={h.snippet} words={h.marks.map(([a, b]) => h.snippet.slice(a, b))} />}
                                   onClick={click(() => onOpen(h.conversation_id))} />
                        )
@@ -270,7 +269,7 @@ export function ConversationList({
                      const tone = running ? undefined : state ? TONE[STATE[state.tone]!] : own ? TONE[own] : undefined
                      if (r.sub) {
                        return (
-                         <ListRow depth={1} icon={Bot} href={href(c.id)} selected={c.id === selected} title={name} tooltip={c.last_line || name}
+                         <ListRow depth={1} icon={Bot} href={c.link} selected={c.id === selected} title={name} tooltip={c.last_line || name}
                                   dot={running ? 'running' : state ? TONE[STATE[state.tone]!] : own ? TONE[own] : undefined}
                                   meta={listTime(c.updated_at)} onClick={click(() => onOpen(c.id))}
                                   onContextMenu={e => ctx.open(e, menu, name)} press={touch ? ctx.press(() => menu, name) : undefined}
@@ -278,7 +277,7 @@ export function ConversationList({
                        )
                      }
                      return (
-                       <ListRow density="lg" href={href(c.id)} selected={c.id === selected} pick={touch && !picker?.on ? undefined : picker?.row(c.id)}
+                       <ListRow density="lg" href={c.link} selected={c.id === selected} pick={touch && !picker?.on ? undefined : picker?.row(c.id)}
                                 leading={leading(c)} title={name} tooltip={name}
                                 subtitle={running
                                   ? state?.words ? <EventLine running quiet>{state.words}</EventLine> : <Dots />

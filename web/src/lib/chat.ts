@@ -24,6 +24,8 @@ export type ChatHit = {
   title: string
   snippet: string
   marks: [number, number][]
+  /** the path that opens its conversation where it lives, the server's (homes.py) */
+  link: string
 }
 
 const shelfQuery = (shelf: 'list' | 'archive' | 'trash') =>
