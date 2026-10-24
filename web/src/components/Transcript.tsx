@@ -21,7 +21,7 @@ import { bytes, errorText, fullDate, stamp } from '../lib/format'
 import { fileUrl } from '../lib/media'
 import { format } from '../lib/nav'
 import { getPref, setPref } from '../lib/prefs'
-import { Bell, Brain, Download, ImageIcon, Mail, Megaphone, Paperclip, Repeat, Shrink, type LucideIcon } from 'lucide-react'
+import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Paperclip, Repeat, Shrink, type LucideIcon } from 'lucide-react'
 import { Button, EventLine, Fold, ICON, IconButton, InlineError, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey } from '../ui'
 import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
@@ -261,6 +261,7 @@ export function Transcript(
               {steps.map(renderStep)}
               <ArtifactCards cards={artifactsOf(calls)} />
               <ShareCards cards={sharesOf(calls)} />
+              <FileCards list={seg.msgs.flatMap(m => (m.attachments ?? []).filter(a => !a.batch_id && a.kind !== 'image' && a.kind !== 'audio'))} />
             </div>
           )}
         </Line>
@@ -279,8 +280,9 @@ export function Transcript(
             : isLive && !thinkingNow && <Status words={waiting} />}
           {formingOf(m.id)}
           <ToolLines calls={toolCalls[m.id] ?? []} inline={!hide_tools} />
-          {/* the files it sent you; what a batch made is in its gallery */}
-          <Attached list={(m.attachments ?? []).filter(a => !a.batch_id)} />
+          {/* the pictures and sounds it sent you, where it sent them; files are cards under the
+              reply (FileCards); what a batch made is in its gallery */}
+          <Attached list={(m.attachments ?? []).filter(a => !a.batch_id && (a.kind === 'image' || a.kind === 'audio'))} />
         </div>
       )
     }
@@ -422,6 +424,25 @@ function Described({ attachments }: { attachments: Attachment[] }) {
 
 /* a file on a message: its name, size and Download on one line (only its name while
    your message is on its way) */
+/* the files it sent you in this reply, each a card to download, under the reply */
+function FileCards({ list }: { list: Attachment[] }) {
+  if (!list.length) return null
+  return (
+    <div className="artcards">
+      {list.map(a => (
+        <a key={a.id} className="artcard" href={fileUrl(a, true)} download title={`Download ${a.filename}`}>
+          <FileText size={ICON.lg} className="artcard__icon" aria-hidden />
+          <span className="artcard__main">
+            <span className="artcard__title">{a.filename}</span>
+            <span className="artcard__sub">{bytes(a.bytes)}</span>
+          </span>
+          <Download size={ICON.md} aria-hidden />
+        </a>
+      ))}
+    </div>
+  )
+}
+
 function FileLine({ name, a }: { name: string; a?: Attachment }) {
   return (
     <div className="msg__file">
