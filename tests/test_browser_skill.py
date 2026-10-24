@@ -1,6 +1,7 @@
 """The browser skill: its tools, their steps and words, the screen model."""
 from __future__ import annotations
 
+import ipaddress
 from types import SimpleNamespace
 
 import httpx
@@ -386,3 +387,53 @@ async def test_look_locate_gives_the_box_and_its_centre_and_clicks_nothing(monke
     assert out.display["point"] == [713, 342] and out.display["shot"]["id"] == "a1"
     out = await b.look(ctx, what="locate", tab="g")
     assert out.is_error and out.content.startswith("locate needs a question")
+
+
+def _opener(monkeypatch, names: dict[str, list[str]]):
+    """A browser whose box answers every open, and the names it looks up: (open, sent)."""
+    sent = []
+
+    async def post(cfg, body):
+        sent.append(body["steps"][0]["url"])
+        return {"tab": body["tab"], "profile": "main", "url": body["steps"][0]["url"],
+                "title": "x", "view": {"y": 0, "h": 900, "page": 900}, "lines": [],
+                "notes": []}
+
+    async def status(cfg):
+        return {"tabs": [{"name": "a"}]}
+
+    async def addresses(host, port):
+        return [ipaddress.ip_address(a) for a in names.get(host, [])]
+    monkeypatch.setattr(sync, "post", post)
+    monkeypatch.setattr(sync, "status", status)
+    monkeypatch.setattr(browser_mod, "addresses", addresses)
+    b = Browser(SimpleNamespace(user="Joe", settings=None))
+    ctx = SimpleNamespace(max_output_tokens=None)
+
+    async def open_(url):
+        return await b.open(ctx, url=url, tab="a")
+    return open_, sent
+
+
+async def test_the_cloud_metadata_address_is_never_opened_the_lan_is(monkeypatch):
+    """169.254.0.0/16 and fd00:ec2::254, written any way Brave reads an address, or a
+    name that points there: refused before the box hears of it. The LAN opens."""
+    open_, sent = _opener(monkeypatch, {"meta.example": ["169.254.169.254"],
+                                        "nas.example": ["192.168.1.20"]})
+    for url in ("http://169.254.169.254/latest/meta-data/", "169.254.170.2/v2/credentials",
+                "http://[fd00:ec2::254]/latest/", "http://2852039166/", "http://169.254.43518/",
+                "http://0xa9.0xfe.0xa9.0xfe/", "http://0251.0376.0251.0376/",
+                "http://[::ffff:169.254.169.254]/", "http://meta.example/computeMetadata/v1/",
+                "http://%31%36%39.254.169.254/", "view-source:http://169.254.169.254/",
+                "http://169.254.169.254.:80/", "http://user@169.254.169.254/",
+                "http://１６９。254.169.254/"):
+        out = await open_(url)
+        assert out.is_error and out.content == (
+            "That is the cloud's instance metadata address, which no tab opens."), url
+    assert sent == []
+    for url in ("http://192.168.1.20:8080/", "http://nas.example/", "http://10.0.0.5/",
+                "file:///home/celine/page.html", "chrome://settings", "brave://settings",
+                "https://example.com/169.254.169.254"):
+        out = await open_(url)
+        assert not out.is_error, url
+    assert len(sent) == 7

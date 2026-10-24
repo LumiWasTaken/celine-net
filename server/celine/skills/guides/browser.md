@@ -9,6 +9,9 @@ Your browser is a real Brave on a screen of its own, in a box next to your shell
 It keeps its profile across restarts: cookies, history, site settings. Downloads land
 in ~/Downloads in your home, so your shellbox sees them at once.
 
+Any address opens, file:// and brave:// too, and the local network; the cloud's metadata
+address (169.254.169.254) does not.
+
 ## When
 
 - A page that needs clicking, typing or its scripts: a job search with filters, a

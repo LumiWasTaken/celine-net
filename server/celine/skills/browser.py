@@ -20,10 +20,14 @@ change both together.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
 import math
 import re
+import socket
+import unicodedata
 from collections import defaultdict
+from urllib.parse import unquote, urlsplit
 from datetime import datetime
 from typing import Annotated, Literal, NotRequired, Required, TypedDict
 
@@ -134,6 +138,86 @@ def address(url: str) -> str:
     if not re.match(r"^[a-z][a-z0-9+.-]*:\S+$", url, re.I):
         raise ToolRefused("url is an address, like https://example.com/jobs or chrome://settings.")
     return url
+
+
+# the cloud's instance metadata: the link-local range, and AWS's address on IPv6
+METADATA = (ipaddress.ip_network("169.254.0.0/16"), ipaddress.ip_network("fd00:ec2::254/128"))
+DEFAULT_PORTS = {"http": 80, "ws": 80, "https": 443, "wss": 443, "ftp": 21}
+SPECIAL = (*DEFAULT_PORTS, "file")     # schemes whose \ Brave reads as /
+RESOLVE_WAIT = 3.0      # seconds to look a name up; a name that does not answer opens
+IPV4_PART = re.compile(r"0[xX][0-9a-fA-F]*|0[0-7]*|[1-9][0-9]*")
+DOTS = str.maketrans({"。": ".", "．": ".", "｡": "."})   # IDNA's full stops
+IP = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def ipv4(host: str) -> ipaddress.IPv4Address | None:
+    """A host as Brave reads an IPv4 address: one to four parts, each decimal, 0x hex or
+    0 octal (2130706433, 127.1 and 0x7f.0.0.1 are all 127.0.0.1); None for a name."""
+    parts = host.split(".")
+    if len(parts) > 1 and parts[-1] == "":
+        parts.pop()
+    if not 1 <= len(parts) <= 4 or not all(IPV4_PART.fullmatch(p) for p in parts):
+        return None
+    nums = [int(p[2:] or "0", 16) if p[:2].lower() == "0x" else int(p, 8 if p[0] == "0" else 10)
+            for p in parts]
+    if any(n > 255 for n in nums[:-1]) or nums[-1] >= 256 ** (5 - len(nums)):
+        return None
+    return ipaddress.IPv4Address(sum(n << 8 * (3 - i) for i, n in enumerate(nums[:-1]))
+                                 + nums[-1])
+
+
+def literal(host: str) -> IP | None:
+    """The address a host names by itself, an IPv4 address in IPv6 read as IPv4."""
+    try:
+        ip = ipaddress.ip_address(host.split("%", 1)[0]) if ":" in host else ipv4(host)
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        return ip.ipv4_mapped
+    return ip
+
+
+def where(url: str) -> tuple[str, str, int | None, str]:
+    """(scheme, host, port, path) of an address as Brave reads it: inside view-source:,
+    \\ for / in a web address, the host percent-decoded, its full-width digits and dots
+    plain, lower case, no dot at its end."""
+    while url[:12].lower() == "view-source:":
+        url = url[12:]
+    scheme = url.split(":", 1)[0].lower()
+    if scheme in SPECIAL:
+        url = url.replace("\\", "/")
+    try:
+        p = urlsplit(url)
+        port = p.port
+    except ValueError:
+        return scheme, "", None, ""
+    host = unicodedata.normalize("NFKC", unquote(p.hostname or "")).translate(DOTS)
+    return scheme, host.lower().rstrip("."), port or DEFAULT_PORTS.get(scheme), p.path
+
+
+async def addresses(host: str, port: int | None) -> list[IP]:
+    """What a name points to, as the box's resolver would answer; [] when it does not
+    answer in RESOLVE_WAIT."""
+    with anyio.move_on_after(RESOLVE_WAIT):
+        try:
+            infos = await anyio.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except (OSError, UnicodeError):
+            return []
+        return [ip for i in infos if (ip := literal(str(i[4][0]))) is not None]
+    return []
+
+
+async def refusal(url: str) -> str | None:
+    """Why the browser does not open an address, None when it does: the cloud's metadata,
+    by its address or a name that points there. Every scheme and the LAN open."""
+    scheme, host, port, path = where(url)
+    if not host:
+        return None
+    ip = literal(host)
+    ips = [ip] if ip is not None else await addresses(host, port)
+    if any(a in net for a in ips for net in METADATA if a.version == net.version):
+        return "That is the cloud's instance metadata address, which no tab opens."
+    return None
 
 
 def key_names(text: str) -> str:
@@ -277,6 +361,8 @@ class Browser:
         what is in view, with an id on everything you can act on."""
         try:
             name, target = tab_name(tab), address(url)
+            if why := await refusal(target):
+                raise ToolRefused(why)
         except ToolRefused as e:
             return self._error(str(e), tab)
         steps = [{"do": "open", "url": target}]
