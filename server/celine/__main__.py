@@ -333,6 +333,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             try:
                 yield
             finally:
+                embed.use_queue(None, None)    # its loop ends: builds after it take no ticket
                 await _announce_shutdown(store, intercom)
                 await dispatcher.stop()
                 await store.aclose()

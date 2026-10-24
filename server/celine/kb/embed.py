@@ -203,7 +203,7 @@ _queue: tuple[Any, Any] | None = None   # (backends/queue.py Scheduler, its even
 def use_queue(scheduler, loop) -> None:
     """Builds take their tickets in `scheduler`, the app's LLM queue on `loop`."""
     global _queue
-    _queue = (scheduler, loop)
+    _queue = None if scheduler is None else (scheduler, loop)
 
 
 def _batch(fn, s: dict[str, Any], texts: list[str]) -> list[list[float]]:
