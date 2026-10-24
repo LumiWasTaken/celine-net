@@ -77,10 +77,13 @@ PREFLIGHT = [(b"access-control-allow-methods", b"*"), (b"access-control-allow-he
 # never passed to its box: hop by hop, the user's cookie, what we set ourselves
 DROP_IN = {b"host", b"connection", b"keep-alive", b"upgrade", b"te", b"trailer",
            b"proxy-authorization", b"proxy-connection", b"cookie", b"origin", b"referer"}
-# never passed from its box: hop by hop, cookies, what HEADERS sets
-DROP_OUT = {b"connection", b"keep-alive", b"transfer-encoding", b"upgrade", b"te", b"trailer",
-            b"proxy-connection", b"set-cookie", b"x-frame-options", b"referrer-policy",
-            b"access-control-allow-origin", b"access-control-allow-credentials"}
+# the only headers passed from its box: a share runs on the app's origin, so anything
+# else (Set-Cookie, Clear-Site-Data, NEL, Service-Worker-Allowed, ...) could reach the app
+KEEP_OUT = {b"content-type", b"content-length", b"content-encoding", b"content-range",
+            b"content-disposition", b"content-language", b"accept-ranges", b"cache-control",
+            b"etag", b"last-modified", b"expires", b"vary", b"location", b"date",
+            b"access-control-allow-methods", b"access-control-allow-headers",
+            b"access-control-expose-headers"}
 METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 NOT_FOUND = "Not found"
 BOX_DOWN = "The shellbox is not answering right now."
@@ -245,16 +248,30 @@ def shown(row: dict, st: str) -> dict:
             "url": f"/api/shares/{row['token']}/open"}
 
 
-def allowed(row: dict, headers, page: bool) -> bool:
+async def from_browser(cfg, client: str | None) -> bool:
+    """The request comes from its own browser box: the client is an address of the browser
+    service's host (a Host header proves nothing, anyone can send one)."""
+    from .settings import services
+    host = urlsplit(services.url(cfg, "browser")).hostname
+    if not host or not client:
+        return False
+    try:
+        got = await anyio.getaddrinfo(host, None)
+    except OSError:
+        return False
+    return client in {a[4][0] for a in got}
+
+
+def allowed(row: dict, headers, page: bool, browser: bool = False) -> bool:
     """May this request reach a running share? A public one, anyone. A private one: the
-    user with its cookie, or its own browser at the app's service name. `page`: a GET of a
+    user with its cookie, or its own browser box (from_browser). `page`: a GET of a
     page (Sec-Fetch-Dest document, or no such header)."""
     if row["public"]:
         return True
     got = cookie_parser(headers.get("cookie", "")).get(COOKIE)
     if got and secrets.compare_digest(got, row["secret"]):
         return True
-    if headers.get("host", "").rsplit(":", 1)[0] == urlsplit(INSIDE).hostname:
+    if browser:
         return True
     # note: only a page needs the cookie. The agent's page's own requests come from its opaque
     # origin, which sends no cookie at all with a module script or a fetch, so the token is
@@ -358,7 +375,8 @@ async def share(request: Request, token: str, rest: str) -> Response:
     cfg, store = _services(request.app)
     row = await get(store, token)
     if not opens(cfg, row) or \
-            not allowed(row, request.headers, _is_page(request.method, request.headers)):
+            not allowed(row, request.headers, _is_page(request.method, request.headers),
+                        await from_browser(cfg, request.client and request.client.host)):
         return _page(404, NOT_FOUND)
     if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
         r = Response(status_code=204)
@@ -405,7 +423,7 @@ async def _forward(request: Request, cfg, store, row: dict, rest: str) -> Respon
             await conn.aclose()
 
     out = StreamingResponse(body(), resp.status)
-    out.raw_headers = [(k, v) for k, v in resp.headers if k.lower() not in DROP_OUT] + HEADERS
+    out.raw_headers = [(k, v) for k, v in resp.headers if k.lower() in KEEP_OUT] + HEADERS
     return out
 
 
@@ -463,7 +481,8 @@ async def share_socket(ws: WebSocket, token: str, rest: str) -> None:
     cfg, store = _services(ws.app)
     row = await get(store, token)
     got = await tunnel(cfg, row["port"]) if opens(cfg, row) and row["port"] and \
-        allowed(row, ws.headers, False) else None
+        allowed(row, ws.headers, False, await from_browser(cfg, ws.client and ws.client.host)) \
+        else None
     if got is None:
         return await ws.close(1008)
     sock, reset = got

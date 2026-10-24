@@ -160,9 +160,14 @@ def sandboxed(r) -> None:
     assert "set-cookie" not in r.headers
 
 
-def test_a_port_needs_no_session_and_never_sees_the_cookie(app, web):
+async def _browser(cfg, client):
+    return True
+
+
+def test_a_port_needs_no_session_and_never_sees_the_cookie(app, web, monkeypatch):
     t = make(app, port=web)["token"]
-    c = TestClient(app, base_url="http://celine:8766")       # its own browser's address
+    monkeypatch.setattr(shares, "from_browser", _browser)    # its own browser box
+    c = TestClient(app, base_url="http://celine:8766")
     c.cookies.set(COOKIE, "the-owners-session")
     r = c.get(f"/share/{t}/a/b.js?x=1", headers={"origin": "null"})
     assert r.status_code == 200, r.text
@@ -378,3 +383,17 @@ def test_shares_off_answer_404_for_every_share_until_on_again(app, web, echo, cl
     assert c.get(f"/share/{public['token']}/").status_code == 404
     s.cfg.settings.features["shellbox"] = True
     assert c.get(f"/share/{public['token']}/").status_code == 200
+
+
+def test_a_host_header_alone_does_not_open_a_private_share(app, web, monkeypatch):
+    t = make(app, port=web)["token"]
+    inside = TestClient(app, base_url="http://celine:8766")
+    assert inside.get(f"/share/{t}/").status_code == 404, "anyone can send Host: celine"
+    monkeypatch.setattr(shares, "from_browser", _browser)
+    assert inside.get(f"/share/{t}/").status_code == 200, "its own browser box opens it"
+
+
+def test_only_plain_headers_come_back_from_a_share(app, web, monkeypatch):
+    from celine.shares import KEEP_OUT
+    assert b"clear-site-data" not in KEEP_OUT and b"set-cookie" not in KEEP_OUT
+    assert b"content-type" in KEEP_OUT
