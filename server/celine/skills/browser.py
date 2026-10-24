@@ -23,6 +23,7 @@ import base64
 import ipaddress
 import logging
 import math
+import posixpath
 import re
 import socket
 import unicodedata
@@ -34,7 +35,7 @@ from typing import Annotated, Literal, NotRequired, Required, TypedDict
 import anyio
 import httpx
 
-from .. import attachments, vision
+from .. import attachments, shares, vision
 from ..browser import sync
 from ..browser.sync import BrowserRefused
 from ..turns import loads, tokens
@@ -52,6 +53,7 @@ STEPS_MAX = 20         # steps in one browser__act (browserd's STEPS_MAX)
 PART_TOKENS = 6000     # one part of a page's text or HTML
 OUTLINE_TOKENS = 4000  # the outline at most; more is cut and said
 VIEW = (1440, 900)     # the view and every shot, px (browserd's W, H)
+CDP_PORT = 9300        # its DevTools, on the box's loopback (browserd's CDP_PORT)
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,15}$")
 POINT = re.compile(r"^(\d+)\s*,\s*(\d+)$")      # a point of the view, x,y in px
@@ -207,16 +209,41 @@ async def addresses(host: str, port: int | None) -> list[IP]:
     return []
 
 
+def ours(ip: IP) -> bool:
+    """Whether an address is one of the app's own, not its loopback: this machine takes
+    it for a socket. The box's loopback is the box's."""
+    if ip.is_loopback or ip.is_unspecified:
+        return False
+    with socket.socket(socket.AF_INET6 if ip.version == 6 else socket.AF_INET) as s:
+        try:
+            s.bind((str(ip), 0))
+        except OSError:
+            return False
+    return True
+
+
 async def refusal(url: str) -> str | None:
-    """Why the browser does not open an address, None when it does: the cloud's metadata,
-    by its address or a name that points there. Every scheme and the LAN open."""
+    """Why the browser does not open an address, None when it does: its own DevTools
+    on the box's loopback; the app where the box reaches it (shares.INSIDE), by that
+    name or one of the app's own addresses, except its shares; the cloud's metadata.
+    Each by its address or a name that points there. Every scheme, the LAN and the
+    box's other ports open."""
     scheme, host, port, path = where(url)
     if not host:
         return None
     ip = literal(host)
     ips = [ip] if ip is not None else await addresses(host, port)
+    loopback = host == "localhost" or host.endswith(".localhost") or \
+        any(a.is_loopback or a.is_unspecified for a in ips)
+    if loopback and port == CDP_PORT:
+        return "That is your browser's own DevTools port, which no tab opens."
     if any(a in net for a in ips for net in METADATA if a.version == net.version):
         return "That is the cloud's instance metadata address, which no tab opens."
+    app = urlsplit(shares.INSIDE)
+    if port == app.port and (host == app.hostname or any(ours(a) for a in ips)) and \
+            not posixpath.normpath("/" + unquote(path).lstrip("/")).startswith(shares.PREFIX):
+        return (f"That is the app itself, which no tab opens; a share of it does, at "
+                f"{shares.INSIDE}{shares.PREFIX}<token>/.")
     return None
 
 

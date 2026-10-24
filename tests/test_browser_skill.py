@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from types import SimpleNamespace
 
 import httpx
@@ -437,3 +438,54 @@ async def test_the_cloud_metadata_address_is_never_opened_the_lan_is(monkeypatch
         out = await open_(url)
         assert not out.is_error, url
     assert len(sent) == 7
+
+
+async def test_its_own_devtools_and_the_app_are_never_opened_its_shares_are(monkeypatch):
+    """The DevTools port on the box's loopback, and the app where the box reaches it
+    (shares.INSIDE, by that name or a name of one of the app's own addresses), refused
+    before the box hears of it; a share of the app opens, as do the box's other ports
+    and the app's name on another port."""
+    mine = local_address()
+    open_, sent = _opener(monkeypatch, {"localhost": ["127.0.0.1"],
+                                        "app.example": [mine] if mine else []})
+    for url in ("http://127.0.0.1:9300/json", "localhost:9300/json/version",
+                "http://[::1]:9300/", "ws://127.0.0.1:9300/devtools/browser/x",
+                "view-source:http://127.0.0.1:9300/json", "http://2130706433:9300/json",
+                "http://127.1:9300/", "http://0.0.0.0:9300/json", "http://a.localhost:9300/"):
+        out = await open_(url)
+        assert out.is_error and out.content == (
+            "That is your browser's own DevTools port, which no tab opens."), url
+    app = ("That is the app itself, which no tab opens; a share of it does, at "
+           "http://celine:8766/share/<token>/.")
+    for url in ("http://celine:8766/api/agent", "http://CELINE.:8766/", "celine:8766",
+                "https://celine:8766/", "http://celine:8766/share/../api/agent",
+                "http://celine:8766/share/%2e%2e/api/agent", "http://celine:8766\\@evil.example/",
+                *([f"http://{mine}:8766/", "http://app.example:8766/login"] if mine else [])):
+        out = await open_(url)
+        assert out.is_error and out.content == app, url
+    assert sent == []
+    for url in ("http://celine:8766/share/k3x9/", "http://celine:8766/share/k3x9/clip.mp4",
+                "http://127.0.0.1:8000/", "http://localhost:3000/", "http://celine:9000/"):
+        out = await open_(url)
+        assert not out.is_error, url
+    assert len(sent) == 5
+
+
+def local_address() -> str | None:
+    """An address of this machine that is not its loopback, None when it has none."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("192.0.2.1", 9))       # no packet: it only picks the way out
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def test_an_address_is_the_apps_only_when_this_machine_has_it():
+    assert not browser_mod.ours(ipaddress.ip_address("127.0.0.1"))
+    assert not browser_mod.ours(ipaddress.ip_address("0.0.0.0"))
+    assert not browser_mod.ours(ipaddress.ip_address("203.0.113.9"))
+    if (mine := local_address()) is not None:
+        assert browser_mod.ours(ipaddress.ip_address(mine))

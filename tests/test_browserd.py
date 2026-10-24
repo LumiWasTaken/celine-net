@@ -185,6 +185,13 @@ def test_an_outline_line_bare_of_ids_new_and_active():
     assert browserd.diff(["a", "b", "b"], ["b", "c", "c"]) == {"added": 2, "gone": 2, "lines": ["c", "c"]}
 
 
+def test_the_skill_knows_the_box_s_numbers():
+    """skills/browser.py repeats browserd's numbers; the app never imports the box."""
+    from celine.skills import browser as skill
+    assert (skill.CDP_PORT, skill.MAX_TABS, skill.STEPS_MAX) == (
+        browserd.CDP_PORT, browserd.MAX_TABS, browserd.STEPS_MAX)
+
+
 def test_each_step_has_its_effect(box, monkeypatch):
     """A swap of text in place is a change; the same outline is nothing; a navigation
     says where to."""

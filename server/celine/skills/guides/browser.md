@@ -9,8 +9,9 @@ Your browser is a real Brave on a screen of its own, in a box next to your shell
 It keeps its profile across restarts: cookies, history, site settings. Downloads land
 in ~/Downloads in your home, so your shellbox sees them at once.
 
-Any address opens, file:// and brave:// too, and the local network; the cloud's metadata
-address (169.254.169.254) does not.
+Any address opens, file:// and brave:// too, and the local network, except three: your
+browser's own DevTools port, the app itself (a share of yours opens) and the cloud's
+metadata address (169.254.169.254).
 
 ## When
 
