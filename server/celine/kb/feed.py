@@ -419,17 +419,23 @@ class _Writer:
                FROM feed_pending p
                JOIN chats c ON c.key = p.chat_key
                JOIN messages m ON m.chat_id = c.id AND m.key = p.message_key
-               ORDER BY p.ts""").fetchall()
+               ORDER BY p.ts, p.rowid""").fetchall()
+        # each message's text and tombstone as this loop leaves them: a second edit or
+        # delete of one message in one batch follows the first, not the row read above
+        now: dict[int, tuple[str, bool]] = {}
         for r in rows:
+            old, gone = now.get(r["mid"], (r["old"], r["deleted_at"] is not None))
             if r["kind"] == "delete":
-                if r["deleted_at"] is None:
+                if not gone:
                     self.erase(r)
+                    now[r["mid"]] = ("", True)
                     out.deleted += 1
-            elif r["deleted_at"] is None and r["text"] != r["old"]:
+            elif not gone and r["text"] != old:
                 self.conn.execute("INSERT INTO message_edits (message_id, ts, old_text) "
-                                  "VALUES (?, ?, ?)", (r["mid"], r["ts"], r["old"]))
+                                  "VALUES (?, ?, ?)", (r["mid"], r["ts"], old))
                 self.conn.execute("UPDATE messages SET text = ?, edited = 1 WHERE id = ?",
                                   (r["text"], r["mid"]))
+                now[r["mid"]] = (r["text"], False)
                 out.edits += 1
             self.sink.touched.add(r["chat_id"])
             self.conn.execute("DELETE FROM feed_pending WHERE rowid = ?", (r["rowid"],))

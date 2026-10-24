@@ -128,3 +128,25 @@ def test_a_failing_feed_backs_off_and_a_refused_key_waits(tmp_path, monkeypatch)
     monkeypatch.setattr(conn_mod, "now_ms", lambda: 10 ** 12)
     assert not c.feed_due({"state": "failed", "finished_at": 0})
     assert c.feed_due({"state": "done", "finished_at": 0})
+
+
+def test_two_edits_of_one_message_in_one_batch_chain(tmp_path):
+    kb = _kb(tmp_path)
+    Consumer(kb).apply(RECS[:2])
+    first = "is the celine running yet"
+    texts = "SELECT text FROM messages WHERE key = 'm1'"
+    olds = ("SELECT e.old_text FROM message_edits e JOIN messages m ON m.id = e.message_id "
+            "WHERE m.key = 'm1' ORDER BY e.ts")
+
+    def edit(seq: int, new: str) -> dict:
+        return {"seq": seq, "kind": "edit", "chat_key": "c100", "message_key": "m1",
+                "ts": 1800000000000 + seq, "text": new}
+    Consumer(kb).apply([edit(3, "b"), edit(4, first)])
+    assert _q(kb, texts) == [(first,)], "an edit back to the first text is an edit too"
+    Consumer(kb).apply([edit(5, "c"), edit(6, "d")])
+    assert _q(kb, texts) == [("d",)]
+    assert _q(kb, olds) == [(first,), ("b",), (first,), ("c",)]
+    Consumer(kb).apply([{"seq": 7, "kind": "delete", "chat_key": "c100",
+                         "message_keys": ["m1"], "ts": 1800000000007}, edit(8, "e")])
+    assert _q(kb, texts) == [("",)], "an edit after a delete leaves the tombstone"
+    assert _q(kb, olds) == []
