@@ -39,7 +39,13 @@ function healthy(): Promise<boolean> {
 
 async function ask(): Promise<boolean> {
   let res: Response
-  try { res = await fetch('/api/health', { cache: 'no-store' }) } catch { return false }
+  try { res = await fetch('/api/health', { cache: 'no-store', redirect: 'manual' }) } catch { return false }
+  // a login in front of the app (a proxy's forward auth) whose session ran out redirects;
+  // only a page load can follow it to that login
+  if (res.type === 'opaqueredirect') {
+    if (!leaving) { leaving = true; location.reload() }
+    return false
+  }
   if (res.status === 404 && await isGate404(res)) {
     if (!leaving) { leaving = true; location.replace('/') }
     return false
@@ -70,6 +76,13 @@ async function check() {
 export function reportApi(status: number) {
   if (status === 0 || status === 502 || status === 503 || status === 504) void check()
   else if (status === 404) void healthy()
+}
+
+/** The build this page was loaded with; a reconnect to another one reloads the page. */
+let loaded: string | null = null
+export function knowBuild(commit: string) { loaded ??= commit }
+export function reloadIfUpdated(commit: string) {
+  if (loaded && commit !== loaded && !leaving) { leaving = true; location.reload() }
 }
 
 /** A socket closed: the session may have ended (the gate refuses the handshake). */

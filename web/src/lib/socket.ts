@@ -24,9 +24,9 @@
      offline       still closed after 10 s: the server is gone (useServerDown)
    A close that heals within the grace time never shows anything. Every close also asks
    /api/health whether the session ended (lib/health.ts). */
-import { checkSession, useApiDown } from './health'
+import { checkSession, reloadIfUpdated, useApiDown } from './health'
 import {
-  request, type Attachment, type Compaction, type ImageNotice, type Intercom, type Message, type Plan, type Snapshot, type ToolCall, type ToolWords, type TurnState,
+  api, request, type Attachment, type Compaction, type ImageNotice, type Intercom, type Message, type Plan, type Snapshot, type ToolCall, type ToolWords, type TurnState,
 } from './api'
 import { emit, type ServerEvent } from './bus'
 import type { GuardBanner } from './guard'
@@ -222,7 +222,11 @@ function useSocket(): Connection {
         clearTimeout(grace); grace = undefined
         clearTimeout(gone); gone = undefined
         setState('connected')
-        if (opened) { void catchUp(s, true); return }
+        if (opened) {
+          // back after a while: an update in between reloads the page instead of a stale app
+          void api.configStatus().then(st => reloadIfUpdated(st.build.commit), () => undefined)
+          void catchUp(s, true); return
+        }
         opened = true
         followFeed(null)
         for (const [cid, set] of followers) send({ type: 'subscribe', conversation: cid, after: seqOf(set) })

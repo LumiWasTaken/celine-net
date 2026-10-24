@@ -8,6 +8,7 @@ import { useServerEvents } from './lib/bus'
 import { fullDate } from './lib/format'
 import { useFocusHandback, useGlobalKeys, useWindowTitle } from './lib/shell'
 import { useNotices } from './lib/notify'
+import { knowBuild } from './lib/health'
 import { HerContext } from './lib/her'
 import { NameContext, PronounsContext } from './lib/name'
 import { AppearanceContext, useAppearanceSettings } from './lib/appearance'
@@ -65,7 +66,11 @@ function Shell() {
 
   // the config status is an extra: when it fails, the app still works, so a failure
   // leaves it out instead of showing an error
-  const loadStatus = useCallback(async () => { setStatus(await api.configStatus()) }, [])
+  const loadStatus = useCallback(async () => {
+    const s = await api.configStatus()
+    knowBuild(s.build.commit)
+    setStatus(s)
+  }, [])
   useEffect(() => { void loadStatus().catch(() => undefined).finally(() => setStatusIn(true)) }, [loadStatus])
   // a settings file fixed or broken on disk shows on General at once
   useServerEvents(ev => { if (ev.type === 'settings.changed' || ev.type === 'her.changed') void loadStatus().catch(() => undefined) })
