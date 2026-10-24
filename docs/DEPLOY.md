@@ -462,6 +462,10 @@ process keeps running when the app stops. In Docker they are services of their o
 - Only one process may use a WhatsApp device. wa-link locks its state folder, so a
   second copy on the same folder exits at once. Never run a second copy of the same
   device on another machine either: stop the old one before the new one starts.
+- wa-link's limits: `WA_LINK_MEM_LIMIT` in `.env` (default `2g`) is its container's
+  memory; `WA_LINK_MAX_MEDIA_MB` (default `100`, the flag `-max-media-mb` outside Docker)
+  is the largest attachment it downloads for the app. A larger one is refused before it
+  is downloaded, by the size its message names.
 
 ## CI
 

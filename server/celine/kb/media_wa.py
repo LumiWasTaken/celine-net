@@ -498,7 +498,9 @@ def _download(kb, link, m: dict[str, Any], direct_path: str | None = None
     (kb/connectors.py)."""
     ref = {"direct_path": direct_path or m["direct_path"], "media_key": m["media_key"],
            "file_hash": m["file_hash"], "enc_file_hash": m["enc_file_hash"],
-           "mtype": m["mtype"]}
+           "mtype": m["mtype"],
+           # wa-link refuses a file over its cap by this, before it downloads anything
+           "file_length": m.get("file_size") or 0}
     try:
         r = link.raw_sync("POST", "/admin/media/download", ref)
     except Unreachable as e:
@@ -507,6 +509,8 @@ def _download(kb, link, m: dict[str, Any], direct_path: str | None = None
         return "offline", "WhatsApp is not reachable."
     if r.status_code in (404, 410):
         return "gone", EXPIRED
+    if r.status_code == 413:
+        return "failed", r.json().get("error") or "too large"
     if r.status_code != 200 or not r.content:
         return "failed", f"{r.status_code} {r.text[:120]}"
     data = r.content
@@ -557,7 +561,7 @@ def _collect(kb, link, res: dict[str, Any]) -> int:
     def waiting(c: sqlite3.Connection) -> list[dict[str, Any]]:
         return [dict(r) for r in c.execute(
             """SELECT m.id, m.key, w.mtype, w.media_key, w.file_hash, w.enc_file_hash, w.mime,
-                      w.direct_path
+                      w.direct_path, w.file_size
                FROM media_fetch f JOIN messages m ON m.id = f.message_id
                JOIN wa_media_meta w ON w.key = m.key
                WHERE f.state = 'retry-requested'

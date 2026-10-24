@@ -292,7 +292,10 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8767", "address for the doors")
 	clientsFile := flag.String("clients-file", "/data/connector-clients",
 		"who may connect: name:key:role per line or comma separated")
+	maxMedia := flag.Int64("max-media-mb", envMB("WA_LINK_MAX_MEDIA_MB", 100)>>20,
+		"the largest attachment /admin/media/download fetches, in MB")
 	flag.Parse()
+	maxMediaBytes = *maxMedia << 20
 
 	lock, err := openState(*state)
 	if err != nil {

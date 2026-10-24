@@ -254,6 +254,8 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ:-UTC}
+      # the largest attachment it downloads for the app, in MB (held in memory whole)
+      WA_LINK_MAX_MEDIA_MB: ${WA_LINK_MAX_MEDIA_MB:-100}
     volumes:
       - type: volume
         source: data
@@ -269,6 +271,8 @@ services:
           subpath: app/keys/connector-clients
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # a large history sync or attachment can't take the machine down with it
+    mem_limit: ${WA_LINK_MEM_LIMIT:-2g}
 
   # The reranker for archive search: bge-reranker-v2-m3 on llama.cpp's llama-server
   # (POST /v1/rerank). Optional: it starts only with the profile "reranker"

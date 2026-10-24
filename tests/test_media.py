@@ -141,3 +141,21 @@ def test_whatsapp_folder_scan_copies_her_files_once_and_downloads_are_off(tmp_pa
     with pytest.raises(media_wa.MediaOff):
         media_wa.fetch_via_link(kb, media.Settings.parse({"wa_download": True}), None,
                                 retry=True)
+
+
+def test_a_download_names_its_size_and_a_refused_one_says_why(tmp_path):
+    """wa-link refuses a file over its cap before downloading it, by the size the
+    message names: the app sends that size and keeps wa-link's reason."""
+    sent = []
+
+    class Link:
+        def raw_sync(self, method, path, body):
+            sent.append(body)
+            return SimpleNamespace(status_code=413, content=b"", text="", json=lambda: {
+                "error": "The file is larger than the connection downloads (100 MB)."})
+    kb = ChatKB(id="whatsapp", title="w", platform="whatsapp", path=tmp_path / "w.db")
+    m = {"id": 1, "direct_path": "/v/x", "media_key": "a2V5", "file_hash": None,
+         "enc_file_hash": None, "mtype": "document", "mime": None, "file_size": 2 << 30}
+    assert media_wa._download(kb, Link(), m) == (
+        "failed", "The file is larger than the connection downloads (100 MB).")
+    assert sent[0]["file_length"] == 2 << 30

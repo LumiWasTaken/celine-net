@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -272,6 +275,51 @@ func TestMediaDownloadKeepsTheFileAndRetryAnswersAreListed(t *testing.T) {
 		t.Fatal("answered request still pending")
 	}
 	_ = types.JID{}
+}
+
+func TestMediaOverTheCapIsRefusedBeforeItIsDownloaded(t *testing.T) {
+	setup(t)
+	s := server(t)
+	old := maxMediaBytes
+	maxMediaBytes = 10
+	defer func() { maxMediaBytes = old }()
+	calls, got := 0, []byte("0123456789")
+	download = func(_ context.Context, _ mediaRef, _ []byte) ([]byte, error) {
+		calls++
+		return got, nil
+	}
+	ref := `{"direct_path":"/v/x","media_key":"a2V5","mtype":"document","file_length":`
+	r := req(t, s, "POST", "/admin/media/download", readerKey, ref+`11}`)
+	if r.StatusCode != 413 || calls != 0 || !strings.Contains(decode(t, r)["error"].(string), "larger") {
+		t.Fatalf("over the cap: %d, %d downloads", r.StatusCode, calls)
+	}
+	if r := req(t, s, "POST", "/admin/media/download", readerKey, ref+`10}`); r.StatusCode != 200 {
+		t.Fatalf("at the cap: %d", r.StatusCode)
+	}
+	// the message said less than came: refused, and not kept
+	got = []byte("0123456789A")
+	r = req(t, s, "POST", "/admin/media/download", readerKey, ref+`5}`)
+	if r.StatusCode != 413 {
+		t.Fatalf("a file larger than its message said: %d", r.StatusCode)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(stateDir, "media")); len(entries) != 1 {
+		t.Fatalf("kept %d files", len(entries))
+	}
+}
+
+func TestTheMediaCapComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("WA_LINK_MAX_MEDIA_MB", "")
+	if envMB("WA_LINK_MAX_MEDIA_MB", 100) != 100<<20 {
+		t.Fatal("default")
+	}
+	t.Setenv("WA_LINK_MAX_MEDIA_MB", "7")
+	if envMB("WA_LINK_MAX_MEDIA_MB", 100) != 7<<20 {
+		t.Fatal("set")
+	}
+	t.Setenv("WA_LINK_MAX_MEDIA_MB", "lots")
+	if envMB("WA_LINK_MAX_MEDIA_MB", 100) != 100<<20 {
+		t.Fatal("not a number")
+	}
 }
 
 func TestAnExpiredQRCodeRestartsForANewOne(t *testing.T) {
