@@ -11,7 +11,9 @@ its row; from then on you edit them in the onboarding or on the agent's page, an
 are only the seed for a new install. `config/her/owner.md` (its notebook rules) is
 appended to every persona.
 
-Placeholders, filled when a request is built and never stored filled:
+Placeholders, filled when a request is built and never stored filled. What you type is
+stored exactly as typed: a name written out stays that name, a placeholder you write
+follows a rename.
 
 | Placeholder | Becomes |
 |---|---|

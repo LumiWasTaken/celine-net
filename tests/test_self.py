@@ -111,10 +111,13 @@ async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
     got = await me.edit(_ctx(store, cfg), what="phrases", add=["my call was right"])
     assert not got.is_error and "1 added" in got.content
     assert "my call was right" in cfg.her.voice["phrases"], "cfg follows the row"
+    placeholders = cfg.her.talk_text.count("{{username}}")
     got = await me.edit(_ctx(store, cfg), what="talk", old="write to Joe,",
                         new="write to Joe, plainly,")
     assert not got.is_error, got.content
-    assert "{{username}}, plainly," in cfg.her.talk, "kept with the placeholder"
+    assert "write to Joe, plainly," in cfg.her.talk, "stored as it wrote it"
+    assert cfg.her.talk.count("{{username}}") == placeholders - 1, \
+        "only the edited one is gone; the rest stay placeholders"
     got = await me.edit(_ctx(store, cfg), what="talk", new="## how I sound\nshort.")
     assert cfg.her.talk.rstrip().endswith("## how I sound\nshort.")
     got = await me.edit(_ctx(store, cfg), what="persona", new="I keep a balcony garden.")

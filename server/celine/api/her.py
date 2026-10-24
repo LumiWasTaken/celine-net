@@ -41,9 +41,6 @@ async def put_her(request: Request, response: Response,
     async with write.lock():
         cfg = cfg_of(request)
         files.check_version("her", her.package(cfg), if_match)
-        for k in ("persona", "talk"):
-            if isinstance(body.get(k), str):
-                body[k] = her.stored(cfg, cfg.her, body[k])
         await her.write(store_of(request), cfg, body)
         await _changed(request)
     return await get_her(request, response)

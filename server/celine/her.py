@@ -15,7 +15,6 @@ opens a connection of its own. The agent's name and pronouns fill the prompt tex
 from __future__ import annotations
 
 import json
-import re
 import tomllib
 from dataclasses import dataclass
 from hashlib import sha256
@@ -128,19 +127,10 @@ def shown(cfg, her: Her, text: str | None = None) -> str:
     return text
 
 
-def stored(cfg, her: Her, text: str) -> str:
-    """A persona or a talk typed on its page as kept: its name and the user's, as whole
-    words, back to {{name}} and {{username}} (shown's other way), so a rename carries."""
-    for name, key in ((her.name, "{{name}}"), (cfg.user, "{{username}}")):
-        if name:
-            text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", key, text)
-    return text
-
-
 def package(cfg) -> dict[str, Any]:
-    """The whole of it as JSON (GET /api/agent): its persona and talk as kept, with
-    {{name}} and {{username}} in them (the user edits the placeholders, so a rename
-    carries); the shipped talk too."""
+    """The whole of it as JSON (GET /api/agent): its persona and talk exactly as typed,
+    with any {{name}} and {{username}} in them (filled when a request is built); the
+    shipped talk too."""
     h = cfg.her
     return {**view(cfg), "persona": h.persona, "talk": h.talk,
             "talk_shipped": shipped_talk(),

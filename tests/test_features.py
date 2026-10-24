@@ -493,16 +493,20 @@ async def test_the_environment_seeds_the_services_once(tmp_path, monkeypatch, st
     assert cfg.settings.services["browser"] == {"url": "http://b:1"}
 
 
-async def test_her_talk_keeps_the_placeholders_and_names_become_them(api):
-    """The page edits the text with {{username}} and {{name}} in it; a name typed in
-    full becomes its placeholder when stored, so a rename carries."""
+async def test_her_talk_is_stored_as_typed_and_placeholders_still_fill(api):
+    """The page edits the text with {{username}} and {{name}} in it; it is stored exactly
+    as typed (a name typed in full stays the name), and a placeholder typed by hand is
+    filled when a request is built."""
     await api.put("/api/settings", json={"general": {"user_name": "Joe"}})
     r = (await api.get("/api/agent")).json()
     assert r["talk"] is None and "{{username}}" in r["talk_shipped"]
-    put = await api.put("/api/agent", json={"talk": "Talk to Joe like Celine would.\n"})
+    typed = f"Talk to Joe like {api.cfg.her.name} would, {{{{username}}}}.\n"
+    put = await api.put("/api/agent", json={"talk": typed})
     assert put.status_code == 200, put.text
-    assert put.json()["talk"] == "Talk to {{username}} like {{name}} would.\n"
-    assert api.cfg.her.talk == "Talk to {{username}} like {{name}} would.\n"
+    assert put.json()["talk"] == typed
+    assert api.cfg.her.talk == typed
+    assert api.cfg.substitute(api.cfg.her.talk) == \
+        f"Talk to Joe like {api.cfg.her.name} would, Joe.\n"
 
 
 async def test_put_answers_from_the_probes_the_page_saw(api, monkeypatch):
