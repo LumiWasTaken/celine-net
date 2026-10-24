@@ -110,9 +110,12 @@ user's own terminals leave none.
 
 At every start a home that is not its own (a new volume, another uid) is given to it, said
 in the container's log; the box runs apt-get update, then ~/boot.sh as it, in the
-background (STATUS apt and boot). With SHELLBOX_HOME_GB set, its home is measured every HOME_EVERY
-seconds (USAGE for the greeting); its next result after a measure past the size carries
-the note home_over:<used>:<limit>, once per measure.
+background (STATUS apt and boot). With SHELLBOX_HOME_GB set (the hard cap; the soft cap
+SHELLBOX_HOME_SOFT_GB, default 90% of it), its home is measured every HOME_EVERY seconds
+(USAGE for the greeting); its next result after a measure past a cap carries the note
+home_over:<used>:<cap>, once per measure, and past the hard cap no upload lands. Nothing
+else the agent writes passes through here: the wall for that is the host's
+(shellbox/home-disk.sh).
 """
 from __future__ import annotations
 
@@ -198,7 +201,8 @@ CMD = MARKER.parent / "cmd"                    # its runs: <id>.start, <id>.log,
 RESET = MARKER.parent / "reset"                # when the last reset was (the greeting)
 USAGE = MARKER.parent / "home"                 # "<used> <limit>" in bytes (the greeting)
 RC = Path("/etc/shellbox/run.sh")              # RUN_SH, sourced by /etc/bash.bashrc
-HOME_GB = os.environ.get("SHELLBOX_HOME_GB", "")   # its home's size; empty: no limit
+HOME_GB = os.environ.get("SHELLBOX_HOME_GB", "")   # its home's hard cap; empty: no limit
+HOME_SOFT_GB = os.environ.get("SHELLBOX_HOME_SOFT_GB", "")   # warned past; empty: 90%
 
 # what its terminals see, and nothing else (tmux hands the environment of whoever starts
 # its server to every terminal). pip and npm settings come from
@@ -1887,35 +1891,61 @@ def update_packages() -> None:
     STATUS["apt"] = {"exit": rc, "seconds": round(time.monotonic() - began)}
 
 
+def caps() -> tuple[int, int] | None:
+    """Its home's (soft, hard) caps in bytes, None without a size."""
+    if not HOME_GB:
+        return None
+    hard = int(float(HOME_GB) * 1024 ** 3)
+    soft = int(float(HOME_SOFT_GB) * 1024 ** 3) if HOME_SOFT_GB else hard * 9 // 10
+    return min(soft, hard), hard
+
+
 def measure_home() -> None:
     """The agent's home's size on disk every HOME_EVERY seconds, when it has one
-    (SHELLBOX_HOME_GB): for the greeting (USAGE), and for home_note()."""
-    limit = int(float(HOME_GB) * 1024 ** 3)
+    (SHELLBOX_HOME_GB): for the greeting (USAGE), home_note() and put_file()."""
     while True:
         try:
             out = subprocess.run(["ionice", "-c3", "nice", "-n19", "du", "-sx",
                                   "--block-size=1", str(HOME)], capture_output=True,
                                  text=True, timeout=HOME_EVERY).stdout
-            used = int(out.split()[0])
-            STATUS["home"] = {"used": used, "limit": limit, "at": int(time.time())}
-            USAGE.write_text(f"{used} {limit}\n")
+            measured(int(out.split()[0]), int(time.time()))
         except (OSError, ValueError, IndexError, subprocess.TimeoutExpired) as e:
             STATUS["home"] = {"error": f"{type(e).__name__}: {e}"}
         time.sleep(HOME_EVERY)
+
+
+def measured(used: int, at: int) -> None:
+    """One measure of its home: `used` bytes at `at` (epoch seconds)."""
+    soft, hard = caps() or (0, 0)
+    STATUS["home"] = {"used": used, "soft": soft, "limit": hard, "at": at}
+    USAGE.write_text(f"{used} {hard}\n")
 
 
 home_noted = None     # the measure the last home note came from
 
 
 def home_note() -> list[str]:
-    """home_over:<used>:<limit> on its next result after each measure that finds its home
-    past its size: once per measure, not on every result."""
+    """home_over:<used>:<cap> on its next result after each measure that finds its home
+    past a cap (the hard one once it is past that too): once per measure, not on every
+    result."""
     global home_noted
     h = STATUS.get("home") or {}
-    if not h.get("limit") or h.get("used", 0) <= h["limit"] or home_noted == h["at"]:
+    if not h.get("limit") or h.get("used", 0) <= h["soft"] or home_noted == h["at"]:
         return []
     home_noted = h["at"]
-    return [f"home_over:{h['used']}:{h['limit']}"]
+    cap = h["limit"] if h["used"] > h["limit"] else h["soft"]
+    return [f"home_over:{h['used']}:{cap}"]
+
+
+def home_room(length: int) -> None:
+    """Refuses `length` more bytes past its home's hard cap, by the last measure and what
+    landed since (Problem 413)."""
+    h = STATUS.get("home") or {}
+    if not h.get("limit") or h["used"] + length <= h["limit"]:
+        return
+    raise Problem(f"The home holds {h['used'] / 1024 ** 3:.1f} GB of its "
+                  f"{h['limit'] / 1024 ** 3:g} GB and the file is "
+                  f"{max(length // 1048576, 1)} MB: delete something first.", 413)
 
 
 def run_boot_script() -> None:
@@ -1973,6 +2003,7 @@ def put_file(rel: str, body, length: int, unique: bool = False, origin: str = ""
     if length > free:
         raise Problem(f"The home disk has {free // 1048576} MB left and the file is "
                       f"{length // 1048576} MB.", 413)
+    home_room(length)
     d = p.parent
     while not d.exists():
         d = d.parent
@@ -1994,6 +2025,8 @@ def put_file(rel: str, body, length: int, unique: bool = False, origin: str = ""
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    if (STATUS.get("home") or {}).get("limit"):
+        STATUS["home"]["used"] += length        # until the next measure
     return {"path": str(p), "bytes": length}
 
 

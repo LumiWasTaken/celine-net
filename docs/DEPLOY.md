@@ -256,9 +256,11 @@ did.
 
 Before the reset it keeps a snapshot of its home, one folder per day in `shellbox-snapshots/<date>` (hardlinks to the day before; a restore is by hand). `SHELLBOX_SNAPSHOTS` (a host folder) sets where, `SHELLBOX_SNAPSHOT_KEEP_DAYS` how many days they are kept (default 7; 0 keeps every one).
 
-The agent's home's size: `SHELLBOX_HOME_GB` gives it one. The box measures its home every 10
-minutes; past the size, its next result says so and asks it to clean up or ask for
-more room. Nothing stops its writing: it is a promise, not a wall.
+The agent's home's size: `SHELLBOX_HOME_GB` gives it a hard cap, `SHELLBOX_HOME_SOFT_GB`
+a soft one (default 90% of the hard cap). The box measures its home every 10 minutes;
+past either cap, its next result says so and asks it to clean up or ask for more room,
+and past the hard cap the box takes no more uploads. What the agent writes from its own
+shell does not pass through the box's daemon: only the disk below stops that.
 
 A hard limit, optionally: with `SHELLBOX_HOME` (a host folder) as well, its home can be an ext4 disk image of that size (`$SHELLBOX_HOME.img`, mounted by `/etc/fstab`). Replace the shellbox's home volume in the compose file with `- ${SHELLBOX_HOME}:/home/celine`, then, as root in the stack folder, `docker compose stop shellbox`, `shellbox/home-disk.sh` (makes the disk, moves the files in, adds the fstab line), `docker compose up -d shellbox`. Run it again after raising `SHELLBOX_HOME_GB`: the disk grows in place; shrinking is by hand. The folder under the disk is made immutable (`chattr +i`): if the disk ever fails to mount, its box refuses to start (shellboxd cannot write its home) instead of writing onto the host's disk; the rest of the stack keeps running.
 
@@ -287,7 +289,8 @@ The two boxes read these; the compose file sets the ones it names, `.env` the on
 | `BROWSER_KEY_HASH_FILE` | `/etc/browser/key.hash` | the sha256 of the app's `keys/browser.key`; the browser box accepts only a call with that key |
 | `BROWSER_PORT` | `8771` | the port browserd listens on |
 | `SHELLBOX_LLM_URL` | none | the app's model proxy its terminals call (`OPENAI_BASE_URL`) |
-| `SHELLBOX_HOME_GB` | empty | its home's size in GB; empty: no size |
+| `SHELLBOX_HOME_GB` | empty | its home's hard cap in GB: past it no upload lands; empty: no size |
+| `SHELLBOX_HOME_SOFT_GB` | 90% of the hard cap | past it the agent is told to clean up |
 | `SHELLBOX_RESET_AT` | `04:00` | the hour of the morning reset, HH:MM in `TZ` |
 | `SHELLBOX_SNAPSHOT_KEEP_DAYS` | `7` | days its home's snapshots are kept (shellbox-manager); 0 keeps every one |
 
