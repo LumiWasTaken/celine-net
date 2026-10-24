@@ -28,10 +28,16 @@ async def watch(app) -> None:
     sdir.mkdir(parents=True, exist_ok=True)
     async for _ in watchfiles.awatch(config_mod.CONFIG_DIR, sdir, debounce=WAIT_MS,
                                      rust_timeout=WAIT_MS):
-        # a save in Settings was applied already; its file landing here changes nothing
-        if apply(app, only_if_changed=True):
-            # a hand edit reaches every open page like a change made in the app
-            app.store.emit_global({"type": SETTINGS_CHANGED, "what": ["files"]})
+        await file_changed(app)
+
+
+async def file_changed(app) -> None:
+    """A save in Settings was applied already; its file landing here changes nothing. A
+    hand edit is applied like one made in the app: the runners follow the features."""
+    if apply(app, only_if_changed=True):
+        from .settings import views
+        await views.apply_runners(app)
+        app.store.emit_global({"type": SETTINGS_CHANGED, "what": ["files"]})
 
 
 def _fresh():

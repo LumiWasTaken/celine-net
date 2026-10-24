@@ -87,3 +87,32 @@ async def test_turns_at_once_follows_a_save(store):
         d.resize()
         assert len(d._workers) == 3 and d._cap() == 2
         tg.cancel_scope.cancel()
+
+
+async def test_a_reload_keeps_the_shell_wedge_count(store, monkeypatch):
+    cfg = load()
+    app = Services(cfg=cfg, store=store)
+    app.registry = build_registry(app)
+    app.registry.skills["shell"].wedges["c1"] = 3
+    fresh = load()
+    fresh.settings.general.update({"max_tool_iterations": 4})
+    monkeypatch.setattr(reload.boot, "load", lambda: fresh)
+    assert reload.apply(app)
+    assert app.registry.skills["shell"].wedges == {"c1": 3}
+
+
+async def test_a_hand_edit_of_the_features_file_stops_the_runner(store, monkeypatch):
+    from celine.core.runners import Runner, Runners
+    import anyio
+    cfg = load()
+    app = Services(cfg=cfg, store=store)
+    app.registry = build_registry(app)
+    async with anyio.create_task_group() as tg:
+        app.runners = Runners()
+        app.runners["shellbox"] = Runner(tg, anyio.sleep_forever)
+        await app.runners["shellbox"].start()
+        fresh = load()
+        fresh.settings.features = {**fresh.settings.features, "shellbox": False}
+        monkeypatch.setattr(reload.boot, "load", lambda: fresh)
+        await reload.file_changed(app)
+        assert not app.runners["shellbox"].running

@@ -417,7 +417,7 @@ class Shell:
 
     def carry(self, old) -> None:
         """A reload's rebuild keeps what it was already told (reload.py)."""
-        for a in ("boots", "apt_noted", "full_noted", "hinted", "told"):
+        for a in ("boots", "apt_noted", "full_noted", "hinted", "told", "wedges"):
             setattr(self, a, getattr(old, a))
 
     @property
