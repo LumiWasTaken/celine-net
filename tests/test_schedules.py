@@ -219,7 +219,7 @@ async def test_a_moment_before_noon_is_that_dates_night_from_noon_the_next(store
 class Hanging(FakeBackend):
     async def stream(self, messages, tools, body=None):
         await anyio.sleep_forever()
-        yield  # noqa: unreachable - a generator
+        yield  # unreachable: makes this a generator
 
 
 async def test_stop_ends_a_waiting_run_and_aborts_a_running_one(
@@ -268,7 +268,7 @@ async def _idle(sched) -> bool:
 class Failing(FakeBackend):
     async def stream(self, messages, tools, body=None):
         raise BackendError("the model broke")
-        yield  # noqa: unreachable - a generator
+        yield  # unreachable: makes this a generator
 
 
 async def test_a_model_error_fails_the_run_once(store, cfg):

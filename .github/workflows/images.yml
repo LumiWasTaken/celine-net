@@ -26,7 +26,7 @@ jobs:
           - {name: celine-discord-link, file: connectors/discord/Dockerfile}
           - {name: celine-wa-link, file: wa-link/Dockerfile}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: img
         run: echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
       - id: meta
