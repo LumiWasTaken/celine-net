@@ -160,7 +160,7 @@ class Vault:
         self.session: str | None = None
         self.problem: str | None = None     # the status line when something went wrong
         self.said: str | None = None        # the status line the pages were last told
-        self.synced = 0.0
+        self.synced: float | None = None
         self.known: set[str] = set()       # every password seen, for the redaction set
         self.lock = asyncio.Lock()
         self.ready = asyncio.Event()       # the first connect is over (the dispatcher)
@@ -215,7 +215,7 @@ class Vault:
     async def _login(self) -> None:
         """From the start: the server and the API key. That logs in and decrypts
         nothing: the vault stays locked until unlock()."""
-        self.session, self.synced = None, 0.0
+        self.session, self.synced = None, None
         self.on_lock()
         a = account(self.cfg)
         if a is None:
@@ -265,7 +265,7 @@ class Vault:
                         if again:
                             raise
                 del master
-                self.session, self.synced = got.strip(), 0.0
+                self.session, self.synced = got.strip(), None
                 self.on_lock()
                 self._learn(await self._items())
             except VaultError as e:
@@ -319,7 +319,7 @@ class Vault:
             return out
 
     async def _fresh(self) -> None:
-        if time.monotonic() - self.synced > SYNC_EVERY:
+        if self.synced is None or time.monotonic() - self.synced > SYNC_EVERY:
             await self._bw("sync")
             self.synced = time.monotonic()
 

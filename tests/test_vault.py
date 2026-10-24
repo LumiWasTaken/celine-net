@@ -349,3 +349,12 @@ async def test_with_a_shared_collection_her_entries_go_there_and_she_sees_only_i
     out = await vault_app.skill.set(ctx, name="hidden", url="https://h.example")
     assert out.is_error
     assert not [i for i in bw.state()["items"] if i["name"] == "hidden"]
+
+
+async def test_the_first_unlock_syncs_even_right_after_the_host_booted(vault_app, monkeypatch):
+    import celine.vault as vault_mod
+    monkeypatch.setattr(vault_mod.time, "monotonic", lambda: 10.0)    # up 10 s
+    before = vault_app.bw.state()["syncs"]
+    await vault_app.post("/api/vault/lock")
+    await vault_app.post("/api/vault/unlock", json={"master_password": MASTER})
+    assert vault_app.bw.state()["syncs"] == before + 1
