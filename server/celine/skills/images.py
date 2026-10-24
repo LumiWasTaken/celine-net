@@ -114,8 +114,6 @@ def batch_text(b: dict, user: str, *, started: bool, chat: bool = True) -> str:
     else:
         head = f"Batch {short(b['id'])} is {b['state']}: {made} of {len(items)} made."
     lines = [head] + [item_line(i) for i in items]
-    if any(i.get("bridged") for i in items):
-        lines.append(f"The images also went to {user}'s bridged chat.")
     return "\n".join(lines)
 
 

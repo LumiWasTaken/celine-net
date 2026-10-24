@@ -5,9 +5,8 @@ description: Your own earlier conversations with {{username}} in this app, your 
   before, or to review a day of your work. "We" in a question about their WhatsApp, Discord
   or other chats means the Messages archive, not this.
 ---
-Your past conversations with {{username}} in this app, your bridged WhatsApp
-chat with them included. Their own WhatsApp and Discord chats with other people are not
-here: those are in the Messages archive (chat_archive). Your sub-agents' conversations and
+Your past conversations with {{username}} in this app. Their own WhatsApp and Discord
+chats with other people are not here: those are in the Messages archive (chat_archive). Your sub-agents' conversations and
 your background runs are here too.
 
 - `past_conversations__search(query)`: word search over what was written, on the version

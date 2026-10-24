@@ -700,8 +700,6 @@ class Browser:
             out = self._refusal(e, name, steps)
             if e.facts.get("error") == "password_field":
                 await self._meet_vault(ctx)
-            if e.facts.get("error") == "wrong_site":
-                await self._wrong_site(e.facts.get("site"), steps)
             done = e.facts.get("effects") or []
             if done:
                 out.content += "\n" + "\n".join(self._effects(steps, done))
@@ -726,21 +724,6 @@ class Browser:
             await self._meet_vault(ctx)
             content += "\nA password field: vault__get or vault__set."
         return ToolResult(content=content, display=display)
-
-    async def _wrong_site(self, site: str | None, steps: list[dict]) -> None:
-        """A vault entry stopped at a page not its own: the user hears it on the phone.
-        Only the entry's name and the page's origin, never its words."""
-        entries = [m[1] for st in steps if st.get("do") == "type"
-                   and (m := VAULT.fullmatch(st.get("text", "")))]
-        ping = self.app.approvals.ping if self.app.approvals else None
-        if ping is None:
-            return
-        try:
-            await ping(f"{self.cfg.name} tried to type the vault entry "
-                       f"{', '.join(entries) or 'unknown'} into {site or 'a page still loading'}, "
-                       f"which is not one of its sites. Nothing was typed.")
-        except Exception:
-            log.warning("vault ping failed", exc_info=True)
 
     @staticmethod
     async def _meet_vault(ctx: ToolContext | None) -> None:

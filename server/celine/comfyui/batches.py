@@ -19,8 +19,7 @@ renders the items that wait, one after the other:
    the catalog lacks) is one failed slot; the next item goes on.
 3. What an item made is an attachment: of the message that holds its call (its image
    list and edits find it), or of the batch alone (one the user started). It is also
-   kept as a file in images/<date>/ or music/<date>/, and an image of a bridged
-   conversation goes to that chat at once.
+   kept as a file in images/<date>/ or music/<date>/.
 4. At the end, also after a Stop, an error or a restart's cut: ComfyUI frees its models
    and memory (POST /free), then the lease is released.
 
@@ -206,7 +205,7 @@ class Batches:
     with its task group, where every batch runs."""
 
     def __init__(self, app, tg=None):
-        self.app = app                  # core/services.py: cfg, store, llm, bridge
+        self.app = app                  # core/services.py: cfg, store, llm
         self.tg = tg
         self.running: dict[str, tuple[anyio.CancelScope, anyio.Event]] = {}
 
@@ -632,10 +631,6 @@ class Batches:
         row = await self._keep(b, data, f"{p.id}-{item['seed']}{ext}", media_type)
         item["attachment"] = {**row, "width": w, "height": h}
         item.update(choice.recipe())
-        bridge = self.app.bridge
-        if b["conversation_id"] and bridge is not None and await bridge.send_image(
-                b["conversation_id"], data, row["filename"], media_type):
-            item["bridged"] = True
 
     async def _song(self, b: dict, item: dict, servers: "_Servers", note) -> None:
         p = self._preset("music", item)

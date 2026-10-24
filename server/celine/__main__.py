@@ -178,16 +178,11 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
 
             # its vault: logged in in the background, locked until the user types the
             # master password (Settings, Vault); its turns wait for the login (the
-            # dispatcher's ready). Approvals (celine/approvals.py) ping the user's phone through
-            # the bridge, made below
+            # dispatcher's ready)
             from .vault import Vault
             from .approvals import Approvals
             services.vault = Vault(cfg, store.emit_global)
-
-            async def vault_ping(text: str) -> None:
-                if services.bridge is not None:
-                    await services.bridge.say(text)
-            services.approvals = Approvals(cfg, store.emit_global, vault_ping, store)
+            services.approvals = Approvals(cfg, store.emit_global, store)
             services.vault.forget = lambda: services.approvals.forget("vault")
 
             async def vault_run() -> None:
@@ -281,25 +276,12 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from .intercom import Intercom      # messages between everyone, and their timer
             intercom = services.intercom = Intercom(store, dispatcher.notify)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules
-            from .guard import freeze as guard_freeze
-
-            async def bridge_command(text: str, by) -> str | None:
-                """!approve, !deny (celine/approvals.py), !freeze, !unfreeze (guard);
-                `by`: the Owner the bridge made of their own message."""
-                return services.approvals.command(text, by) or \
-                    await guard_freeze.command(services, text, by)
-            from .bridge import Bridge           # chatting with it from WhatsApp
-            bridge = services.bridge = Bridge(
-                store, connectors, mcp.call, intercom, resolve=kbs.resolve_refs,
-                title=lambda k: getattr(kbs.get(k), "title", k), command=bridge_command)
             # every on_end before the workers start: a turn resumed at start that ends
-            # while the awaits below run still reports, answers its pair, and reaches
-            # its bridged chat
+            # while the awaits below run still reports and answers its pair
             from .sub_agents import report       # a sub-agent that is done reports
             dispatcher.on_end(lambda cid, _turn: report.on_end(services, cid))
             from .intercom import answer         # its answer to the user's reply, in its thread
             dispatcher.on_end(lambda cid, turn: answer.on_end(services, cid, turn))
-            dispatcher.on_end(bridge.on_end)     # a bridged chat's answer
             from . import leftovers              # a done mission's terminals and tabs close
             dispatcher.on_end(lambda cid, _turn: leftovers.on_end(services, cid))
             from .missions import watch as mission_watch    # a mission keeps going
@@ -331,7 +313,6 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             for fid in ("shellbox", "browser"):
                 if on[fid]:
                     await runners[fid].start()
-            tg.start_soon(bridge.run)
             tg.start_soon(reload.watch, services)
 
             auth = app.state.auth

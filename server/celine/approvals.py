@@ -1,6 +1,6 @@
 """Approvals: what the user answers before something runs, from a logged-in session
-(GET /api/approvals, POST /api/approvals/{id}/answer; Settings, Vault shows the vault's) or with
-`!approve` / `!deny` in the bridged chat. One service, three kinds:
+(GET /api/approvals, POST /api/approvals/{id}/answer; Settings, Vault shows the vault's).
+One service, three kinds:
 
 - `vault`, the vault's taps. Only the high-risk actions ask: the password into its
   shellbox (vault__get with shell), where everything in the box and the internet can
@@ -21,9 +21,7 @@ a mail, a chat, a file) in that conversation before it asked, so a request right
 such a read stands out: that is where someone else's words get in.
 
 The tool call waits for the answer (ASK_FOR seconds). The user answers from a logged-in
-session (a named token is refused), or in the bridged chat: the bridge takes commands
-only from the user's own messages there (bridge/service.py, from_me), never from what
-it posts. One request waits at a time. Everything is in memory: a restart forgets it,
+session (a named token is refused). One request waits at a time. Everything is in memory: a restart forgets it,
 and the vault is locked after a restart anyway. Every change is the global event
 `approvals.changed`, and a new request a `notice` (events.py) too.
 """
@@ -31,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -51,7 +48,6 @@ ROTATE = "change the password of {entry}"
 SHELL_SHORT = "{entry} password into the shell"
 ROTATE_SHORT = "new password for {entry}"
 WHY_MAX = 300
-COMMAND = re.compile(r"^!(approve|deny)\s*$", re.I)
 
 
 def _minutes() -> str:
@@ -66,7 +62,7 @@ class Ask:
     action: str             # one of the sentences above, filled in
     facts: list[str]        # the call's own data: an entry's sites, a tool's arguments
     why: str                # her reason, in her words, shown apart (vault); Bastet's (gate)
-    short: str              # the action in a few words, for the ping
+    short: str              # the action in a few words, for the notice
     conversation: str
     read: str | None        # the last tool that read from outside before it asked
     expires: float          # time.time()
@@ -81,8 +77,8 @@ class Ask:
 
 
 class Approvals:
-    def __init__(self, cfg, emit=None, ping=None, store=None):
-        self.cfg, self.emit, self.ping, self.store = cfg, emit, ping, store
+    def __init__(self, cfg, emit=None, store=None):
+        self.cfg, self.emit, self.store = cfg, emit, store
         self.waiting: dict[str, Ask] = {}
         self.read: dict[str, str] = {}      # conversation -> last outside tool
         self.approved: dict[str, None] = {}  # calls approved on a gate ask, newest last
@@ -131,7 +127,6 @@ class Approvals:
                                           "action": action.split(" ")[0]})
         self._changed()
         await self._notice(ask)
-        await self._ping(ask)
         try:
             ok = await asyncio.wait_for(asyncio.shield(ask.answer), ASK_FOR)
         except asyncio.TimeoutError:
@@ -168,23 +163,6 @@ class Approvals:
         return next((a.id for a in self.waiting.values()
                      if a.ref == ref and not a.answer.done()), None)
 
-    def command(self, text: str, by) -> str | None:
-        """`!approve` or `!deny` from the user's bridged chat (`by`, the Owner the bridge
-        made): the one waiting request.
-        -> the answer for that chat, or None when the text is no such command (it goes
-        to it as a message then)."""
-        m = COMMAND.match((text or "").strip())
-        if not m:
-            return None
-        ok = m[1].lower() == "approve"
-        live = [a for a in self.waiting.values()
-                if not a.answer.done() and time.time() <= a.expires]
-        if not live:
-            return "No request waits."
-        ask = live[0]
-        self.decide(ask.id, ok, by)
-        return ("Approved: " if ok else "Denied: ") + ask.action + "."
-
     def view(self, kind: str | None = None) -> list[dict]:
         return [a.view() for a in self.waiting.values() if kind in (None, a.kind)]
 
@@ -204,21 +182,3 @@ class Approvals:
             self.store, c, "approval", LABEL[ask.kind], ask.short or ask.action,
             "/settings/vault" if ask.kind == "vault" else homes.of(c, ask.conversation)["link"],
             f"ask:{ask.id}"))
-
-    async def _ping(self, ask: Ask) -> None:
-        """The user's phone: the bridged chat, the request's own words only."""
-        if self.ping is None:
-            return
-        try:
-            await self.ping(self.message(ask))
-        except Exception:
-            log.warning("approval ping failed", exc_info=True,
-                        extra={"event": "approvals.ping_failed"})
-
-    def message(self, ask: Ask) -> str:
-        """Short: what, why, how to answer."""
-        what = ask.short or ask.action
-        label = LABEL[ask.kind]
-        out = f" Read from outside before: {ask.read}." if ask.read else ""
-        return (f"{label}: {what}\nWhy: {ask.why}{out}\n"
-                f"!approve or !deny ({_minutes()})")

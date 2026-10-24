@@ -66,7 +66,7 @@ class Dispatcher:
     def on_end(self, fn) -> None:
         """`await fn(cid, turn_id)` after turn `turn_id` of conversation `cid` ended, and
         with `turn_id` None after one of its jobs ended (a sub-agent's report,
-        sub_agents/report.py; a bridged chat's answer, bridge/)."""
+        sub_agents/report.py)."""
         self._on_end.append(fn)
 
     async def ended(self, cid: str, turn_id: str | None = None) -> None:

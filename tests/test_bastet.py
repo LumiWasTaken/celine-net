@@ -1,7 +1,7 @@
 """Bastet (server/celine/guard): the rule set file, each rule's trigger and outcome, the
 passes on a fixed clock, the freeze (claims blocked, a live turn stopped,
-released on unfreeze, idempotent), the routes (a token refused), the bridged chat's
-commands, its own-mind line, and the fixture turn:
+released on unfreeze, idempotent), the routes (a token refused), its own-mind line,
+and the fixture turn:
 a sensitive note, then web__search with its address (On: not run; Watch: runs, row
 would_stop; with a pass: runs, row passed)."""
 from __future__ import annotations
@@ -34,7 +34,7 @@ from celine.turns.runner import run_turn
 from celine.guard.owner import _SEAL, Owner
 
 pytestmark = pytest.mark.anyio
-OWNER = Owner("test", _SEAL)       # what only their session or bridged message makes
+OWNER = Owner("test", _SEAL)       # what only their session makes
 
 NOTE = "class: sensitive\n\nSam lives at 12 Example Road in Springfield, phone +49 30 1234567."
 AT = "2026-10-22T10:00:00.000+00:00"
@@ -525,21 +525,6 @@ async def test_a_freeze_stops_the_live_turn_holds_the_queue_and_an_unfreeze_rele
 
 async def _done(store, tid) -> bool:
     return (await _state(store, tid))[0] not in ("queued", "preparing", "streaming", "tools")
-
-
-async def test_freeze_and_unfreeze_from_the_bridged_chat(store):
-    app = Services(cfg=load(), store=store)
-    assert await freeze.command(app, "!freezer", OWNER) is None
-    assert await freeze.command(app, "hello", OWNER) is None
-    assert await freeze.command(app, "!freeze she is acting strange", OWNER) == \
-        "Frozen: she is acting strange"
-    assert await freeze.command(app, "!freeze", OWNER) == "Frozen already."
-    assert (await freeze.frozen(store))["by"] == "user"
-    assert await freeze.command(app, "!UNFREEZE", OWNER) == "Unfrozen."
-    assert await freeze.command(app, "!unfreeze", OWNER) == "Not frozen."
-    notes = await store.read(lambda c: [r[0] for r in c.execute(
-        "SELECT from_addr FROM intercom WHERE to_addr='user'")])
-    assert notes == ["system:guard"]
 
 
 # ---- the routes --------------------------------------------------------------------------

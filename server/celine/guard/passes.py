@@ -31,7 +31,7 @@ async def make(store, *, by, rule: str, minutes: int,
                at: str | None = None) -> dict:
     """A pass from `at` (now) for `minutes`; `by`: the owner (guard/owner.py), the only
     one who makes a pass, anything else a TypeError; the row's `by` is where they made it
-    (session or bridge). Invalid (rule or minutes) with one sentence on a bad rule or
+    (session). Invalid (rule or minutes) with one sentence on a bad rule or
     time. Every client hears it (global event guard.passes)."""
     must(by)
     if rule != ALL and rule not in RULES:

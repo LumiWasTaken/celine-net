@@ -21,7 +21,6 @@ class Services:
     registry: Any = None
     dispatcher: Any = None
     intercom: Any = None
-    bridge: Any = None
     terminals: Any = None
     mcp: Any = None
     connectors: Any = None

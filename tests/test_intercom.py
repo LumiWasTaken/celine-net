@@ -402,7 +402,7 @@ async def test_her_answer_to_a_host_script_reaches_the_user(store):
 async def test_wait_holds_until_the_user_answers(store, cfg):
     ic = Intercom(store)
     skill = IntercomSkill(cfg)
-    skill.app = SimpleNamespace(intercom=ic, bridge=None)
+    skill.app = SimpleNamespace(intercom=ic)
     cid = await conversations.create(store)
     shown = anyio.Event()
     notes = []

@@ -126,9 +126,6 @@ class IntercomSkill:
         until: Annotated[str | None, 'To "all": an announcement that stands until then, '
                                      'like "05:00" or "2 h". Everyone who starts work '
                                      'before then sees it.'] = None,
-        urgent: Annotated[bool, 'To "user": the text also goes to their bridged chat '
-                                '(WhatsApp), so it reaches their phone. Not with in or '
-                                'at.'] = False,
         wait: Annotated[bool, 'To "user": your turn holds here until {{username}} '
                               'answers, up to 10 minutes; the answer comes in as their '
                               'message. Not with in or at.'] = False,
@@ -161,14 +158,11 @@ class IntercomSkill:
         if not guard.enabled(self.cfg) and any(
                 w.strip().casefold() in GUARD_NAMES for w in to.split(",")):
             return ToolResult(content="Bastet is off; nobody reads this.", is_error=True)
-        data, chat = {}, ""
-        if urgent and due is None and "user" in [w.strip() for w in to.split(",")]:
-            data, chat = await self._to_chat(text)
         try:
             out = await self.app.intercom.send(
                 f"agent:{ctx.conversation_id}", to, text, subject=subject,
                 reply_to=reply_to, due_at=iso(due) if due else None,
-                until_at=iso(until_at) if until_at else None, data=data,
+                until_at=iso(until_at) if until_at else None,
                 turn=None if new_thread else ctx.turn_id)
         except KeyError as e:
             return ToolResult(content=f"No conversation or message {e.args[0]}.",
@@ -189,7 +183,6 @@ class IntercomSkill:
         where = "a new thread" if tid == iid else f"thread #{tid}"
         said = f"Sent #{iid} in {where}." if due is None else \
             f"#{iid} lands {clock(due, self.tz, now_)}, in {where}."
-        said += chat
         if wait and due is None and "user" in [w.strip() for w in to.split(",")]:
             said += await self._wait_for_user(ctx, iid)
         return ToolResult(content=said, display={
@@ -215,21 +208,6 @@ class IntercomSkill:
         got = await self.app.intercom.wait_for(answer, limit)
         return f" {user} answered (#{got})." if got else \
             f" {user} did not answer within {limit} s; their answer comes in as a message."
-
-    async def _to_chat(self, text: str) -> tuple[dict, str]:
-        """The user's bridged chat, for `urgent`. -> (the message's data: where it went
-        and the chat's keys of its parts, so a quote-reply there joins the thread; one
-        sentence for the tool result)."""
-        bridge = self.app.bridge if self.app is not None else None
-        try:
-            if bridge is None:
-                raise ValueError("No bridged chat is on.")
-            kid, keys = await bridge.say(text)
-        except ValueError as e:
-            return {"urgent": True}, f" {str(e).rstrip('.')}, so it went to no chat: " \
-                f"{self.cfg.user} reads it in the Intercom section."
-        return ({"via": kid, "urgent": True, "sent": keys},
-                f" Also sent to {bridge.sides[kid].title}.")
 
     @tool()
     async def read(

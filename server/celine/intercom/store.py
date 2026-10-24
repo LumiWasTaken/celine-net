@@ -94,26 +94,6 @@ NAMES: dict = {"user": "you", "her": ""}
 SYSTEM_NAMES = {"app": "the app", "guard": "Bastet"}
 
 
-def via(c: sqlite3.Connection, turn_id: str) -> str | None:
-    """The bridged chat (its source id) a turn answers: it took the user's message from
-    there."""
-    r = c.execute("SELECT json_extract(i.data, '$.via') FROM intercom_deliveries d "
-                  "JOIN intercom i ON i.id = d.intercom_id WHERE d.turn_id = ? AND "
-                  "i.from_addr = 'user' AND json_extract(i.data, '$.via') IS NOT NULL "
-                  "ORDER BY i.id DESC LIMIT 1", (turn_id,)).fetchone()
-    return r[0] if r else None
-
-
-def sent_as(c: sqlite3.Connection, via_: str, key: str) -> int | None:
-    """The agent's message that went into the bridged chat `via_` as that chat's message `key`."""
-    # note: scans its messages sent through a bridge; an index if there are many
-    r = c.execute("SELECT id FROM intercom WHERE from_addr LIKE 'agent:%' AND "
-                  "json_extract(data, '$.via') = ? AND EXISTS (SELECT 1 FROM "
-                  "json_each(data, '$.sent') WHERE value = ?) ORDER BY id DESC LIMIT 1",
-                  (via_, key)).fetchone()
-    return r[0] if r else None
-
-
 def name_of(c: sqlite3.Connection, addr: str) -> str | None:
     """An address as people read it: the user's name; a conversation's mission or
     sub-agent name, else its own name (a team by its first conversation's); a token's
@@ -290,7 +270,7 @@ _UNREAD = ("EXISTS (SELECT 1 FROM intercom_deliveries d WHERE d.intercom_id = i.
 
 KINDS = ("message", "brief", "report", "job", "notice", "trigger")
 
-# The user's own message as typed (the composer, a bridged chat): a conversation message
+# The user's own message as typed (the composer): a conversation message
 # with no number (render.header), so no thread of its own. A note to themselves is one.
 PLAIN = ("(i.from_addr = 'user' AND i.to_addr <> 'user' AND i.kind = 'message' AND "
          "i.due_at IS NULL AND i.until_at IS NULL AND i.reply_to IS NULL)")

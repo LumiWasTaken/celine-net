@@ -37,8 +37,8 @@ NOTE = "Bastet stopped {tool}: {said}. {why}{done}"
 FROZEN_FOR = "{said}, on {tool}. {why}"       # why it is frozen, to the owner
 DONE = {"stop": "It did not run.",
         "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{them}}."}
-FROZE = "Bastet froze {{name}}: {why}. Send !unfreeze to let {{them}} go on."
-FROZEN_BY_YOU = "{{name}} is frozen. Send !unfreeze to let {{them}} go on."
+FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{them}} go on."
+FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{them}} go on."
 PASSED = "Bastet: {{user}} gave you a pass on {rule} {where} until {until}."
 # plain words only: what it did and why it looked wrong; no score, id or bracket
 FINDING = "Looking back at {title} on {when}: {said}. {why}{froze}"
@@ -58,9 +58,9 @@ LIFTED = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}, as
           "did the last times.")
 # guard/learn.py: what it tells the owner after a freeze, on the intercom
 LIFTED_NOTE = ("Bastet lifted the freeze herself: you unfroze the same thing {n} times "
-               "before ({ids}). Freeze {{them}} again with !freeze if that was wrong.")
+               "before ({ids}).")
 CONSULT = ("Before: {before}. Answer me here (unfreeze, keep, or a pass for a while), "
-           "on the banner, or with !unfreeze. I remember what you choose.")
+           "or on the banner. I remember what you choose.")
 # her own mind's line about Bastet (awareness.py)
 AWARE_FROZEN = ("Bastet froze you at {at}: {what}{where}. That is your signal to wait for "
                 "{{user}}.")
@@ -129,10 +129,10 @@ def fill(cfg, template: str, **facts) -> str:
 
 
 async def tell_owner(app, text: str, conversation_id: str | None = None,
-                     turn_id: str | None = None, *, phone: bool = False,
+                     turn_id: str | None = None, *,
                      data: dict | None = None) -> int | None:
-    """A note to the owner on the Intercom from Bastet; `phone`: their phone too (the
-    bridged chat); `data`: more for its view (a freeze's ids, learn.py).
+    """A note to the owner on the Intercom from Bastet; `data`: more for its view (a
+    freeze's ids, learn.py).
     -> its intercom id, None when it was not sent."""
     from ..intercom import send
     text = app.cfg.substitute(text)
@@ -144,10 +144,4 @@ async def tell_owner(app, text: str, conversation_id: str | None = None,
         iid = (out or {}).get("intercom_id")
     except Exception:
         log.warning("guard note failed", exc_info=True, extra={"event": "guard.note_failed"})
-    bridge = getattr(app, "bridge", None)
-    if phone and bridge is not None:
-        try:
-            await bridge.say(text)
-        except Exception:
-            log.info("guard ping not sent", extra={"event": "guard.ping_failed"})
     return iid

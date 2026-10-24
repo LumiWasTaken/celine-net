@@ -27,8 +27,6 @@ def _what(c: sqlite3.Connection, r) -> str:
         return f"the mission {m['name'] if m else title} (address {r['id']})"
     if r["kind"] == "agent":
         return f"the sub-agent {r['agent_name'] or title} (address {r['id']})"
-    if key.startswith("bridge:"):
-        return f"the bridged chat {title} (address {r['id']})"
     if r["kind"] == "chat":
         return f"the chat {title} (address {r['id']})"
     return f"the background task {title} (address {r['id']})"

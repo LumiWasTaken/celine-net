@@ -1,8 +1,7 @@
 """The gates it cannot talk its way out of,
 one test per gate: closed gates are code (no model, no pass, no Watch), the house
 enforces a freeze (no turn or work item leased, no tool, the model proxy and tokens
-refused), only the owner's session or their own bridged message unfreezes, passes and
-approves, the guard routes refuse every token, and every tool call has one way in."""
+refused), only the owner's session unfreezes, passes and approves, the guard routes refuse every token, and every tool call has one way in."""
 from __future__ import annotations
 
 import json
@@ -297,13 +296,12 @@ async def test_unfreeze_pass_and_approve_take_the_owner_and_nothing_else(store):
     assert await passes.listing(store) == []
 
 
-def test_only_his_session_and_his_bridged_message_make_an_owner():
-    """By construction: an Owner comes from guard/owner.py's three makers, and each is
-    called in one place only (the precedent, an unfreeze on their own past unfreezes, in
+def test_only_his_session_makes_an_owner():
+    """By construction: an Owner comes from guard/owner.py's makers, and each is called
+    in one place only (the precedent, an unfreeze on their own past unfreezes, in
     guard/learn.py). No tool, model path, intercom or Bastet's chat holds one."""
     makers = {"Owner(": set(), "_SEAL": set(), "owner.session(": set(),
-              "owner.session_or_none(": set(),
-              "owner.bridged(": set(), "precedent(c": set(), "second_look(c": set()}
+              "owner.session_or_none(": set(), "precedent(c": set(), "second_look(c": set()}
     for path, text in _sources():
         for word in makers:
             if word in text:
@@ -311,26 +309,8 @@ def test_only_his_session_and_his_bridged_message_make_an_owner():
     assert makers == {"Owner(": {"guard/owner.py"}, "_SEAL": {"guard/owner.py"},
                       "owner.session(": {"guard/api.py", "api/approvals.py"},
                       "owner.session_or_none(": {"guard/consult.py"},
-                      "owner.bridged(": {"bridge/service.py"},
                       "precedent(c": {"guard/owner.py", "guard/learn.py"},
                       "second_look(c": {"guard/owner.py", "guard/chain.py"}}
-
-
-async def test_the_bridge_takes_commands_from_his_own_messages_only(store, tmp_path,
-                                                                    monkeypatch):
-    import test_bridge as tb
-    monkeypatch.setattr(tb.bmod, "_now", lambda: tb.T0 / 1000)
-    w = await tb._world(store, tmp_path)
-    seen = []
-
-    async def command(text, by):
-        seen.append((text, by.via))
-        return "Unfrozen." if text == "!unfreeze" else None
-    w.bridge.command = command
-    await tb.feed(w, [tb.rec(1, "!unfreeze", from_me=False),     # someone else
-                      tb.rec(2, "Celine: !unfreeze"),           # its own, the marker
-                      tb.rec(3, "!unfreeze")])                  # their
-    assert seen == [("!unfreeze", "bridge")]
 
 
 # ---- the guard routes: a logged-in session only ------------------------------------------

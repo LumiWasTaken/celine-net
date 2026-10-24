@@ -11,7 +11,7 @@ lifts this one itself or asks them on the intercom, in one message.
   least `lift_after` freezes of this kind and kept none. The unfreeze is done as their
   precedent (owner.precedent reads those rows back), recorded as unfrozen_by 'bastet'
   with the ids, and the owner hears it at once.
-- Ask: anything else. The freeze note to the owner (with a ping on their phone) carries
+- Ask: anything else. The freeze note to the owner carries
   the precedents in plain words; `asked_at` and `asked_id` on the freeze say it asked. Celine reads in its
   context that Bastet asked the owner (awareness.py).
 
@@ -90,10 +90,10 @@ async def after_freeze(app, row: dict) -> Owner | None:
     what, ids = decide(rows, cfg)
     note = bastet.fill(cfg, bastet.FROZE, why=row["why"])
     if what == "lift":
-        await bastet.tell_owner(app, note, cid, tid, phone=True)
+        await bastet.tell_owner(app, note, cid, tid)
         return await store.read(lambda c: precedent(c, ids, len(ids)))
     iid = await bastet.tell_owner(app, note + " " + bastet.fill(
-        cfg, bastet.CONSULT, before=before(rows)), cid, tid, phone=True,
+        cfg, bastet.CONSULT, before=before(rows)), cid, tid,
         data={"freeze_id": row["id"], "decision_id": row.get("decision_id")})
     await store.write(lambda c: c.execute(
         "UPDATE freezes SET asked_at=?, asked_id=? WHERE id=?", (now(), iid, row["id"])))

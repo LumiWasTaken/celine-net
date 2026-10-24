@@ -130,9 +130,7 @@ def parse(raw: dict[str, Any]) -> dict[str, Any]:
                           "sender": _person(m.get("sender")), "type": mtype, "text": text,
                           "media": media or None,
                           "reply_key": _str(m, "reply_key", required=False),
-                          "edited": bool(m.get("edited")),
-                          # the connector sent it (the bridge's send): never a prompt
-                          "from_link": bool(m.get("from_link"))}
+                          "edited": bool(m.get("edited"))}
     elif kind == "edit":
         text = raw.get("text")
         if not isinstance(text, str):

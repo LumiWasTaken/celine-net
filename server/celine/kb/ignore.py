@@ -19,18 +19,10 @@ from .chat import ChatKB
 from .connectors import Refused
 
 
-def bridge_chat(connector) -> str | None:
-    """The connection's bridged chat (WhatsApp: Message yourself). It carries Celine's
-    conversation, so it is never deleted."""
-    if connector is None:
-        return None
-    return (connector.admin_sync("GET", "/admin/info") or {}).get("write_chat")
-
-
 def delete_and_ignore(kb: ChatKB, chat_ids: list[int], connector=None) -> dict[str, Any]:
     """Delete these chats from the archive and ignore them. The connector leaves them
     out first (Discord) or deletes them from its journal (WhatsApp). Raises Refused
-    (unknown chat, the bridged chat, the connection said no) or Unreachable."""
+    (unknown chat, the connection said no) or Unreachable."""
     ids = sorted({int(i) for i in chat_ids})
     if not ids:
         return {"chats": [], "messages": 0}
@@ -38,9 +30,6 @@ def delete_and_ignore(kb: ChatKB, chat_ids: list[int], connector=None) -> dict[s
         f"SELECT id, key FROM chats WHERE id IN ({','.join('?' * len(ids))})", ids)]))
     if len(keys) != len(ids):
         raise Refused("There is no such chat.")
-    bridge = bridge_chat(connector)
-    if bridge is not None and bridge in keys.values():
-        raise Refused("This is the bridged chat. You cannot delete it.")
     if connector is not None and kb.platform == "discord":
         connector.admin_sync("PUT", "/admin/targets", {"set": {k: False for k in keys.values()}})
     if connector is not None and kb.platform == "whatsapp":
@@ -63,4 +52,4 @@ def include_again(kb: ChatKB, key: str, connector=None) -> str | None:
     return job
 
 
-__all__ = ["bridge_chat", "delete_and_ignore", "include_again"]
+__all__ = ["delete_and_ignore", "include_again"]

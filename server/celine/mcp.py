@@ -12,9 +12,8 @@ Three things a server block can add:
   can be cited like any archived message. Messages references are accepted in place
   of the connector's own ids: a chat reference for `chat`, a message reference for
   `message`, `before` and `after` (its chat fills `chat`, which is then optional), an
-  account reference for `user_id` and `from_user`. A connector's tools that are not
-  read-only (wa-link's `send` and `send_image`) are not offered to Celine: the bridge
-  (bridge/) calls them through `Supervisor.call`.
+  account reference for `user_id` and `from_user`. A connector only reads: a tool of
+  its that is not read-only is not offered to Celine.
 - `guides/<server>.md` (skills/guides): the skill's description and guide.
 """
 from __future__ import annotations
@@ -131,7 +130,7 @@ class McpSkill:
         self.client: Client | None = None
         self.kick = anyio.Event()       # set to force a reconnect
         self.proc: Any = None           # the process this app started, if any
-        self.hidden: set[str] = set()   # a connector's writes: not Celine's tools
+        self.hidden: set[str] = set()   # a connector's writes: never offered
 
 
 def _tools(listed) -> list[dict[str, Any]]:
@@ -348,24 +347,6 @@ class Supervisor:
             schema = _with_refs(schema, skill.cfg.kb)
         return ToolSpec(skill=skill.name, name=name, description=t.get("description", ""),
                         schema=schema, fn=fn, annotations=_hints(t))
-
-    async def call(self, server: str, name: str, args: dict[str, Any]) -> Any:
-        """One call on a server, hidden tools included (the bridge's send). Returns
-        the SDK result; raises RuntimeError with one sentence when it did not work."""
-        skill = self.skills.get(server)
-        if skill is None:
-            raise RuntimeError(f"There is no MCP server {server}.")
-        client = skill.client
-        if client is None or skill.status != "up":
-            raise RuntimeError(f"{server} is {skill.status} right now.")
-        try:
-            res = await client.call_tool(name, args)
-        except Exception as e:
-            skill.kick.set()
-            raise RuntimeError(f"{server} failed: {type(e).__name__}") from e
-        if getattr(res, "is_error", False):
-            raise RuntimeError(_text(res) or f"{server} refused {name}.")
-        return res
 
     async def _call(self, skill: McpSkill, name: str, args: dict) -> ToolResult:
         client = skill.client

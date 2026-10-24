@@ -25,20 +25,14 @@ async def list_conversations(request: Request, limit: int = 200,
                              cursor: str | None = None, archived: bool = False,
                              trashed: bool = False, place: str | None = None) -> dict:
     """A page of conversations (store.list: running first, then pinned, then the most
-    recently updated, each row with its `group`, `state` and `source`); with `archived`
+    recently updated, each row with its `group` and `state`); with `archived`
     only the archived ones, with `trashed` only the deleted ones, else only the others;
     `place` "celine" only its chats. `count`: how many that shelf holds. `next` is the
     cursor of the following page, null on the last one."""
     from ..clock import zone
     limit = max(1, min(limit, 500))
-    kbs = getattr(request.app.state.services, "kbs", None)
-
-    def source(kid: str) -> str | None:
-        kb = kbs.get(kid) if kbs is not None else None
-        return getattr(kb, "platform", None)
-
     rows = await store.list(store_of(request), limit + 1, read_cursor(cursor), archived,
-                            trashed, place=place, tz=zone(cfg_of(request)), source=source)
+                            trashed, place=place, tz=zone(cfg_of(request)))
     more = len(rows) > limit
     rows = rows[:limit]
     last = rows[-1] if rows else None

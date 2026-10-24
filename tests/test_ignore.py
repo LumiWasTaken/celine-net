@@ -102,7 +102,7 @@ class FakeLink:
 
     def admin_sync(self, method, path, body=None):
         self.calls.append((method, path, body))
-        return {"write_chat": "4917000000000@s.whatsapp.net"} if path == "/admin/info" else {}
+        return {}
 
 
 def test_whatsapp_deletes_the_chat_from_its_journal_too(wa):

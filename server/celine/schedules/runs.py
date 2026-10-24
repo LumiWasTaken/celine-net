@@ -14,8 +14,8 @@ first that does not, in words:
    ("Runs after World news");
 2. the model of its role can answer now, the Router says ("Waiting for <model>"); it
    starts by itself when the model comes back, the same night or days later;
-3. no turn a person waits on is live: a chat (not a trigger's), a bridged chat, a
-   turn the user started in a mission ("Waiting until your chat is done"); a mission's
+3. no turn a person waits on is live: a chat (not a trigger's), a turn the user
+   started in a mission ("Waiting until your chat is done"); a mission's
    turns that go on by themselves hold no run unless Routines wait for missions is on
    (Settings, Advanced);
 4. no other run is running ("While Self-review runs"): one at a time, one model server.
@@ -104,7 +104,7 @@ IN_USE = "The app was in use"
 FROZEN = "Frozen"            # a freeze cut its turn, or it may not start while frozen
 PASSED = f"More than {IDLE_MINUTES} minutes late"
 WAITED_ON = ("((c.kind = 'mission' AND {mission}) OR (c.kind = 'chat' AND "
-             "c.trigger_key IS NULL) OR c.trigger_key LIKE 'bridge:%')")
+             "c.trigger_key IS NULL))")
 
 RULE = ("This runs in the background: {{username}} is not here and reads nothing of it "
         "live. {final} If something needs {{username}} to act or to know, start a chat "

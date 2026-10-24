@@ -588,8 +588,7 @@ def state_of(c: sqlite3.Connection, row: dict) -> dict | None:
 async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                after: tuple[int, str, str] | None = None,
                archived: bool = False, trashed: bool = False, *, place: str | None = None,
-               tz=timezone.utc, now_: datetime | None = None,
-               source=lambda kb: None) -> list[dict]:
+               tz=timezone.utc, now_: datetime | None = None) -> list[dict]:
     """Running first (a live turn in it or a sub-agent of it), then pinned, then the most
     recently updated. `after`: the (rank, updated_at, id) of the last row of the
     previous page. `archived`: only the archived ones, else only the others;
@@ -597,8 +596,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
     (last_line above), `group` (group_of), `state` (state_of), `home` and `link`
-    (homes.of: where it opens) and `source` (`source(kb)` of a bridged chat: whatsapp;
-    else None). Sub-agents are not rows of their own: each row lists its
+    (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
     1 pinned, 0)."""
     now_ = now_ or datetime.now(timezone.utc)
@@ -619,15 +617,13 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
         for r in rows:
             r["agents"] = [{**dict(s), "agents": []} for s in c.execute(
                 _SUMMARY + "WHERE c.agent_of = ? ORDER BY c.created_at, c.id", (r["id"],))]
-            key = r["trigger_key"] or ""
-            r["source"] = source(key[7:]) if key.startswith("bridge:") else None
             r["group"] = group_of(r["rank"], r["updated_at"], tz, now_)
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
                 one["state"] = state_of(c, one)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
-                a["group"], a["source"] = r["group"], None
+                a["group"] = r["group"]
         return rows
 
     return await store.read(fn)

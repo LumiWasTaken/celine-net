@@ -1,5 +1,5 @@
 """All of it in every kind of turn: its persona, the legend, its talk (and the voice cue
-it names) in the system prompt of a chat, a bridged chat, a mission, a sub-agent, a
+it names) in the system prompt of a chat, a mission, a sub-agent, a
 schedule's run and a trigger's task (prompt.system_blocks, the one assembly), and its
 Banned words on every call of its turns (settings/voice.of)."""
 from __future__ import annotations
@@ -19,7 +19,6 @@ async def _kinds(store) -> dict[str, str]:
     chat = await conversations.create(store, "chat")
     return {
         "chat": chat,
-        "bridge": await conversations.create(store, trigger_key="bridge:whatsapp"),
         "mission": await conversations.create(store, kind="mission"),
         "agent": await conversations.create(store, agent_of=chat, agent_name="scout"),
         "run": await conversations.create(store, trigger_key="run:" + "a" * 32 + ":1",

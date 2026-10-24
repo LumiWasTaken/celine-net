@@ -100,15 +100,14 @@ def test_place_of_each_kind(tmp_path):
     migrate(db)
     c = sqlite3.connect(db)
     for cid, kind, agent_of, key in (
-            ("chat", "chat", None, None), ("bridge", "background", None, "bridge:whatsapp"),
-            ("run", "background", None, "run:r1:1"), ("trig", "chat", None, "trigger:t"),
+            ("chat", "chat", None, None), ("run", "background", None, "run:r1:1"), ("trig", "chat", None, "trigger:t"),
             ("mis", "mission", None, None), ("sub", "agent", "mis", None),
             ("subsub", "agent", "sub", None), ("orphan", "agent", None, None)):
         c.execute("INSERT INTO conversations(id, kind, agent_of, trigger_key, created_at, "
                   "updated_at) VALUES(?, ?, ?, ?, 'x', 'x')", (cid, kind, agent_of, key))
     got = {cid: place_of(c, cid) for cid in (
-        "chat", "bridge", "run", "trig", "mis", "sub", "subsub", "orphan", "gone")}
-    assert got == {"chat": "chat", "bridge": "chat", "run": "background",
+        "chat", "run", "trig", "mis", "sub", "subsub", "orphan", "gone")}
+    assert got == {"chat": "chat", "run": "background",
                    "trig": "background", "mis": "mission", "sub": "mission",
                    "subsub": "mission", "orphan": "background", "gone": "background"}
     assert offered("notebook", "chat") and offered("notebook", "mission")

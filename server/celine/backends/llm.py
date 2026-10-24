@@ -4,8 +4,8 @@ the router (backends/router.py) which models of its task can answer now, waits f
 slot in the scheduler (backends/queue.py), and moves to the next model when one fails
 before its first token.
 
-A turn the user waits on (`fallback` False: their message in a chat, a mission, a
-bridged chat) runs on exactly its first model: when it fails, the
+A turn the user waits on (`fallback` False: their message in a chat or a mission)
+runs on exactly its first model: when it fails, the
 call fails with its error, and nothing waits for another model. When that model's
 provider is seen down (backends/router.py), its state is asked for once more (2 s at
 most, the state may be stale) and the call fails with the provider's sentence only

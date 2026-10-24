@@ -361,19 +361,13 @@ async def test_a_placeholder_takes_any_name_up_to_its_last_part(box, monkeypatch
 async def test_a_vault_entry_is_typed_only_on_its_own_site(box, monkeypatch, vault_app, store):
     """The page and the frame that holds the cursor must be one of the entry's sites,
     exactly: another host, a subdomain, http, a user name in the address, a frame of
-    another site, a page still loading, all refused before a key goes out, and the user
-    is pinged. An entry with no site is typed nowhere. Typing asks no tap: the site check
-    is its guard."""
+    another site, a page still loading, all refused before a key goes out. An entry with
+    no site is typed nowhere. Typing asks no tap: the site check is its guard."""
     ctx = ctx_for(store, await conversations.create(store))
     await vault_app.skill.set(ctx, name="example-shop", url="https://example-shop.com")
     await vault_app.skill.set(ctx, name="nosite")
     page = _login_page(box, monkeypatch, vault_app)
     b = page.browser
-    pings = []
-
-    async def ping(text):
-        pings.append(text)
-    vault_app.app.state.services.approvals.ping = ping
 
     async def typed(url, frame=None, loading=False, entry="example-shop"):
         page.url, page.frame, box.tab.loading = url, frame, loading
@@ -396,7 +390,6 @@ async def test_a_vault_entry_is_typed_only_on_its_own_site(box, monkeypatch, vau
         out, keys = await typed(url, frame)
         assert keys == [] and out.is_error, (url, frame)
         assert "not one of the entry's own sites" in out.content
-    assert len(pings) == 7 and "example-shop" in pings[0] and "evil.example" in pings[0]
     out, keys = await typed("https://example-shop.com/login", loading=True)
     assert keys == [] and out.is_error
     out, keys = await typed("https://example-shop.com/login", entry="nosite")

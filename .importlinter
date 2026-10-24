@@ -26,7 +26,6 @@ forbidden_modules =
     celine.boot
     celine.commands
     celine.box_files
-    celine.bridge
     celine.browser
     celine.bugreports
     celine.comfyui

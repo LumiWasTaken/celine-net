@@ -76,7 +76,6 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     await turns.transition(store, t["id"], failed, "failed")
     running = await conversations.create(store, "running")
     await user_says(store, running, "are you there")      # queued: live
-    bridged = await conversations.create(store, "bridged", trigger_key="bridge:dc")
     mission = await conversations.create(store, "mission", kind="mission")
     await at(store, old, "2025-10-09T12:00:00+00:00")
 
@@ -84,13 +83,12 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     rows = {r["id"]: r for r in body["conversations"]}
     order = [r["id"] for r in body["conversations"]]
     assert order[:2] == [running, pinned]
-    assert mission not in rows and body["count"] == len(rows) == 5
+    assert mission not in rows and body["count"] == len(rows) == 4
     assert rows[running]["group"] == "Running"
     assert rows[running]["state"] == {"tone": "running", "words": ""}
     assert rows[pinned]["group"] == "Pinned" and rows[pinned]["state"] is None
     assert rows[failed]["state"] == {"tone": "error", "words": "The reply failed."}
     assert rows[old]["group"] == "October 2025"
-    assert rows[bridged]["source"] is None, "no source without its kb"
     assert "rank" not in rows[old]
 
     # frozen (guard/freeze.py): the queued turn waits, nothing runs

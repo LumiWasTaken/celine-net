@@ -178,8 +178,7 @@ TOOLS: dict[str, dict[str, str]] = {
                    "summary": "Lists {{her}} coding sessions."},
     "intercom__send": {"label": "Intercom: send a message",
                        "summary": "Sends a message to you, to {{herself}}, to {{her}} parent, team "
-                                  "or everyone working, now or at a later time; to you also "
-                                  "in your bridged chat."},
+                                  "or everyone working, now or at a later time."},
     "intercom__read": {"label": "Intercom: read threads",
                        "summary": "Lists {{her}} threads or reads one whole thread."},
     "intercom__cancel": {"label": "Intercom: cancel a scheduled message",
