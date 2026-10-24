@@ -14,7 +14,7 @@ from ..api.deps import cfg_of, etag, json_body, person_only, services_of, settin
 from ..errors import CelineError, NotFound
 from ..settings import files, write
 from ..settings.files import Invalid, version
-from . import banners, consult, freeze as freezes, owner, passes as passes_mod, persona
+from . import banners, freeze as freezes, owner, passes as passes_mod, persona
 from . import prompts, questions, rules as rule_set, store as decisions
 from .small_role import Unavailable
 

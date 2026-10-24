@@ -286,7 +286,7 @@ def test_her_output_stands_on_the_screen_above_her_next_prompt(box):
 
 def test_a_shell_alone_at_its_prompt_is_ended_never_waiting(box):
     # `exec bash`: the run's function is gone with the old shell, no .exit ever comes
-    r = box.run(f"exec bash --noprofile --norc -i")
+    r = box.run("exec bash --noprofile --norc -i")
     assert (r["state"], r["exit"]) == ("ended", None)
     assert box.read()["state"] == "prompt"
 

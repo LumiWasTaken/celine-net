@@ -8,7 +8,6 @@ import pytest
 
 from celine.browser import sync
 from celine.browser.sync import BrowserRefused
-from celine.skills import browser as browser_mod
 from celine.skills.browser import Browser
 
 pytestmark = pytest.mark.anyio

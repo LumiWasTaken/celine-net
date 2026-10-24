@@ -34,6 +34,7 @@ Every push passes all of these; the exit code is the check.
 
 ```sh
 uv run pytest -q                     # the app and the Discord connector, on fakes, in parallel
+uv run ruff check                    # pyflakes and a few pycodestyle checks (pyproject.toml)
 cd web && npm ci && npm run build    # prebuild: useReveal check; then tsc and vite
 cd wa-link && go test ./...          # only when wa-link changed
 ```

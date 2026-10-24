@@ -16,7 +16,6 @@ The reply's signed blocks come back on Done.thinking, for the runner to keep.
 """
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 

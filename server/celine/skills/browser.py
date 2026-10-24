@@ -24,7 +24,6 @@ import logging
 import math
 import re
 from collections import defaultdict
-from urllib.parse import urlsplit
 from datetime import datetime
 from typing import Annotated, Literal, NotRequired, Required, TypedDict
 

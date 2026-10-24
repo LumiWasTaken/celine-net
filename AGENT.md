@@ -76,6 +76,7 @@ The map of the code and the rules it follows.
 
 ```sh
 uv run pytest -q
+uv run ruff check
 cd web && npm ci && npm run build     # prebuild: useReveal check; then tsc and vite
 cd wa-link && go test ./...           # when wa-link changed
 ```

@@ -14,7 +14,7 @@ is worded as the shell skill words it (errors.py).
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any
+from typing import Annotated
 from urllib.parse import urlsplit
 
 import httpx
