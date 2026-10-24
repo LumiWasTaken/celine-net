@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from .facts import DESTROY, HOST, REMOVE, Private, copies, damage, escape
+from .facts import DESTROY, HOST, REMOVE, Private, copies, damage, escape, found_text
 from .trigger import FILE_ENDS, texts
 
 IP = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?![\w.])")
@@ -68,7 +68,7 @@ def again(prev: dict, call: dict, sink: str, sent: list[str]) -> str | None:
     if rule not in acts or not (ask or acts[rule]()):
         return None
     if rule == "escape" and prev.get("piece") and escape(call) == prev["piece"]:
-        return prev["piece"].removeprefix("the command has ")
+        return found_text(prev["piece"])
     before = targets(texts(prev.get("args")) + [prev.get("piece") or "",
                                                   prev.get("quote") or ""])
     shared = sorted(before & targets(text))

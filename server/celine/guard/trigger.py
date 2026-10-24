@@ -19,7 +19,7 @@ from .sources import NEVER
 ALWAYS = {"notebook__write", "notebook__edit", "notebook__delete", "notebook__move",
           "plan__set", "missions__update", "sub_agents__start",
           "email__delete", "email__move", "user_documents__write",
-          "me__edit", "routines__write"}
+          "me__edit", "routines__write", "code__start"}
 # read-only, but data can leave in the URL or the query
 OUT_IN_URL = {"browser__open": "url", "web__read_page": "url", "web__search": "query"}
 

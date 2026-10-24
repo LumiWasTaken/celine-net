@@ -30,6 +30,7 @@ from typing import Awaitable, Callable
 
 from . import caps, prompts
 from .bastet import KINDS
+from .facts import found_text
 from .mark import unclosed
 from .small_role import complete, parse_json
 from .trigger import strings
@@ -73,8 +74,7 @@ def call_state(call: dict, sink: str, her: str, found: dict) -> dict:
                      f"{f['what']}); this call has the same {f['same']}")
     # what code flagged in the command stays in what the judge reads, and so in the
     # evidence its quote is held to
-    keep = tuple(found[r]["fact"].removeprefix("the command has ")
-                 for r in ("escape", "damage") if r in found)
+    keep = tuple(found_text(found[r]["fact"]) for r in ("escape", "damage") if r in found)
     return {"intent": her, "call": {"tool": call["name"],
                                     "what": " ".join(str(call.get("description") or "")
                                                      .split("\n")[0].split())[:200],

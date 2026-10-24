@@ -278,6 +278,49 @@ async def test_escape_freezes_and_damage_stops_on_a_held_yes(store):
         ["allow", "stop"]
 
 
+def _code(task):
+    return {"id": "k5", "name": "code__start", "message_id": None, "read_only": False,
+            "args": {"dir": "site", "task": task, "model": "main/big"},
+            "description": "Hand a coding task to your coding agent."}
+
+
+def _cli(brief, cli="opencode"):
+    return {"id": "k6", "name": "sub_agents__start", "message_id": None,
+            "read_only": False, "args": {"brief": brief, "name": "helper", "cli": cli},
+            "description": "Start a sub-agent."}
+
+
+def test_a_coding_agent_task_is_read_like_a_shell_command():
+    """The coding agent and a CLI sub-agent run their task with a shell and the net:
+    a public sink, and its text has the escape and damage facts a command has."""
+    assert facts.sink(_code("fix the build")) == ("public", ["fix the build"])
+    assert facts.sink(_cli("tidy ~/src")) == ("public", ["tidy ~/src"])
+    assert facts.sink(_cli("tidy ~/src", cli=None))[0] == "house", "a model sub-agent"
+    assert facts.escape(_code("then ssh root@box and read /etc/shadow")) == \
+        "the task has ssh r"
+    assert facts.damage(_cli("first run rm -rf ~/notes, then rebuild")) == \
+        "the task has rm -rf ~/notes, then rebuild"
+    assert facts.escape(_code("make the tests pass")) is None
+    assert facts.damage(_code("make the tests pass")) is None
+    from celine.guard import trigger
+    assert trigger.always("code__start", {}) and trigger.always("sub_agents__start", {})
+
+
+async def test_a_coding_task_is_held_like_a_command(store):
+    cfg = _cfg()
+    # a sensitive piece in its task: the closed gate to public holds, no judge asked
+    v = await guard.closed(TURN, _code("put 12 Example Road on the contact page"), [],
+                           mode="watch", store=store, cfg=cfg)
+    assert v is not None and v.decision == "stop" and v.rule == "gates"
+    ask = FakeAsk(0.8)
+    v = await guard.check(TURN, _cli("first run rm -rf ~/notes, then rebuild"), [],
+                          mode="on", judge=_never, store=store, ask=ask, cfg=cfg)
+    assert v.decision == "stop" and v.rule == "damage"
+    state = ask.seen[0][0]
+    assert state["sink"] == "public"
+    assert state["facts"] == ["destructive: the task has rm -rf ~/notes, then rebuild"]
+
+
 async def test_a_stop_tells_the_owner_why_and_off_asks_nothing(store):
     v = await guard.check(TURN, _shell("rm -rf ~/old"), [], mode="on", judge=_never,
                           store=store, ask=FakeAsk(0.9), cfg=_cfg())
