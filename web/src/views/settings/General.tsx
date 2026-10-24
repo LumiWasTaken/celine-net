@@ -1,15 +1,17 @@
 /* General: when a settings file has an error, one quiet line and the list under it; You
    (your name, time zone, what you write about you), each saved when you leave it; Chats
    (Lock archived chats, Describe new chat photos), saved on change. How the app looks is
-   Appearance; its name is its own (Her.tsx). Advanced: the time limits and sizes (the
+   Appearance; its name is its own (Her.tsx). Source code: the code this build runs, its
+   commit on the link (the server's `build`, the AGPL's offer). Advanced: the time limits and sizes (the
    server's `advanced` fields), each saved on change (lib/useAutosave). */
 import { useEffect } from 'react'
+import { ArrowUpRight } from 'lucide-react'
 import type { ConfigStatus } from '../../lib/api'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { settingsApi } from '../../lib/settingsApi'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Field, InlineError, Input, Section, TextArea } from '../../ui'
+import { Button, Field, InlineError, Input, Section, TextArea } from '../../ui'
 import { Page, SchemaForm } from './parts'
 import './settings.css'
 
@@ -31,6 +33,12 @@ export function General({ status }: { status: ConfigStatus | null }) {
       <Section title="Chats">
         <GeneralFields only={['lock_archived', 'image_captions_auto']} />
       </Section>
+      {status && (
+        <Section title="Source code"
+                 action={<Button variant="ghost" size="sm" icon={ArrowUpRight} href={status.build.source} target="_blank" rel="noopener">
+                   {status.build.commit}
+                 </Button>} />
+      )}
     </Page>
   )
 }

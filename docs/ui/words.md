@@ -137,6 +137,7 @@ block at the end of this file lists the words no UI string uses.
 | Login, Passkey, Password, PIN, This session | the Security list of how you log in, one row each, This session on the one this browser used | Apple, Google "Passkey", "Password", "PIN" |
 | Sessions, Log out, Log out everywhere, Last seen, Unknown device | Security: every browser logged in, one row each named by the server ("Firefox on Linux", Unknown device without a user agent), This session on this one and Last seen on the rest; Log out on a row, Log out everywhere for every other one | GitHub "Sessions"; Google "Sign out of all", "Unknown device"; WhatsApp "last seen" |
 | Confirm access, Use passkey, Confirm | the dialog adding a way to log in, Reset codes or Create token opens first unless you proved it in the last 5 minutes: your passkey, password or PIN | GitHub sudo mode "Confirm access", "Use passkey", "Confirm" |
+| Source code | General: the link to the code this build runs, its commit on the link | GitHub "Source code"; the AGPL's offer of the source |
 | Features | the Settings page of what it has, one switch each; also the onboarding's step | Windows "Optional features", Discord "Features" |
 | Next, Back, Skip | the onboarding's steps: on, back one, leave this one as it is | Apple setup, Android setup "Next", "Back", "Skip" |
 | Step 4 of 16 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
