@@ -191,6 +191,44 @@ def _gated_app(store):
     return app
 
 
+async def test_a_named_token_does_not_act_as_the_user(store):
+    """A token posts and reads; it does not read the user's messages for them, carry a
+    thread into a chat, or cancel a message it did not send."""
+    import httpx
+    from celine.intercom import tokens
+    token = await store.write(lambda c: tokens.make(c, "cli"))
+    other = await store.write(lambda c: tokens.make(c, "nightly"))
+    app = _gated_app(store)
+    auth = lambda t: {"authorization": f"Bearer {t}"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://localhost:8766") as http:
+        mine = (await http.post("/api/intercom", headers=auth(token),
+                                json={"to": "user", "text": "later", "in": "30 min"})).json()
+        theirs = (await http.post("/api/intercom", headers=auth(other),
+                                  json={"to": "user", "text": "later", "in": "30 min"})).json()
+        now_ = (await http.post("/api/intercom", headers=auth(token),
+                                json={"to": "user", "text": "now"})).json()
+        tid = await store.read(lambda c: c.execute(
+            "SELECT COALESCE(thread, id) FROM intercom WHERE id=?",
+            (now_["intercom_id"],)).fetchone()[0])
+        r = await http.post("/api/intercom/read?all=1", headers=auth(token))
+        assert r.status_code == 403
+        r = await http.post("/api/intercom/read", headers=auth(token),
+                            json={"ids": [now_["intercom_id"]]})
+        assert r.status_code == 403
+        r = await http.post(f"/api/intercom/threads/{tid}/conversations", headers=auth(token))
+        assert r.status_code == 403
+        r = await http.post(f"/api/intercom/{theirs['intercom_id']}/stop", headers=auth(token))
+        assert r.status_code == 404
+        r = await http.post(f"/api/intercom/{mine['intercom_id']}/stop", headers=auth(token))
+        assert r.status_code == 200, "its own scheduled message it may take back"
+        r = await http.get("/api/intercom", headers=auth(token))
+        assert r.status_code == 200, "it still reads"
+    assert await store.read(lambda c: c.execute(
+        "SELECT cancelled_at IS NULL FROM intercom WHERE id=?",
+        (theirs["intercom_id"],)).fetchone()[0])
+
+
 async def test_a_named_token_sends_on_the_intercom_only_a_revoked_one_gets_404(store):
     """A token made in Settings is for a host script on the intercom: it sends there as
     `system:<name>` and reaches nothing else. A revoked or wrong one is turned away."""

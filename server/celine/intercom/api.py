@@ -9,11 +9,12 @@ import json
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..api.cursor import page_cursor, read_id
+from ..api.deps import person_only
 from ..core.ids import iso, parse_when
 from ..errors import CelineError, NotFound
 from ..clock import zone
@@ -172,7 +173,7 @@ async def recipients(request: Request) -> dict:
 CARRIED = "{user} continued an Intercom thread in this chat. The thread:"
 
 
-@router.post("/intercom/threads/{tid}/conversations")
+@router.post("/intercom/threads/{tid}/conversations", dependencies=[Depends(person_only)])
 async def to_chat(request: Request, tid: int) -> dict:
     """Continue in a chat: a new chat with it that carries thread `tid`, its messages
     landing there as one notice from the app without waking it (CARRIED, each message
@@ -216,7 +217,7 @@ async def _read(request: Request, ids) -> list[int]:
     return await store.write(fn)
 
 
-@router.post("/intercom/read")
+@router.post("/intercom/read", dependencies=[Depends(person_only)])
 async def read(request: Request, body: ReadIn | None = None, all: bool = False) -> dict:
     """The user's deliveries of these messages (`{ids}`) become read; `?all=1`: everything
     that waits for the user (Dismiss all)."""
@@ -258,6 +259,12 @@ async def stream(request: Request, to: str | None = None, after: int = 0) -> Str
 
 @router.post("/intercom/{iid}/stop")
 async def cancel(request: Request, iid: int) -> dict:
+    sender = await _sender(request)
+    if sender != "user":                # a token takes back only what it sent
+        frm = await request.app.state.services.store.read(lambda c: c.execute(
+            "SELECT from_addr FROM intercom WHERE id=?", (iid,)).fetchone())
+        if frm is None or frm[0] != sender:
+            raise CelineError("not_found", "This message already landed or was cancelled.", 404)
     if not await request.app.state.services.intercom.cancel(iid):
         raise CelineError("not_found", "This message already landed or was cancelled.", 404)
     return {"ok": True}
