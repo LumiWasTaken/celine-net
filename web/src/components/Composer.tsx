@@ -206,18 +206,28 @@ export function Composer({
     setJson(`draft-files:${selected}`, ready.length ? ready : null)
   }, [uploads]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // the conversation open now: an upload ends in the one it started in
+  const current = useRef(selected)
+  current.current = selected
   const addFiles = useCallback(async (files: FileList | File[]) => {
+    const from = selected
+    const here = () => current.current === from
     for (const file of Array.from(files)) {
       const key = crypto.randomUUID()
       setUploads(u => [...u, { key, name: file.name, state: 'uploading', image: file.type.startsWith('image/') }])
       try {
         const att = await uploadAttachment(file)
-        setUploads(u => u.map(x => x.key === key ? { ...x, state: 'ready', att } : x))
+        if (here()) setUploads(u => u.map(x => x.key === key ? { ...x, state: 'ready', att } : x))
+        else if (from) {
+          // switched away: the file joins the draft it was dropped on
+          const kept = getJson<Upload[]>(`draft-files:${from}`, [])
+          setJson(`draft-files:${from}`, [...kept, { key, name: file.name, state: 'ready', image: file.type.startsWith('image/'), att }])
+        } else deleteAttachment(att.id).catch(() => {})
       } catch (e) {
-        setUploads(u => u.map(x => x.key === key ? { ...x, state: 'failed', error: errorText(e) } : x))
+        if (here()) setUploads(u => u.map(x => x.key === key ? { ...x, state: 'failed', error: errorText(e) } : x))
       }
     }
-  }, [])
+  }, [selected])
 
   const removeUpload = useCallback((key: string) => {
     const gone = uploads.find(x => x.key === key)
