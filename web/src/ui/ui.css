@@ -336,6 +336,7 @@
 .menu__item--danger > svg { color: inherit; }
 .menu__item > .menu__check { color: var(--accent); }
 .menu__item:hover:not(:disabled, [aria-disabled='true']), .menu__item:focus-visible { background: var(--surface-3); outline: none; }
+.menu__item:focus-visible { outline: var(--focus-outline); outline-offset: calc(-1 * var(--s-0)); }
 .menu__item:disabled { color: var(--text-muted); }
 .menu__text { flex: 1; min-width: 0; display: grid; gap: var(--s-0); padding: var(--s-2) 0; }
 .menu__text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
