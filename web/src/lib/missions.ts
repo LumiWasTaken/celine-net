@@ -43,9 +43,9 @@ export type MissionStep = PlanStep
 type MissionCounts = Record<MissionStatus | 'all' | 'archived' | 'trashed', number>
 
 export const missionsApi = {
-  /** the brief and nothing else; with no name it names it */
-  start: (brief: string, name?: string) =>
-    request<{ conversation_id: string }>('/missions', json('POST', { brief, ...(name ? { name } : {}) })),
+  /** the brief; with no name it names it; `model`: its chat model, else the default */
+  start: (brief: string, name?: string, model?: string | null) =>
+    request<{ conversation_id: string }>('/missions', json('POST', { brief, ...(name ? { name } : {}), ...(model ? { model } : {}) })),
   /** the archived or the trashed ones instead */
   list: (which?: 'archived' | 'trashed') =>
     request<{ missions: Mission[]; counts: MissionCounts }>(`/missions${which ? `?${which}=1` : ''}`),

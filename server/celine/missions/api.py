@@ -24,9 +24,11 @@ from ..texts import record
 router = APIRouter(prefix="/api")
 
 class MissionIn(BaseModel):
-    """The brief and nothing else; with no name it has one from the brief."""
+    """The brief; with no name it has one from the brief; `model` its chat model (a
+    ref), else the default."""
     model_config = ConfigDict(extra="forbid")
     name: str | None = None
+    model: str | None = None
     brief: str = ""
     report_to: str | None = None
     time_limit: str | None = None
@@ -125,6 +127,10 @@ async def start(request: Request, body: MissionIn) -> str:
     if not brief:
         raise CelineError("bad_request", "Brief is required.", 400)
     await _conversation_exists(store, body.report_to)
+    from ..settings import conversations as conv_settings
+    services = request.app.state.services
+    chosen = conv_settings.validate(cfg.settings, getattr(services, "registry", None),
+                                    {"model": body.model}) if body.model else None
     until = _until(body.time_limit, tz)
     check_in = _check_in(body.check_in)
     name = " ".join((body.name or "").split())
@@ -137,6 +143,8 @@ async def start(request: Request, body: MissionIn) -> str:
         "name": name or title, "terminal": terminal, "brief": brief,
         "report_to": body.report_to or None, "until": iso(until) if until else None,
         "check_in": check_in})
+    if chosen:                          # before the brief: its first turn runs on it
+        await conv_settings.apply(store, cid, chosen)
     await store.write(lambda c: record(c, f"mission:{cid}:brief", brief, "user"))
     if until:
         await missions.update(store, cid, {"wake_id": await _time_limit(request, cid, until)})

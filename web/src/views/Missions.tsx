@@ -33,7 +33,7 @@ import { click } from '../components/ConversationList'
 import { ArtifactChip, Markdown } from '../components/Markdown'
 import { Talk } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
-import { ModelRow } from '../components/ConversationPanel'
+import { ModelPick, ModelRow } from '../components/ConversationPanel'
 import { ModelChooser, findModel, modelName } from '../components/ModelChooser'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
@@ -278,8 +278,9 @@ function TrashMission({ m, onClose, onDone }: { m: Mission; onClose: () => void;
 function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (cid: string) => void }) {
   const [text, setText] = useState('')
   const [name, setName] = useState('')
+  const [model, setModel] = useState<string | null>(null)
   const start = useAction(async () => {
-    const r = await missionsApi.start(text.trim(), name.trim() || undefined)
+    const r = await missionsApi.start(text.trim(), name.trim() || undefined, model)
     onStarted(r.conversation_id)
   })
   return (
@@ -289,6 +290,9 @@ function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (c
       <div className="missions-form">
         <Field label="Name"><Input value={name} placeholder="Optional" onChange={e => setName(e.target.value)} /></Field>
         <Field label="Instructions"><TextArea rows={5} max={14} value={text} autoFocus={!coarse()} onChange={e => setText(e.target.value)} /></Field>
+        <Field label="Model" group>
+          <ModelPick name={model ?? 'Default'} current={model} fallback={null} disabled={start.busy} onModel={setModel} />
+        </Field>
       </div>
       {start.error && <InlineError compact message={start.error} />}
     </Dialog>

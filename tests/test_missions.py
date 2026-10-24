@@ -123,6 +123,15 @@ async def test_a_mission_starts_reports_and_stops(db_path):
             assert job.state == "cancelled"
             # a stopped mission takes no change
             assert (await c.patch(f"/api/missions/{cid}", json={"brief": "x"})).status_code == 409
+            # a model picked at the start
+            bad = await c.post("/api/missions", json={**BRIEF, "model": "nope/x"})
+            assert bad.status_code == 400 and "There is no model 'nope/x'" in bad.text
+            cfg.settings.model = lambda ref: {"caps": ["chat"]} if ref == "or/glm" else None
+            r = await c.post("/api/missions", json={**BRIEF, "model": "or/glm"})
+            picked = r.json()["conversation_id"]
+            assert await store.read(lambda c: c.execute(
+                "SELECT model_id FROM conversations WHERE id=?", (picked,)).fetchone()[0]) \
+                == "or/glm", "its first turn runs on the model picked at the start"
         await store.aclose()
 
 

@@ -102,7 +102,7 @@ const THINK = ['default', 'off', 'low', 'medium', 'high', 'max'] as const
 const THINK_LABEL: Record<string, string> = { default: 'Default', off: 'Off', low: 'Low', medium: 'Medium', high: 'High', max: 'Max', xhigh: 'Max' }
 
 /** the model in use as a row; Change model opens the chooser, with Default first */
-function ModelPick({ name, tooltip, current, fallback, disabled, onModel }: {
+export function ModelPick({ name, tooltip, current, fallback, disabled, onModel }: {
   /** what the row says: the picked model's name, or "Default, <the model it comes to>" */
   name: string; tooltip?: string
   current: string | null; fallback: string | null | undefined; disabled: boolean
