@@ -116,6 +116,12 @@ LAST = "This is your last line: give your closing line now."
 LINE = "This is line {n} of at most {rounds}."
 
 
+def _repeated(slot: datetime, tz) -> bool:
+    """The second 02:00 of the night the clocks go back: that wall time already ran."""
+    local = slot.astimezone(tz)
+    return local.utcoffset() != local.replace(fold=0).utcoffset()
+
+
 def final_words(note: str) -> str:
     """final.md (with note.md's clause for `note`, the notebook path, when there is one):
     what the result of a run is, said to it with the prompt and after a partner's talk."""
@@ -366,6 +372,8 @@ class Scheduler:
                     slot = it.get_next(datetime)
                     if slot > at:
                         break
+                    if _repeated(slot, tz):
+                        continue
                     old = slot < horizon
                     _insert(c, store, self.app.cfg, s.name, slot, tz,
                             "skipped" if old else "waiting", MISSED if old else "")

@@ -129,6 +129,15 @@ async def test_slots_past_max_slots_are_made_by_the_next_look(store, cfg, monkey
     assert len(await _runs(store)) == 5, "no slot is dropped"
 
 
+async def test_the_night_the_clocks_go_back_runs_two_am_once(store, cfg):
+    cfg.timezone = "Europe/Berlin"
+    cfg.schedules = {"tidy": _s("tidy", "0 2 * * *")}
+    clock = Clock(datetime(2026, 10, 25, 3, tzinfo=UTC))
+    await store.kv_set(CHECKED, iso(datetime(2026, 10, 24, 12, tzinfo=UTC)))
+    await Scheduler(_app(store, cfg), clock).make_due()
+    assert len(await _runs(store)) == 1
+
+
 class Router:
     def __init__(self):
         self.why: str | None = "llama-swap does not answer"
@@ -591,6 +600,9 @@ def _write(note: str, content: str) -> list:
         Done(reason="tool_calls")]
 
 
+NOTE = "diary/2026-10-10-review.md"     # {{date}} on _one_run's clock
+
+
 async def _one_run(store, cfg, backend) -> dict:
     """One run of a self-review with a note."""
     cfg.schedules = {"review": _s("review", "0 4 * * *", "Review the night.",
@@ -607,9 +619,9 @@ async def _one_run(store, cfg, backend) -> dict:
 async def test_a_note_she_wrote_is_the_result_not_the_line_beside_the_write(store, cfg):
     review = "# Self-review\n\nWent well: the search.\nDid not: the mail."
     backend = Writer({"Review the night": [TextDelta("Writing the review now."),
-                                           *_write("diary/2026-10-10-review.md", review)]})
+                                           *_write(NOTE, review)]})
     row = await _one_run(store, cfg, backend)
-    note = (cfg.her.notebook / "diary" / "2026-10-10-review.md").read_text()
+    note = (cfg.her.notebook / NOTE).read_text()
     assert note.endswith(review), "nothing is written over the note it wrote"
     assert "Writing the review now" not in note
     assert row["result"] == review, "the note is the result the next run reads"
@@ -621,7 +633,7 @@ async def test_a_new_note_gets_her_answer_whole(store, cfg):
                                            Done(reason="stop")]})
     row = await _one_run(store, cfg, backend)
     from celine.skills.notebook import unstamped
-    note = unstamped((cfg.her.notebook / "diary" / "2026-10-10-review.md").read_text())
+    note = unstamped((cfg.her.notebook / NOTE).read_text())
     assert note.strip() == "Went well: the search.\nDid not: the mail." == row["result"]
     assert len(backend.calls) == 1, "its first final answer is the result: no second ask"
 
@@ -630,11 +642,11 @@ async def test_a_note_she_wrote_again_keeps_its_text_not_the_closing_line(store,
     """The note was there with the same text she writes: her write still makes it hers,
     her closing line is not appended."""
     review = "# Self-review\n\nWent well: the search."
-    note = cfg.her.notebook / "diary" / "2026-10-10-review.md"
+    note = cfg.her.notebook / NOTE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text(review)
     backend = Writer({"Review the night": [TextDelta("Got the whole picture now."),
-                                           *_write("diary/2026-10-10-review.md", review)]})
+                                           *_write(NOTE, review)]})
     row = await _one_run(store, cfg, backend)
     from celine.skills.notebook import unstamped
     assert unstamped(note.read_text()) == review, "the note she wrote stays as she wrote it"
@@ -642,7 +654,7 @@ async def test_a_note_she_wrote_again_keeps_its_text_not_the_closing_line(store,
 
 
 async def test_a_note_she_did_not_write_gets_her_answer_appended(store, cfg):
-    note = cfg.her.notebook / "diary" / "2026-10-10-review.md"
+    note = cfg.her.notebook / NOTE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("# Reviews\n")
     backend = Writer({"Review the night": [TextDelta("Went well: the search."),
@@ -653,13 +665,13 @@ async def test_a_note_she_did_not_write_gets_her_answer_appended(store, cfg):
 
 
 async def test_a_log_note_she_adds_to_gives_only_what_she_added(store, cfg):
-    note = cfg.her.notebook / "diary" / "2026-10-10-review.md"
+    note = cfg.her.notebook / NOTE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("# Reviews\n\nThe night before.\n")
     added = "\n## Tonight\n\nWent well: the search.\n"
     backend = Writer({"Review the night": [TextDelta("Adding tonight."), *[
         ToolCallDelta(index=0, id="w", name="notebook__write", arguments=json.dumps(
-            {"path": "diary/2026-10-10-review.md", "content": added, "mode": "append",
+            {"path": NOTE, "content": added, "mode": "append",
              "summary": "Reviews."})), Done(reason="tool_calls")]]})
     row = await _one_run(store, cfg, backend)
     assert note.read_text().endswith("The night before.\n" + added), "nothing more appended"
