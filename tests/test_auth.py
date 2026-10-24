@@ -482,3 +482,27 @@ def test_wrong_pins_from_many_addresses_pause_pin_login_for_everyone_not_the_pas
     clock.t += store_mod.PIN_PAUSE + 1
     assert client(app, address="2001:db8:2::1").post(
         "/api/auth/login", json={"method": "pin", "secret": "04815162"}).status_code == 200
+
+
+def _proxy_lines(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records
+            if getattr(r, "event", "") == "auth.proxy_not_trusted"]
+
+
+def test_forwarded_headers_from_a_peer_that_is_no_trusted_proxy_are_logged_once(caplog):
+    c = client(make_app(), address="172.18.0.2")
+    with caplog.at_level(logging.WARNING, logger="celine.auth"):
+        c.get("/api/status")
+        assert _proxy_lines(caplog) == []
+        c.get("/api/status", headers={"X-Real-IP": "203.0.113.9"})
+        c.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9"})
+    [line] = _proxy_lines(caplog)
+    assert "172.18.0.2" in line and "CELINE_TRUSTED_PROXIES" in line
+
+
+def test_a_trusted_proxy_whose_client_address_was_taken_is_not_logged(caplog):
+    # uvicorn's proxy headers have already put the forwarded client in place
+    c = client(make_app(trusted_proxies="172.18.0.2"), address="203.0.113.9")
+    with caplog.at_level(logging.WARNING, logger="celine.auth"):
+        c.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9, 172.18.0.2"})
+    assert _proxy_lines(caplog) == []

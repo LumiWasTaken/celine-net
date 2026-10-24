@@ -17,10 +17,16 @@ here first and refused above OPEN_BODY_MAX bytes (a WebAuthn answer is a few KB)
 With a valid session the request goes on (the session is in `request.state.session`)
 and, at most once an hour, an HTTP request slides the expiry forward and gets the
 cookie again.
+
+A request that carries a forwarded client address the server did not take (uvicorn
+takes X-Forwarded-For from CELINE_TRUSTED_PROXIES only, and nothing else) is logged
+once: behind a proxy that is not trusted every client is the proxy's one address, so
+one client's wrong PINs pause everyone's.
 """
 from __future__ import annotations
 
 import json
+import logging
 
 from starlette.requests import cookie_parser
 from starlette.responses import JSONResponse, Response
@@ -34,6 +40,9 @@ from .routes import open_router
 
 OPEN = {(m, r.path) for r in open_router.routes for m in r.methods}
 OPEN_BODY_MAX = 64 * 1024
+FORWARDED = (b"x-forwarded-for", b"forwarded", b"x-real-ip")
+
+log = logging.getLogger("celine.auth")
 
 
 def not_found(path: str) -> JSONResponse:
@@ -56,11 +65,14 @@ class Gate:
     def __init__(self, app, auth: Auth):
         self.app = app
         self.auth = auth
+        self.proxy_noted = False
 
     async def __call__(self, scope, receive, send):
         kind = scope["type"]
         if kind not in ("http", "websocket"):
             return await self.app(scope, receive, send)
+        if not self.proxy_noted:
+            self.proxy_noted = _untrusted_proxy(scope)
         path = scope.get("path", "")
         if path.startswith(SHARE):          # its token is its key, never the cookie
             return await self.app(scope, receive, send)
@@ -124,6 +136,26 @@ class Gate:
             await send({"type": "websocket.http.response.body", "body": body})
         else:
             await send({"type": "websocket.close", "code": 1008})
+
+
+def _untrusted_proxy(scope) -> bool:
+    """True, and the warning logged, when the request names a forwarded client the server
+    did not take: a header from FORWARDED, and the peer is not a client X-Forwarded-For
+    names (which it is once uvicorn took the address from a trusted proxy)."""
+    headers = dict((k, v) for k, v in scope.get("headers") or [] if k in FORWARDED)
+    if not headers:
+        return False
+    peer = (scope.get("client") or ("", 0))[0]
+    named = headers.get(b"x-forwarded-for", b"").decode("latin-1")
+    if peer and peer in {a.strip() for a in named.split(",")}:
+        return False
+    which = ", ".join(k.decode() for k in FORWARDED if k in headers)
+    log.warning(f"Requests from {peer} carry {which}, which the server does not take: "
+                f"it takes a client address only from X-Forwarded-For sent by an address "
+                f"in CELINE_TRUSTED_PROXIES. Until then every client behind {peer} counts "
+                f"as {peer}, for the login limit too (docs/DEPLOY.md).",
+                extra={"event": "auth.proxy_not_trusted", "client": peer})
+    return True
 
 
 async def _named_token(scope, path: str) -> bool:

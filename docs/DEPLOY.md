@@ -429,7 +429,9 @@ The proxy must pass the `Host` header and upgrade WebSockets (`/ws/events`,
 Point the router for `celine.example.net` at `http://192.168.1.5:8766`.
 
 The app reads the client's address from `X-Forwarded-For` only when the request comes
-from `CELINE_TRUSTED_PROXIES` (used for the login limit and the log). Behind two
+from `CELINE_TRUSTED_PROXIES` (used for the login limit and the log). A request from
+any other address that carries `X-Forwarded-For`, `Forwarded` or `X-Real-IP` is logged
+once as a warning: every client behind that proxy counts as its one address. Behind two
 proxies in a row, list both. Changing the public address later means registering the
 passkeys again. `[server] allowed_hosts` in `config/celine.toml` adds more host names
 for the `Host` check.
