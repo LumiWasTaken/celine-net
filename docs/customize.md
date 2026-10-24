@@ -83,8 +83,8 @@ in `docker-compose.yml` under the `celine` service's `volumes`:
 ## Features
 
 Settings, Features (or `var/settings/features.toml`, `shellbox = false`). A feature not
-named is on, but Shares, which is on only once saved on (`shares = true`); switching it on
-asks first, with what a share's link gives whoever holds it. The onboarding shows a card
+named is on, but Shares and Guard, which are on only once saved on (`shares = true`,
+`guard = true`); switching Shares on asks first, with what a share's link gives whoever holds it. The onboarding shows a card
 for every feature whose service answers, and always for Shares, Discord, WhatsApp (their
 card says how to run the connector), Guard and Routines (switch each routine on or off and set its time). Off means its skills are not built, and for the connectors and services
 they are stopped at once: a switch, or a changed address in Settings, Features, is live

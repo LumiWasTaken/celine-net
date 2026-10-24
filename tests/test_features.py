@@ -45,7 +45,7 @@ async def test_defaults_then_put_then_get(api):
     # nothing that needs a service runs before Setup saved it: no connector starts at boot
     off = {i for i, on in r["features"].items() if not on}
     assert off == {"shellbox", "shares", "browser", "images", "music", "web", "discord",
-                   "whatsapp", "email", "vault"}
+                   "whatsapp", "email", "vault", "guard"}
     assert "shell" not in _skills(api) and "discord" not in _skills(api)
     assert not features.allows_connector(api.cfg, "discord")
     assert api.cfg.settings.features == features.seed()
@@ -55,6 +55,7 @@ async def test_defaults_then_put_then_get(api):
     assert again["saved"] is True and again["features"]["web"] is False
     assert again["features"]["email"] is True, "an id left out is on"
     assert again["features"]["shares"] is False, "but shares, on only once saved on"
+    assert again["features"]["guard"] is False, "and the guard"
     assert again["version"] == put.json()["version"] != r["version"]
     assert not (api.var / "settings" / "features.toml").read_text().count("email")
     assert "shell" in _skills(api)
@@ -314,6 +315,7 @@ async def test_put_provider_fills_the_empty_roles_from_caps_and_presets(tmp_path
 
 async def test_guard_off_means_bastet_is_off(api):
     from celine.guard import switch
+    await api.put("/api/features", json={"features": {"guard": True}})
     await api.put("/api/settings", json={"general": {"guard": "on"}})
     assert switch.mode(api.cfg) == "on"
     await api.put("/api/features", json={"features": {"guard": False}})
@@ -542,3 +544,16 @@ async def test_shares_start_off_and_their_switch_saves_on(api):
     assert (await api.get("/api/features/shares/probe")).json() == \
         {"state": "unset", "detail": "The shellbox is off."}
     assert f"{shares.PRIVATE_HOURS} hours" in features.BY_ID["shares"].warn
+
+
+async def test_the_guard_starts_off_until_the_user_switches_it_on(api):
+    """A fresh install has no Bastet, a decision model picked or not: the Guard feature is
+    on only once saved on (Settings, Features), and an id left out stays off."""
+    from celine import guard
+    _fresh(api)
+    assert features.on(api.cfg, "guard") is False and guard.mode(api.cfg) == "off"
+    await api.put("/api/features", json={"features": {}})
+    assert features.on(api.cfg, "guard") is False, "an id left out stays off"
+    put = await api.put("/api/features", json={"features": {"guard": True}})
+    assert put.json()["features"]["guard"] is True
+    assert guard.mode(api.cfg) == "watch"
