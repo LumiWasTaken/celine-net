@@ -239,7 +239,7 @@ with a prompt that says so.
   `mem_limit`, `pids_limit` and `cpus` keep it from taking the machine down; `/tmp` is
   a 2 GB tmpfs that counts against its memory.
 - Its own network: the app reaches it; the connectors and the search engine do not. The internet and your LAN are open to it.
-  As an extra safety measure, uncomment `internal: true` under `networks: shellbox` (and
+  If it can do without them, `internal: true` is the recommended setting: uncomment it under `networks: shellbox` (and
   `browser`) in the compose file: the box then reaches only the app, so something that
   talked it into a command cannot reach your LAN or the internet from there. It can no
   longer install packages or fetch pages from the box then.
