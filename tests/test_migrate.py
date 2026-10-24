@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 4
+LATEST = 5
 
 
 def _version(db) -> int:
@@ -224,4 +224,42 @@ def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, m
     assert got["s-run"] == "/routines/2026-10-22/task/s-run" and got["gone"] is None
     assert "link" not in json.loads(c.execute(
         "SELECT display FROM tool_calls WHERE id='other'").fetchone()[0]), "only hers"
+    c.close()
+
+
+def test_0005_makes_the_bridged_chats_plain_chats_and_drops_what_only_the_bridge_read(
+        tmp_path, monkeypatch):
+    """The bridge is gone: its conversations are chats like any other, and the marks it
+    left in intercom rows and image batches go."""
+    import json
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.glob("000[1-4]_*.sql")):
+        shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate(db) == 4
+    c = sqlite3.connect(db)
+    for cid, kind, key in (("wa", "background", "bridge:whatsapp"),
+                           ("run", "background", "run:r1:1"), ("chat", "chat", None)):
+        c.execute("INSERT INTO conversations(id, title, kind, trigger_key, created_at, "
+                  "updated_at) VALUES(?, ?, ?, ?, 'x', 'x')", (cid, cid, kind, key))
+    for i, data in enumerate(({"via": "whatsapp"}, {"via": "whatsapp", "sent": ["K1"]},
+                              {"urgent": True}, {"source": "x"})):
+        c.execute("INSERT INTO intercom(id, created_at, from_addr, to_addr, kind, data) "
+                  "VALUES(?, 'x', 'user', 'agent:wa', 'message', ?)", (i + 1, json.dumps(data)))
+    items = [{"state": "done", "bridged": True}, {"state": "failed"}]
+    c.execute("INSERT INTO media_batches(id, kind, conversation_id, state, items, created_at) "
+              "VALUES('b1', 'images', 'wa', 'done', ?, 'x')", (json.dumps(items),))
+    c.commit()
+    c.close()
+    shutil.copy(next(MIGRATIONS_DIR.glob("0005_*.sql")), d)
+    assert migrate(db) == 5
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT id, kind, trigger_key FROM conversations ORDER BY id").fetchall() \
+        == [("chat", "chat", None), ("run", "background", "run:r1:1"), ("wa", "chat", None)]
+    assert [json.loads(r[0]) for r in c.execute("SELECT data FROM intercom ORDER BY id")] \
+        == [{}, {}, {}, {"source": "x"}]
+    assert json.loads(c.execute("SELECT items FROM media_batches").fetchone()[0]) == \
+        [{"state": "done"}, {"state": "failed"}]
     c.close()

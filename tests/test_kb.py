@@ -34,12 +34,35 @@ def test_kb_file_version_and_old_file_refused(tmp_path):
 
     fresh = tmp_path / "fresh.db"
     KBFile(fresh, CHAT_MIGRATIONS)
-    assert sqlite3.connect(fresh).execute("PRAGMA user_version").fetchone() == (2,)
+    assert sqlite3.connect(fresh).execute("PRAGMA user_version").fetchone() == (3,)
 
     old = tmp_path / "old.db"
     sqlite3.connect(old).executescript("CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT);")
     with pytest.raises(RuntimeError, match=r"old\.db has no schema version"):
         KBFile(old, CHAT_MIGRATIONS)
+
+
+def test_chat_0003_forgets_what_only_the_bridge_kept(tmp_path):
+    """The bridge's cursor, its switch and the marker the user set lived in the archive's
+    kv; they go, and nothing else there."""
+    import shutil
+    import sqlite3
+    from celine.db.migrate import migrate
+    from celine.kb.db import CHAT_MIGRATIONS
+    d = tmp_path / "chat"
+    d.mkdir()
+    for f in sorted(CHAT_MIGRATIONS.glob("000[1-2]_*.sql")):
+        shutil.copy(f, d)
+    db = tmp_path / "wa.db"
+    assert migrate(db, d) == 2
+    c = sqlite3.connect(db)
+    c.executemany("INSERT INTO kv(key, value) VALUES(?, '1')",
+                  [("bridge_cursor",), ("bridge_since",), ("marker_own",), ("login_account",)])
+    c.commit()
+    c.close()
+    shutil.copy(next(CHAT_MIGRATIONS.glob("0003_*.sql")), d)
+    assert migrate(db, d) == 3
+    assert sqlite3.connect(db).execute("SELECT key FROM kv").fetchall() == [("login_account",)]
 
 
 def test_a_restored_file_is_reopened(tmp_path):
