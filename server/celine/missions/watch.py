@@ -12,6 +12,8 @@ is not locked (conversations/store.locked), its plan (plans/) decides:
 - it asked at a checkpoint (the plan waits): Needs you, the note WAITING;
 - every step is done, or no line follows: Needs you, the note NOTE.
 A move to Needs you is reported as its own status change is (missions/skill.record).
+A turn the user started ends a Needs you: the mission is active again, and the rule above
+goes on from there.
 
 Check-ins: every `check_in` minutes while a mission is active, a short line on where it
 stands (the step of its plan, its note) goes where it reports, else to the user
@@ -75,6 +77,10 @@ async def check(app, cid: str, turn_id: str | None) -> str | None:
     if turn_id is None or await app.store.read(lambda c: locked(c, cid)):
         return None                  # a locked mission is left as it stands
     row = await missions.get(app.store, cid)
+    if row is not None and row["status"] == "needs_you" and await app.store.read(
+            lambda c: c.execute("SELECT origin FROM turns WHERE id=?", (turn_id,))
+            .fetchone()[0] == "user"):
+        row = await record(app, app.store, cid, "active", None)   # the user answered
     if row is None or row["status"] != "active" or \
             not await app.store.read(lambda c: stuck(c, cid)):
         return None

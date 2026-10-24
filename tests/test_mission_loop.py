@@ -225,3 +225,14 @@ async def test_check_ins_go_where_it_reports_on_its_cadence(store):
     await store.write(lambda c: missions.set_status_sync(c, store, cid, "needs_you", "x"))
     assert await watch.check_ins(app, start + timedelta(hours=5)) == [], "active only"
     assert quiet not in await watch.check_ins(app, start + timedelta(hours=5))
+
+
+async def test_a_reply_of_the_user_makes_a_waiting_mission_active_again(store):
+    intercom = Intercom(store)
+    app = SimpleNamespace(store=store, intercom=intercom)
+    cid = await _mission(store, intercom)
+    await store.write(lambda c: missions.set_status_sync(c, store, cid, "needs_you", "x"))
+    tid = await _ended_turn(store, intercom, cid, tool=True)
+    await store.write(lambda c: c.execute("UPDATE turns SET origin='user' WHERE id=?", (tid,)))
+    assert await watch.check(app, cid, tid) == "line", "active again, so it goes on"
+    assert (await missions.get(store, cid))["status"] == "active"
