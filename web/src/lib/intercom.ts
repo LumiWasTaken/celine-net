@@ -4,7 +4,12 @@
    `intercom.state` on the feed (lib/bus). No EventSource here: each one holds
    one of the six HTTP/1.1 connections a browser keeps per site, so a few open tabs
    would starve every request. /intercom/stream is for other clients (curl, a CLI). */
+import { createContext } from 'react'
 import { json, post, query, request } from './api'
+
+/** how many messages wait for you, the server's (the rail's count, App); null until it
+    answered */
+export const WaitingCount = createContext<number | null>(null)
 
 /** where a message or a thread came from, from the server: the conversation that sent it
  *  (a chat, a mission, a schedule's run, a background task, a sub-agent) or the app's
