@@ -65,10 +65,6 @@ WAITING = "waiting for Bastet"
 TOLD_HOURS = 24      # the same rule and evidence in a conversation: one note to the owner
 
 
-def _listed(tools: list[str], name: str) -> bool:
-    return name in tools or name.split("__")[0] in tools
-
-
 def _decision(act: str | None, mode: str) -> str:
     """A rule's row: what it did, or in Watch (or a rule set to watch) what it would."""
     if act is None:
@@ -157,7 +153,8 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
         if on["persist"] and persist.can_again(call, sink) and (same := await _again(store, turn, call, sink, sent, mode,
                                                    rules["persist"], cfg, at)):
             found["persist"] = same
-    if on["confirm"] and _listed(rules["confirm"]["tools"], call["name"]):
+    if on["confirm"] and rule_set.listed(rules["confirm"]["tools"], call["name"],
+                                         call.get("args") or {}):
         found["confirm"] = {}
     if hit is None and not found:
         return None

@@ -9,8 +9,8 @@ values stay on a reload.
     on = true
     does = "stop"        # watch (a row only), stop, freeze
 
-    [confirm]
-    tools = ["email__send"]   # a tool, or a whole skill by its name
+    [confirm]            # a tool, a whole skill by its name, or "tool:arg": that tool
+    tools = ["email__send", "shell__share:public"]   # only when its argument is set
 
     [stops]
     count = 3            # stops in one turn, then `does`
@@ -166,7 +166,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "hijack": {"on": True, "does": "stop"},
     "leak": {"on": True, "does": "stop"},
     "damage": {"on": True, "does": "stop"},
-    "confirm": {"on": True, "tools": []},
+    # what reaches out or changes her, until the owner's own list replaces it: a public
+    # share, the coding agent and a CLI sub-agent (a shell with the net), her persona
+    "confirm": {"on": True, "tools": ["shell__share:public", "code__start",
+                                      "sub_agents__start:cli", "me__edit"]},
     "sites": {"on": True, "does": "watch"},
     "stops": {"on": True, "does": "freeze", "count": 3},
     # after a stop, the same thing again another way: `first` the first
@@ -204,6 +207,16 @@ def escalates(rule: str, fired: set[str]) -> bool:
     """The hijack rule freezes when a rule of real harm fired on the same call or turn:
     an order from outside carried out that also leaks or destroys."""
     return rule == "hijack" and bool(fired & {"leak", "damage"})
+
+
+def listed(tools: list[str], name: str, args: dict) -> bool:
+    """Is the call on the confirm list: its tool, its skill, or "tool:arg" with that
+    argument set (shell__share:public, sub_agents__start:cli)?"""
+    for entry in tools:
+        what, _, arg = entry.partition(":")
+        if what in (name, name.split("__")[0]) and (not arg or (args or {}).get(arg)):
+            return True
+    return False
 
 
 def gate(rules: dict, cls: str, sink: str) -> str:
