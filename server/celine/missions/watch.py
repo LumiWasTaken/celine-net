@@ -11,6 +11,10 @@ is not locked (conversations/store.locked), its plan (plans/) decides:
   PAST;
 - it asked at a checkpoint (the plan waits): Needs you, the note WAITING;
 - every step is done, or no line follows: Needs you, the note NOTE.
+A turn a freeze cut (guard/freeze.py) is no Stop: with Missions go on after Unfreeze
+(Settings, Advanced, on by default) the mission stays active, and after the unfreeze
+that turn goes on (`thaw`, looked at every LOOK seconds; a turn that cannot be
+continued gets KEEP_GOING). Switched off, it is a Stop as above.
 A move to Needs you is reported as its own status change is (missions/skill.record).
 A turn the user started ends a Needs you: the mission is active again, and the rule above
 goes on from there.
@@ -59,6 +63,11 @@ def stuck(c: sqlite3.Connection, cid: str) -> bool:
     return all(quiet(c, one, limit if one == cid else None) for one in family(c, cid))
 
 
+def _cut_by_freeze(c: sqlite3.Connection, turn_id: str | None) -> bool:
+    r = c.execute("SELECT state, reason_code FROM turns WHERE id=?", (turn_id,)).fetchone()
+    return r is not None and r["state"] == "aborted" and r["reason_code"] == "frozen"
+
+
 def _may_go_on(c: sqlite3.Connection, turn_id: str) -> bool:
     """Turn `turn_id` ended done or capped, and unless only KEEP_GOING started it, it
     called a tool."""
@@ -88,6 +97,9 @@ async def check(app, cid: str, turn_id: str | None) -> str | None:
     if row is None or row["status"] != "active" or \
             not await app.store.read(lambda c: stuck(c, cid)):
         return None
+    if await app.store.read(lambda c: _cut_by_freeze(c, turn_id)) and \
+            app.cfg.r("missions_resume_after_unfreeze"):
+        return None                  # thaw takes it on after the unfreeze
     plan = await plans.get(app.store, cid)
     if plan is not None and plan["waiting"]:
         n = max((i for i, s in enumerate(plan["steps"], 1) if s["state"] == "done"
@@ -170,12 +182,45 @@ async def ceilings(app, at: datetime) -> list[str]:
     return out
 
 
+async def thaw(app) -> list[str]:
+    """After an unfreeze (Missions go on after Unfreeze on): every active mission that is
+    stuck with its latest turn cut by the freeze goes on in that turn, or with KEEP_GOING
+    when it cannot be continued. -> the missions that did."""
+    from ..conversations import tree
+    from ..guard.freeze import frozen
+    from ..turns import store as turns
+    if not app.cfg.r("missions_resume_after_unfreeze") or await frozen(app.store):
+        return []
+    out = []
+    for row in await missions.list(app.store, "active"):
+        cid = row["conversation_id"]
+        last = await app.store.read(lambda c: (c.execute(
+            "SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC LIMIT 1",
+            (cid,)).fetchone() or [None])[0])
+        if not await app.store.read(lambda c: _cut_by_freeze(c, last) and stuck(c, cid)):
+            continue
+        try:
+            await turns.continue_turn(app.store, cid, last, app.registry)
+        except (KeyError, ValueError, tree.Busy):
+            await app.intercom.send("system:app", f"agent:{cid}", KEEP_GOING, kind="notice",
+                                    data={"mission": cid, "keep_going": True})
+        else:
+            app.dispatcher.notify()
+        log.info("mission goes on after the unfreeze",
+                 extra={"event": "missions.thawed", "conversation": cid})
+        out.append(cid)
+    return out
+
+
 async def run(app) -> None:
-    """The app's loop: every LOOK seconds a look for due check-ins and for missions past
-    their ceiling."""
+    """The app's loop: every LOOK seconds a look for due check-ins, for missions past
+    their ceiling and for missions a freeze cut."""
+    async def thawed(app, _at) -> None:
+        await thaw(app)
     while True:
         at = datetime.now(timezone.utc)
-        for look, what in ((check_ins, "check_in"), (ceilings, "ceiling")):
+        for look, what in ((check_ins, "check_in"), (ceilings, "ceiling"),
+                           (thawed, "thaw")):
             try:
                 await look(app, at)
             except Exception:

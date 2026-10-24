@@ -251,6 +251,42 @@ async def test_past_the_mission_time_limit_of_advanced_it_stops_with_the_reason(
     assert await watch.ceilings(app, start + timedelta(days=999)) == [], "0: no ceiling"
 
 
+async def test_a_mission_a_freeze_cut_goes_on_after_the_unfreeze(store):
+    from celine.core.services import Services
+    from celine.guard import freeze
+    from test_bastet import OWNER
+    intercom = Intercom(store)
+    cfg = load()
+    woke = []
+    app = SimpleNamespace(store=store, intercom=intercom, cfg=cfg, registry=None,
+                          dispatcher=SimpleNamespace(notify=lambda: woke.append(1)))
+    cid = await _mission(store, intercom)
+    await plans.save(store, cid, "", plans.clean(["Read", "Write"]))
+    tid = await _ended_turn(store, intercom, cid, tool=True)
+    await store.write(lambda c: c.execute(
+        "UPDATE turns SET state='aborted', reason='frozen', reason_code='frozen' WHERE id=?",
+        (tid,)))
+    await freeze.freeze(Services(cfg=cfg, store=store), by="user", why="a test")
+    assert await watch.check(app, cid, tid) is None, "left active, not Needs you"
+    assert (await missions.get(store, cid))["status"] == "active"
+    assert await watch.thaw(app) == [], "still frozen"
+    await freeze.unfreeze(Services(cfg=cfg, store=store), by=OWNER)
+    assert await watch.thaw(app) == [cid]
+    assert await store.read(lambda c: c.execute(
+        "SELECT state FROM turns WHERE id=?", (tid,)).fetchone()[0]) == "queued", \
+        "the cut turn goes on"
+    assert woke and await watch.thaw(app) == [], "once"
+
+    cfg.settings.general["missions_resume_after_unfreeze"] = False
+    other = await _mission(store, intercom)
+    tid = await _ended_turn(store, intercom, other, tool=True)
+    await store.write(lambda c: c.execute(
+        "UPDATE turns SET state='aborted', reason='frozen', reason_code='frozen' WHERE id=?",
+        (tid,)))
+    assert await watch.check(app, other, tid) == "needs_you", "switched off: as a Stop"
+    assert await watch.thaw(app) == []
+
+
 async def test_a_reply_of_the_user_makes_a_waiting_mission_active_again(store):
     intercom = Intercom(store)
     app = SimpleNamespace(store=store, intercom=intercom)
