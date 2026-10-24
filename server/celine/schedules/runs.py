@@ -550,21 +550,31 @@ class Scheduler:
             return
         day = run_date(s, datetime.fromisoformat(r["slot"]), zone(cfg))
         fresh = not r["conversation_id"]
-        cid = r["conversation_id"] or await conversations.for_trigger(
-            store, f"run:{rid}", f"{shown(s)}, {night_words(day.isoformat())}")
-        if fresh:
-            from ..settings import roles
-            await roles.resolve(store, cfg, cid)
         started = r["started_at"] or now()
-        await store.write(lambda c: _set(
-            c, store, cfg, rid, state="running", reason="", conversation_id=cid,
-            started_at=started))
-        log.info("run begins", extra={"event": "schedules.run", "run": rid,
-                                      "schedule": s.name, "conversation": cid,
-                                      "fresh": fresh})
-        night = date.fromisoformat(r["night"])
-        await self._backups(night)
+
+        def begin(c: sqlite3.Connection, cid: str) -> dict | None:
+            # only a run still waiting or running: a Stop may have ended it meanwhile
+            if not c.execute(
+                    "UPDATE runs SET state = 'running', reason = '', conversation_id = ?, "
+                    "started_at = ? WHERE id = ? AND state IN ('waiting', 'running')",
+                    (cid, started, rid)).rowcount:
+                return None
+            return _set(c, store, cfg, rid)
         try:
+            cid = r["conversation_id"] or await conversations.for_trigger(
+                store, f"run:{rid}", f"{shown(s)}, {night_words(day.isoformat())}")
+            if fresh:
+                from ..settings import roles
+                await roles.resolve(store, cfg, cid)
+            if await store.write(lambda c: begin(c, cid)) is None:
+                log.info("run ended before it began", extra={"event": "schedules.gone",
+                                                              "run": rid})
+                return
+            log.info("run begins", extra={"event": "schedules.run", "run": rid,
+                                          "schedule": s.name, "conversation": cid,
+                                          "fresh": fresh})
+            night = date.fromisoformat(r["night"])
+            await self._backups(night)
             res = await store.read(lambda c: results(c, r["night"]))
             note = fill(cfg, s.note, day, res) if s.note else ""
             where = final_words(note)

@@ -691,3 +691,32 @@ async def test_a_stop_of_a_turn_that_never_ran_still_tells_its_end(store, cfg):
     _, tid, _ = await user_says(store, cid, "go")
     assert await d.abort_conversation(cid) == tid
     assert heard == [(cid, tid)]
+
+
+async def test_a_run_stopped_before_it_begins_stays_stopped_and_nothing_takes_the_app_down(
+        store, cfg):
+    """The scheduler's `running` write only takes a run still waiting or running: a Stop
+    that landed between the run's start and that write leaves no zombie row, and a
+    second running run fails instead of raising into the lifespan."""
+    cfg.schedules = {"world": _s("world"), "other": _s("other")}
+    app = _app(store, cfg, FakeBackend(echo=True))
+    sched = Scheduler(app, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)))
+    run = await sched.run_now("world")
+    stale = await store.read(lambda c: dict(c.execute(
+        "SELECT * FROM runs WHERE id = ?", (run["id"],)).fetchone()))
+    await sched.end(run["id"], "stopped", "Stopped by Joe")
+    with anyio.move_on_after(3):          # a run taken anyway waits for a turn forever
+        await sched._run_as(run["id"], stale)
+    [row] = await _runs(store)
+    assert row["state"] == "stopped", "no running row without a task"
+
+    other = await sched.run_now("other")
+    await store.write(lambda c: c.execute(
+        "UPDATE runs SET state = 'running' WHERE id = ?", (run["id"],)))
+    taken = await store.read(lambda c: dict(c.execute(
+        "SELECT * FROM runs WHERE id = ?", (other["id"],)).fetchone()))
+    with anyio.fail_after(3):
+        await sched._run_as(other["id"], taken)
+    got = await store.read(lambda c: c.execute(
+        "SELECT state FROM runs WHERE id = ?", (other["id"],)).fetchone()[0])
+    assert got == "failed", "one running run at most, and no exception"
