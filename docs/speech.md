@@ -9,7 +9,11 @@ speech engine, model download, container or extension framework is included.
 For each feature, enter the provider's OpenAI-compatible base address (including `/v1`),
 model ID and optional API key. The app must be able to reach that address; it is not a
 browser address. Input and output may use the same gateway or different providers.
-Save the settings, then turn on the feature. Changes take effect without a restart.
+Use Discover models to save the address and key and fetch the provider's model list.
+Pick a returned model, or enter an ID manually if the provider does not expose an
+inventory. Run Record test for Dictation or Test speech for Read aloud before turning
+on the feature. Tests work while the feature is off and never submit a chat message.
+Changes take effect without a restart.
 
 The app calls these fixed provider routes:
 
@@ -18,6 +22,7 @@ The app calls these fixed provider routes:
 | Dictation | `POST /audio/transcriptions` | Multipart `file`, `model`, `response_format=json`, optional `language` |
 | Read aloud | `POST /audio/speech` | JSON `model`, `input`, `voice`, `response_format=wav` |
 | Voice discovery | `GET /voices` | Optional list as `{ "voices": ["name", { "id": "name" }] }` |
+| Model discovery | `GET /models?service=stt` or `?service=tts` | OpenAI envelope `{ "object": "list", "data": [{ "id": "model-id" }] }` |
 
 Addresses may already end in `/v1` or another provider API prefix; the app appends the
 route, not an extra `/v1`. A proxy must authorize the transcription and speech scopes,
@@ -33,6 +38,14 @@ person-only policy applies; protect the instance accordingly.
 
 The feature status says whether an address and model are configured. It does not
 claim that recording, the model, provider authorization or playback was tested.
+The optional `service` query is a gateway filter, not an OpenAI standard. Generic
+providers can ignore it and return their usual inventory. Speech capability metadata,
+when provided, filters out the other speech direction; untyped entries remain
+selectable rather than guessing capabilities from model names.
+Record test displays the actual transcript and releases the microphone on finish or
+Stop test. Test speech makes a real synthesis request and displays audio controls for
+the returned sample. Use those controls if the browser blocks autoplay. Discovery
+alone never counts as a successful speech test. Neither test enables the feature.
 Opening Speech options discovers voices only. Providers without `/voices` still
 work: enter a voice name manually. Voice discovery does not test transcription.
 

@@ -48,6 +48,58 @@ async def test_default_off_and_no_provider_requests(api, monkeypatch):
     assert (await api.post("/api/transcriptions", files={"file": ("x.webm", b"x", "audio/webm")})).status_code == 409
 
 
+async def test_discover_speech_models_without_model_or_opt_in(api, monkeypatch):
+    await api.put('/api/speech/input', json={'endpoint': {'url': ENDPOINT['url']}, 'key': KEY})
+    def handle(r):
+        assert r.url.path == '/v1/models' and r.url.params['service'] == 'stt'
+        assert r.headers['authorization'] == 'Bearer ' + KEY
+        return httpx.Response(200, json={'object': 'list', 'data': [
+            {'id': 'transcriber', 'capabilities': {'transcription': True}},
+            {'id': 'speaker', 'capabilities': {'speech': True}},
+            {'id': 'transcriber'}, {'id': 'generic-model'}]})
+    upstream(monkeypatch, handle)
+    result = await api.get('/api/speech/input/models')
+    assert result.status_code == 200
+    assert result.json() == {'models': ['transcriber', 'generic-model']}
+    assert not features.on(api.cfg, 'speech_input')
+    assert KEY not in result.text
+
+
+@pytest.mark.parametrize('payload', [{'data': 'bad'}, {'data': [{'name': 'bad'}]}, {'data': [{'id': ''}]}])
+async def test_invalid_model_discovery_is_not_success(api, monkeypatch, payload):
+    await setup(api)
+    upstream(monkeypatch, lambda r: httpx.Response(200, json=payload))
+    result = await api.get('/api/speech/output/models')
+    assert result.status_code == 502 and KEY not in result.text
+
+
+async def test_real_test_routes_work_while_features_off(api, monkeypatch):
+    await setup(api, 'input')
+    await setup(api, 'output')
+    calls = []
+    def handle(r):
+        calls.append(r.url.path)
+        if r.url.path.endswith('/transcriptions'):
+            return httpx.Response(200, json={'text': 'Real test transcript'})
+        return httpx.Response(200, content=b'test-wave', headers={'content-type': 'audio/wav'})
+    upstream(monkeypatch, handle)
+    result = await api.post('/api/speech/input/tests', files={'file': ('test.webm', b'audio', 'audio/webm')})
+    assert result.status_code == 200 and result.json()['text'] == 'Real test transcript'
+    result = await api.post('/api/speech/output/tests', json={'text': 'Test speech', 'voice': 'speaker'})
+    assert result.status_code == 200 and result.content == b'test-wave'
+    assert calls == ['/v1/audio/transcriptions', '/v1/audio/speech']
+    assert not features.on(api.cfg, 'speech_input') and not features.on(api.cfg, 'speech_output')
+
+
+async def test_test_routes_and_model_discovery_are_person_only(api, monkeypatch):
+    upstream(monkeypatch, lambda r: pytest.fail('untrusted speech test made an upstream call'))
+    headers = {'Authorization': 'Bearer untrusted'}
+    assert (await api.get('/api/speech/input/models', headers=headers)).status_code == 403
+    assert (await api.post('/api/speech/output/tests', headers=headers, json={'text': 'Test'})).status_code == 403
+    assert (await api.post('/api/speech/input/tests', headers=headers,
+                           files={'file': ('x.webm', b'x', 'audio/webm')})).status_code == 403
+
+
 async def test_secret_roundtrip_blank_preserves_explicit_clear_and_url_guard(api):
     r = await setup(api)
     assert KEY not in r.text

@@ -96,9 +96,19 @@ async def list_voices(request: Request) -> dict:
     return await speech.voices(cfg_of(request))
 
 
+@router.get("/speech/{direction}/models")
+async def list_models(request: Request, direction: str) -> dict:
+    person_only(request)
+    cfg = cfg_of(request)
+    view(cfg, direction)
+    return await speech.models(cfg, direction)
+
+
 @router.post("/transcriptions")
+@router.post("/speech/input/tests")
 async def transcribe(request: Request, file: UploadFile = File(...), language: str = Form("")) -> dict:
-    cfg = allowed(request, "input")
+    person_only(request)
+    cfg = cfg_of(request) if request.url.path.endswith("/tests") else allowed(request, "input")
     if len(language) > 32 or any(not (c.isalpha() or c == "-") for c in language):
         raise Invalid("language", "Use a language code, or leave it empty.")
     try:
@@ -109,8 +119,10 @@ async def transcribe(request: Request, file: UploadFile = File(...), language: s
 
 
 @router.post("/speech/audio")
+@router.post("/speech/output/tests")
 async def synthesize(request: Request) -> Response:
-    cfg = allowed(request, "output")
+    person_only(request)
+    cfg = cfg_of(request) if request.url.path.endswith("/tests") else allowed(request, "output")
     body = await json_body(request, need=("text",), allow=("text", "voice"))
     text, voice = body["text"], body.get("voice", "")
     if not isinstance(text, str) or not text.strip() or len(text) > speech.MAX_TEXT:

@@ -64,4 +64,4 @@ def _probe(cfg, direction: str) -> dict:
         return {"state": "unset", "detail": "Add the provider address and model."}
     # There is no universal non-generating STT health route. Configuration is not a
     # claim that the microphone, scopes, model or playback have been tested.
-    return {"state": "ready", "detail": "Configured. Try dictation or playback to test it."}
+    return {"state": "ready", "detail": "Provider configured. Run the speech test below to verify it."}

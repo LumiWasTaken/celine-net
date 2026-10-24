@@ -13,13 +13,14 @@ export const speechApi = {
     request<SpeechSettings>(`/speech/${direction}`, { method: 'PUT', headers: { 'If-Match': version },
       body: JSON.stringify({ endpoint, ...(key === undefined ? {} : { key }) }) }),
   voices: (signal?: AbortSignal) => request<{ voices: string[] }>('/speech/output/voices', { signal }),
-  transcribe: (blob: Blob, language: string, signal: AbortSignal) => {
+  models: (direction: Direction, signal?: AbortSignal) => request<{ models: string[] }>(`/speech/${direction}/models`, { signal }),
+  transcribe: (blob: Blob, language: string, signal: AbortSignal, test = false) => {
     const form = new FormData()
     form.append('file', blob, 'recording')
     if (language) form.append('language', language)
-    return request<{ text: string }>('/transcriptions', { method: 'POST', body: form, signal })
+    return request<{ text: string }>(test ? '/speech/input/tests' : '/transcriptions', { method: 'POST', body: form, signal })
   },
-  synthesize: (text: string, voice: string, signal: AbortSignal) => requestBlob('/speech/audio', {
+  synthesize: (text: string, voice: string, signal: AbortSignal, test = false) => requestBlob(test ? '/speech/output/tests' : '/speech/audio', {
     method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, voice }),
   }),
 }

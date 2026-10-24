@@ -17,7 +17,7 @@
    the onboarding's Next runs before it saves the features. All through the Settings
    endpoints. */
 import { Copy } from 'lucide-react'
-import { useEffect, type MutableRefObject, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject, type ReactElement } from 'react'
 import { format, useNav } from '../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { routinesApi, type Schedule } from '../lib/routines'
@@ -29,6 +29,7 @@ import { reach } from './settings/Models'
 import { SchemaForm } from './settings/parts'
 import './Welcome.css'
 import { speechApi, type Direction, type SpeechEndpoint } from '../lib/speechApi'
+import { SpeechTest } from '../components/SpeechTest'
 
 export type SaveRef = MutableRefObject<(() => Promise<void>) | null>
 type FormProps<T> = {
@@ -50,7 +51,14 @@ type SpeechDraft = { endpoint: SpeechEndpoint; key: string; clear: boolean }
 function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<SpeechDraft>) {
   const direction: Direction = feature.id === 'speech_input' ? 'input' : 'output'
   const res = useResource(signal => speechApi.settings(direction, signal), [direction])
+  const [models, setModels] = useState<string[]>([])
   const d = value ?? (res.data ? { endpoint: res.data.endpoint, key: '', clear: false } : null)
+  const discovering = useRef<AbortController | null>(null)
+  const latest = useRef(d); latest.current = d
+  useEffect(() => {
+    setModels([])
+    return () => discovering.current?.abort()
+  }, [d?.endpoint.url, direction])
   const save = async () => {
     if (!d || !res.data) return
     const saved = await speechApi.save(direction, d.endpoint, res.data.version, d.clear ? null : d.key || undefined)
@@ -59,17 +67,38 @@ function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<Sp
   }
   saveRef.current = save
   const action = useAction(async () => { await save(); await reprobe() })
+  const discover = useAction(async () => {
+    discovering.current?.abort()
+    const c = new AbortController(); discovering.current = c
+    await save()
+    if (c.signal.aborted) return
+    const found = await speechApi.models(direction, c.signal)
+    if (c.signal.aborted) return
+    setModels(found.models)
+    if (!found.models.length) throw new Error('The provider returned no speech models.')
+    const current = latest.current
+    if (found.models.length === 1 && current && !current.endpoint.model) onChange({ ...current, endpoint: { ...current.endpoint, model: found.models[0] } })
+  })
   if (!d) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : <LoadingRow label="Loading" />
   return <>
-    <SchemaForm plain schema={res.data?.fields ?? []} values={d.endpoint}
+    <SchemaForm plain schema={(res.data?.fields ?? []).filter(f => f.key !== 'model')} values={d.endpoint}
       onChange={(k, v) => onChange({ ...d, endpoint: { ...d.endpoint, [k]: v } })} />
     <Field label="API key"><Input type="password" autoComplete="off" value={d.key}
       placeholder={res.data?.key.state === 'set' ? 'Saved' : 'Optional'}
       onChange={e => onChange({ ...d, key: e.target.value, clear: false })} /></Field>
     {res.data?.key.state === 'set' && <Switch label="Clear saved key" checked={d.clear}
       onChange={clear => onChange({ ...d, clear, key: '' })} />}
-    <CheckRow label="Save" busy={action.busy} disabled={!d.endpoint.url?.trim() || !d.endpoint.model?.trim()}
+    <CheckRow label="Discover models" busy={discover.busy} disabled={!d.endpoint.url?.trim() || action.busy}
+      error={discover.error} onClick={() => void discover.run()} />
+    {models.length > 0 && <Choice label="Available speech models" value={d.endpoint.model ?? ''}
+      options={Array.from(new Set([d.endpoint.model, ...models].filter((v): v is string => !!v))).map(v => ({ value: v, label: v }))}
+      onChange={model => onChange({ ...d, endpoint: { ...d.endpoint, model } })} />}
+    <Field label="Model"><Input value={d.endpoint.model ?? ''} placeholder="Discover or enter a model ID"
+      onChange={e => onChange({ ...d, endpoint: { ...d.endpoint, model: e.target.value } })} /></Field>
+    <CheckRow label="Save" busy={action.busy} disabled={!d.endpoint.url?.trim() || discover.busy}
       error={action.error} onClick={() => void action.run()} />
+    <SpeechTest direction={direction} identity={JSON.stringify(d.endpoint)}
+      ready={!!d.endpoint.url?.trim() && !!d.endpoint.model?.trim() && !action.busy && !discover.busy} save={save} />
   </>
 }
 
