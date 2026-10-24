@@ -93,3 +93,60 @@ async def test_the_store_says_while_its_writer_runs():
             assert s.alive
             await s.aclose()
         assert not s.alive, "a writer that ended is no longer alive: the health check says 503"
+
+
+async def test_a_slow_write_leaves_the_loop_free(store):
+    """The writer runs on its own thread: while one write takes long, the loop still
+    reads, and only the callers of later writes wait."""
+    import threading
+    gate = threading.Event()
+
+    def slow(c):
+        # the loop sets the gate: were this the loop's thread, it would wait in vain
+        assert gate.wait(5), "the loop was blocked by the write"
+        c.execute("INSERT INTO kv(k, v) VALUES('slow', '1')")
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(store.write, slow)
+        assert await store.kv_get("slow") is None
+        gate.set()
+    assert await store.kv_get("slow") == "1"
+
+
+async def test_events_go_out_on_the_loop_after_their_commit(db_path):
+    """The bus hears a write's events on the loop's thread, in commit order, each once
+    its row can be read."""
+    import threading
+    from celine.core.bus import EventBus
+    from celine.core.store import Store, connect
+    bus = EventBus()
+    look = connect(db_path)
+    async with anyio.create_task_group() as tg:
+        s = Store(db_path, bus=bus)
+        await s.start(tg)
+        cid = await conversations.create(s, "x")
+        seen: list[tuple[int, int, int]] = []
+
+        class Tap:
+            def send_nowait(self, ev):
+                landed = look.execute("SELECT count(*) FROM events WHERE "
+                                      "conversation_id=? AND seq=?", (cid, ev["seq"]))
+                seen.append((ev["seq"], threading.get_ident(), landed.fetchone()[0]))
+        bus._subs[cid].add(Tap())
+        for i in range(5):
+            await s.append_event(cid, "message.delta", {"i": i})
+        seqs = [x[0] for x in seen]
+        assert len(seqs) == 5 and seqs == sorted(seqs)
+        assert {x[1] for x in seen} == {threading.get_ident()}
+        assert {x[2] for x in seen} == {1}, "published before its commit"
+        await s.aclose()
+    look.close()
+
+
+async def test_write_soon_from_a_thread_lands(store):
+    """A write queued from another thread (the archive's tasks, the model queue) lands
+    before a write awaited after it."""
+    await anyio.to_thread.run_sync(lambda: store.write_soon(lambda c: c.execute(
+        "INSERT INTO kv(k, v) VALUES('soon', '1')")))
+    await store.write(lambda c: None)
+    assert await store.kv_get("soon") == "1"

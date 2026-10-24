@@ -7,17 +7,15 @@ import asyncio
 import contextvars
 import json
 import logging
-import math
 import queue
 import sqlite3
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
 import anyio
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from ..db.migrate import BUSY_MS, log_path, notebook_db
 from .bus import for_pages, lands
@@ -65,22 +63,26 @@ class _Job:
     error: BaseException | None = None
     done: anyio.Event | None = None
     ctx: contextvars.Context | None = None    # the caller's context
+    # (topic, event) the write appended (Store.event, Store.global_event): published
+    # on the loop after its commit
+    events: list[tuple[str, dict]] = field(default_factory=list)
 
 
-# One write connection, one writer task: that is what makes events.seq gapless
-# without a lock. Never open a second write connection.
+# One write connection, one writer thread taking jobs in arrival order: that is what
+# makes events.seq gapless without a lock. Never open a second write connection. The
+# loop only queues a write and awaits it; a write that takes long (a lock held by
+# another process, a large prune) holds up the writes behind it, never the loop.
 class Store:
     def __init__(self, db_path: Path, bus=None):
         self.db_path = db_path
         self.bus = bus
-        self.alive = False          # the writer task runs
-        self._pending: list[tuple[str, dict]] = []
+        self.alive = False          # the writer thread runs
+        self._pending: list[tuple[str, dict]] = []     # the running write's events
         self._conn: sqlite3.Connection | None = None
-        self._tx: MemoryObjectSendStream[_Job] | None = None
-        self._rx: MemoryObjectReceiveStream[_Job] | None = None
+        self._jobs: queue.SimpleQueue[_Job | None] | None = None   # None: stop
+        self._ended: anyio.Event | None = None          # the writer thread is done
         self._closed = False
         self._loop: asyncio.AbstractEventLoop | None = None   # start() sets the writer's
-        self._thread: int | None = None
         # one read connection per worker thread, opened once (pragmas, ATTACHes) and
         # kept: a read is a transaction on it, not a new connection
         # idle reader connections: a read takes one and gives it back, so there are never
@@ -89,16 +91,25 @@ class Store:
 
     async def start(self, task_group: anyio.abc.TaskGroup) -> None:
         self._conn = connect(self.db_path)
-        self._loop, self._thread = asyncio.get_running_loop(), threading.get_ident()
+        self._loop = asyncio.get_running_loop()
         # unbounded: an awaited write waits for its own result anyway, and emit_global
         # must never block or fail a sync caller
-        self._tx, self._rx = anyio.create_memory_object_stream[_Job](math.inf)
+        self._jobs, self._ended = queue.SimpleQueue(), anyio.Event()
+        self.alive = True
+        threading.Thread(target=self._serve, name="store-writer", daemon=True).start()
         task_group.start_soon(self._writer, name="store-writer")
 
-    async def aclose(self) -> None:
+    def _stop(self) -> None:
+        """No write is taken after this; the writer ends after the ones queued."""
+        if not self._closed and self._jobs is not None:
+            self._jobs.put(None)
         self._closed = True
-        if self._tx is not None:
-            await self._tx.aclose()
+
+    async def aclose(self) -> None:
+        """Every write queued so far lands, then the writer's connection closes."""
+        self._stop()
+        if self._ended is not None:
+            await self._ended.wait()
         while True:
             try:
                 self._idle.get_nowait().close()
@@ -106,52 +117,66 @@ class Store:
                 break
 
     async def _writer(self) -> None:
-        """The single writer. Serialises every write in arrival order."""
-        assert self._rx is not None and self._conn is not None
-        self.alive = True
+        """The writer thread's life in the task group: a cancelled group stops it."""
         try:
-            await self._serve()
+            await self._ended.wait()
         finally:
+            self._stop()
             self.alive = False      # the health check says so: nothing can be written now
 
-    async def _serve(self) -> None:
-        async with self._rx:
-            async for job in self._rx:
-                self._pending.clear()
+    def _serve(self) -> None:
+        """The single writer, on its own thread. Serialises every write in arrival
+        order; each one's result and events go back to the loop in commit order."""
+        conn = self._conn
+        try:
+            while (job := self._jobs.get()) is not None:
+                self._pending = job.events
                 try:
-                    self._conn.execute("BEGIN IMMEDIATE")
+                    conn.execute("BEGIN IMMEDIATE")
                     try:
-                        job.result = job.ctx.run(job.fn, self._conn) if job.ctx \
-                            else job.fn(self._conn)
-                        self._conn.execute("COMMIT")
+                        job.result = job.ctx.run(job.fn, conn) if job.ctx else job.fn(conn)
+                        conn.execute("COMMIT")
                     except BaseException:
-                        if self._conn.in_transaction:
-                            self._conn.execute("ROLLBACK")
+                        if conn.in_transaction:
+                            conn.execute("ROLLBACK")
                         raise
-                    if self.bus is not None:
-                        for topic, event in self._pending:
-                            self.bus.publish(topic, event)
                 except BaseException as e:      # noqa: BLE001 - reported to caller
                     job.error = e
-                    if job.done is None:        # write_soon: nobody waits for it
-                        log.error("queued write failed", exc_info=e,
-                                  extra={"event": "store.write_soon_failed"})
-                finally:
-                    self._pending.clear()
-                    if job.done is not None:
-                        job.done.set()
-        if self._conn is not None:
-            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            self._conn.close()
+                    job.events.clear()          # nothing of it landed
+                self._pending = []
+                self._to_loop(self._finish, job)
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
             self._conn = None
+            self._to_loop(self._ended.set)
+
+    def _to_loop(self, fn, *args) -> None:
+        try:
+            self._loop.call_soon_threadsafe(fn, *args)
+        except RuntimeError:                    # the loop has closed: nobody waits
+            pass
+
+    def _finish(self, job: _Job) -> None:
+        """On the loop, after the commit: the write's events go out, its caller wakes."""
+        try:
+            if job.error is None and self.bus is not None:
+                for topic, event in job.events:
+                    self.bus.publish(topic, event)
+            elif job.error is not None and job.done is None:   # write_soon: nobody waits
+                log.error("queued write failed", exc_info=job.error,
+                          extra={"event": "store.write_soon_failed"})
+        finally:
+            if job.done is not None:
+                job.done.set()
 
     # Callables so a caller cannot await mid-transaction.
     async def write(self, fn: Callable[[sqlite3.Connection], T]) -> T:
-        """Run fn on the writer task inside one transaction. fn must be sync."""
-        if self._tx is None or self._closed:
+        """Run fn on the writer thread inside one transaction. fn must be sync."""
+        if self._jobs is None or self._closed:
             raise RuntimeError("store is not running")
         job = _Job(fn=fn, done=anyio.Event(), ctx=contextvars.copy_context())
-        await self._tx.send(job)
+        self._jobs.put(job)
         await job.done.wait()
         if job.error is not None:
             raise job.error
@@ -194,12 +219,9 @@ class Store:
         """A write queued for the writer and never awaited, so sync callers (the model
         queue, the archive's tasks, a settings reload) make one too, from any thread; a
         write after it sees it. Dropped once the store has closed."""
-        if self._tx is None or self._closed:
+        if self._jobs is None or self._closed:
             return
-        if threading.get_ident() != self._thread:      # the stream is the loop's
-            self._loop.call_soon_threadsafe(self.write_soon, fn)
-            return
-        self._tx.send_nowait(_Job(fn=fn))
+        self._jobs.put(_Job(fn=fn))
 
     def emit_global(self, event: dict) -> None:
         """One event of the global feed ({"type": ..., ...}) from outside a write
