@@ -115,3 +115,11 @@ async def test_a_server_that_does_not_answer_fails_with_the_plain_sentence(store
         tg.cancel_scope.cancel()
     assert skill.error == ("The dead server did not answer at 127.0.0.1:9. Start it, or fix "
                            "the address.")
+
+
+def test_an_mcp_argument_named_like_a_python_keyword_keeps_its_name():
+    from celine.turns.tools import _takes_any
+
+    async def mcp(ctx, **args): ...
+    async def own(ctx, in_: str): ...
+    assert _takes_any(mcp) and not _takes_any(own)

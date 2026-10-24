@@ -1,6 +1,7 @@
 """The single chokepoint every tool call resolves through."""
 from __future__ import annotations
 
+import inspect
 import json
 import keyword
 import logging
@@ -411,6 +412,11 @@ def coerce(args: dict, schema: dict) -> str | None:
     return "; ".join(wrong) or None
 
 
+def _takes_any(fn) -> bool:
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD
+               for p in inspect.signature(fn).parameters.values())
+
+
 async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
     """The call itself, after every check: the turn's time, then the tool, in its turn
     or handed to a job."""
@@ -423,9 +429,11 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
 
     # a parameter named like a Python keyword is `in` on the wire and `in_` in the
     # coroutine (skills.derive_schema); the schema and repeat checks above saw the
-    # wire form, the call below gets the Python one
+    # wire form, the call below gets the Python one. A tool that takes **args (MCP)
+    # passes them on as they came.
     wire = args
-    args = {k + "_" if keyword.iskeyword(k) else k: v for k, v in args.items()}
+    if not _takes_any(spec.fn):
+        args = {k + "_" if keyword.iskeyword(k) else k: v for k, v in args.items()}
 
     async def emit(note: str, **data) -> None:
         await turns.tool_progress(store, cid, call["id"], note, **data)
