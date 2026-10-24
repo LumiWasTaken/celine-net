@@ -31,7 +31,7 @@ export const usePhone = () => useMedia(PHONE)
 export const useNarrow = () => useMedia(NARROW)
 
 /** how long a finger rests on something before it is a long press */
-const LONG_PRESS_MS = 500
+export const LONG_PRESS_MS = 500
 
 /** a long press by touch: `start(e, fn)` from onPointerDown runs `fn` once a finger has
     rested LONG_PRESS_MS (a mouse or a pen: nothing, false); `stop` from up, cancel and leave */
