@@ -199,6 +199,8 @@ services:
     environment:
       # a host folder for its home's snapshots (DEPLOY.md "Shellbox"); empty: beside its home
       SHELLBOX_SNAPSHOTS: ${SHELLBOX_SNAPSHOTS:-}
+      # days a snapshot is kept; 0 keeps every one
+      SHELLBOX_SNAPSHOT_KEEP_DAYS: ${SHELLBOX_SNAPSHOT_KEEP_DAYS:-7}
       # the hour of the reset, HH:MM in TZ
       SHELLBOX_RESET_AT: *reset-at
       TZ: ${TZ:-UTC}

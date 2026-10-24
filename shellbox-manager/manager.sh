@@ -10,7 +10,8 @@
 # Before the reset it keeps a snapshot of its home, one folder per day
 # (shellbox-snapshots/<date>, out of its reach): a hardlink copy of the previous
 # snapshot (cp -al), then rsync -a --delete from its home, so a file that did not change
-# costs nothing. Snapshots are kept; a restore is by hand. The folder is beside its
+# costs nothing. A snapshot older than SHELLBOX_SNAPSHOT_KEEP_DAYS (default 7; 0 keeps
+# every one) goes after the new one is made; a restore is by hand. The folder is beside its
 # home: in the same volume when its home is a named volume (docker-compose.yml), next
 # to the host folder when it is one (DEPLOY.md "Shellbox", the home disk, so the
 # snapshots are not on it). SHELLBOX_SNAPSHOTS, a host folder, puts them there instead.
@@ -44,6 +45,9 @@ snapshot() {
         return 1
     fi
     [ -z "$snaps" ] || set -- "$@" -v "$snaps:/data/shellbox-snapshots"
+    # the oldest day kept, by name; empty keeps every one
+    keep=${SHELLBOX_SNAPSHOT_KEEP_DAYS:-7} oldest=
+    [ "$keep" -eq 0 ] || oldest=$(date -d "@$(($(date +%s) - keep * 86400))" +%F)
     # the shellbox image has rsync
     docker run --rm --network none "$@" --entrypoint sh "$image" -c '
         set -eu
@@ -51,7 +55,11 @@ snapshot() {
         mkdir -p "$s"
         last=$(cd "$s" && ls -1d [0-9]* 2>/dev/null | tail -n 1)
         if [ -n "$last" ] && [ "$last" != "$day" ]; then cp -al "$s/$last" "$s/$day"; fi
-        rsync -a --delete /data/shellbox/ "$s/$day/"' sh "$(date +%F)"
+        rsync -a --delete /data/shellbox/ "$s/$day/"
+        [ -n "$2" ] || exit 0
+        for old in $(cd "$s" && ls -1d [0-9]*); do
+            if [ "$old" \< "$2" ]; then rm -rf "${s:?}/$old"; fi
+        done' sh "$(date +%F)" "$oldest"
 }
 
 if snapshot; then

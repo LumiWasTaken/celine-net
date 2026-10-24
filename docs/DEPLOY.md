@@ -254,7 +254,7 @@ restart, a crash, or `sudo reboot` inside the box keeps the container as it was;
 the recreate resets it. `docker compose logs shellbox-manager` shows what each morning
 did.
 
-Before the reset it keeps a snapshot of its home, one folder per day in `shellbox-snapshots/<date>` (hardlinks to the day before; kept; a restore is by hand). `SHELLBOX_SNAPSHOTS` (a host folder) sets where.
+Before the reset it keeps a snapshot of its home, one folder per day in `shellbox-snapshots/<date>` (hardlinks to the day before; a restore is by hand). `SHELLBOX_SNAPSHOTS` (a host folder) sets where, `SHELLBOX_SNAPSHOT_KEEP_DAYS` how many days they are kept (default 7; 0 keeps every one).
 
 The agent's home's size: `SHELLBOX_HOME_GB` gives it one. The box measures its home every 10
 minutes; past the size, its next result says so and asks it to clean up or ask for
@@ -289,6 +289,7 @@ The two boxes read these; the compose file sets the ones it names, `.env` the on
 | `SHELLBOX_LLM_URL` | none | the app's model proxy its terminals call (`OPENAI_BASE_URL`) |
 | `SHELLBOX_HOME_GB` | empty | its home's size in GB; empty: no size |
 | `SHELLBOX_RESET_AT` | `04:00` | the hour of the morning reset, HH:MM in `TZ` |
+| `SHELLBOX_SNAPSHOT_KEEP_DAYS` | `7` | days its home's snapshots are kept (shellbox-manager); 0 keeps every one |
 
 ## Browser
 
