@@ -193,6 +193,15 @@
 .chip__remove { display: grid; place-items: center; width: 18px; height: 18px; margin-right: calc(-1 * var(--s-1));
   border-radius: var(--r-full); color: inherit; opacity: 0.75; }
 .chip__remove:hover { opacity: 1; background: var(--shade); }
+/* touch: a small control under 44 px gets an unseen hit area 44 px each way around its
+   middle; it looks the same */
+@media (pointer: coarse) {
+  .field__clear, .chip__remove, .tree__arrow:not(:empty) { position: relative; }
+  :is(.field__clear, .chip__remove, .tree__arrow:not(:empty), .place-toolbar__chip > .btn)::before {
+    content: ''; position: absolute; left: 50%; top: 50%; width: var(--h-lg); height: var(--h-lg);
+    transform: translate(-50%, -50%);
+  }
+}
 
 /* ── Notice / InlineError: the single error (and info) widget ────────────── */
 .notice {
