@@ -1,6 +1,7 @@
-/* The login's credentials: the Security page's calls (passkeys, passwords, PINs, and
-   Confirm access, the proof some of them need first), and the WebAuthn JSON conversions
-   (the server speaks the JSON form of the options and credentials, base64url for bytes). The login screen is a page of its own, served by the
+/* The login's credentials: the Security page's calls (passkeys, passwords, PINs, the
+   sessions, and Confirm access, the proof some of them need first), and the WebAuthn JSON
+   conversions (the server speaks the JSON form of the options and credentials, base64url
+   for bytes). The login screen is a page of its own, served by the
    server (server/celine/auth/page.py), with the same conversions inline. */
 import { del, json, post, request } from './api'
 
@@ -82,6 +83,10 @@ function passkeyError(e: unknown): Error {
 
 export interface NamedToken { id: number; name: string; created_at: string }
 
+/** a browser logged in: its name from its user agent ("Firefox on Linux"), when it logged
+    in and when it was last seen (the server's seconds; to the hour) */
+export interface LoginSession { id: number; label: string; created_at: number; last_seen_at: number; this_session: boolean }
+
 /** the server's code when an action needs Confirm access first (auth/routes.py) */
 export const PROOF_NEEDED = 'proof_needed'
 
@@ -118,6 +123,13 @@ export const securityApi = {
   /** Confirm access with a password or a PIN */
   prove: (method: 'password' | 'pin', secret: string) =>
     request<{ ok: boolean }>('/auth/reauth', json('POST', { method, secret })),
+
+  /** every browser logged in, the oldest first */
+  sessions: () => request<{ sessions: LoginSession[] }>('/auth/sessions'),
+  /** `logged_out` when it was this browser's */
+  endSession: (id: number) => del<{ ok: boolean; logged_out: boolean }>(`/auth/sessions/${id}`),
+  /** every session but this one */
+  logoutOthers: () => post<{ ok: boolean; ended: number }>('/auth/sessions/logout-others'),
 
   /** named tokens: a host script sends on the intercom as system:<name> */
   tokens: () => request<{ tokens: NamedToken[] }>('/tokens'),

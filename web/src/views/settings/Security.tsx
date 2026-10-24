@@ -2,14 +2,16 @@
    the icon, its label, when it was created, "This session" on the one this browser logged in
    with), Add passkey (the browser's prompt), Add password and Add PIN (a dialog each, the
    server's sentence on the field), Delete on each row (never the last one; when the server
-   says logged_out the page goes to /). Then new recovery codes and the named tokens host
-   scripts send on the intercom with (logging out is the door at the bottom of the rail). Adding a way to log in, new codes and a new token may
+   says logged_out the page goes to /). Then the sessions (each browser logged in, "This
+   session" on this one, Log out on each, Log out everywhere for every other), new recovery
+   codes and the named tokens host scripts send on the intercom with (logging out is the
+   door at the bottom of the rail). Adding a way to log in, new codes and a new token may
    ask Confirm access first (Prove.tsx). Listed only while the login is on. API:
    lib/passkey.ts securityApi. */
 import { useState } from 'react'
-import { Copy, Fingerprint, Hash, LockKeyhole, Plus, Trash2, type LucideIcon } from 'lucide-react'
+import { Copy, DoorOpen, Fingerprint, Hash, LockKeyhole, MonitorSmartphone, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { stamp } from '../../lib/format'
-import { securityApi, type Credential, type CredentialKind, type NamedToken } from '../../lib/passkey'
+import { securityApi, type Credential, type CredentialKind, type LoginSession, type NamedToken } from '../../lib/passkey'
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import {
@@ -60,6 +62,8 @@ export function Security() {
             ))}
           </div>
         </Section>
+
+        <Sessions />
 
         <Section title="Recovery codes"
                  action={<Button onClick={() => setRenewing(true)}>Reset codes</Button>}>
@@ -113,6 +117,35 @@ export function Security() {
 }
 
 type Guard = ReturnType<typeof useProof>['guard']
+
+/* every browser logged in: its name, when it logged in, when it was last seen ("This
+   session" on this one); Log out on each (this one goes to /), Log out everywhere for the rest */
+function Sessions() {
+  const list = useResource(() => securityApi.sessions(), [])
+  const others = useAction(async () => { await securityApi.logoutOthers(); list.reload() })
+  const end = useAction(async (s: LoginSession) => {
+    const r = await securityApi.endSession(s.id)
+    if (r.logged_out) { location.replace('/'); return }
+    list.reload()
+  })
+  const rows = list.data?.sessions ?? []
+  return (
+    <Section title="Sessions"
+             action={<Button loading={others.busy} disabled={rows.length < 2} onClick={() => void others.run()}>Log out everywhere</Button>}>
+      {list.error && <InlineError message={list.error} onRetry={list.reload} />}
+      {(others.error || end.error) && <InlineError compact message={others.error ?? end.error} />}
+      {!list.data && list.loading && <LoadingRow />}
+      <div className="rows">
+        {rows.map(s => (
+          <ListRow key={s.id} icon={MonitorSmartphone} title={s.label}
+                   subtitle={`Created ${when(s.created_at)}`}
+                   meta={s.this_session ? 'This session' : `Last seen ${when(s.last_seen_at)}`} trailingAlways
+                   trailing={<IconButton icon={DoorOpen} label="Log out" onClick={() => void end.run(s)} />} />
+        ))}
+      </div>
+    </Section>
+  )
+}
 
 /* a new password (at least 10 characters) or PIN (8 digits); the server's sentence on the field */
 function AddSecret({ kind, guard, onClose, onAdded }: { kind: 'password' | 'pin'; guard: Guard; onClose: () => void; onAdded: () => void }) {
