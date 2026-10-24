@@ -321,3 +321,8 @@ async def test_she_marks_moves_and_deletes(api, caps):
     r = await skill.delete(ctx, ["INBOX:20"])
     assert r.is_error and r.content == "This account has no trash folder." \
         and set(inbox()) == {20}
+
+
+def test_a_line_break_in_a_search_cannot_end_the_imap_command():
+    from celine.skills.mail import _q
+    assert _q('x"\r\nA1 DELETE INBOX') == '"x\\"  A1 DELETE INBOX"'

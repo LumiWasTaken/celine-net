@@ -75,6 +75,8 @@ def _encode_folder(s: str) -> str:
 
 
 def _q(s: str) -> str:
+    """A quoted IMAP string; a line break would end the command, so it is a space."""
+    s = s.replace("\r", " ").replace("\n", " ")
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
