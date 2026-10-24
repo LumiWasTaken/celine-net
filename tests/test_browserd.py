@@ -21,8 +21,9 @@ from vault_fixtures import by_hand, ctx_for, fake_bw, vault_app  # noqa: F401
 ROOT = Path(__file__).parent.parent
 try:
     import PIL  # noqa: F401
-except ImportError:
-    sys.modules["PIL"] = types.ModuleType("PIL")
+    stub = False
+except ImportError:                    # only while browserd loads: pypdf looks for PIL too
+    stub = sys.modules["PIL"] = types.ModuleType("PIL")
     for name in ("Image", "ImageDraw", "ImageFont"):
         setattr(sys.modules["PIL"], name, None)
 sys.path.insert(0, str(ROOT / "browser"))
@@ -30,6 +31,8 @@ spec = importlib.util.spec_from_file_location("browserd", ROOT / "browser" / "br
 browserd = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(browserd)
 sys.path.remove(str(ROOT / "browser"))
+if stub:
+    del sys.modules["PIL"]
 
 
 @pytest.fixture
