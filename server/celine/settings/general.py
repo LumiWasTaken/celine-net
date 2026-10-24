@@ -54,6 +54,8 @@ FIELDS: list[dict[str, Any]] = [
          "One routine run at most. 0: no cap."),
         ("mission_max_hours", "Mission time limit", "hours", 0, 100_000, 0,
          "One mission at most, from its start. 0: no cap."),
+        ("mission_max_sub_agents", "Sub-agents per mission", None, 0, 10_000, 0,
+         "0: no cap."),
         ("job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
          "A tool that runs in the background is stopped after this."),
         ("history_messages", "Messages per request", "messages", 0, 100_000, 200,

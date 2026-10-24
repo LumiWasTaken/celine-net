@@ -240,6 +240,30 @@ async def test_a_start_over_max_running_is_queued_and_starts_when_one_is_done(st
         "its report answers the brief"
 
 
+async def test_a_mission_starts_no_more_sub_agents_than_advanced_allows(store, cfg):
+    """Sub-agents per mission caps the names a mission starts; one that is done still
+    takes a new brief; a chat has no such cap; 0 is none."""
+    cfg.settings.general["mission_max_sub_agents"] = 1
+    mission = await conversations.create(store, "m", kind="mission")
+    chat = await conversations.create(store, "p")
+    d = Dispatcher(store, cfg, EventBus(), lambda: None, Registry())
+    app = Services(cfg=cfg, store=store, dispatcher=d, intercom=Intercom(store, d.notify))
+    skill = SubAgents(cfg)
+    skill.app = app
+    first, refusal, _, _ = await skill.begin(store, mission, "review the night", "night-rvw")
+    assert refusal is None
+    second, refusal, _, _ = await skill.begin(store, mission, "review the day", "day-rvw")
+    assert second is None and refusal and "1 sub-agent" in refusal
+    await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
+    await report.on_end(app, first)
+    again, refusal, resumed, _ = await skill.begin(store, mission, "and the day", "night-rvw")
+    assert (again, refusal, resumed) == (first, None, True), "a done one takes a new brief"
+    for name in ("chat-one", "chat-two"):
+        assert (await skill.begin(store, chat, "look", name))[1] is None, "a chat: no cap"
+    cfg.settings.general["mission_max_sub_agents"] = 0
+    assert (await skill.begin(store, mission, "look", "day-rvw"))[1] is None, "0: no cap"
+
+
 async def test_stopping_a_queued_sub_agent_drops_its_brief(store, cfg):
     cfg.skills["sub_agents"] = {**cfg.skills.get("sub_agents", {}), "max_running": 0}
     parent = await conversations.create(store, "p")

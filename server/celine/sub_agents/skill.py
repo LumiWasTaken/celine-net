@@ -268,6 +268,8 @@ class SubAgents:
             if known is not None:
                 sub = known["id"]
             else:
+                if (refusal := await self._over_cap(store, parent, len(mine))):
+                    return None, refusal, False, None
                 if folder is not None:
                     folder, refusal = self._folder(folder, create=access == "work")
                     if refusal:
@@ -285,6 +287,17 @@ class SubAgents:
         metrics.SUB_AGENTS_STARTED.labels("cli" if (cli or (known or {}).get("cli"))
                                           else "model").inc()
         return sub, None, known is not None, int(sent["intercom_id"]) if sent else None
+
+    async def _over_cap(self, store, parent: str, started: int) -> str | None:
+        """The refusal when `parent` is a mission that started its Sub-agents per mission
+        (Settings, Advanced; 0 none) already, else None."""
+        cap = self.cfg.r("mission_max_sub_agents")
+        if not cap or started < cap or not await store.read(lambda c: c.execute(
+                "SELECT 1 FROM conversations WHERE id=? AND kind='mission'",
+                (parent,)).fetchone()):
+            return None
+        return (f"This mission has started its {cap} sub-agent{'' if cap == 1 else 's'}, "
+                f"the most it may. Give one that is done a new brief under its name.")
 
     async def stop_agent(self, sub: str) -> None:
         """Its turn, its jobs, the messages it scheduled that have not landed, and a
