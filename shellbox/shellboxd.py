@@ -110,8 +110,8 @@ user's own terminals leave none.
 
 At every start a home that is not its own (a new volume, another uid) is given to it, said
 in the container's log; the box runs apt-get update, then ~/boot.sh as it, in the
-background (STATUS apt and boot). With SHELLBOX_HOME_GB set (the hard cap; the soft cap
-SHELLBOX_HOME_SOFT_GB, default 90% of it), its home is measured every HOME_EVERY seconds
+background (STATUS apt and boot). With SHELLBOX_HOME_GB (the hard cap, default 50; the soft
+cap SHELLBOX_HOME_SOFT_GB, default 90% of it), its home is measured every HOME_EVERY seconds
 (USAGE for the greeting); its next result after a measure past a cap carries the note
 home_over:<used>:<cap>, once per measure, and past the hard cap no upload lands. Nothing
 else the agent writes passes through here: the wall for that is the host's
@@ -201,7 +201,7 @@ CMD = MARKER.parent / "cmd"                    # its runs: <id>.start, <id>.log,
 RESET = MARKER.parent / "reset"                # when the last reset was (the greeting)
 USAGE = MARKER.parent / "home"                 # "<used> <limit>" in bytes (the greeting)
 RC = Path("/etc/shellbox/run.sh")              # RUN_SH, sourced by /etc/bash.bashrc
-HOME_GB = os.environ.get("SHELLBOX_HOME_GB", "")   # its home's hard cap; empty: no limit
+HOME_GB = os.environ.get("SHELLBOX_HOME_GB") or "50"   # its home's hard cap
 HOME_SOFT_GB = os.environ.get("SHELLBOX_HOME_SOFT_GB", "")   # warned past; empty: 90%
 
 # what its terminals see, and nothing else (tmux hands the environment of whoever starts
@@ -1839,8 +1839,7 @@ def start() -> None:
     start_agent()
     STATUS["boot"] = {"state": "running", "exit": None, "seconds": None, "error": None}
     threading.Thread(target=boot, daemon=True).start()
-    if HOME_GB:
-        threading.Thread(target=measure_home, daemon=True).start()
+    threading.Thread(target=measure_home, daemon=True).start()
 
 
 def load_agent(name: str):
@@ -1893,18 +1892,16 @@ def update_packages() -> None:
     STATUS["apt"] = {"exit": rc, "seconds": round(time.monotonic() - began)}
 
 
-def caps() -> tuple[int, int] | None:
-    """Its home's (soft, hard) caps in bytes, None without a size."""
-    if not HOME_GB:
-        return None
+def caps() -> tuple[int, int]:
+    """Its home's (soft, hard) caps in bytes."""
     hard = int(float(HOME_GB) * 1024 ** 3)
     soft = int(float(HOME_SOFT_GB) * 1024 ** 3) if HOME_SOFT_GB else hard * 9 // 10
     return min(soft, hard), hard
 
 
 def measure_home() -> None:
-    """The agent's home's size on disk every HOME_EVERY seconds, when it has one
-    (SHELLBOX_HOME_GB): for the greeting (USAGE), home_note() and put_file()."""
+    """The agent's home's size on disk every HOME_EVERY seconds (SHELLBOX_HOME_GB): for
+    the greeting (USAGE), home_note() and put_file()."""
     while True:
         try:
             out = subprocess.run(["ionice", "-c3", "nice", "-n19", "du", "-sx",
@@ -1918,7 +1915,7 @@ def measure_home() -> None:
 
 def measured(used: int, at: int) -> None:
     """One measure of its home: `used` bytes at `at` (epoch seconds)."""
-    soft, hard = caps() or (0, 0)
+    soft, hard = caps()
     STATUS["home"] = {"used": used, "soft": soft, "limit": hard, "at": at}
     USAGE.write_text(f"{used} {hard}\n")
 

@@ -4,7 +4,7 @@
 # and again after raising SHELLBOX_HOME_GB.
 #
 #   SHELLBOX_HOME     the host folder the shellbox mounts as /home/celine (.env)
-#   SHELLBOX_HOME_GB  its size in GB (.env)
+#   SHELLBOX_HOME_GB  its size in GB (.env; default 50)
 #
 # The disk is SHELLBOX_HOME.img (ext4), mounted on SHELLBOX_HOME by /etc/fstab before
 # Docker starts. The first run moves what the folder holds into it (the shellbox must
@@ -16,7 +16,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH
 cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 home=${SHELLBOX_HOME:?set SHELLBOX_HOME in .env}
-gb=${SHELLBOX_HOME_GB:?set SHELLBOX_HOME_GB in .env}
+gb=${SHELLBOX_HOME_GB:-50}
 img="$home.img"
 want=$((gb * 1073741824))
 

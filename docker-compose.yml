@@ -92,8 +92,8 @@ services:
       # the proxy's own key (mounted below), never a provider's
       SHELLBOX_LLM_URL: http://celine:8766/llm
       # its home's caps in GB (DEPLOY.md "Shellbox"): past the soft one it is told so,
-      # past the hard one no upload lands; empty: no size, soft empty: 90% of the hard
-      SHELLBOX_HOME_GB: ${SHELLBOX_HOME_GB:-}
+      # past the hard one no upload lands; hard empty: 50, soft empty: 90% of the hard
+      SHELLBOX_HOME_GB: ${SHELLBOX_HOME_GB:-50}
       SHELLBOX_HOME_SOFT_GB: ${SHELLBOX_HOME_SOFT_GB:-}
       # the hour of the morning reset, for its greeting (shellbox-manager resets it)
       SHELLBOX_RESET_AT: &reset-at ${SHELLBOX_RESET_AT:-04:00}

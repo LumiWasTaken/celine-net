@@ -57,10 +57,20 @@ def test_past_the_soft_cap_it_is_told_and_past_the_hard_cap_no_upload_lands(d):
         put(d, 8)                       # what landed since the measure counts
 
 
-def test_the_soft_cap_defaults_below_the_hard_one_and_no_size_is_no_cap(d):
+def test_the_soft_cap_defaults_below_the_hard_one(d):
     d.HOME_GB, d.HOME_SOFT_GB = "20", ""
     assert d.caps() == (18 * GB, 20 * GB)
-    d.HOME_GB = ""
-    assert d.caps() is None
-    d.measured(500 * GB, at=1)
-    assert d.home_note() == [] and put(d, 3)["bytes"] == 3
+
+
+@pytest.mark.parametrize("hard", [None, ""])
+def test_without_a_size_the_home_is_50_gb_and_warned_at_45(monkeypatch, hard):
+    monkeypatch.delenv("SHELLBOX_HOME_SOFT_GB", raising=False)
+    if hard is None:
+        monkeypatch.delenv("SHELLBOX_HOME_GB", raising=False)
+    else:
+        monkeypatch.setenv("SHELLBOX_HOME_GB", hard)
+    spec = importlib.util.spec_from_file_location("shellboxd_default",
+                                                  ROOT / "shellbox" / "shellboxd.py")
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+    assert fresh.caps() == (45 * GB, 50 * GB)
