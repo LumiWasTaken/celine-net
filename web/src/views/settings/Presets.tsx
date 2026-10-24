@@ -15,7 +15,6 @@ import { uploadAttachment } from '../../lib/api'
 import { useServerEvents } from '../../lib/bus'
 import { clock, errorText } from '../../lib/format'
 import { batchEvent, fileUrl, mediaApi, ROLE, workflowUrl, type Batch, type Kind, type Param, type Preset } from '../../lib/media'
-import { format } from '../../lib/nav'
 import { useOnline } from '../../lib/socket'
 import { SETTINGS_EVENTS, STATE_TONE, settingsApi, type Cap, type ProviderView, type RoleView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
@@ -180,7 +179,7 @@ function Recent({ kind, batches, error, reload }: { kind: Kind; batches?: Batch[
   const more = (total: number) => total > limit && (
     <div><Button onClick={() => setLimit(l => l + STEP[kind])}>Show more</Button></div>
   )
-  const link = (b: Batch) => (b.conversation_id ? format({ section: 'celine', conversation: b.conversation_id }) : undefined)
+  const link = (b: Batch) => b.link ?? undefined
   if (kind === 'music') {
     // a row per track: its title (or what it was asked for), the style, its time; Play opens the player
     const rows = batches.flatMap(b => b.items.map(i => ({ b, i })))

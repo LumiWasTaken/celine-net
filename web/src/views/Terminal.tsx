@@ -142,7 +142,7 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
                    )}
                  </>}
                  more={[
-                   ...(own && !yours ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: own.id }) }] : []),
+                   ...(own && !yours ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(own.link) }] : []),
                    ...(!ended ? ['sep' as const, { label: 'Close terminal', icon: X, danger: true, onSelect: () => setClosing(true) }] : []),
                  ]} />
       {error && <StatusLine className="term-note" tone="error">{error}</StatusLine>}

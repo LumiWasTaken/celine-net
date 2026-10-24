@@ -4,7 +4,7 @@ import { json, query, request } from './api'
 export type Tab = {
   name: string; url: string; title: string; busy: boolean
   /** the conversation that opened it; null: yours, or too new to know */
-  conversation: { id: string; title: string; kind: string } | null
+  conversation: { id: string; title: string; kind: string; link: string } | null
 }
 export type Box = {
   /** the box's own, or unreachable (it does not answer), or off (no box set up) */
@@ -46,7 +46,8 @@ export type BrowserCall = {
   at: string
   shots: number
   display: Record<string, unknown>
-  conversation: { id: string; title: string }
+  /** `link`: where it opens, the server's (homes.py) */
+  conversation: { id: string; title: string; link: string }
 }
 
 /** GET /browser/calls: its calls, newest first; `failed` how many failed, `next` the `before` of the next page */

@@ -69,8 +69,8 @@ export function ArtifactView({ id, assistant, onAsk, onBack, extra, onLoaded }: 
   const file = `${a.title.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || word}.${a.kind === 'html' ? 'html' : 'md'}`
   const failed = restore.error ?? trash.error
   // the full page leads back to the conversation it was made in
-  const lead = back || (a.conversation_id
-    ? <IconButton icon={ChevronLeft} label="Open conversation" href={format({ section: 'celine', conversation: a.conversation_id })} />
+  const lead = back || (a.link
+    ? <IconButton icon={ChevronLeft} label="Open conversation" href={a.link} />
     : undefined)
   return (
     <div className="art">

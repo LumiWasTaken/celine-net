@@ -10,6 +10,7 @@ import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
+from celine import homes
 from celine.core.ids import new_id, now
 
 NAME_MAX = 16          # the daemon's rule for a terminal name
@@ -128,7 +129,8 @@ async def opened_by(store, cid: str) -> list[dict]:
 
 async def opener(store, id: str) -> dict | None:
     """The conversation that opened this terminal: {id, title, agent_of, kind (mission,
-    sub_agent or conversation)}; None for the user's own."""
+    sub_agent or conversation), link (homes.of: where it opens)}; None for the user's
+    own."""
     def fn(c: sqlite3.Connection) -> dict | None:
         r = c.execute(
             "SELECT c.id, c.title, c.agent_of, CASE WHEN mi.conversation_id IS NOT NULL "
@@ -137,7 +139,7 @@ async def opener(store, id: str) -> dict | None:
             "JOIN conversations c ON c.id = t.opened_by "
             "LEFT JOIN missions mi ON mi.conversation_id = c.id WHERE t.id=?",
             (id,)).fetchone()
-        return dict(r) if r else None
+        return {**dict(r), "link": homes.of(c, r["id"])["link"]} if r else None
 
     return await store.read(fn)
 
@@ -295,7 +297,8 @@ async def commands(store, terminal_id: str | None = None, kind: str | None = Non
     `kind` is command, read, line or control; `q` is looked for in the text; `mission`
     keeps the rows of that conversation and of its sub-agents; `before` is the `at` of
     the last row of the previous page. The total counts what the filters match without
-    the page. `live` is the sync's live state by terminal id: a call that returned
+    the page. Each row's `from` carries its conversation's `link` (homes.of). `live`
+    is the sync's live state by terminal id: a call that returned
     while its program ran is settled with it."""
     where, args = [], []
     if terminal_id is not None:
@@ -325,7 +328,15 @@ async def commands(store, terminal_id: str | None = None, kind: str | None = Non
 
     def fn(c: sqlite3.Connection) -> tuple[list[dict], int]:
         total = c.execute(f"{union}SELECT count(*) FROM cmds{match}", args).fetchone()[0]
-        rows = [_command(r, live) for r in c.execute(
+        links: dict[str, str | None] = {}
+
+        def link(cid: str | None) -> str | None:       # where its conversation opens
+            if cid is None:
+                return None
+            if cid not in links:
+                links[cid] = homes.of(c, cid)["link"]
+            return links[cid]
+        rows = [_command(r, live, link(r["conversation_id"])) for r in c.execute(
             f"{union}SELECT * FROM cmds{page_where} ORDER BY at DESC, id DESC LIMIT ?",
             [*page_args, limit])]
         return rows, int(total)
@@ -344,7 +355,7 @@ def _view(r: sqlite3.Row) -> dict:
     return d
 
 
-def _command(r: sqlite3.Row, live: dict) -> dict:
+def _command(r: sqlite3.Row, live: dict, link: str | None) -> dict:
     display = _dict(r["display"])
     outcome = None
     if r["kind"] == "line":         # a line the user typed: settled like its own
@@ -361,7 +372,7 @@ def _command(r: sqlite3.Row, live: dict) -> dict:
     return {"id": r["id"], "kind": r["kind"], "at": r["at"],
             "terminal": {"id": r["terminal_id"], "name": r["terminal_name"]},
             "from": {"kind": r["from_kind"], "conversation_id": r["conversation_id"],
-                     "title": r["title"]},
+                     "title": r["title"], "link": link},
             "text": r["text"] or "", "keys": keys or "", "outcome": outcome,
             "result": _screen(r["result"], (display or {}).get("head")), "note": r["note"],
             "job_id": r["job_id"]}

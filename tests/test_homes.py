@@ -67,6 +67,34 @@ async def test_lists_and_senders_carry_the_same_link(store):
         assert src["link"] == (await store.read(lambda c, v=v: homes.of(c, v)))["link"], k
 
 
+
+async def test_rows_that_name_a_conversation_carry_its_link(store):
+    """An artifact, a terminal and a browser tab it opened, a batch: each names its
+    conversation with the same link, so the client never builds one."""
+    from celine.artifacts import store as artifacts
+    from celine.browser import tabs
+    from celine.comfyui import batches
+    from celine.terminals import store as terminals
+    ids = await _tree(store)
+    sub = ids["mission-agent"]
+    want = f"/mission/{sub}"
+    a = await artifacts.add_version(store, None, "html", "t", "<p>x</p>", "", sub, None)
+    assert (await artifacts.get(store, a["id"]))["link"] == want
+    mine = await artifacts.add_version(store, None, "html", "t", "<p>x</p>", "", None, None)
+    assert (await artifacts.get(store, mine["id"]))["link"] is None
+    await terminals.upsert(store, "ab12cd", "build", "celine", "2026-10-02T01:00:00.000+00:00")
+    await store.write(lambda c: (
+        c.execute("UPDATE terminals SET opened_by=? WHERE id='ab12cd'", (sub,)),
+        c.execute("INSERT INTO tabs(name, opened_by, opened_at, used_at) "
+                  "VALUES('t1', ?, 'x', 'x')", (sub,)),
+        c.execute("INSERT INTO media_batches(id, kind, conversation_id, state, items, "
+                  "created_at) VALUES('b1', 'images', ?, 'done', '[]', 'x')", (sub,))))
+    assert (await terminals.opener(store, "ab12cd"))["link"] == want
+    assert (await tabs.openers(store))["t1"]["link"] == want
+    [b] = await batches.list_batches(store, "images")
+    assert batches.view(b)["link"] == want
+    assert batches.view(await batches.get(store, "b1"))["link"] == want
+
 def test_place_of_each_kind(tmp_path):
     db = tmp_path / "celine.db"
     migrate(db)

@@ -22,7 +22,11 @@ export type ArtifactRow = {
   updated_at: string
 }
 
-export type Artifact = ArtifactRow & { versions: ArtifactVersion[] }
+export type Artifact = ArtifactRow & {
+  versions: ArtifactVersion[]
+  /** where its conversation opens, the server's (homes.py); null without one */
+  link: string | null
+}
 
 /** what its write leaves in the tool row's display: a card's data */
 export type ArtifactCardData = { id: string; n: number; title: string; kind: ArtifactKind }

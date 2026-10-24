@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..api.origin import ws_origin_ok
 from ..api.deps import GONE, page_frames
+from .. import homes
 from ..errors import CelineError, not_set_up, unreachable_words
 from ..skills import ToolContext
 from . import sync, tabs
@@ -34,7 +35,8 @@ async def browser(request: Request) -> dict:
     answer, off without a box), reason, taken (since when the user has it, epoch, or
     null), front (the tab on the screen, or null), screen ({w, h}: the live view's size
     in px, the box's) and its tabs with name, url, title, busy and conversation (the
-    one that opened it, {id, title, kind}, or null: the user's own, or too new to know)."""
+    one that opened it, {id, title, kind, link}, or null: the user's own, or too new to
+    know)."""
     cfg = request.app.state.services.cfg
     if not sync.url(cfg):
         return {"state": "off", "reason": NO_BOX, "taken": None, "tabs": []}
@@ -168,27 +170,31 @@ def call_line(name: str, args: dict) -> str:
 async def history(request: Request, q: str = "", failed: bool = False,
                   before: str | None = None, limit: int = 100) -> dict:
     """The agent's browser calls, newest first: {calls: [{id, tool, tab, line, state (running,
-    done, failed, cancelled), at, shots, display, conversation: {id, title}}], total,
+    done, failed, cancelled), at, shots, display, conversation: {id, title, link}}], total,
     failed (how many failed), next (the `before` of the next page)}. `q` looks in the
     line, `failed` keeps the failed ones."""
-    def fn(c) -> list:
-        return c.execute(
+    def fn(c) -> tuple[list, dict]:
+        rows = c.execute(
             "SELECT t.id, t.name, t.arguments, t.display, t.state, "
             "coalesce(t.started_at, m.created_at) AS at, m.conversation_id, v.title "
             "FROM tool_calls t JOIN messages m ON m.id = t.message_id "
             "JOIN conversations v ON v.id = m.conversation_id "
             "WHERE t.name LIKE 'browser\\_\\_%' ESCAPE '\\' ORDER BY at DESC, t.id DESC").fetchall()
+        # where each of their conversations opens, the server's
+        return rows, {cid: homes.of(c, cid)["link"] for cid in {r["conversation_id"] for r in rows}}
 
     # note: every call is read and matched here; a paged query once it has many thousands
+    rows, links = await request.app.state.services.store.read(fn)
     calls = []
-    for r in await request.app.state.services.store.read(fn):
+    for r in rows:
         args, display = _loads(r["arguments"]), _loads(r["display"])
         state = "failed" if display.get("refused") else STATE.get(r["state"], "done")
         calls.append({"id": r["id"], "tool": r["name"].removeprefix("browser__"),
                       "tab": display.get("tab") or args.get("tab"),
                       "line": call_line(r["name"], args), "state": state, "at": r["at"],
                       "shots": len(display.get("steps") or []), "display": display,
-                      "conversation": {"id": r["conversation_id"], "title": r["title"]}})
+                      "conversation": {"id": r["conversation_id"], "title": r["title"],
+                                       "link": links[r["conversation_id"]]}})
     shown = [x for x in calls if q.lower() in x["line"].lower() and (not failed or x["state"] == "failed")]
     rest = [x for x in shown if before is None or x["at"] < before]
     page = rest[:max(1, min(limit, 500))]

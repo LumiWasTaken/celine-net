@@ -11,7 +11,7 @@ import RFB from '@novnc/novnc'
 import { BrowserShots } from '../components/ToolRow'
 import { browserApi, browserHistory, isBrowserEvent, type Box, type BrowserCall, type Tab } from '../lib/browser'
 import { clock, count, dayLabel } from '../lib/format'
-import { format, useNav } from '../lib/nav'
+import { useNav } from '../lib/nav'
 import { usePronouns } from '../lib/name'
 import { LINK } from '../lib/settingsApi'
 import { backoffMs, keepAlive } from '../lib/socket'
@@ -102,7 +102,7 @@ function TabsList({ box, take, restart, onOpen, onClose }: {
   const menu = (t: Tab): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => onOpen(t) },
     { label: 'Copy', icon: Copy, detail: t.url, onSelect: () => copied(t.url) },
-    ...(t.conversation ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: t.conversation!.id }) }] : []),
+    ...(t.conversation ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
     'sep', { label: 'Close tab', icon: X, danger: true, onSelect: () => onClose(t) },
   ]
   const waiting = b && notUp(b)
@@ -163,7 +163,7 @@ function HistoryList() {
   ])
   const menu = (c: BrowserCall): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => setOpened(c) },
-    { label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: c.conversation.id }) },
+    { label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(c.conversation.link) },
   ]
   const tone = (c: BrowserCall) => (c.state === 'failed' ? 'error' : c.state === 'running' ? 'running' : c.state === 'cancelled' ? 'muted' : 'ok') as 'error' | 'running' | 'muted' | 'ok'
   const draw = (r: Row) => 'day' in r ? <GroupHead title={r.day} count={count(perDay.get(r.day) ?? 0, 'call')} /> : (
@@ -194,7 +194,7 @@ function HistoryList() {
       {ctx.menu}
       {opened && (
         <Dialog title={opened.line} size="lg" onClose={() => setOpened(null)}
-                actions={<Button href={format({ section: 'celine', conversation: opened.conversation.id })}>Open conversation</Button>}>
+                actions={<Button href={opened.conversation.link}>Open conversation</Button>}>
           <BrowserShots display={opened.display} />
           {!opened.shots && <p className="brw-quiet">{opened.conversation.title}</p>}
         </Dialog>

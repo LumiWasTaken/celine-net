@@ -34,6 +34,8 @@ export type Batch = {
   id: string
   kind: Kind
   conversation_id: string | null
+  /** where its conversation opens, the server's (homes.py); null for yours */
+  link: string | null
   tool_call_id: string | null
   state: 'running' | 'done' | 'stopped'
   created_at: string

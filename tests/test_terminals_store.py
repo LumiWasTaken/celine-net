@@ -55,7 +55,7 @@ async def test_commands_join_her_calls_and_the_users_lines(store):
     assert rows[0]["from"]["kind"] == "you" and rows[1]["outcome"]["exit"] == 0
     assert rows[1]["result"] == "ok" and rows[1]["text"] == "make", "its status line is not shown"
     assert rows[1]["from"] == {"kind": "conversation", "conversation_id": cid,
-                               "title": "Build llama.cpp"}
+                               "title": "Build llama.cpp", "link": f"/chat/{cid}"}
     assert await terminals.last_conversation(store, "ab12cd") == {
         "id": cid, "title": "Build llama.cpp", "agent_of": None, "kind": "conversation"}
     await missions.create(store, cid, {"name": "Build", "terminal": "build", "brief": "make it"})

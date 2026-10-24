@@ -116,7 +116,8 @@ async def test_her_browser_calls_list_newest_first_with_their_line_and_state(sto
             ("d", "open x.org", "failed", 0), ("c", "look screen: Where is Play?", "failed", 0),
             ("b", "click e14, type e2: python", "done", 2), ("a", "open jobs.example.org/x", "done", 0)]
         assert got["total"] == 4 and got["failed"] == 2 and got["next"] is None
-        assert got["calls"][2]["tab"] == "t1" and got["calls"][2]["conversation"] == {"id": cid, "title": "find a job"}
+        assert got["calls"][2]["tab"] == "t1" and got["calls"][2]["conversation"] == {"id": cid, "title": "find a job",
+                                                                                     "link": f"/chat/{cid}"}
         assert [x["id"] for x in (await c.get("/api/browser/calls", params={"failed": 1})).json()["calls"]] == ["d", "c"]
         assert [x["id"] for x in (await c.get("/api/browser/calls", params={"q": "JOBS"})).json()["calls"]] == ["a"]
         page = (await c.get("/api/browser/calls", params={"limit": 2})).json()
