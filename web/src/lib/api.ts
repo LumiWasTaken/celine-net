@@ -159,9 +159,9 @@ export const del = <T>(path: string) => request<T>(path, { method: 'DELETE' })
 
 /* An answer as it is (not JSON), with the same errors as request(). `url` is a page
    address: '/api/...' or a picture's src. */
-async function fetchRaw(url: string): Promise<Response> {
+async function fetchRaw(url: string, init?: RequestInit): Promise<Response> {
   let res: Response
-  try { res = await fetch(url) } catch (e) {
+  try { res = await fetch(url, init) } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
     return settle(0, '')
   }
@@ -173,6 +173,7 @@ async function fetchRaw(url: string): Promise<Response> {
 export const requestText = (path: string) => fetchRaw(`/api${path}`).then(r => r.text())
 /** a file's raw bytes */
 export const requestBytes = (path: string) => fetchRaw(`/api${path}`).then(r => r.arrayBuffer()).then(b => new Uint8Array(b))
+export const requestBlob = (path: string, init: RequestInit) => fetchRaw(`/api${path}`, init).then(r => r.blob())
 
 /* A multipart upload with progress (0 to 1) as it goes. Same errors as request(). */
 export function upload<T>(path: string, form: FormData, onProgress?: (share: number) => void): Promise<T> {

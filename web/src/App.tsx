@@ -12,6 +12,7 @@ import { knowBuild } from './lib/health'
 import { HerContext } from './lib/her'
 import { NameContext, PronounsContext } from './lib/name'
 import { AppearanceContext, useAppearanceSettings } from './lib/appearance'
+import { SpeechProvider } from './components/Speech'
 import { NavProvider, useNav, type Section } from './lib/nav'
 import { ConnectionProvider, changesApi } from './lib/socket'
 import { useLostLogins } from './lib/sources'
@@ -173,6 +174,7 @@ function Shell() {
     <PronounsContext.Provider value={status?.owner.pronouns ?? 'she'}>
     <AppearanceContext.Provider value={appearance}>
     <WaitingCount.Provider value={waiting.data ?? null}>
+    <SpeechProvider features={status?.features}>
     <div className="app">
       {section === 'welcome' ? (
         <Suspense fallback={<LoadingRow />}><Welcome status={status} onSaved={shown.onStatus} /></Suspense>
@@ -253,6 +255,7 @@ function Shell() {
       {/* the server is gone: one block over everything, until it is back */}
       <ServerDown />
     </div>
+    </SpeechProvider>
     </WaitingCount.Provider>
     </AppearanceContext.Provider>
     </PronounsContext.Provider>

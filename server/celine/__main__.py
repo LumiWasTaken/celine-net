@@ -369,6 +369,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from .api import llm_proxy
     app.include_router(llm_proxy.router)
     app.include_router(settings_api.router)
+    from .api import speech as speech_api
+    app.include_router(speech_api.router)
     app.include_router(her_api.router)
     app.include_router(commands_api.router)
     from .api import documents as documents_api

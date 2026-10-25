@@ -21,6 +21,7 @@ import { ConfirmDialog, Drawer, IconButton, InlineError, Thoughts, useCopied, ty
 import { ToolGroup } from './ToolRow'
 import { WhatSheSaw } from './WhatSheSaw'
 import './Transcript.css'
+import { useReplySpeech } from './Speech'
 
 type Props = {
   conversationId: string
@@ -74,6 +75,8 @@ export function useMessageActions(
   const show = (p: Panel) => { setMade(m => (m.has(p) ? m : new Set(m).add(p))); setPanel(p) }
   const [refused, setRefused] = useState<string | null>(null)
   const hers = message.role === 'assistant'
+  const speechAction = useReplySpeech(message.id, conversationId, hers ? message.content : '',
+    running, hers && turn?.state === 'done', last && hers)
   // More like this: the server says whether it is a sample now
   const [sample, setSample] = useState(!!message.sample)
   useEffect(() => setSample(!!message.sample), [message.sample])
@@ -135,6 +138,7 @@ export function useMessageActions(
   return {
     versions: sib ? { at: sib.index + 1, total: sib.count, onPrev: () => go(-1), onNext: () => go(1) } : undefined,
     actions: <>
+      {hers && !running && !!message.content.trim() && speechAction}
       {regen && <IconButton icon={RefreshCw} label="Regenerate" size="sm" onClick={regenerate} />}
       {editable && <IconButton icon={Pencil} label="Edit" size="sm" onClick={onEdit} />}
       <IconButton icon={copied ? Check : Copy} label={copied ? 'Copied' : 'Copy'} size="sm" onClick={() => void copy()} />

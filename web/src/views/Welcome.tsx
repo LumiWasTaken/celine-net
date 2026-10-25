@@ -26,6 +26,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react'
 import { ApiError, type ConfigStatus } from '../lib/api'
 import { kbApi } from '../lib/kb'
+import { onboardingModel } from '../lib/onboardingModel'
 import { previewAppearance, saveAppearance, type Accent } from '../lib/appearance'
 import { COLORS } from '../lib/her'
 import { format, useNav } from '../lib/nav'
@@ -315,8 +316,7 @@ function ModelStep({ back, next }: StepNav) {
   const onNext = async () => {
     if (!saved || !model) return
     const m = models?.find(x => x.id === model)
-    const cfg: ModelConfig = { label: m?.name || model, caps: m?.caps ?? ['chat'], ...(m?.context ? { context: m.context } : {}),
-                               ...(m?.thinking_levels?.length ? { thinking_levels: m.thinking_levels } : {}) }
+    const cfg = onboardingModel(model, m, saved.models[model])
     await settingsApi.putProvider(saved.id, { kind: saved.kind, label: saved.label, base_url: saved.base_url, models: { ...saved.models, [model]: cfg } })
     next()
   }

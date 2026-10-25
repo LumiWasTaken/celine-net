@@ -1,0 +1,9 @@
+.speech-controls { position: relative; display: flex; align-items: center; }
+.speech-controls__status { position: absolute; bottom: calc(100% + var(--s-2)); right: 0; width: max-content; max-width: min(var(--measure-form), calc(100vw - var(--s-6))); padding: var(--s-2); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-muted); font-size: var(--t-xs); }
+.speech-player {
+  position: fixed;
+  inset-block-start: var(--s-4);
+  inset-inline-end: var(--s-4);
+  max-width: calc(100vw - var(--s-4) * 2);
+  z-index: 50;
+}

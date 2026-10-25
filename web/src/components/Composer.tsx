@@ -21,6 +21,7 @@ import { OFFLINE_TITLE } from '../lib/socket'
 import { THINK_WORD, commandsApi, menuRows, parseCommand, useCommands } from '../lib/commands'
 import { Button, Chip, coarse, ComposerBox, IconButton, Menu, Notice, cx, curve, ms, reduced, type MenuItem } from '../ui'
 import './Composer.css'
+import { SpeechControls } from './Speech'
 
 type Upload = {
   key: string
@@ -276,8 +277,8 @@ export function Composer({
 
   // you sent from this box: the next switch from empty to a conversation glides
   const sent = useRef(false)
-  const send = useCallback(async () => {
-    const typed = draft.trim()
+  const send = useCallback(async (transcriptDraft?: string) => {
+    const typed = (transcriptDraft ?? draft).trim()
     const refs = draftRefs
     const said = [typed, refs.map(r => `[[${r}]]`).join(' ')].filter(Boolean).join('\n\n')
     const out = tag ? [tag.text, said].filter(Boolean).join('\n\n') : said
@@ -411,7 +412,14 @@ export function Composer({
                        onChange={v => { setDraft(v); setTyped(null); setNote(n => (n?.tone === 'success' ? null : n)) }}
                        onSend={() => void send()} onStop={onStop} running={running && !draft.trim()} ready={ready}
                        disabled={offline ? OFFLINE_TITLE : imageBlock ? 'Remove the image to send the message.' : undefined}
-                       placeholder={placeholder ?? `Message ${name}`.trim()}
+                        placeholder={placeholder ?? `Message ${name}`.trim()}
+                        tools={<SpeechControls conversation={selected} active={active && !hidden} disabled={offline || sending}
+                          onTranscript={(words, autoSend) => {
+                            const combined = [draft.trim(), words].filter(Boolean).join('\n')
+                            setDraft(combined)
+                            if (autoSend) void send(combined)
+                            else text.current?.focus()
+                          }} />}
                        files={chips && <>
                          {tag && <Chip icon={Quote} title={tag.text} removeLabel={`Remove ${tag.label}`} onRemove={() => onTag(null)}>{tag.label}</Chip>}
                          {draftRefs.map(r => (

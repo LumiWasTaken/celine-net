@@ -41,6 +41,9 @@ cd wa-link && go test ./...          # only when wa-link changed
 
 - `tests/test_imports.py` keeps the package boundaries (`.importlinter`; no new two-way imports).
 - A flaky test is a failing test. Run the suite twice.
+- The web prebuild also checks speech text splitting and lookahead/cancellation on fakes
+  (`src/lib/speechText.check.mjs`) and runs the speech form/navigation tests with Vitest
+  and jsdom (`npm test`). See [speech.md](speech.md) for provider/browser checks.
 
 Opt-in markers: `-m live` (a real model server, `CELINE_LIVE=http://host:11434/v1`), `-m shellbox`, `-m browser`.
 
