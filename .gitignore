@@ -16,3 +16,4 @@ web/tsconfig.tsbuildinfo
 wa-link/wa-link
 
 .worktrees/
+demo-data/

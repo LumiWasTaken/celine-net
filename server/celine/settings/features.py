@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 
 import importlib
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +31,9 @@ import anyio
 from .files import Invalid
 
 log = logging.getLogger("celine.features")
+# CELINE_DEMO=1 (tools/testdata/demo.sh): every feature answers ready and nothing outside is
+# asked, so an instance on invented data shows every place as set up
+DEMO = os.environ.get("CELINE_DEMO") == "1"
 
 PROBE_SECONDS = 3.0        # one probe's cap
 CACHE_SECONDS = 10.0       # probes answer from the cache this long
@@ -279,6 +283,8 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
     fn = probe_fn(BY_ID[feature])
     if fn is None:
         return {"state": "none", "detail": ""}
+    if DEMO:
+        return {"state": "ready", "detail": "Demo"}
     try:
         with anyio.fail_after(PROBE_SECONDS):
             result = await fn(cfg, services)
