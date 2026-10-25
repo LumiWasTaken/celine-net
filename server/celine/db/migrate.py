@@ -118,8 +118,11 @@ def migrate(db_path: Path, migrations_dir: Path | None = None) -> int:
 
 def _copy(conn: sqlite3.Connection, db_path: Path, version: int) -> None:
     """The file as it is, to <file>.pre-<version>.bak beside it (through a temp name, so a
-    copy is whole or absent); the older copies past COPIES_KEPT go."""
+    copy is whole or absent); the older copies past COPIES_KEPT go. A copy already there
+    is kept: it is the file before an upgrade that failed part way, the one to go back to."""
     out = db_path.with_name(f"{db_path.name}.pre-{version}.bak")
+    if out.exists():
+        return
     tmp = out.with_name(out.name + ".tmp")
     tmp.unlink(missing_ok=True)
     dst = sqlite3.connect(tmp)
