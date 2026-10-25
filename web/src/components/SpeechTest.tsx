@@ -4,14 +4,14 @@ import { errorText } from '../lib/format'
 import { useNav } from '../lib/nav'
 import { Button, Choice, Field, InlineError, Input } from '../ui'
 
-/** Real provider requests, available before opting in. Never submits a chat message. */
+/** A real request to the role's model, also before the feature is on; never sends a message. */
 export function SpeechTest({ direction, identity, ready, save }: {
   direction: Direction; identity: string; ready: boolean; save: () => Promise<void>
 }) {
   const nav = useNav()
   const [state, setState] = useState<'idle' | 'saving' | 'permission' | 'recording' | 'testing'>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [text, setText] = useState('This is a speech playback test.')
+  const [text, setText] = useState('Hi, this is how I sound.')
   const [voice, setVoice] = useState('')
   const [voices, setVoices] = useState<string[]>([])
   const [transcript, setTranscript] = useState<string | null>(null)
@@ -41,13 +41,13 @@ export function SpeechTest({ direction, identity, ready, save }: {
       if (c.signal.aborted) return
       if (direction === 'output') {
         setState('testing')
-        const blob = await speechApi.synthesize(text, voice, c.signal, true)
+        const blob = await speechApi.synthesize(text, voice, c.signal)
         if (c.signal.aborted) return
         const url = URL.createObjectURL(blob); objectUrl.current = url; setAudio(url); setState('idle')
         return
       }
       if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder)
-        throw new Error('Microphone recording needs HTTPS or localhost and a supported browser.')
+        throw new Error('The microphone needs HTTPS or localhost.')
       setState('permission')
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (c.signal.aborted) { stream.getTracks().forEach(t => t.stop()); return }
@@ -59,18 +59,18 @@ export function SpeechTest({ direction, identity, ready, save }: {
       c.signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
       r.ondataavailable = e => {
         size += e.data.size
-        if (size > 12_000_000) { failed(new Error('Recording is too large. Try a shorter sample.')); return }
+        if (size > 12_000_000) { failed(new Error('That recording is too long.')); return }
         if (e.data.size) chunks.push(e.data)
       }
-      r.onerror = () => failed(new Error('The microphone recording failed.'))
+      r.onerror = () => failed(new Error('The microphone stopped.'))
       r.onstop = () => {
         clearTimeout(timer); r.stream.getTracks().forEach(t => t.stop()); recorder.current = null
         if (c.signal.aborted) return
         setState('testing')
-        void speechApi.transcribe(new Blob(chunks, { type: r.mimeType }), '', c.signal, true)
+        void speechApi.transcribe(new Blob(chunks, { type: r.mimeType }), '', c.signal)
           .then(result => {
             if (c.signal.aborted) return
-            if (!result.text.trim()) { failed(new Error('No speech was recognized. Try another sample.')); return }
+            if (!result.text.trim()) { failed(new Error('Nothing heard. Try again.')); return }
             setTranscript(result.text); setState('idle')
           }).catch(failed)
       }
@@ -90,22 +90,22 @@ export function SpeechTest({ direction, identity, ready, save }: {
   const busy = state !== 'idle'
   return <>
     {direction === 'output' && <>
-      <Field label="Sample text"><Input value={text} maxLength={900} disabled={busy} onChange={e => setText(e.target.value)} /></Field>
-      <Field label="Test voice"><Input value={voice} disabled={busy} placeholder="Default (alloy)" onChange={e => setVoice(e.target.value)} /></Field>
-      {voices.length > 0 && <Choice label="Available test voices" value={voice} disabled={busy} onChange={setVoice}
+      <Field label="Text"><Input value={text} maxLength={900} disabled={busy} onChange={e => setText(e.target.value)} /></Field>
+      <Field label="Voice"><Input value={voice} disabled={busy} placeholder="Default" onChange={e => setVoice(e.target.value)} /></Field>
+      {voices.length > 0 && <Choice label="Voices" value={voice} disabled={busy} onChange={setVoice}
         options={Array.from(new Set([voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))} />}
-      <Button disabled={!ready || busy} onClick={() => void discoverVoices()}>Discover voices</Button>
+      <Button disabled={!ready || busy} onClick={() => void discoverVoices()}>Find voices</Button>
     </>}
     <div className="onb__check">
       <Button disabled={!ready || (busy && state !== 'recording') || (direction === 'output' && !text.trim())}
         onClick={() => state === 'recording' ? recorder.current?.stop() : void begin()}>
-        {state === 'recording' ? 'Finish and transcribe' : direction === 'input' ? 'Record test' : 'Test speech'}
+        {state === 'recording' ? 'Done' : direction === 'input' ? 'Try it' : 'Listen'}
       </Button>
-      {(busy || audio) && <Button onClick={stop}>Stop test</Button>}
+      {(busy || audio) && <Button onClick={stop}>Stop</Button>}
     </div>
-    {busy && <p role="status">{state === 'recording' ? 'Recording' : state === 'permission' ? 'Waiting for microphone' : state === 'saving' ? 'Saving settings' : direction === 'input' ? 'Transcribing sample' : 'Generating sample'}</p>}
-    {transcript !== null && <Field label="Recognized speech"><p role="status">{transcript}</p></Field>}
-    {audio && <Field label="Generated sample"><audio key={audio} controls autoPlay src={audio} onError={() => setError('The browser could not play this audio.')} /></Field>}
+    {busy && <p role="status">{state === 'recording' ? 'Recording' : state === 'permission' ? 'Waiting for microphone' : state === 'saving' ? 'Saving' : direction === 'input' ? 'Writing it down' : 'Reading it out'}</p>}
+    {transcript !== null && <Field label="Heard"><p role="status">{transcript}</p></Field>}
+    {audio && <Field label="Sample"><audio key={audio} controls autoPlay src={audio} onError={() => setError('The browser could not play this audio.')} /></Field>}
     {error && <InlineError compact message={error} />}
   </>
 }

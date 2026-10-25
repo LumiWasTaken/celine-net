@@ -17,7 +17,7 @@
    the onboarding's Next runs before it saves the features. All through the Settings
    endpoints. */
 import { Copy } from 'lucide-react'
-import { useEffect, useRef, useState, type MutableRefObject, type ReactElement } from 'react'
+import { useEffect, useState, type MutableRefObject, type ReactElement } from 'react'
 import { format, useNav } from '../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { routinesApi, type Schedule } from '../lib/routines'
@@ -25,10 +25,11 @@ import { LINK, settingsApi, type Available, type Cap, type Feature, type Provide
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Switch, copied } from '../ui'
-import { reach } from './settings/Models'
+import { reach, slug } from './settings/Models'
 import { SchemaForm } from './settings/parts'
 import './Welcome.css'
-import { speechApi, type Direction, type SpeechEndpoint } from '../lib/speechApi'
+import { SPEECH_ROLE, type Direction } from '../lib/speechApi'
+import { EMPTY_PROVIDER, ProviderFields, host, ready, type ProviderDraft } from '../components/ProviderFields'
 import { SpeechTest } from '../components/SpeechTest'
 
 export type SaveRef = MutableRefObject<(() => Promise<void>) | null>
@@ -47,64 +48,75 @@ export const FORMS: Record<string, (p: FormProps<any>) => ReactElement> = {
   routines: RoutinesForm, speech: SpeechForm,
 }
 
-type SpeechDraft = { endpoint: SpeechEndpoint; key: string; clear: boolean }
-function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<SpeechDraft>) {
+/* ── speech: the Dictation (transcription) or Read aloud (speech) model, out of what the
+   saved providers offer (any of their models: speech servers seldom say what a model does);
+   a pick saves at once (PUT /roles/{role}). Add a provider: a speech server beside the chat
+   one, checked and saved like Connect a model's, then its models are in the list. Then a
+   real try of the picked model ── */
+function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<string>) {
+  const online = useOnline()
   const direction: Direction = feature.id === 'speech_input' ? 'input' : 'output'
-  const res = useResource(signal => speechApi.settings(direction, signal), [direction])
-  const [models, setModels] = useState<string[]>([])
-  const d = value ?? (res.data ? { endpoint: res.data.endpoint, key: '', clear: false } : null)
-  const discovering = useRef<AbortController | null>(null)
-  const latest = useRef(d); latest.current = d
-  useEffect(() => {
-    setModels([])
-    return () => discovering.current?.abort()
-  }, [d?.endpoint.url, direction])
-  const save = async () => {
-    if (!d || !res.data) return
-    const saved = await speechApi.save(direction, d.endpoint, res.data.version, d.clear ? null : d.key || undefined)
-    res.set(saved)
-    const current = latest.current
-    if (current) {
-      const unchangedKey = current.key === d.key && current.clear === d.clear && current.endpoint.url === d.endpoint.url
-      const next = unchangedKey ? { ...current, key: '', clear: false } : current
-      latest.current = next
-      onChange(next)
-    }
-  }
-  saveRef.current = save
-  const action = useAction(async () => { await save(); await reprobe() })
-  const discover = useAction(async () => {
-    discovering.current?.abort()
-    const c = new AbortController(); discovering.current = c
-    await save()
-    if (c.signal.aborted) return
-    const found = await speechApi.models(direction, c.signal)
-    if (c.signal.aborted) return
-    setModels(found.models)
-    if (!found.models.length) throw new Error('The provider returned no speech models.')
-    const current = latest.current
-    if (found.models.length === 1 && current && !current.endpoint.model) onChange({ ...current, endpoint: { ...current.endpoint, model: found.models[0] } })
+  const role = SPEECH_ROLE[direction]
+  const cap: Cap = role
+  const roles = useResource(() => settingsApi.roles(), [])
+  const offers = useOffers()
+  const current = roles.data?.roles[role]?.chain[0] ?? ''
+  const picked = value ?? current
+  saveRef.current = null
+  const pick = useAction(async (want: string) => {
+    onChange(want)
+    const ref = await addPick(offers.data, want, cap)
+    await settingsApi.putRole(role, ref ? [ref] : [])
+    onChange(ref ?? '')
+    roles.reload()
+    await reprobe()
   })
-  if (!d) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : <LoadingRow label="Loading" />
+  if (!roles.data || !offers.data) {
+    const err = roles.error ?? offers.error
+    return err ? <InlineError compact message={err} onRetry={() => { roles.reload(); offers.reload() }} /> : <LoadingRow label="Loading" />
+  }
+  const info = roles.data.roles[role]
   return <>
-    <SchemaForm plain schema={(res.data?.fields ?? []).filter(f => f.key !== 'model')} values={d.endpoint}
-      onChange={(k, v) => onChange({ ...d, endpoint: { ...d.endpoint, [k]: v } })} />
-    <Field label="API key"><Input type="password" autoComplete="off" value={d.key}
-      placeholder={res.data?.key.state === 'set' ? 'Saved' : 'Optional'}
-      onChange={e => onChange({ ...d, key: e.target.value, clear: false })} /></Field>
-    {res.data?.key.state === 'set' && <Switch label="Clear saved key" checked={d.clear}
-      onChange={clear => onChange({ ...d, clear, key: '' })} />}
-    <CheckRow label="Discover models" busy={discover.busy} disabled={!d.endpoint.url?.trim() || action.busy}
-      error={discover.error} onClick={() => void discover.run()} />
-    {models.length > 0 && <Choice label="Available speech models" value={d.endpoint.model ?? ''}
-      options={Array.from(new Set([d.endpoint.model, ...models].filter((v): v is string => !!v))).map(v => ({ value: v, label: v }))}
-      onChange={model => onChange({ ...d, endpoint: { ...d.endpoint, model } })} />}
-    <Field label="Model"><Input value={d.endpoint.model ?? ''} placeholder="Discover or enter a model ID"
-      onChange={e => onChange({ ...d, endpoint: { ...d.endpoint, model: e.target.value } })} /></Field>
-    <CheckRow label="Save" busy={action.busy} disabled={!d.endpoint.url?.trim() || discover.busy}
-      error={action.error} onClick={() => void action.run()} />
-    <SpeechTest direction={direction} identity={JSON.stringify(d.endpoint)}
-      ready={!!d.endpoint.url?.trim() && !!d.endpoint.model?.trim() && !action.busy && !discover.busy} save={save} />
+    <Field label={info?.label ?? feature.label} group>
+      <Choice list label={info?.label ?? feature.label} value={picked} disabled={!online || pick.busy}
+              options={modelOptions(offers.data, cap, true, true)} onChange={v => void pick.run(v)} />
+    </Field>
+    {pick.error && <InlineError compact message={pick.error} />}
+    <AddProvider onAdded={offers.reload} />
+    <SpeechTest direction={direction} identity={current} ready={!!current && !pick.busy} save={async () => {}} />
+  </>
+}
+
+/** another provider, from a form that opens on Add provider: checked, saved (or the saved
+    one at that address), its key kept; `onAdded` then lists its models */
+function AddProvider({ onAdded }: { onAdded: () => void }) {
+  const online = useOnline()
+  const providers = useResource(() => settingsApi.providers(), [])
+  const [open, setOpen] = useState(false)
+  const [d, setD] = useState<ProviderDraft>(EMPTY_PROVIDER)
+  const kinds = providers.data?.kinds ?? []
+  const add = useAction(async () => {
+    const r = await settingsApi.testNew({ kind: d.kind || undefined, base_url: d.url.trim(), key: d.key.trim() || undefined })
+    if (!r.kind || !r.ok) throw new Error(r.sentence || 'No answer there.')
+    const all = providers.data?.providers ?? []
+    const same = (a: string, b: string) => a.replace(/\/+$/, '').toLowerCase() === b.replace(/\/+$/, '').toLowerCase()
+    const have = all.find(p => same(p.provider.base_url, r.base_url))
+    const name = d.label.trim() || host(r.base_url)
+    const id = have?.id ?? slug(name, all.map(p => p.id))
+    if (!have) await settingsApi.putProvider(id, { kind: r.kind, label: name, base_url: r.base_url, models: {} })
+    if (d.key.trim()) await settingsApi.setKey(id, d.key.trim())
+    setD(EMPTY_PROVIDER); setOpen(false)
+    providers.reload(); onAdded()
+  })
+  if (!open) return <div className="onb__check"><Button disabled={!online} onClick={() => setOpen(true)}>Add provider</Button></div>
+  return <>
+    <ProviderFields kinds={kinds} value={d} onChange={setD} autoFocus />
+    <div className="onb__check">
+      <Button loading={add.busy} disabled={!online || !ready(kinds, d)} title={online ? undefined : OFFLINE_TITLE}
+              onClick={() => void add.run()}>Add</Button>
+      <Button onClick={() => { setOpen(false); setD(EMPTY_PROVIDER) }}>Cancel</Button>
+    </div>
+    {add.error && <InlineError compact message={add.error} />}
   </>
 }
 
@@ -245,12 +257,12 @@ const useOffers = () => useResource(async () => {
 
 /** the Choice options of one capability: None first when `none`, then each provider's saved
     models and its offered ones ("+pid/model": added on save), a model once */
-const modelOptions = (offers: Offer[], cap: Cap, none: boolean) => [
+const modelOptions = (offers: Offer[], cap: Cap, none: boolean, any = false) => [
   ...(none ? [{ value: '', label: 'None' }] : []),
   ...offers.flatMap(({ p, available }) => {
     const saved = p.models.filter(m => m.offered && (m.caps ?? []).includes(cap)).map(m => ({ value: m.ref, label: m.name }))
     const have = new Set(p.models.map(m => m.ref.slice(p.id.length + 1)))
-    const more = available.filter(a => !a.added && !have.has(a.id) && (a.caps ?? []).includes(cap))
+    const more = available.filter(a => !a.added && !have.has(a.id) && (any || (a.caps ?? []).includes(cap)))
       .map(a => ({ value: `+${p.id}/${a.id}`, label: a.name || a.id }))
     const all = [...saved, ...more]
     return all.length ? [{ group: p.provider.label, options: all }] : []
@@ -263,7 +275,8 @@ async function addPick(offers: Offer[] | undefined, want: string, cap: Cap) {
   const [pid, ...rest] = want.slice(1).split('/')
   const id = rest.join('/')
   const a = offers?.find(o => o.p.id === pid)?.available.find(m => m.id === id)
-  return (await settingsApi.putModel(pid!, id, { label: a?.name || id, caps: a?.caps ?? [cap] })).ref
+  const caps = a?.caps?.includes(cap) ? a.caps : [...(a?.caps ?? []), cap]
+  return (await settingsApi.putModel(pid!, id, { label: a?.name || id, caps })).ref
 }
 
 /* ── search: Topic search (embeddings) and Reranking (rerank), one model each or none; a

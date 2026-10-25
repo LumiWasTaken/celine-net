@@ -5,5 +5,5 @@
   inset-block-start: var(--s-4);
   inset-inline-end: var(--s-4);
   max-width: calc(100vw - var(--s-4) * 2);
-  z-index: 50;
+  z-index: var(--z-toast);
 }

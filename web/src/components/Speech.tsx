@@ -96,7 +96,7 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
   const start = async () => {
     cancel(); setError(null)
     if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
-      setError('Microphone recording needs HTTPS or localhost and a supported browser.'); return
+      setError('The microphone needs HTTPS or localhost.'); return
     }
     const controller = new AbortController()
     task.current = controller; setState('permission')
@@ -117,10 +117,10 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
       controller.signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
       recorder.ondataavailable = e => {
         size += e.data.size
-        if (size > 12_000_000) { setError('Recording is too large. Try a shorter message.'); cancel(); return }
+        if (size > 12_000_000) { setError('That recording is too long.'); cancel(); return }
         if (e.data.size) chunks.push(e.data)
       }
-      recorder.onerror = () => { setError('The microphone recording failed.'); cancel() }
+      recorder.onerror = () => { setError('The microphone stopped.'); cancel() }
       recorder.onstop = () => {
         clearTimeout(timer); recorder.stream.getTracks().forEach(t => t.stop()); capture.current = null
         if (controller.signal.aborted) return
@@ -157,14 +157,14 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
       {speech.input && <>
         <Field label="Language"><Input value={p.language} placeholder="Auto" maxLength={32}
           onChange={e => speech.setPrefs({ ...p, language: e.target.value })} /></Field>
-        <Switch checked={p.send} label="Send after transcription" onChange={send => speech.setPrefs({ ...p, send })} />
+        <Switch checked={p.send} label="Send when done" onChange={send => speech.setPrefs({ ...p, send })} />
       </>}
       {speech.output && <>
-        <Field label="Voice"><Input value={p.voice} placeholder="Default (alloy)"
+        <Field label="Voice"><Input value={p.voice} placeholder="Default"
           onChange={e => speech.setPrefs({ ...p, voice: e.target.value })} /></Field>
         {voices.length > 0 && <Choice label="Available voices" value={p.voice} onChange={voice => speech.setPrefs({ ...p, voice })}
-          options={[{ value: '', label: 'Default (alloy)' }, ...Array.from(new Set([p.voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))]} />}
-        <Switch checked={p.autoRead} label="Read new replies automatically" onChange={autoRead => speech.setPrefs({ ...p, autoRead })} />
+          options={[{ value: '', label: 'Default' }, ...Array.from(new Set([p.voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))]} />}
+        <Switch checked={p.autoRead} label="Read new replies aloud" onChange={autoRead => speech.setPrefs({ ...p, autoRead })} />
       </>}
     </Dialog>}
   </div>
