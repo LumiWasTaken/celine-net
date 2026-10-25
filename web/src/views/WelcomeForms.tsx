@@ -63,7 +63,13 @@ function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<Sp
     if (!d || !res.data) return
     const saved = await speechApi.save(direction, d.endpoint, res.data.version, d.clear ? null : d.key || undefined)
     res.set(saved)
-    onChange({ ...d, key: '', clear: false })
+    const current = latest.current
+    if (current) {
+      const unchangedKey = current.key === d.key && current.clear === d.clear && current.endpoint.url === d.endpoint.url
+      const next = unchangedKey ? { ...current, key: '', clear: false } : current
+      latest.current = next
+      onChange(next)
+    }
   }
   saveRef.current = save
   const action = useAction(async () => { await save(); await reprobe() })

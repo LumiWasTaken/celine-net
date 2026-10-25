@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Mic, Settings2, Square, Volume2, X } from 'lucide-react'
 import { speechApi } from '../lib/speechApi'
-import { playSpeechQueue, speechChunks } from '../lib/speechText'
 import { playSpeechAudio } from '../lib/speechAudio'
 import { usePref } from '../lib/prefs'
 import { useNav } from '../lib/nav'
@@ -37,18 +36,22 @@ export function SpeechProvider({ features, children }: { features?: Record<strin
   useServerEvents(ev => { if (ev.type === 'settings.changed') stop() })
   const read = useCallback((text: string, id: string) => {
     stop(); setError(null)
-    const chunks = speechChunks(text)
-    if (!output || !chunks.length) return
+    if (!output) return
     const controller = new AbortController()
     work.current = controller; setPlaying(id)
-    void playSpeechQueue(chunks, {
-      signal: controller.signal,
-      generate: (t, signal) => speechApi.synthesize(t, prefs.voice, signal),
-      play: (blob, signal) => {
-        if (!player.current) throw new Error('The audio player is not ready.')
-        return playSpeechAudio(blob, signal, retry => setResume(() => retry), player.current)
-      },
-    }).catch(e => { if (!controller.signal.aborted) setError(errorText(e)) })
+    void (async () => {
+      // Keep Markdown parsing lazy for people who never enable speech playback.
+      const { playSpeechQueue, speechChunks } = await import('../lib/speechText')
+      controller.signal.throwIfAborted()
+      await playSpeechQueue(speechChunks(text), {
+        signal: controller.signal,
+        generate: (t, signal) => speechApi.synthesize(t, prefs.voice, signal),
+        play: (blob, signal) => {
+          if (!player.current) throw new Error('The audio player is not ready.')
+          return playSpeechAudio(blob, signal, retry => setResume(() => retry), player.current)
+        },
+      })
+    })().catch(e => { if (!controller.signal.aborted) setError(errorText(e)) })
       .finally(() => { if (work.current === controller) { work.current = null; setPlaying(null) } })
   }, [output, prefs.voice, stop])
   const visible = (cid: string) => ('conversation' in nav.route && nav.route.conversation === cid)
@@ -157,10 +160,10 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
         <Switch checked={p.send} label="Send after transcription" onChange={send => speech.setPrefs({ ...p, send })} />
       </>}
       {speech.output && <>
-        <Field label="Voice"><Input value={p.voice} placeholder="Provider default"
+        <Field label="Voice"><Input value={p.voice} placeholder="Default (alloy)"
           onChange={e => speech.setPrefs({ ...p, voice: e.target.value })} /></Field>
         {voices.length > 0 && <Choice label="Available voices" value={p.voice} onChange={voice => speech.setPrefs({ ...p, voice })}
-          options={[{ value: '', label: 'Provider default' }, ...Array.from(new Set([p.voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))]} />}
+          options={[{ value: '', label: 'Default (alloy)' }, ...Array.from(new Set([p.voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))]} />}
         <Switch checked={p.autoRead} label="Read new replies automatically" onChange={autoRead => speech.setPrefs({ ...p, autoRead })} />
       </>}
     </Dialog>}

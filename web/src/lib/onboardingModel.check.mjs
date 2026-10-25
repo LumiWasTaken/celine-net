@@ -12,4 +12,8 @@ for (const id of ['chat-model-one', 'chat-model-two']) {
 assert.deepEqual(onboardingModel('new-model'), { label: 'new-model', caps: ['chat'] })
 assert.deepEqual(onboardingModel('new-model', { id: 'new-model', caps: ['chat', 'vision'] }).caps, ['chat', 'vision'])
 assert.deepEqual(onboardingModel('old-model', undefined, { caps: ['chat', 'vision'] }).caps, ['chat', 'vision'])
+for (const caps of [['chat'], []]) {
+  assert.deepEqual(onboardingModel('existing', { id: 'existing', caps: ['chat', 'vision', 'tools'] }, { caps }).caps, caps,
+    'discovery must not re-enable explicitly disabled capabilities')
+}
 console.log('onboarding model preservation checks passed')

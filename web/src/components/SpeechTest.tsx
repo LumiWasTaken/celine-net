@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { speechApi, type Direction } from '../lib/speechApi'
 import { errorText } from '../lib/format'
+import { useNav } from '../lib/nav'
 import { Button, Choice, Field, InlineError, Input } from '../ui'
 
 /** Real provider requests, available before opting in. Never submits a chat message. */
 export function SpeechTest({ direction, identity, ready, save }: {
   direction: Direction; identity: string; ready: boolean; save: () => Promise<void>
 }) {
+  const nav = useNav()
   const [state, setState] = useState<'idle' | 'saving' | 'permission' | 'recording' | 'testing'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [text, setText] = useState('This is a speech playback test.')
@@ -28,7 +30,7 @@ export function SpeechTest({ direction, identity, ready, save }: {
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
     objectUrl.current = null; setAudio(null); setState('idle')
   }, [])
-  useEffect(() => { stop(); setError(null); setTranscript(null); setVoices([]); return stop }, [identity, stop])
+  useEffect(() => { stop(); setError(null); setTranscript(null); setVoices([]); return stop }, [identity, nav.route, stop])
   const begin = async () => {
     stop(); setError(null); setTranscript(null)
     const c = new AbortController(); work.current = c; setState('saving')
@@ -89,7 +91,7 @@ export function SpeechTest({ direction, identity, ready, save }: {
   return <>
     {direction === 'output' && <>
       <Field label="Sample text"><Input value={text} maxLength={900} disabled={busy} onChange={e => setText(e.target.value)} /></Field>
-      <Field label="Test voice"><Input value={voice} disabled={busy} placeholder="Provider default" onChange={e => setVoice(e.target.value)} /></Field>
+      <Field label="Test voice"><Input value={voice} disabled={busy} placeholder="Default (alloy)" onChange={e => setVoice(e.target.value)} /></Field>
       {voices.length > 0 && <Choice label="Available test voices" value={voice} disabled={busy} onChange={setVoice}
         options={Array.from(new Set([voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))} />}
       <Button disabled={!ready || busy} onClick={() => void discoverVoices()}>Discover voices</Button>

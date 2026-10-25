@@ -1,10 +1,23 @@
-/** Speak reply prose, not fenced code, links, markup or provider control tags. */
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import remarkGfm from 'remark-gfm'
+import type { Nodes } from 'mdast'
+
+// Match the reply renderer's Markdown grammar, including nested/indented code and GFM.
+const markdownParser = unified().use(remarkParse).use(remarkGfm)
+function prose(node: Nodes): string {
+  if (node.type === 'code' || node.type === 'html' || node.type === 'image' || node.type === 'imageReference') return ''
+  if (node.type === 'text' || node.type === 'inlineCode') return node.value
+  if (node.type === 'break') return '\n'
+  if (!('children' in node)) return ''
+  const block = ['root', 'blockquote', 'list', 'listItem', 'table', 'tableRow'].includes(node.type)
+  return node.children.map(prose).join(block ? '\n' : '')
+}
+
+/** Speak reply prose, not code blocks, URLs, markup or provider control tags. */
 export function speechChunks(markdown: string): string[] {
-  const text = markdown.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g, '')
-    .replace(/<\|[^>]*\|>/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/https?:\/\/\S+/g, '')
-    .replace(/<[^>]*>/g, '').replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/gm, '')
-    .replace(/[`*_~]/g, '').trim()
+  const text = prose(markdownParser.parse(markdown)).replace(/<\|[^>]*\|>/g, '')
+    .replace(/https?:\/\/\S+/g, '').trim()
   const result: string[] = []
   let part = ''
   const flush = () => { if (part) result.push(part); part = '' }
@@ -27,7 +40,7 @@ export function speechChunks(markdown: string): string[] {
   return result
 }
 
-/** Independent lookahead producer, sequential playback; exactly one synthesis in flight. */
+/** Sequential playback, one queued clip of lookahead, one synthesis in flight. */
 export async function playSpeechQueue<T>(texts: string[], options: {
   signal: AbortSignal; generate: (text: string, signal: AbortSignal) => Promise<T>
   play: (value: T, signal: AbortSignal) => Promise<void>
@@ -37,11 +50,15 @@ export async function playSpeechQueue<T>(texts: string[], options: {
   const buffer: ({ value: T } | { error: unknown })[] = []
   let done = false
   let wake: (() => void) | undefined
-  const notify = () => { wake?.(); wake = undefined }
+  let space: (() => void) | undefined
+  const notify = () => { wake?.(); wake = undefined; space?.(); space = undefined }
   signal.addEventListener('abort', notify)
   const producer = (async () => {
     try {
       for (const text of texts) {
+        while (buffer.length && !signal.aborted) {
+          await new Promise<void>(resolve => { space = resolve })
+        }
         signal.throwIfAborted()
         const value = await options.generate(text, signal)
         signal.throwIfAborted()
@@ -55,6 +72,7 @@ export async function playSpeechQueue<T>(texts: string[], options: {
       signal.throwIfAborted()
       if (!buffer.length) { await new Promise<void>(resolve => { wake = resolve }); continue }
       const item = buffer.shift()!
+      notify()
       if ('error' in item) throw item.error
       await options.play(item.value, signal)
     }
