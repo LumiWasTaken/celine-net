@@ -11,8 +11,14 @@ on its own; routines on a schedule; missions over days with sub-agents; an inter
 between you, the agent and its work; terminals in its own Linux container; a browser of
 its own with a live view; images and music through ComfyUI; a searchable archive of your
 Discord and WhatsApp history and your documents; a guard model that checks risky actions.
-Optional [dictation and read-aloud](docs/speech.md) use your OpenAI-compatible speech
-providers, configured in Settings or during onboarding. No speech engine is bundled.
+Optional [dictation and read-aloud](docs/speech.md) run on speech models from your own
+providers. No speech engine is bundled.
+
+![A chat: the agent searches the web, reads a page and writes a note](docs/screenshots/chat.jpg)
+
+| A mission with its plan and sub-agents | Routines on a schedule | Every feature, one switch each |
+|---|---|---|
+| ![Mission](docs/screenshots/mission.jpg) | ![Routines](docs/screenshots/routines.jpg) | ![Features](docs/screenshots/features.jpg) |
 
 ## Run
 
@@ -37,6 +43,9 @@ Python 3.14 with [uv](https://docs.astral.sh/uv/), Node 22, Go for the WhatsApp 
 ./start.sh            # builds the UI when it changed, serves http://127.0.0.1:8766
 ./start.sh dev        # API plus the Vite dev server on http://127.0.0.1:5174
 ```
+
+A demo on invented data, every feature on, nothing to set up (no model server, no
+connectors): `tools/testdata/demo.sh`, then http://127.0.0.1:8801.
 
 [docs/dev.md](docs/dev.md) has the gates, the switches, migrations and test rules.
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains a turn, the skills, the storage
