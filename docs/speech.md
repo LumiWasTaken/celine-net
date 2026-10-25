@@ -48,6 +48,7 @@ the returned sample. Use those controls if the browser blocks autoplay. Discover
 alone never counts as a successful speech test. Neither test enables the feature.
 Opening Speech options discovers voices only. Providers without `/voices` still
 work: enter a voice name manually. Voice discovery does not test transcription.
+An empty voice uses `alloy`; select or enter another voice if the provider requires it.
 
 ## Dictation
 
@@ -63,13 +64,22 @@ invalidate pending work, including a late permission response. Microphone captur
 needs HTTPS or localhost and browser permission. A Bluetooth headset may switch its
 audio profile when its microphone opens.
 
+Both transcription routes bound incoming bytes before multipart parsing to 12 MB plus
+64 KiB of form overhead, even without a trustworthy Content-Length. They accept one
+file and an optional language field; the recording itself is still limited to 12 MB.
+Leaving a speech request cancels its provider work, including explicit tests and
+model/voice discovery. Navigating away also stops a test microphone recording, even
+if microphone permission is still pending.
+
 ## Playback
 
 Read aloud on a completed assistant reply plays only its answer text. Reasoning and
 tool output are not included. Fenced code, URLs, Markdown/HTML and speech control tags
 are removed; prose is split at sentences or newlines into at most 900-character
 requests. One producer generates ahead, one request at a time, while clips play in
-order. Responses are limited to 20 MB; provider requests time out after three minutes.
+order. At most one clip is queued beyond the playing clip, including while paused or
+waiting for an autoplay gesture. Responses are limited to 20 MB; provider requests
+time out after three minutes.
 Chat uses a page-mounted native audio player, as the setup test does. Its controls
 appear during playback for manual play, pause and volume adjustments. Browser media
 errors include their diagnostic code instead of hiding the cause behind a generic
