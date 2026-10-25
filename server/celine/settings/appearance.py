@@ -14,13 +14,16 @@ from .files import Invalid
 # GET /appearance and the config status). The numbers are percents: the grain's opacity,
 # how much the accent tints the greys (tint) and the lightness step between surfaces
 # (contrast), as web/src/styles/tokens.css reads them.
+# a larger contrast step lifts the surfaces past the text contrast floor (web CONTRAST_MAX);
+# a value saved above it, from before the cap, reads as the cap
+CONTRAST_MAX = 110
 ACCENTS = ("rose", "peach", "sage", "teal", "sky", "violet", "miku")
 APPEARANCE: dict[str, tuple[tuple, Any]] = {
     "accent": (ACCENTS, "rose"),
     "grain": (("fine", "coarse", "paper", "none"), "fine"),
     "grain_opacity": (tuple(range(0, 21)), 4),
     "tint": (tuple(range(0, 301, 25)), 100),
-    "contrast": (tuple(range(50, 151, 10)), 100),
+    "contrast": (tuple(range(50, CONTRAST_MAX + 1, 10)), 100),
     "text_size": (("sm", "md", "lg", "xl"), "md"),
     "hide_thinking": ((False, True), False),
     "hide_tools": ((False, True), False),
@@ -59,5 +62,8 @@ def read(root) -> dict[str, Any]:
     raw, err = files.read(root, "appearance")
     if err:
         raise Invalid("appearance", err)
-    return {k: v for k, v in validate({k: v for k, v in (raw or {}).items() if k in APPEARANCE}).items()
+    raw = {k: v for k, v in (raw or {}).items() if k in APPEARANCE}
+    if type(raw.get("contrast")) is int and raw["contrast"] > CONTRAST_MAX:
+        raw["contrast"] = CONTRAST_MAX
+    return {k: v for k, v in validate(raw).items()
             if v is not None}
