@@ -64,6 +64,8 @@ async def put_settings(request: Request, response: Response, direction: str,
         changed[direction] = clean
         try:
             out = await reload.commit(services_of(request), {"speech": changed})
+            if not out["applied"]:
+                raise CelineError("unavailable", "Speech settings could not be applied.", 503)
         except BaseException:
             if replacing or clearing:
                 disk, error = files.read(files.settings_dir(cfg), "speech")
