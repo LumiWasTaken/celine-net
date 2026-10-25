@@ -110,7 +110,7 @@ async def test_status_words_the_three_states(code, box):
 
 
 async def test_result_cuts_the_text_and_names_files_and_tests(code, box):
-    code.chars = 30
+    code.cfg.settings.general["code.result_chars"] = 30
     box.answers = [{"session": "ses_1", "agent": "opencode", "state": "done",
                     "text": "I changed the parser and ran the suite, all green now.",
                     "tool_output": "....\n3 passed, 1 skipped in 0.42s\n",

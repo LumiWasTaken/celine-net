@@ -5,7 +5,7 @@ import {
 } from './api'
 import { asBatch } from './media'
 import { follow, isDown, snapshotAgain, useConnection, type Frame } from './socket'
-import type { ConversationSettings } from './settingsApi'
+import type { ChatApproval, ConversationSettings } from './settingsApi'
 import type { GuardBanner } from './guard'
 import type { Plan } from './api'
 
@@ -63,6 +63,8 @@ type State = {
   imageNotices: ImageNotice[]
   /** Bastet's banners after the messages that made their calls (event guard.banner) */
   banners: GuardBanner[]
+  /** her requests that wait for you, after the messages that made their calls (events approval.asked, approval.closed) */
+  approvals: ChatApproval[]
   /** the turn you pressed Stop on, shown stopped until the server says so */
   stopping: string | null
   /** the latest manual compaction's outcome, for the quiet line at the end of the transcript */
@@ -77,7 +79,7 @@ type State = {
 
 export interface Forming { message_id: string; index: number; name: string; chars: number; preview: string; words: string }
 
-const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
+const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
 
 export function useConversation(conversationId: string | null) {
   const [state, setState] = useState<State>(EMPTY)
@@ -95,17 +97,24 @@ export function useConversation(conversationId: string | null) {
     if (!conversationId) return
     const cid = conversationId
     let held: TextFrame[] = []
-    let timer = 0
+    // a frame id and a timeout id are separate counters: each is cancelled only as itself
+    let frame = 0, timeout = 0
+    const cancel = () => {
+      if (frame) cancelAnimationFrame(frame)
+      if (timeout) clearTimeout(timeout)
+      frame = 0; timeout = 0
+    }
     const flush = () => {
-      cancelAnimationFrame(timer); clearTimeout(timer); timer = 0
+      cancel()
       if (!held.length) return
       const evs = joinText(held)
       held = []
       setState(s => evs.reduce(apply, s))
     }
     const later = () => {
-      if (timer) return
-      timer = document.hidden ? window.setTimeout(flush, HIDDEN_FLUSH_MS) : requestAnimationFrame(flush)
+      if (frame || timeout) return
+      if (document.hidden) timeout = window.setTimeout(flush, HIDDEN_FLUSH_MS)
+      else frame = requestAnimationFrame(flush)
     }
     const stop = follow(cid, {
       seq: () => seq.current,
@@ -125,7 +134,7 @@ export function useConversation(conversationId: string | null) {
         setState(s => apply(s, ev))
       },
     })
-    return () => { cancelAnimationFrame(timer); clearTimeout(timer); stop() }
+    return () => { cancel(); stop() }
   }, [conversationId])
 
   // the render before the reset above still holds the last conversation's: none of it
@@ -163,7 +172,7 @@ function joinText(evs: TextFrame[]): TextFrame[] {
 function fromSnapshot(s: State, snap: Snapshot): State {
   return { ...s, conversation: snap.conversation, forming: [], messages: snap.messages, toolCalls: snap.tool_calls, compactions: snap.compactions,
            turn: snap.turn, queue: snap.queue, live: snap.turn?.live ?? null, switched: snap.switched,
-           imageNotices: snap.image_notices, banners: snap.guard, plan: snap.plan }
+           imageNotices: snap.image_notices, banners: snap.guard, approvals: snap.approvals, plan: snap.plan }
 }
 
 function apply(s: State, ev: Frame): State {
@@ -178,6 +187,10 @@ function apply(s: State, ev: Frame): State {
       const at = s.banners.findIndex(x => x.id === b.id)
       return { ...s, banners: at < 0 ? [...s.banners, b] : s.banners.map((x, i) => (i === at ? b : x)) }
     }
+    case 'approval.asked':
+      return { ...s, approvals: [...s.approvals.filter(a => a.id !== ev.approval.id), ev.approval] }
+    case 'approval.closed':
+      return { ...s, approvals: s.approvals.filter(a => a.id !== ev.id) }
     case 'attachment.described':
       return {
         ...s,

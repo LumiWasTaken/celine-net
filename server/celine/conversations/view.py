@@ -6,6 +6,7 @@ import json
 import sqlite3
 
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER
+from .. import approvals
 from ..guard import store as guard_rows
 from ..plans import store as plans
 from ..skills import words
@@ -109,6 +110,8 @@ async def snapshot(store, cid: str) -> dict:
                 "tool_calls": calls, "compactions": compactions,
                 "turn": tdict, "switched": switched, "image_notices": image_notices,
                 "guard": guard, "plan": plans.get_sync(c, cid),
+                "approvals": [a for a in approvals.open_in(c, cid)
+                              if a["message_id"] in on_path],
                 "queue": [{"turn_id": r["id"]} for r in queue],
                 "seq": int(conv["seq"])}
 

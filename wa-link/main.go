@@ -3,16 +3,14 @@
 // (access.go):
 //
 //	/feed     every record it learned, as canonical NDJSON with a rising seq (journal.go)
-//	/admin/*  status, QR code, marker, bridge lease, older messages, media (admin.go)
+//	/admin/*  status, QR code, older messages, media, deleted chats (admin.go)
 //	/mcp      the tools Celine uses (tools.go)
 //
 // It pairs with the phone like WhatsApp Web (QR code) and journals everything it
-// receives in <state>/journal.db, never pruned. It never sends read receipts, presence
-// or typing. It sends exactly four things, each to the user's OWN account and fixed
-// to it in code: a request for older messages of one chat (history.go), a media retry
-// receipt for expired media (media.go), and a text message or an image into the user's
-// own "message yourself" chat (the `send` and `send_image` tools, tools.go), which is
-// the chat bridge.
+// receives in <state>/journal.db, never pruned. It never sends a message, a read
+// receipt, presence or typing. It sends exactly two things, each to the user's OWN
+// account and fixed to it in code: a request for older messages of one chat
+// (history.go) and a media retry receipt for expired media (media.go).
 //
 // When the phone unlinks it, wa-link exits; the app starts it again and it shows a
 // new QR code.
@@ -64,7 +62,6 @@ var (
 	jr       *Journal
 	norm     *Normalizer
 	normMu   sync.Mutex
-	lease    Lease
 	stateDir string
 	exitFn   = os.Exit
 	waClient *whatsmeow.Client
@@ -292,7 +289,10 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8767", "address for the doors")
 	clientsFile := flag.String("clients-file", "/data/connector-clients",
 		"who may connect: name:key:role per line or comma separated")
+	maxMedia := flag.Int64("max-media-mb", envMB("WA_LINK_MAX_MEDIA_MB", 100)>>20,
+		"the largest attachment /admin/media/download fetches, in MB")
 	flag.Parse()
+	maxMediaBytes = *maxMedia << 20
 
 	lock, err := openState(*state)
 	if err != nil {
@@ -388,7 +388,7 @@ func openClient(ctx context.Context, storePath string) (*whatsmeow.Client, error
 	return whatsmeow.NewClient(device, logger), nil
 }
 
-// setRealSends: the sends and the image upload, each fixed to the own account.
+// setRealSends: the two sends, each fixed to the own account.
 func setRealSends(client *whatsmeow.Client) {
 	historySend = func(ctx context.Context, msg *waE2E.Message) (string, error) {
 		resp, err := client.SendPeerMessage(ctx, msg)
@@ -397,14 +397,6 @@ func setRealSends(client *whatsmeow.Client) {
 	retrySend = func(ctx context.Context, info *types.MessageInfo, key []byte) error {
 		return client.SendMediaRetryReceipt(ctx, info, key)
 	}
-	chatSend = func(ctx context.Context, to types.JID, msg *waE2E.Message, id string) error {
-		_, err := client.SendMessage(ctx, to, msg, whatsmeow.SendRequestExtra{ID: types.MessageID(id)})
-		return err
-	}
-	mediaUpload = func(ctx context.Context, data []byte) (whatsmeow.UploadResponse, error) {
-		return client.Upload(ctx, data, whatsmeow.MediaImage)
-	}
-	newID = func() string { return string(client.GenerateMessageID()) }
 	ownJID = func() (types.JID, bool) {
 		if client.Store.ID == nil {
 			return types.JID{}, false

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -10,9 +9,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/types"
 )
 
 var errFake = errors.New("fake")
@@ -48,15 +45,6 @@ func TestToolsAnnotations(t *testing.T) {
 		if a == nil {
 			t.Fatalf("%s has no annotations", tool.Name)
 		}
-		if tool.Name == "send" || tool.Name == "send_image" {
-			if a.ReadOnlyHint || a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint {
-				t.Fatalf("%s annotations %+v", tool.Name, a)
-			}
-			if _, has := tool.InputSchema.(map[string]any)["properties"].(map[string]any)["chat"]; has {
-				t.Fatalf("%s has a destination", tool.Name)
-			}
-			continue
-		}
 		if !a.ReadOnlyHint || !a.IdempotentHint || a.OpenWorldHint == nil {
 			t.Fatalf("%s annotations %+v", tool.Name, a)
 		}
@@ -64,10 +52,14 @@ func TestToolsAnnotations(t *testing.T) {
 			t.Fatalf("%s: a dash in the description", tool.Name)
 		}
 	}
-	for _, n := range []string{"list_chats", "read_messages", "read_around_message", "request_older_messages", "get_contact", "get_group", "send", "send_image"} {
+	want := []string{"list_chats", "read_messages", "read_around_message", "request_older_messages", "get_contact", "get_group"}
+	for _, n := range want {
 		if !seen[n] {
 			t.Fatalf("missing %s", n)
 		}
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("tools %v: every tool only reads", seen)
 	}
 }
 
@@ -159,77 +151,13 @@ func TestOlderWaitsForThePhonesAnswer(t *testing.T) {
 	}
 }
 
-func TestSendNeedsOwnerAndLeaseAddsTheMarkerAndRecordsTheId(t *testing.T) {
-	log := setup(t)
-	s := server(t)
-	reader := session(t, s, readerKey)
-	if res := call(t, reader, "send", map[string]any{"text": "hi"}); !res.IsError {
-		t.Fatal("a reader sent")
-	}
-	owner := session(t, s, ownerKey)
-	if res := call(t, owner, "send", map[string]any{"text": "hi"}); !res.IsError {
-		t.Fatal("sent without the lease")
-	}
-	base := time.Unix(1_800_000_000, 0)
-	clock = func() time.Time { return base }
-	lease.Claim("second")
-	if res := call(t, owner, "send", map[string]any{"text": "hi"}); !res.IsError {
-		t.Fatal("sent while another instance holds the lease")
-	}
-	clock = func() time.Time { return base.Add(61 * time.Second) }
-	if _, _, err := lease.Claim("live"); err != nil {
-		t.Fatal(err)
-	}
-	res := call(t, owner, "send", map[string]any{"text": "send this to " + BEA + " please"})
-	if res.IsError {
-		t.Fatalf("send: %s", text(res))
-	}
-	if _, _, n := log.kinds(); n != 1 {
-		t.Fatalf("%d sends", n)
-	}
-	sent := log.texts[0]
-	if sent.to.String() != OWN+"@s.whatsapp.net" || sent.msg.GetConversation() != "Celine: send this to "+BEA+" please" {
-		t.Fatalf("sent %v to %v", sent.msg, sent.to)
-	}
-	if !jr.IsSent(sent.id) || structured(t, res)["sent"].([]any)[0] != sent.id {
-		t.Fatal("the id was not recorded")
-	}
-	// the record carries from_link, and so does the echo that comes back from WhatsApp
-	rec := find(journalRecs(t), "message", sent.id)
-	if !truthy(obj(rec, "message"), "from_link") || str(obj(rec, "chat"), "key") != OWN+"@s.whatsapp.net" {
-		t.Fatalf("sent record %v", rec)
-	}
-	liveLine(Rec{"info": Rec{"Chat": OWN + "@s.whatsapp.net", "Sender": OWN + "@s.whatsapp.net",
-		"IsFromMe": true, "ID": sent.id, "Timestamp": "2026-09-24T10:00:01+02:00"},
-		"message": Rec{"conversation": "Celine: send this to " + BEA + " please"}})
-	echo := find(journalRecs(t), "message", sent.id)
-	if !truthy(obj(echo, "message"), "from_link") {
-		t.Fatalf("echo %v", echo)
-	}
-	// a message the user typed in the same chat is not from the link
-	liveLine(Rec{"info": Rec{"Chat": OWN + "@s.whatsapp.net", "Sender": OWN + "@s.whatsapp.net",
-		"IsFromMe": true, "ID": "USER1", "Timestamp": "2026-09-24T10:00:02+02:00"},
-		"message": Rec{"conversation": "hi celine"}})
-	if truthy(obj(find(journalRecs(t), "message", "USER1"), "message"), "from_link") {
-		t.Fatal("the user's own message was marked as sent by the link")
-	}
-	// a failed send leaves no sent id
-	chatSend = func(context.Context, types.JID, *waE2E.Message, string) error { return errFake }
-	if res := call(t, owner, "send", map[string]any{"text": "x"}); !res.IsError {
-		t.Fatal("a failed send reported success")
-	}
-	if jr.IsSent("SENT2") {
-		t.Fatal("a failed send kept its id")
-	}
-}
-
 // TestNoCodePathWritesAnywhereElse drives every tool and door and checks that the only
-// sends are the three allowed kinds, and every text goes to the own account.
+// sends are the two allowed kinds, each to the own account: a request for older
+// messages and a media retry receipt.
 func TestNoCodePathWritesAnywhereElse(t *testing.T) {
 	log := setup(t)
 	loadFixtures(t)
 	s := server(t)
-	lease.Claim("live")
 	for _, key := range []string{readerKey, ownerKey} {
 		cs := session(t, s, key)
 		call(t, cs, "list_chats", nil)
@@ -238,30 +166,18 @@ func TestNoCodePathWritesAnywhereElse(t *testing.T) {
 		call(t, cs, "read_around_message", map[string]any{"chat": GROUP, "message": "G1"})
 		call(t, cs, "get_contact", map[string]any{"phone": "+49 170 0000002"})
 		call(t, cs, "get_group", map[string]any{"jid": GROUP})
-		call(t, cs, "send", map[string]any{"text": "to " + GROUP})
 		historyLast = time.Time{}
 		olderWait = 10 * time.Millisecond
 		call(t, cs, "request_older_messages", map[string]any{"chat": BEA + " " + GROUP})
 		historyLast = time.Time{}
 		call(t, cs, "request_older_messages", map[string]any{"chat": GROUP})
 		olderWait = 120 * time.Second
-		for _, d := range [][3]string{{"GET", "/admin/status", ""}, {"GET", "/admin/info", ""},
-			{"GET", "/admin/qr", ""}, {"PUT", "/admin/bridge", `{"marker":"C: "}`},
-			{"POST", "/admin/bridge/lease", ""}, {"GET", "/admin/media/retry", ""},
-			{"POST", "/admin/media/download", `{"direct_path":"/v/x"}`}} {
+		for _, d := range [][3]string{{"GET", "/admin/status", ""}, {"GET", "/admin/qr", ""},
+			{"GET", "/admin/media/retry", ""}, {"POST", "/admin/media/download", `{"direct_path":"/v/x"}`}} {
 			req(t, s, d[0], d[1], key, d[2])
 		}
 		historyLast = time.Time{}
 		req(t, s, "POST", "/admin/older", key, `{"chat":"`+GROUP+`"}`)
-	}
-	_, _, texts := log.kinds()
-	if texts != 1 {
-		t.Fatalf("%d texts: only the operator with the lease may send", texts)
-	}
-	for _, x := range log.texts {
-		if x.to.String() != OWN+"@s.whatsapp.net" {
-			t.Fatalf("a text went to %s", x.to)
-		}
 	}
 	for _, m := range log.history {
 		if m.GetProtocolMessage().GetType() != waE2E.ProtocolMessage_PEER_DATA_OPERATION_REQUEST_MESSAGE {
@@ -270,55 +186,5 @@ func TestNoCodePathWritesAnywhereElse(t *testing.T) {
 	}
 	if len(log.history) == 0 {
 		t.Fatal("the older paths were not driven")
-	}
-}
-
-func TestSendImageGoesToTheOwnChatWithTheMarker(t *testing.T) {
-	log := setup(t)
-	s := server(t)
-	uploaded := 0
-	mediaUpload = func(_ context.Context, data []byte) (whatsmeow.UploadResponse, error) {
-		uploaded++
-		return whatsmeow.UploadResponse{URL: "https://mmg/x", DirectPath: "/x",
-			FileLength: uint64(len(data))}, nil
-	}
-	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nxxxx"))
-	args := map[string]any{"data": png, "media_type": "image/png", "text": "for you"}
-	reader := session(t, s, readerKey)
-	if res := call(t, reader, "send_image", args); !res.IsError {
-		t.Fatal("a reader sent an image")
-	}
-	owner := session(t, s, ownerKey)
-	if res := call(t, owner, "send_image", args); !res.IsError {
-		t.Fatal("sent an image without the lease")
-	}
-	lease.Claim("live")
-	for _, bad := range []map[string]any{
-		{"data": png, "media_type": "text/html"},
-		{"data": "!!", "media_type": "image/png"},
-	} {
-		if res := call(t, owner, "send_image", bad); !res.IsError {
-			t.Fatalf("sent %v", bad)
-		}
-	}
-	res := call(t, owner, "send_image", args)
-	if res.IsError {
-		t.Fatalf("send_image: %s", text(res))
-	}
-	if _, _, n := log.kinds(); n != 1 || uploaded != 1 {
-		t.Fatalf("%d sends, %d uploads", n, uploaded)
-	}
-	sent := log.texts[0]
-	img := sent.msg.GetImageMessage()
-	if sent.to.String() != OWN+"@s.whatsapp.net" || img.GetCaption() != "Celine: for you" ||
-		img.GetMimetype() != "image/png" || img.GetURL() != "https://mmg/x" {
-		t.Fatalf("sent %v to %v", sent.msg, sent.to)
-	}
-	if !jr.IsSent(sent.id) {
-		t.Fatal("the id was not recorded")
-	}
-	rec := find(journalRecs(t), "message", sent.id)
-	if !truthy(obj(rec, "message"), "from_link") || str(obj(obj(rec, "message"), "media"), "type") != "photo" {
-		t.Fatalf("sent record %v", rec)
 	}
 }

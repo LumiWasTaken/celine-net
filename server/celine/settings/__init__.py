@@ -44,6 +44,15 @@ def section_to_file(section: str, value: Any) -> dict[str, Any]:
         return {"providers": value}
     if section == "tools":
         return {"defaults": value}
+    if section == "general":            # a skill's knobs in a table of its own
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            skill, dot, name = k.partition(".")
+            if dot:
+                out.setdefault(skill, {})[name] = v
+            else:
+                out[k] = v
+        return out
     return value
 
 

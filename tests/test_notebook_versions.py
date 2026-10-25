@@ -80,3 +80,19 @@ async def test_a_move_takes_the_history_along_a_delete_keeps_a_copy_and_a_purge_
             {"ok": True, "path": "world/sea.md"}
         assert not (root / ".trash" / entry["id"]).exists()
         assert (await c.delete(f"/api/notebook/trash/{entry['id']}")).status_code == 404
+
+
+async def test_the_apps_own_files_are_not_notes(tmp_path, monkeypatch, store):
+    """.index.db, .versions and .trash: the routes refuse them as the tools do."""
+    scratch(tmp_path, monkeypatch)
+    cfg = boot.load()
+    app = make_app(cfg, store)
+    app.include_router(notebook_api.router)
+    async with client(app) as c:
+        await c.put("/api/notebook/entries/lore/sea.md", json={"content": "waves"})
+        for rel in (".index.db", ".versions/lore/sea.md", ".trash", "lore/.hidden.md"):
+            assert (await c.put(f"/api/notebook/entries/{rel}",
+                                json={"content": "x"})).status_code == 400, rel
+            assert (await c.get(f"/api/notebook/entries/{rel}")).status_code == 400, rel
+            assert (await c.delete(f"/api/notebook/entries/{rel}")).status_code == 400, rel
+        assert (await c.get("/api/notebook/entries/lore/sea.md")).status_code == 200

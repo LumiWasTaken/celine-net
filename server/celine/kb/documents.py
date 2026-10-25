@@ -61,7 +61,7 @@ from . import normalize
 from . import passages as P
 from ..core.ids import now_ms
 from .db import DOCUMENTS_MIGRATIONS, KBFile, in_batches, kv, set_kv
-from .documents_extract import EXTRACTOR, MIME, Segment, extract, kind_of
+from .documents_extract import EXTRACTOR, MIME, Segment, extract, kind_of, limits
 from .identity import REF
 from ..core.event_types import DOCUMENTS_CHANGED, DOCUMENTS_DELETED, DOCUMENTS_ITEM
 
@@ -553,7 +553,7 @@ class DocumentsKB:
         if not p.is_file():
             return None
         sha = row["sha256"]
-        ex = extract(p)
+        ex = extract(p, limits(self.app_cfg))
         segs = [s for s in ex.segments if s.text.strip()]
         n_chars = sum(len(s.text) for s in segs)
         n_words = sum(len(s.text.split()) for s in segs)

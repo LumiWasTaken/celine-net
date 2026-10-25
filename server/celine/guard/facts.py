@@ -5,7 +5,8 @@
   public; an MCP server its `class` in mcp.toml (default sensitive).
 - sinks: where a call sends text. public: a web search's query, the address of a page
   it opens, what it types or uploads into a page, a shell command that reaches the
-  net, an MCP tool that writes with `sends = "public"` (the default); people: a message
+  net (the box's verdict once it ran, trigger.EGRESS before), a coding agent's task
+  (code__start, a CLI sub-agent's brief: it runs with a shell and the net), an MCP tool that writes with `sends = "public"` (the default); people: a message
   to anyone but the owner, an MCP tool with `sends = "people"`; everything else stays in
   the house, never looked at by the leak rule (only a closed house gate looks).
 - the private corpus: the notes it carries this turn and the classed results in the
@@ -70,10 +71,25 @@ def typed(steps) -> list[str]:
             and s.get("do") in ("type", "upload") and s.get("text")]
 
 
+# a coding agent's task: the argument a tool hands to an agent with a shell and the net
+TASKS = {"code__start": "task", "sub_agents__start": "brief"}
+
+
+def task(call: dict) -> str | None:
+    """The task a coding agent gets: code__start's, a CLI sub-agent's brief (`cli`).
+    None for any other call."""
+    name, args = call["name"], call.get("args") or {}
+    if name not in TASKS or (name == "sub_agents__start" and not args.get("cli")):
+        return None
+    return str(args.get(TASKS[name]) or "")
+
+
 def sink(call: dict) -> tuple[str, list[str]]:
     """(where the call sends, the text it sends). A house call's text is its arguments:
     only a closed house gate looks at it (guard.closed), the leak rule never does."""
     name, args = call["name"], call.get("args") or {}
+    if (t := task(call)) is not None:
+        return "public", [t]
     if name == "web__search":
         return "public", [str(args.get("query") or "")]
     if name in ("web__read_page", "browser__open"):
@@ -82,7 +98,10 @@ def sink(call: dict) -> tuple[str, list[str]]:
         return "public", t
     if name in ("shell__run", "shell__type"):
         t = " ".join(texts(args))
-        return ("public" if EGRESS.search(t) else "house"), [t]
+        # once it ran, the box's verdict that it reached the net (shellboxd reaches_net,
+        # display "net"); before, the command's words
+        net = (call.get("display") or {}).get("net") or EGRESS.search(t)
+        return ("public" if net else "house"), [t]
     if name == "intercom__send" and not to_house(args):
         return "people", strings(args)
     if call.get("sends") in ("public", "people") and not call.get("read_only"):
@@ -223,10 +242,25 @@ DESTROY_TOOL = re.compile(r"(?:^|_)(?:delete|remove|trash|purge|drop|wipe|destro
                           r"overwrite|pay|purchase|buy|transfer|rotate)(?:_|$)")
 
 
-def _command(call: dict) -> str:
-    if call["name"] not in ("shell__run", "shell__type"):
-        return ""
-    return " ".join(texts(call.get("args")))
+# how a fact names what it found in: a shell command, a coding agent's task
+HAS = ("the command has ", "the task has ")
+
+
+def found_text(fact: str) -> str:
+    """What a fact found, without how it names the text it found it in (HAS)."""
+    for has in HAS:
+        fact = fact.removeprefix(has)
+    return fact
+
+
+def _command(call: dict) -> tuple[str, str]:
+    """(how a fact names it, the text): a shell command, a coding agent's task (read the
+    way a command is), else ("", "")."""
+    if call["name"] in ("shell__run", "shell__type"):
+        return HAS[0], " ".join(texts(call.get("args")))
+    if (t := task(call)) is not None:
+        return HAS[1], t
+    return "", ""
 
 
 def escape(call: dict) -> str | None:
@@ -234,8 +268,9 @@ def escape(call: dict) -> str | None:
     if call["name"] in ("browser__open", "web__read_page"):
         host = urlsplit(str((call.get("args") or {}).get("url") or "")).hostname or ""
         return f"opens {host}" if ESCAPE.fullmatch(host) else None
-    if m := ESCAPE.search(_command(call)):
-        return f"the command has {m.group(0).strip()}"
+    has, cmd = _command(call)
+    if m := ESCAPE.search(cmd):
+        return f"{has}{m.group(0).strip()}"
     return None
 
 
@@ -256,11 +291,11 @@ def damage(call: dict) -> str | None:
     bare = call["name"].split("__", 1)[-1]
     if not call.get("read_only") and DESTROY_TOOL.search(bare):
         return f"{call['name']} {bare.replace('_', ' ')}s"
-    cmd = _command(call)
+    has, cmd = _command(call)
     if m := DESTROY.search(cmd):
-        return f"the command has {m.group(0).strip()}"
+        return f"{has}{m.group(0).strip()}"
     if got := removes(cmd):
-        return f"the command has {got}"
+        return f"{has}{got}"
     return None
 
 

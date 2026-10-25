@@ -43,7 +43,7 @@ async def test_defaults_then_a_save_keeps_the_rest_and_tells_every_page(api):
     r = await api.put("/api/appearance", json={"appearance": {"accent": "sage", "hide_thinking": True}})
     assert r.status_code == 200
     assert r.json()["appearance"] == {**DEFAULTS, "accent": "sage", "hide_thinking": True}
-    look = {"text_size": "xl", "hide_tools": True, "collapse_thinking": False, "grain": "paper", "grain_opacity": 12, "tint": 250, "contrast": 130}
+    look = {"text_size": "xl", "hide_tools": True, "collapse_thinking": False, "grain": "paper", "grain_opacity": 12, "tint": 250, "contrast": 110}
     r = await api.put("/api/appearance", json={"appearance": look})
     assert r.json()["appearance"] == {**DEFAULTS, "accent": "sage", "hide_thinking": True, **look}
     saved = tomllib.loads((api.var / "settings" / "appearance.toml").read_text())

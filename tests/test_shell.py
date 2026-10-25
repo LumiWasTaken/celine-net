@@ -120,6 +120,12 @@ async def test_a_run_the_box_flags_as_outside_is_labelled_with_its_source(shell,
     assert "outside" not in (await shell.run(ctx(), command="ls")).display
 
 
+async def test_the_box_verdict_that_a_run_reached_the_net_is_in_its_display(shell, box):
+    box.answers = [ran(outside=True, outside_from="curl", net="curl"), ran()]
+    assert (await shell.run(ctx(), command="./sync")).display["net"] == "curl"
+    assert "net" not in (await shell.run(ctx(), command="ls")).display
+
+
 async def test_a_timeout_says_the_command_keeps_running_and_where_to_read_on(shell, box):
     box.answers = [ran(state="running", exit=None, seconds=30.2, program="make", pid=812,
                        front=[{"pid": 812, "name": "make", "args": ["make"]}], size=48211,

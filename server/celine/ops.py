@@ -218,7 +218,7 @@ def export(cfg: config_mod.Config, out: Path | None) -> Path:
 
 def purge(cfg: config_mod.Config, under: int, dry_run: bool) -> int:
     """In every chat source: delete and ignore each chat with fewer than `under`
-    messages (as "Delete and ignore" does; the bridged chat stays), then delete the
+    messages (as "Delete and ignore" does), then delete the
     people nothing refers to any more. People in a person record (a same person, or
     one with about or aliases) and people you named stay."""
     from .kb import KBs
@@ -226,7 +226,7 @@ def purge(cfg: config_mod.Config, under: int, dry_run: bool) -> int:
     from .kb.connectors import Connectors
     from .kb.identity import kept_sync
     from .kb.connectors import Refused
-    from .kb.ignore import bridge_chat, delete_and_ignore
+    from .kb.ignore import delete_and_ignore
     from .kb.importers import Unreachable
 
     kept: set[str] = set()
@@ -241,16 +241,9 @@ def purge(cfg: config_mod.Config, under: int, dry_run: bool) -> int:
     for kb in kbs.chats():
         print(f"{kb.id} ({kb.title})")
         conn = connectors.get(kb.id)
-        try:
-            bridge = bridge_chat(conn)
-        except (Unreachable, Refused) as e:
-            print(f"  skipped: {e}")
-            good = False
-            continue
         rows = kb.file.read_sync(lambda c: c.execute(
             "SELECT id, key, kind, message_count FROM chats WHERE message_count < ?",
             (under,)).fetchall())
-        rows = [r for r in rows if r["key"] != bridge]
         ids = {r["id"] for r in rows}
         keep = {int(r.split(":", 1)[1]) for r in kept if r.startswith(f"{kb.id}:")}
         kinds = {k: sum(r["kind"] == k for r in rows) for k in ("dm", "group", "channel")}
@@ -258,7 +251,12 @@ def purge(cfg: config_mod.Config, under: int, dry_run: bool) -> int:
               f"{kinds['group']} groups, {kinds['channel']} channels), "
               f"{sum(r['message_count'] for r in rows)} messages")
         if not dry_run and ids:
-            out = delete_and_ignore(kb, sorted(ids), conn)
+            try:
+                out = delete_and_ignore(kb, sorted(ids), conn)
+            except (Unreachable, Refused) as e:
+                print(f"  skipped: {e}")
+                good = False
+                continue
             print(f"  deleted and ignored {len(out['chats'])} chats, "
                   f"{out['messages']} messages")
         unused = kb.unused_people(keep, without_chats=ids if dry_run else set())

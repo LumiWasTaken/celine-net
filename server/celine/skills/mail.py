@@ -587,7 +587,7 @@ class Email:
         meta, raw = await self._run(run)
         return folder, uid, _meta(meta), _parse(raw)
 
-    @tool(open_world=True)
+    @tool(read_only=False, destructive=False, open_world=True)     # reading marks it \Seen
     async def read(self, ctx: ToolContext,
                    id: Annotated[str, "A message id from email__list or email__search, "
                                       "such as INBOX:4521."],
@@ -782,13 +782,13 @@ class Email:
         head = f"{filename} ({p.get_content_type()}, {_size(len(data))}) from {folder}:{uid}" \
                + (f", attached to this conversation for {self.cfg.user}." if "attachment"
                   in display else ".")
-        from ..kb.documents_extract import extract
+        from ..kb.documents_extract import extract, limits
 
         def read_it():
             with tempfile.TemporaryDirectory() as d:
                 path = Path(d) / filename
                 path.write_bytes(data)
-                return extract(path)
+                return extract(path, limits(self.cfg))
         got = await anyio.to_thread.run_sync(read_it)
         if got.kind == "image":
             llm = self.app.llm if self.app is not None else None

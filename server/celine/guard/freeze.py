@@ -1,12 +1,12 @@
 """Freeze: everything she does stops until the owner unfreezes her. Bastet freezes her in mode On (a rule whose `does` is freeze); the owner
-can by hand in any mode (POST /api/guard/freeze, `!freeze` in the bridged chat).
+can by hand in any mode (POST /api/guard/freeze).
 
 Frozen: every live turn is stopped like a Stop, its reason "frozen"; its jobs (and with
 the turns its sub-agents) are stopped; no worker claims a turn while frozen
 (hold.py, before paused), so what is queued, routines included, runs after the unfreeze;
 the work queue claims nothing (work.claim), no tool runs (turns/tools.py), the model
 proxy refuses its shellbox (api/llm_proxy.py) and a named token gets no action (auth/
-gate.py). Only the owner unfreezes (owner.py: their session or their own bridged message).
+gate.py). Only the owner unfreezes (owner.py: their session).
 kv "frozen" holds the open freeze's id; the table `freezes` keeps every one (migration
 0113). Both calls are idempotent. The global event `frozen.changed` carries the view;
 the freeze banners of its turn change with it (banners.py).
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import sqlite3
 
 from ..core.ids import now
@@ -25,8 +24,6 @@ from .owner import must
 from ..core.event_types import FROZEN_CHANGED
 
 log = logging.getLogger("celine.guard")
-
-COMMAND = re.compile(r"^!(freeze|unfreeze)(?:\s+(.+))?$", re.I | re.S)
 
 
 def _one(c: sqlite3.Connection, fid: int) -> dict:
@@ -68,8 +65,7 @@ async def freeze(app, *, by: str, why: str, conversation_id: str | None = None,
             await unfreeze(app, by=lift)
             await learn.lifted(app, row, lift)
     else:
-        await bastet.tell_owner(app, bastet.FROZEN_BY_YOU, conversation_id, turn_id,
-                                phone=True)
+        await bastet.tell_owner(app, bastet.FROZEN_BY_YOU, conversation_id, turn_id)
     return row
 
 
@@ -125,16 +121,3 @@ async def unfreeze(app, *, by) -> dict | None:
             pool.notify()        # the work queue's workers wait out a freeze too
     return row
 
-
-async def command(app, text: str, by) -> str | None:
-    """`!freeze <why>` or `!unfreeze` from the owner's own bridged message (`by`, the
-    Owner the bridge made). -> the answer for that chat, None when the text is no such
-    command."""
-    m = COMMAND.match((text or "").strip())
-    if not m:
-        return None
-    if m[1].lower() == "freeze":
-        was = await frozen(app.store)
-        row = await freeze(app, by="user", why=m[2] or "frozen from the bridged chat")
-        return "Frozen already." if was else f"Frozen: {row['why']}"
-    return "Unfrozen." if await unfreeze(app, by=by) else "Not frozen."

@@ -5,6 +5,8 @@ same constant, never a string of their own. The web reads the same strings
 
 AGENT_STATE = "agent.state"
 
+APPROVAL_ASKED = "approval.asked"
+APPROVAL_CLOSED = "approval.closed"
 APPROVALS_CHANGED = "approvals.changed"
 
 ATTACHMENT_DESCRIBED = "attachment.described"
@@ -96,8 +98,6 @@ SHARE_UPDATED = "share.updated"
 SOURCE_STATE = "source.state"
 
 TERMINAL_STATE = "terminal.state"
-
-TEXTS_DRAFT = "texts.draft"
 
 TOOL_DETACHED = "tool.detached"
 TOOL_DONE = "tool.done"

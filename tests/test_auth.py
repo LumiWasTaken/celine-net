@@ -117,6 +117,25 @@ def test_without_a_session_every_route_and_socket_is_an_unknown_route(app):
     assert 'id="celine-login"' in page.text and "/assets/" not in page.text
 
 
+def test_the_setup_code_is_never_readable_by_others(app, monkeypatch):
+    """The file is made 600, not written and then tightened."""
+    seen = []
+    real = os.write
+
+    def spy(fd, data):
+        seen.append(os.fstat(fd).st_mode & 0o777)
+        return real(fd, data)
+    monkeypatch.setattr(os, "write", spy)
+    old = os.umask(0o022)
+    try:
+        app.state.auth.announce_setup_code()
+    finally:
+        os.umask(old)
+    f = app.state.auth.setup_code_file
+    assert seen and set(seen) == {0o600}, "600 before the code is in it"
+    assert oct(f.stat().st_mode & 0o777) == "0o600" and f.read_text().strip()
+
+
 def test_the_first_passkey_with_the_setup_code(app, caplog):
     with caplog.at_level(logging.WARNING, logger="celine.auth"):
         app.state.auth.announce_setup_code()
@@ -463,3 +482,191 @@ def test_wrong_pins_from_many_addresses_pause_pin_login_for_everyone_not_the_pas
     clock.t += store_mod.PIN_PAUSE + 1
     assert client(app, address="2001:db8:2::1").post(
         "/api/auth/login", json={"method": "pin", "secret": "04815162"}).status_code == 200
+
+
+def _proxy_lines(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records
+            if getattr(r, "event", "") == "auth.proxy_not_trusted"]
+
+
+def test_forwarded_headers_from_a_peer_that_is_no_trusted_proxy_are_logged_once(caplog):
+    c = client(make_app(), address="172.18.0.2")
+    with caplog.at_level(logging.WARNING, logger="celine.auth"):
+        c.get("/api/status")
+        assert _proxy_lines(caplog) == []
+        c.get("/api/status", headers={"X-Real-IP": "203.0.113.9"})
+        c.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9"})
+    [line] = _proxy_lines(caplog)
+    assert "172.18.0.2" in line and "CELINE_TRUSTED_PROXIES" in line
+
+
+def test_a_trusted_proxy_whose_client_address_was_taken_is_not_logged(caplog):
+    # uvicorn's proxy headers have already put the forwarded client in place
+    c = client(make_app(trusted_proxies="172.18.0.2"), address="203.0.113.9")
+    with caplog.at_level(logging.WARNING, logger="celine.auth"):
+        c.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9, 172.18.0.2"})
+    assert _proxy_lines(caplog) == []
+
+
+# ---- a fresh proof before adding a way in, and the list of sessions -----------------
+
+def _guarded(c: TestClient) -> dict[str, int]:
+    """What each route that needs a fresh proof answers now (POST /api/tokens too,
+    test_intercom.py)."""
+    return {
+        "credential": c.post("/api/auth/credentials",
+                             json={"kind": "pin", "secret": "22223333"}).status_code,
+        "passkey": c.post("/api/auth/passkeys/start").status_code,
+        "codes": c.post("/api/auth/recovery-codes").status_code,
+    }
+
+
+def test_adding_a_way_in_new_codes_and_a_token_need_a_proof_from_the_last_minutes(app):
+    auth = app.state.auth
+    clock = auth.store.clock = Clock()
+    c = client(app)
+    assert setup_password(app, c).status_code == 200
+    # the login is the first proof
+    assert set(_guarded(c).values()) == {200}
+    clock.t += store_mod.PROOF_SECONDS + 1
+    assert set(_guarded(c).values()) == {403}
+    stale = c.post("/api/auth/recovery-codes").json()["error"]
+    assert stale["code"] == "proof_needed" and stale["message"] == "Confirm access first."
+    # the hourly refresh of the cookie is no proof
+    assert c.get("/api/health").status_code == 200
+    assert c.post("/api/auth/recovery-codes").status_code == 403
+    # a wrong password is a failed login: it counts toward that address's lock
+    wrong = c.post("/api/auth/reauth", json={"method": "password", "secret": "not it, no"})
+    assert wrong.status_code == 401 and wrong.json()["error"]["message"] == "The password is wrong."
+    assert c.post("/api/auth/reauth", json={"method": "x", "secret": PASSWORD}).status_code == 400
+    assert c.post("/api/auth/reauth", json={"method": "password", "secret": PASSWORD}
+                  ).status_code == 200
+    assert set(_guarded(c).values()) == {200}
+    # a PIN proves too, for this session only
+    other = client(app)
+    assert other.post("/api/auth/login", json={"method": "pin", "secret": "22223333"}
+                      ).status_code == 200
+    clock.t += store_mod.PROOF_SECONDS + 1
+    assert c.post("/api/auth/reauth", json={"method": "pin", "secret": "22223333"}
+                  ).status_code == 200
+    assert c.post("/api/auth/recovery-codes").status_code == 200
+    assert other.post("/api/auth/recovery-codes").status_code == 403
+
+
+def test_wrong_proofs_lock_like_wrong_logins(app):
+    auth = app.state.auth
+    auth.store.clock = Clock()
+    c = client(app, address="198.51.100.7")
+    assert setup_password(app, c).status_code == 200
+    for n in range(store_mod.FREE_TRIES):
+        r = c.post("/api/auth/reauth", json={"method": "password", "secret": f"wrong one {n}"})
+    assert r.status_code == 429 and r.json()["error"]["code"] == "locked"
+    assert c.post("/api/auth/reauth", json={"method": "password", "secret": PASSWORD}
+                  ).status_code == 429
+    for _ in range(10 - store_mod.FREE_TRIES):
+        c.post("/api/auth/reauth/finish", json={"ceremony": "gone", "credential": {}})
+    assert c.post("/api/auth/reauth/start").json()["error"]["code"] == "rate_limited"
+
+
+def test_a_passkey_proves_in_the_session_that_asked(app):
+    auth = app.state.auth
+    clock = auth.store.clock = Clock()
+    pk = SoftPasskey()
+    c = client(app)
+    setup_first_passkey(app, c, pk)
+    other = client(app)
+    assert login(other, pk).status_code == 200
+    clock.t += store_mod.PROOF_SECONDS + 1
+    assert c.post("/api/auth/passkeys/start").status_code == 403
+    # a proof started in one session does not finish in another
+    start = c.post("/api/auth/reauth/start").json()
+    assert other.post("/api/auth/reauth/finish", json={
+        "ceremony": start["ceremony"], "credential": pk.get(start["options"])}).status_code == 401
+    start = c.post("/api/auth/reauth/start").json()
+    assert c.post("/api/auth/reauth/finish", json={
+        "ceremony": start["ceremony"], "credential": SoftPasskey().get(start["options"])}
+    ).status_code == 401                                         # not registered here
+    start = c.post("/api/auth/reauth/start").json()
+    assert c.post("/api/auth/reauth/finish", json={
+        "ceremony": start["ceremony"], "credential": pk.get(start["options"])}).status_code == 200
+    assert c.post("/api/auth/passkeys/start").status_code == 200
+    assert other.post("/api/auth/passkeys/start").status_code == 403
+
+
+def test_with_the_login_off_there_is_nothing_to_prove():
+    c = client(build_app(boot.load(), dev=False))
+    assert c.post("/api/auth/reauth", json={"method": "pin", "secret": "x"}).status_code == 404
+
+
+def test_the_sessions_list_names_each_browser_and_logs_them_out(app):
+    clock = app.state.auth.store.clock = Clock()
+    here = client(app)
+    here.headers["user-agent"] = ("Mozilla/5.0 (X11; Linux x86_64; rv:131.0) "
+                                  "Gecko/20100101 Firefox/131.0")
+    assert setup_password(app, here).status_code == 200
+    clock.t += 7200
+    phone = client(app)
+    phone.headers["user-agent"] = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+                                   "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 "
+                                   "Mobile/15E148 Safari/604.1")
+    assert phone.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                      ).status_code == 200
+    script = client(app)
+    script.headers["user-agent"] = "x" * 2000
+    assert script.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                       ).status_code == 200
+    clock.t += 3600
+    assert here.get("/api/health").status_code == 200           # the hourly refresh: seen
+    rows = here.get("/api/auth/sessions").json()["sessions"]
+    assert [(r["label"], r["this_session"]) for r in rows] == [
+        ("Firefox on Linux", True), ("Safari on iOS", False), ("x" * 80, False)]
+    assert rows[0]["created_at"] == clock.t - 3600 - 7200 and rows[0]["last_seen_at"] == clock.t
+    assert rows[1]["created_at"] == rows[1]["last_seen_at"] == clock.t - 3600
+    stored = Path(os.environ["CELINE_DATA_DIR"]) / "auth.db"
+    assert ("x" * 201).encode() not in stored.read_bytes()      # the user agent is trimmed
+    # one session out
+    assert here.delete(f"/api/auth/sessions/{rows[1]['id']}").json() == \
+        {"ok": True, "logged_out": False}
+    assert phone.get("/api/health").status_code == 404
+    assert here.delete(f"/api/auth/sessions/{rows[1]['id']}").status_code == 404
+    # every other one out, this one stays
+    again = client(app)
+    assert again.post("/api/auth/login", json={"method": "password", "secret": PASSWORD}
+                      ).status_code == 200
+    assert here.post("/api/auth/sessions/logout-others").json() == {"ok": True, "ended": 2}
+    assert script.get("/api/health").status_code == 404
+    assert again.get("/api/health").status_code == 404
+    [mine] = here.get("/api/auth/sessions").json()["sessions"]
+    assert mine["this_session"]
+    # this one out: the cookie goes with it
+    r = here.delete(f"/api/auth/sessions/{mine['id']}")
+    assert r.json() == {"ok": True, "logged_out": True}
+    assert 'celine_session=""' in r.headers["set-cookie"]
+    here.cookies.clear()
+    assert here.get("/api/health").status_code == 404
+
+
+def test_sessions_from_before_keep_working_and_must_prove(tmp_path):
+    """auth.db at version 2: its sessions get an id and no proof."""
+    import sqlite3
+    from celine.db.migrate import migrate
+    db = tmp_path / "auth.db"
+    old = tmp_path / "old"
+    old.mkdir()
+    for f in sorted(store_mod.MIGRATIONS.glob("*.sql"))[:2]:
+        (old / f.name).write_text(f.read_text())
+    migrate(db, old)
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO credentials (kind, hash, label, created_at) "
+                     "VALUES ('pin', x'00', '', 1)")
+        conn.execute("INSERT INTO sessions (token_hash, credential_id, created_at, refreshed_at, "
+                     "expires_at) VALUES (?, 1, 10, 20, ?)",
+                     (store_mod.token_hash("a-token"), Clock.t + 86400))
+    s = store_mod.AuthStore(db, clock=Clock())
+    try:
+        live = s.session("a-token")
+        assert live is not None and live.id and live.user_agent == ""
+        assert not s.proven(live)
+        assert [(r.created_at, r.refreshed_at) for r in s.sessions()] == [(10, 20)]
+    finally:
+        s.close()

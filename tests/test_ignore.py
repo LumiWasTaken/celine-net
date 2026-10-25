@@ -12,7 +12,7 @@ from celine.kb import identity, instant, passages
 from celine.kb.chat import ChatKB
 from celine.kb.feed import Consumer
 from celine.kb.connectors import Refused
-from celine.kb.ignore import delete_and_ignore
+from celine.kb.ignore import delete_and_ignore, include_again
 from celine.kb.media import media_dir
 
 from kb_fixtures import archive
@@ -92,6 +92,27 @@ def test_an_ignored_chat_stays_gone_whoever_writes(wa, tmp_path):
     assert wa.unignore([GROUP]) == [GROUP]
     Consumer(wa).apply([_msg(35, GROUP, "G8", T0 + 11 * 60_000, "back")])
     assert _q(wa, "SELECT message_count FROM chats WHERE key = ?", GROUP)[0][0] == 1
+
+
+class FakeLink:
+    """The WhatsApp connection's doors, as far as delete and ignore uses them."""
+
+    def __init__(self):
+        self.calls = []
+
+    def admin_sync(self, method, path, body=None):
+        self.calls.append((method, path, body))
+        return {}
+
+
+def test_whatsapp_deletes_the_chat_from_its_journal_too(wa):
+    link = FakeLink()
+    delete_and_ignore(wa, [_chat_id(wa, GROUP)], link)
+    assert ("POST", "/admin/ignored", {"chats": [GROUP]}) in link.calls
+    assert [c["key"] for c in wa.ignored_chats()] == [GROUP]
+    include_again(wa, GROUP, link)
+    assert link.calls[-1] == ("DELETE", "/admin/ignored?chat=12345-678%40g.us", None)
+    assert wa.ignored_chats() == []
 
 
 def test_purge_deletes_small_chats_and_unused_people_and_keeps_the_rest(tmp_path):

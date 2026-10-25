@@ -123,5 +123,5 @@ first blank line:
 - `notebook__move(src, dst)`: change the path of a note or a whole folder. Your index
   follows.
 - `notebook__delete(path)`: delete one of your notes. It is gone for you.
-- Every write and edit keeps the old text in `.versions/<path>/`. Read an old version
-  with `notebook__read(".versions/<path>/<time>.md")` when you need it back.
+- Every write and edit keeps the old text for {{username}}, who can bring a version
+  back; your tools read only the note as it is now.

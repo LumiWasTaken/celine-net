@@ -16,7 +16,7 @@ from ..skills import words
 from ..skills.gating import overrides_for
 from ..intercom import deliver
 from ..plans import flow as plan_flow
-from . import context, ledger, loads, message_context, prompt, reply, tokens
+from . import context, ledger, loads, message_context, prompt, reply, tokens, waiting
 from . import store as turns
 from .compact import SummaryFailed, closing, stoppable
 from .tools import NOT_RUN_ANSWER, run_tool_calls
@@ -43,7 +43,21 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
     answers with what it has when its time is up."""
     # the ledger is rebuilt from this turn's stored tool calls, so a turn resumed after
     # a restart or a Continue keeps its counts and its repeat detection
+    from .cancel import Token
     tid = turn["id"]
+    token = token if token is not None else Token(tid)
+    if clock is None:
+        # a turn's clock without the dispatcher (tests): the same limits,
+        # kept by the runner alone (never entered). The dispatcher's clock is the cancel
+        # scope that also stops a turn that hangs; the model queue moves its deadline by
+        # the time spent waiting for a model.
+        clock = anyio.CancelScope(deadline=anyio.current_time() +
+                                  float(cfg.r("last_step_seconds")) +
+                                  float(cfg.r("turn_wall_clock_seconds")))
+    # what a wait for the user inside it needs (approvals.py): the user's own turn
+    # waits for their answer, its clock held meanwhile
+    waits = waiting.TURN.set(waiting.Turn(
+        interactive=(turn.get("origin") or "user") == "user", clock=clock, token=token))
     ledger.open_for(tid, await ledger.records_for(store, tid))
     try:
         await _run_turn(turn, store, cfg, backend, bus, token, registry, jobs, clock)
@@ -54,22 +68,14 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
                       f"The older messages could not be summarised: {e}", True)
     finally:
         ledger.close(tid)
+        waiting.TURN.reset(waits)
 
 
 async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
-                    token=None, registry=None, jobs=None, clock=None) -> None:
-    from .cancel import Token
+                    token, registry, jobs, clock) -> None:
     tid, cid = turn["id"], turn["conversation_id"]
-    token = token if token is not None else Token(tid)
     kbs = prompt.kbs(registry)
     last_step = float(cfg.r("last_step_seconds"))
-    if clock is None:
-        # a turn's clock without the dispatcher (tests): the same limits,
-        # kept by the runner alone (never entered). The dispatcher's clock is the cancel
-        # scope that also stops a turn that hangs; the model queue moves its deadline by
-        # the time spent waiting for a model.
-        clock = anyio.CancelScope(deadline=anyio.current_time() + last_step +
-                                  float(cfg.r("turn_wall_clock_seconds")))
 
     def time_left() -> float:
         """Seconds of work left in this turn; the last step's room is not counted."""
@@ -159,8 +165,11 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                 done_msg["reasoning"], messages, kbs, hidden)
         await turns.transition(store, tid, cid, "done", honor_abort=False)
         return
+    # a reply continued in place: the stored partial reply leaves the history, and what
+    # continues it (the prefill or the note) goes with its one step only
+    reopen_tail: list[dict] = []
     if reopen:
-        messages = _reopen_request(messages, reopen, backend, cfg, cid, tid)
+        messages, reopen_tail = _reopen_request(messages, reopen, backend, cfg, cid, tid)
 
     # the instructions and tools alone do not fit the model's context: no request can
     # succeed, and compacting cannot help
@@ -217,9 +226,10 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             ledger.view(tid, messages)
         grown = False
 
-        step_tools, step = (wire_tools, messages) if note is None else ([], messages + [
-            {"role": "user", "content": cfg.substitute(note[1]),
-             ORIGIN: context.origin(cid, turn=tid, note=note[0])}])
+        step_tools, step = (wire_tools, messages + reopen_tail) if note is None else (
+            [], messages + reopen_tail + [
+                {"role": "user", "content": cfg.substitute(note[1]),
+                 ORIGIN: context.origin(cid, turn=tid, note=note[0])}])
         if bare:
             step_tools = []
         if why := context.malformed(step, cid):
@@ -231,7 +241,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         await prompt.keep_request(cfg, cid, pieces, step, step_tools)
         out = await _stream_one(store, cid, tid, parent, backend, step, step_tools,
                                 token, iteration, reopen=reopen, quiet=quiet)
-        reopen = None
+        reopen, reopen_tail = None, []
         if isinstance(out, _Overflow) and emergency:
             # still too long after the emergency pass: nothing is left to shorten
             await _too_small(store, tid, cid, cfg, backend, out.n_prompt,
@@ -414,27 +424,26 @@ _NO_SPACE_BEFORE = ".,;:!?)]}'\"\u2019\u201d\u2026"
 
 
 def _reopen_request(messages: list[dict], reopen: dict, backend, cfg, cid: str,
-                    tid: str) -> list[dict]:
-    """The request that continues a cut-off reply in the same message. With prefill it
-    ends with the partial reply itself (the stored reply, taken off the history first);
-    otherwise with a note quoting its end."""
+                    tid: str) -> tuple[list[dict], list[dict]]:
+    """The request that continues a cut-off reply in the same message: -> (the history
+    with the stored partial reply taken off, what ends the continuing step). With
+    prefill that is the partial reply itself; otherwise a note quoting its end. The end
+    goes with that one step: the reply, once whole, joins the history as stored."""
     text = reopen.get("text") or ""
     if not text:
-        return messages                       # died before the first token: a new step
+        return messages, []                   # died before the first token: a new step
     mid = reopen["message_id"]
     out = [m for m in messages if not (m.get("role") == "assistant" and not m.get(
         "tool_calls") and any(o.get("message") == mid for o in m.get(ORIGIN) or ()))]
     if prompt.supports_prefill(backend):
-        out.append({"role": "assistant", "content": text,
-                    ORIGIN: context.origin(cid, turn=tid, message=mid)})
-        return out
+        return out, [{"role": "assistant", "content": text,
+                      ORIGIN: context.origin(cid, turn=tid, message=mid)}]
     tail = text[-200:]
-    out.append({"role": "user", "content": cfg.substitute(
+    return out, [{"role": "user", "content": cfg.substitute(
         f"(Automatic note, not written by {{{{username}}}}.) Your previous reply was cut "
         f"off after: \"…{tail}\". Continue it from exactly there, without repeating "
         f"anything and without a preface."), ORIGIN: context.origin(cid, turn=tid,
-                                                                   note="continue")})
-    return out
+                                                                   note="continue")}]
 
 
 async def _record_usage(store, cid, tid, iteration, backend, counter, estimate,
@@ -522,6 +531,28 @@ async def _left(store, cid: str, mid: str, parts, thinking, token) -> str | None
     if "".join(parts) or "".join(thinking) or getattr(token, "shutdown", False):
         return mid
     return None if await tree.drop_empty(store, cid, mid) else mid
+
+
+_END = object()
+
+
+async def _next_event(events, backend):
+    """The adapter's next event, _END after its last. Anything else it raises (a reply
+    it could not read, a bug in it) comes out as a BackendError: the reply ends and the
+    turn fails with what it said, as for any model failure."""
+    try:
+        return await anext(events)
+    except StopAsyncIteration:
+        return _END
+    except BackendError:
+        raise
+    except Exception as exc:
+        log.error("model reply broke", exc_info=exc,
+                  extra={"event": "turn.backend_broke", "backend": backend.name})
+        e = BackendError(f"The reply from {backend.model} could not be read "
+                         f"({type(exc).__name__}: {exc}).", retryable=False)
+        e.raw = {"error": f"{type(exc).__name__}: {exc}"}
+        raise e from exc
 
 
 class _Overflow:
@@ -618,7 +649,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
     try:
         # aclosing: a queued backend frees its model slot as soon as we stop reading
         async with closing(stoppable(backend, messages, tools, token)) as events:
-            async for ev in events:
+            while (ev := await _next_event(events, backend)) is not _END:
                 if token.cancelled:
                     break
                 if isinstance(ev, TextDelta):

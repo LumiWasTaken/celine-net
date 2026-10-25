@@ -16,13 +16,22 @@ from typing import Annotated, Literal
 from ..turns import ledger
 from ..config import CONFIG_DIR
 from ..turns.compact import one_line
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, knob, tool, described
 from . import notebook_index
 from .web import linked
 from .anchors import Edit, EditRefused, apply, is_stamp, lines_of, numbered, plan
 from ..clock import zone
+from ..errors import ToolRefused
 
-# the seeds ship as config/notebook_seed/<rel>, copied once, its own from then on
+# Settings, Advanced, read at use (cfg.r): the index in every system prompt, capped both
+# ways, and both caps are told to it
+KNOBS = (
+    knob("notebook.index_max_entries", "Notes in the index", None, 1, 10_000, 10,
+         "The index of its notebook in every system prompt."),
+    knob("notebook.index_max_chars", "Index length", "characters", 100, 1_000_000, 4000),
+)
+# the seeds ship as config/notebook_seed/<rel>, copied once, its own from then on; it reads
+# them and never writes or deletes them (owner "config")
 SEEDS = {
     "identity.md": "who you are, written by {{username}}",
     "opinions/README.md": "what goes under opinions/",
@@ -50,8 +59,7 @@ class Notebook:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        protected = cfg.skill("notebook").get("protected")
-        self.protected = {str(p) for p in (protected if protected is not None else SEEDS)}
+        self.protected = set(SEEDS)
         # the notes the user marked as theirs, toggled from the browser (kv)
         self.marked: set[str] = set()
 
@@ -201,16 +209,17 @@ class Notebook:
 
     def _resolve(self, path: str, folder: str | None = None) -> Path:
         """Confine to the notebook root, symlinks included, and to `folder` when the
-        conversation is limited to one."""
+        conversation is limited to one. ToolRefused, the tool's answer, when not."""
         p = (self.root / path).resolve()
         if not p.is_relative_to(self.root.resolve()):
-            raise ValueError(f"{path!r} is outside your notebook")
+            raise ToolRefused(f"{path} is outside your notebook.")
         # the app's own files (.index.db, .versions, .trash: deleted notes are the
         # user's to bring back) are not notes
         if any(part.startswith(".") for part in p.relative_to(self.root.resolve()).parts):
-            raise ValueError(f"{path!r} is not in your notebook")
+            raise ToolRefused(f"{path} is not in your notebook: notebook__list shows your "
+                              f"notes.")
         if folder and not p.is_relative_to((self.root / folder).resolve()):
-            raise ValueError(f"{path!r} is outside your folder {folder}")
+            raise ToolRefused(f"{path} is outside your folder {folder}.")
         return p
 
     def _place(self, path: str, folder: str | None) -> tuple[Path, str]:
@@ -237,7 +246,10 @@ class Notebook:
         {{username}}'s notes. Head lines right under the first line steer a note:
         `keys: ram, laptop` loads it when one comes up, `load: always`, `class:
         public, informal, nsfw or sensitive`."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="tools/ is not part of your notebook.", is_error=True)
         if self._owned_by_user(path):
@@ -265,7 +277,10 @@ class Notebook:
         """Read one note. Each line comes as `<n>:<hash>| <text>`. `n:hash` is the anchor
         for notebook__edit. Line 1, Last changed, comes plain: the app keeps it. A long
         note comes in parts. You can read {{username}}'s notes too."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="Skill guides are not notes in your notebook. "
                                       "skills__read_guide(name=\"<skill>\") shows a skill's "
@@ -321,7 +336,10 @@ class Notebook:
         """Change lines of one note by their anchors from notebook__read. Read the note
         first. All edits in one call refer to the note as you read it. If an anchor does
         not match, nothing changes and you get the current lines."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="tools/ is not part of your notebook.", is_error=True)
         if self._owned_by_user(path):
@@ -424,7 +442,10 @@ class Notebook:
         limit = await folder_of(ctx)
         if limit:
             if folder:
-                self._resolve(folder, limit)
+                try:
+                    self._resolve(folder, limit)
+                except ToolRefused as e:
+                    return ToolResult(content=str(e), is_error=True)
             else:
                 folder = limit
         rows = await notebook_index.list(ctx.store, folder)
@@ -444,7 +465,10 @@ class Notebook:
         path: Annotated[str, "The path of the note."],
     ) -> ToolResult:
         """Delete one of your notes. {{username}}'s notes cannot be deleted."""
-        p, path = self._place(path, await folder_of(ctx))
+        try:
+            p, path = self._place(path, await folder_of(ctx))
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         if self.owner(path) == "generated":
             return ToolResult(content="tools/ is not part of your notebook.", is_error=True)
         if self._owned_by_user(path):
@@ -469,7 +493,10 @@ class Notebook:
         """Change the path of a note or a folder. Your index follows. {{username}}'s notes
         do not move."""
         folder = await folder_of(ctx)
-        (a, src), (b, dst) = self._place(src, folder), self._place(dst, folder)
+        try:
+            (a, src), (b, dst) = self._place(src, folder), self._place(dst, folder)
+        except ToolRefused as e:
+            return ToolResult(content=str(e), is_error=True)
         for rel in (src, dst):
             if rel == "tools" or rel.startswith("tools/"):
                 return ToolResult(content="tools/ is not part of your notebook.",
@@ -765,9 +792,8 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
     only entries inside the folder are shown. The notes `loaded` in full are left out:
     they are in its request already (the always ones in the system prompt, the others
     in the tail)."""
-    nb = cfg.skill("notebook")
-    max_entries = int(nb.get("index_max_entries", 10))
-    max_bytes = int(nb.get("index_max_bytes", 4000))
+    max_entries = int(cfg.r("notebook.index_max_entries"))
+    max_chars = int(cfg.r("notebook.index_max_chars"))
 
     rows = [r for r in await notebook_index.list(store, folder, order="touched")
             if r["path"] not in loaded]
@@ -783,7 +809,7 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
         if shown >= max_entries:
             break
         line = f"    {row['path']} - {row['summary']}{tag(row['path'])}"
-        if used + len(line) > max_bytes:
+        if used + len(line) > max_chars:
             crowded += 1
             continue
         lines.append(line)
@@ -802,7 +828,7 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
                    f"not shown. notebook__search finds them.")
     if crowded:
         out.append(f"{crowded} did not fit in your index budget "
-                   f"({max_bytes} bytes). Shorter summaries let more of them fit.")
+                   f"({max_chars} characters). Shorter summaries let more of them fit.")
     return "\n".join(out)
 
 

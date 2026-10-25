@@ -154,6 +154,8 @@ export type FieldSchema = {
   editable?: boolean
   /** on the Advanced page (general settings) */
   advanced?: boolean
+  /** an Advanced field's skill, by its label: a section of its own */
+  group?: string
   /** a text of several lines: a text box */
   long?: boolean
 }
@@ -167,19 +169,35 @@ type EmailView = {
 
 type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 
+type AskKind = 'vault' | 'gate' | 'her' | 'share'
+
 /** one request waiting for you (server/celine/approvals.py): `vault` a tap, `gate` a
-    tool Bastet asks you about; every word is the server's, built from fixed sentences
-    and the call's own data */
+    tool Bastet asks you about, `her` an edit of herself, `share` a public share; every
+    word is the server's, built from fixed sentences and the call's own data */
 export type VaultAsk = {
   id: string
-  kind: 'vault' | 'gate'
+  kind: AskKind
   action: string
   facts: string[]
   why: string
   conversation: string
   /** the last tool that read from outside in that conversation before it asked */
   read: string | null
-  expires_in: number
+  /** null: it waits for you (your own turn), until you answer or Stop */
+  expires_in: number | null
+}
+
+/** a request as its chat shows it, after the message that made the call (the snapshot's
+    `approvals`, the events approval.asked and approval.closed); a gate is asked on
+    Bastet's banner instead */
+export type ChatApproval = {
+  id: string
+  kind: AskKind
+  /** the kind's name, in bold */
+  label: string
+  line: string
+  tool_call_id: string | null
+  message_id: string | null
 }
 
 type VaultView = {
@@ -346,7 +364,7 @@ export const settingsApi = {
   unlockVault: (master_password: string) =>
     request<VaultView>('/vault/unlock', json('POST', { master_password })),
   lockVault: () => post<VaultView>('/vault/lock'),
-  /** POST /approvals/{id}/answer: the answer to one request, vault or gate */
+  /** POST /approvals/{id}/answer: the answer to one request, from Settings or its chat */
   answerApproval: (id: string, ok: boolean) =>
     request<{ approvals: VaultAsk[] }>(`/approvals/${enc(id)}/answer`, json('POST', { ok })),
 

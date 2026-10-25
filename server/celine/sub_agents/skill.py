@@ -29,7 +29,7 @@ import anyio
 from .. import homes, metrics, prompts
 from ..conversations import store as conversations, tree
 from ..core.ids import now
-from ..skills import ToolContext, ToolResult, guide, tool, described
+from ..skills import ToolContext, ToolResult, guide, knob, tool, described
 from ..settings import her_models
 from ..skills import words
 from ..skills.gating import overrides_for
@@ -41,6 +41,13 @@ from ..core.event_types import AGENT_STATE
 MIN_NAME = 5
 MAX_NAME = 60
 MAX_WAIT = 600      # seconds `read` waits for a sub-agent at most
+# Settings, Advanced, read at use (cfg.r)
+KNOBS = (
+    knob("sub_agents.max_running", "Sub-agents at once", None, 1, 1000, 4,
+         "Per conversation; a start over it waits its turn."),
+    knob("sub_agents.cli_minutes", "Agent CLI time limit", "minutes", 1, 100_000, 120,
+         "One sub-agent that works through an agent CLI in its shellbox."),
+)
 
 
 async def model_for_sub_agent(store, parent_cid: str) -> dict:
@@ -97,8 +104,8 @@ class SubAgents:
                              "conversation. The name of one that is done gives it this "
                              "brief."],
         access: Annotated[Literal["read", "work"] | None,
-                          "read: it changes nothing (in a browser it opens and looks, "
-                          "and cannot act). work: it may write and act. Default: read, "
+                          "read: it changes nothing (in a browser it looks and "
+                          "scrolls, and cannot open or act). work: it may write and act. Default: read, "
                           "or work when you give a folder."] = None,
         folder: Annotated[str | None, "A notebook folder, such as agents/scout. It sees "
                                       "and writes only that folder."] = None,
@@ -127,7 +134,7 @@ class SubAgents:
                     f"are working, and it starts when one of them is done.")
         return ToolResult(content=f"{said} Its report comes here as a message.",
                           display={"name": row["name"], "conversation_id": sub,
-                                   "access": row["access"], "folder": row["folder"],
+                                   "link": row["link"], "access": row["access"], "folder": row["folder"],
                                    "model": row["model"], "cli": row["cli"],
                                    "resumed": resumed})
 
@@ -172,7 +179,7 @@ class SubAgents:
         else:
             lines.append("No report yet.")
         return ToolResult(content="\n".join(lines), display={
-            "name": sub["name"], "conversation_id": sub["id"],
+            "name": sub["name"], "conversation_id": sub["id"], "link": sub["link"],
             "state": state,
             # it read text others wrote: so does it now (guard/sources.py)
             **({"outside": True} if outside else {})})
@@ -190,7 +197,8 @@ class SubAgents:
             return refusal
         await self.stop_agent(sub["id"])
         return ToolResult(content=f"Stopped {sub['name']}.",
-                          display={"name": sub["name"], "conversation_id": sub["id"]})
+                          display={"name": sub["name"], "conversation_id": sub["id"],
+                                   "link": sub["link"]})
 
     async def _is_sub_agent(self, store, cid: str) -> bool:
         row = await store.read(lambda c: c.execute(
@@ -267,6 +275,8 @@ class SubAgents:
             if known is not None:
                 sub = known["id"]
             else:
+                if (refusal := await self._over_cap(store, parent, len(mine))):
+                    return None, refusal, False, None
                 if folder is not None:
                     folder, refusal = self._folder(folder, create=access == "work")
                     if refusal:
@@ -284,6 +294,17 @@ class SubAgents:
         metrics.SUB_AGENTS_STARTED.labels("cli" if (cli or (known or {}).get("cli"))
                                           else "model").inc()
         return sub, None, known is not None, int(sent["intercom_id"]) if sent else None
+
+    async def _over_cap(self, store, parent: str, started: int) -> str | None:
+        """The refusal when `parent` is a mission that started its Sub-agents per mission
+        (Settings, Advanced; 0 none) already, else None."""
+        cap = self.cfg.r("mission_max_sub_agents")
+        if not cap or started < cap or not await store.read(lambda c: c.execute(
+                "SELECT 1 FROM conversations WHERE id=? AND kind='mission'",
+                (parent,)).fetchone()):
+            return None
+        return (f"This mission has started its {cap} sub-agent{'' if cap == 1 else 's'}, "
+                f"the most it may. Give one that is done a new brief under its name.")
 
     async def stop_agent(self, sub: str) -> None:
         """Its turn, its jobs, the messages it scheduled that have not landed, and a
@@ -338,7 +359,7 @@ class SubAgents:
 
 def max_running(cfg) -> int:
     """How many sub-agents of one parent run at once; the others wait queued."""
-    return int(cfg.skill("sub_agents").get("max_running", 4))
+    return int(cfg.r("sub_agents.max_running"))
 
 
 def agents_of(c: sqlite3.Connection, parent: str | None = None, *,

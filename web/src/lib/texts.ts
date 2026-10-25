@@ -1,5 +1,5 @@
 /* History and Ask Celine for every long text. */
-import { json, query, request } from './api'
+import { json, query, request, requestLines } from './api'
 
 /** what a long text is, as `<kind>:<id>[:<field>]` ("her:persona", "her:talk", "note:4",
     "routine:radar:prompt") */
@@ -11,11 +11,11 @@ export type TextHistory = { versions: TextVersion[]; total: number; next: number
 /** GET /text-versions/{id} */
 export type TextVersionFull = TextVersion & { text: string }
 
-/** POST /text-drafts {of, prompt, text}: Celine writes a draft for that text; it comes
-    as events `texts.draft {id, text, done, error}` (the whole draft so far each time) */
+/** POST /text-drafts {of, prompt, text}: Celine writes a draft for that text; it streams
+    back on that request as lines: `{text}` what it added, then `{done, text, error}` with
+    the whole draft */
 type AskRequest = { of: TextOf; prompt: string; text: string }
-type AskStarted = { id: string }
-export type AskDraft = { id: string; text: string; done: boolean; error: string | null }
+export type AskDraft = { text: string; done?: true; error?: string | null }
 
 /** History and Ask Celine of every long text */
 export const textsApi = {
@@ -25,6 +25,7 @@ export const textsApi = {
   /** POST /text-versions/{id}/revert: that version is its persona, talk or voice again,
       saved at once as a new version (event her.changed) */
   revert: (id: number) => request<{ of: TextOf; text: string }>(`/text-versions/${id}/revert`, json('POST', {})),
-  /** its draft comes as events `texts.draft` with this id */
-  ask: (body: AskRequest) => request<AskStarted>('/text-drafts', json('POST', body)),
+  /** each line of its draft to `onDraft` as it streams; `signal` ends it */
+  ask: (body: AskRequest, onDraft: (d: AskDraft) => void, signal: AbortSignal) =>
+    requestLines('/text-drafts', { ...json('POST', body), signal }, d => onDraft(d as AskDraft)),
 }

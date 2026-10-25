@@ -30,11 +30,12 @@ The shellbox calls the app's model proxy on `CELINE_PORT` (default 8766): export
 
 ## Gates
 
-Every push passes all of these; the exit code is the check.
+Every push passes all of these; the exit code is the check. GitHub runs them on every push and pull request (`.github/workflows/test.yml`).
 
 ```sh
 uv run pytest -q                     # the app and the Discord connector, on fakes, in parallel
-cd web && npm ci && npm run build    # prebuild: useReveal check; then tsc and vite
+uv run ruff check                    # pyflakes and a few pycodestyle checks (pyproject.toml)
+cd web && npm ci && npm run build    # prebuild: useReveal check, eslint (hooks); then tsc and vite
 cd wa-link && go test ./...          # only when wa-link changed
 ```
 
@@ -61,7 +62,7 @@ Stored data changes one way: a numbered SQL migration, applied once, with the co
 3. Convert existing rows in the migration, never on read. A conversion SQL cannot do (files, settings TOML) is a one-time Python step that is deleted once everyone has run it.
 4. Never edit a migration that is released; fix forward.
 5. `tests/test_migrate.py` holds `LATEST`: set it to your number.
-6. Every other SQLite file has its own folder and the same runner (`db/migrate.py`, `migrate(path, dir)`, the version in the file's `PRAGMA user_version`): `db/migrations/log` (`var/log.db`, the append-only tables), `db/migrations/notebook` (`var/notebook/.index.db`, the notes' index; both attached to celine.db by the Store), `auth/migrations`, `kb/migrations/chat`, `kb/migrations/documents`. `0001` is the whole schema. A file with tables and no version, or a newer one, is refused. `migrate_all(db_path)` brings celine.db, log.db and the index up together; the app calls it at start.
+6. Every other SQLite file has its own folder and the same runner (`db/migrate.py`, `migrate(path, dir)`, the version in the file's `PRAGMA user_version`): `db/migrations/log` (`var/log.db`, the append-only tables), `db/migrations/notebook` (`var/notebook/.index.db`, the notes' index; both attached to celine.db by the Store), `auth/migrations`, `kb/migrations/chat`, `kb/migrations/documents`. `0001` is the whole schema. A file with tables and no version, or a newer one, is refused. `migrate_all(db_path)` brings celine.db, log.db and the index up together; the app calls it at start. Before it applies anything to a file with data, it copies the file to `<file>.pre-<version>.bak` beside it (`COPIES_KEPT` of them kept).
 
 ## Worktrees
 

@@ -40,7 +40,7 @@ type FormProps<T> = {
 }
 
 /** the form of a `setup` id; an id not here shows no form */
-export const FORMS: Record<string, (p: FormProps<any>) => ReactElement> = { // eslint-disable-line @typescript-eslint/no-explicit-any
+export const FORMS: Record<string, (p: FormProps<any>) => ReactElement> = {
   comfyui: ComfyuiForm, email: EmailForm, vault: VaultForm, search: SearchForm, guard: GuardForm, service: ServiceForm, address: AddressForm,
   routines: RoutinesForm,
 }

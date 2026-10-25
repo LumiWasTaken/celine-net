@@ -95,7 +95,7 @@ def deliver_idle_sync(c: sqlite3.Connection, store, cid: str) -> dict | None:
         return out
     origin = "user" if any(author_of(r) == "user" for r in rows) else "intercom"
     tid, out["seq"] = tree.queue_turn(c, store, cid, leaf, origin=origin)
-    # the turn that answers them: the bridge and a sub-agent's caller find it here
+    # the turn that answers them: a sub-agent's caller and the answer hook find it here
     c.execute(f"UPDATE intercom_deliveries SET turn_id=? WHERE conversation_id=? AND "
               f"intercom_id IN ({','.join('?' * len(landed))})", (tid, cid, *landed))
     out["turn_id"] = tid

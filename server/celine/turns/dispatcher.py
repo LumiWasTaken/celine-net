@@ -66,7 +66,7 @@ class Dispatcher:
     def on_end(self, fn) -> None:
         """`await fn(cid, turn_id)` after turn `turn_id` of conversation `cid` ended, and
         with `turn_id` None after one of its jobs ended (a sub-agent's report,
-        sub_agents/report.py; a bridged chat's answer, bridge/)."""
+        sub_agents/report.py)."""
         self._on_end.append(fn)
 
     async def ended(self, cid: str, turn_id: str | None = None) -> None:
@@ -283,56 +283,80 @@ class Dispatcher:
         self._wake = anyio.Event()
 
     async def _worker(self, worker_id: str) -> None:
+        """One worker for as long as the app runs. An error outside a turn (a store
+        error in the hold check or the claim) is logged and the worker looks again
+        later, as work.py's do: it never reaches the app's task group. A worker that
+        ends anyway outside a shutdown leaves its place, so resize starts another."""
         if self.ready is not None:
             with anyio.move_on_after(READY_SECONDS):
                 await self.ready.wait()
+        try:
+            while self._running:
+                try:
+                    if not await self._next(worker_id):
+                        return
+                except Exception:
+                    if self._stopping:
+                        return
+                    log.exception("worker loop failed",
+                                  extra={"event": "turn.worker_failed", "worker": worker_id})
+                    with anyio.move_on_after(HOLD_RECHECK):
+                        await self._wait_for_work()
+        finally:
+            if not self._stopping and worker_id in self._workers:
+                self._workers.remove(worker_id)
+
+    async def _next(self, worker_id: str) -> bool:
+        """One look for a turn, and the turn when there is one. -> False when the
+        worker ends (a shutdown)."""
         from ..guard.freeze import frozen
-        while self._running:
-            hold = await her_hold(self.store, self.llm)
-            if hold == "frozen":            # the unfreeze wakes them (notify)
-                await self._wait_for_work()
-                continue
-            if hold is not None:
-                await self._held()
-                continue
-            if self._workers.index(worker_id) >= self._cap():
-                await self._wait_for_work()
-                continue
-            try:
-                turn = await turns.claim(self.store, worker_id)
-                if turn is not None:
-                    # the token opens before the second look: a freeze after that look
-                    # finds it live and stops it (freeze._stop_all); the DB column seeds
-                    # it, covering the lease-to-start window
-                    token = self.tokens.open(turn["id"], bool(turn.get("abort_requested")))
-                    if await frozen(self.store) is not None:
-                        # frozen while it was claimed: back in the queue
-                        self.tokens.close(turn["id"])
-                        await turns.put_down(self.store, [worker_id], reason="frozen",
-                                             code="frozen")
-                        turn = None
-            except Exception:
-                if self._stopping:
-                    return
+        hold = await her_hold(self.store, self.llm)
+        if hold == "frozen":            # the unfreeze wakes them (notify)
+            await self._wait_for_work()
+            return True
+        if hold is not None:
+            await self._held()
+            return True
+        if self._workers.index(worker_id) >= self._cap():
+            await self._wait_for_work()
+            return True
+        turn = await turns.claim(self.store, worker_id)
+        if turn is None:
+            await self._wait_for_work()
+            return True
+        # the token opens before the second look: a freeze after that look finds it
+        # live and stops it (freeze._stop_all); the DB column seeds it, covering the
+        # lease-to-start window
+        token = self.tokens.open(turn["id"], bool(turn.get("abort_requested")))
+        try:
+            again = await frozen(self.store) is not None
+        except Exception:
+            # claimed, not run: back in the queue for the next look
+            self.tokens.close(turn["id"])
+            await turns.put_down(self.store, [worker_id])
+            raise
+        if again:
+            # frozen while it was claimed: back in the queue
+            self.tokens.close(turn["id"])
+            await turns.put_down(self.store, [worker_id], reason="frozen", code="frozen")
+            await self._wait_for_work()
+            return True
+        # another idle worker looks too: one notify may have queued several turns
+        self.notify()
+        if not self._running:          # claimed as the shutdown began
+            self.tokens.close(turn["id"])
+            await turns.put_down(self.store, [worker_id])
+            return False
+        try:
+            await self._run_one(turn, worker_id, token)
+        except Exception:
+            # the store closed under a turn during shutdown: it was put down already
+            if not self._stopping:
                 raise
-            if turn is None:
-                await self._wait_for_work()
-                continue
-            # another idle worker looks too: one notify may have queued several turns
-            self.notify()
-            if not self._running:          # claimed as the shutdown began
-                self.tokens.close(turn["id"])
-                await turns.put_down(self.store, [worker_id])
-                return
-            try:
-                await self._run_one(turn, worker_id, token)
-            except Exception:
-                # the store closed under a turn during shutdown: it was put down already
-                if not self._stopping:
-                    raise
-                log.info("turn left to the next start", extra={
-                    "event": "shutdown.turn_left", "turn": turn["id"]})
-                return
+            log.info("turn left to the next start", extra={
+                "event": "shutdown.turn_left", "turn": turn["id"]})
+            return False
+        return True
 
     async def _count(self, tid: str, origin: str, seconds: float) -> None:
         """A turn that ended: its outcome and its steps (the requests it sent)."""
@@ -397,7 +421,6 @@ class Dispatcher:
             # what reached the conversation after the turn's last step lands now
             await self.deliver_idle(cid)
             await self.ended(cid, turn["id"])
-            await conversations.prune_events(self.store, int(self.cfg.r("events_keep")), cid)
             # a work item: a title waits behind every turn in the model queue
             if not await conversations.title(self.store, cid):
                 await self.work.put("title", {"conversation_id": cid}, conversation_id=cid,

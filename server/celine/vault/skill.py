@@ -81,7 +81,8 @@ class VaultSkill:
     async def _ask(self, ctx: ToolContext, action: str, facts: list[str],
                    why: str, short: str = "") -> ToolResult | None:
         """The user's tap (celine/approvals.py): None when approved, else the result."""
-        no = await self.app.approvals.ask(action, facts, ctx.conversation_id, why, short)
+        no = await self.app.approvals.ask(action, facts, ctx.conversation_id, why, short,
+                                          call=ctx.tool_call_id or None)
         return None if no is None else self._bad(no)
 
     def _who(self, it: dict) -> str:

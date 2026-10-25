@@ -49,22 +49,17 @@ func (fakeNames) Contact(jid string) (string, string, string, string) {
 	return "", "", "", ""
 }
 
-// sendLog: every send any code path made, through the three fakes.
+// sendLog: every send any code path made, through the two fakes.
 type sendLog struct {
 	mu      sync.Mutex
 	history []*waE2E.Message
 	retries []*types.MessageInfo
-	texts   []struct {
-		to  types.JID
-		msg *waE2E.Message
-		id  string
-	}
 }
 
-func (l *sendLog) kinds() (int, int, int) {
+func (l *sendLog) kinds() (int, int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.history), len(l.retries), len(l.texts)
+	return len(l.history), len(l.retries)
 }
 
 var clients = map[string]Client{
@@ -83,10 +78,7 @@ func setup(t *testing.T) *sendLog {
 	}
 	t.Cleanup(func() { jr.Close(); lock.Close() })
 	norm = NewNormalizer(fakeNames{}, emit)
-	lease = Lease{}
-	clock = time.Now
 	historyLast = time.Time{}
-	servers = map[string]*mcp.Server{}
 	status = Status{State: "connected", Since: now()}
 	log := &sendLog{}
 	isConnected = func() bool { return true }
@@ -102,18 +94,6 @@ func setup(t *testing.T) *sendLog {
 	retrySend = func(_ context.Context, info *types.MessageInfo, _ []byte) error {
 		log.mu.Lock()
 		log.retries = append(log.retries, info)
-		log.mu.Unlock()
-		return nil
-	}
-	n := 0
-	newID = func() string { n++; return "SENT" + string(rune('0'+n)) }
-	chatSend = func(_ context.Context, to types.JID, m *waE2E.Message, id string) error {
-		log.mu.Lock()
-		log.texts = append(log.texts, struct {
-			to  types.JID
-			msg *waE2E.Message
-			id  string
-		}{to, m, id})
 		log.mu.Unlock()
 		return nil
 	}

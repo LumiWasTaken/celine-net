@@ -11,7 +11,9 @@ its row; from then on you edit them in the onboarding or on the agent's page, an
 are only the seed for a new install. `config/her/owner.md` (its notebook rules) is
 appended to every persona.
 
-Placeholders, filled when a request is built and never stored filled:
+Placeholders, filled when a request is built and never stored filled. What you type is
+stored exactly as typed: a name written out stays that name, a placeholder you write
+follows a rename.
 
 | Placeholder | Becomes |
 |---|---|
@@ -36,6 +38,18 @@ The time limits and sizes (turns at once, tool, job and turn time limits, messag
 request, what is kept, attachment sizes) are Settings, Advanced, saved in
 `var/settings/general.toml` and applied at once. `config/celine.toml` holds only how the
 app is served (host, port, login, the data folder) and is read at start.
+
+Below the app's own, each skill's numbers have a section under the skill's name: Web
+(search results, time limits, the largest page and PDF in MB), Messages (result lengths,
+reranking), Notebook (the index in every prompt), Past conversations, Code, Sub-agents.
+Each skill declares them beside its code, so a skill you remove takes its section with
+it. `general.toml` keeps them in a table per skill:
+
+```toml
+[web]
+results = 10
+pdf_max_mb = 50
+```
 
 ## Routines
 
@@ -83,8 +97,8 @@ in `docker-compose.yml` under the `celine` service's `volumes`:
 ## Features
 
 Settings, Features (or `var/settings/features.toml`, `shellbox = false`). A feature not
-named is on, but Shares, which is on only once saved on (`shares = true`); switching it on
-asks first, with what a share's link gives whoever holds it. The onboarding shows a card
+named is on, but Shares and Guard, which are on only once saved on (`shares = true`,
+`guard = true`); switching Shares on asks first, with what a share's link gives whoever holds it. The onboarding shows a card
 for every feature whose service answers, and always for Shares, Discord, WhatsApp (their
 card says how to run the connector), Guard and Routines (switch each routine on or off and set its time). Off means its skills are not built, and for the connectors and services
 they are stopped at once: a switch, or a changed address in Settings, Features, is live
@@ -117,13 +131,16 @@ in `.env`.
 ## Skills and MCP
 
 `config/skills.toml` has one section per built-in skill, such as `[shell]`, with
-`enabled = true` or `false` as the global default (a conversation can override it).
+`enabled = true` or `false` as the global default (a conversation can override it), and
+nothing else: a skill's numbers are on Settings, Advanced. A skill whose module (or
+folder) is removed is skipped: no tools, no Advanced section, and its saved numbers are
+dropped.
 
 `[code]` is its coding agent: a coding agent server in its shellbox (opencode by default;
 the box picks the backend with the `CODING_AGENT` environment variable, one module in
 `shellbox/agents/`) that works on a folder of its own in the background with a model it
-picks from the ones you allow it. `poll_seconds` is how long it waits between two
-looks at a session, `result_chars` how much of its answer it reads. It is part of the
+picks from the ones you allow it. Settings, Advanced, Code: how long it waits between two
+looks at a session, how much of its answer it reads. It is part of the
 Shellbox feature: off with it.
 `config/mcp.toml` adds MCP servers; each becomes a skill named after its key:
 

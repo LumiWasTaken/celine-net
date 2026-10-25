@@ -128,7 +128,7 @@ function TerminalsList() {
 
   const menu = (t: TerminalRow): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => nav.go({ section: 'terminals', terminal: t.id }) },
-    ...(t.conversation && !isYours(t) ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: t.conversation!.id }) }] : []),
+    ...(t.conversation && !isYours(t) ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
     ...(!t.ended_at && !isYours(t) && stateWord(t) === 'Running'
       ? [{ label: 'Stop', icon: CircleStop, detail: t.live?.program ?? undefined, onSelect: () => void act.run(() => terminalsApi.control(t.id, 'stop')) }] : []),
     'sep',
@@ -280,7 +280,7 @@ function Commands({ mission }: { mission?: string }) {
   ])
   const menu = (c: CommandRow): MenuItem[] => [
     ...(c.terminal.id ? [{ label: 'Open terminal', icon: SquareTerminal, onSelect: () => nav.go({ section: 'terminals', terminal: c.terminal.id! }) }] : []),
-    ...(c.from.conversation_id ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: c.from.conversation_id! }) }] : []),
+    ...(c.from.link ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(c.from.link!) }] : []),
     ...(c.from.kind !== 'you' && c.terminal.id ? [{ label: 'Reply', icon: CornerUpLeft, onSelect: () => nav.go({ section: 'terminals', terminal: c.terminal.id!, reply: c.id }) }] : []),
     { label: 'Copy', icon: Copy, onSelect: () => copied(c.text) },
   ]
@@ -341,8 +341,8 @@ export function CommandDialog({ c, onClose, onReply }: {
   return (
     <Dialog size="lg" title={c.terminal.name} onClose={onClose}
             actions={<>
-              {c.from.conversation_id && (
-                <Button href={format({ section: 'celine', conversation: c.from.conversation_id })}>Open conversation</Button>
+              {c.from.link && (
+                <Button href={c.from.link}>Open conversation</Button>
               )}
               {!onReply && tid && <Button href={format({ section: 'terminals', terminal: tid })}>Open terminal</Button>}
               {reply && (onReply

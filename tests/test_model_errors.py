@@ -10,7 +10,7 @@ import json
 import httpx
 import pytest
 
-from celine.backends.base import BackendError, TextDelta
+from celine.backends.base import BackendError, Done, TextDelta, ToolCallDelta
 from celine.backends.ollama import OllamaBackend
 from celine.backends.openai import OpenAIBackend
 from celine.config import BackendConfig
@@ -105,6 +105,43 @@ async def test_a_broken_chunk_fails_the_call_instead_of_going_missing(monkeypatc
     b = _backend(monkeypatch, lambda r: httpx.Response(
         200, text='data: {"choices": [{"delta": {"content": "a"}}]}\n\ndata: {cut\n\n'))
     assert str(await _fails(b)) == "llama-swap sent a reply chunk that is not JSON."
+
+
+def _chunks(*chunks) -> str:
+    return "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+
+
+async def test_null_fields_in_a_chunk_read_as_absent(monkeypatch):
+    """An OpenAI-compatible server that sends null for usage counts, choices or a tool
+    call's index: the reply is read, nothing fails on the null."""
+    b = _backend(monkeypatch, lambda r: httpx.Response(200, text=_chunks(
+        {"choices": None},
+        {"choices": [{"delta": {"content": "hi"}}]},
+        {"choices": [{"delta": {"tool_calls": [{"index": None, "id": "a", "function": {
+            "name": "f", "arguments": "{}"}}]}, "finish_reason": "tool_calls"}]},
+        {"choices": [], "usage": {"prompt_tokens": None, "completion_tokens": 3}})))
+    evs = [ev async for ev in b.stream([{"role": "user", "content": "hi"}], [])]
+    assert [e.text for e in evs if isinstance(e, TextDelta)] == ["hi"]
+    calls = [e for e in evs if isinstance(e, ToolCallDelta)]
+    assert [(c.index, c.name) for c in calls] == [(0, "f")]
+    done = evs[-1]
+    assert isinstance(done, Done) and done.reason == "tool_calls"
+    assert (done.usage.input_tokens, done.usage.output_tokens) == (0, 3)
+
+
+async def test_parallel_calls_without_an_index_stay_apart(monkeypatch):
+    """A server that leaves out the index: each call that starts (its id, its name) gets
+    the next one; a delta without either continues the call before it."""
+    def call(**tc):
+        return {"choices": [{"delta": {"tool_calls": [tc]}}]}
+    b = _backend(monkeypatch, lambda r: httpx.Response(200, text=_chunks(
+        call(id="a", function={"name": "f", "arguments": '{"x":'}),
+        call(function={"arguments": " 1}"}),
+        call(id="b", function={"name": "g", "arguments": "{}"}),
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]})))
+    evs = [ev async for ev in b.stream([{"role": "user", "content": "hi"}], [])]
+    calls = [(e.index, e.name, e.arguments) for e in evs if isinstance(e, ToolCallDelta)]
+    assert calls == [(0, "f", '{"x":'), (0, None, " 1}"), (1, "g", "{}")]
 
 
 NATIVE_OVERFLOW = json.dumps({"error": json.dumps({"error": {

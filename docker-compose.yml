@@ -91,8 +91,10 @@ services:
       # its models through the app (OPENAI_BASE_URL and OPENAI_API_KEY in its terminals):
       # the proxy's own key (mounted below), never a provider's
       SHELLBOX_LLM_URL: http://celine:8766/llm
-      # its home's size in GB: past it it is told so (DEPLOY.md "Shellbox"); empty: none
-      SHELLBOX_HOME_GB: ${SHELLBOX_HOME_GB:-}
+      # its home's caps in GB (DEPLOY.md "Shellbox"): past the soft one it is told so,
+      # past the hard one no upload lands; hard empty: 50, soft empty: 90% of the hard
+      SHELLBOX_HOME_GB: ${SHELLBOX_HOME_GB:-50}
+      SHELLBOX_HOME_SOFT_GB: ${SHELLBOX_HOME_SOFT_GB:-}
       # the hour of the morning reset, for its greeting (shellbox-manager resets it)
       SHELLBOX_RESET_AT: &reset-at ${SHELLBOX_RESET_AT:-04:00}
       TZ: ${TZ:-UTC}
@@ -199,6 +201,8 @@ services:
     environment:
       # a host folder for its home's snapshots (DEPLOY.md "Shellbox"); empty: beside its home
       SHELLBOX_SNAPSHOTS: ${SHELLBOX_SNAPSHOTS:-}
+      # days a snapshot is kept; 0 keeps every one
+      SHELLBOX_SNAPSHOT_KEEP_DAYS: ${SHELLBOX_SNAPSHOT_KEEP_DAYS:-7}
       # the hour of the reset, HH:MM in TZ
       SHELLBOX_RESET_AT: *reset-at
       TZ: ${TZ:-UTC}
@@ -250,6 +254,8 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ:-UTC}
+      # the largest attachment it downloads for the app, in MB (held in memory whole)
+      WA_LINK_MAX_MEDIA_MB: ${WA_LINK_MAX_MEDIA_MB:-100}
     volumes:
       - type: volume
         source: data
@@ -265,6 +271,8 @@ services:
           subpath: app/keys/connector-clients
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # a large history sync or attachment can't take the machine down with it
+    mem_limit: ${WA_LINK_MEM_LIMIT:-2g}
 
   # The reranker for archive search: bge-reranker-v2-m3 on llama.cpp's llama-server
   # (POST /v1/rerank). Optional: it starts only with the profile "reranker"

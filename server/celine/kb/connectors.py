@@ -91,11 +91,6 @@ def _json(r: httpx.Response) -> Any:
         return {}
 
 
-def _marker(name: str) -> str:
-    """WhatsApp: what its messages start with by default."""
-    return f"{name}: "
-
-
 def base_url(url: str) -> str:
     url = url.rstrip("/")
     return url.removesuffix("/mcp")
@@ -112,10 +107,8 @@ class Connector:
         self._transport = transport
         self._sync_transport = sync_transport
         self.status: dict[str, Any] | None = None
-        self.info: dict[str, Any] | None = None
         self.down_since: int | None = None
         self.refused: str | None = None
-        self.on_batch: Callable[[Applied], None] | None = None
         self.changed: Callable[[], None] | None = None       # kb.changed, throttled
         self.lost_at: int | None = kb.file.get_json("login_lost_at")
         self.feed_fails = 0                 # feeds in a row that did not end done
@@ -211,13 +204,11 @@ class Connector:
 
     def _applied(self, applied: Applied) -> None:
         """After each feed batch: copy the files its messages carry, tell open pages
-        when the archive changed, then hand the batch on (the bridge)."""
+        when the archive changed."""
         self.pull_files(applied)
         if self.changed is not None and (applied.messages or applied.edits
                                          or applied.deleted):
             self.changed()
-        if self.on_batch is not None:
-            self.on_batch(applied)
 
     # ---- state -------------------------------------------------------------------------
     def connection(self) -> dict[str, Any]:
@@ -230,17 +221,16 @@ class Connector:
         return dict(self.status.get("connection") or {})
 
     async def poll(self) -> bool:
-        """Status and info from the connector. True when the connection record changed."""
+        """The status from the connector. True when the connection record changed."""
         before = self.connection()
         try:
             code, status = await self.request("GET", "/admin/status", timeout=5.0)
-            code2, info = await self.request("GET", "/admin/info", timeout=5.0)
-            if 401 in (code, code2):
+            if code == 401:
                 raise Unreachable(f"The {self.title} connection does not know this app's key "
                                   f"(its clients file is not the app's keys/connector-clients).")
-            if code != 200 or code2 != 200:
+            if code != 200:
                 raise Unreachable(self._down())
-            self.status, self.info, self.down_since = status, info, None
+            self.status, self.down_since = status, None
             self.refused = None
         except Unreachable as e:
             if self.status is not None or self.down_since is None:
@@ -252,25 +242,6 @@ class Connector:
             await anyio.to_thread.run_sync(self._note_login)
         return (before.get("state"), before.get("error"), lost) != \
             (after.get("state"), after.get("error"), self.lost_at)
-
-    async def follow_name(self, name: str) -> None:
-        """A connector with a marker (WhatsApp): its messages start with its name as it
-        is now ("Mira: "), until the user sets a marker of their own (kv marker_own, set
-        by PUT .../bridge)."""
-        if "marker" not in (self.info or {}):
-            return
-        want = _marker(name)
-        if self.info.get("marker") == want or \
-                await anyio.to_thread.run_sync(self.kb.file.get_json, "marker_own"):
-            return
-        code, info = await self.request("PUT", "/admin/bridge", {"marker": want})
-        if code == 200:
-            self.info = info
-
-    def own_marker(self, marker: str, name: str) -> None:
-        """The user set `marker`: their own unless it is its name's."""
-        self.kb.file.set_json("marker_own", True if marker.strip() != _marker(name).strip()
-                              else None)
 
     def _note_login(self) -> None:
         state = self.connection().get("state")
@@ -428,7 +399,6 @@ class Connectors:
                             "state": conn.get("state"), "error": conn.get("error")})
                         self.publish({"type": SOURCE_STATE, "kb": c.kb.id,
                                       "connection": conn, "login_lost_at": c.lost_at})
-                    await c.follow_name(self.cfg.name)
                     self._feed(c)
                 except Exception:
                     log.exception("connector check failed")

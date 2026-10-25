@@ -219,7 +219,7 @@ async def test_a_moment_before_noon_is_that_dates_night_from_noon_the_next(store
 class Hanging(FakeBackend):
     async def stream(self, messages, tools, body=None):
         await anyio.sleep_forever()
-        yield  # noqa: unreachable - a generator
+        yield  # unreachable: makes this a generator
 
 
 async def test_stop_ends_a_waiting_run_and_aborts_a_running_one(
@@ -268,7 +268,7 @@ async def _idle(sched) -> bool:
 class Failing(FakeBackend):
     async def stream(self, messages, tools, body=None):
         raise BackendError("the model broke")
-        yield  # noqa: unreachable - a generator
+        yield  # unreachable: makes this a generator
 
 
 async def test_a_model_error_fails_the_run_once(store, cfg):
@@ -691,3 +691,73 @@ async def test_a_stop_of_a_turn_that_never_ran_still_tells_its_end(store, cfg):
     _, tid, _ = await user_says(store, cid, "go")
     assert await d.abort_conversation(cid) == tid
     assert heard == [(cid, tid)]
+
+
+async def test_a_run_stopped_before_it_begins_stays_stopped_and_nothing_takes_the_app_down(
+        store, cfg):
+    """The scheduler's `running` write only takes a run still waiting or running: a Stop
+    that landed between the run's start and that write leaves no zombie row, and a
+    second running run fails instead of raising into the lifespan."""
+    cfg.schedules = {"world": _s("world"), "other": _s("other")}
+    app = _app(store, cfg, FakeBackend(echo=True))
+    sched = Scheduler(app, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)))
+    run = await sched.run_now("world")
+    stale = await store.read(lambda c: dict(c.execute(
+        "SELECT * FROM runs WHERE id = ?", (run["id"],)).fetchone()))
+    await sched.end(run["id"], "stopped", "Stopped by Joe")
+    with anyio.move_on_after(3):          # a run taken anyway waits for a turn forever
+        await sched._run_as(run["id"], stale)
+    [row] = await _runs(store)
+    assert row["state"] == "stopped", "no running row without a task"
+
+    other = await sched.run_now("other")
+    await store.write(lambda c: c.execute(
+        "UPDATE runs SET state = 'running' WHERE id = ?", (run["id"],)))
+    taken = await store.read(lambda c: dict(c.execute(
+        "SELECT * FROM runs WHERE id = ?", (other["id"],)).fetchone()))
+    with anyio.fail_after(3):
+        await sched._run_as(other["id"], taken)
+    got = await store.read(lambda c: c.execute(
+        "SELECT state FROM runs WHERE id = ?", (other["id"],)).fetchone()[0])
+    assert got == "failed", "one running run at most, and no exception"
+
+
+class HangsOnce(FakeBackend):
+    """The first call waits until it is stopped; every later one answers."""
+
+    def __init__(self):
+        super().__init__(echo=True)
+        self.hung = False
+
+    async def stream(self, messages, tools, body=None):
+        if not self.hung:
+            self.hung = True
+            await anyio.sleep_forever()
+        async for ev in super().stream(messages, tools, body):
+            yield ev
+
+
+async def test_a_freeze_leaves_the_run_in_flight_waiting_and_the_unfreeze_runs_it_on(
+        store, cfg):
+    from celine.guard import freeze
+    from test_bastet import OWNER
+    cfg.schedules = {"world": _s("world")}
+    backend = HangsOnce()
+    app = _app(store, cfg, backend)
+    async with _scheduler(store, cfg, app, backend,
+                          Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))) as sched:
+        run = await sched.run_now("world")
+        await sched.tick()
+        await until(lambda: backend.hung)          # its turn streams
+        await freeze.freeze(app, by="user", why="a test")
+        await until(lambda: _state(store, run["id"], "waiting"))
+        await until(lambda: _idle(sched))
+        await sched.tick()
+        [row] = await _runs(store)
+        assert (row["state"], row["reason"]) == ("waiting", runs_mod.FROZEN), \
+            "it waits, not failed, and does not start while frozen"
+        await freeze.unfreeze(app, by=OWNER)
+        await sched.tick()
+        await until(lambda: _state(store, run["id"], "done"))
+    [row] = await _runs(store)
+    assert await _turns(store, row["conversation_id"]) == 1, "the cut turn went on"

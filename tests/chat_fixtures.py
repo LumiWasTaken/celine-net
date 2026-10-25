@@ -79,11 +79,16 @@ class Scripted(FakeBackend):
         super().__init__()
         self.tools, self.crash_on_reply, self.replies = tools, crash_on_reply, 0
 
-    async def stream(self, messages, tools):
+    def stream(self, messages, tools):
         self.calls.append(messages)
         self.replies += 1
         if self.crash_on_reply == self.replies:
-            raise RuntimeError("process died here")      # not a BackendError
+            # as the request goes out, outside the adapter's events (an error in them
+            # fails the turn, turns/runner.py): nothing in the turn catches it
+            raise RuntimeError("process died here")
+        return self._reply(messages)
+
+    async def _reply(self, messages):
         seen = sum(1 for m in messages if m.get("role") == "tool")
         if seen < len(self.tools):
             name, args = (self.tools[seen] if isinstance(self.tools[seen], tuple)

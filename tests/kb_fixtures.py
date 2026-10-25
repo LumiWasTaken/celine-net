@@ -137,7 +137,7 @@ def embed_cfg(model="fake", **extra):
                                                      "caps": ["embeddings"]}}}},
                  roles={"embeddings": {"chain": [f"p/{model}"]}})
     return SimpleNamespace(embeddings={"batch": 3, "dims": 64, "workers": 2, **extra},
-                           settings=s, skills={})
+                           settings=s, skills={}, r=s.value)
 
 
 H = 3_600_000
@@ -195,13 +195,14 @@ class WordReranker:
         return [float(sum(w in d.casefold() for w in words)) - 0.5 for d in docs]
 
 
-def archive_skill(monkeypatch, kbs, **extra):
+def archive_skill(monkeypatch, kbs):
     from celine.core.services import Services
     from celine.kb.retrieve import rerank
+    from celine.settings import general
     from celine.skills.archive import ChatArchive
     monkeypatch.setattr(rerank, "from_config", lambda cfg: WordReranker())
-    cfg = SimpleNamespace(user="sam", skill=lambda n: extra, substitute=lambda s: s,
-                          embeddings={}, settings=None)
+    cfg = SimpleNamespace(user="sam", substitute=lambda s: s, embeddings={}, settings=None,
+                          r=lambda key: general.value({}, key))
     skill = ChatArchive(cfg)
     skill.app = Services(kbs=kbs)
     monkeypatch.setattr(skill, "_embedder", lambda: (None, "", None))

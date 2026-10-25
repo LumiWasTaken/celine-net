@@ -326,7 +326,7 @@ One height for every field, a hairline edge, a halo on focus.
 | `PinInput` | a PIN, one box per digit: typing moves on, Backspace goes back, a paste fills from the first box, digits only | `value`, `onChange`, `length` (8), `label`, `invalid`, `autoFocus`, `disabled` |
 | `InlineEdit` | rename in place | `value`, `label`, `onSave`, `onCancel` |
 
-Don't: use a dropdown `<select>`; put a hint line under a field; build a field by hand.
+Don't: use a dropdown `<select>` (a dropdown only for a list that can run to hundreds of entries, such as a provider's models); put a hint line under a field; build a field by hand.
 
 ## Feedback and state
 
@@ -366,8 +366,7 @@ in it, the scrim, Escape and its X.
 **Don't:** make it a list pane (a place's list is its page); hand-build a sidebar.
 
 ### Message
-**When:** every message of a conversation: Celine's chat, an Intercom thread, a bridged
-chat.
+**When:** every message of a conversation: Celine's chat, an Intercom thread.
 **Props:** `mine`, `face`, `name`, `head` (beside the name: to whom), `before` (pictures and files above the text),
 children (the text), `time`, `versions` (`at`, `total`, `onPrev`, `onNext`), `actions` (the
 caller's buttons), `menu` (its "..." and right-click), `source` (where it came from, always

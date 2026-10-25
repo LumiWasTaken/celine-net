@@ -164,7 +164,7 @@ function MenuBox({ anchor, items, onClose, align, label, inline, search, q, setQ
     // keeps it on the button; with a search its width stays while you type
     setPos({ left, ...up ? { bottom: window.innerHeight - top - height } : { top }, maxHeight,
              width: search ? width : undefined, transformOrigin: up ? `${ox}px 100%` : `${ox}px ${oy}px` })
-  }, [anchor, align])
+  }, [anchor, align]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (inline) return
@@ -176,15 +176,19 @@ function MenuBox({ anchor, items, onClose, align, label, inline, search, q, setQ
       closeRef.current()
     }
     const onBlur = () => closeRef.current()
+    // a new width moves its button away; a new height alone is the on-screen keyboard
+    // (its search field raised it), which leaves the menu where it is
+    const wide = window.innerWidth
+    const onResize = () => { if (window.innerWidth !== wide) closeRef.current() }
     document.addEventListener('mousedown', onDown, true)
     window.addEventListener('blur', onBlur)
-    window.addEventListener('resize', onBlur)
+    window.addEventListener('resize', onResize)
     return () => {
       document.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('blur', onBlur)
-      window.removeEventListener('resize', onBlur)
+      window.removeEventListener('resize', onResize)
     }
-  }, [anchor, inline])
+  }, [anchor, inline]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = (refocus: boolean) => {
     onClose()

@@ -3,11 +3,14 @@
    title moves into data-tip, so the browser's own tooltip never shows), so every view gets
    the same tips without changes. After --tip-delay on hover, at once on keyboard focus and
    within --tip-skip of the last one; one at a time; pointer down, Escape and scrolling hide
-   it. A disabled kit button is aria-disabled, so the reason in its tip still shows.
+   it. A touch screen has no hover: a long press on an icon button (or a head's button that
+   lost its words) shows its tip, and the tap that ends the press does nothing else (a
+   row's long press is its menu, so not in a row). A disabled kit button is aria-disabled, so the reason in its tip still shows.
    Text: starts with a verb, about 70 characters at most. */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { leave, ms, OUT, useLeave } from './motion'
+import { LONG_PRESS_MS } from './phone'
 
 /** the text a control's tip shows; a title becomes its data-tip (and its name, when it had no other) */
 function adopt(el: HTMLElement): string | null {
@@ -34,6 +37,8 @@ export function TipLayer() {
     let timer = 0
     let hiddenAt = -Infinity
     let at: HTMLElement | null = null
+    let press = 0                          // a finger resting on an icon button
+    let held: HTMLElement | null = null    // the one whose tip a long press showed
     const hide = () => {
       clearTimeout(timer)
       if (at) { at.removeAttribute('aria-describedby'); hiddenAt = performance.now() }
@@ -64,10 +69,28 @@ export function TipLayer() {
       const el = find(e.target)
       if (el && el.matches(':focus-visible')) { if (at) hide(); open(el, true) }
     }
+    const down = (e: PointerEvent) => {
+      hide()
+      clearTimeout(press)
+      held = null
+      if (e.pointerType !== 'touch') return
+      const el = find(e.target)
+      if (!el || !el.matches('.btn--icon, [data-tip-words]') || el.closest('.list-row')) return
+      press = window.setTimeout(() => { held = el; open(el, true) }, LONG_PRESS_MS)
+    }
+    const lift = () => clearTimeout(press)
+    // the tap that ends a long press only showed the tip
+    const click = (e: MouseEvent) => {
+      if (held && e.target instanceof Node && held.contains(e.target)) { e.preventDefault(); e.stopPropagation() }
+      held = null
+    }
     const blur = (e: FocusEvent) => { if (at && at === e.target) hide() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && at) hide() }
+    const key = (e: KeyboardEvent) => { held = null; if (e.key === 'Escape' && at) hide() }
     document.addEventListener('pointerover', over, true)
-    document.addEventListener('pointerdown', hide, true)
+    document.addEventListener('pointerdown', down, true)
+    document.addEventListener('pointerup', lift, true)
+    document.addEventListener('pointercancel', lift, true)
+    document.addEventListener('click', click, true)
     document.addEventListener('focusin', focus, true)
     document.addEventListener('focusout', blur, true)
     document.addEventListener('keydown', key, true)
@@ -75,8 +98,12 @@ export function TipLayer() {
     window.addEventListener('blur', hide)
     return () => {
       clearTimeout(timer)
+      clearTimeout(press)
       document.removeEventListener('pointerover', over, true)
-      document.removeEventListener('pointerdown', hide, true)
+      document.removeEventListener('pointerdown', down, true)
+      document.removeEventListener('pointerup', lift, true)
+      document.removeEventListener('pointercancel', lift, true)
+      document.removeEventListener('click', click, true)
       document.removeEventListener('focusin', focus, true)
       document.removeEventListener('focusout', blur, true)
       document.removeEventListener('keydown', key, true)

@@ -61,7 +61,7 @@ export type ViewContext = {
   active: boolean
   status: ConfigStatus | null
   name: string
-  /** its place's own: the list beside the chat, the lost logins, what each place has going on */
+  /** its place's own: the list beside the chat, what each place has going on */
   celine: Omit<ComponentProps<typeof Celine>, 'active' | 'status'>
   /** the terminal the Terminals section shows (none: the list), and the text Reply quotes */
   terminal: string | undefined

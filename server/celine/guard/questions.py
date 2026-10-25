@@ -30,6 +30,8 @@ from typing import Awaitable, Callable
 
 from . import caps, prompts
 from .bastet import KINDS
+from .facts import found_text
+from .mark import unclosed
 from .small_role import complete, parse_json
 from .trigger import strings
 from .verdict import confirm
@@ -72,8 +74,7 @@ def call_state(call: dict, sink: str, her: str, found: dict) -> dict:
                      f"{f['what']}); this call has the same {f['same']}")
     # what code flagged in the command stays in what the judge reads, and so in the
     # evidence its quote is held to
-    keep = tuple(found[r]["fact"].removeprefix("the command has ")
-                 for r in ("escape", "damage") if r in found)
+    keep = tuple(found_text(found[r]["fact"]) for r in ("escape", "damage") if r in found)
     return {"intent": her, "call": {"tool": call["name"],
                                     "what": " ".join(str(call.get("description") or "")
                                                      .split("\n")[0].split())[:200],
@@ -92,8 +93,9 @@ def render(cfg, state: dict) -> str:
     """The state as text: a page (the page check), a finished turn (the patrol), else
     one call."""
     if "page" in state:
-        return cfg.substitute(prompts.text("page"), braces=True).format(source=state.get("source") or "outside",
-                                           page=state["page"])
+        # the page cannot close its <text> tag (page.md) and answer in its place
+        return cfg.substitute(prompts.text("page"), braces=True).format(
+            source=state.get("source") or "outside", page=unclosed(state["page"], "text"))
     if "steps" in state:
         return cfg.substitute(prompts.text("patrol"), braces=True).format(
             intent=caps.tail(state.get("intent") or "(none)", caps.INTENT),

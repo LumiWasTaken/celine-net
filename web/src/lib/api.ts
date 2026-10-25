@@ -1,7 +1,7 @@
 import type { GuardBanner } from './guard'
 import type { Her } from './her'
 import { reportApi } from './health'
-import type { ConversationSettings, Feature } from './settingsApi'
+import type { ChatApproval, ConversationSettings, Feature } from './settingsApi'
 import type { Kind } from './intercom'
 import type { BulkResult } from '../ui'
 
@@ -22,8 +22,8 @@ export type ConfigStatus = {
   catalog: Feature[]
   /** the onboarding finished (the features were saved once) */
   setup: boolean
-  /** this build: its commit, and when it was built (null: unknown) */
-  build: { commit: string; built: string | null }
+  /** this build: its commit, when it was built (null: unknown) and its code (the repository at that commit) */
+  build: { commit: string; built: string | null; source: string }
   /** the vault is set up and locked */
   vault_locked: boolean
 }
@@ -72,8 +72,6 @@ export type ConversationSummary = {
   /** GET /conversations: its turn in it, running with the server's step words ('' while it
       writes), waiting for you, or how the last turn ended when it failed or paused */
   state?: { tone: 'running' | 'error' | 'warn'; words: string } | null
-  /** GET /conversations: whatsapp for a bridged chat, else null */
-  source?: string | null
   /** GET /conversations: where it lives and the path that opens it, the server's (homes.py) */
   home?: Home
   link?: string
@@ -128,6 +126,31 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return settle(0, '')
   }
   return settle(res.status, await res.text().catch(() => ''))
+}
+
+/* An answer that streams as lines of JSON (POST /text-drafts): each line to `onLine` as it
+   lands. Before the first, the same errors as request(); a stream cut midway throws. */
+export async function requestLines(path: string, init: RequestInit,
+                                   onLine: (line: unknown) => void): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    return settle(0, '')
+  }
+  if (!res.ok || !res.body) return settle(res.status, await res.text().catch(() => ''))
+  reportApi(res.status)
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let rest = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    const lines = (rest + value).split('\n')
+    rest = lines.pop() ?? ''
+    for (const line of lines) if (line.trim()) onLine(JSON.parse(line))
+  }
+  if (rest.trim()) onLine(JSON.parse(rest))
 }
 
 /** a POST or a DELETE with no body */
@@ -493,6 +516,8 @@ export type Snapshot = {
   image_notices: ImageNotice[]
   /** Bastet's banners (lib/guard.ts) */
   guard: GuardBanner[]
+  /** her requests that wait for you here, after the messages that made their calls */
+  approvals: ChatApproval[]
   /** its plan here (event plan.state), null when it has none */
   plan: Plan | null
   seq: number

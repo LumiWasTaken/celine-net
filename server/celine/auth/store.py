@@ -31,7 +31,10 @@ MIGRATIONS = Path(__file__).parent / "migrations"
 
 SESSION_IDLE = 30 * 86400        # a session ends 30 days after it was last used
 SESSION_MAX = 90 * 86400         # and 90 days after the login, whatever happens
+PROOF_SECONDS = 300              # a proof (a login, or /api/auth/reauth) opens what needs
+                                 # one for 5 minutes in its session
 SESSION_REFRESH = 3600           # the sliding expiry moves at most once an hour
+USER_AGENT_MAX = 200             # characters of a browser's user agent kept with its session
 
 FREE_TRIES = 5                   # wrong tries of one kind before its lock
 FIRST_LOCK = 6 * 3600            # the first lock: 6 hours
@@ -52,12 +55,19 @@ def token_hash(token: str) -> bytes:
 
 @dataclass
 class Session:
+    id: int
     token_hash: bytes
     passkey_id: bytes | None        # one of the two: what the login used
     credential_id: int | None
+    user_agent: str
     created_at: int
-    refreshed_at: int
+    refreshed_at: int               # also when it was last seen (to the hour)
     expires_at: int
+    proved_at: int                  # its login or its last /api/auth/reauth (0: none)
+
+
+_SESSION = ("SELECT id, token_hash, passkey_id, credential_id, user_agent, created_at, "
+            "refreshed_at, expires_at, proved_at FROM sessions")
 
 
 class AuthStore:
@@ -148,21 +158,22 @@ class AuthStore:
         return self._x("DELETE FROM credentials WHERE id = ?", (rid,)) > 0
 
     # ---- sessions ---------------------------------------------------------------------
-    def new_session(self, passkey: bytes | None = None, credential: int | None = None) -> str:
+    def new_session(self, passkey: bytes | None = None, credential: int | None = None,
+                    user_agent: str = "") -> str:
+        """A login: a new session, proved now."""
         token = secrets.token_urlsafe(32)
         now = self.clock()
-        self._x("INSERT INTO sessions (token_hash, passkey_id, credential_id, created_at, "
-                "refreshed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (token_hash(token), passkey, credential, now, now, now + SESSION_IDLE))
+        self._x("INSERT INTO sessions (token_hash, passkey_id, credential_id, user_agent, "
+                "created_at, refreshed_at, expires_at, proved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (token_hash(token), passkey, credential, user_agent[:USER_AGENT_MAX], now, now,
+                 now + SESSION_IDLE, now))
         return token
 
     def session(self, token: str | None) -> Session | None:
         """The live session for this cookie value, or None."""
         if not token:
             return None
-        rows = self._q("SELECT token_hash, passkey_id, credential_id, created_at, "
-                       "refreshed_at, expires_at FROM sessions WHERE token_hash = ?",
-                       (token_hash(token),))
+        rows = self._q(_SESSION + " WHERE token_hash = ?", (token_hash(token),))
         if not rows:
             return None
         s = Session(*rows[0])
@@ -184,6 +195,26 @@ class AuthStore:
 
     def end_session(self, s: Session) -> None:
         self._x("DELETE FROM sessions WHERE token_hash = ?", (s.token_hash,))
+
+    def sessions(self) -> list[Session]:
+        """Every live session, the oldest first."""
+        return [Session(*r) for r in self._q(_SESSION + " WHERE expires_at > ? ORDER BY id",
+                                             (self.clock(),))]
+
+    def end_session_id(self, sid: int) -> bool:
+        return self._x("DELETE FROM sessions WHERE id = ?", (sid,)) > 0
+
+    def end_other_sessions(self, s: Session) -> int:
+        """Every session but this one ends; how many did."""
+        return self._x("DELETE FROM sessions WHERE id != ?", (s.id,))
+
+    def proved(self, s: Session) -> None:
+        """The owner proved it again in this session (auth/routes.py, reauth)."""
+        self._x("UPDATE sessions SET proved_at = ? WHERE id = ?", (self.clock(), s.id))
+
+    def proven(self, s: Session) -> bool:
+        """Proved within PROOF_SECONDS."""
+        return self.clock() - s.proved_at <= PROOF_SECONDS
 
     def prune_sessions(self) -> None:
         self._x("DELETE FROM sessions WHERE expires_at <= ?", (self.clock(),))

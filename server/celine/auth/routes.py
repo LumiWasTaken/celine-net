@@ -3,7 +3,12 @@
 `open_router` holds the routes reached without a session (the gate builds its list
 from it): logging in, and adding the first way to log in with the setup code or a
 new one with a recovery code. `router` holds the rest, reached only with a session
-(Settings, Security).
+(Settings, Security): the ways to log in, the sessions, and the proof.
+
+The proof: adding a way to log in, new recovery codes and a named token need the owner
+to have proved it in this session within PROOF_SECONDS (api/deps.py `proven`, else 403
+`proof_needed`). A login is one; /reauth (a password or PIN) and /reauth/start and
+/reauth/finish (a passkey) give another, under the same limits as logging in.
 
 Two limits guard the open routes. Per client address, LOGIN_MAX_FAILURES failed
 logins (passkey, password or PIN) refuse that address's logins for the rest of
@@ -31,9 +36,10 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from ..api.deps import proven
 from ..errors import CelineError
 from . import CEREMONY_SECONDS, Auth, Ceremony, credentials as cred
-from .store import SESSION_IDLE
+from .store import SESSION_IDLE, Session
 
 log = logging.getLogger("celine.auth")
 open_router = APIRouter(prefix="/api/auth")
@@ -76,14 +82,16 @@ def _reject(request: Request, kind: str, reason: str, answer: JSONResponse, *,
     return answer
 
 
-def _signed_in(auth: Auth, body: dict, passkey: bytes | None = None,
+def _signed_in(request: Request, body: dict, passkey: bytes | None = None,
                credential: int | None = None) -> JSONResponse:
+    auth = _auth(request)
     res = JSONResponse(body)
-    res.set_cookie(**auth.cookie(auth.store.new_session(passkey, credential), SESSION_IDLE))
+    token = auth.store.new_session(passkey, credential, request.headers.get("user-agent", ""))
+    res.set_cookie(**auth.cookie(token, SESSION_IDLE))
     return res
 
 
-def _session(request: Request):
+def _session(request: Request) -> Session | None:
     return getattr(request.state, "session", None)
 
 
@@ -232,21 +240,21 @@ def _new_passkey(request: Request, kind: str, c: Ceremony, credential: dict):
 
 # ---- login ---------------------------------------------------------------------------
 
-@open_router.post("/login/start", dependencies=[Depends(not_limited)])
-async def login_start(request: Request):
+def _authentication_options(request: Request) -> tuple[bytes, dict]:
     opts = webauthn.generate_authentication_options(
         rp_id=_auth(request).settings.rp_id, timeout=TIMEOUT_MS,
         user_verification=UserVerificationRequirement.REQUIRED)
-    return _start(request, "login", opts.challenge, options_to_json_dict(opts))
+    return opts.challenge, options_to_json_dict(opts)
 
 
-@open_router.post("/login/finish", dependencies=[Depends(not_limited)])
-async def login_finish(request: Request, body: Finish):
+def _assertion(request: Request, kind: str, body: Finish, session: bytes | None = None):
+    """A passkey's answer to a started login ("login") or proof ("reauth", only in the
+    session that started it): the passkey's id, or the refusal (a failed login)."""
     auth = _auth(request)
     fail = _err("login_failed", "The login with this passkey failed.", 401)
-    c = auth.take(body.ceremony, "login")
-    if c is None:
-        return _reject(request, "passkey", "no such login in progress", fail, login=True)
+    c = auth.take(body.ceremony, kind)
+    if c is None or c.session != session:
+        return _reject(request, "passkey", f"no such {kind} in progress", fail, login=True)
     try:
         raw_id = base64url_to_bytes(str(body.credential.get("rawId") or body.credential["id"]))
     except (KeyError, ValueError, TypeError):
@@ -264,25 +272,42 @@ async def login_finish(request: Request, body: Finish):
         return _reject(request, "passkey", "verification failed", fail, login=True,
                        error=type(e).__name__)
     auth.store.used_passkey(raw_id, v.new_sign_count)
+    return raw_id
+
+
+async def _secret(request: Request, body: LoginIn):
+    """A password or a PIN under the password and PIN lock: its row id, or the refusal."""
+    if body.method not in ("password", "pin"):
+        return _err("bad_request", "The method is password or pin.", 400)
+    name = "PIN" if body.method == "pin" else "password"
+    return await _try(request, "secret", body.method, body.secret,
+                      _auth(request).store.credential_hashes(body.method), 1,
+                      _err("login_failed", f"The {name} is wrong.", 401))
+
+
+@open_router.post("/login/start", dependencies=[Depends(not_limited)])
+async def login_start(request: Request):
+    return _start(request, "login", *_authentication_options(request))
+
+
+@open_router.post("/login/finish", dependencies=[Depends(not_limited)])
+async def login_finish(request: Request, body: Finish):
+    raw_id = _assertion(request, "login", body)
+    if isinstance(raw_id, JSONResponse):
+        return raw_id
     log.info("logged in", extra={"event": "auth.login", "client": _client(request)})
-    return _signed_in(auth, {"ok": True}, passkey=raw_id)
+    return _signed_in(request, {"ok": True}, passkey=raw_id)
 
 
 @open_router.post("/login", dependencies=[Depends(not_limited)])
 async def login_secret(request: Request, body: LoginIn):
     """A password or a PIN: the per-address limit and the password and PIN lock."""
-    if body.method not in ("password", "pin"):
-        return _err("bad_request", "The method is password or pin.", 400)
-    auth = _auth(request)
-    name = "PIN" if body.method == "pin" else "password"
-    rid = await _try(request, "secret", body.method, body.secret,
-                     auth.store.credential_hashes(body.method), 1,
-                     _err("login_failed", f"The {name} is wrong.", 401))
+    rid = await _secret(request, body)
     if isinstance(rid, JSONResponse):
         return rid
     log.info("logged in", extra={"event": "auth.login", "client": _client(request),
                                  "with": body.method})
-    return _signed_in(auth, {"ok": True}, credential=rid)
+    return _signed_in(request, {"ok": True}, credential=rid)
 
 
 # ---- registration with the setup code or a recovery code ------------------------------
@@ -305,7 +330,7 @@ async def register_finish(request: Request, body: Finish):
     pid = _new_passkey(request, "register", c, body.credential)
     if isinstance(pid, JSONResponse):
         return pid
-    return _signed_in(auth, await _after_code(auth, c.code), passkey=pid)
+    return _signed_in(request, await _after_code(auth, c.code), passkey=pid)
 
 
 @open_router.post("/register/credential")
@@ -324,7 +349,7 @@ async def register_credential(request: Request, body: RegisterCredentialIn):
                                          body.label)
     log.info("credential added", extra={"event": "auth.credential_added", "kind": body.kind,
                                         "with": ref[0], "client": _client(request)})
-    return _signed_in(auth, await _after_code(auth, ref), credential=rid)
+    return _signed_in(request, await _after_code(auth, ref), credential=rid)
 
 
 # ---- Settings, Security (the gate lets these through only with a session) -------------
@@ -353,7 +378,7 @@ def _all_credentials(auth: Auth, s) -> list[dict]:
     return out
 
 
-@router.post("/credentials")
+@router.post("/credentials", dependencies=[Depends(proven)])
 async def add_credential(request: Request, body: CredentialIn):
     auth = _auth(request)
     if msg := _invalid(body.kind, body.secret):
@@ -385,8 +410,10 @@ async def remove_credential(request: Request, cid: str):
     return {"ok": True, "logged_out": this["this_session"]}
 
 
-@router.post("/passkeys/start")
+@router.post("/passkeys/start", dependencies=[Depends(proven)])
 async def add_start(request: Request):
+    """Needs a fresh proof; /passkeys/finish takes only a ceremony started here, in this
+    session, so it needs none of its own."""
     return _start(request, "add", *_registration_options(_auth(request)),
                   session=_session(request).token_hash)
 
@@ -400,17 +427,103 @@ async def add_finish(request: Request, body: Finish):
     return pid if isinstance(pid, JSONResponse) else {"ok": True}
 
 
-@router.post("/recovery-codes")
+@router.post("/recovery-codes", dependencies=[Depends(proven)])
 async def new_codes(request: Request) -> dict:
     fresh = await anyio.to_thread.run_sync(_auth(request).store.new_recovery_codes)
     log.info("new recovery codes", extra={"event": "auth.recovery_codes"})
     return {"recovery_codes": fresh}
 
 
+# ---- the proof: the owner again, in this session ----------------------------------------
+
+@router.post("/reauth/start", dependencies=[Depends(not_limited)])
+async def reauth_start(request: Request):
+    return _start(request, "reauth", *_authentication_options(request),
+                  session=_session(request).token_hash)
+
+
+@router.post("/reauth/finish", dependencies=[Depends(not_limited)])
+async def reauth_finish(request: Request, body: Finish):
+    s = _session(request)
+    raw_id = _assertion(request, "reauth", body, session=s.token_hash)
+    if isinstance(raw_id, JSONResponse):
+        return raw_id
+    _auth(request).store.proved(s)
+    log.info("proved", extra={"event": "auth.proved", "client": _client(request)})
+    return {"ok": True}
+
+
+@router.post("/reauth", dependencies=[Depends(not_limited)])
+async def reauth_secret(request: Request, body: LoginIn):
+    rid = await _secret(request, body)
+    if isinstance(rid, JSONResponse):
+        return rid
+    _auth(request).store.proved(_session(request))
+    log.info("proved", extra={"event": "auth.proved", "client": _client(request),
+                              "with": body.method})
+    return {"ok": True}
+
+
+# ---- sessions: every browser logged in ------------------------------------------------
+
+_BROWSERS = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
+             ("FxiOS/", "Firefox"), ("CriOS/", "Chrome"), ("Chrome/", "Chrome"),
+             ("Safari/", "Safari"))
+_SYSTEMS = (("Android", "Android"), ("iPhone", "iOS"), ("iPad", "iOS"), ("CrOS", "ChromeOS"),
+            ("Windows", "Windows"), ("Mac OS X", "macOS"), ("Linux", "Linux"))
+LABEL_MAX = 80
+
+
+def device(user_agent: str) -> str:
+    """A session's name from its browser's user agent: "Firefox on Linux"; one it does
+    not know as it came, cut short; none, "Unknown device"."""
+    browser = next((name for mark, name in _BROWSERS if mark in user_agent), None)
+    system = next((name for mark, name in _SYSTEMS if mark in user_agent), None)
+    if browser and system:
+        return f"{browser} on {system}"
+    return user_agent.strip()[:LABEL_MAX] or "Unknown device"
+
+
+@router.get("/sessions")
+async def sessions(request: Request) -> dict:
+    """Every live session, the oldest first; `this_session` marks this browser's.
+    `last_seen_at` is to the hour (the cookie's refresh)."""
+    mine = _session(request)
+    return {"sessions": [{"id": s.id, "label": device(s.user_agent),
+                          "created_at": s.created_at, "last_seen_at": s.refreshed_at,
+                          "this_session": mine is not None and s.id == mine.id}
+                         for s in _auth(request).store.sessions()]}
+
+
+def _logged_out(auth: Auth, body: dict) -> JSONResponse:
+    res = JSONResponse(body, headers={"clear-site-data": '"cache", "cookies"'})
+    res.set_cookie(**auth.cookie("", 0))
+    return res
+
+
+@router.delete("/sessions/{sid}")
+async def end_session(request: Request, sid: int):
+    """Logs that browser out; `logged_out` when it was this one."""
+    auth = _auth(request)
+    if not auth.store.end_session_id(sid):
+        return _err("not_found", "That session has ended.", 404)
+    log.info("session ended", extra={"event": "auth.session_ended", "client": _client(request)})
+    if sid == _session(request).id:
+        return _logged_out(auth, {"ok": True, "logged_out": True})
+    return {"ok": True, "logged_out": False}
+
+
+@router.post("/sessions/logout-others")
+async def logout_others(request: Request) -> dict:
+    """Every session but this one ends; `ended`: how many."""
+    ended = _auth(request).store.end_other_sessions(_session(request))
+    log.info("other sessions ended", extra={"event": "auth.sessions_ended", "ended": ended,
+                                            "client": _client(request)})
+    return {"ok": True, "ended": ended}
+
+
 @router.post("/logout")
 async def logout(request: Request):
     auth = _auth(request)
     auth.store.end_session(_session(request))
-    res = JSONResponse({"ok": True}, headers={"clear-site-data": '"cache", "cookies"'})
-    res.set_cookie(**auth.cookie("", 0))
-    return res
+    return _logged_out(auth, {"ok": True})

@@ -19,8 +19,7 @@ renders the items that wait, one after the other:
    the catalog lacks) is one failed slot; the next item goes on.
 3. What an item made is an attachment: of the message that holds its call (its image
    list and edits find it), or of the batch alone (one the user started). It is also
-   kept as a file in images/<date>/ or music/<date>/, and an image of a bridged
-   conversation goes to that chat at once.
+   kept as a file in images/<date>/ or music/<date>/.
 4. At the end, also after a Stop, an error or a restart's cut: ComfyUI frees its models
    and memory (POST /free), then the lease is released.
 
@@ -42,6 +41,7 @@ from uuid import uuid4
 import anyio
 import httpx
 
+from .. import homes
 from ..attachments import blob_path, image_size
 from ..core.ids import new_id, now
 from ..settings.registry import provider_headers
@@ -62,21 +62,27 @@ _EXT = {"image/jpeg": ".jpg", "image/webp": ".webp"}    # a media type's file na
 
 def view(b: dict) -> dict:
     """One shape for a batch wherever it appears: the routes, the event, the display
-    of the call that started it."""
-    return {k: b.get(k) for k in ("id", "kind", "conversation_id", "tool_call_id", "state",
-                                  "created_at", "finished_at", "items")}
+    of the call that started it. `link`: where its conversation opens (homes.of), None
+    for the user's own."""
+    return {k: b.get(k) for k in ("id", "kind", "conversation_id", "link", "tool_call_id",
+                                  "state", "created_at", "finished_at", "items")}
 
 
-def _row(r: sqlite3.Row) -> dict:
+def _link(c: sqlite3.Connection, cid: str | None) -> str | None:
+    return homes.of(c, cid)["link"] if cid else None
+
+
+def _row(c: sqlite3.Connection, r: sqlite3.Row) -> dict:
     d = dict(r)
     d["items"] = json.loads(d["items"])
+    d["link"] = _link(c, d["conversation_id"])
     return d
 
 
 async def get(store, bid: str) -> dict | None:
     def fn(c: sqlite3.Connection) -> dict | None:
         r = c.execute("SELECT * FROM media_batches WHERE id=?", (bid,)).fetchone()
-        return _row(r) if r else None
+        return _row(c, r) if r else None
     return await store.read(fn)
 
 
@@ -89,7 +95,7 @@ async def find(store, kind: str, ref: str) -> dict:
                          f"characters from its result.")
 
     def fn(c: sqlite3.Connection) -> list[dict]:
-        return [_row(r) for r in c.execute(
+        return [_row(c, r) for r in c.execute(
             "SELECT * FROM media_batches WHERE kind=? AND substr(id, 1, ?)=? LIMIT 2",
             (kind, len(ref), ref))]
     rows = await store.read(fn)
@@ -108,7 +114,7 @@ async def list_batches(store, kind: str, conversation: str | None = None,
         if conversation:
             where += " AND conversation_id=?"
             args.append(conversation)
-        return [_row(r) for r in c.execute(
+        return [_row(c, r) for r in c.execute(
             f"SELECT * FROM media_batches WHERE {where} ORDER BY created_at DESC, id DESC "
             "LIMIT ?", (*args, limit))]
     return await store.read(fn)
@@ -133,6 +139,7 @@ async def _insert(store, b: dict) -> None:
                   (b["id"], b["kind"], b["conversation_id"], b["tool_call_id"],
                    b["state"], json.dumps(b["items"], ensure_ascii=False),
                    b["created_at"], b["finished_at"]))
+        b["link"] = _link(c, b["conversation_id"])
         _publish(store, c, b)
     await store.write(fn)
 
@@ -150,7 +157,7 @@ async def _save(store, b: dict) -> None:
 async def sweep(store) -> int:
     """At startup: a batch the restart cut is stopped, its unfinished items too."""
     def fn(c: sqlite3.Connection) -> int:
-        rows = [_row(r) for r in c.execute(
+        rows = [_row(c, r) for r in c.execute(
             "SELECT * FROM media_batches WHERE state='running'")]
         for b in rows:
             _settle(b)
@@ -198,7 +205,7 @@ class Batches:
     with its task group, where every batch runs."""
 
     def __init__(self, app, tg=None):
-        self.app = app                  # core/services.py: cfg, store, llm, bridge
+        self.app = app                  # core/services.py: cfg, store, llm
         self.tg = tg
         self.running: dict[str, tuple[anyio.CancelScope, anyio.Event]] = {}
 
@@ -624,10 +631,6 @@ class Batches:
         row = await self._keep(b, data, f"{p.id}-{item['seed']}{ext}", media_type)
         item["attachment"] = {**row, "width": w, "height": h}
         item.update(choice.recipe())
-        bridge = self.app.bridge
-        if b["conversation_id"] and bridge is not None and await bridge.send_image(
-                b["conversation_id"], data, row["filename"], media_type):
-            item["bridged"] = True
 
     async def _song(self, b: dict, item: dict, servers: "_Servers", note) -> None:
         p = self._preset("music", item)

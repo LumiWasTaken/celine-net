@@ -123,9 +123,6 @@ class Link:
                 "sync_every_minutes": self.every_ms / 60_000,
                 "login": s.as_dict() if s is not None and s.state != "done" else None}
 
-    def info(self) -> dict[str, Any]:
-        return {"platform": "discord"}
-
     # ---- work --------------------------------------------------------------------------
     def start_sync(self):
         return self.jobs.start("sync", "Discord sync",

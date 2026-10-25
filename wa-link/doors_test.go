@@ -2,11 +2,16 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -41,7 +46,7 @@ func TestClientsParse(t *testing.T) {
 func TestEveryDoorNeedsAKeyAndOwnerDoorsNeedAnOwner(t *testing.T) {
 	setup(t)
 	s := server(t)
-	for _, p := range []string{"/feed", "/admin/status", "/admin/info", "/admin/qr", "/mcp"} {
+	for _, p := range []string{"/feed", "/admin/status", "/admin/qr", "/mcp"} {
 		if got := req(t, s, "GET", p, "", "").StatusCode; got != 401 {
 			t.Errorf("%s without key: %d", p, got)
 		}
@@ -49,18 +54,22 @@ func TestEveryDoorNeedsAKeyAndOwnerDoorsNeedAnOwner(t *testing.T) {
 			t.Errorf("%s with a wrong key: %d", p, got)
 		}
 	}
-	if r := req(t, s, "PUT", "/admin/bridge", readerKey, `{"marker":"X: "}`); r.StatusCode != 403 {
-		t.Fatalf("reader changed the marker: %d", r.StatusCode)
-	}
-	if r := req(t, s, "POST", "/admin/bridge/lease", readerKey, ""); r.StatusCode != 403 {
-		t.Fatalf("reader took the lease: %d", r.StatusCode)
+	if r := req(t, s, "GET", "/admin/ignored", readerKey, ""); r.StatusCode != 403 {
+		t.Fatalf("reader read the ignored chats: %d", r.StatusCode)
 	}
 	if r := req(t, s, "GET", "/admin/status", readerKey, ""); r.StatusCode != 200 {
 		t.Fatalf("reader can't read status: %d", r.StatusCode)
 	}
+	// nothing writes a chat: no info door, no marker, no lease
+	for _, d := range [][2]string{{"GET", "/admin/info"}, {"PUT", "/admin/bridge"},
+		{"POST", "/admin/bridge/lease"}} {
+		if r := req(t, s, d[0], d[1], ownerKey, `{"marker":"C: "}`); r.StatusCode != 404 {
+			t.Errorf("%s %s: %d", d[0], d[1], r.StatusCode)
+		}
+	}
 }
 
-func TestStatusInfoMarkerAndLease(t *testing.T) {
+func TestStatusAndQR(t *testing.T) {
 	setup(t)
 	s := server(t)
 	st := decode(t, req(t, s, "GET", "/admin/status", readerKey, ""))
@@ -85,45 +94,6 @@ func TestStatusInfoMarkerAndLease(t *testing.T) {
 	}
 	if r := req(t, s, "GET", "/admin/qr", readerKey, ""); r.StatusCode != 404 {
 		t.Fatalf("qr without a code: %d", r.StatusCode)
-	}
-
-	info := decode(t, req(t, s, "GET", "/admin/info", readerKey, ""))
-	if info["write_chat"] != OWN+"@s.whatsapp.net" || info["marker"] != "Celine: " ||
-		info["write_chat_name"] != "Message yourself" || info["part_chars"] != float64(partChars) {
-		t.Fatalf("info %v", info)
-	}
-	for _, bad := range []string{`{"marker":""}`, `{"marker":"   "}`, `{"marker":"` + strings.Repeat("x", 41) + `"}`, `{}`} {
-		if r := req(t, s, "PUT", "/admin/bridge", ownerKey, bad); r.StatusCode != 400 {
-			t.Errorf("%s: %d", bad, r.StatusCode)
-		}
-	}
-	info = decode(t, req(t, s, "PUT", "/admin/bridge", ownerKey, `{"marker":"C: "}`))
-	if info["marker"] != "C: " || marker() != "C: " {
-		t.Fatalf("marker %v", info)
-	}
-
-	base := time.Unix(1_800_000_000, 0)
-	clock = func() time.Time { return base }
-	if r := req(t, s, "POST", "/admin/bridge/lease", ownerKey, ""); r.StatusCode != 200 {
-		t.Fatalf("claim %d", r.StatusCode)
-	}
-	r := req(t, s, "POST", "/admin/bridge/lease", owner2Key, "")
-	if r.StatusCode != 409 || decode(t, r)["error"] != "Another instance holds the bridge." {
-		t.Fatal("a second owner took a held lease")
-	}
-	b := decode(t, req(t, s, "GET", "/admin/info", readerKey, ""))["bridge"].(map[string]any)
-	if b["holder"] != "live" {
-		t.Fatalf("bridge %v", b)
-	}
-	clock = func() time.Time { return base.Add(61 * time.Second) }
-	if r := req(t, s, "POST", "/admin/bridge/lease", owner2Key, ""); r.StatusCode != 200 {
-		t.Fatalf("after the TTL: %d", r.StatusCode)
-	}
-	if decode(t, req(t, s, "DELETE", "/admin/bridge/lease", ownerKey, ""))["released"] != false {
-		t.Fatal("a non-holder released the lease")
-	}
-	if decode(t, req(t, s, "DELETE", "/admin/bridge/lease", owner2Key, ""))["released"] != true {
-		t.Fatal("the holder could not release")
 	}
 }
 
@@ -259,7 +229,7 @@ func TestMediaDownloadKeepsTheFileAndRetryAnswersAreListed(t *testing.T) {
 			t.Errorf("%s: %d, want %d", body, got, want)
 		}
 	}
-	if _, retries, _ := log.kinds(); retries != 1 {
+	if _, retries := log.kinds(); retries != 1 {
 		t.Fatalf("retries %d", retries)
 	}
 	onMediaRetry(&events.MediaRetry{MessageID: "NOT-OURS"})
@@ -272,6 +242,51 @@ func TestMediaDownloadKeepsTheFileAndRetryAnswersAreListed(t *testing.T) {
 		t.Fatal("answered request still pending")
 	}
 	_ = types.JID{}
+}
+
+func TestMediaOverTheCapIsRefusedBeforeItIsDownloaded(t *testing.T) {
+	setup(t)
+	s := server(t)
+	old := maxMediaBytes
+	maxMediaBytes = 10
+	defer func() { maxMediaBytes = old }()
+	calls, got := 0, []byte("0123456789")
+	download = func(_ context.Context, _ mediaRef, _ []byte) ([]byte, error) {
+		calls++
+		return got, nil
+	}
+	ref := `{"direct_path":"/v/x","media_key":"a2V5","mtype":"document","file_length":`
+	r := req(t, s, "POST", "/admin/media/download", readerKey, ref+`11}`)
+	if r.StatusCode != 413 || calls != 0 || !strings.Contains(decode(t, r)["error"].(string), "larger") {
+		t.Fatalf("over the cap: %d, %d downloads", r.StatusCode, calls)
+	}
+	if r := req(t, s, "POST", "/admin/media/download", readerKey, ref+`10}`); r.StatusCode != 200 {
+		t.Fatalf("at the cap: %d", r.StatusCode)
+	}
+	// the message said less than came: refused, and not kept
+	got = []byte("0123456789A")
+	r = req(t, s, "POST", "/admin/media/download", readerKey, ref+`5}`)
+	if r.StatusCode != 413 {
+		t.Fatalf("a file larger than its message said: %d", r.StatusCode)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(stateDir, "media")); len(entries) != 1 {
+		t.Fatalf("kept %d files", len(entries))
+	}
+}
+
+func TestTheMediaCapComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("WA_LINK_MAX_MEDIA_MB", "")
+	if envMB("WA_LINK_MAX_MEDIA_MB", 100) != 100<<20 {
+		t.Fatal("default")
+	}
+	t.Setenv("WA_LINK_MAX_MEDIA_MB", "7")
+	if envMB("WA_LINK_MAX_MEDIA_MB", 100) != 7<<20 {
+		t.Fatal("set")
+	}
+	t.Setenv("WA_LINK_MAX_MEDIA_MB", "lots")
+	if envMB("WA_LINK_MAX_MEDIA_MB", 100) != 100<<20 {
+		t.Fatal("not a number")
+	}
 }
 
 func TestAnExpiredQRCodeRestartsForANewOne(t *testing.T) {
@@ -298,50 +313,91 @@ func TestAnExpiredQRCodeRestartsForANewOne(t *testing.T) {
 	}
 }
 
-func TestRecordsOfOneChatForAChatIncludedAgain(t *testing.T) {
+// mediaMsg: a message record in chat with a file whose plain sha256 is sha.
+func mediaMsg(chat, key, sha string, ts int64) Rec {
+	return Rec{"kind": "message", "chat": Rec{"key": chat, "kind": "group"},
+		"message": Rec{"key": key, "ts": ts, "type": "media", "text": "",
+			"media": Rec{"type": "photo", "ref": Rec{"file_sha256": sha}}}}
+}
+
+func TestDeleteAndIgnoreTakesAChatOutOfTheJournalForGood(t *testing.T) {
 	setup(t)
 	loadFixtures(t)
 	s := server(t)
-	var chat string
+	other := BEA
+	shaOf := func(b string) string { sum := sha256.Sum256([]byte(b)); return hex.EncodeToString(sum[:]) }
+	gone, kept, shared := keepFile([]byte("group photo")), keepFile([]byte("bea photo")),
+		keepFile([]byte("forwarded"))
+	if gone != shaOf("group photo") {
+		t.Fatal("kept files are named by their sha256")
+	}
+	for _, r := range []Rec{mediaMsg(GROUP, "G1", gone, T0+1), mediaMsg(GROUP, "G2", shared, T0+2),
+		mediaMsg(other, "B1", kept, T0+3), mediaMsg(other, "B2", shared, T0+4)} {
+		if _, err := jr.Append(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := `{"chats":["` + GROUP + `"]}`
+	if r := req(t, s, "POST", "/admin/ignored", readerKey, body); r.StatusCode != 403 {
+		t.Fatalf("a reader deleted a chat: %d", r.StatusCode)
+	}
+	if r := req(t, s, "POST", "/admin/ignored", ownerKey, `{"chats":[""]}`); r.StatusCode != 400 {
+		t.Fatalf("an empty chat key: %d", r.StatusCode)
+	}
+	r := req(t, s, "POST", "/admin/ignored", ownerKey, body)
+	if r.StatusCode != 200 || decode(t, r)["deleted"].(float64) < 2 {
+		t.Fatalf("ignore: %d", r.StatusCode)
+	}
+	for _, rec := range journalRecs(t) {
+		if k, chat, _, _ := recordKeys(rec); chat == GROUP {
+			t.Fatalf("a %s record of the chat is left", k)
+		}
+	}
+	files := func(sha string) bool { _, err := os.Stat(filepath.Join(stateDir, "media", sha)); return err == nil }
+	if files(gone) || !files(kept) || !files(shared) {
+		t.Fatalf("files: its own %v, another chat's %v, shared %v", files(gone), files(kept), files(shared))
+	}
+	// what the phone sends again of it, a history sync or a live message, stays out
+	if seq, err := jr.Append(mediaMsg(GROUP, "G3", gone, T0+5)); seq != 0 || err != nil {
+		t.Fatalf("journaled again: %d %v", seq, err)
+	}
+	loadFixtures(t)
+	for _, rec := range journalRecs(t) {
+		if _, chat, _, _ := recordKeys(rec); chat == GROUP {
+			t.Fatal("a history sync brought it back")
+		}
+	}
+	got := decode(t, req(t, s, "GET", "/admin/ignored", ownerKey, ""))["chats"].([]any)
+	if len(got) != 1 || got[0] != GROUP {
+		t.Fatalf("ignored %v", got)
+	}
+	// included again: what comes from now on is journaled
+	if r := req(t, s, "DELETE", "/admin/ignored?chat="+url.QueryEscape(GROUP), ownerKey, ""); r.StatusCode != 200 {
+		t.Fatalf("include again: %d", r.StatusCode)
+	}
+	if seq, _ := jr.Append(mediaMsg(GROUP, "G4", gone, T0+6)); seq == 0 {
+		t.Fatal("still ignored")
+	}
+}
+
+func TestAJournalFromTheBridgeForgetsWhatOnlyTheBridgeKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.db")
+	j, err := OpenJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.db.Exec(`CREATE TABLE sent (message_key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+		INSERT INTO kv (key, value) VALUES ('marker', 'Celine: '), ('retry:X', '{}')`); err != nil {
+		t.Fatal(err)
+	}
+	j.Close()
+	if j, err = OpenJournal(path); err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
 	var n int
-	if err := jr.db.QueryRow(`SELECT chat_key, COUNT(*) FROM journal WHERE kind = 'message'
-		GROUP BY chat_key ORDER BY COUNT(*) DESC LIMIT 1`).Scan(&chat, &n); err != nil {
-		t.Fatal(err)
-	}
-	var want int
-	if err := jr.db.QueryRow(`SELECT COUNT(*) FROM journal WHERE chat_key = ?
-		OR (kind = 'person' AND message_key = ?)`, chat, chat).Scan(&want); err != nil {
-		t.Fatal(err)
-	}
-	lines := readLines(t, req(t, s, "GET", "/admin/records?chat="+chat, readerKey, ""), want)
-	last := 0.0
-	messages := 0
-	for _, l := range lines {
-		var m map[string]any
-		if json.Unmarshal([]byte(l), &m) != nil || m["seq"].(float64) <= last {
-			t.Fatalf("not in seq order: %s", l)
-		}
-		last = m["seq"].(float64)
-		if m["kind"] == "message" {
-			messages++
-			if m["chat"].(map[string]any)["key"] != chat {
-				t.Fatalf("another chat's record: %s", l)
-			}
-		}
-	}
-	if messages != n {
-		t.Fatalf("%d of %d messages", messages, n)
-	}
-	// the stream ends after the last record
-	r := req(t, s, "GET", "/admin/records?chat="+chat, readerKey, "")
-	body, _ := io.ReadAll(r.Body)
-	if got := strings.Count(string(body), "\n"); got != want {
-		t.Fatalf("%d lines, want %d", got, want)
-	}
-	if req(t, s, "GET", "/admin/records", readerKey, "").StatusCode != 400 {
-		t.Fatal("no chat accepted")
-	}
-	if req(t, s, "GET", "/admin/records?chat="+chat, "", "").StatusCode != 401 {
-		t.Fatal("no key accepted")
+	_ = j.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name = 'sent'").Scan(&n)
+	if n != 0 || j.Get("marker", "") != "" || j.Get("retry:X", "") != "{}" {
+		t.Fatalf("sent table %d, marker %q", n, j.Get("marker", ""))
 	}
 }

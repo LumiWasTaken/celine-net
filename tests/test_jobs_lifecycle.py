@@ -116,6 +116,47 @@ async def test_a_job_whose_conversation_vanished_does_not_take_the_app_down(stor
         tg.cancel_scope.cancel()
 
 
+async def test_a_job_whose_finish_raises_still_ends(store, cfg, monkeypatch):
+    from celine.turns import tools
+
+    async def broken(*a, **kw):
+        raise RuntimeError("the page check broke")
+    painter = Painter()
+    async with anyio.create_task_group() as tg:
+        cid, jobs = await _start(store, cfg, painter, tg, [])
+        monkeypatch.setattr(tools, "checked", broken)      # the turn itself is over
+        job_id = next(iter(jobs.handles))
+        painter.release.set()
+        await until(lambda: not jobs.handles, 3)
+        job = await job_rows.get(store, job_id)
+        assert job["state"] == "failed" and "the page check broke" in job["result"], \
+            "never an undead running row"
+        [posted] = await _job_messages(store, cid)
+        assert "the page check broke" in posted["content"]
+        tg.cancel_scope.cancel()
+
+
+async def test_a_job_whose_finish_hangs_can_be_stopped(store, cfg, monkeypatch):
+    from celine.turns import tools
+    started = anyio.Event()
+
+    async def hangs(*a, **kw):
+        started.set()
+        await anyio.sleep_forever()
+    painter = Painter()
+    async with anyio.create_task_group() as tg:
+        cid, jobs = await _start(store, cfg, painter, tg, [])
+        monkeypatch.setattr(tools, "checked", hangs)
+        job_id = next(iter(jobs.handles))
+        painter.release.set()
+        with anyio.fail_after(3):
+            await started.wait()
+        assert await jobs.cancel(job_id), "Stop reaches a job that is being finished"
+        await until(lambda: not jobs.handles, 3)
+        assert (await job_rows.get(store, job_id))["state"] == "cancelled"
+        tg.cancel_scope.cancel()
+
+
 async def test_a_stopped_job_tells_her_so_in_one_quiet_job_message(store, cfg):
     async with anyio.create_task_group() as tg:
         cid, jobs = await _start(store, cfg, Painter(), tg, [])

@@ -305,6 +305,7 @@ async def test_bastet_says_who_she_is_the_first_time_she_writes_to_celine(store)
 async def test_her_message_waits_while_she_is_frozen_or_the_small_model_is_down(store):
     from datetime import datetime, timezone
     cfg = load()
+    cfg.settings.features = {**(cfg.settings.features or {}), "guard": True}
     t0 = datetime(2026, 1, 5, 10, tzinfo=timezone.utc)
     cid = await conversations.create(store)
     asked = await send(store, f"agent:{cid}", "bastet", "are you there?")

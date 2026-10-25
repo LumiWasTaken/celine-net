@@ -324,7 +324,8 @@ async def upload(request: Request, files: list[UploadFile] = File(...),
     base = folder.strip("/")
     if base:
         await _call(kb.resolve, base)                    # confined to the folder
-    limit = int(float(kb.opt("max_upload_mb", 512)) * 1024 * 1024)
+    mb = request.app.state.services.cfg.r("max_upload_mb")   # Settings, Advanced
+    limit = int(mb) * 1024 * 1024
     tmp_dir = kb.root / ".uploads"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     out: dict[str, Any] = {"items": [], "existing": [], "rejected": [], "task": None}
@@ -347,7 +348,8 @@ async def upload(request: Request, files: list[UploadFile] = File(...),
                     fh.write(chunk)
             if too_big:
                 out["rejected"].append({"name": str(inner), "reason": f"The file is larger "
-                                        f"than {limit // 1048576} MB, the limit in kb.toml."})
+                                        f"than {mb} MB, the Largest upload in Settings, "
+                                        f"Advanced."})
                 continue
             if size == 0:
                 out["rejected"].append({"name": str(inner), "reason": "The file is empty."})

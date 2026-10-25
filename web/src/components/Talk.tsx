@@ -122,7 +122,7 @@ export function Talk({ cid, convo, active, name, user, send, placeholder, noTool
         <Transcript conversationId={cid} messages={convo.messages} toolCalls={convo.toolCalls} turn={convo.turn}
                     running={convo.running} error={convo.error} pending={pending} compactions={convo.compactions}
                     onRetry={() => conversationApi.regenerate(cid).then(() => undefined)}
-                    live={convo.live} switched={convo.switched} imageNotices={convo.imageNotices} banners={convo.banners} forming={convo.forming}
+                    live={convo.live} switched={convo.switched} imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
                     waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue}
                     note={null} assistant={name} user={user} closed={!!closed} />
       </div>

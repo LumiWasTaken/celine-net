@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import anyio
 
 from .. import homes
-from ..core.ids import new_id, now
+from ..core.ids import iso, new_id, now
 from ..core.states import LIVE_SQL
 from ..kb.chat import fts_candidates, is_query_error
 from . import tree
@@ -24,6 +27,8 @@ from ..core.event_types import (
     IMAGES_NOTICE,
     MESSAGE_PURGED,
 )
+
+log = logging.getLogger("celine.conversations")
 
 
 async def create(store, title: str = "", trigger_key: str | None = None,
@@ -583,8 +588,7 @@ def state_of(c: sqlite3.Connection, row: dict) -> dict | None:
 async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                after: tuple[int, str, str] | None = None,
                archived: bool = False, trashed: bool = False, *, place: str | None = None,
-               tz=timezone.utc, now_: datetime | None = None,
-               source=lambda kb: None) -> list[dict]:
+               tz=timezone.utc, now_: datetime | None = None) -> list[dict]:
     """Running first (a live turn in it or a sub-agent of it), then pinned, then the most
     recently updated. `after`: the (rank, updated_at, id) of the last row of the
     previous page. `archived`: only the archived ones, else only the others;
@@ -592,8 +596,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
     (last_line above), `group` (group_of), `state` (state_of), `home` and `link`
-    (homes.of: where it opens) and `source` (`source(kb)` of a bridged chat: whatsapp;
-    else None). Sub-agents are not rows of their own: each row lists its
+    (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
     1 pinned, 0)."""
     now_ = now_ or datetime.now(timezone.utc)
@@ -614,15 +617,13 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
         for r in rows:
             r["agents"] = [{**dict(s), "agents": []} for s in c.execute(
                 _SUMMARY + "WHERE c.agent_of = ? ORDER BY c.created_at, c.id", (r["id"],))]
-            key = r["trigger_key"] or ""
-            r["source"] = source(key[7:]) if key.startswith("bridge:") else None
             r["group"] = group_of(r["rank"], r["updated_at"], tz, now_)
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
                 one["state"] = state_of(c, one)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
-                a["group"], a["source"] = r["group"], None
+                a["group"] = r["group"]
         return rows
 
     return await store.read(fn)
@@ -747,17 +748,37 @@ async def note_images(store, cid: str, model: str, describer: str | None) -> Non
 
 GLOBAL_KEEP = 20000     # rows of the global feed kept by prune_events (events.added
                         # adds one per tool call, turn and job end)
+PRUNE_EVERY = 600.0     # seconds between two prunes of the app's loop (keep_pruned)
 
 
-async def prune_events(store, keep: int, cid: str | None = None) -> int:
+async def keep_pruned(store, cfg, every: float = PRUNE_EVERY) -> None:
+    """The app's loop: the event logs pruned every `every` seconds, with events_keep as
+    it is then (the startup prunes once before). Off the turns' path: a large prune
+    holds up the writes behind it once in a while, not at every turn's end."""
+    while True:
+        await anyio.sleep(every)
+        try:
+            await prune_events(store, int(cfg.r("events_keep")),
+                               requests_days=int(cfg.r("requests_keep")))
+        except Exception:
+            log.exception("prune failed", extra={"event": "events.prune_failed"})
+
+
+async def prune_events(store, keep: int, cid: str | None = None,
+                       requests_days: int = 0) -> int:
     """Drop all but the last `keep` events of every idle conversation, except what the
     snapshot reads back: the transcript's lasting lines (image notices) and which
     replies another model answered (`llm.queue` with `fallback`). A client resuming
     from below trim_below gets a resync instead of a gap. The global feed keeps its
-    newest GLOBAL_KEEP rows the same way (a client below the oldest gets a resync)."""
+    newest GLOBAL_KEEP rows the same way (a client below the oldest gets a resync).
+    `requests_days` (the requests_keep setting): the request bodies in log.db older
+    than that many days go too; 0 keeps them."""
     def fn(c: sqlite3.Connection) -> int:
         c.execute("DELETE FROM global_events WHERE id <= "
                   "(SELECT max(id) FROM global_events) - ?", (GLOBAL_KEEP,))
+        if requests_days > 0:
+            since = datetime.fromisoformat(now()) - timedelta(days=requests_days)
+            c.execute("DELETE FROM requests WHERE created_at < ?", (iso(since),))
         sql = ("SELECT id, next_seq FROM conversations WHERE id NOT IN "
                f"(SELECT conversation_id FROM turns WHERE state IN {LIVE_SQL})")
         args: list = []

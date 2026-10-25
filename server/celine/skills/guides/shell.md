@@ -78,8 +78,10 @@ under your reply and open it in a tab of its own. Use it whenever you want them 
 play something you made, or to try a web app yourself in your own browser (the result
 names its address there). Your server gets the paths after the share's link, so link your
 pages' scripts and styles relatively (`app.js`, not `/app.js`); cookies do not reach it.
-A share is {{username}}'s alone: it opens only for them, logged in to the app. Make it
-public (`public=true`) only when they ask for a link others can open. A share runs for
+A share is private by default, {{username}}'s alone: it opens only for them, logged in to
+the app. Make it public (`public=true`) only when they explicitly ask for a link others can
+open. A public share waits for their approval: the call asks them in the chat and waits
+for their answer; denied, nothing is shared and the result says so. A share runs for
 `hours` (the tool says the default and the most), until **shell__unshare(id)**, until
 {{username}} stops it, or until the next reset of your box; nobody tells you when it ends.
 **shell__list_shares** lists yours, and those that ended in the last day.

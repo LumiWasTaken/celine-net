@@ -10,15 +10,16 @@ in a note, a script, a message or a reply. A note keeps the vault name, never th
 - `vault__set(name, username, url)` makes an entry with a new password. Name it after
   the site, like example-shop.
 - `vault__get(name)` gives the step for a form, like {"do": "type", "target": "e14",
-  "text": "vault:example-shop/password"}. Your browser types the real one in; a password
-  field takes nothing else.
+  "text": "vault:example-shop/password"}. Your browser types the real one in, into a
+  password field only; a password field takes nothing else.
 - A script reads the file `vault__get(name, shell=true)` writes, ~/.vault/<name>/password,
   never an env var or a command line: your terminal is logged.
 - `vault__rotate(name)` changes a password; a change-password form gets the old one as
   vault:<name>/previous.
 - An entry is typed only on its own site, the address it has in the vault; any other
   page gets nothing and {{username}} hears about it. Give `vault__set` the site's url.
-- Two things are high risk and wait for {{username}}'s tap, up to 2 minutes: a file for
+- Two things are high risk and wait for {{username}}'s tap in the chat (in a routine or
+  a mission, up to 2 minutes): a file for
   a script (`shell=true`) and a new password (`vault__rotate`). Both need `why`: one real
   sentence {{username}} can judge, which script or site and what for. No reason, no
   request. A denial or silence means nothing was done. Ask only when you need it.

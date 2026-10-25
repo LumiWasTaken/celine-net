@@ -17,8 +17,9 @@ export type Grain = typeof GRAINS[number]
 export type Appearance = {
   accent: Accent
   grain: Grain
-  /** percents, as settings/registry.py APPEARANCE: the grain's opacity (0 to 20), the
-      accent's tint of the greys (0 to 300), the lightness step between surfaces (50 to 150) */
+  /** percents, as settings/appearance.py APPEARANCE: the grain's opacity (0 to 20), the
+      accent's tint of the greys (0 to 300), the lightness step between surfaces (50 to
+      CONTRAST_MAX) */
   grain_opacity: number
   tint: number
   contrast: number
@@ -27,6 +28,11 @@ export type Appearance = {
   hide_tools: boolean
   collapse_thinking: boolean
 }
+
+/** the most the slider offers for `contrast`: a larger step lifts surface-4 so far that
+    text-muted on it falls under 4.5:1, the floor tokens.css keeps (4.50:1 at 110 for every
+    accent, 3.5:1 at 150) */
+export const CONTRAST_MAX = 110
 
 /** Settings, Appearance; a key sent as null goes back to the server's default */
 export const appearanceApi = {

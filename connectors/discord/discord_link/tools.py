@@ -4,6 +4,8 @@ Read tools: list_chats, read_messages, read_around_message, search_messages,
 list_user_messages, get_user_profile, get_server_info, list_members. Every message a
 tool returns is journaled too (reading is archiving), and the result's structured
 content carries those records, so the app can cite them like any archived message.
+The two reads answer what the journal already holds and ask Discord only for the gaps
+(spans.py).
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field
 
-from . import policy, sync
+from . import policy, spans, sync
 from .errors import Failed, Unreachable
 from .link import Link, Refused
 from .records import DM, GROUP_DM, message, snowflake_at, snowflake_ms
@@ -202,27 +204,29 @@ def build(link: Link) -> MCPServer:
         limit: Annotated[int, Field(ge=1, le=100, description="The most messages, 1 to "
                                                               "100.")] = 50,
     ) -> CallToolResult:
-        """Read messages of one Discord chat live: the newest, or before or after one
-        message. For anything already in the chat archive, use chat_archive__read_period:
-        it is faster and works offline."""
+        """Read messages of one Discord chat: the newest, or before or after one message.
+        What the connection already holds comes from it, the rest live. For anything
+        already in the chat archive, use chat_archive__read_period: it is faster and
+        works offline."""
         def work():
             cid = _id(chat, "chat")
             if cid is None:
                 raise Refused("Pass the chat's id.")
             older, newer = _id(before, "message"), _id(after, "message")
             ch = known(cid)
-            params: dict[str, Any] = {"limit": limit}
-            if older:
-                params["before"] = older
-            if newer:
-                params["after"] = newer
-            msgs = rest.get(f"/channels/{cid}/messages", params)
+            local, params = spans.plan(state, cid, before=older, after=newer, limit=limit,
+                                       live=link.gateway.live(cid))
+            msgs = rest.get(f"/channels/{cid}/messages", params) if params else []
             recs = records_of(msgs)
+            if params and not (older and newer):
+                spans.covered(state, cid, params, msgs)
+            recs = sorted(local + recs, key=lambda r: int(r["message"]["key"]))
             where = _where(recs[0]["chat"]) if recs else _where(
                 {"key": cid, "kind": ch["kind"], "name": ch.get("name"),
                  "peer": ch.get("peer"), "parent": ch.get("guild_name")})
-            ids = sorted((m["id"] for m in msgs), key=int)
-            earlier = {"chat": cid, "before": ids[0]} if ids and len(msgs) >= limit else None
+            ids = sorted({*(m["id"] for m in msgs), *(r["message"]["key"] for r in local)},
+                         key=int)
+            earlier = {"chat": cid, "before": ids[0]} if ids and len(ids) >= limit else None
             later = {"chat": cid, "after": ids[-1]} if ids and (older or newer) else None
             return _result(f"Read {len(recs)} messages of {where}.", records=recs,
                            where=where, lines=_lines(recs), earlier=earlier, later=later)
@@ -235,17 +239,22 @@ def build(link: Link) -> MCPServer:
         limit: Annotated[int, Field(ge=2, le=100, description="Messages in all, 2 to "
                                                               "100.")] = 40,
     ) -> CallToolResult:
-        """Read the messages before and after one Discord message, live, half on each
-        side. Use it before you say anything about a message from
-        discord__search_messages."""
+        """Read the messages before and after one Discord message, half on each side.
+        Use it before you say anything about a message from discord__search_messages."""
         def work():
             cid, mid = _id(chat, "chat"), _id(message, "message")
             if cid is None or mid is None:
                 raise Refused("Pass the chat's id and the message's id.")
             known(cid)
-            msgs = rest.get(f"/channels/{cid}/messages", {"around": mid, "limit": limit})
-            recs = records_of(msgs)
-            ids = sorted((m["id"] for m in msgs), key=int)
+            recs = spans.around(state, cid, mid, limit, live=link.gateway.live(cid))
+            if recs is None:
+                params = {"around": mid, "limit": limit}
+                msgs = rest.get(f"/channels/{cid}/messages", params)
+                recs = records_of(msgs)
+                spans.covered(state, cid, params, msgs)
+                ids = sorted((m["id"] for m in msgs), key=int)
+            else:
+                ids = [r["message"]["key"] for r in recs]
             where = _where(recs[0]["chat"]) if recs else cid
             return _result(f"Read {len(recs)} messages around one message in {where}.",
                            records=recs, where=where, lines=_lines(recs),

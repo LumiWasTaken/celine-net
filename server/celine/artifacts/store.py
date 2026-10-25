@@ -7,6 +7,7 @@ import re
 import secrets
 import sqlite3
 
+from celine import homes
 from celine.core.ids import now
 
 MAX_BYTES = 1_000_000     # one version, stored and served: a cap no model reaches
@@ -71,8 +72,9 @@ def _new_id(c: sqlite3.Connection) -> str:
 
 async def get(store, id: str) -> dict | None:
     """The artifact with its newest title and version, and every version without its
-    content: {id, kind, conversation_id, created_at, trashed_at, n, title, note,
-    updated_at, versions: [{n, title, note, created_at, bytes}]}."""
+    content: {id, kind, conversation_id, link (homes.of: where its conversation opens,
+    None without one), created_at, trashed_at, n, title, note, updated_at,
+    versions: [{n, title, note, created_at, bytes}]}."""
     def fn(c: sqlite3.Connection) -> dict | None:
         row = c.execute(_NEWEST + " WHERE a.id = ?", (id,)).fetchone()
         if row is None:
@@ -80,7 +82,9 @@ async def get(store, id: str) -> dict | None:
         versions = [dict(v) for v in c.execute(
             "SELECT n, title, note, created_at, length(CAST(content AS BLOB)) AS bytes "
             "FROM artifact_versions WHERE artifact_id = ? ORDER BY n", (id,))]
-        return {**dict(row), "versions": versions}
+        cid = row["conversation_id"]
+        return {**dict(row), "link": homes.of(c, cid)["link"] if cid else None,
+                "versions": versions}
 
     return await store.read(fn)
 

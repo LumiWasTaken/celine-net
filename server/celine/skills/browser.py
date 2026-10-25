@@ -1,9 +1,9 @@
 """The agent's browser: one Brave in the browser box (browser/browserd.py), used like a person
 at a screen.
 
-Five tools. browser__open loads a page in a named tab; browser__scroll scrolls it and
-browser__close closes it (reading tools, as open and look: a sub-agent that only reads
-may browse); browser__act runs steps on it
+Five tools. browser__open loads a page in a named tab and browser__close closes it
+(each has effects: a GET can log out or start a download); browser__scroll scrolls it
+(a reading tool, as look); browser__act runs steps on it
 (click, type, select, hover, press, find, back, forward, reload, upload, accept,
 dismiss, restart, and locate: a click or hover where the Screen reading model
 boxes what it names); browser__look reads the page: the view again, the whole page
@@ -20,18 +20,22 @@ change both together.
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
 import math
+import posixpath
 import re
+import socket
+import unicodedata
 from collections import defaultdict
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from datetime import datetime
 from typing import Annotated, Literal, NotRequired, Required, TypedDict
 
 import anyio
 import httpx
 
-from .. import attachments, vision
+from .. import attachments, shares, vision
 from ..browser import sync
 from ..browser.sync import BrowserRefused
 from ..turns import loads, tokens
@@ -49,13 +53,14 @@ STEPS_MAX = 20         # steps in one browser__act (browserd's STEPS_MAX)
 PART_TOKENS = 6000     # one part of a page's text or HTML
 OUTLINE_TOKENS = 4000  # the outline at most; more is cut and said
 VIEW = (1440, 900)     # the view and every shot, px (browserd's W, H)
+CDP_PORT = 9300        # its DevTools, on the box's loopback (browserd's CDP_PORT)
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,15}$")
 POINT = re.compile(r"^(\d+)\s*,\s*(\d+)$")      # a point of the view, x,y in px
 ID = re.compile(r"^e?(\d+)$", re.I)
 NAME_RULE = ("A tab name is up to 16 lowercase letters, digits, - or _, starting with a "
              "letter or digit, like tab=\"jobs\".")
-# scroll and close are browser__scroll and browser__close, which a reading sub-agent has
+# scroll and close are tools of their own, browser__scroll and browser__close
 DOES = ("click", "type", "select", "hover", "press", "find", "wait", "back",
         "forward", "reload", "upload", "accept", "dismiss", "restart", "locate")
 NEEDS_TARGET = {"click", "hover", "select", "upload"}
@@ -135,6 +140,111 @@ def address(url: str) -> str:
     if not re.match(r"^[a-z][a-z0-9+.-]*:\S+$", url, re.I):
         raise ToolRefused("url is an address, like https://example.com/jobs or chrome://settings.")
     return url
+
+
+# the cloud's instance metadata: the link-local range, and AWS's address on IPv6
+METADATA = (ipaddress.ip_network("169.254.0.0/16"), ipaddress.ip_network("fd00:ec2::254/128"))
+DEFAULT_PORTS = {"http": 80, "ws": 80, "https": 443, "wss": 443, "ftp": 21}
+SPECIAL = (*DEFAULT_PORTS, "file")     # schemes whose \ Brave reads as /
+RESOLVE_WAIT = 3.0      # seconds to look a name up; a name that does not answer opens
+IPV4_PART = re.compile(r"0[xX][0-9a-fA-F]*|0[0-7]*|[1-9][0-9]*")
+DOTS = str.maketrans({"。": ".", "．": ".", "｡": "."})   # IDNA's full stops
+IP = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def ipv4(host: str) -> ipaddress.IPv4Address | None:
+    """A host as Brave reads an IPv4 address: one to four parts, each decimal, 0x hex or
+    0 octal (2130706433, 127.1 and 0x7f.0.0.1 are all 127.0.0.1); None for a name."""
+    parts = host.split(".")
+    if len(parts) > 1 and parts[-1] == "":
+        parts.pop()
+    if not 1 <= len(parts) <= 4 or not all(IPV4_PART.fullmatch(p) for p in parts):
+        return None
+    nums = [int(p[2:] or "0", 16) if p[:2].lower() == "0x" else int(p, 8 if p[0] == "0" else 10)
+            for p in parts]
+    if any(n > 255 for n in nums[:-1]) or nums[-1] >= 256 ** (5 - len(nums)):
+        return None
+    return ipaddress.IPv4Address(sum(n << 8 * (3 - i) for i, n in enumerate(nums[:-1]))
+                                 + nums[-1])
+
+
+def literal(host: str) -> IP | None:
+    """The address a host names by itself, an IPv4 address in IPv6 read as IPv4."""
+    try:
+        ip = ipaddress.ip_address(host.split("%", 1)[0]) if ":" in host else ipv4(host)
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        return ip.ipv4_mapped
+    return ip
+
+
+def where(url: str) -> tuple[str, str, int | None, str]:
+    """(scheme, host, port, path) of an address as Brave reads it: inside view-source:,
+    \\ for / in a web address, the host percent-decoded, its full-width digits and dots
+    plain, lower case, no dot at its end."""
+    while url[:12].lower() == "view-source:":
+        url = url[12:]
+    scheme = url.split(":", 1)[0].lower()
+    if scheme in SPECIAL:
+        url = url.replace("\\", "/")
+    try:
+        p = urlsplit(url)
+        port = p.port
+    except ValueError:
+        return scheme, "", None, ""
+    host = unicodedata.normalize("NFKC", unquote(p.hostname or "")).translate(DOTS)
+    return scheme, host.lower().rstrip("."), port or DEFAULT_PORTS.get(scheme), p.path
+
+
+async def addresses(host: str, port: int | None) -> list[IP]:
+    """What a name points to, as the box's resolver would answer; [] when it does not
+    answer in RESOLVE_WAIT."""
+    with anyio.move_on_after(RESOLVE_WAIT):
+        try:
+            infos = await anyio.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except (OSError, UnicodeError):
+            return []
+        return [ip for i in infos if (ip := literal(str(i[4][0]))) is not None]
+    return []
+
+
+def ours(ip: IP) -> bool:
+    """Whether an address is one of the app's own, not its loopback: this machine takes
+    it for a socket. The box's loopback is the box's."""
+    if ip.is_loopback or ip.is_unspecified:
+        return False
+    with socket.socket(socket.AF_INET6 if ip.version == 6 else socket.AF_INET) as s:
+        try:
+            s.bind((str(ip), 0))
+        except OSError:
+            return False
+    return True
+
+
+async def refusal(url: str) -> str | None:
+    """Why the browser does not open an address, None when it does: its own DevTools
+    on the box's loopback; the app where the box reaches it (shares.INSIDE), by that
+    name or one of the app's own addresses, except its shares; the cloud's metadata.
+    Each by its address or a name that points there. Every scheme, the LAN and the
+    box's other ports open."""
+    scheme, host, port, path = where(url)
+    if not host:
+        return None
+    ip = literal(host)
+    ips = [ip] if ip is not None else await addresses(host, port)
+    loopback = host == "localhost" or host.endswith(".localhost") or \
+        any(a.is_loopback or a.is_unspecified for a in ips)
+    if loopback and port == CDP_PORT:
+        return "That is your browser's own DevTools port, which no tab opens."
+    if any(a in net for a in ips for net in METADATA if a.version == net.version):
+        return "That is the cloud's instance metadata address, which no tab opens."
+    app = urlsplit(shares.INSIDE)
+    if port == app.port and (host == app.hostname or any(ours(a) for a in ips)) and \
+            not posixpath.normpath("/" + unquote(path).lstrip("/")).startswith(shares.PREFIX):
+        return (f"That is the app itself, which no tab opens; a share of it does, at "
+                f"{shares.INSIDE}{shares.PREFIX}<token>/.")
+    return None
 
 
 def key_names(text: str) -> str:
@@ -257,7 +367,7 @@ class Browser:
 
     # ---- the tools ------------------------------------------------------------------------
 
-    @tool(read_only=True, open_world=True, terminal_arg="tab")       # a sub-agent that only reads may browse
+    @tool(read_only=False, destructive=False, open_world=True, terminal_arg="tab")
     async def open(
         self,
         ctx: ToolContext,
@@ -278,6 +388,8 @@ class Browser:
         what is in view, with an id on everything you can act on."""
         try:
             name, target = tab_name(tab), address(url)
+            if why := await refusal(target):
+                raise ToolRefused(why)
         except ToolRefused as e:
             return self._error(str(e), tab)
         steps = [{"do": "open", "url": target}]
@@ -450,7 +562,7 @@ class Browser:
             return self._error(str(e) or "amount is a number of pixels.", tab)
         return await self._steps(ctx, name, [step], show=show)
 
-    @tool(read_only=True, open_world=True, terminal_arg="tab")
+    @tool(read_only=False, destructive=False, open_world=True, terminal_arg="tab")
     async def close(
         self,
         ctx: ToolContext,
@@ -588,8 +700,6 @@ class Browser:
             out = self._refusal(e, name, steps)
             if e.facts.get("error") == "password_field":
                 await self._meet_vault(ctx)
-            if e.facts.get("error") == "wrong_site":
-                await self._wrong_site(e.facts.get("site"), steps)
             done = e.facts.get("effects") or []
             if done:
                 out.content += "\n" + "\n".join(self._effects(steps, done))
@@ -614,21 +724,6 @@ class Browser:
             await self._meet_vault(ctx)
             content += "\nA password field: vault__get or vault__set."
         return ToolResult(content=content, display=display)
-
-    async def _wrong_site(self, site: str | None, steps: list[dict]) -> None:
-        """A vault entry stopped at a page not its own: the user hears it on the phone.
-        Only the entry's name and the page's origin, never its words."""
-        entries = [m[1] for st in steps if st.get("do") == "type"
-                   and (m := VAULT.fullmatch(st.get("text", "")))]
-        ping = self.app.approvals.ping if self.app.approvals else None
-        if ping is None:
-            return
-        try:
-            await ping(f"{self.cfg.name} tried to type the vault entry "
-                       f"{', '.join(entries) or 'unknown'} into {site or 'a page still loading'}, "
-                       f"which is not one of its sites. Nothing was typed.")
-        except Exception:
-            log.warning("vault ping failed", exc_info=True)
 
     @staticmethod
     async def _meet_vault(ctx: ToolContext | None) -> None:
@@ -1046,6 +1141,9 @@ class Browser:
             return self._error(f"Nothing was typed {into(f.get('target'))}. A password field "
                                f"takes a vault entry: vault__set(name) makes one, "
                                f"vault__get(name) gives the text to type.", tab)
+        if code == "not_password":
+            return self._error(f"Nothing was typed {into(f.get('target'))}. A vault entry is "
+                               f"typed only into a password field.", tab)
         if code == "no_back":
             return self._error(where + f"There is no earlier page in tab {tab}.", tab)
         if code == "no_forward":

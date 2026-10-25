@@ -61,8 +61,15 @@ def _error(status: int, message: str, kind: str) -> JSONResponse:
                         status_code=status)
 
 
+# a reverse proxy adds one of these; the box calls the app directly
+_PROXIED = ("x-forwarded-for", "forwarded", "x-real-ip")
+
+
 def _refused(request: Request) -> JSONResponse | None:
-    """The key check: None when the caller holds the shellbox-llm key."""
+    """The key check: None when the caller holds the shellbox-llm key and came straight
+    from the box, not through the public origin."""
+    if any(n in request.headers for n in _PROXIED):
+        return _error(403, "The model proxy is for the shellbox only.", "permission_error")
     want = key(request.app.state.services.cfg)
     if not want:
         return _error(503, "The model proxy is off: the app has no keys/shellbox-llm.key.", "unavailable")

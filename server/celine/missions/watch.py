@@ -11,9 +11,17 @@ is not locked (conversations/store.locked), its plan (plans/) decides:
   PAST;
 - it asked at a checkpoint (the plan waits): Needs you, the note WAITING;
 - every step is done, or no line follows: Needs you, the note NOTE.
+A turn a freeze cut (guard/freeze.py) is no Stop: with Continue missions after Unfreeze
+(Settings, Advanced, on by default) the mission stays active, and after the unfreeze
+that turn goes on (`thaw`, looked at every LOOK seconds; a turn that cannot be
+continued gets KEEP_GOING). Switched off, it is a Stop as above.
 A move to Needs you is reported as its own status change is (missions/skill.record).
 A turn the user started ends a Needs you: the mission is active again, and the rule above
 goes on from there.
+
+The ceiling: the Mission time limit (Settings, Advanced; 0 none) counts from its start;
+past it an active mission is stopped, its note why (`ceilings`, looked at every LOOK
+seconds), as a routine past its own.
 
 Check-ins: every `check_in` minutes while a mission is active, a short line on where it
 stands (the step of its plan, its note) goes where it reports, else to the user
@@ -31,7 +39,7 @@ import anyio
 from ..core import ids
 from . import store as missions
 from ..plans import flow, store as plans
-from .skill import record
+from .skill import record, stop
 
 log = logging.getLogger("celine.missions")
 LOOK = 60.0         # seconds between two looks for a check-in that is due
@@ -53,6 +61,11 @@ def stuck(c: sqlite3.Connection, cid: str) -> bool:
     r = c.execute("SELECT wake_id FROM missions WHERE conversation_id=?", (cid,)).fetchone()
     limit = int(r[0]) if r and r[0] else None
     return all(quiet(c, one, limit if one == cid else None) for one in family(c, cid))
+
+
+def _cut_by_freeze(c: sqlite3.Connection, turn_id: str | None) -> bool:
+    r = c.execute("SELECT state, reason_code FROM turns WHERE id=?", (turn_id,)).fetchone()
+    return r is not None and r["state"] == "aborted" and r["reason_code"] == "frozen"
 
 
 def _may_go_on(c: sqlite3.Connection, turn_id: str) -> bool:
@@ -84,6 +97,9 @@ async def check(app, cid: str, turn_id: str | None) -> str | None:
     if row is None or row["status"] != "active" or \
             not await app.store.read(lambda c: stuck(c, cid)):
         return None
+    if await app.store.read(lambda c: _cut_by_freeze(c, turn_id)) and \
+            app.cfg.r("missions_resume_after_unfreeze"):
+        return None                  # thaw takes it on after the unfreeze
     plan = await plans.get(app.store, cid)
     if plan is not None and plan["waiting"]:
         n = max((i for i, s in enumerate(plan["steps"], 1) if s["state"] == "done"
@@ -146,14 +162,70 @@ async def check_ins(app, at: datetime) -> list[str]:
     return out
 
 
-async def run(app) -> None:
-    """The app's loop: a look for due check-ins every LOOK seconds."""
-    while True:
+def _over(hours: int) -> str:
+    return f"Ran over {hours} hour{'' if hours == 1 else 's'}"
+
+
+async def ceilings(app, at: datetime) -> list[str]:
+    """Every active mission that started more than the Mission time limit before `at`
+    stops, its note why. -> the missions stopped."""
+    hours = app.cfg.r("mission_max_hours")
+    if not hours:
+        return []
+    out = []
+    for row in await missions.list(app.store, "active"):
+        if at - datetime.fromisoformat(row["created_at"]) > timedelta(hours=hours):
+            await stop(app, row["conversation_id"], _over(hours))
+            log.info("mission over its ceiling", extra={
+                "event": "missions.ceiling", "conversation": row["conversation_id"]})
+            out.append(row["conversation_id"])
+    return out
+
+
+async def thaw(app) -> list[str]:
+    """After an unfreeze (Continue missions after Unfreeze on): every active mission that is
+    stuck with its latest turn cut by the freeze goes on in that turn, or with KEEP_GOING
+    when it cannot be continued. -> the missions that did."""
+    from ..conversations import tree
+    from ..guard.freeze import frozen
+    from ..turns import store as turns
+    if not app.cfg.r("missions_resume_after_unfreeze") or await frozen(app.store):
+        return []
+    out = []
+    for row in await missions.list(app.store, "active"):
+        cid = row["conversation_id"]
+        last = await app.store.read(lambda c: (c.execute(
+            "SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC LIMIT 1",
+            (cid,)).fetchone() or [None])[0])
+        if not await app.store.read(lambda c: _cut_by_freeze(c, last) and stuck(c, cid)):
+            continue
         try:
-            await check_ins(app, datetime.now(timezone.utc))
-        except Exception:
-            log.exception("mission check-ins failed",
-                          extra={"event": "missions.check_in_failed"})
+            await turns.continue_turn(app.store, cid, last, app.registry)
+        except (KeyError, ValueError, tree.Busy):
+            await app.intercom.send("system:app", f"agent:{cid}", KEEP_GOING, kind="notice",
+                                    data={"mission": cid, "keep_going": True})
+        else:
+            app.dispatcher.notify()
+        log.info("mission goes on after the unfreeze",
+                 extra={"event": "missions.thawed", "conversation": cid})
+        out.append(cid)
+    return out
+
+
+async def run(app) -> None:
+    """The app's loop: every LOOK seconds a look for due check-ins, for missions past
+    their ceiling and for missions a freeze cut."""
+    async def thawed(app, _at) -> None:
+        await thaw(app)
+    while True:
+        at = datetime.now(timezone.utc)
+        for look, what in ((check_ins, "check_in"), (ceilings, "ceiling"),
+                           (thawed, "thaw")):
+            try:
+                await look(app, at)
+            except Exception:
+                log.exception(f"mission {what} failed",
+                              extra={"event": f"missions.{what}_failed"})
         await anyio.sleep(LOOK)
 
 

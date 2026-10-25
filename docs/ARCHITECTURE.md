@@ -2,7 +2,7 @@
 
 ## Shape
 
-One Python process. Celine's state is one SQLite file with one writer task; every
+One Python process. Celine's state is one SQLite file with one writer thread; every
 knowledge base is another SQLite file of its own (see Knowledge bases). A React app served as static
 files from the same process, or by Vite in dev. Turns run server side and survive the
 browser going away. The WebSocket is a tail of a durable event log; closing it changes
@@ -61,7 +61,7 @@ Then the lifespan starts the parts in order: the store; the LLM queue and its Ro
 (before anything that may ask a model); the knowledge bases and their schedulers; the
 skills; the MCP supervisor and the connectors; the sweep of turns a crash or restart
 left behind (see Durable execution); the dispatcher's workers; the intercom and its
-timer; triggers; the scheduler; the terminal sync; the bridge; the config watcher; the
+timer; triggers; the scheduler; the terminal sync; the config watcher; the
 login's sessions; the health port.
 
 Everything the app runs is one `Services` object (`core/services.py`), made with the app
@@ -92,7 +92,7 @@ and pronouns are its row's; your name (`{{username}}`) is Settings, General.
 (var). `config.load` reads it and writes nothing; `boot.load` reads the rest
 (mcp.toml, kb.toml, skills.toml, llm.toml, the presets, var/settings, its row), each
 file's keys checked against the table of its owner (`mcp.KEYS`, `kb.TABLES`,
-`skills.KNOBS`, `backends.llm.QUEUE_KEYS`). The data dir, the stack's keys and the
+`skills.BUILTIN` with `enabled` only, `backends.llm.QUEUE_KEYS`). The data dir, the stack's keys and the
 seeded settings are made once by `__main__.preflight`, before the first full load.
 
 The Advanced settings (Settings, Advanced; `settings/general.py` FIELDS, saved in
@@ -115,10 +115,34 @@ applies at once:
 | `max_attachment_bytes` | 20000000 | refused during upload |
 | `max_attachments` | 10 | per message |
 | `inline_text_max_bytes` | 200000 | larger text attachments become a note |
+| `requests_keep` | 0 | days a model request body is kept in log.db; 0 keeps it forever |
+| `document_part_mb` | 256 | an EPUB or DOCX part that unpacks larger is not read |
+| `document_html_mb` | 64 | a larger HTML document is stored, not read |
+| `document_pdf_pages` | 5000 | pages read of one PDF |
+| `document_pdf_seconds` | 600 | time spent reading one PDF, looked at between pages |
 
-`skills.toml` holds one section per skill (`[notebook]`, `[chat_archive]`,
-`[past_conversations]`, `[user_documents]`, `[sub_agents]`) with `enabled` and that
-skill's limits; `skills.KNOBS` lists the keys.
+A skill's own numbers are declared beside its code: its module (the one `BUILTIN` names)
+has `KNOBS`, a tuple of `skills.knob(key, label, unit, min, max, default, help)` with keys
+`<skill>.<name>` and the default as the constant. `settings/general.py` `fields()` adds
+the knobs of every skill whose module is there (`skills.module`, `skills.knob_fields`)
+after FIELDS, advanced, with `group` the skill's label (`tools_meta.SKILLS`); Settings,
+Advanced shows the app's own first and then one section per group. They are read at use
+with `cfg.r("web.results")`. `general.toml` keeps them in a table per skill (`[web]
+results = 10`, `section_to_file`), and `validate` reads a table back as its dotted keys,
+refuses an unknown knob of a skill that is there and drops the table of a skill that is
+gone. Sizes are in MB (1024 * 1024 bytes). The knobs: `notebook.index_max_entries`,
+`notebook.index_max_chars`; `past_conversations.max_results`, `snippet_chars`;
+`sub_agents.max_running`, `cli_minutes`; `code.poll_seconds`, `result_chars`;
+`chat_archive.search_max_tokens`, `search_max_tokens_all`, `candidates`, `rerank_floor`,
+`episode_gap_minutes`, `session_max_tokens`, `period_max_tokens`, `max_tokens_cap`,
+`scroll_max_messages`, `scroll_max_tokens`, `get_max_refs`; `web.results`,
+`search_timeout`, `read_tokens`, `timeout`, `page_max_mb`, `pdf_max_mb`. The citation
+check (`turns/reply.py`) is the app's own: `verify_citations`, a switch.
+
+`skills.toml` holds one section per skill with `enabled` and nothing else. `build`, the
+reload and the knobs all walk `skills.BUILTIN` and skip a skill whose module is gone
+(`skills.module`: None for a missing file or folder, any other import error raised), so
+a skill's module or folder removed takes the skill, its tools and its knobs with it.
 
 Models: `var/settings/providers.toml` (providers and their models) and `roles.toml`
 (an ordered list of models per role), kept as `cfg.settings`. Which model answers a call
@@ -134,10 +158,11 @@ conversation can pick its own (`PATCH /api/conversations/{cid}/settings`).
 
 Who it is and how it sounds are fields of its row (Settings, the agent's page): `persona`, `talk`
 (null: the shipped `config/her/talk.md`) and its Banned words (`voice`). Every turn of
-its own gets all of it, whatever the kind: a chat, a bridged chat, a mission, a sub-agent,
+its own gets all of it, whatever the kind: a chat, a mission, a sub-agent,
 a background run (`prompt.system_blocks`, the one assembly). It reads them with
 `me__read` and changes its talk and its banned words with `me__edit` (`skills/me.py`);
-the persona stays yours. Every change goes through `her.write_sync` into `text_versions`
+the persona stays yours. Every edit waits for your approval first (`approvals.py`, kind
+`her`), whether the guard is on or not. Every change goes through `her.write_sync` into `text_versions`
 as `her:persona`, `her:talk` and `her:voice`, and `POST /api/text-versions/{vid}/revert`
 makes a version the text again.
 
@@ -179,8 +204,8 @@ and a read joins across them in one SQL; the attached files have no foreign keys
 celine.db, so a purge deletes their rows by name (`conversations/store.py`,
 `terminals/store.py`). WAL, foreign keys on, busy timeout 5 s. A file older than its
 first migration stops the server; later numbered migrations apply on top, in one
-transaction each ([dev.md](dev.md)). No copy is made before migrating: the nightly
-backups are the backups (`schedules/backups.py`, one `.db.xz` per file).
+transaction each ([dev.md](dev.md)). Before a migration changes a file with data, the
+file is copied beside it as `<file>.pre-<version>.bak`; the last three are kept.
 
 Main tables: `conversations`, `messages`, `tool_calls`, `turns`, `events`,
 `global_events`, `jobs`, `compactions`, `context_state`, `attachments`, `blobs`,
@@ -201,7 +226,9 @@ with every message after it in its branch; there is no message trash.
 
 ### The event logs
 
-Two durable logs, both written only by the single writer (`core/store.py`):
+Two durable logs, both written only by the single writer (`core/store.py`, a thread of
+its own; the loop queues a write and awaits it, and the write's events are published on
+the loop after its commit):
 
 - A conversation's: `events(conversation_id, seq)` is unique and gapless per
   conversation. The counter is `conversations.next_seq`, bumped in the same transaction
@@ -217,10 +244,11 @@ transaction; a caller cannot await mid-transaction. Events of a write are publis
 the `EventBus` after COMMIT. A write after the store closed raises (`store is not
 running`).
 
-After each turn, and at startup, `prune_events` drops all but the last `events_keep`
+At startup and every ten minutes after (`keep_pruned`), `prune_events` drops all but the last `events_keep`
 entries of every idle conversation and raises `trim_below`, keeping what the snapshot
 reads back (`images.notice`, `llm.queue` with `fallback`); the global feed keeps its newest
-20000 rows (`GLOBAL_KEEP`). A client resuming from below gets `resync`.
+20000 rows (`GLOBAL_KEEP`). A client resuming from below gets `resync`. At startup it
+also drops the `requests` older than `requests_keep` days (0, the default, keeps them).
 
 ### The message tree
 
@@ -674,9 +702,10 @@ only write rows; a closed gate still holds), `on`.
 - `GET /api/guard/freeze`, `POST /api/guard/freeze` `{why}`, `DELETE /api/guard/freeze`
 - `POST /api/guard/banners/{id}/replies` `{text}` or `{button: approve | deny | unfreeze | once |
   pass}`; 503 `bastet_away` when the reader cannot answer
-- `GET /api/approvals`, `POST /api/approvals/{id}/answer` `{ok}` (`api/approvals.py`)
-- the bridged chat: `!freeze <why>`, `!unfreeze`, `!approve`, `!deny` from your own
-  messages only.
+- `GET /api/approvals`, `POST /api/approvals/{id}/answer` `{ok}` (`api/approvals.py`); every request but a
+  gate also waits in its chat, after the message that made the call, with Approve and Deny
+  (snapshot `approvals`, events `approval.asked`, `approval.closed`); in your own turn it
+  waits for your answer or Stop and holds the turn's clock, elsewhere `ASK_FOR` seconds
 
 **What code enforces** (`tests/test_gates_hold.py`): the floor under Bastet's judgement.
 - A closed gate never opens.
@@ -684,9 +713,7 @@ only write rows; a closed gate still holds), `on`.
   no model call through the proxy, no action with a named token.
 - Only you unfreeze, make a pass and answer an approval or a banner: those functions take
   an `Owner` (`guard/owner.py`), made only from a logged-in session (`guard/api.py`,
-  `api/approvals.py`) or
-  your own bridged message (`bridge/service.py`). No tool, model, intercom message or
-  Bastet's chat holds one.
+  `api/approvals.py`). No tool, model, intercom message or Bastet's chat holds one.
 - The agent's tools cannot reach the rule file, the database, the decisions, passes or freezes:
   file tools resolve every path inside their root, and the shellbox and the browser see
   only the shellbox folder of the data volume.
@@ -828,7 +855,7 @@ all its tools are off).
 sub-agent, a conversation of kind `agent` on the tasks role, with `agent_of`,
 `agent_name` (unique among the parent's sub-agents), `notebook_folder` and `access`
 (read or work; read by default) and an intercom `brief`. The name of a sub-agent that is
-done sends the brief to it instead. At most `max_running` of a parent's sub-agents work at
+done sends the brief to it instead. At most `sub_agents.max_running` of a parent's sub-agents work at
 once; the rest are queued, and `release` starts them oldest brief first. With `cli`
 (`agent_cli`) its turns run on `sub_agents/cli.py`'s backend in its shellbox instead of a
 model, calling its models through the model proxy (`api/llm_proxy.py`). A sub-agent is
@@ -850,8 +877,8 @@ every anchor is checked before anything changes, a stale one refuses the call),
 `var/notebook/`, confined, any format; the index is `notebook_index` and `notebook_fts`
 in `var/notebook/.index.db`.
 Line 1 of every note is a `Last changed:` line the code keeps up to date. The index
-fragment goes into every system prompt: `map.md` first, up to `index_max_entries` entries
-within `index_max_bytes`. `tools/` in the notebook browser is generated from the
+fragment goes into every system prompt: `map.md` first, up to `notebook.index_max_entries`
+entries within `notebook.index_max_chars` (Settings, Advanced). `tools/` in the notebook browser is generated from the
 registry on each read (`skills/toolsdoc.py`) and is not in its notebook.
 
 Placeholders are created once (marker `.placeholders`): `appearance/*.md` and
@@ -862,7 +889,7 @@ config list for its `write` and `delete`.
 Every notebook tool speaks to it in the second person and says whose file is whose:
 `list`, `search` and the index suffix your files with `[{{username}}'s, you can read it,
 not change it]` and the generated folder with `[generated, read-only]`. Three files are
-yours, listed in `[notebook] protected`: `identity.md`, `opinions/README.md`,
+yours, `SEEDS` in `skills/notebook.py`: `identity.md`, `opinions/README.md`,
 `appearance/README.md`. They are written once at startup from `config/notebook_seed/`
 when missing, and its `write` and `delete` refuse them. `identity.md` goes into every
 system prompt in full, ahead of the index.
@@ -954,11 +981,11 @@ not built (the catalog's `tools`) and `/share/` and the open route answer 404 fo
 share, even one that still runs, which shows as not running.
 
 `intercom` (`intercom/skill.py`, guide `guides/intercom.md`, always loaded): its side of the
-intercom (see Intercom). `send(text, to, subject, reply_to, in, at, until, urgent, wait)`
+intercom (see Intercom). `send(text, to, subject, reply_to, in, at, until, wait)`
 writes to `user`, `me`, `parent`, `team`, `all`, a sub-agent's or mission's name or a
 conversation id; `in` or `at` make it land later (to `me`, a reminder that starts its turn);
-`until` on a message to `all` makes it an announcement; `urgent` also posts it in the
-bridged chat (`Bridge.say`). `read(thread, unread)` lists its threads or reads
+`until` on a message to `all` makes it an announcement. `read(thread, unread)` lists its
+threads or reads
 one; `cancel(id)` cancels a message it scheduled. Sub-agents in read mode have these tools
 too.
 
@@ -997,12 +1024,13 @@ the tail of a turn names the other conversations with a live turn.
 conversation's active path, the current conversation left out; `read(conversation, before)`,
 one conversation's active path from the end.
 
-`web` (`skills/web.py`, guide `guides/web.md`, `[web]` in skills.toml): `search(query,
+`web` (`skills/web.py`, guide `guides/web.md`, its knobs `web.*`): `search(query,
 time_range, language, site, limit, page)` asks a self-hosted SearXNG (the address in
 Settings, Features, seeded from `CELINE_SEARXNG_URL`) and returns
 compact `[web:n]` blocks. `read(url, part)` takes a
-URL or `web:n`, fetches it (httpx, 20 s, 5 MB HTML / 25 MB PDF, redirects followed by hand),
-extracts the main text (trafilatura, pypdf) and returns one part of about `read_tokens`.
+URL or `web:n`, fetches it (httpx, `web.timeout` 20 s, `web.page_max_mb` 5 MB HTML,
+`web.pdf_max_mb` 25 MB PDF, redirects followed by hand), extracts the main text
+(trafilatura, pypdf) and returns one part of about `web.read_tokens`.
 Only http(s) to global addresses is fetched: every hop's host is resolved and each address
 must be global (`ipaddress.is_global`), and the peer address is checked again before the
 body is read. Citations: it writes `[[web:n]]`; the runner's citation check
@@ -1072,9 +1100,11 @@ the app is their MCP client (it is never an MCP server).
 
 - `connectors/discord/discord_link/` (Python, `python -m discord_link --state
   var/discord-link --listen 127.0.0.1:8768`): `state.py` (one SQLite file: the journal,
-  dedupe, channels, cursors), `rest.py` (GET only), `gateway.py` (live messages, edits,
-  deletes, catch-up after a drop), `sync.py`, `login.py`, `tools.py` (MCP read tools),
-  `app.py`. It never writes to Discord.
+  dedupe, channels, cursors, spans), `rest.py` (GET only), `gateway.py` (live messages,
+  edits, deletes, catch-up after a drop), `sync.py`, `spans.py` (the message id ranges the
+  journal holds all of: a read tool answers those from the journal and asks Discord only
+  for the gaps), `login.py`, `tools.py` (MCP read tools), `app.py`. It never writes to
+  Discord.
 - `wa-link/` (Go, whatsmeow): pairs as a linked device, journals history and live messages
   as the same records, serves the same doors, downloads media on request, asks the phone
   for older messages. On `LoggedOut` it exits and starts again with a new code.
@@ -1089,22 +1119,15 @@ App side:
 - `kb/ignore.py`: "Delete and ignore". One list for every source, `ignored_chats`, which
   every Sink keeps to.
 - `mcp.py`: a block with `command` next to `url` is started only when the url does not
-  answer; it outlives the app. A connector's tools that are not read-only are hidden from
-  Celine; `Supervisor.call` reaches them for the bridge. Tool results' records are
-  archived and rendered as Messages archive lines, so they are citable.
-- `bridge/`: a connector bridges when its `/admin/info` names a `write_chat` (wa-link:
-  "Message yourself"; `part_chars` the longest message). Prompts there become intercom
-  messages to "Bridge (WhatsApp)", read from the archive after a cursor (kv
-  `bridge_cursor`) once the lease is held (60 s, renewed every 20 s). The agent's answer (the
-  turn's last reply without a tool call, `conversations/tree.final_words`) goes back from
-  the dispatcher's turn-end hook as it wrote it, only the markdown WhatsApp would show
-  as raw symbols in WhatsApp's own syntax (`bridge/render.py`), every part in order.
-  `say` sends its `intercom__send(to="user", urgent)`.
+  answer; it outlives the app. A connector only reads: a tool of its that is not
+  read-only is never offered to Celine. Tool results' records are archived and rendered
+  as Messages archive lines, so they are citable.
 - `api/connectors.py`: the source pages' routes.
 
 Write scope, enforced in the connectors and proven by their tests: discord-link's REST
-client refuses any method but GET and nothing else writes to Discord; wa-link writes only
-into the account's own "Message yourself" chat.
+client refuses any method but GET and nothing else writes to Discord; wa-link sends no
+message, only two requests to the account's own phone (older messages of one chat, a
+media retry receipt).
 
 ### Semantic
 
@@ -1606,7 +1629,8 @@ Conversation events: `snapshot`, `turn.state`, `message.created`, `message.delta
 `message.reasoning`, `message.done` (once, with its text), `message.rewritten` (once, when
 the text changed after that), `message.purged`, `message.reopened`, `message.attachments`,
 `tool.started`, `tool.progress`, `tool.done`, `tool.gated`, `tool.detached`, `tool.reset`,
-`job.state`, `guard.banner`, `images.batch`, `music.batch`, `version.changed`,
+`job.state`, `guard.banner`, `approval.asked`, `approval.closed`, `images.batch`,
+`music.batch`, `version.changed`,
 `overrides.changed`, `llm.queue`, `context.*` (see Context), `conversation.settings`,
 `citations.checked`, `terminal.state`, `error`. `turn.state` carries the conversation's live
 `queue`, `message.created` the message's `meta`.

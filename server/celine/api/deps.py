@@ -1,6 +1,6 @@
 """What every route module needs: the request's JSON object, the loaded settings, the
-ETag header, the logged-in-person check and a live view's socket loop. Packages import these from here, never from
-another route module."""
+ETag header, the logged-in-person and fresh-proof checks and a live view's socket loop.
+Packages import these from here, never from another route module."""
 from __future__ import annotations
 
 import json
@@ -59,6 +59,18 @@ def person_only(request: Request) -> None:
             getattr(request.app.state, "auth", None) is not None:
         raise CelineError("passkey_only", "Only a logged-in session can do this, not a "
                           "token.", 403)
+
+
+def proven(request: Request) -> None:
+    """A proof from the last minutes in this session (auth/routes.py, /api/auth/reauth)
+    before adding a way to log in, new recovery codes or a named token. With the login
+    off there is nothing to prove."""
+    auth = getattr(request.app.state, "auth", None)
+    if auth is None:
+        return
+    s = getattr(request.state, "session", None)
+    if s is None or not auth.store.proven(s):
+        raise CelineError("proof_needed", "Confirm access first.", 403)
 
 
 def services_of(request: Request):

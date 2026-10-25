@@ -74,8 +74,9 @@ class Skills:
         ctx: ToolContext,
         name: Annotated[str, "A skill name from the skill index, such as shell."],
     ) -> ToolResult:
-        """Read the guide of one skill: how its tools go together, with examples, and
-        your notes on it when you keep any. The skill does not have to be loaded."""
+        """Read the guide of one skill: how its tools go together, with examples, what
+        it offers now (such as its presets), and your notes on it when you keep any.
+        The skill does not have to be loaded."""
         from ..turns import loads
         key = str(name or "").strip().lower().split(SEP)[0]
         if key == META:
@@ -91,6 +92,9 @@ class Skills:
         g = getattr(skill, "guide", None)
         body = self.cfg.substitute(guide_text(self.cfg, g.body) if g is not None
                                    else str(getattr(skill, "description", "")))
+        # what the guide says comes after it: the skill's live docs (a role's presets)
+        for text in (getattr(skill, "docs", None) or {}).values():
+            body += f"\n\n{self.cfg.substitute(text.strip())}"
         if why := self.registry.down(key):
             from .gating import down_sentence
             body = f"{self.cfg.substitute(down_sentence(key, why))}\n\n{body}"

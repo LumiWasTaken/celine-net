@@ -32,7 +32,11 @@ export type TerminalRow = {
   exit: number | null
   live: Live | null
   /** the conversation that opened it, and which kind it is; null for the user's own */
-  conversation: { id: string; title: string; agent_of: string | null; kind: 'conversation' | 'mission' | 'sub_agent' } | null
+  conversation: {
+    id: string; title: string; agent_of: string | null; kind: 'conversation' | 'mission' | 'sub_agent'
+    /** where it opens, the server's (homes.py) */
+    link: string
+  } | null
 }
 
 /** how a command went: its own from its result, a line of yours settled by the server (null on a control) */
@@ -54,7 +58,8 @@ export type CommandRow = {
   kind: 'command' | 'read' | 'line' | 'control'
   at: string
   terminal: { id: string | null; name: string }
-  from: { kind: FromKind; conversation_id: string | null; title: string | null }
+  /** `link`: where its conversation opens, the server's (homes.py); null without one */
+  from: { kind: FromKind; conversation_id: string | null; title: string | null; link: string | null }
   text: string
   keys: string
   outcome: Outcome | null

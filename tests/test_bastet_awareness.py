@@ -18,6 +18,13 @@ AT = "2026-10-22T14:00:00.000+00:00"
 LATER = "2026-10-22T15:00:00.000+00:00"
 
 
+def _guarded():
+    """The config with the Guard feature switched on (it starts off)."""
+    cfg = load()
+    cfg.settings.features = {**(cfg.settings.features or {}), "guard": True}
+    return cfg
+
+
 async def _setup(store, cid: str) -> None:
     def fn(c):
         c.execute("UPDATE conversations SET title='Trip planning' WHERE id=?", (cid,))
@@ -33,7 +40,7 @@ async def _setup(store, cid: str) -> None:
 
 
 async def test_frozen_she_reads_where_why_and_that_she_waits(store):
-    cfg = load()
+    cfg = _guarded()
     cid = await conversations.create(store)
     await _setup(store, cid)
     line = await awareness.line(store, cfg, timezone.utc, cid, LATER)
@@ -42,7 +49,7 @@ async def test_frozen_she_reads_where_why_and_that_she_waits(store):
 
 
 async def test_her_thread_with_bastet_and_nothing_when_off(store):
-    cfg = load()
+    cfg = _guarded()
     cid = await conversations.create(store)
     first = await send(store, f"agent:{cid}", "bastet", "hi", created_at=AT)
     await send(store, bastet.ADDR, f"agent:{cid}", "hello", reply_to=first["intercom_id"],

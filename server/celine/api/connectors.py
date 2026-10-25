@@ -1,6 +1,6 @@
 """The source pages' routes for Discord and WhatsApp. The accounts live in the
 connectors (discord-link, wa-link); these routes forward to their `/admin/*` doors and
-add what only the app knows (the archive, the bridge switch, tasks). Delete and ignore
+add what only the app knows (the archive, tasks). Delete and ignore
 (kb/ignore.py) is here too, for every chat source."""
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from ..errors import CelineError
 from ..kb.connectors import Refused
-from ..kb.ignore import delete_and_ignore, include_again, replay
+from ..kb.ignore import delete_and_ignore, include_again
 from ..kb.importers import Unreachable
 from .deps import in_thread
 from .kb import chat_kb, kb_changed
@@ -78,52 +78,14 @@ async def connectors_list(request: Request) -> dict:
 @router.get("/sources/{sid}/connector")
 async def connector_state(request: Request, sid: str) -> dict:
     """The connection record, the account, the login in progress (`login`) or the code
-    to scan (`qr_at`, the code at GET .../connector/qr.png), and the bridge when the
-    connector has a chat it writes to (`write_chat` in its /admin/info): that chat, its
-    marker, this instance's switch. Null when it has none."""
+    to scan (`qr_at`, the code at GET .../connector/qr.png)."""
     c = connector(request, sid)
     await c.poll()
     st = c.status or {}
-    info = c.info or {}
-    out: dict[str, Any] = {
+    return {
         "platform": c.kb.platform, "connection": c.connection(), "account": st.get("account"),
         "login_lost_at": c.lost_at, "login": st.get("login"), "qr_at": st.get("qr_at"),
-        "bridge": None,
     }
-    if "write_chat" in info:
-        out["bridge"] = {"chat": info["write_chat"], "chat_name": info.get("write_chat_name"),
-                         "marker": info.get("marker"),
-                         **request.app.state.services.bridge.state(sid)}
-        if out["connection"]["state"] != "connected":
-            out["bridge"]["error"] = None         # the connection's own line says why
-    return out
-
-
-class BridgeBody(BaseModel):
-    on: bool | None = None
-    marker: str | None = None           # what its messages start with
-
-
-@router.put("/sources/{sid}/bridge")
-async def bridge_set(request: Request, sid: str, body: BridgeBody) -> dict:
-    """Switch the bridge on or off for this instance, or set the marker its messages
-    start with in the connector."""
-    c = connector(request, sid)
-    bridge = request.app.state.services.bridge
-    if body.marker is not None:
-        await _admin(c, "PUT", "/admin/bridge", {"marker": body.marker})
-        await anyio.to_thread.run_sync(c.own_marker, body.marker,
-                                       request.app.state.services.cfg.name)
-        await c.poll()
-    if body.on is not None:
-        if body.on:
-            await c.poll()
-            if not (c.info or {}).get("write_chat"):
-                raise CelineError("bad_request",
-                                  f"The {c.title} connection has no bridged chat.", 400)
-        await anyio.to_thread.run_sync(bridge.set_on, sid, body.on)
-        await bridge.lease(bridge.sides[sid])
-    return await connector_state(request, sid)
 
 
 def _optional_connector(request: Request, sid: str):
@@ -144,7 +106,7 @@ async def _ignoring(fn, *args):
 async def delete_chat(request: Request, sid: str, chat_id: int) -> dict:
     """Delete and ignore: the chat leaves the archive and no sync or import brings it
     back until it is included again (kb/ignore.py). Discord's connector stops reading
-    it. The bridged chat is refused."""
+    it."""
     kb = chat_kb(request, sid)
     if await anyio.to_thread.run_sync(kb.get_chat, chat_id) is None:
         raise CelineError("not_found", "There is no such chat.", 404)
@@ -168,20 +130,12 @@ class IncludeBody(BaseModel):
 @router.post("/sources/{sid}/ignored-chats/include")
 async def include(request: Request, sid: str, body: IncludeBody) -> dict:
     """Include an ignored chat again. Discord: the connector reads it from the start
-    (task kind `sync`). WhatsApp: what wa-link's journal has of it is applied (task
-    kind `include`). `{"task": id|null}`."""
+    (task kind `sync`). WhatsApp: what comes of it from now on lands; wa-link deleted
+    its history. `{"task": id|null}`."""
     kb = chat_kb(request, sid)
     c = _optional_connector(request, sid)
-    name = next((x["name"] for x in await anyio.to_thread.run_sync(kb.ignored_chats)
-                 if x["key"] == body.key), None) or body.key
     job = await _ignoring(include_again, kb, body.key, c)
-    task = None
-    if job:
-        task = _follow(request, sid, "sync", "Discord sync", job)
-    elif c is not None and kb.platform == "whatsapp":
-        task = request.app.state.services.kbs.tasks.start(
-            sid, f"include:{body.key}", f"Restoring {name}",
-            lambda ctx: replay(kb, c, body.key, ctx)).id
+    task = _follow(request, sid, "sync", "Discord sync", job) if job else None
     kb_changed(request, sid)
     return {"task": task}
 

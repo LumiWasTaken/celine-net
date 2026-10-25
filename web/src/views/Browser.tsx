@@ -10,9 +10,8 @@ import { ArrowUpRight, Copy, Globe, History, MessageCircle, Monitor, MoreHorizon
 import RFB from '@novnc/novnc'
 import { BrowserShots } from '../components/ToolRow'
 import { browserApi, browserHistory, isBrowserEvent, type Box, type BrowserCall, type Tab } from '../lib/browser'
-import { useServerEvents } from '../lib/bus'
 import { clock, count, dayLabel } from '../lib/format'
-import { format, useNav } from '../lib/nav'
+import { useNav } from '../lib/nav'
 import { usePronouns } from '../lib/name'
 import { LINK } from '../lib/settingsApi'
 import { backoffMs, keepAlive } from '../lib/socket'
@@ -72,7 +71,7 @@ export function Browser({ active }: { active: boolean }) {
       {error && <div className="list-page__note"><InlineError compact message={error} /></div>}
       {page.kind === 'history' ? <HistoryList />
         : page.kind === 'tab' && b && tab ? (
-          <TabPage b={b} tab={tab} active={active} take={take} yours={yours} onBack={() => setPage({ kind: 'tabs' })}
+          <TabPage b={b} tab={tab} last={calls.data?.calls[0]} active={active} take={take} yours={yours} onBack={() => setPage({ kind: 'tabs' })}
                    more={[{ label: 'Copy', icon: Copy, detail: tab.url, onSelect: () => copied(tab.url) }, restart,
                           'sep', { label: 'Close tab', icon: X, danger: true, onSelect: () => { void onTab.run('close', tab.name); setPage({ kind: 'tabs' }) } }]}
                    onConnect={box.reload} />
@@ -103,7 +102,7 @@ function TabsList({ box, take, restart, onOpen, onClose }: {
   const menu = (t: Tab): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => onOpen(t) },
     { label: 'Copy', icon: Copy, detail: t.url, onSelect: () => copied(t.url) },
-    ...(t.conversation ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: t.conversation!.id }) }] : []),
+    ...(t.conversation ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
     'sep', { label: 'Close tab', icon: X, danger: true, onSelect: () => onClose(t) },
   ]
   const waiting = b && notUp(b)
@@ -164,7 +163,7 @@ function HistoryList() {
   ])
   const menu = (c: BrowserCall): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => setOpened(c) },
-    { label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.go({ section: 'celine', conversation: c.conversation.id }) },
+    { label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(c.conversation.link) },
   ]
   const tone = (c: BrowserCall) => (c.state === 'failed' ? 'error' : c.state === 'running' ? 'running' : c.state === 'cancelled' ? 'muted' : 'ok') as 'error' | 'running' | 'muted' | 'ok'
   const draw = (r: Row) => 'day' in r ? <GroupHead title={r.day} count={count(perDay.get(r.day) ?? 0, 'call')} /> : (
@@ -195,7 +194,7 @@ function HistoryList() {
       {ctx.menu}
       {opened && (
         <Dialog title={opened.line} size="lg" onClose={() => setOpened(null)}
-                actions={<Button href={format({ section: 'celine', conversation: opened.conversation.id })}>Open conversation</Button>}>
+                actions={<Button href={opened.conversation.link}>Open conversation</Button>}>
           <BrowserShots display={opened.display} />
           {!opened.shots && <p className="brw-quiet">{opened.conversation.title}</p>}
         </Dialog>
@@ -205,9 +204,10 @@ function HistoryList() {
 }
 
 /* ── a tab: the live screen, the shots of its latest call, a call to run ── */
-function TabPage({ b, tab, active, take, yours, more, onBack, onConnect }: {
+function TabPage({ b, tab, last, active, take, yours, more, onBack, onConnect }: {
   b: Box
   tab: Tab
+  last: BrowserCall | undefined
   active: boolean
   take: React.ReactNode
   yours: boolean
@@ -229,7 +229,7 @@ function TabPage({ b, tab, active, take, yours, more, onBack, onConnect }: {
               {waiting && <div className="brw-off">{waiting}</div>}
             </div>
           </Screen>
-          <Console />
+          <Console last={last} />
         </div>
       </div>
     </div>
@@ -246,15 +246,12 @@ const EXAMPLE: Record<string, string> = {
   close: '{}',
 }
 
-/* its latest call's step shots, and Tools: one of its calls, run as it runs it */
-function Console() {
+/* its latest call's step shots (its newest call, which the place fetches again as each of
+   its calls is done: the feed's copy of tool.done carries no display), and Tools: one of
+   its calls, run as it runs it */
+function Console({ last }: { last: BrowserCall | undefined }) {
   const { possessive } = usePronouns()
-  const [latest, setLatest] = useState<Record<string, unknown> | null>(null)
-  useServerEvents(ev => {
-    if (ev.type === 'tool.done' && typeof ev.name === 'string' && ev.name.startsWith('browser__') && ev.display) {
-      setLatest(ev.display as Record<string, unknown>)
-    }
-  })
+  const latest = last?.display
   const [tool, setTool] = useState('act')
   const [args, setArgs] = useState(EXAMPLE.act!)
   const [out, setOut] = useState<Awaited<ReturnType<typeof browserApi.call>> | null>(null)
@@ -266,7 +263,7 @@ function Console() {
   const steps = Array.isArray(latest?.steps) ? latest.steps.length : 0
   return (
     <>
-      {latest && <Section title="Steps" count={steps || undefined}><BrowserShots display={latest} /></Section>}
+      {(steps > 0 || !!latest?.shot) && <Section title="Steps" count={steps || undefined}><BrowserShots display={latest} /></Section>}
       <Section title="Tools">
         <form className="brw-console" aria-label={`Try ${possessive} calls`} onSubmit={e => { e.preventDefault(); void run.run() }}>
           <Segmented label="Tool" value={tool} options={TOOLS} onChange={t => { setTool(t); setArgs(EXAMPLE[t] ?? '{}') }} />

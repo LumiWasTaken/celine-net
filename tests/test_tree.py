@@ -1,12 +1,14 @@
 """The message tree: retry and edit branch and keep every version; what is refused."""
 from __future__ import annotations
 
+import json
+
 from chat_fixtures import user_says
 
 import pytest
 
 from celine.conversations import store as conversations, tree, view
-from celine.backends.base import Done, TextDelta
+from celine.backends.base import Done, TextDelta, ToolCallDelta
 from fake_backend import FakeBackend
 from celine.boot import load
 from celine.core.ids import new_id
@@ -14,6 +16,7 @@ from celine.core.bus import EventBus
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 from celine.turns import store as turns
+from celine.skills import Registry, ToolResult, tool
 
 pytestmark = pytest.mark.anyio
 
@@ -222,6 +225,61 @@ async def test_continue_her_reply_grows_a_new_version(store):
         "continuing does not move the conversation up the list"
     sib = await tree.siblings(store, cid, mid)
     assert [s["content"] for s in sib["siblings"]] == ["one, two", "one, two, three"]
+
+
+class _Notes:
+    name = "notes"
+    description = "Notes."
+
+    @tool(read_only=False, needs_answer=True)
+    async def write(self, ctx, path: str) -> ToolResult:
+        """Write a note."""
+        return ToolResult(f"wrote {path}")
+
+
+@pytest.mark.parametrize("prefill", [True, False])
+async def test_a_continued_reply_that_calls_a_tool_goes_on(store, prefill):
+    """The continued step ends in a call: the next request carries the whole reply once,
+    as stored, and neither the prefill nor the continue note."""
+    class Steps(FakeBackend):
+        supports_prefill = prefill
+
+        def __init__(self, replies):
+            super().__init__()
+            self.replies = replies
+
+        def for_message(self, mid, thinking=None):
+            return self
+
+        async def stream(self, messages, tools, body=None):
+            self.calls.append(messages)
+            for ev in self.replies[len(self.calls) - 1]:
+                yield ev
+
+    cfg = load()
+    reg = Registry(cfg)
+    reg.add(_Notes())
+    cid = await conversations.create(store)
+    await user_says(store, cid, "count")
+    await say(store, cid, "one, two")
+    old = (await view.snapshot(store, cid))["messages"][-1]["id"]
+    mid, tid, _ = await tree.continue_message(store, cid, old)
+    turn = await turns.claim(store, "w")
+    backend = Steps([
+        [TextDelta(", three"), ToolCallDelta(index=0, name="notes__write",
+                                             arguments=json.dumps({"path": "a.md"})),
+         Done(reason="tool_calls")],
+        [TextDelta("four"), Done(reason="stop")],
+    ])
+    await run_turn(turn, store, cfg, backend, EventBus(), Token(tid), reg)
+    row = await store.read(lambda c: dict(c.execute(
+        "SELECT state, reason_code FROM turns WHERE id=?", (tid,)).fetchone()))
+    assert row == {"state": "done", "reason_code": None}
+    second = backend.calls[1]
+    replies = [m for m in second if m["role"] == "assistant"]
+    assert [m["content"] for m in replies] == ["one, two, three"]
+    assert replies[0]["tool_calls"][0]["function"]["name"] == "notes__write"
+    assert not any("cut off after" in str(m.get("content")) for m in second)
 
 
 async def test_continue_without_a_prefill_keeps_a_space_at_the_seam(store):

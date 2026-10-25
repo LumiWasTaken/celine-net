@@ -85,8 +85,6 @@ def from_config(cfg) -> Reranker | None:
     ref = ordered.refs[0]
     b = router.backend_config(ref)
     pid = ref.partition("/")[0]
-    a = dict(cfg.skill("chat_archive"))
     return HttpReranker(f"{b.base_url}/rerank", b.model, key=b.api_key,
-                        timeout=float(a.get("rerank_timeout", 60)),
                         on_unreachable=lambda e: router.note_unreachable(
                             pid, router._unreachable_sentence(pid, e)))

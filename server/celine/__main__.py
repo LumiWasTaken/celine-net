@@ -61,6 +61,19 @@ def _load_config(load=boot.load) -> config_mod.Config:
         _refuse(str(e))
 
 
+def own_data_dir(data_dir: Path) -> None:
+    """What the app writes is its user's alone: umask 077 for this process, the data dir
+    made 0700, or closed when it is its own and was open. What another container reads
+    from the volume (keys/*.hash, connector-clients, searxng-settings.yml) is mounted as
+    a file of its own, with the mode keys.py gives it, so the closed folder above it
+    changes nothing there."""
+    os.umask(0o077)
+    data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    st = data_dir.stat()
+    if st.st_uid == os.getuid() and st.st_mode & 0o077:
+        data_dir.chmod(0o700)
+
+
 def preflight(argv: argparse.Namespace) -> config_mod.Config:
     # a second worker process means a second writer and broken event sequencing
     if int(os.environ.get("WEB_CONCURRENCY", "1")) != 1:
@@ -76,7 +89,8 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
         cfg.server.update(reload.CLI_SERVER)
 
     try:
-        for p in (cfg.data_dir, cfg.blobs_dir, cfg.data_dir / "logs"):
+        own_data_dir(cfg.data_dir)
+        for p in (cfg.blobs_dir, cfg.data_dir / "logs"):
             p.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         _refuse(f"The data dir {cfg.data_dir} is not writable ({e.strerror}). Set "
@@ -100,11 +114,15 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
                     f"probably running.")
 
     made = keys.ensure(cfg.data_dir)      # the stack's own keys (keys.py)
+    set_secrets(keys.values(cfg.data_dir), "keys")
     if made:
         log.info("keys made", extra={"event": "keys.made", "files": made,
                                      "dir": str(cfg.data_dir / "keys")})
     from .settings import files as settings_files, seed
     seed.seed(settings_files.settings_dir(cfg))    # context shares, schedules: copied once
+    moved = seed.skill_knobs(settings_files.settings_dir(cfg), config_mod.CONFIG_DIR / "skills.toml")
+    if moved:
+        log.info("skill numbers moved", extra={"event": "settings.knobs_moved", "keys": moved})
     version = migrate_all(cfg.db_path)
     cfg = _load_config()                            # everything, its row too
     cfg.server.update(reload.CLI_SERVER)
@@ -163,16 +181,11 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
 
             # its vault: logged in in the background, locked until the user types the
             # master password (Settings, Vault); its turns wait for the login (the
-            # dispatcher's ready). Approvals (celine/approvals.py) ping the user's phone through
-            # the bridge, made below
+            # dispatcher's ready)
             from .vault import Vault
             from .approvals import Approvals
             services.vault = Vault(cfg, store.emit_global)
-
-            async def vault_ping(text: str) -> None:
-                if services.bridge is not None:
-                    await services.bridge.say(text)
-            services.approvals = Approvals(cfg, store.emit_global, vault_ping, store)
+            services.approvals = Approvals(cfg, store.emit_global, store)
             services.vault.forget = lambda: services.approvals.forget("vault")
 
             async def vault_run() -> None:
@@ -243,10 +256,14 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             await comfy_batches.sweep(store)
             services.batches = comfy_batches.Batches(services, tg)
             await attachments.gc(cfg, store)
-            await conversations.prune_events(store, keep=int(cfg.r("events_keep")))
+            await conversations.prune_events(store, keep=int(cfg.r("events_keep")),
+                                             requests_days=int(cfg.r("requests_keep")))
+            tg.start_soon(conversations.keep_pruned, store, cfg)    # and every so often
             swept = await turns.sweep(store, registry)
             from .guard import store as guard_rows
             await guard_rows.close_asked(store)     # Bastet's asks of the last run
+            from .approvals import close_left
+            await close_left(store)                 # the chats' requests of the last run
             if swept["total"]:
                 log.info("swept orphans", extra={"event": "startup.swept",
                                                  "count": swept["total"],
@@ -264,25 +281,12 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from .intercom import Intercom      # messages between everyone, and their timer
             intercom = services.intercom = Intercom(store, dispatcher.notify)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules
-            from .guard import freeze as guard_freeze
-
-            async def bridge_command(text: str, by) -> str | None:
-                """!approve, !deny (celine/approvals.py), !freeze, !unfreeze (guard);
-                `by`: the Owner the bridge made of their own message."""
-                return services.approvals.command(text, by) or \
-                    await guard_freeze.command(services, text, by)
-            from .bridge import Bridge           # chatting with it from WhatsApp
-            bridge = services.bridge = Bridge(
-                store, connectors, mcp.call, intercom, resolve=kbs.resolve_refs,
-                title=lambda k: getattr(kbs.get(k), "title", k), command=bridge_command)
             # every on_end before the workers start: a turn resumed at start that ends
-            # while the awaits below run still reports, answers its pair, and reaches
-            # its bridged chat
+            # while the awaits below run still reports and answers its pair
             from .sub_agents import report       # a sub-agent that is done reports
             dispatcher.on_end(lambda cid, _turn: report.on_end(services, cid))
             from .intercom import answer         # its answer to the user's reply, in its thread
             dispatcher.on_end(lambda cid, turn: answer.on_end(services, cid, turn))
-            dispatcher.on_end(bridge.on_end)     # a bridged chat's answer
             from . import leftovers              # a done mission's terminals and tabs close
             dispatcher.on_end(lambda cid, _turn: leftovers.on_end(services, cid))
             from .missions import watch as mission_watch    # a mission keeps going
@@ -314,7 +318,6 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             for fid in ("shellbox", "browser"):
                 if on[fid]:
                     await runners[fid].start()
-            tg.start_soon(bridge.run)
             tg.start_soon(reload.watch, services)
 
             auth = app.state.auth
@@ -509,6 +512,8 @@ def main() -> None:
         from . import ops
         cfg = _load_config()
         set_secrets(cfg.secrets())
+        set_secrets(keys.values(cfg.data_dir), "keys")
+        own_data_dir(cfg.data_dir)
         migrate_all(cfg.db_path)
         if argv.command == "doctor":
             raise SystemExit(ops.doctor(cfg))

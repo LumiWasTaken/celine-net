@@ -171,23 +171,17 @@ def kbs(registry):
     return app.kbs if app is not None else None
 
 
-async def _chat_line(store, cid: str, kbs) -> str | None:
+async def _chat_line(store, cid: str) -> str | None:
     """Who is on the other side of this conversation, and where. None for a sub-agent
     (the sub_agents skill tells it who it is and where its brief came from) and a
     mission (its brief says who reads)."""
     row = await store.read(lambda c: c.execute(
-        "SELECT trigger_key, kind FROM conversations WHERE id=?", (cid,)).fetchone())
+        "SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone())
     if row is None or row["kind"] in ("agent", "mission"):
         return None
     if row["kind"] != "chat":
         return ("{{username}} is not here: this runs in the background, and nobody reads "
                 "along live.")
-    kind, _, name = (row["trigger_key"] or "").partition(":")
-    if kind == "bridge":
-        source = kbs.get(name) if kbs is not None else None
-        return (f"You are talking with {{{{username}}}} over "
-                f"{getattr(source, 'title', None) or name}, in their bridged chat. Their "
-                f"messages arrive from there, and your answer is posted there.")
     return "You are talking with {{username}} in the app right now."
 
 
@@ -236,7 +230,7 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
     notebook index), then the date. What changes from turn to turn comes last, so the
     start of the prompt stays the same for the model server's cache. Who a sub-agent is
     (the sub_agents fragment) is told in every conversation. Every kind gets all of it:
-    a chat, a bridged chat, a mission, a sub-agent and a background run or task alike;
+    a chat, a mission, a sub-agent and a background run or task alike;
     what the kind adds (a brief, a trigger's prompt) comes as its messages."""
     from ..skills.notebook import notes_block
     her = getattr(cfg, "her", None)
@@ -245,7 +239,7 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
     # what the app's marks in its context mean (turns/legend.py), right under who it is
     voiced = voice_line(cfg) is not None
     parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid), voiced)))
-    line = await _chat_line(store, cid, kbs(registry))
+    line = await _chat_line(store, cid)
     if line:
         parts.append(("talk", cfg.substitute(line)))
     from ..conversations import here

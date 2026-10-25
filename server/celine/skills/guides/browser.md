@@ -9,6 +9,10 @@ Your browser is a real Brave on a screen of its own, in a box next to your shell
 It keeps its profile across restarts: cookies, history, site settings. Downloads land
 in ~/Downloads in your home, so your shellbox sees them at once.
 
+Any address opens, file:// and brave:// too, and the local network, except three: your
+browser's own DevTools port, the app itself (a share of yours opens) and the cloud's
+metadata address (169.254.169.254).
+
 ## When
 
 - A page that needs clicking, typing or its scripts: a job search with filters, a
@@ -205,8 +209,8 @@ all with browser__look(what="page").
   addresses), and when a download finished.
 - Stuck: a step {"do": "restart"} restarts the whole browser; your tabs reopen.
 - A login: the accounts are in the vault. A CAPTCHA: stop and ask {{username}} to solve it, say which page and why you need it, then go on once they say it is done.
-- Stuck after a few tries: ping {{username}} with intercom__send(to="user", text,
-  urgent=true), the site and what blocks you, and move on to something else.
+- Stuck after a few tries: tell {{username}} with intercom__send(to="user", text), the
+  site and what blocks you, and move on to something else.
 - What you could not finish goes into todo.md in your notebook: the site, what blocked
   you, what to try next. Come back to it later and cross it off once it worked.
 - {{username}} can take over the browser from the app. While they have it, every call

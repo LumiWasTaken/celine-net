@@ -3,7 +3,11 @@ the whole schema (a fresh database applies it); later files apply on top of it.
 
 Every SQLite file (the main db, log.db beside it, the notebook's index, each knowledge
 base, auth.db) uses this runner with its own directory, and keeps its version in the
-file's header (PRAGMA user_version), set in the transaction of the migration."""
+file's header (PRAGMA user_version), set in the transaction of the migration.
+
+Before a migration changes a file that has data, the file is copied beside it as
+<file>.pre-<version>.bak (an online backup, so a running reader is no matter); the
+last COPIES_KEPT copies of each file are kept."""
 from __future__ import annotations
 
 import contextlib
@@ -19,6 +23,7 @@ LOG_MIGRATIONS = MIGRATIONS_DIR / "log"
 NOTEBOOK_MIGRATIONS = MIGRATIONS_DIR / "notebook"
 _NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 BUSY_MS = 5000          # how long a connection waits for another's lock (core/store.py too)
+COPIES_KEPT = 3         # copies made before a migration, per file
 
 
 def _migrations(directory: Path | None = None) -> list[tuple[int, Path]]:
@@ -101,12 +106,37 @@ def migrate(db_path: Path, migrations_dir: Path | None = None) -> int:
                 f"{migrations[0][1].name} this build starts from; delete it and let Celine "
                 f"build it again."
             )
-        for version, path in migrations:
-            if version > current:
-                _apply(conn, path, version)
+        pending = [(v, p) for v, p in migrations if v > current]
+        if pending and current > 0:
+            _copy(conn, db_path, latest)
+        for version, path in pending:
+            _apply(conn, path, version)
         return latest
     finally:
         conn.close()
+
+
+def _copy(conn: sqlite3.Connection, db_path: Path, version: int) -> None:
+    """The file as it is, to <file>.pre-<version>.bak beside it (through a temp name, so a
+    copy is whole or absent); the older copies past COPIES_KEPT go. A copy already there
+    is kept: it is the file before an upgrade that failed part way, the one to go back to."""
+    out = db_path.with_name(f"{db_path.name}.pre-{version}.bak")
+    if out.exists():
+        return
+    tmp = out.with_name(out.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    dst = sqlite3.connect(tmp)
+    try:
+        conn.backup(dst)
+    finally:
+        dst.close()
+    tmp.replace(out)
+    log.info("copied before migrating", extra={"event": "db.copy", "file": str(out)})
+    pattern = re.compile(re.escape(db_path.name) + r"\.pre-(\d+)\.bak$")
+    copies = sorted((int(mm.group(1)), q) for q in db_path.parent.iterdir()
+                    if (mm := pattern.match(q.name)))
+    for _, old in copies[:-COPIES_KEPT]:
+        old.unlink()
 
 
 def _apply(conn: sqlite3.Connection, path: Path, version: int) -> None:

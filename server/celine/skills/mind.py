@@ -8,7 +8,7 @@
   `state` in `message_context`, so it holds across a restart; a compaction or the
   history limit in between makes the next one whole), after a pause here or with an
   unfreeze; else nothing. Its first line is HEAD, as the legend at the top
-  of its prompt names it (turns/legend.py). Only in its chats, bridged chats, missions and background
+  of its prompt names it (turns/legend.py). Only in its chats, missions and background
   jobs, and never with automatic context off (`conversations.auto_context`). The agent's notes
   come back in their own block, `[your memory]` (skills/recall.py).
 - The agent's mood: the `moods` rows (append-only), each a word of PAD with a strength;
@@ -253,8 +253,8 @@ def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, at: str,
                      "id<>? AND created_at<?", (cid, mid, at)).fetchone()[0]
     anywhere = c.execute(
         "SELECT max(m.created_at) FROM messages m JOIN conversations v ON v.id = "
-        "m.conversation_id WHERE m.role='user' AND ((v.kind='chat' AND v.trigger_key IS "
-        "NULL) OR v.trigger_key LIKE 'bridge:%') AND m.id<>? AND m.created_at<?",
+        "m.conversation_id WHERE m.role='user' AND v.kind='chat' AND v.trigger_key IS "
+        "NULL AND m.id<>? AND m.created_at<?",
         (mid, at)).fetchone()[0]
     # the state of the last whole block on this branch it still sees (only a whole
     # block's report has one)

@@ -79,7 +79,7 @@ async def test_keys_and_roles(link, discord):
             assert (await c.post("/mcp", json={})).status_code == 401
         async with s.http(READER) as c:
             assert (await c.get("/admin/status")).status_code == 200
-            assert (await c.get("/admin/info")).json() == {"platform": "discord"}
+            assert (await c.get("/admin/info")).status_code == 404, "no info door"
             for method, path, body in [
                     ("POST", "/admin/logout", None), ("PUT", "/admin/token", {"token": "x"}),
                     ("PUT", "/admin/targets", {"set": {}}),
@@ -244,4 +244,4 @@ async def test_ids_are_checked_before_anything_is_asked(link, discord):
             assert (await h.get("/admin/guilds/x/channels")).status_code == 400
             r = await h.post("/admin/media/refresh",
                              json={"chat": "1", "message": "2", "max_mb": "lots"})
-            assert r.status_code == 400
+            assert r.status_code == 403, "downloading files is the owner's"

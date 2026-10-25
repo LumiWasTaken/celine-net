@@ -44,7 +44,7 @@ The map of the code and the rules it follows.
 | `attachments.py`, `box_files.py` | files on a message; files between the app and the box |
 | `comfyui/`, `image_catalog.py`, `vision.py` | images and music; the model catalog; one question about one image |
 | `terminals/`, `browser/`, `vault/`, `artifacts/`, `shares.py` | terminals, browser, vault (bw), pages, and shares of its box at /share/<token>/ |
-| `bridge/`, `mcp.py` | the bridged chat (WhatsApp); MCP servers as skills |
+| `mcp.py` | MCP servers as skills |
 | `auth/` | login: passkey, password, PIN |
 | `api/` | HTTP routes and the WebSocket |
 | `clock.py`, `errors.py`, `logs.py`, `ops.py`, `keys.py` | time zone; errors; logging; `celine doctor/export/purge/keys` |
@@ -76,7 +76,8 @@ The map of the code and the rules it follows.
 
 ```sh
 uv run pytest -q
-cd web && npm ci && npm run build     # prebuild: useReveal check; then tsc and vite
+uv run ruff check
+cd web && npm ci && npm run build     # prebuild: useReveal check, eslint (hooks); then tsc and vite
 cd wa-link && go test ./...           # when wa-link changed
 ```
 
@@ -85,13 +86,13 @@ An instance on a scratch data dir: `CELINE_DATA_DIR=DIR/data ./start.sh --port 8
 ## Rules
 
 1. No backwards compatibility: no shims, aliases or old shapes. Stored data changes once, in a migration, and the old code goes in the same change.
-2. An interactive turn that fails fails with its reason. Nothing retries, rewrites or re-asks behind the user's back; routines run once and wait for their model.
+2. An interactive turn that fails fails with its reason. Nothing re-asks behind the user's back; routines run once and wait for their model. A model's output is stored and shown as it came: no code transforms, trims, replaces or rewrites a reply (`turns/reply.py` touches citation tokens only; known secrets are masked).
 3. The server owns state: lists, counts, labels, paths and effective settings come from the server through explicit events. The client never guesses.
 4. Routes are plain REST: `/api/<plural-noun>[/{id}[/<sub-resource>]]`, kebab-case, a verb only as a trailing action (`/run`, `/stop`, `/test`), singular only for a singleton (`/api/agent`, `/api/status`), sockets under `/ws/`.
 5. A text a model reads lives beside the code that sends it (`prompts.text`), or in `config/` when a user is meant to edit it.
-6. A feature is one entry in `settings/features.py`; a service address is a setting with a probe; nothing needs a restart.
-7. UI: draw with the kit in `web/src/ui`; words from `docs/ui/words.md` or an icon with a tooltip; no explainer text; every colour, size, radius, shadow and duration from `web/src/styles/tokens.css`; one design.
+6. A feature is one entry in `settings/features.py`; a service address is a setting with a probe.
+7. UI: draw with the kit in `web/src/ui`; words from `docs/ui/words.md` or an icon with a tooltip; no explainer text; every colour, size, radius, shadow and duration from `web/src/styles/tokens.css`; one design. A dropdown only for a list that can run to hundreds of entries (a provider's models).
 8. The page never scrolls: a screen fits the viewport and only inner regions scroll (a transcript, a list, a text box, a card body).
-9. No em dash, en dash or " · " in any text a user or a model sees. Code that needs one writes the escape.
+9. No em dash, en dash or " · " in any text a user or a model sees. Code that needs one writes the escape. Text says what exists and what it does, never what does not exist. Comments get to the point with no preamble, in plain technical English that has one reading.
 10. Tests use fixed clocks and wait on conditions, never on sleeps.
 11. Small commits with short lowercase messages. Every gate green before a push.

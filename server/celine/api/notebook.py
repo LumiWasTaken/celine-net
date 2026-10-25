@@ -29,6 +29,9 @@ def _notebook_path(ch, rel: str) -> Path:
     p = (root / rel).resolve()
     if rel in ("", ".") or not p.is_relative_to(root) or p == root:
         raise CelineError("bad_request", f"{rel!r} is outside {ch.name}'s notebook.", 400)
+    # the app's own files (.index.db, .versions, .trash) are not notes, as for the tools
+    if any(part.startswith(".") for part in p.relative_to(root).parts):
+        raise CelineError("bad_request", f"{rel!r} is not a note.", 400)
     return p
 
 
@@ -238,8 +241,8 @@ class NotebookChange(BaseModel):
 @router.patch("/notebook/entries/{path:path}")
 async def notebook_change(request: Request, path: str, body: NotebookChange) -> dict:
     """{path}: the note or folder moves there, its history and protection along;
-    {protected}: write protection for it on a note (files listed in config/skills.toml
-    stay). -> {ok, owner}."""
+    {protected}: write protection for it on a note (the seeded ones, skills/notebook.py
+    SEEDS, stay). -> {ok, owner}."""
     _entry_path(path)
     ch = _who(request)
     nb = _notebook_skill(request)
@@ -252,8 +255,7 @@ async def notebook_change(request: Request, path: str, body: NotebookChange) -> 
             raise NotFound("notebook")
         if nb.owner(path) == "config":
             raise CelineError("bad_request",
-                              f"{path} is read-only for {ch.name} "
-                              f"(config/skills.toml). Change it there.", 400)
+                              f"{path} is always read-only for {ch.name}.", 400)
         _notebook_path(ch, path)
         await nb.mark(store_of(request), path, body.protected)
     return {"ok": True, "owner": nb.owner(path) if nb is not None else None}

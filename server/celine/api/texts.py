@@ -1,30 +1,30 @@
 """History and Ask Celine for every long text (web/src/lib/texts.ts, server/celine/texts.py).
 
 Ask Celine: the user writes a draft for one text, on the chat role, as one request with
-thinking off. The draft streams as `texts.draft {id, text, done, error}` on the global
-feed, the whole draft so far each time. It reads the text as it stands and what it
-belongs to (`about`), read only. Nothing is stored: the editor puts the draft into its
-text with Copy, Insert or Replace. A failure is the event's `error`; nothing falls back."""
+thinking off. The draft streams back on the request that asked, to that editor alone, as
+lines of JSON: `{text}` what it added, then `{done, text, error}` with the whole draft.
+It reads the text as it stands and what it belongs to (`about`), read only. Nothing is
+stored, nothing goes on the feed: the editor puts the draft into its text with Copy,
+Insert or Replace. A failure is the last line's `error`; nothing falls back. The editor
+going away ends the request, and the model's work with it."""
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
 import time
 
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .. import texts
 from ..backends.base import BackendError, Done, TextDelta
-from ..core.ids import new_id
 from ..errors import CelineError, NotFound
-from ..core.event_types import TEXTS_DRAFT
 from .deps import services_of
 
 router = APIRouter(prefix="/api")
 log = logging.getLogger("celine.texts")
-EVERY = 0.1          # seconds between two draft events while it streams
-_running: set[asyncio.Task] = set()
+EVERY = 0.1          # seconds between two lines while the draft streams
 
 
 @router.get("/text-versions")
@@ -69,36 +69,42 @@ def _messages(cfg, body: AskBody, lines: list[str]) -> list[dict]:
             {"role": "user", "content": body.prompt}]
 
 
-async def _draft(store, backend, aid: str, messages: list[dict]) -> None:
-    def emit(text: str, done: bool = False, error: str | None = None) -> None:
-        store.emit_global({"type": TEXTS_DRAFT, "id": aid, "text": text,
-                           "done": done, "error": error})
+def _line(**data) -> str:
+    return json.dumps(data, ensure_ascii=False) + "\n"
+
+
+async def _draft(backend, messages: list[dict]):
+    """The response's lines: what the draft added, at most every EVERY seconds, then the
+    whole draft with done (and the error, when it failed)."""
     parts: list[str] = []
-    last = 0.0
+    sent, last = 0, 0.0
     events = backend.stream(messages, [])
     try:
-        async for ev in events:
-            if isinstance(ev, TextDelta):
-                parts.append(ev.text)
-                if time.monotonic() - last >= EVERY:
-                    last = time.monotonic()
-                    emit("".join(parts))
-            elif isinstance(ev, Done):
-                break
-        emit("".join(parts).strip(), done=True)
-    except BackendError as e:
-        emit("".join(parts), done=True, error=str(e))
-    except Exception as e:          # the editor waits on this id: it must hear the end
-        log.exception("texts.ask failed")
-        emit("".join(parts), done=True, error=str(e) or type(e).__name__)
+        try:
+            async for ev in events:
+                if isinstance(ev, TextDelta):
+                    parts.append(ev.text)
+                    if time.monotonic() - last >= EVERY:
+                        last = time.monotonic()
+                        added, sent = "".join(parts[sent:]), len(parts)
+                        yield _line(text=added)
+                elif isinstance(ev, Done):
+                    break
+            end = _line(done=True, text="".join(parts).strip(), error=None)
+        except BackendError as e:
+            end = _line(done=True, text="".join(parts), error=str(e))
+        except Exception as e:      # the editor waits for the last line: it must hear the end
+            log.exception("texts.ask failed")
+            end = _line(done=True, text="".join(parts), error=str(e) or type(e).__name__)
+        yield end
     finally:                        # frees a queued backend's model slot right away
         if (aclose := getattr(events, "aclose", None)) is not None:
             await aclose()
 
 
 @router.post("/text-drafts")
-async def ask(request: Request, body: AskBody) -> dict:
-    """{of, prompt, text} -> {id}: its draft comes as `texts.draft` events with this id."""
+async def ask(request: Request, body: AskBody) -> StreamingResponse:
+    """{of, prompt, text} -> its draft, streamed as lines of JSON (_draft)."""
     from ..backends.queue import Priority
     s = services_of(request)
     cfg = s.cfg
@@ -110,8 +116,6 @@ async def ask(request: Request, body: AskBody) -> dict:
     if backend is None:
         raise CelineError("unavailable", "No chat model is set up.", 503)
     lines = await s.store.read(lambda c: texts.about(c, cfg, body.of))
-    aid = new_id()
-    task = asyncio.create_task(_draft(s.store, backend, aid, _messages(cfg, body, lines)))
-    _running.add(task)
-    task.add_done_callback(_running.discard)
-    return {"id": aid}
+    return StreamingResponse(_draft(backend, _messages(cfg, body, lines)),
+                             media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})

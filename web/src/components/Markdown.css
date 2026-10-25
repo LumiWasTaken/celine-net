@@ -36,6 +36,11 @@
   transition: background var(--dur-fast) var(--ease);
 }
 .refchip:hover, .refchip:focus-visible { background: var(--accent-wash-strong); }
+/* touch: an unseen hit area 44 px high (and wide, for a short chip) around its middle */
+@media (pointer: coarse) {
+  a.refchip::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, var(--h-lg)); height: var(--h-lg);
+    transform: translate(-50%, -50%); }
+}
 a.refchip, a.refchip:hover { text-decoration: none; }
 .refchip__who { color: var(--text-secondary); font-weight: var(--fw-medium); }
 .refchip--quiet { cursor: default; color: var(--text-muted); background: var(--surface-3); font-weight: var(--fw-regular); }

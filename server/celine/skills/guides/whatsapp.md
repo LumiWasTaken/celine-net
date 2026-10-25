@@ -33,11 +33,4 @@ group's JID comes from `whatsapp__list_chats`.
 
 A result that has more ends with `earlier:` or `later:`. Call exactly that to scroll.
 A request to the phone works only while the phone is online. Nothing is ever sent to a
-contact.
-
-## Writing
-
-Every tool here only reads. When {{username}} writes to you in their "Message yourself"
-chat, the app sends your answer in the conversation "Bridge (WhatsApp)" there for you,
-with a marker in front. intercom__send(to="user", urgent=true) sends {{username}} a
-message there from any conversation.
+contact. Every tool here only reads.

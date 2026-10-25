@@ -1,8 +1,9 @@
 // The journal: everything wa-link learns, as canonical records with a rising seq, in
-// <state>/journal.db. Never pruned: it is the device's complete copy and the only
-// source any app instance needs (GET /feed?after=0 gives the whole history). The
-// `sent` table holds every message id wa-link itself sent (the bridge's loop guard);
-// `kv` holds the connector's own settings (the marker).
+// <state>/journal.db. Never pruned but by the user: it is the device's complete copy and
+// the only source any app instance needs (GET /feed?after=0 gives the whole history),
+// except the chats the user deleted and ignored (`ignored`: their records and files are
+// gone, and nothing of them is journaled again until they are included again). `kv`
+// holds the phone's answers to media retries (media.go).
 package main
 
 import (
@@ -13,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,8 +35,11 @@ CREATE TABLE IF NOT EXISTS journal (
 );
 CREATE INDEX IF NOT EXISTS journal_key ON journal (kind, chat_key, message_key, seq);
 CREATE INDEX IF NOT EXISTS journal_chat_ts ON journal (chat_key, ts);
-CREATE TABLE IF NOT EXISTS sent (message_key TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS ignored (chat_key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+-- what the chat bridge kept, in a journal from before it was removed
+DROP TABLE IF EXISTS sent;
+DELETE FROM kv WHERE key = 'marker';
 `
 
 type Journal struct {
@@ -119,8 +125,8 @@ func recordKeys(r Rec) (kind, chat, msg string, ts int64) {
 	return
 }
 
-// Append journals a record unless it is already there (see below). A message wa-link
-// sent itself carries "from_link": true. Returns the seq (0 when nothing was appended).
+// Append journals a record unless it is already there (see below). Returns the seq (0
+// when nothing was appended).
 func (j *Journal) Append(r Rec) (int64, error) {
 	kind, chat, msg, ts := recordKeys(r)
 	if kind == "" {
@@ -128,12 +134,10 @@ func (j *Journal) Append(r Rec) (int64, error) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if kind == "message" && msg != "" {
-		if m := obj(r, "message"); m != nil && truthy(m, "from_me") {
-			var one int
-			if j.db.QueryRow("SELECT 1 FROM sent WHERE message_key = ?", msg).Scan(&one) == nil {
-				m["from_link"] = true
-			}
+	if chat != "" {
+		var one int
+		if j.db.QueryRow("SELECT 1 FROM ignored WHERE chat_key = ?", chat).Scan(&one) == nil {
+			return 0, nil // deleted and ignored: the phone's history of it stays out
 		}
 	}
 	body, err := json.Marshal(r)
@@ -211,52 +215,139 @@ func (j *Journal) After(after int64, limit int) ([]Row, error) {
 	return j.rows("SELECT seq, body FROM journal WHERE seq > ? ORDER BY seq LIMIT ?", after, limit)
 }
 
-// ChatRecords: every record of one chat in seq order, and for a DM the person records
-// of its peer (the same key), up to the head.
-func (j *Journal) ChatRecords(chat string) ([]Row, error) {
-	return j.rows(`SELECT seq, body FROM journal WHERE chat_key = ?
-		OR (kind = 'person' AND message_key = ?) ORDER BY seq`, chat, chat)
-}
+// ---- deleted and ignored chats ---------------------------------------------------------
 
-// handleRecords: GET /admin/records?chat=<key>. NDJSON like the feed, every record of
-// one chat, then the stream ends. For a chat the app includes again after ignoring
-// it: the feed has passed its records, and the journal still has them.
-func (j *Journal) handleRecords(w http.ResponseWriter, r *http.Request) {
-	chat := r.URL.Query().Get("chat")
-	if chat == "" {
-		writeJSON(w, 400, map[string]string{"error": "need chat"})
-		return
-	}
-	rows, err := j.ChatRecords(chat)
+// Ignore deletes every record of these chats and their kept files (a file another chat's
+// record names stays), and keeps them out from now on. Returns the records deleted.
+func (j *Journal) Ignore(chats []string) (int64, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	tx, err := j.db.Begin()
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return 0, err
 	}
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(200)
-	for _, row := range rows {
-		if _, err := fmt.Fprintln(w, row.Line()); err != nil {
-			return
+	defer tx.Rollback()
+	files := map[string]bool{}
+	var deleted int64
+	for _, chat := range chats {
+		rs, err := tx.Query("SELECT body FROM journal WHERE chat_key = ? AND kind = 'message'", chat)
+		if err != nil {
+			return 0, err
+		}
+		for rs.Next() {
+			var body string
+			var r Rec
+			if rs.Scan(&body) == nil && json.Unmarshal([]byte(body), &r) == nil {
+				if sha := str(obj(obj(obj(r, "message"), "media"), "ref"), "file_sha256"); shaRe.MatchString(sha) {
+					files[sha] = true
+				}
+			}
+		}
+		rs.Close()
+		res, err := tx.Exec("DELETE FROM journal WHERE chat_key = ?", chat)
+		if err != nil {
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		deleted += n
+		if _, err := tx.Exec("INSERT OR IGNORE INTO ignored (chat_key, at) VALUES (?, ?)",
+			chat, now()); err != nil {
+			return 0, err
 		}
 	}
+	var gone []string
+	for sha := range files {
+		var one int
+		if tx.QueryRow("SELECT 1 FROM journal WHERE body LIKE ? LIMIT 1", "%"+sha+"%").Scan(&one) != nil {
+			gone = append(gone, sha)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	for _, sha := range gone {
+		_ = os.Remove(filepath.Join(stateDir, "media", sha))
+	}
+	return deleted, nil
 }
 
-// ---- sent ids and settings ------------------------------------------------------------
-
-func (j *Journal) MarkSent(id string, at int64) error {
-	_, err := j.db.Exec("INSERT OR IGNORE INTO sent (message_key, at) VALUES (?, ?)", id, at)
+// Unignore: a chat included again; what comes of it from now on is journaled.
+func (j *Journal) Unignore(chat string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	_, err := j.db.Exec("DELETE FROM ignored WHERE chat_key = ?", chat)
 	return err
 }
 
-func (j *Journal) Unsent(id string) {
-	_, _ = j.db.Exec("DELETE FROM sent WHERE message_key = ?", id)
+func (j *Journal) Ignored() ([]string, error) {
+	rs, err := j.db.Query("SELECT chat_key FROM ignored ORDER BY chat_key")
+	if err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	out := []string{}
+	for rs.Next() {
+		var k string
+		if err := rs.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rs.Err()
 }
 
-func (j *Journal) IsSent(id string) bool {
-	var one int
-	return j.db.QueryRow("SELECT 1 FROM sent WHERE message_key = ?", id).Scan(&one) == nil
+// handleIgnored: the chats the user deleted and ignored (owner only).
+//
+//	GET    /admin/ignored              -> {"chats": [...]}
+//	POST   /admin/ignored {"chats"}    -> {"deleted": n}: their records and files go, and
+//	                                      nothing of them is journaled again
+//	DELETE /admin/ignored?chat=<key>   -> {"ok": true}: included again
+func (j *Journal) handleIgnored(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		chats, err := j.Ignored()
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"chats": chats})
+	case http.MethodPost:
+		var body struct {
+			Chats []string `json:"chats"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Chats) == 0 {
+			writeJSON(w, 400, map[string]string{"error": "need chats"})
+			return
+		}
+		for _, c := range body.Chats {
+			if c == "" {
+				writeJSON(w, 400, map[string]string{"error": "need chats"})
+				return
+			}
+		}
+		n, err := j.Ignore(body.Chats)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"deleted": n})
+	case http.MethodDelete:
+		chat := r.URL.Query().Get("chat")
+		if chat == "" {
+			writeJSON(w, 400, map[string]string{"error": "need chat"})
+			return
+		}
+		if err := j.Unignore(chat); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "GET, POST or DELETE only"})
+	}
 }
+
+// ---- settings ----------------------------------------------------------------------------
 
 func (j *Journal) Get(key, def string) string {
 	var v string

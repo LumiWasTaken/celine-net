@@ -21,8 +21,9 @@ from vault_fixtures import by_hand, ctx_for, fake_bw, vault_app  # noqa: F401
 ROOT = Path(__file__).parent.parent
 try:
     import PIL  # noqa: F401
-except ImportError:
-    sys.modules["PIL"] = types.ModuleType("PIL")
+    stub = False
+except ImportError:                    # only while browserd loads: pypdf looks for PIL too
+    stub = sys.modules["PIL"] = types.ModuleType("PIL")
     for name in ("Image", "ImageDraw", "ImageFont"):
         setattr(sys.modules["PIL"], name, None)
 sys.path.insert(0, str(ROOT / "browser"))
@@ -30,6 +31,8 @@ spec = importlib.util.spec_from_file_location("browserd", ROOT / "browser" / "br
 browserd = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(browserd)
 sys.path.remove(str(ROOT / "browser"))
+if stub:
+    del sys.modules["PIL"]
 
 
 @pytest.fixture
@@ -185,6 +188,13 @@ def test_an_outline_line_bare_of_ids_new_and_active():
     assert browserd.diff(["a", "b", "b"], ["b", "c", "c"]) == {"added": 2, "gone": 2, "lines": ["c", "c"]}
 
 
+def test_the_skill_knows_the_box_s_numbers():
+    """skills/browser.py repeats browserd's numbers; the app never imports the box."""
+    from celine.skills import browser as skill
+    assert (skill.CDP_PORT, skill.MAX_TABS, skill.STEPS_MAX) == (
+        browserd.CDP_PORT, browserd.MAX_TABS, browserd.STEPS_MAX)
+
+
 def test_each_step_has_its_effect(box, monkeypatch):
     """A swap of text in place is a change; the same outline is nothing; a navigation
     says where to."""
@@ -233,12 +243,15 @@ def _login_page(box, monkeypatch, vault_app) -> SimpleNamespace:
     frame = SimpleNamespace(owner=None)
     box.tab.nodes = {14: browserd.Node(14, "s1", 140, "textbox", (0, 0, 100, 40), frame,
                                        password=True)}
-    page = SimpleNamespace(url="https://x/login", focus=None, shots=[], frame=None)
+    page = SimpleNamespace(url="https://x/login", focus=None, shots=[], frame=None,
+                           password=True)
     box.answers["Target.getTargetInfo"] = lambda p: {"targetInfo": {"url": page.url,
                                                                     "title": "Sign in"}}
-    # browserd.on_its_site: the page's address and the cursor's frame's
+    # browserd.on_its_site: the page's address, the cursor's frame's, and whether the
+    # cursor is in an <input type=password>
     box.answers["Runtime.evaluate"] = lambda p: {"result": {"value": {
-        "top": page.url, "frame": page.url if page.frame is None else page.frame}}}
+        "top": page.url, "frame": page.url if page.frame is None else page.frame,
+        "password": page.password}}}
     box.answers["Page.navigate"] = lambda p: setattr(page, "url", p["url"]) or {}
     monkeypatch.setattr(browserd, "step_shot",
                         lambda tab, aimed: page.shots.append(aimed) or "")
@@ -348,19 +361,13 @@ async def test_a_placeholder_takes_any_name_up_to_its_last_part(box, monkeypatch
 async def test_a_vault_entry_is_typed_only_on_its_own_site(box, monkeypatch, vault_app, store):
     """The page and the frame that holds the cursor must be one of the entry's sites,
     exactly: another host, a subdomain, http, a user name in the address, a frame of
-    another site, a page still loading, all refused before a key goes out, and the user
-    is pinged. An entry with no site is typed nowhere. Typing asks no tap: the site check
-    is its guard."""
+    another site, a page still loading, all refused before a key goes out. An entry with
+    no site is typed nowhere. Typing asks no tap: the site check is its guard."""
     ctx = ctx_for(store, await conversations.create(store))
     await vault_app.skill.set(ctx, name="example-shop", url="https://example-shop.com")
     await vault_app.skill.set(ctx, name="nosite")
     page = _login_page(box, monkeypatch, vault_app)
     b = page.browser
-    pings = []
-
-    async def ping(text):
-        pings.append(text)
-    vault_app.app.state.services.approvals.ping = ping
 
     async def typed(url, frame=None, loading=False, entry="example-shop"):
         page.url, page.frame, box.tab.loading = url, frame, loading
@@ -383,12 +390,50 @@ async def test_a_vault_entry_is_typed_only_on_its_own_site(box, monkeypatch, vau
         out, keys = await typed(url, frame)
         assert keys == [] and out.is_error, (url, frame)
         assert "not one of the entry's own sites" in out.content
-    assert len(pings) == 7 and "example-shop" in pings[0] and "evil.example" in pings[0]
     out, keys = await typed("https://example-shop.com/login", loading=True)
     assert keys == [] and out.is_error
     out, keys = await typed("https://example-shop.com/login", entry="nosite")
     assert keys == [] and "nosite has no https site of its own" in out.content
     assert vault_app.taps == []
+
+
+@pytest.mark.anyio
+async def test_a_vault_entry_is_typed_only_into_a_password_field(box, monkeypatch, vault_app,
+                                                                store):
+    """By its id from its last outline, refused before anything runs; at the cursor or
+    at a point, the element that holds the cursor is an <input type=password> right
+    before the text goes out, else nothing is typed. The model hears why."""
+    ctx = ctx_for(store, await conversations.create(store))
+    await vault_app.skill.set(ctx, name="example-shop", url="https://x")
+    page = _login_page(box, monkeypatch, vault_app)
+    b = page.browser
+    box.tab.nodes[15] = browserd.Node(15, "s1", 150, "textbox", (0, 0, 100, 40),
+                                      SimpleNamespace(owner=None))
+    words = "A vault entry is typed only into a password field."
+
+    async def typed(steps):
+        n = len(box.sent)
+        out = await b.act(ctx, steps=steps, tab="a")
+        return out, [m for m, _ in box.sent[n:] if m.startswith("Input.")]
+
+    out, keys = await typed([{"do": "click", "target": "e14"},
+                             {"do": "type", "target": "e15",
+                              "text": "vault:example-shop/password"}])
+    assert out.is_error and out.content == f"Nothing was typed into e15. {words}"
+    assert keys == []
+    page.password, page.focus = False, '- textbox "Search" [active]'
+    out, keys = await typed([{"do": "type", "text": "vault:example-shop/password"}])
+    assert out.is_error and out.content == f"Nothing was typed at the cursor. {words}"
+    assert "Input.insertText" not in keys
+    out, keys = await typed([{"do": "type", "target": "120,300",
+                              "text": "vault:example-shop/password"}])
+    assert out.is_error and out.content == (
+        f"Nothing was typed into the field at 120,300. {words}")
+    assert "Input.insertText" not in keys
+    page.password = True
+    out, keys = await typed([{"do": "type", "target": "120,300",
+                              "text": "vault:example-shop/password"}])
+    assert not out.is_error and "Input.insertText" in keys
 
 
 def test_the_last_shot_is_taken_again_after_the_outline(box, monkeypatch):

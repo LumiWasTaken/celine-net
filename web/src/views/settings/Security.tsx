@@ -2,19 +2,23 @@
    the icon, its label, when it was created, "This session" on the one this browser logged in
    with), Add passkey (the browser's prompt), Add password and Add PIN (a dialog each, the
    server's sentence on the field), Delete on each row (never the last one; when the server
-   says logged_out the page goes to /). Then new recovery codes and the named tokens host
-   scripts send on the intercom with (logging out is the door at the bottom of the rail).
-   Listed only while the login is on. API: lib/passkey.ts securityApi. */
+   says logged_out the page goes to /). Then the sessions (each browser logged in, "This
+   session" on this one, Log out on each, Log out everywhere for every other), new recovery
+   codes and the named tokens host scripts send on the intercom with (logging out is the
+   door at the bottom of the rail). Adding a way to log in, new codes and a new token may
+   ask Confirm access first (Prove.tsx). Listed only while the login is on. API:
+   lib/passkey.ts securityApi. */
 import { useState } from 'react'
-import { Copy, Fingerprint, Hash, LockKeyhole, Plus, Trash2, type LucideIcon } from 'lucide-react'
+import { Copy, DoorOpen, Fingerprint, Hash, LockKeyhole, MonitorSmartphone, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { stamp } from '../../lib/format'
-import { securityApi, type Credential, type CredentialKind, type NamedToken } from '../../lib/passkey'
+import { securityApi, type Credential, type CredentialKind, type LoginSession, type NamedToken } from '../../lib/passkey'
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import {
   Button, ConfirmDialog, Dialog, Field, IconButton, InlineError, Input, ListRow, LoadingRow, PinInput, Section, copy,
 } from '../../ui'
 import { Page } from './parts'
+import { useProof } from './Prove'
 import './settings.css'
 
 const KIND: Record<CredentialKind, { icon: LucideIcon; word: string }> = {
@@ -26,7 +30,8 @@ const when = (t: number | string) => stamp(typeof t === 'number' ? t * 1000 : t)
 
 export function Security() {
   const creds = useResource(() => securityApi.credentials(), [])
-  const add = useAction(async () => { await securityApi.add(); creds.reload() })
+  const { guard, dialog: proving } = useProof()
+  const add = useAction(async () => { await guard(() => securityApi.add()); creds.reload() })
   const [adding, setAdding] = useState<'password' | 'pin' | null>(null)
   const [deleting, setDeleting] = useState<Credential | null>(null)
   const [renewing, setRenewing] = useState(false)
@@ -58,6 +63,8 @@ export function Security() {
           </div>
         </Section>
 
+        <Sessions />
+
         <Section title="Recovery codes"
                  action={<Button onClick={() => setRenewing(true)}>Reset codes</Button>}>
           {codes && (
@@ -73,10 +80,10 @@ export function Security() {
           )}
         </Section>
 
-        <Tokens />
+        <Tokens guard={guard} />
       </div>
 
-      {adding && <AddSecret kind={adding} onClose={() => setAdding(null)} onAdded={() => { setAdding(null); creds.reload() }} />}
+      {adding && <AddSecret kind={adding} guard={guard} onClose={() => setAdding(null)} onAdded={() => { setAdding(null); creds.reload() }} />}
 
       {deleting && (
         <ConfirmDialog
@@ -97,20 +104,53 @@ export function Security() {
                        confirmLabel="Reset codes"
                        onClose={() => setRenewing(false)}
                        onConfirm={async () => {
-                         const r = await securityApi.newRecoveryCodes()
+                         const r = await guard(() => securityApi.newRecoveryCodes())
                          setCodes(r.recovery_codes)
                          setCopied(false)
                          setRenewing(false)
                        }} />
       )}
+
+      {proving}
     </Page>
   )
 }
 
+type Guard = ReturnType<typeof useProof>['guard']
+
+/* every browser logged in: its name, when it logged in, when it was last seen ("This
+   session" on this one); Log out on each (this one goes to /), Log out everywhere for the rest */
+function Sessions() {
+  const list = useResource(() => securityApi.sessions(), [])
+  const others = useAction(async () => { await securityApi.logoutOthers(); list.reload() })
+  const end = useAction(async (s: LoginSession) => {
+    const r = await securityApi.endSession(s.id)
+    if (r.logged_out) { location.replace('/'); return }
+    list.reload()
+  })
+  const rows = list.data?.sessions ?? []
+  return (
+    <Section title="Sessions"
+             action={<Button loading={others.busy} disabled={rows.length < 2} onClick={() => void others.run()}>Log out everywhere</Button>}>
+      {list.error && <InlineError message={list.error} onRetry={list.reload} />}
+      {(others.error || end.error) && <InlineError compact message={others.error ?? end.error} />}
+      {!list.data && list.loading && <LoadingRow />}
+      <div className="rows">
+        {rows.map(s => (
+          <ListRow key={s.id} icon={MonitorSmartphone} title={s.label}
+                   subtitle={`Created ${when(s.created_at)}`}
+                   meta={s.this_session ? 'This session' : `Last seen ${when(s.last_seen_at)}`} trailingAlways
+                   trailing={<IconButton icon={DoorOpen} label="Log out" onClick={() => void end.run(s)} />} />
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 /* a new password (at least 10 characters) or PIN (8 digits); the server's sentence on the field */
-function AddSecret({ kind, onClose, onAdded }: { kind: 'password' | 'pin'; onClose: () => void; onAdded: () => void }) {
+function AddSecret({ kind, guard, onClose, onAdded }: { kind: 'password' | 'pin'; guard: Guard; onClose: () => void; onAdded: () => void }) {
   const [secret, setSecret] = useState('')
-  const save = useAction(async () => { await securityApi.addCredential(kind, secret); onAdded() })
+  const save = useAction(async () => { await guard(() => securityApi.addCredential(kind, secret)); onAdded() })
   const ready = kind === 'pin' ? secret.length === PIN_LENGTH : secret.length >= 10
   const word = KIND[kind].word
   return (
@@ -133,14 +173,14 @@ function AddSecret({ kind, onClose, onAdded }: { kind: 'password' | 'pin'; onClo
 
 /* Named tokens: `Authorization: Bearer <token>` on /api/intercom only
    sends as system:<name> (docs/ARCHITECTURE.md). The token is shown once; revoking hides it. */
-function Tokens() {
+function Tokens({ guard }: { guard: Guard }) {
   const list = useResource(() => securityApi.tokens(), [])
   const [name, setName] = useState('')
   const [made, setMade] = useState<{ name: string; token: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [revoking, setRevoking] = useState<NamedToken | null>(null)
   const make = useAction(async () => {
-    setMade(await securityApi.makeToken(name.trim()))
+    setMade(await guard(() => securityApi.makeToken(name.trim())))
     setCopied(false)
     setName('')
     list.reload()

@@ -35,9 +35,7 @@ of that kind, unread=true only threads with messages waiting for you.
 intercom__read(thread=409) shows one whole thread.
 
 A message to "user" is in {{username}}'s Intercom section in the app, where they read and
-answer it. urgent=true also sends the text to their bridged chat (WhatsApp), so it
-reaches their phone. It does not work with in or at. When {{username}} answers
-there with a quote-reply, the answer arrives in its thread. wait=true holds your turn
+answer it. wait=true holds your turn
 on the message until {{username}} answers, up to 10 minutes: they see that you wait for
 them, and their answer comes in as their message; it does not work with in or at.
 

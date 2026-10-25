@@ -18,7 +18,7 @@ import { useLostLogins } from './lib/sources'
 import { useRoutinesAttention } from './lib/routines'
 import { useMissionsWaiting } from './lib/missions'
 import type { RowState, Work } from './components/ConversationList'
-import { isIntercomEvent } from './lib/intercom'
+import { WaitingCount, isIntercomEvent } from './lib/intercom'
 import { useResource } from './lib/useResource'
 import { useSlide } from './ui/slide'
 import { SectionBoundary } from './components/SectionBoundary'
@@ -104,7 +104,7 @@ function Shell() {
   const own = terminal || artifact || section === 'celine' ? pageName : ''
   useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread)
 
-  // a source that lost its login: a dot on Settings, and a line in its bridge conversation
+  // a source that lost its login: a dot on Settings
   const lost = useLostLogins()
   // a run at work or one that failed in the last two nights: a dot on Routines (the server's)
   const routines = useRoutinesAttention()
@@ -163,7 +163,7 @@ function Shell() {
   const moreHere = !bar.includes(section) && section !== 'artifact'
   const shown = {
     status, name, terminal: shownTerminal.current, reply, artifact,
-    celine: { sidebarOpen: list, onSidebar: setList, lost, onWork },
+    celine: { sidebarOpen: list, onSidebar: setList, onWork },
     onStatus: () => void loadStatus().catch(() => undefined),
   }
 
@@ -172,6 +172,7 @@ function Shell() {
     <NameContext.Provider value={name}>
     <PronounsContext.Provider value={status?.owner.pronouns ?? 'she'}>
     <AppearanceContext.Provider value={appearance}>
+    <WaitingCount.Provider value={waiting.data ?? null}>
     <div className="app">
       {section === 'welcome' ? (
         <Suspense fallback={<LoadingRow />}><Welcome status={status} onSaved={shown.onStatus} /></Suspense>
@@ -252,6 +253,7 @@ function Shell() {
       {/* the server is gone: one block over everything, until it is back */}
       <ServerDown />
     </div>
+    </WaitingCount.Provider>
     </AppearanceContext.Provider>
     </PronounsContext.Provider>
     </NameContext.Provider>

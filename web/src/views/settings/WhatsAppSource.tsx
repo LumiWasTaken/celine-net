@@ -1,7 +1,6 @@
 /* WhatsApp: the connection's state in the head (a linked device; a QR code to connect the
    phone, then new messages as they happen), what to fix (a lost connection, a failed
-   task), the bridged chat in "Message yourself", what is included, and the chats you
-   deleted and ignored, each with when. */
+   task), what is included, and the chats you deleted and ignored, each with when. */
 import { useState } from 'react'
 import { kbApi, type ConnectorState } from '../../lib/kb'
 import { errorText, stamp } from '../../lib/format'
@@ -9,7 +8,7 @@ import { useOnline } from '../../lib/socket'
 import { connectionState, lostWhen, type Source } from '../../lib/sources'
 import { useResource } from '../../lib/useResource'
 import { Button, InlineError, ListRow, LoadingRow, Section, VirtualList } from '../../ui'
-import { BridgeSection, useConnector } from './Bridge'
+import { useConnector } from './Connector'
 import { Page, StatusDot } from './parts'
 import { Problem, StateNotice, ToFix, failedLines, includedSentence, scheduleProblems, useSchedules, useTasks } from './SourcePage'
 import './settings.css'
@@ -48,8 +47,6 @@ export function WhatsAppSource({ source, active }: { source: Source; active: boo
       </ToFix>
 
       {c.state === 'needs_login' && !lost && <Section title="Login">{pairing}</Section>}
-
-      {st.bridge && <BridgeSection kid={kb.id} b={st.bridge} onChanged={connector.set} />}
 
       {(kb.messages ?? 0) > 0 && (
         <Section title="Included">

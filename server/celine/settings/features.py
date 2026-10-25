@@ -2,7 +2,7 @@
 Features). While no file is saved, what needs a service (`needs_service`: the boxes,
 ComfyUI, SearXNG, the connectors, email, the vault) is off and the rest on (`seed`);
 once saved, every feature is on until the file says otherwise, but one with `start_on`
-False (shares), which is on only once the file says so. `done` is False until a
+False (shares, guard), which is on only once the file says so. `done` is False until a
 PUT says the onboarding finished (config status `setup`).
 
 The plug: CATALOG declares each feature once. Adding a module is one Feature here and
@@ -122,7 +122,7 @@ CATALOG: tuple[Feature, ...] = (
             "Bastet, a second model that checks risky actions before they run and asks you "
             "when unsure.",
             "No second opinion wanted on tool use.",
-            probe="celine.guard.rules:probe", setup="guard", card="always"),
+            probe="celine.guard.rules:probe", setup="guard", card="always", start_on=False),
     Feature("documents", "Documents", "",
             "A folder of your documents, searched, read and cited.",
             "No documents to give.",

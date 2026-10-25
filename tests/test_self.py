@@ -19,7 +19,7 @@ from celine.core.services import Services
 from celine.errors import install_error_handler
 from celine.settings.files import Invalid
 from celine.skills import ToolContext
-from celine.skills.me import Me
+from celine.skills.me import Me, replaced
 from celine.turns import slop
 from celine.turns.prompt import VOICE_MAX, voice_line
 
@@ -39,9 +39,26 @@ async def cfg(store, clock):
     return cfg
 
 
-def _ctx(store, cfg):
-    return ToolContext(conversation_id="c1", turn_id="t1", tool_call_id="x", store=store,
+def _ctx(store, cfg, call="x"):
+    return ToolContext(conversation_id="c1", turn_id="t1", tool_call_id=call, store=store,
                        config=cfg, emit=None)  # type: ignore[arg-type]
+
+
+class Yes:
+    """The approvals of a user who says yes to everything, every request kept."""
+
+    def __init__(self):
+        self.asked: list[tuple] = []
+
+    async def ask(self, action, facts, conversation, why="", short="", kind="vault",
+                  ref=None, call=None):
+        self.asked.append((kind, action, facts, call))
+
+
+def _me(cfg, approvals=None):
+    me = Me(cfg)
+    me.app = Services(cfg=cfg, approvals=Yes() if approvals is None else approvals)
+    return me
 
 
 async def _versions(store, of: str) -> list[tuple[str, str]]:
@@ -85,7 +102,7 @@ def test_her_voice_as_text_reads_back_the_same():
 # ---- me__read, me__edit ------------------------------------------------------------------
 
 async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
-    me = Me(cfg)
+    me = _me(cfg)
     seen = []
     store.emit_global = seen.append
     read = (await me.read(_ctx(store, cfg))).content
@@ -94,10 +111,13 @@ async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
     got = await me.edit(_ctx(store, cfg), what="phrases", add=["my call was right"])
     assert not got.is_error and "1 added" in got.content
     assert "my call was right" in cfg.her.voice["phrases"], "cfg follows the row"
+    placeholders = cfg.her.talk_text.count("{{username}}")
     got = await me.edit(_ctx(store, cfg), what="talk", old="write to Joe,",
                         new="write to Joe, plainly,")
     assert not got.is_error, got.content
-    assert "{{username}}, plainly," in cfg.her.talk, "kept with the placeholder"
+    assert "write to Joe, plainly," in cfg.her.talk, "stored as it wrote it"
+    assert cfg.her.talk.count("{{username}}") == placeholders - 1, \
+        "only the edited one is gone; the rest stay placeholders"
     got = await me.edit(_ctx(store, cfg), what="talk", new="## how I sound\nshort.")
     assert cfg.her.talk.rstrip().endswith("## how I sound\nshort.")
     got = await me.edit(_ctx(store, cfg), what="persona", new="I keep a balcony garden.")
@@ -115,8 +135,16 @@ async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
     assert rows["events"][0]["links"]["open"] == "/settings/agent/edit/persona/history"
 
 
+async def test_an_edit_keeps_every_placeholder_it_does_not_touch(cfg):
+    kept = "Hi {{username}}. Bye {{username}}."
+    assert replaced(cfg, kept, "Bye", "Ciao") == "Hi {{username}}. Ciao {{username}}."
+    assert replaced(cfg, kept, "Hi Joe.", "Hey Joe!") == "Hey Joe! Bye {{username}}."
+    assert replaced(cfg, kept, "Bye J", "See y") == "Hi {{username}}. See yoe.", \
+        "a placeholder cut by the edit keeps its outside part as it reads"
+
+
 async def test_a_wrong_edit_says_why_and_writes_nothing(store, cfg):
-    me = Me(cfg)
+    me = _me(cfg)
     for kw, why in (({"what": "talk", "old": "nowhere", "new": "x"}, "0 times"),
                     ({"what": "talk", "add": ["x"]}, "old and new"),
                     ({"what": "phrases", "remove": ["not there"]}, "Not in your phrases"),
@@ -126,6 +154,52 @@ async def test_a_wrong_edit_says_why_and_writes_nothing(store, cfg):
         assert got.is_error and why in got.content, (kw, got.content)
     assert await store.read(lambda c: c.execute(
         "SELECT count(*) FROM text_versions").fetchone()[0]) == 0
+
+
+async def test_every_edit_of_herself_waits_for_the_owner_guard_or_not(store, cfg,
+                                                                      monkeypatch):
+    """me__edit asks the owner (celine/approvals.py) before it writes, whatever the guard
+    is; denied, unanswered or with nobody to ask, nothing changes. A call the owner
+    already approved on Bastet's ask is not asked again."""
+    from celine import approvals as ap
+    from celine.guard.owner import _SEAL, Owner
+    from chat_fixtures import until
+    import asyncio
+    yes = Yes()
+    await _me(cfg, yes).edit(_ctx(store, cfg), what="persona", old="", new="I garden.")
+    [(kind, action, facts, call)] = yes.asked
+    assert (kind, action, facts, call) == ("her", "change the Persona", ["new: I garden."],
+                                           "x")
+    before = cfg.her.persona
+    monkeypatch.setattr(ap, "ASK_FOR", 5)
+    a = ap.Approvals(cfg)
+
+    async def answer(ok, kind="her"):
+        await until(lambda: a.waiting)
+        [ask] = a.view()
+        assert ask["kind"] == kind and (kind != "her" or "every chat" in ask["why"])
+        assert a.decide(ask["id"], ok, Owner("test", _SEAL))
+    got, _ = await asyncio.gather(
+        _me(cfg, a).edit(_ctx(store, cfg, "k1"), what="talk", new="short."), answer(False))
+    assert got.is_error and got.content == "Joe denied it; nothing was done."
+    assert cfg.her.persona == before and "short." not in cfg.her.talk_text
+    monkeypatch.setattr(ap, "ASK_FOR", 0)
+    got = await _me(cfg, a).edit(_ctx(store, cfg, "k2"), what="phrases", add=["x y"])
+    assert got.is_error and got.content.startswith("Joe did not answer")
+    got = await Me(cfg).edit(_ctx(store, cfg, "k3"), what="phrases", add=["x y"])
+    assert got.is_error and "nobody" in got.content
+    assert "x y" not in cfg.her.voice["phrases"]
+    # Bastet's confirm ask for this very call was approved: it is not asked again
+    monkeypatch.setattr(ap, "ASK_FOR", 5)
+    gate, _ = await asyncio.gather(a.ask("run me__edit", [], "c1", kind="gate", call="k4"),
+                                   answer(True, "gate"))
+    assert gate is None
+    got = await _me(cfg, a).edit(_ctx(store, cfg, "k4"), what="phrases", add=["x y"])
+    assert not got.is_error and "x y" in cfg.her.voice["phrases"] and not a.waiting
+
+
+def test_she_knows_an_edit_of_herself_waits_for_the_owner():
+    assert "approve" in Me.edit.__doc__ and "approve" in Me.guide.body
 
 
 # ---- revert ------------------------------------------------------------------------------

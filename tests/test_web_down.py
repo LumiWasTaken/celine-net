@@ -8,13 +8,14 @@ import httpx
 import pytest
 
 from celine import boot
+from celine.settings import general
 from celine.skills import ToolContext, web
 from celine.skills.web import Web
 
 pytestmark = pytest.mark.anyio
 
 CFG = SimpleNamespace(user="sam", name="Celine", substitute=lambda s: s,
-                      skill=lambda n: {"enabled": True},
+                      skill=lambda n: {"enabled": True}, r=lambda key: general.value({}, key),
                       settings=SimpleNamespace(features={"browser": False}, services={}))
 
 

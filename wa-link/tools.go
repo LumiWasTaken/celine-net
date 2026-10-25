@@ -1,7 +1,5 @@
 // The tools Celine uses (POST /mcp, the official MCP Go SDK, streamable HTTP). Every
-// tool is read-only except `send`, which writes only into the user's own "message
-// yourself" chat: it has no destination argument, the recipient is the own account in
-// code, it needs an owner key and the bridge lease, and wa-link prefixes the marker.
+// tool only reads.
 //
 // Results: text lines for the model plus structuredContent {"records": [canonical
 // message records with their seq], "where", "note"}; read_messages and
@@ -12,30 +10,19 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
 	// swapped by setRealSends (main.go) and by tests
-	chatSend = func(ctx context.Context, to types.JID, msg *waE2E.Message, id string) error {
-		return errors.New("not connected")
-	}
-	mediaUpload = func(ctx context.Context, data []byte) (whatsmeow.UploadResponse, error) {
-		return whatsmeow.UploadResponse{}, errors.New("not connected")
-	}
-	newID  = func() string { return fmt.Sprintf("WL%d", time.Now().UnixNano()) }
 	ownJID = func() (types.JID, bool) { return types.JID{}, false }
 	// live lookups (reads)
 	lookupContact = func(ctx context.Context, jid types.JID) (Rec, error) {
@@ -195,21 +182,6 @@ type contactIn struct {
 type groupIn struct {
 	JID string `json:"jid" jsonschema:"The group JID, ending in @g.us."`
 }
-
-type sendIn struct {
-	Text string `json:"text" jsonschema:"The message."`
-}
-
-type sendImageIn struct {
-	Data      string `json:"data" jsonschema:"The image, base64."`
-	MediaType string `json:"media_type" jsonschema:"image/png, image/jpeg or image/webp."`
-	Text      string `json:"text,omitempty" jsonschema:"A line of text with it."`
-}
-
-// the image types WhatsApp shows as a photo, and the most the connection sends
-var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/webp": true}
-
-const maxImage = 16 << 20
 
 func toolChats(_ context.Context, _ *mcp.CallToolRequest, in chatsIn) (*mcp.CallToolResult, any, error) {
 	all, err := jr.Chats()
@@ -397,104 +369,9 @@ func toolGroup(ctx context.Context, _ *mcp.CallToolRequest, in groupIn) (*mcp.Ca
 	return result(lines, info), nil, nil
 }
 
-// mayWrite: the operator key and the bridge lease, which every send needs.
-func mayWrite(c Client) *mcp.CallToolResult {
-	if !c.Owner() {
-		return toolError("This app instance may only read.")
-	}
-	if !lease.Holds(c.Name) {
-		return toolError("Another instance holds the bridge, or the bridge is off.")
-	}
-	return nil
-}
+// ---- the server ------------------------------------------------------------------------------
 
-// ownChat: the own account's "message yourself" chat, while connected. The only recipient.
-func ownChat() (types.JID, bool) {
-	own, ok := ownJID()
-	if !ok || !isConnected() {
-		return types.JID{}, false
-	}
-	return types.JID{User: own.User, Server: types.DefaultUserServer}, true
-}
-
-// sendOwn: records msg as sent, sends it into the own chat and journals it. m is the
-// record's message without key, ts and from_me; what is "message" or "image".
-func sendOwn(ctx context.Context, to types.JID, msg *waE2E.Message, m Rec, what string) *mcp.CallToolResult {
-	id := newID()
-	at := now()
-	if err := jr.MarkSent(id, at); err != nil {
-		return toolError("The " + what + " could not be recorded, so it was not sent.")
-	}
-	if err := chatSend(ctx, to, msg, id); err != nil {
-		jr.Unsent(id)
-		return toolError("WhatsApp did not take the " + what + ".")
-	}
-	normMu.Lock()
-	ch := norm.chat(to.String(), "")
-	normMu.Unlock()
-	m["key"], m["ts"], m["from_me"] = id, at, true
-	rec := Rec{"kind": "message", "chat": ch, "message": m}
-	seq, _ := jr.Append(rec)
-	rec["seq"] = seq
-	note := "Sent one " + what + " to your own WhatsApp chat."
-	return result([]string{note}, Rec{"sent": []string{id}, "records": []Rec{rec},
-		"where": "Message yourself", "note": note})
-}
-
-// sendText: a text message into the own chat, the chat bridge.
-func sendText(ctx context.Context, c Client, text string) (*mcp.CallToolResult, error) {
-	if r := mayWrite(c); r != nil {
-		return r, nil
-	}
-	if strings.TrimSpace(text) == "" {
-		return toolError("The message is empty."), nil
-	}
-	to, ok := ownChat()
-	if !ok {
-		return toolError("WhatsApp is not reachable."), nil
-	}
-	full := marker() + text
-	return sendOwn(ctx, to, &waE2E.Message{Conversation: proto.String(full)},
-		Rec{"type": "text", "text": full}, "message"), nil
-}
-
-// sendImage: an image Celine made, into the own chat like sendText, with the marker as
-// (the start of) its caption.
-func sendImage(ctx context.Context, c Client, in sendImageIn) (*mcp.CallToolResult, error) {
-	if r := mayWrite(c); r != nil {
-		return r, nil
-	}
-	if !imageTypes[in.MediaType] {
-		return toolError("The connection sends only image/png, image/jpeg or image/webp."), nil
-	}
-	data, err := base64.StdEncoding.DecodeString(in.Data)
-	if err != nil {
-		return toolError("The image is not valid base64."), nil
-	}
-	if len(data) == 0 || len(data) > maxImage {
-		return toolError(fmt.Sprintf("The image is empty or larger than %d MB.", maxImage>>20)), nil
-	}
-	to, ok := ownChat()
-	if !ok {
-		return toolError("WhatsApp is not reachable."), nil
-	}
-	up, err := mediaUpload(ctx, data)
-	if err != nil {
-		return toolError("WhatsApp did not take the image."), nil
-	}
-	caption := marker() + strings.TrimSpace(in.Text)
-	msg := &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
-		URL: proto.String(up.URL), DirectPath: proto.String(up.DirectPath),
-		MediaKey: up.MediaKey, Mimetype: proto.String(in.MediaType),
-		FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256,
-		FileLength: proto.Uint64(up.FileLength), Caption: proto.String(caption)}}
-	return sendOwn(ctx, to, msg, Rec{"type": "media", "text": caption,
-		"media": Rec{"type": "photo", "caption": caption}}, "image"), nil
-}
-
-// ---- the server per client ------------------------------------------------------------------
-
-func newServer(c Client) *mcp.Server {
+func newServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "whatsapp", Version: "1"}, nil)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_chats", Annotations: readOnly(false),
 		Description: "List the WhatsApp chats that the linked device knows, most recently active first, with their JIDs. For anything already in the chat archive, the chat_archive tools are faster."},
@@ -514,47 +391,12 @@ func newServer(c Client) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "get_group", Annotations: readOnly(true),
 		Description: "Get one WhatsApp group's subject, description and participants."},
 		toolGroup)
-	mcp.AddTool(s, &mcp.Tool{Name: "send", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false,
-		DestructiveHint: ptr(false), IdempotentHint: false, OpenWorldHint: ptr(true)},
-		Description: "Send a message into the account's own \"message yourself\" chat. It can reach no other chat."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, any, error) {
-			res, err := sendText(ctx, c, in.Text)
-			return res, nil, err
-		})
-	mcp.AddTool(s, &mcp.Tool{Name: "send_image", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false,
-		DestructiveHint: ptr(false), IdempotentHint: false, OpenWorldHint: ptr(true)},
-		Description: "Send an image into the account's own \"message yourself\" chat. It can reach no other chat."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in sendImageIn) (*mcp.CallToolResult, any, error) {
-			res, err := sendImage(ctx, c, in)
-			return res, nil, err
-		})
-	return s
-}
-
-var (
-	serversMu sync.Mutex
-	servers   = map[string]*mcp.Server{}
-)
-
-func serverFor(c Client) *mcp.Server {
-	serversMu.Lock()
-	defer serversMu.Unlock()
-	s := servers[c.Name]
-	if s == nil {
-		s = newServer(c)
-		servers[c.Name] = s
-	}
 	return s
 }
 
 func mcpHandler(clients map[string]Client) http.Handler {
-	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		c, ok := caller(r.Context())
-		if !ok {
-			return nil
-		}
-		return serverFor(c)
-	}, nil)
+	s := newServer()
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil)
 	return authed(clients, false, h.ServeHTTP)
 }
 

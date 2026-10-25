@@ -25,9 +25,7 @@ import { useNav } from '../lib/nav'
 import { setPageName } from '../lib/title'
 import { AgentsContext, useAgents } from '../lib/agents'
 import { isOpen } from '../lib/missions'
-import type { ConnectorSummary } from '../lib/kb'
 import { fileUrl } from '../lib/media'
-import { lostWhen } from '../lib/sources'
 import { FirstRun } from './settings/FirstRun'
 import { ConversationReminders, remindersApi } from '../lib/reminders'
 import { snapshotAgain, useOnline, OFFLINE_TITLE } from '../lib/socket'
@@ -41,7 +39,7 @@ import { waitWords } from '../components/Status'
 import { PhotoViewer } from '../components/PhotoViewer'
 import { GalleryContext, collectGeneratedImages, madeDetails, type Made } from '../components/Batch'
 import {
-  Button, ConfirmDialog, EmptyState, IconButton, InlineEdit, InlineError, LoadingRow, Notice, Place, PlaceHead, SelectBar, SourceGlyph,
+  Button, ConfirmDialog, EmptyState, IconButton, InlineEdit, InlineError, LoadingRow, Notice, Place, PlaceHead, SelectBar,
   coarse, isNarrow, StatusLine, cx, usePicker, type Shelf,
 } from '../ui'
 import { usePref } from '../lib/prefs'
@@ -56,14 +54,12 @@ const place = 'celine' as const
 const chatsNoun = (n: number) => count(n, 'conversation')
 const exportUrl = (id: string) => `/api/conversations/${encodeURIComponent(id)}/export`
 
-export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }: {
+export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   active: boolean
   status: ConfigStatus | null
   /** the list over the chat on a phone */
   sidebarOpen: boolean
   onSidebar: (open: boolean) => void
-  /** sources whose login was lost: a bridged chat of one cannot answer */
-  lost: ConnectorSummary[]
   /** what each place has going on (the rail's dots) */
   onWork: (work: Work) => void
 }) {
@@ -85,7 +81,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
     setArtifact(id)
     setPanelTab('pages')
     setDrawerOpen(true)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const openPanel = (t: PanelTab) => {
     setActiveSide(null)
     setPanelTab(t)
@@ -96,7 +92,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
       setDrawerOpen(false)
     }
     setActiveSide(key)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // the new conversation's choices, until the first message creates it
   const [newSettings, setNewSettings] = useState<NewConversationSettings>({})
 
@@ -245,7 +241,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
     setNewSettings({})
     onSidebar(false)
     if (!coarse()) composer.current?.focus()
-  }, [setSelected, onSidebar])
+  }, [setSelected, onSidebar]) // eslint-disable-line react-hooks/exhaustive-deps
   const toNew = useCallback(() => setSelected(null, { replace: true }), [setSelected])
   const onCompact = useCallback(() => { awaitingCompact.current = true }, [])
 
@@ -323,7 +319,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, drawerOpen, sidebarOpen, selected, setSelected, onSidebar])
+  }, [active, drawerOpen, sidebarOpen, selected, setSelected, onSidebar]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // what the rail shows for its place: waiting for you over failed over running (the
   // server's row states), and its sub-agents at work
@@ -368,8 +364,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
   const open = (id: string) => { setSelected(id); onSidebar(false) }
   const conversationTitle = current?.title || convo.conversation?.title || ''
   const isArchived = current ? !!current.archived_at : !!convo.conversation?.archived_at
-  // a bridged chat whose source lost its login cannot answer there
-  const bridgeLost = current?.trigger_key ? lost.find(l => current.trigger_key === `bridge:${l.kb}`) : undefined
   const headMore = current ? [
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(current.id) },
     ...(!current.agent_of ? [{ label: current.pinned ? 'Unpin' : 'Pin', icon: current.pinned ? PinOff : Pin, onSelect: () => void togglePin(current) }] : []),
@@ -438,7 +432,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
                        </span>
                      }
                      titleAttr={conversationTitle || undefined}
-                     detail={drawn && current?.source ? <SourceGlyph source={current.source} showLabel /> : undefined}
                      actions={<>
                        <PlanButton plan={convo.plan} />
                        {runningJobs > 0 && (
@@ -456,14 +449,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
               <Notice tone="warn" action={selected ? { label: 'Retry', onClick: () => snapshotAgain(selected) } : undefined}>{OFFLINE_TITLE}</Notice>
             </div>
           )}
-          {bridgeLost && (
-            <div className="chat-notice">
-              <Notice tone="warn" action={{ label: 'Connect your phone',
-                                            onClick: () => nav.go({ section: 'settings', page: 'sources', sub: bridgeLost.kb }) }}>
-                {`${name} can't answer in ${bridgeLost.title}: your phone disconnected ${lostWhen(bridgeLost.login_lost_at!)}.`}
-              </Notice>
-            </div>
-          )}
 
           {drawn ? (
             <div className="chat-scroll" ref={transcript} onScroll={onTranscriptScroll}>
@@ -476,7 +461,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, lost, onWork }:
                               running={convo.running} error={convo.error}
                               pending={shownPending} compactions={convo.compactions} onRetry={regenerate}
                               live={convo.live} switched={convo.switched}
-                              imageNotices={convo.imageNotices} banners={convo.banners} forming={convo.forming}
+                              imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
                               waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue}
                               note={null} assistant={name}
                               user={status?.user ?? ''} />

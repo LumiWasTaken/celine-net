@@ -297,8 +297,7 @@ def _senders(person: str | None, ids: Identities) -> dict[str, list[int]] | None
 SOURCE_KEYS = {
     "chat": {"kind": "str", "title": "str", "platform": "str"},
     # documents: kb/documents.py opt(), documents_describe.py, api/documents.py
-    "documents": {"kind": "str", "title": "str", "path": "str", "max_upload_mb": "num",
-                  "chunk_over_kb": "num", "describe": "bool", "embed": "bool",
+    "documents": {"kind": "str", "title": "str", "path": "str", "chunk_over_kb": "num", "describe": "bool", "embed": "bool",
                   "describe_part_chars": "int", "describe_max_parts": "int"},
 }
 TABLES = {

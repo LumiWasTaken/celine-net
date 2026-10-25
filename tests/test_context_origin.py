@@ -160,7 +160,7 @@ async def test_the_background_build_leaves_every_message_when_the_summary_fails(
 
 
 async def test_a_turn_whose_summary_fails_fails_with_the_reason(store, cfg):
-    cid = await _too_long(store)
+    await _too_long(store)
     context.POLICY = SMALL
     turn = await turns.claim(store, "w")
     backend = Model(window=20_000, summary=None)

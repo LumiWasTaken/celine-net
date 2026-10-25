@@ -5,13 +5,14 @@
   so an interrupted backfill resumes where it stopped.
 - later runs: page forwards from `newest`, then finish any backfill left open.
 
-Everything read becomes journal records (the feed carries them to the archive).
+Everything read becomes journal records (the feed carries them to the archive), and
+every page becomes a span (spans.py); a message the subscription leaves out is a hole.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from . import policy
+from . import policy, spans
 from .errors import Ctx, DiscordError, Unreachable
 from .records import DM, GROUP_DM, TEXT_CHANNELS, THREAD_TYPES, dm_name, message, ms, person
 from .rest import CDN, Rest
@@ -299,10 +300,11 @@ def _sync_one(rest: Rest, key: str, me_id: str, ctx: Ctx, fetched: list[int],
                 (key, kw.get("newest", newest), kw.get("oldest", oldest),
                  int(kw.get("backfilled", backfilled)), now_ms()))
 
-    def write(batch: list[dict]) -> None:
-        recs = []
+    def write(batch: list[dict], params: dict[str, Any]) -> None:
+        recs, holes = [], []
         for m in batch:
             if pol is not None and not pol.keep(m):
+                holes.append(int(m["id"]))
                 continue
             learn_author_peer(state, key, m, me_id)
             r = message(state, m, me_id,
@@ -313,17 +315,19 @@ def _sync_one(rest: Rest, key: str, me_id: str, ctx: Ctx, fetched: list[int],
         if batch:
             state.learn_channel(key, kind=state.channel(key)["kind"],
                                 last_message_id=max((m["id"] for m in batch), key=int))
+        spans.covered(state, key, params, batch, holes)
         fetched[0] += len(batch)
         ctx.progress(fetched[0], None, f"messages, chat {index + 1} of {count}")
 
     if newest is not None:
         after = newest
         while True:
-            batch = rest.get(f"/channels/{key}/messages", {"limit": 100, "after": after}, ctx)
+            params = {"limit": 100, "after": after}
+            batch = rest.get(f"/channels/{key}/messages", params, ctx)
             if not batch:
                 break
             batch.sort(key=lambda m: int(m["id"]))
-            write(batch)
+            write(batch, params)
             after = newest = batch[-1]["id"]
             save(newest=newest)
             if len(batch) < 100:
@@ -337,11 +341,12 @@ def _sync_one(rest: Rest, key: str, me_id: str, ctx: Ctx, fetched: list[int],
                 params["before"] = before
             batch = rest.get(f"/channels/{key}/messages", params, ctx)
             if not batch:
+                spans.covered(state, key, params, batch)
                 backfilled = True
                 save(backfilled=True)
                 break
             batch.sort(key=lambda m: int(m["id"]))
-            write(batch)
+            write(batch, params)
             if newest is None or int(batch[-1]["id"]) > int(newest):
                 newest = batch[-1]["id"]
             before = oldest = batch[0]["id"]

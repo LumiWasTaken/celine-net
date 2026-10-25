@@ -23,7 +23,7 @@ import {
   Avatar, Button, Checkbox, Chip, ConfirmDialog, Dialog, EmptyState, Field, InlineError, Input, LoadingRow,
   SearchField, Section, Switch, VirtualList,
 } from '../../ui'
-import { useConnector } from './Bridge'
+import { useConnector } from './Connector'
 import { Page, SchemaForm, StatusDot, TaskLine } from './parts'
 import { Problem, StateLine, StateNotice, ToFix, failedLines, scheduleProblems, useSchedules, useTasks } from './SourcePage'
 import './settings.css'

@@ -66,8 +66,9 @@ async def proxy(tmp_path, monkeypatch, store, stack_key):
         yield c
 
 
-def ask(c, model="main/big", key=KEY, **extra):
-    return c.post("/llm/v1/chat/completions", headers={"Authorization": f"Bearer {key}"},
+def ask(c, model="main/big", key=KEY, headers=None, **extra):
+    return c.post("/llm/v1/chat/completions",
+                  headers={"Authorization": f"Bearer {key}", **(headers or {})},
                   json={"model": model, "stream": True,
                         "messages": [{"role": "user", "content": "hello"}], **extra})
 
@@ -83,6 +84,31 @@ async def test_only_the_box_key_gets_in(proxy, tmp_path):
     r = await ask(proxy)
     assert r.status_code == 503 and "shellbox-llm.key" in r.json()["error"]["message"]
     assert len(proxy.up.seen) == 0, "nothing refused reached the provider"
+
+
+async def test_a_call_through_a_reverse_proxy_is_refused(proxy):
+    """The box reaches the app directly; a forwarded header means the call came in
+    through the public origin, where the box's key must not open anything."""
+    for name in ("X-Forwarded-For", "Forwarded", "X-Real-IP"):
+        r = await ask(proxy, headers={name: "203.0.113.9"})
+        assert r.status_code == 403, name
+    r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {KEY}",
+                                                   "X-Forwarded-For": "203.0.113.9"})
+    assert r.status_code == 403
+    assert len(proxy.up.seen) == 0
+    assert (await ask(proxy)).status_code == 200, "straight from the box it still works"
+
+
+def test_the_stack_keys_are_secrets(stack_key, tmp_path):
+    from celine import keys
+    from celine.errors import mask, set_secrets
+    stack_key("shellbox-llm", KEY)
+    set_secrets(keys.values(tmp_path / "var"), "keys")
+    try:
+        assert mask(f"OPENAI_API_KEY={KEY}") == "OPENAI_API_KEY=****"
+        assert len(keys.values(tmp_path / "var")) == len(keys.NAMES)
+    finally:
+        set_secrets([], "keys")
 
 
 async def test_models_are_every_chat_model_with_a_key(proxy):

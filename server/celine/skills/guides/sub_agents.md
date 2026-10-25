@@ -31,9 +31,9 @@ need only when this conversation does.
   its own.
   One that is still working is refused.
 - `access`: `read` looks things up and changes nothing (chats, documents, your notebook,
-  the web, the live chats); it still has the intercom. With read access it opens pages
-  in a browser, looks and scrolls, and cannot act on a page. `work` may also write, such
-  as notes, and act on a page. Without `access` it is read, or work when you give a
+  the web, the live chats); it still has the intercom. With read access it looks at and
+  scrolls the pages open in a browser, and cannot open, close or act on one. `work` may
+  also write, such as notes, and open and act on pages. Without `access` it is read, or work when you give a
   folder.
 - `folder`: a folder of your notebook, such as `agents/<name>`. It sees (and with work
   access writes) only that folder. Without it, your whole notebook.

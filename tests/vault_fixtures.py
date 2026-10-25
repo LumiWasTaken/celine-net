@@ -76,7 +76,7 @@ async def vault_app(tmp_path, monkeypatch, store, fake_bw):
     vault.forget = lambda: approvals.forget("vault")
     taps: list[tuple[str, list[str]]] = []
 
-    async def yes(action, facts, conversation, *_):
+    async def yes(action, facts, conversation, *_, **__):
         taps.append((action, facts))
         return None
     monkeypatch.setattr(approvals, "ask", yes)

@@ -72,11 +72,12 @@ def test_the_index_follows_new_edited_and_deleted_rows_and_keeps_history(tmp_pat
 
 
 def test_paging_across_knowledge_bases_loses_nothing(tmp_path):
+    from celine.settings import general
     kbs = KBs(SimpleNamespace(data_dir=tmp_path, problems=[], kb={
         "whatsapp": {"kind": "chat", "title": "WhatsApp"},
         "discord": {"kind": "chat", "title": "Discord"},
-        "documents": {"kind": "documents", "title": "Documents", "chunk_over_kb": 0}}),
-        lambda *a: None)
+        "documents": {"kind": "documents", "title": "Documents", "chunk_over_kb": 0}},
+        r=lambda key: general.value({}, key)), lambda *a: None)
     _fill(kbs.get("whatsapp"), [f"pizza {i}" for i in range(10)], sender="p:alex")
     _fill(kbs.get("discord"), [f"pizza {i}" for i in range(10)], t0=T0 + 30_000)
     kbs.get("documents").write("food.md", "pizza recipe")

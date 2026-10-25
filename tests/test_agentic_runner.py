@@ -149,9 +149,6 @@ def test_a_tool_name_written_as_a_citation_is_marked_invalid():
     text = "BAD BOY [[chat_archive__look_up: person discord:265 BAD BOY]] said hi [[discord:7]]."
     assert verify.mark_tool_citations(text) == \
         "BAD BOY [[chat_archive__look_up|invalid]] said hi [[discord:7]]."
-    from celine.bridge.render import render       # in a chat app: unknown, no word
-    out = render("hi [[chat_archive__look_up|invalid]] and [[Notes/Ana|Ana]]")
-    assert out.startswith("hi [?] and Ana") and "invalid" not in out
 
 
 def test_the_ledger_seeds_from_stored_calls_after_a_restart():

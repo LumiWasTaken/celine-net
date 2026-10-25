@@ -2,7 +2,8 @@
 // re-upload media whose CDN copy expired. The app drives both from
 // server/celine/kb/media_wa.py.
 //
-//	POST /admin/media/download {direct_path, media_key, file_hash, enc_file_hash, mtype}
+//	POST /admin/media/download {direct_path, media_key, file_hash, enc_file_hash, mtype,
+//	                      file_length} -> 413 when file_length or the file is over the cap
 //	                      -> 200 the decrypted file (also kept in <state>/media/<sha256>)
 //	                         | 410 {"error"} expired | 503 not reachable
 //	POST /admin/media/retry {message_id, chat, sender, from_me, is_group, media_key}
@@ -21,10 +22,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,12 +50,30 @@ var (
 	}
 )
 
+// maxMediaBytes: the largest file /admin/media/download fetches (-max-media-mb,
+// WA_LINK_MAX_MEDIA_MB); the whole file is held in memory while it is decrypted.
+var maxMediaBytes int64 = 100 << 20
+
+// envMB: a size in MB from the environment, in bytes; def when unset or not a number.
+func envMB(name string, def int64) int64 {
+	if n, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(name)), 10, 64); err == nil && n > 0 {
+		return n << 20
+	}
+	return def << 20
+}
+
 type mediaRef struct {
 	DirectPath  string `json:"direct_path"`
 	MediaKey    string `json:"media_key"`     // base64
 	FileHash    string `json:"file_hash"`     // hex sha256 of the plain file
 	EncFileHash string `json:"enc_file_hash"` // base64
 	MType       string `json:"mtype"`         // photo | video | gif | audio | voice | document | sticker
+	FileLength  int64  `json:"file_length"`   // the size the message names (its fileLength), 0 unknown
+}
+
+func tooLarge(w http.ResponseWriter) {
+	writeJSON(w, 413, map[string]string{"error": fmt.Sprintf(
+		"The file is larger than the connection downloads (%d MB).", maxMediaBytes>>20)})
 }
 
 type retryReq struct {
@@ -113,6 +134,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "need direct_path, media_key, hashes"})
 		return
 	}
+	if ref.FileLength > maxMediaBytes {
+		tooLarge(w) // before anything is downloaded or decrypted
+		return
+	}
 	if !isConnected() {
 		writeJSON(w, 503, map[string]string{"error": "WhatsApp is not reachable."})
 		return
@@ -130,6 +155,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	if int64(len(data)) > maxMediaBytes {
+		tooLarge(w) // the message named less than came; not kept
 		return
 	}
 	w.Header().Set("X-Sha256", keepFile(data))

@@ -577,8 +577,47 @@ async def test_background_work_on_one_model_waits_for_a_busy_provider(tmp_path, 
     async def emit(d):
         if d.get("reason") == "busy":
             nets["main/big"].fail = None
+    llm.cfg.settings.general["busy_retry_seconds"] = 0     # no backoff: no wait here
     out = await collect(llm.bind(role="small", priority=B, fallback=False, emit=emit))
     assert isinstance(out[-1], Done) and nets["main/big"].calls == 2
+
+
+async def test_background_work_waits_longer_each_time_a_provider_stays_busy(
+        tmp_path, monkeypatch):
+    """Background work keeps waiting for a busy provider, each wait twice the last (the
+    Advanced busy model waits), never shorter than its Retry-After; a Keep waiting turn
+    keeps its plain wait."""
+    from celine.backends import llm as llm_mod
+    llm, nets = routed(tmp_path, monkeypatch, {"small": {"chain": ["main/big"]},
+                                               "chat": {"chain": ["main/big"]}})
+    llm.cfg.settings.general.update({"busy_retry_seconds": 10, "busy_retry_max_seconds": 60})
+    plain = _busy(503)
+    plain.retry_after = None
+    told = _busy(429)
+    told.retry_after = 30
+    assert [llm_mod.backoff(told, n, llm.cfg) for n in (0, 1, 2)] == [30, 30, 40]
+
+    seen, real = [], llm_mod.backoff
+
+    def spy(e, tries, cfg):
+        seen.append(real(e, tries, cfg))
+        if len(seen) == 5:
+            nets["main/big"].fail = None
+        return 0
+    monkeypatch.setattr(llm_mod, "backoff", spy)
+    nets["main/big"].fail = plain
+    out = await collect(llm.bind(role="small", priority=B, fallback=False))
+    assert isinstance(out[-1], Done) and seen == [10, 20, 40, 60, 60]
+
+    seen.clear()
+
+    async def emit(d):
+        if d.get("reason") == "busy":
+            nets["main/big"].fail = None
+    nets["main/big"].fail = _busy(429)
+    out = await collect(llm.bind(role="chat", priority=I, conversation_id="c1",
+                                 fallback=False, keep_waiting=True, emit=emit))
+    assert isinstance(out[-1], Done) and seen == [], "the user's Keep waiting: as before"
 
 
 # ---- the user's request never times out, a wait names the holder -----------------------

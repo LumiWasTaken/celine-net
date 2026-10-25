@@ -8,14 +8,14 @@
    Open or Closed and its Close. New message: To (its conversation
    as a second step), Subject, the text and When. Reminders are messages here too.
    URL: /intercom, /intercom/<thread id>. */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight, Bot, CheckCheck, CircleCheck, CornerUpLeft, Flag, Info, Link, Mail, MessageCircle, MessageSquarePlus, MoreHorizontal, SearchX, Shapes, Terminal, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Portrait } from '../components/Portrait'
 import {
-  KINDS, KIND_PLURAL, KIND_WORD, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
+  KINDS, KIND_PLURAL, KIND_WORD, WaitingCount, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
   type IntercomMessage, type Kind, type Source, type Thread, type ThreadsPage,
 } from '../lib/intercom'
 import { useName } from '../lib/name'
@@ -131,11 +131,12 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
                             { events: isIntercomEvent, enabled: active })
   const s = q.trim().toLowerCase()
   const matches = (t: Thread) => !s || [t.name, t.subject ?? '', t.last.text, t.last.from_name ?? '', t.source?.title ?? ''].some(x => x.toLowerCase().includes(s))
-  const waitN = (waiting.data?.groups ?? []).reduce((n, g) => n + g.waiting, 0)
+  // what waits for you: the server's count, the rail's
+  const waitN = useContext(WaitingCount)
   // it opens on Waiting for you when something waits, else on All; it stays where it opened
   const show: Show = picked ?? 'waiting'
   const opened = !!waiting.data
-  useEffect(() => { if (opened && !waitN) setShow(s => s ?? 'all') }, [opened]) // eslint-disable-line react-hooks/exhaustive-deps -- once, on the first answer
+  useEffect(() => { if (opened && !waiting.data!.groups.length) setShow(s => s ?? 'all') }, [opened]) // eslint-disable-line react-hooks/exhaustive-deps -- once, on the first answer
   const allN = list.data && !list.data.next && !who ? list.data.groups.reduce((n, g) => n + g.threads, 0) : undefined
   const guardOn = useFeatureOn('guard')
   const guardN = guard.data && !guard.data.next ? guard.data.groups.reduce((n, g) => n + g.threads, 0) : undefined
@@ -219,7 +220,7 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
           ? <SelectBar picker={picker} noun={n => count(n, 'thread')}
                        actions={[{ label: 'Dismiss', icon: CheckCheck, done: 'dismissed', run: dismissMany }]} />
           : <Toolbar state={{ label: 'Show', value: show, onChange: v => { setShow(v as Show); if (v === 'waiting') setWho0(null) },
-                              options: [{ value: 'waiting', label: 'Waiting for you', count: waiting.data ? waitN : undefined },
+                              options: [{ value: 'waiting', label: 'Waiting for you', count: waitN ?? undefined },
                                         { value: 'all', label: 'All', count: allN },
                                         ...(guardOn ? [{ value: 'guard', label: 'Guard', count: guardN }] : [])] }}
                      filters={[

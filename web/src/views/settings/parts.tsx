@@ -79,10 +79,8 @@ const UNIT: Record<string, string> = {
   'passages embedded': '', 'chats cut into passages': 'chats', files: 'files', chats: 'chats',
 }
 
-/* a restore names its chat ("Restoring Ann", the server's label) */
 function taskWhat(t: Task): string {
   const kind = t.kind.split(':')[0]!
-  if (kind === 'include') return t.label
   return WHAT[t.kind] ?? WHAT[kind] ?? 'In progress'
 }
 

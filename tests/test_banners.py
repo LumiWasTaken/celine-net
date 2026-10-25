@@ -23,7 +23,7 @@ from celine.guard.owner import _SEAL, Owner
 from celine.guard.small_role import Unavailable
 
 pytestmark = pytest.mark.anyio
-OWNER = Owner("test", _SEAL)       # what only their session or bridged message makes
+OWNER = Owner("test", _SEAL)       # what only their session makes
 
 NOTE = "class: sensitive\n\nSam lives at 12 Example Road in Springfield, phone +49 30 1234567."
 

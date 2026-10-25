@@ -34,7 +34,6 @@ platform = "discord"
 kind  = "documents"
 title = "Documents"
 path  = "documents"      # relative to paths.data; an absolute path works too (a vault)
-max_upload_mb = 512      # per file, uploads through the API
 chunk_over_kb = 32       # default mode: a text file larger than this is chunked, else full file
 describe = true          # write AI descriptions in the background
 embed    = true          # passages into the semantic index ([embeddings] below)

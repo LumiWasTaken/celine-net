@@ -283,7 +283,6 @@ function Thread({ kb, chatId, jump }: { kb: Kb; chatId: number; jump?: number })
       return
     }
     void loadInitial(jump)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jump, loadInitial])
   useEffect(() => { loadedIds.current = new Set(page?.msgs.map(m => m.id)) }, [page])
 

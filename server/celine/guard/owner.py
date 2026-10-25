@@ -1,9 +1,9 @@
 """The owner, as code proves them: an unfreeze, a
 pass, an answer to an approval and an answer on Bastet's banner each take an `Owner`,
-and only three places make one: `session` (guard/api.py, a logged-in session, never a
-token), `bridged` (bridge/service.py, their own message in the bridged chat: from_me
-and without its marker) and `precedent` (guard/learn.py: an unfreeze only, on freezes
-of the same kind that they themselves ended, read back from the table). No tool, model,
+and only these places make one: `session` (guard/api.py, a logged-in session, never a
+token), `precedent` (guard/learn.py: an unfreeze only, on freezes of the same kind that
+they themselves ended, read back from the table) and `second_look` (guard/chain.py: an
+unfreeze only, on the second look's no). No tool, model,
 intercom message or Bastet's chat holds one, so none of them can do these;
 tests/test_gates_hold.py checks that no other file makes one.
 """
@@ -22,7 +22,7 @@ class Owner:
 
     def __init__(self, via: str, seal: object, ids: tuple[int, ...] = ()):
         if seal is not _SEAL:
-            raise TypeError("only the owner's session or their own bridged message")
+            raise TypeError("only the owner's session")
         self.via, self.ids = via, ids
 
     @property
@@ -47,16 +47,11 @@ def session_or_none(request) -> Owner | None:
         return None
 
 
-def bridged() -> Owner:
-    """Their own message in the bridged chat (bridge/service.py read, from_me only)."""
-    return Owner("bridge", _SEAL)
-
-
 def must(by, *, unfreeze: bool = False) -> None:
     """`by` is the owner; their precedent and a second look (Bastet's lifts) count only for
     an unfreeze."""
     if not isinstance(by, Owner) or (by.lifts_only and not unfreeze):
-        raise TypeError("only the owner's session or their own bridged message")
+        raise TypeError("only the owner's session")
 
 
 def second_look(c, rid: int) -> Owner:

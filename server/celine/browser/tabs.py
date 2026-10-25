@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
+from .. import homes
 from ..core.ids import now
 from . import sync
 
@@ -93,9 +94,12 @@ async def close_opened_by(cfg, store, cid: str) -> None:
 
 async def openers(store) -> dict[str, dict]:
     """The conversation that opened each open tab, by tab name: {id, title, kind
-    (mission, sub_agent or conversation)}; the user's own tabs are left out."""
+    (mission, sub_agent or conversation), link (homes.of: where it opens)}; the user's
+    own tabs are left out."""
     return await store.read(lambda c: {r["name"]: {"id": r["id"], "title": r["title"],
-                                                   "kind": r["kind"]} for r in c.execute(
+                                                   "kind": r["kind"],
+                                                   "link": homes.of(c, r["id"])["link"]}
+                                       for r in c.execute(
         "SELECT t.name, c.id, c.title, CASE WHEN mi.conversation_id IS NOT NULL "
         "THEN 'mission' WHEN c.agent_of IS NOT NULL THEN 'sub_agent' "
         "ELSE 'conversation' END AS kind FROM tabs t "

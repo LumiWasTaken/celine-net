@@ -77,7 +77,7 @@ async def test_connector_records_render_as_citable_archive_lines(store, tmp_path
     async with anyio.create_task_group() as tg:
         await sup.start(tg)
         await until(lambda: sup.skills["chatlink"].status == "up")
-        # the one write is not Celine's tool; the bridge reaches it through call()
+        # a connector only reads: its one write is not offered
         assert "chatlink__send" not in reg.tools
         out = await reg.tools["chatlink__read_messages"].fn(_ctx(store), chat="c9")
         assert not out.is_error
@@ -86,8 +86,6 @@ async def test_connector_records_render_as_citable_archive_lines(store, tmp_path
         assert len(refs) == 2 and all(r.startswith("chatlink:") for r in refs)
         resolved = _KBs(kb).resolve_refs(refs)
         assert [m["text"] for m in resolved.values()] == ["first", "second"]
-        res = await sup.call("chatlink", "send", {"text": "hi"})
-        assert res.content[0].text == "sent: hi"
         tg.cancel_scope.cancel()
 
 
@@ -123,3 +121,17 @@ def test_an_mcp_argument_named_like_a_python_keyword_keeps_its_name():
     async def mcp(ctx, **args): ...
     async def own(ctx, in_: str): ...
     assert _takes_any(mcp) and not _takes_any(own)
+
+
+def test_a_server_named_like_a_built_in_skill_is_refused_with_its_reason():
+    """[servers.notebook] would replace the notebook in the registry: it is left out, and
+    the config's problems say why. Another name is read."""
+    from celine.mcp import read_servers
+    from celine.skills import META
+    problems = []
+    raw = {"servers": {"notebook": {"command": "x"}, META: {"command": "x"},
+                       "my-tools": {"command": "x"}}}
+    assert list(read_servers("mcp.toml", raw, problems, {})) == ["my-tools"]
+    assert [p.message for p in problems] == [
+        "[servers.notebook] is the name of a built-in skill; that server is not started",
+        f"[servers.{META}] is the name of a built-in skill; that server is not started"]

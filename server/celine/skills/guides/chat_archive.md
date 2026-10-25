@@ -10,9 +10,8 @@ about it starts with a tool call, and the answer comes only from what the tools 
 Never answer from memory, and never write that you searched when no tool ran. Use these
 tools only. Never use the terminal for it, and never look for database files.
 
-What you and {{username}} said to each other in this app, your bridged WhatsApp
-chat with them and your own runs included, is not here: that is
-past_conversations.
+What you and {{username}} said to each other in this app, your own runs included, is
+not here: that is past_conversations.
 
 A name you do not know (a nickname, an alias, "Kit") is most likely someone in the
 archive: `chat_archive__look_up(name=...)` first. It knows the other names {{username}}

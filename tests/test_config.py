@@ -10,7 +10,7 @@ import pytest
 from celine import boot
 from celine import config as config_mod
 from celine.comfyui import presets
-from celine.skills import BUILTIN, KNOBS
+from celine.skills import BUILTIN
 
 
 @pytest.fixture
@@ -61,10 +61,12 @@ def _edit(path, old: str, new: str) -> None:
 def test_an_unknown_table_or_key_is_a_problem_with_file_and_key(own_config):
     with (own_config / "celine.toml").open("a") as f:
         f.write("\n[nonsense]\nlaser = true\n")
-    _edit(own_config / "skills.toml", "results       = 8 ", "resutls = 8 ")
+    _edit(own_config / "skills.toml", "[web]\nenabled = true\n",
+          "[web]\nenabled = true\nresults = 8\n")
     said = {(p.file.rsplit("/", 1)[-1], p.message) for p in boot.load().problems}
     assert ("celine.toml", "unknown table [nonsense], ignored") in said
-    assert ("skills.toml", "unknown key [web] resutls, ignored") in said
+    assert ("skills.toml", "unknown key [web] results, ignored") in said, \
+        "a skill's numbers are on Settings, Advanced"
 
 
 def test_a_wrong_type_is_a_problem_and_the_default_counts(own_config):
@@ -75,5 +77,8 @@ def test_a_wrong_type_is_a_problem_and_the_default_counts(own_config):
     assert cfg.port == 8766
 
 
-def test_the_skill_tables_are_the_built_in_skills():
-    assert set(KNOBS) == {n for n, _, _ in BUILTIN}
+def test_the_skill_tables_are_the_built_in_skills_and_hold_enabled_only(own_config):
+    cfg = boot.load()
+    assert set(cfg.skills) == {n for n, _, _ in BUILTIN}
+    assert all(set(t) == {"enabled"} for t in cfg.skills.values())
+    assert cfg.problems == []

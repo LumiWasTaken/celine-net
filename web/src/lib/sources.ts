@@ -23,8 +23,7 @@ type SourcesData = { kbs: Kb[]; sources: Source[] }
 const EVENTS = new Set(['kb.changed', 'kb.task', 'kb.task.removed', 'kb.job', 'source.state', 'settings.changed'])
 
 /** the sources whose login was lost and is not back (WhatsApp unlinked the phone,
- *  Discord refused the login): the rail's dot on Settings, and the line in a bridge
- *  conversation that cannot answer because of it */
+ *  Discord refused the login): the rail's dot on Settings */
 export function useLostLogins(): ConnectorSummary[] {
   const r = useResource(() => kbApi.connectors().then(x => x.connectors), [],
                         { events: ev => ev.type === 'source.state' })

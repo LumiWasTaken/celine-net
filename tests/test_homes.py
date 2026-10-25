@@ -67,20 +67,47 @@ async def test_lists_and_senders_carry_the_same_link(store):
         assert src["link"] == (await store.read(lambda c, v=v: homes.of(c, v)))["link"], k
 
 
+
+async def test_rows_that_name_a_conversation_carry_its_link(store):
+    """An artifact, a terminal and a browser tab it opened, a batch: each names its
+    conversation with the same link, so the client never builds one."""
+    from celine.artifacts import store as artifacts
+    from celine.browser import tabs
+    from celine.comfyui import batches
+    from celine.terminals import store as terminals
+    ids = await _tree(store)
+    sub = ids["mission-agent"]
+    want = f"/mission/{sub}"
+    a = await artifacts.add_version(store, None, "html", "t", "<p>x</p>", "", sub, None)
+    assert (await artifacts.get(store, a["id"]))["link"] == want
+    mine = await artifacts.add_version(store, None, "html", "t", "<p>x</p>", "", None, None)
+    assert (await artifacts.get(store, mine["id"]))["link"] is None
+    await terminals.upsert(store, "ab12cd", "build", "celine", "2026-10-02T01:00:00.000+00:00")
+    await store.write(lambda c: (
+        c.execute("UPDATE terminals SET opened_by=? WHERE id='ab12cd'", (sub,)),
+        c.execute("INSERT INTO tabs(name, opened_by, opened_at, used_at) "
+                  "VALUES('t1', ?, 'x', 'x')", (sub,)),
+        c.execute("INSERT INTO media_batches(id, kind, conversation_id, state, items, "
+                  "created_at) VALUES('b1', 'images', ?, 'done', '[]', 'x')", (sub,))))
+    assert (await terminals.opener(store, "ab12cd"))["link"] == want
+    assert (await tabs.openers(store))["t1"]["link"] == want
+    [b] = await batches.list_batches(store, "images")
+    assert batches.view(b)["link"] == want
+    assert batches.view(await batches.get(store, "b1"))["link"] == want
+
 def test_place_of_each_kind(tmp_path):
     db = tmp_path / "celine.db"
     migrate(db)
     c = sqlite3.connect(db)
     for cid, kind, agent_of, key in (
-            ("chat", "chat", None, None), ("bridge", "background", None, "bridge:whatsapp"),
-            ("run", "background", None, "run:r1:1"), ("trig", "chat", None, "trigger:t"),
+            ("chat", "chat", None, None), ("run", "background", None, "run:r1:1"), ("trig", "chat", None, "trigger:t"),
             ("mis", "mission", None, None), ("sub", "agent", "mis", None),
             ("subsub", "agent", "sub", None), ("orphan", "agent", None, None)):
         c.execute("INSERT INTO conversations(id, kind, agent_of, trigger_key, created_at, "
                   "updated_at) VALUES(?, ?, ?, ?, 'x', 'x')", (cid, kind, agent_of, key))
     got = {cid: place_of(c, cid) for cid in (
-        "chat", "bridge", "run", "trig", "mis", "sub", "subsub", "orphan", "gone")}
-    assert got == {"chat": "chat", "bridge": "chat", "run": "background",
+        "chat", "run", "trig", "mis", "sub", "subsub", "orphan", "gone")}
+    assert got == {"chat": "chat", "run": "background",
                    "trig": "background", "mis": "mission", "sub": "mission",
                    "subsub": "mission", "orphan": "background", "gone": "background"}
     assert offered("notebook", "chat") and offered("notebook", "mission")

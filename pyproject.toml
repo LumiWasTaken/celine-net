@@ -44,6 +44,7 @@ dev = [
     "segno>=1.6.6",
     "pytest-xdist>=3.8.0",
     "import-linter>=2.15",
+    "ruff>=0.17.2",
 ]
 
 [tool.pytest.ini_options]
@@ -55,3 +56,12 @@ markers = [
     "shellbox: needs docker and the local shellbox image; opt in with -m shellbox",
     "browser: needs docker and the local browser image; opt in with -m browser",
 ]
+
+# a lint gate, not a formatter: pyflakes and the few pycodestyle checks the code passes
+[tool.ruff.lint]
+select = ["F", "E9", "E101", "E401", "E711", "E712", "E713", "E714", "E721", "E722",
+          "W291", "W292", "W293", "W605"]
+
+[tool.ruff.lint.per-file-ignores]
+# a test names an imported fixture as its argument
+"tests/**" = ["F811"]

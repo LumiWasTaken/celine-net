@@ -21,7 +21,7 @@ GPU). Every other service except `celine` is optional too: see Profiles.
 |---|---|---|
 | `celine` | `celine-app` | The server and the web UI. |
 | `discord-link` | `celine-discord-link` | Owns the Discord login, keeps a journal, serves Celine's Discord read tools. |
-| `wa-link` | `celine-wa-link` | Owns the WhatsApp linked device, keeps a journal, serves Celine's WhatsApp tools and the bridged chat. |
+| `wa-link` | `celine-wa-link` | Owns the WhatsApp linked device, keeps a journal, serves Celine's WhatsApp read tools. |
 | `searxng` | `searxng/searxng` | A private metasearch engine for Celine's web skill. |
 | `reranker` | `ggml-org/llama.cpp:server` | bge-reranker-v2-m3 on llama-server, for the Reranking task. Only with the profile `reranker`. |
 | `shellbox` | `celine-shellbox` | Celine's own Debian computer, where its terminals run. |
@@ -81,8 +81,6 @@ the app, in this order:
    Settings, Linked devices, Link a device). The phone then sends its history.
    It is an unofficial client, which WhatsApp does not allow and may ban the number
    for; use it at your own risk.
-5. **The bridged chat** (optional), on the WhatsApp page: the switch. You then text
-   Celine in your own "Message yourself" chat.
 
 A connector with no internet access is a normal state: the source page says so, and
 "Sync now" catches up by hand once it is back.
@@ -111,7 +109,10 @@ folder.
 
 Nothing secret is in an image or in the compose file. The keys in `.env` reach the
 containers as environment variables; everything typed into the app stays on the volume.
-The passkeys, sessions and recovery codes are in `app/auth.db` (mode 600).
+The passkeys, sessions and recovery codes are in `app/auth.db` (mode 600). The app's
+folder (`app/`, or `var/` without Docker) is mode 700 and what the app writes there is
+its user's alone (umask 077); the files other containers mount from `app/keys/` keep
+their own modes.
 
 Hand-written configuration (`config/*.toml`, its shipped base in `config/her/` and the
 schedules copied once into `app/settings/`) is part of the app image. Settings changed
@@ -236,7 +237,7 @@ with a prompt that says so.
   `mem_limit`, `pids_limit` and `cpus` keep it from taking the machine down; `/tmp` is
   a 2 GB tmpfs that counts against its memory.
 - Its own network: the app reaches it; the connectors and the search engine do not. The internet and your LAN are open to it.
-  As an extra safety measure, uncomment `internal: true` under `networks: shellbox` (and
+  If it can do without them, `internal: true` is the recommended setting: uncomment it under `networks: shellbox` (and
   `browser`) in the compose file: the box then reaches only the app, so something that
   talked it into a command cannot reach your LAN or the internet from there. It can no
   longer install packages or fetch pages from the box then.
@@ -251,11 +252,13 @@ restart, a crash, or `sudo reboot` inside the box keeps the container as it was;
 the recreate resets it. `docker compose logs shellbox-manager` shows what each morning
 did.
 
-Before the reset it keeps a snapshot of its home, one folder per day in `shellbox-snapshots/<date>` (hardlinks to the day before; kept; a restore is by hand). `SHELLBOX_SNAPSHOTS` (a host folder) sets where.
+Before the reset it keeps a snapshot of its home, one folder per day in `shellbox-snapshots/<date>` (hardlinks to the day before; a restore is by hand). `SHELLBOX_SNAPSHOTS` (a host folder) sets where, `SHELLBOX_SNAPSHOT_KEEP_DAYS` how many days they are kept (default 7; 0 keeps every one).
 
-The agent's home's size: `SHELLBOX_HOME_GB` gives it one. The box measures its home every 10
-minutes; past the size, its next result says so and asks it to clean up or ask for
-more room. Nothing stops its writing: it is a promise, not a wall.
+The agent's home's size: `SHELLBOX_HOME_GB` gives it a hard cap (default 50 GB),
+`SHELLBOX_HOME_SOFT_GB` a soft one (default 90% of the hard cap). The box measures its home every 10 minutes;
+past either cap, its next result says so and asks it to clean up or ask for more room,
+and past the hard cap the box takes no more uploads. What the agent writes from its own
+shell does not pass through the box's daemon: only the disk below stops that.
 
 A hard limit, optionally: with `SHELLBOX_HOME` (a host folder) as well, its home can be an ext4 disk image of that size (`$SHELLBOX_HOME.img`, mounted by `/etc/fstab`). Replace the shellbox's home volume in the compose file with `- ${SHELLBOX_HOME}:/home/celine`, then, as root in the stack folder, `docker compose stop shellbox`, `shellbox/home-disk.sh` (makes the disk, moves the files in, adds the fstab line), `docker compose up -d shellbox`. Run it again after raising `SHELLBOX_HOME_GB`: the disk grows in place; shrinking is by hand. The folder under the disk is made immutable (`chattr +i`): if the disk ever fails to mount, its box refuses to start (shellboxd cannot write its home) instead of writing onto the host's disk; the rest of the stack keeps running.
 
@@ -284,8 +287,10 @@ The two boxes read these; the compose file sets the ones it names, `.env` the on
 | `BROWSER_KEY_HASH_FILE` | `/etc/browser/key.hash` | the sha256 of the app's `keys/browser.key`; the browser box accepts only a call with that key |
 | `BROWSER_PORT` | `8771` | the port browserd listens on |
 | `SHELLBOX_LLM_URL` | none | the app's model proxy its terminals call (`OPENAI_BASE_URL`) |
-| `SHELLBOX_HOME_GB` | empty | its home's size in GB; empty: no size |
+| `SHELLBOX_HOME_GB` | `50` | its home's hard cap in GB: past it no upload lands |
+| `SHELLBOX_HOME_SOFT_GB` | 90% of the hard cap | past it the agent is told to clean up |
 | `SHELLBOX_RESET_AT` | `04:00` | the hour of the morning reset, HH:MM in `TZ` |
+| `SHELLBOX_SNAPSHOT_KEEP_DAYS` | `7` | days its home's snapshots are kept (shellbox-manager); 0 keeps every one |
 
 ## Browser
 
@@ -408,9 +413,13 @@ a login writes a new setup code, and the old one stops working.
 **Recovery.** On the login screen, "Use a recovery code" takes a code and adds a new
 way to log in, any of the three. Each code works once. Settings, Security lists the
 passkeys, passwords and PINs, adds and removes them (never the last one; removing one
-ends its sessions), and makes new recovery codes (the old ones stop working).
+ends its sessions), and makes new recovery codes (the old ones stop working). Adding a
+way to log in, new recovery codes and a new API token ask you to confirm it is you
+(a passkey, your password or your PIN) unless you did in the last 5 minutes; logging in
+counts. It also lists the browsers logged in, each with when it logged in and when it
+was last seen, and logs out one or every other.
 
-**Stored** (`auth.db`, mode 600): the passkeys' public keys, the passwords and PINs as scrypt hashes, a SHA-256 of each session token, and the recovery and setup codes as scrypt hashes. **Sessions** end 30 days after last use and 90 days after login; the cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on https. **Limits:** two locks, each on its own: after 5 wrong setup or recovery codes, code entry locks for everyone for 6 hours, and after 5 wrong passwords or PINs from one client address, logging in with them from that address does (so nobody can lock you out from elsewhere); each further wrong one doubles that lock up to 30 days. A locked kind refuses even the right one, while the other kind still works. Failed logins of any kind are also limited to 10 per client address in 15 minutes.
+**Stored** (`auth.db`, mode 600): the passkeys' public keys, the passwords and PINs as scrypt hashes, a SHA-256 of each session token with its browser's user agent (trimmed), and the recovery and setup codes as scrypt hashes. **Sessions** end 30 days after last use and 90 days after login; the cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on https. **Limits:** two locks, each on its own: after 5 wrong setup or recovery codes, code entry locks for everyone for 6 hours, and after 5 wrong passwords or PINs from one client address, logging in with them from that address does (so nobody can lock you out from elsewhere); each further wrong one doubles that lock up to 30 days. A locked kind refuses even the right one, while the other kind still works. Failed logins of any kind are also limited to 10 per client address in 15 minutes.
 
 ## Behind a reverse proxy (https)
 
@@ -429,7 +438,9 @@ The proxy must pass the `Host` header and upgrade WebSockets (`/ws/events`,
 Point the router for `celine.example.net` at `http://192.168.1.5:8766`.
 
 The app reads the client's address from `X-Forwarded-For` only when the request comes
-from `CELINE_TRUSTED_PROXIES` (used for the login limit and the log). Behind two
+from `CELINE_TRUSTED_PROXIES` (used for the login limit and the log). A request from
+any other address that carries `X-Forwarded-For`, `Forwarded` or `X-Real-IP` is logged
+once as a warning: every client behind that proxy counts as its one address. Behind two
 proxies in a row, list both. Changing the public address later means registering the
 passkeys again. `[server] allowed_hosts` in `config/celine.toml` adds more host names
 for the `Host` check.
@@ -446,13 +457,17 @@ process keeps running when the app stops. In Docker they are services of their o
 
 - Keys: the clients file (`-clients-file`, in Docker `/data/connector-clients`, the
   app's `keys/connector-clients` mounted read-only) lists who may connect, `name:key:role`
-  one per line or comma separated. `owner` may change the account and hold the bridged chat;
+  one per line or comma separated. `owner` may change the account and delete chats;
   `reader` may only read (a second app instance). The app uses `keys/connector.key`,
   which `celine keys` writes into that file as `live`. The connectors' health checks use
   the first key in the file.
 - Only one process may use a WhatsApp device. wa-link locks its state folder, so a
   second copy on the same folder exits at once. Never run a second copy of the same
   device on another machine either: stop the old one before the new one starts.
+- wa-link's limits: `WA_LINK_MEM_LIMIT` in `.env` (default `2g`) is its container's
+  memory; `WA_LINK_MAX_MEDIA_MB` (default `100`, the flag `-max-media-mb` outside Docker)
+  is the largest attachment it downloads for the app. A larger one is refused before it
+  is downloaded, by the size its message names.
 
 ## CI
 
@@ -466,6 +481,12 @@ other branches build nothing. A push runs only the jobs whose files changed.
   the tests of what it ships, and push it to the project's registry as
   `$CI_REGISTRY_IMAGE/celine-*`, tagged with the branch or tag slug and `:latest` on
   master.
+
+GitHub Actions: `.github/workflows/test.yml` runs the gates on every push and pull
+request; `images.yml` builds the six images on master and on a `v*` tag and pushes them
+to `ghcr.io/<owner>/celine-net/celine-*`, tagged `latest` (master), the tag as pushed
+(`v1.2`) and the commit. `CELINE_TAG=v1.2` keeps a machine on a release; `CHANGELOG.md`
+says what each one changed.
 
 To pull them, set `CELINE_IMAGES=<registry>` in `.env` (the project's
 `$CI_REGISTRY_IMAGE`, for example `registry.example.net/you/celine-net`) and

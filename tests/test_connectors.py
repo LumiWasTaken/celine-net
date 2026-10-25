@@ -1,5 +1,5 @@
-"""The app's side of the connectors: no bridge without a chat to write to, deleting a
-chat, and what reaches the connector's own paths. A fake connector only."""
+"""The app's side of the connectors: deleting a chat, and what reaches the connector's
+own paths. A fake connector only."""
 from __future__ import annotations
 
 import json
@@ -22,7 +22,6 @@ class FakeLink:
     def __init__(self):
         self.calls: list[tuple[str, str, object]] = []
         self.ticks: dict[str, bool] = {}
-        self.channel = None           # a chat the connector writes to (WhatsApp's own)
         self.head = 0
         self.polls = 0
 
@@ -39,9 +38,6 @@ class FakeLink:
         if p == "/admin/jobs/j9":
             self.polls += 1
             return httpx.Response(200, json={"state": "done" if self.polls > 1 else "running"})
-        if p == "/admin/info":
-            return httpx.Response(200, json={"platform": "discord", **(
-                {"write_chat": self.channel} if self.channel else {})})
         if p == "/admin/targets" and request.method == "PUT":
             self.ticks.update(body["set"])
             return httpx.Response(200, json={"changed": len(body["set"]), "job": "j1"})
@@ -67,17 +63,16 @@ def world(tmp_path, monkeypatch):
     app.state.services.kbs = SimpleNamespace(tasks=Tasks(lambda ev: None), get={"discord": kb}.get)
     app.state.services.bus = SimpleNamespace(publish=lambda *a: None)
     app.state.services.store = SimpleNamespace(emit_global=lambda ev: None)
-    app.state.services.bridge = SimpleNamespace(
-        sides={"discord": None}, set_on=lambda kid, on: None,
-        state=lambda kid: {"on": False, "held": False, "error": None})
     return TestClient(app), link, kb
 
 
-def test_a_connector_without_a_chat_it_writes_to_has_no_bridge(world):
-    client, _, _ = world
-    assert client.get("/api/sources/discord/connector").json()["bridge"] is None
-    r = client.put("/api/sources/discord/bridge", json={"on": True})
-    assert r.status_code == 400 and "no bridged chat" in r.json()["error"]["message"]
+def test_the_connector_state_is_its_status(world):
+    client, link, _ = world
+    got = client.get("/api/sources/discord/connector").json()
+    assert got == {"platform": "discord", "connection": {"state": "connected"},
+                   "account": {"id": "105", "name": "sam"}, "login_lost_at": None,
+                   "login": None, "qr_at": None}
+    assert [p for _, p, _ in link.calls] == ["/admin/status"]
 
 
 def test_a_deleted_chat_is_left_out_first_and_comes_back_when_included(world):
@@ -97,10 +92,6 @@ def test_a_deleted_chat_is_left_out_first_and_comes_back_when_included(world):
     r = client.post("/api/sources/discord/ignored-chats/include", json={"key": "D2"}).json()
     assert link.ticks["D2"] is True and r["task"]
     assert client.get("/api/sources/discord/ignored-chats").json()["chats"] == []
-    # a bridged chat stays
-    link.channel = "D1"
-    assert client.delete(f"/api/sources/discord/chats/{ids['D1']}").status_code == 400
-    assert kb.get_chat(ids["D1"]) is not None
 
 
 def test_ids_in_a_connector_path_are_checked_first(world):
@@ -117,26 +108,6 @@ def test_ids_in_a_connector_path_are_checked_first(world):
         r = client.request(method, path, json={} if method == "PUT" else None)
         assert r.status_code == code, (method, path, r.status_code)
     assert len(link.calls) == before
-
-
-@pytest.mark.anyio
-async def test_the_whatsapp_marker_follows_her_name_until_the_user_sets_one(tmp_path):
-    stored = {"marker": "Celine: "}
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/admin/bridge":
-            stored["marker"] = json.loads(request.content)["marker"]
-        return httpx.Response(200, json={"platform": "whatsapp", **stored})
-    kb = ChatKB(id="whatsapp", title="WhatsApp", platform="whatsapp", path=tmp_path / "wa.db")
-    c = Connector("whatsapp", "http://127.0.0.1:8769/mcp", {}, kb,
-                  transport=httpx.MockTransport(handle))
-    c.info = dict(stored)
-    await c.follow_name("Mira")
-    assert stored["marker"] == c.info["marker"] == "Mira: "
-    c.own_marker("Mira says: ", "Mira")
-    c.info = stored = {"marker": "Mira says: "}
-    await c.follow_name("Nova")
-    assert c.info["marker"] == "Mira says: ", "the user's own marker stays"
 
 
 def test_the_first_import_counts_the_archive_and_ends_at_the_journal_head(world):

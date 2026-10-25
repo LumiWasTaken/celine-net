@@ -42,16 +42,27 @@ elif a[0] == "run":
     script = a[i + 1].replace("/data/", str(root) + "/data/")
     sys.exit(subprocess.call(["sh", "-c", script] + a[i + 2:]))
 '''
-FAKE_DATE = f'''#!/bin/sh
-case "$1" in +%F) echo {DAY};; *) echo "{DAY} 04:00";; esac
+FAKE_DATE = f'''
+import sys
+from datetime import datetime, timezone
+now = datetime(2026, 10, 23, 4, 0, tzinfo=timezone.utc)
+a = sys.argv[1:]
+if a == ["+%F"]:
+    print("{DAY}")
+elif a == ["+%s"]:
+    print(int(now.timestamp()))
+elif a[:1] == ["-d"] and a[1].startswith("@") and a[2:] == ["+%F"]:
+    print(datetime.fromtimestamp(int(a[1][1:]), timezone.utc).strftime("%F"))
+else:
+    print("{DAY} 04:00")
 '''
 
 
-def run(tmp_path: Path, mount: str) -> tuple[str, str]:
+def run(tmp_path: Path, mount: str, **env: str) -> tuple[str, str]:
     bin_ = tmp_path / "bin"
     bin_.mkdir(exist_ok=True)
     (bin_ / "docker").write_text(f"#!{sys.executable}\n{FAKE_DOCKER}")
-    (bin_ / "date").write_text(FAKE_DATE)
+    (bin_ / "date").write_text(f"#!{sys.executable}\n{FAKE_DATE}")
     for p in bin_.iterdir():
         p.chmod(0o755)
     root = tmp_path / "root"
@@ -61,7 +72,7 @@ def run(tmp_path: Path, mount: str) -> tuple[str, str]:
     log.write_text("")
     env = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}", "FAKE_LOG": str(log),
            "FAKE_MOUNT": mount, "FAKE_ROOT": str(root),
-           "FAKE_VOLUMES": str(tmp_path / "volumes"), "SHELLBOX_SNAPSHOTS": ""}
+           "FAKE_VOLUMES": str(tmp_path / "volumes"), "SHELLBOX_SNAPSHOTS": "", **env}
     out = subprocess.run(["sh", str(ROOT / "shellbox-manager" / "manager.sh"), "reset"],
                          env=env, capture_output=True, text=True, check=True).stdout
     return out, log.read_text()
@@ -112,3 +123,17 @@ def test_no_home_mount_fails_the_snapshot_and_the_reset_goes_on(tmp_path):
     assert "home snapshot failed, the reset goes on" in out
     assert " run " not in f" {log}"
     assert "up -d --force-recreate --no-deps shellbox" in log
+
+
+def test_snapshots_older_than_the_days_kept_go(tmp_path):
+    home(tmp_path / "volumes" / "celine_data" / "shellbox")
+    snaps = tmp_path / "volumes" / "celine_data" / "shellbox-snapshots"
+    for day in ("2026-10-10", "2026-10-15", "2026-10-16", "2026-10-22"):
+        (snaps / day).mkdir(parents=True)
+        (snaps / day / "same.txt").write_text("kept\n")
+    out, _ = run(tmp_path, "celine_data|/x", SHELLBOX_SNAPSHOT_KEEP_DAYS="7")
+    assert "home snapshot kept" in out
+    assert sorted(p.name for p in snaps.iterdir()) == ["2026-10-16", "2026-10-22", DAY]
+
+    run(tmp_path, "celine_data|/x", SHELLBOX_SNAPSHOT_KEEP_DAYS="0")
+    assert len(list(snaps.iterdir())) == 3, "0 keeps every one"

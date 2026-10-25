@@ -8,6 +8,8 @@ import importlib.util
 import json
 import os
 import shutil
+import subprocess
+import signal
 import threading
 import time
 import urllib.error
@@ -28,8 +30,28 @@ def until(cond, timeout: float = 10) -> None:
         assert time.monotonic() < end, "it never happened"
         time.sleep(0.05)
 
-pytestmark = pytest.mark.skipif(shutil.which("tmux") is None or shutil.which("bash") is None,
-                                reason="no tmux")
+def reads_syscalls() -> bool:
+    """Can this user read /proc/<pid>/syscall of a process it did not start? shellboxd
+    needs it to see a program waiting on its terminal (SYS_PTRACE in the box); Yama's
+    ptrace_scope 1 (Ubuntu's default) allows it for descendants only."""
+    out = subprocess.run(["sh", "-c", "sleep 5 >/dev/null 2>&1 & echo $!"],
+                         capture_output=True, text=True, check=True).stdout
+    pid = int(out.strip())
+    try:
+        Path(f"/proc/{pid}/syscall").read_text()
+        return True
+    except OSError:
+        return False
+    finally:
+        os.kill(pid, signal.SIGKILL)
+
+
+pytestmark = [
+    pytest.mark.skipif(shutil.which("tmux") is None or shutil.which("bash") is None,
+                       reason="no tmux"),
+    pytest.mark.skipif(not reads_syscalls(), reason="other processes' syscalls are not "
+                       "readable (kernel.yama.ptrace_scope=0 or SYS_PTRACE needed)"),
+]
 
 
 class Box:
@@ -262,8 +284,10 @@ def test_a_run_says_whether_its_output_came_from_the_net(box):
     assert (mine["output"], mine["outside"], mine["outside_from"]) == ("hers", False, None)
     read = box.run("cat post.html")
     assert (read["outside"], read["outside_from"]) == (True, "https://reddit.com/r/x")
+    assert (mine["net"], read["net"]) == (None, None), "reading a page is not reaching out"
     net = box.run("curl -s --max-time 1 http://127.0.0.1:9/ || true")
     assert (net["outside"], net["outside_from"]) == (True, "http://127.0.0.1:9/")
+    assert net["net"] == "http://127.0.0.1:9/", "its verdict: it reached the net"
     assert box.read(**{"from": 0})["outside"] is True
 
 
@@ -286,7 +310,7 @@ def test_her_output_stands_on_the_screen_above_her_next_prompt(box):
 
 def test_a_shell_alone_at_its_prompt_is_ended_never_waiting(box):
     # `exec bash`: the run's function is gone with the old shell, no .exit ever comes
-    r = box.run(f"exec bash --noprofile --norc -i")
+    r = box.run("exec bash --noprofile --norc -i")
     assert (r["state"], r["exit"]) == ("ended", None)
     assert box.read()["state"] == "prompt"
 

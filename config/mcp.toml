@@ -11,8 +11,7 @@
 # connectors are services of their own and *_COMMAND is set to "" (never started here). The keys are the
 # stack's own (server/celine/keys.py): CONNECTOR_KEY is this app's keys/connector.key,
 # CONNECTOR_CLIENTS_FILE its keys/connector-clients ("name:key:owner" or "name:key:reader",
-# one per line or comma separated); an environment variable of the same name wins. The bridged chat
-# (WhatsApp's own chat, the one chat wa-link writes to) is set up on its source page, not here.
+# one per line or comma separated); an environment variable of the same name wins.
 #
 # Bastet (server/celine/guard/facts.py) reads two keys per server: `class`, who may see
 # its results (public, informal, nsfw, sensitive; default sensitive), and `sends`, where
