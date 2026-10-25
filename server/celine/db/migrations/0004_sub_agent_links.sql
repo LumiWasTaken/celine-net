@@ -2,7 +2,8 @@
 -- works the link out; its display carries `link` from now on (sub_agents/skill.py), and
 -- the calls made before now get it here. The home follows the root, the top of the
 -- agent_of chain: a mission's opens under Missions, a background one's under Routines
--- (the night of its run, else of its root's start), any other with her. A conversation
+-- (the night of its run, else of its root's start), any other with her; a bridged chat's
+-- (0005 makes it a chat) with her too. A conversation
 -- that is gone has none.
 UPDATE tool_calls SET display = json_set(display, '$.link', (
   WITH RECURSIVE up(id, agent_of, depth) AS (
@@ -16,7 +17,7 @@ UPDATE tool_calls SET display = json_set(display, '$.link', (
   sub AS (SELECT id FROM up WHERE depth = 0)
   SELECT CASE
     WHEN top.kind = 'mission' THEN '/mission/' || sub.id
-    WHEN top.kind = 'background' THEN '/routines/' || coalesce(
+    WHEN top.kind = 'background' AND coalesce(top.trigger_key, '') NOT LIKE 'bridge:%' THEN '/routines/' || coalesce(
       (SELECT r.night FROM runs r
         WHERE top.trigger_key LIKE 'run:%'
           AND r.id = CASE WHEN instr(substr(top.trigger_key, 5), ':') > 0

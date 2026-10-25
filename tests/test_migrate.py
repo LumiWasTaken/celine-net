@@ -178,6 +178,22 @@ def test_a_file_is_copied_before_a_migration_changes_it_and_the_last_copies_kept
     assert [r[0] for r in c.execute("SELECT k FROM kv ORDER BY k")] == ["2", "3", "4", "5"]
 
 
+def test_a_retry_after_a_failed_upgrade_keeps_the_copy_from_before_it(tmp_path, monkeypatch):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("CREATE TABLE kv(k TEXT PRIMARY KEY);\nINSERT INTO kv VALUES('a');\n")
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "x.db"
+    assert migrate(db) == 1
+    (d / "0002_drop.sql").write_text("DELETE FROM kv;\n")
+    (d / "0003_bad.sql").write_text("INSERT INTO nope VALUES(1);\n")
+    for _ in range(2):
+        with pytest.raises(sqlite3.OperationalError):
+            migrate(db)
+    c = sqlite3.connect(tmp_path / "x.db.pre-3.bak")
+    assert c.execute("SELECT k FROM kv").fetchall() == [("a",)]
+
+
 def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, monkeypatch):
     """A sub-agent's call names where its conversation opens (homes.of), as its display
     does from now on."""
@@ -196,7 +212,8 @@ def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, m
             ("run", "background", None, "run:r1:1", "x"),
             ("task", "background", None, None, "2026-10-21T10:00:00+00:00"),
             ("s-chat", "agent", "chat", None, "x"), ("s-mis", "agent", "mis", None, "x"),
-            ("s-run", "agent", "run", None, "x"), ("s-task", "agent", "task", None, "x")):
+            ("s-run", "agent", "run", None, "x"), ("s-task", "agent", "task", None, "x"),
+            ("br", "background", None, "bridge:whatsapp", "x"), ("s-br", "agent", "br", None, "x")):
         c.execute("INSERT INTO conversations(id, kind, agent_of, trigger_key, created_at, "
                   "updated_at) VALUES(?, ?, ?, ?, ?, 'x')", (cid, kind, agent_of, key, at))
     c.execute("INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
@@ -204,7 +221,7 @@ def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, m
     c.execute("INSERT INTO messages(id, conversation_id, role, created_at) "
               "VALUES('m', 'chat', 'assistant', 'x')")
     subs = ("s-chat", "s-mis", "s-run", "s-task", "gone")
-    for i, sub in enumerate(subs):
+    for i, sub in enumerate((*subs, "s-br")):
         c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state, display) "
                   "VALUES(?, 'm', 'sub_agents__start', '{}', 'ok', ?)",
                   (f"c{i}", json.dumps({"name": "helper", "conversation_id": sub})))
@@ -220,6 +237,7 @@ def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, m
     shown = [json.loads(r[0]) for r in c.execute(
         "SELECT display FROM tool_calls WHERE id != 'other'")]
     got = {x["conversation_id"]: x.get("link", "-") for x in shown}
+    assert got.pop("s-br") == "/chat/s-br", "a bridged chat's (a chat after 0005) opens with her"
     assert got == {sub: homes.of(c, sub)["link"] for sub in subs}
     assert got["s-run"] == "/routines/2026-10-22/task/s-run" and got["gone"] is None
     assert "link" not in json.loads(c.execute(
