@@ -4,8 +4,10 @@ from __future__ import annotations
 import json
 import tomllib
 
+import anyio
 import httpx
 import pytest
+from starlette import formparsers
 
 from celine import boot, speech
 from celine.api import speech as api_mod
@@ -38,6 +40,72 @@ async def setup(api, direction="output", key=KEY):
 def upstream(monkeypatch, handler):
     constructor = httpx.AsyncClient
     monkeypatch.setattr(speech, "client", lambda: constructor(transport=httpx.MockTransport(handler), follow_redirects=False))
+
+
+@pytest.mark.parametrize("path", ["/api/transcriptions", "/api/speech/input/tests", "/api/speech/audio",
+                                  "/api/speech/output/tests", "/api/speech/input/models",
+                                  "/api/speech/output/models", "/api/speech/output/voices"])
+@pytest.mark.parametrize("phase", ["connecting", "streaming"])
+async def test_disconnect_cancels_provider_work_and_closes_response(api, monkeypatch, path, phase):
+    await setup(api, "input")
+    await setup(api, "output")
+    api.cfg.settings.features.update(speech_input=True, speech_output=True)
+    started, cancelled, disconnect, finished = (anyio.Event() for _ in range(4))
+    class Stream(httpx.AsyncByteStream):
+        closed = False
+        async def __aiter__(self):
+            try:
+                yield b"partial response"
+                started.set()
+                await anyio.sleep_forever()
+            finally:
+                cancelled.set()
+        async def aclose(self):
+            self.closed = True
+    stream = Stream()
+    async def handle(request):
+        if phase == "connecting":
+            started.set()
+            try:
+                await anyio.sleep_forever()
+            finally:
+                cancelled.set()
+        return httpx.Response(200, stream=stream, headers={"content-type": "audio/wav"})
+    upstream(monkeypatch, handle)
+    if path.endswith(("models", "voices")):
+        request = httpx.Request("GET", "http://t" + path)
+    elif path in ("/api/transcriptions", "/api/speech/input/tests"):
+        request = httpx.Request("POST", "http://t" + path, files={"file": ("x", b"audio", "audio/webm")})
+    else:
+        request = httpx.Request("POST", "http://t" + path, json={"text": "Hi"})
+    body, sent = request.read(), []
+    async def receive():
+        nonlocal body
+        if body is not None:
+            value, body = body, None
+            return {"type": "http.request", "body": value, "more_body": False}
+        await disconnect.wait()
+        return {"type": "http.disconnect"}
+    async def send(message):
+        sent.append(message)
+    async def run():
+        await api._transport.app({"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+                                  "method": request.method, "scheme": "http", "path": path,
+                                  "raw_path": path.encode(), "query_string": b"", "root_path": "",
+                                  "headers": [(k.lower(), v) for k, v in request.headers.raw], "client": ("127.0.0.1", 1),
+                                  "server": ("t", 80)}, receive, send)
+        assert started.is_set(), sent
+        finished.set()
+    with anyio.fail_after(5):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run)
+            await started.wait()
+            disconnect.set()
+            await finished.wait()
+    assert cancelled.is_set()
+    if phase == "streaming":
+        assert stream.closed
+    assert not any(m.get("status") == 200 for m in sent)
 
 
 async def test_default_off_and_no_provider_requests(api, monkeypatch):
@@ -212,6 +280,78 @@ async def test_invalid_upload_never_calls_provider(api, monkeypatch):
         assert r.status_code == 400
 
 
+@pytest.mark.parametrize("path", ["/api/transcriptions", "/api/speech/input/tests"])
+@pytest.mark.parametrize("length", [None, "1", "99999999"])
+async def test_upload_limit_precedes_parsing_and_closes_partial_files(api, monkeypatch, path, length):
+    await setup(api, "input")
+    api.cfg.settings.features["speech_input"] = True
+    upstream(monkeypatch, lambda r: pytest.fail("oversized upload forwarded"))
+    monkeypatch.setattr(speech, "MAX_RECORDING", 8)
+    opened, parsed, consumed = [], [], []
+    factory = formparsers.SpooledTemporaryFile
+    def tempfile(*args, **kwargs):
+        file = factory(*args, **kwargs)
+        opened.append(file)
+        return file
+    monkeypatch.setattr(formparsers, "SpooledTemporaryFile", tempfile)
+    original = formparsers.multipart.MultipartParser.write
+    def parse(parser, chunk):
+        parsed.append(len(chunk))
+        return original(parser, chunk)
+    monkeypatch.setattr(formparsers.multipart.MultipartParser, "write", parse)
+    async def chunks():
+        for chunk in [b'--test\r\nContent-Disposition: form-data; name="file"; filename="x"\r\nContent-Type: audio/webm\r\n\r\nx',
+                      b"x" * 70_000, b"must not read this"]:
+            consumed.append(chunk)
+            yield chunk
+    headers = {"Content-Type": "multipart/form-data; boundary=test"}
+    if length is not None:
+        headers["Content-Length"] = length
+    r = await api.post(path, content=chunks(), headers=headers)
+    assert r.status_code == 413
+    assert len(consumed) <= 2 and sum(parsed) < 1000
+    assert all(file.closed for file in opened)
+    if length != "99999999":
+        assert opened  # The partial file must be cleaned up, not just rejected by a header.
+
+
+@pytest.mark.parametrize("path,status", [("/api/transcriptions", 409), ("/api/speech/input/tests", 403)])
+async def test_rejected_upload_does_not_consume_body(api, path, status):
+    async def unread():
+        pytest.fail("rejected upload consumed its body")
+        yield b""
+    headers = {"Content-Type": "multipart/form-data; boundary=test"}
+    if status == 403:
+        headers["Authorization"] = "Bearer untrusted"
+    assert (await api.post(path, content=unread(), headers=headers)).status_code == status
+
+
+async def test_upload_rejects_extra_files(api, monkeypatch):
+    await setup(api, "input")
+    upstream(monkeypatch, lambda r: pytest.fail("extra parts forwarded"))
+    r = await api.post("/api/speech/input/tests", files=[
+        ("file", ("x", b"x", "audio/webm")), ("extra", ("y", b"y", "audio/webm"))])
+    assert r.status_code == 400
+
+
+async def test_upload_accepts_recording_at_exact_audio_limit(api, monkeypatch):
+    await setup(api, "input")
+    monkeypatch.setattr(speech, "MAX_RECORDING", 8)
+    upstream(monkeypatch, lambda r: httpx.Response(200, json={"text": "at the limit"}))
+    r = await api.post("/api/speech/input/tests", files={"file": ("x", b"x" * 8, "audio/webm")},
+                       data={"language": "en"})
+    assert r.status_code == 200 and r.json() == {"text": "at the limit"}
+
+
+@pytest.mark.parametrize("fields", [[("language", "en"), ("extra", "x")], [("language", "x" * 129)]])
+async def test_upload_bounds_form_fields(api, monkeypatch, fields):
+    await setup(api, "input")
+    upstream(monkeypatch, lambda r: pytest.fail("invalid form forwarded"))
+    r = await api.post("/api/speech/input/tests", files=[("file", ("x", b"x", "audio/webm")),
+                       *[(name, (None, value)) for name, value in fields]])
+    assert r.status_code == 400
+
+
 def test_unknown_config_and_whitespace():
     from celine.settings.files import Invalid
     with pytest.raises(Invalid):
@@ -254,6 +394,33 @@ async def test_partial_commit_never_restores_old_key_at_new_address(api, monkeyp
     assert r.status_code == 503
     assert boot.load().settings.speech["output"] == changed
     assert secrets.read_key(api.cfg.settings.secrets_root, "speech-output") is None
+
+
+@pytest.mark.parametrize("changed_url", [False, True])
+@pytest.mark.parametrize("key", ["replacement-private-key", None])
+async def test_refused_reload_is_failure_and_keeps_keys_at_their_original_address(api, monkeypatch, changed_url, key):
+    await setup(api)
+    endpoint = {**ENDPOINT, "url": "https://changed.example/v1"} if changed_url else ENDPOINT
+    monkeypatch.setattr(api_mod.reload, "apply", lambda services: False)
+    r = await api.put("/api/speech/output", json={"endpoint": endpoint, "key": key})
+    assert r.status_code == 503
+    assert KEY not in r.text and "replacement-private-key" not in r.text
+    assert api.cfg.settings.speech["output"] == ENDPOINT
+    assert boot.load().settings.speech["output"] == endpoint
+    assert secrets.read_key(api.cfg.settings.secrets_root, "speech-output") == (None if changed_url else KEY)
+
+
+@pytest.mark.parametrize("voice", [None, "", "   ", "custom-speaker"])
+async def test_synthesis_defaults_to_alloy_but_preserves_explicit_voices(api, monkeypatch, voice):
+    await setup(api)
+    def handle(r):
+        assert json.loads(r.content)["voice"] == ("custom-speaker" if voice == "custom-speaker" else "alloy")
+        return httpx.Response(200, content=b"wave", headers={"content-type": "audio/wav"})
+    upstream(monkeypatch, handle)
+    body = {"text": "Hi"}
+    if voice is not None:
+        body["voice"] = voice
+    assert (await api.post("/api/speech/output/tests", json=body)).status_code == 200
 
 
 async def test_oversized_recording_and_bad_language_do_not_reach_provider(api, monkeypatch):

@@ -72,7 +72,7 @@ async def transcribe(cfg, audio: bytes, mime: str, language: str) -> dict:
 async def synthesize(cfg, text: str, voice: str) -> tuple[bytes, str]:
     _, _, model = endpoint(cfg, "output")
     body, mime = await call(cfg, "output", "/audio/speech", limit=MAX_AUDIO,
-                            json={"model": model, "input": text, "voice": voice or "default",
+                            json={"model": model, "input": text, "voice": voice.strip() or "alloy",
                                   "response_format": "wav"})
     if not body or not mime.startswith("audio/"):
         raise CelineError("speech_provider", "Speech provider returned no audio.", 502)
