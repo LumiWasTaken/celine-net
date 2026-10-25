@@ -75,7 +75,7 @@ def kinds_view() -> list[dict[str, Any]]:
 # the roles an empty one of fills itself from a new provider's models: the first model
 # with the role's caps, every preset for the ComfyUI roles. Settings shows it, change it there.
 AUTO_ROLES = ("chat", "small", "embeddings", "reranker", "vision",
-              "image_generation", "music_generation")
+              "image_generation", "music_generation", "transcription", "speech")
 _ALL = ("image_generation", "music_generation")
 
 

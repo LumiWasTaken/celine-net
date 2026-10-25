@@ -1,20 +1,19 @@
-"""Speech configuration and fixed upstream routes, for the logged-in person only."""
+"""Speech for the logged-in person: a recording to text (the Dictation role's model), a
+reply's text to audio and the voices (the Read aloud role's). The feature switches only
+show or hide the controls: a test before switching one on goes through the same routes."""
 from __future__ import annotations
 
-import copy
 from collections.abc import Awaitable
 
 import anyio
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Request, Response
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
-from .. import reload, speech
-from ..errors import CelineError, NotFound
-from ..settings import features, files, secrets, write
-from ..settings import speech as settings
-from ..settings.files import Invalid, check_version, version
-from .deps import cfg_of, etag, json_body, person_only, services_of
+from .. import speech
+from ..errors import CelineError
+from ..settings.files import Invalid
+from .deps import cfg_of, json_body, person_only
 
 router = APIRouter(prefix="/api")
 
@@ -41,102 +40,16 @@ async def connected[T](request: Request, operation: Awaitable[T]) -> T:
     raise CelineError("cancelled", "The speech request was cancelled.", 499)
 
 
-def view(cfg, direction: str) -> dict:
-    if direction not in settings.DIRECTIONS:
-        raise NotFound("speech settings")
-    s = cfg.settings
-    value = s.speech.get(direction, {})
-    return {"endpoint": value, "version": version(value), "fields": settings.FIELDS,
-            "key": secrets.state(s.secrets_root, settings.secret(direction))}
-
-
-@router.get("/speech/{direction}")
-async def get_settings(request: Request, response: Response, direction: str) -> dict:
-    person_only(request)
-    result = view(cfg_of(request), direction)
-    etag(response, result["version"])
-    return result
-
-
-@router.put("/speech/{direction}")
-async def put_settings(request: Request, response: Response, direction: str,
-                       if_match: str | None = Header(default=None)) -> dict:
-    person_only(request)
-    cfg = cfg_of(request)
-    view(cfg, direction)
-    body = await json_body(request, need=("endpoint",), allow=("endpoint", "key"))
-    key = body.get("key")
-    if key is not None and (not isinstance(key, str) or len(key) > secrets.MAX_KEY
-                            or any(c in key for c in "\r\n\0")):
-        raise Invalid("key", "That does not look like an API key.")
-    async with write.lock():
-        s = cfg.settings
-        before = s.speech.get(direction, {})
-        check_version("speech", before, if_match)
-        clean = settings.validate({direction: body["endpoint"]})[direction]
-        root, name = s.secrets_root, settings.secret(direction)
-        previous_key = secrets.read_key(root, name)
-        replacing = isinstance(key, str) and bool(key.strip())
-        clearing = "key" in body and key is None
-        if (clean.get("url") != before.get("url") and previous_key
-                and not replacing and not clearing):
-            raise Invalid("key", "Replace or clear the saved key when changing the provider address.")
-        # Blank input preserves a key; only explicit null clears it.
-        if replacing:
-            secrets.set_key(root, name, key)
-        elif clearing:
-            secrets.delete_key(root, name)
-        changed = copy.deepcopy(s.speech)
-        changed[direction] = clean
-        try:
-            out = await reload.commit(services_of(request), {"speech": changed})
-            if not out["applied"]:
-                raise CelineError("unavailable", "Speech settings could not be applied.", 503)
-        except BaseException:
-            if replacing or clearing:
-                disk, error = files.read(files.settings_dir(cfg), "speech")
-                disk_url = (disk or {}).get(direction, {}).get("url")
-                live_url = cfg.settings.speech.get(direction, {}).get("url")
-                # A commit may fail after writing or applying the new address.
-                # Never restore the old address's key beside a changed address.
-                if previous_key and not error and disk_url == live_url == before.get("url"):
-                    secrets.set_key(root, name, previous_key)
-                else:
-                    secrets.delete_key(root, name)
-            raise
-        result = view(cfg, direction)
-        etag(response, result["version"])
-        return {**result, **out}
-
-
-def allowed(request: Request, direction: str):
-    person_only(request)
-    cfg = cfg_of(request)
-    if not features.on(cfg, f"speech_{direction}"):
-        raise CelineError("unavailable", "This speech feature is switched off.", 409)
-    return cfg
-
-
-@router.get("/speech/output/voices")
+@router.get("/speech/voices")
 async def list_voices(request: Request) -> dict:
-    # Explicit discovery also works before enabling playback. It tests only this route.
     person_only(request)
     return await connected(request, speech.voices(cfg_of(request)))
 
 
-@router.get("/speech/{direction}/models")
-async def list_models(request: Request, direction: str) -> dict:
-    person_only(request)
-    cfg = cfg_of(request)
-    view(cfg, direction)
-    return await connected(request, speech.models(cfg, direction))
-
-
-@router.post("/transcriptions")
-@router.post("/speech/input/tests")
+@router.post("/speech/transcriptions")
 async def transcribe(request: Request) -> dict:
     person_only(request)
-    cfg = cfg_of(request) if request.url.path.endswith("/tests") else allowed(request, "input")
+    cfg = cfg_of(request)
     # Count actual bytes before feeding the parser, including multipart overhead.
     # Content-Length is only an early rejection, never the source of truth.
     limit = speech.MAX_RECORDING + 64 * 1024
@@ -181,11 +94,10 @@ async def transcribe(request: Request) -> dict:
         await form.close()
 
 
-@router.post("/speech/audio")
-@router.post("/speech/output/tests")
+@router.post("/speech/clips")
 async def synthesize(request: Request) -> Response:
     person_only(request)
-    cfg = cfg_of(request) if request.url.path.endswith("/tests") else allowed(request, "output")
+    cfg = cfg_of(request)
     body = await json_body(request, need=("text",), allow=("text", "voice"))
     text, voice = body["text"], body.get("voice", "")
     if not isinstance(text, str) or not text.strip() or len(text) > speech.MAX_TEXT:

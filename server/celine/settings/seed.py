@@ -92,3 +92,58 @@ def skill_knobs(root: Path, skills_toml: Path) -> list[str]:
         from . import section_to_file
         files.write(root, "general", section_to_file("general", {**have, **moved}))
     return sorted(moved)
+
+
+def speech_roles(root: Path, secrets_root: Path) -> list[str]:
+    """var/settings/speech.toml (the speech providers before they were providers) into
+    providers.toml and the Dictation and Read aloud roles: each address becomes a provider
+    (a saved one with the same address is used), its key that provider's key, its model
+    that role's. speech.toml and its keys go once the new files are written, so a crash
+    halfway runs it again. -> the roles it set."""
+    import tomllib
+
+    from . import file_to_section, files, kinds, registry, section_to_file, secrets
+    path = files.path_for(root, "providers").with_name("speech.toml")
+    try:
+        old = tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    raw, err = files.read(root, "providers")
+    roles, rerr = files.read(root, "roles")
+    if err or rerr:
+        return []
+    providers = file_to_section("providers", raw or {})
+    roles = roles or {}
+    done = []
+    for direction, role, cap, name, label in (
+            ("input", "transcription", "transcription", "dictation", "Dictation"),
+            ("output", "speech", "speech", "read-aloud", "Read aloud")):
+        url, model = (old.get(direction) or {}).get("url"), (old.get(direction) or {}).get("model")
+        if not url or not model:
+            continue
+        url = kinds.normalize_url("openai", url)
+        pid = next((k for k, p in providers.items()
+                    if p.get("base_url", "").rstrip("/") == url.rstrip("/")), None)
+        if pid is None:
+            pid = next(f"{name}{n or ''}" for n in range(100) if f"{name}{n or ''}" not in providers)
+            providers[pid] = {"kind": "openai", "label": label,
+                              "base_url": url, "models": {}}
+            key = secrets.read_key(secrets_root, f"speech-{direction}")
+            if key:
+                secrets.set_key(secrets_root, pid, key)
+        m = providers[pid].setdefault("models", {}).setdefault(model, {"label": model, "caps": []})
+        m["caps"] = list(dict.fromkeys([*(m.get("caps") or []), cap]))
+        if not (roles.get(role) or {}).get("chain"):
+            roles[role] = {"chain": [f"{pid}/{model}"]}
+            done.append(role)
+    try:
+        clean = registry.validate_providers(providers)
+        roles = registry.validate_roles(roles, clean)
+    except files.Invalid:
+        return []                     # a file that does not load: Settings says why
+    files.write(root, "providers", section_to_file("providers", clean))
+    files.write(root, "roles", section_to_file("roles", roles))
+    path.unlink()
+    for direction in ("input", "output"):
+        secrets.delete_key(secrets_root, f"speech-{direction}")
+    return done

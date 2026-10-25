@@ -123,6 +123,10 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
     moved = seed.skill_knobs(settings_files.settings_dir(cfg), config_mod.CONFIG_DIR / "skills.toml")
     if moved:
         log.info("skill numbers moved", extra={"event": "settings.knobs_moved", "keys": moved})
+    from .settings.secrets import secrets_dir
+    spoken = seed.speech_roles(settings_files.settings_dir(cfg), secrets_dir(cfg.data_dir))
+    if spoken:
+        log.info("speech moved to roles", extra={"event": "settings.speech_moved", "roles": spoken})
     version = migrate_all(cfg.db_path)
     cfg = _load_config()                            # everything, its row too
     cfg.server.update(reload.CLI_SERVER)

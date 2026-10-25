@@ -11,7 +11,6 @@ from typing import Any
 from . import features as features_mod, files, general as general_mod
 from . import mail as mail_mod, section_to_file, services as services_mod
 from . import vault as vault_mod
-from . import speech as speech_mod
 from .registry import validate_providers, validate_role, validate_tools, validate_triggers
 from ..core.event_types import SETTINGS_CHANGED
 
@@ -32,8 +31,7 @@ def _current(s) -> dict[str, Any]:
             "tools": dict(s.tools), "general": dict(s.general), "email": dict(s.email),
             "vault": dict(s.vault), "triggers": copy.deepcopy(s.triggers),
             "features": dict(s.features),
-            "guard": copy.deepcopy(s.guard), "services": copy.deepcopy(s.services),
-            "speech": copy.deepcopy(s.speech)}
+            "guard": copy.deepcopy(s.guard), "services": copy.deepcopy(s.services)}
 
 
 def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
@@ -49,8 +47,7 @@ def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
             "triggers": validate_triggers(new["triggers"]),
             "features": features_mod.validate(new["features"]),
             "guard": guard_rules.validate(new["guard"]),
-            "services": services_mod.validate(new["services"]),
-            "speech": speech_mod.validate(new["speech"])}
+            "services": services_mod.validate(new["services"])}
 
 
 def save(cfg, changes: dict[str, Any]) -> list[str]:

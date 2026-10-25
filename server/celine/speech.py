@@ -6,8 +6,7 @@ import json
 import httpx
 
 from .errors import CelineError
-from .settings import secrets
-from .settings.speech import secret
+from .settings.registry import ROLES, provider_headers
 
 MAX_RECORDING = 12_000_000
 MAX_AUDIO = 20_000_000
@@ -15,14 +14,35 @@ MAX_TEXT = 900
 TIMEOUT = 180.0
 
 
-def endpoint(cfg, direction: str, *, require_model: bool = True) -> tuple[str, dict, str]:
+# the model role each direction runs on (settings/registry.py ROLES)
+ROLE = {"input": "transcription", "output": "speech"}
+
+
+def endpoint(cfg, direction: str) -> tuple[str, dict, str]:
+    """(the provider's base address, its key's headers, the model) of the direction's role."""
     s = cfg.settings
-    value = s.speech.get(direction, {})
-    if not value.get("url") or (require_model and not value.get("model")):
-        raise CelineError("unavailable", "Set up the speech provider in Settings, Features.", 503)
-    key = secrets.read_key(s.secrets_root, secret(direction)) if s.secrets_root else None
-    base = value["url"].rstrip("/")
-    return base, {"Authorization": f"Bearer {key}"} if key else {}, value.get("model", "")
+    chain = s.chain(ROLE[direction])
+    if not chain:
+        label = ROLES[ROLE[direction]]["label"]
+        raise CelineError("unavailable", f"Pick a {label} model in Settings, Models.", 503)
+    pid, _, model = chain[0].partition("/")
+    return s.providers[pid]["base_url"].rstrip("/"), provider_headers(s, pid), model
+
+
+async def probe_input(cfg, services) -> dict:
+    return _probe(cfg, "input")
+
+
+async def probe_output(cfg, services) -> dict:
+    return _probe(cfg, "output")
+
+
+def _probe(cfg, direction: str) -> dict:
+    s = getattr(cfg, "settings", None)
+    role = ROLE[direction]
+    if not (s and s.chain(role)):
+        return {"state": "unset", "detail": f"Pick a {ROLES[role]['label']} model."}
+    return {"state": "ready", "detail": s.chain(role)[0]}
 
 
 def client():
@@ -30,7 +50,7 @@ def client():
 
 
 async def call(cfg, direction: str, path: str, *, limit: int, **kw) -> tuple[bytes, str]:
-    base, headers, _ = endpoint(cfg, direction, require_model=False)
+    base, headers, _ = endpoint(cfg, direction)
     try:
         async with client() as c:
             async with c.stream(kw.pop("method", "POST"), base + path, headers=headers, **kw) as r:
@@ -92,27 +112,3 @@ async def voices(cfg) -> dict:
     if any(not isinstance(v, str) or not v or len(v) > 200 for v in ids):
         raise CelineError("speech_provider", "Speech provider returned an invalid voice list.", 502)
     return {"voices": list(dict.fromkeys(ids))}
-
-
-async def models(cfg, direction: str) -> dict:
-    # /models is the OpenAI inventory route. Generic providers may ignore the
-    # optional service filter; gateways can use it to isolate speech inventories.
-    body, _ = await call(cfg, direction, "/models", method="GET", limit=1_000_000,
-                         params={"service": "stt" if direction == "input" else "tts"})
-    try:
-        result = json.loads(body)
-    except (ValueError, UnicodeError):
-        result = None
-    raw = result.get("data") if isinstance(result, dict) else None
-    if not isinstance(raw, list) or any(not isinstance(m, dict) or not isinstance(m.get("id"), str)
-                                       or not m["id"] or len(m["id"]) > 2000 for m in raw):
-        raise CelineError("speech_provider", "Speech provider returned an invalid model list.", 502)
-    capability = "transcription" if direction == "input" else "speech"
-    found = []
-    for m in raw:
-        caps = m.get("capabilities")
-        if isinstance(caps, dict) and any(k in caps for k in ("transcription", "speech")) and not caps.get(capability):
-            continue
-        if m["id"] not in found:
-            found.append(m["id"])
-    return {"models": found}

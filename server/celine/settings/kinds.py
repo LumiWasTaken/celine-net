@@ -49,7 +49,7 @@ KINDS: dict[str, dict[str, Any]] = {
 SWAPS = ("llama-swap", "tabby")
 LLAMA = (*SWAPS, "llama-server")
 CAPS = ("chat", "tools", "vision", "embeddings", "rerank", "image_generation",
-        "music_generation")
+        "music_generation", "transcription", "speech")
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_BETAS = "thinking-binding-controls-2026-08-01"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")     # Anthropic's, weakest first
@@ -105,6 +105,8 @@ def root_of(base_url: str) -> str:
 # The last resort, for a model its server says nothing about: a word in its name. Wrong
 # guesses are fixed in Settings, Models (the model's capabilities).
 NAMED_CAPS = (("rerank", ["rerank"]), ("embed", ["embeddings"]),
+              ("whisper", ["transcription"]), ("stt", ["transcription"]),
+              ("tts", ["speech"]), ("kokoro", ["speech"]),
               ("vision", ["chat", "tools", "vision"]), ("-vl", ["chat", "tools", "vision"]))
 
 

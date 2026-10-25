@@ -15,7 +15,6 @@ from ..config import ConfigError, Problem, shown_path
 from . import features as features_mod, files, general as general_mod
 from . import mail as mail_mod, services as services_mod, vault as vault_mod
 from .files import Invalid
-from . import speech as speech_mod
 from .registry import (
     Settings, compile_into, validate_providers, validate_roles, validate_tools,
     validate_triggers,
@@ -87,7 +86,6 @@ def load(cfg) -> Settings:
     s.general = pick("general", lambda v: general_mod.validate(v))
     s.email = pick("email", mail_mod.validate)
     s.vault = pick("vault", vault_mod.validate)
-    s.speech = pick("speech", speech_mod.validate)
     s.triggers = pick("triggers", validate_triggers)
     from ..guard import rules as guard_rules
     s.guard = pick("guard", guard_rules.validate)
