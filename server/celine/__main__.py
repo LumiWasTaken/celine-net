@@ -120,6 +120,9 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
                                      "dir": str(cfg.data_dir / "keys")})
     from .settings import files as settings_files, seed
     seed.seed(settings_files.settings_dir(cfg))    # context shares, schedules: copied once
+    moved = seed.skill_knobs(settings_files.settings_dir(cfg), config_mod.CONFIG_DIR / "skills.toml")
+    if moved:
+        log.info("skill numbers moved", extra={"event": "settings.knobs_moved", "keys": moved})
     version = migrate_all(cfg.db_path)
     cfg = _load_config()                            # everything, its row too
     cfg.server.update(reload.CLI_SERVER)

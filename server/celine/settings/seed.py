@@ -47,3 +47,48 @@ def seed(root: Path) -> None:
     if not schedules_dir(root).exists():
         _copy(CONFIG_DIR / "schedules", schedules_dir(root), ("*.toml", "*.md"))
 
+
+
+# config/skills.toml kept a skill's numbers in its table until they moved to Settings,
+# Advanced (var/settings/general.toml, a table per skill). The old key -> the new one and
+# how its value converts; a key that kept its name maps to itself.
+_MOVED = {
+    "notebook.index_max_bytes": ("notebook.index_max_chars", int),
+    "web.max_bytes": ("web.page_max_mb", lambda v: max(1, round(v / 2**20))),
+    "web.pdf_max_bytes": ("web.pdf_max_mb", lambda v: max(1, round(v / 2**20))),
+    "chat_archive.verify_citations": ("verify_citations", bool),
+}
+
+
+def skill_knobs(root: Path, skills_toml: Path) -> list[str]:
+    """The numbers an older config/skills.toml sets, into general.toml where general.toml
+    has none for them yet; never overwrites a saved one. The keys moved."""
+    import tomllib
+
+    from . import files, general
+    try:
+        old = tomllib.loads(skills_toml.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    saved, err = files.read(root, "general")
+    if err:
+        return []
+    saved = saved or {}
+    have = general.validate(saved)
+    known = general.schema()[1]
+    moved: dict[str, object] = {}
+    for skill, table in old.items():
+        for name, v in (table.items() if isinstance(table, dict) else ()):
+            if name == "enabled":
+                continue
+            key, conv = _MOVED.get(f"{skill}.{name}", (f"{skill}.{name}", lambda x: x))
+            if key not in known or key in have:
+                continue
+            try:
+                moved.update(general.validate({key: conv(v)}))
+            except (files.Invalid, TypeError, ValueError):
+                continue
+    if moved:
+        from . import section_to_file
+        files.write(root, "general", section_to_file("general", {**have, **moved}))
+    return sorted(moved)
