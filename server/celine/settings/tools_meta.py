@@ -58,6 +58,8 @@ SKILLS: dict[str, dict[str, str]] = {
     "skills": {"label": "Skills", "summary": "Loads a skill's guide and its tools."},
     "bugreport": {"label": "Bugs", "summary": "Problems with the app {{name}} files for you, "
                                               "each a thread in the Intercom."},
+    "voice": {"label": "Voice notes", "summary": "{{Her}} voice notes to you, spoken by the "
+                                                 "Read aloud model."},
     "appearance": {"label": "Portrait", "summary": "{{Her}} portrait, set from one of {{her}} "
                                                       "images or a document image."},
     "me": {"label": "Persona", "summary": "{{Her}} persona, Example lines and Banned words: "
@@ -198,6 +200,12 @@ TOOLS: dict[str, dict[str, str]] = {
                                   "then."},
     "missions__list": {"label": "Missions: list",
                        "summary": "Lists the missions with their status and plan."},
+    "missions__start": {"label": "Missions: start",
+                        "summary": "Starts a mission of {{her}} own, with what your form "
+                                   "takes."},
+    "voice__send": {"label": "Voice notes: send",
+                    "summary": "Speaks {{her}} text with the Read aloud model, an audio file "
+                               "on {{her}} message."},
     "plan__set": {"label": "Plan: write", "summary": "Writes {{her}} plan for the "
                                                      "conversation, step by step."},
     "plan__step": {"label": "Plan: mark a step",

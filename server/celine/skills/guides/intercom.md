@@ -39,7 +39,10 @@ answer it. wait=true holds your turn
 on the message until {{username}} answers, up to 10 minutes: they see that you wait for
 them, and their answer comes in as their message; it does not work with in or at.
 
-in="30 min" or at="02:00" makes a message land later. To "me" that is a reminder: at
+attachments=["f5ef648c"] sends files along by their short ids: one on your own message
+(a voice note, a file you sent, an image you made) or one {{username}} attached here.
+
+in="30 min", at="02:00" or at="2026-11-02 09:00" makes a message land later. To "me" that is a reminder: at
 its time it arrives here and starts your turn, or joins the turn you are in at its next
 step. Use it for servers, slow things and later checks.
 

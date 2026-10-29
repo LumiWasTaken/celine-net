@@ -12,8 +12,8 @@ from ..core.event_types import MISSION_STATE
 
 # its plan is the conversation's (plans/store.py): a row reads it as `plan` (its text),
 # `steps` and `step` (the number of the step it is on, None when none is)
-FIELDS = ("name", "terminal", "brief", "artifact", "report_to", "until", "wake_id",
-          "check_in", "status", "note")
+FIELDS = ("name", "terminal", "brief", "artifact", "report_to", "until", "min_until", "wake_id",
+          "check_in", "status", "note", "held_seconds", "started_by")
 # what a row reads of its conversation: an unnamed mission is named as a chat is (the
 # title role, after its first reply), and the automatic context switch is the
 # conversation's (api/context.py)
@@ -80,7 +80,8 @@ def state_event(row: dict) -> dict:
     """`mission.state` on the global feed: a client keeps its list without a refetch."""
     return {"type": MISSION_STATE, "conversation_id": row["conversation_id"],
             "name": row.get("name"), "status": row.get("status"), "note": row.get("note"),
-            "until": row.get("until"), "artifact": row.get("artifact"),
+            "until": row.get("until"), "min_until": row.get("min_until"),
+            "artifact": row.get("artifact"),
             "steps": row.get("steps") or [], "step": row.get("step"),
             "auto_context": bool(row.get("auto_context", True))}
 

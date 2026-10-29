@@ -193,15 +193,18 @@ def view(c: sqlite3.Connection, iid: int, cid: str | None = None) -> dict | None
     r = c.execute("SELECT * FROM intercom WHERE id=?", (iid,)).fetchone()
     if r is None:
         return None
+    from ..attachments import of_ids       # attachments imports conversations, which import this
+    data = json.loads(r["data"] or "{}")
     return {"id": r["id"], "kind": r["kind"], "from": r["from_addr"], "to": r["to_addr"],
             "subject": r["subject"], "created_at": r["created_at"], "due_at": r["due_at"],
             "until_at": r["until_at"], "wake": bool(r["wake"]),
             "reply_to": r["reply_to"], "thread": r["thread"],
-            "data": json.loads(r["data"] or "{}"), "from_name": name_of(c, r["from_addr"]),
+            "data": data, "from_name": name_of(c, r["from_addr"]),
             # each conversation it went to by name (a team by its first conversation's)
             "to_names": {a: name_of(c, a) for a in r["to_addr"].split(", ")},
             "mine": cid is not None and r["from_addr"] == f"agent:{cid}",
-            "source": source_of(c, r["from_addr"])}
+            "source": source_of(c, r["from_addr"]),
+            "attachments": of_ids(c, data.get("attachments") or [])}
 
 
 def state(c: sqlite3.Connection, r: sqlite3.Row) -> str:

@@ -24,7 +24,8 @@ list and edits never see it.
 
 What stays (`gc`, at each start; KEEP is 30 days). A file stays while an attachment of a
 message, a tool call or a batch, or its portrait, points at it. A draft (an upload not
-sent yet) keeps its file until it is sent, discarded or KEEP old. A file nothing points
+sent yet) keeps its file until it is sent, discarded or KEEP old; one an intercom message
+carries (a file she sent the user there) stays. A file nothing points
 at goes once it is KEEP old, a half-written upload once untouched for KEEP. A picture's
 smaller copies (`resized`) go with its file. A file and
 its rows are written and dropped in one writer job, so gc never sees one without the other.
@@ -454,7 +455,7 @@ async def gc(cfg, store, at: datetime | None = None) -> int:
 
     def fn(c: sqlite3.Connection) -> list[str]:
         c.execute(f"DELETE FROM attachments WHERE {_UNBOUND} AND batch_id IS NULL AND "
-                  f"created_at < ?", (iso(old),))
+                  f"created_at < ? AND id NOT IN ({ON_INTERCOM})", (iso(old),))
         shas = [r["sha256"] for r in c.execute(
             "SELECT sha256 FROM blobs WHERE created_at < ? AND sha256 NOT IN "
             "(SELECT sha256 FROM attachments) AND sha256 NOT IN "
@@ -502,6 +503,21 @@ def of_message(c: sqlite3.Connection, message_id: str) -> list[dict]:
         "WHERE a.message_id=?1 OR a.id = (SELECT json_extract(meta, '$.attachment') "
         "FROM messages WHERE id=?1 AND json_extract(meta, '$.kind') = 'image') "
         "ORDER BY a.created_at, a.id", (message_id,))]
+
+
+# the drafts a message to the user carries (intercom/service.py): no conversation binds them
+ON_INTERCOM = "SELECT j.value FROM intercom i, json_each(i.data, '$.attachments') j"
+
+
+def of_ids(c: sqlite3.Connection, ids: list[str]) -> list[dict]:
+    """The attachments `ids`, in that order, as of_message gives them (an intercom
+    message's)."""
+    marks = ",".join("?" * len(ids))
+    rows = {r["id"]: dict(r) for r in c.execute(
+        "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, b.width, b.height "
+        f"FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 WHERE a.id IN ({marks})",
+        ids)} if ids else {}
+    return [rows[i] for i in ids if i in rows]
 
 
 def with_files(c: sqlite3.Connection, call_id: str, display: dict | None) -> dict | None:
@@ -658,6 +674,42 @@ async def her_image(store, ref: str, cid: str | None, user: str) -> dict | str:
         return (f"There is no image {wanted} that you may use: only an image you made, or "
                 f"one {user} attached to this conversation.")
     return row
+
+
+async def her_file(store, ref: str, cid: str, user: str) -> dict | str:
+    """A file it may send on by its short id (or a longer start of its id): one on its
+    own message (in any conversation: a voice note, a file it sent) or one the user
+    attached to conversation `cid`. -> its attachment row, or the sentence that says
+    why not."""
+    if not re.fullmatch(r"[0-9a-f]{4,32}", ref):
+        return f"{ref} is not a file's short id: use the {SHORT} characters, like f5ef648c."
+
+    def fn(c: sqlite3.Connection) -> list[dict]:
+        return [dict(r) for r in c.execute(
+            "SELECT a.id, a.filename, m.role, m.conversation_id FROM attachments a "
+            "JOIN messages m ON m.id = a.message_id WHERE substr(a.id, 1, ?)=?",
+            (len(ref), ref))]
+    rows = await store.read(fn)
+    if len(rows) > 1:
+        return f"Several files start with {ref}: use all {SHORT} characters of its short id."
+    row = next((r for r in rows if r["role"] == "assistant" or (
+        r["role"] == "user" and r["conversation_id"] == cid)), None)
+    if row is None:
+        return (f"There is no file {ref} that you may send: only a file on your own "
+                f"message, or one {user} attached to this conversation.")
+    return row
+
+
+async def draft_of(store, aid: str) -> str:
+    """A new draft of attachment `aid`'s file (the same blob, nothing copied), for a
+    message to take along. -> its id."""
+    new = new_id()
+    await store.write(lambda c: c.execute(
+        "INSERT INTO attachments(id, sha256, filename, kind, state, created_at, description, "
+        "described_by, described_for) SELECT ?, sha256, filename, kind, 'ready', ?, "
+        "description, described_by, described_for FROM attachments WHERE id=?",
+        (new, now(), aid)))
+    return new
 
 
 async def has_images(store, conversation_id: str) -> bool:

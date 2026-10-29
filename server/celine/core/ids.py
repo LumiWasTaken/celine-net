@@ -30,16 +30,23 @@ def when(created_at: str, tz) -> str:
 _PIECE = re.compile(r"(\d+)\s*(minutes|minute|min|m|hours|hour|h|days|day|d)")
 _SECONDS = {"m": 60, "h": 3600, "d": 86400}
 _CLOCK = re.compile(r"(\d{1,2}):(\d{2})")
+_DATE = re.compile(r"\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}")
 
 
 def parse_when(in_: str | None, at: str | None, tz, now_: datetime) -> datetime | None:
     """`in` is "30 min", "2 h", "1 h 30 min" or "3 days", with no upper limit; `at` is
-    HH:MM today in the app zone, tomorrow once it has passed. `in` first, then `at`;
-    None when neither reads."""
+    HH:MM today in the app zone, tomorrow once it has passed, or "YYYY-MM-DD HH:MM" in
+    the app zone, still ahead. `in` first, then `at`; None when neither reads."""
     if in_:
         pieces = _PIECE.findall(in_)
         if pieces and not _PIECE.sub("", in_).strip():
             return now_ + timedelta(seconds=sum(int(n) * _SECONDS[u[0]] for n, u in pieces))
+    if at and _DATE.fullmatch(at.strip()):
+        try:
+            due = datetime.strptime(at.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+        except ValueError:
+            return None
+        return due if due > now_ else None
     if at:
         m = _CLOCK.fullmatch(at.strip())
         if m and int(m[1]) < 24 and int(m[2]) < 60:

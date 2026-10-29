@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Portrait } from '../components/Portrait'
+import { Attached } from '../components/Transcript'
 import {
   KINDS, KIND_PLURAL, KIND_WORD, WaitingCount, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
   type IntercomMessage, type Kind, type Source, type Thread, type ThreadsPage,
@@ -390,6 +391,7 @@ function ThreadMessage({ m, onCancel }: { m: IntercomMessage; onCancel: () => vo
                {scheduled && <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>}
              </>}>
       <span className="intercom-text">{m.text}</span>
+      <Attached list={m.attachments} />
     </Message>
   )
 }

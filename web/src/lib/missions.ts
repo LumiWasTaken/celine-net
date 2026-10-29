@@ -22,6 +22,8 @@ export type Mission = {
   report_to: string | null
   /** the time limit as a time, null without one */
   until: string | null
+  /** the minimum time as a time: before it she closes it as done only with force */
+  min_until: string | null
   status: MissionStatus
   note: string | null
   /** its plan's steps, each with the model it runs on (null: the mission's own) */
@@ -43,9 +45,12 @@ export type MissionStep = PlanStep
 type MissionCounts = Record<MissionStatus | 'all' | 'archived' | 'trashed', number>
 
 export const missionsApi = {
-  /** the brief; with no name it names it; `model`: its chat model, else the default */
-  start: (brief: string, name?: string, model?: string | null) =>
-    request<{ conversation_id: string }>('/missions', json('POST', { brief, ...(name ? { name } : {}), ...(model ? { model } : {}) })),
+  /** the brief; with no name it names it; `model`: its chat model, else the default;
+      `minTime` how long it runs at least ("2 h", "08:00") */
+  start: (brief: string, name?: string, model?: string | null, minTime?: string) =>
+    request<{ conversation_id: string }>('/missions', json('POST', {
+      brief, ...(name ? { name } : {}), ...(model ? { model } : {}), ...(minTime ? { min_time: minTime } : {}),
+    })),
   /** the archived or the trashed ones instead */
   list: (which?: 'archived' | 'trashed') =>
     request<{ missions: Mission[]; counts: MissionCounts }>(`/missions${which ? `?${which}=1` : ''}`),

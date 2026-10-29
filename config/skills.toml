@@ -61,6 +61,11 @@ enabled = true
 # The agent's portrait, set by it from one of its images or a document image
 # (skills/appearance.py); you set it in Settings too.
 
+[voice]
+enabled = true
+# The agent's voice notes to you (skills/voice.py): its text spoken by the Read aloud
+# model, an audio file on its message. With Read aloud off the tool fails and says so.
+
 [intercom]
 enabled = true
 # The agent's messages to you, to itself or to a conversation, now or later (a reminder is a
