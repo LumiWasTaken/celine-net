@@ -297,6 +297,9 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             runners["documents"] = Runner(tg, documents_run)
             if on["documents"]:
                 await runners["documents"].start()
+            from .push import Push              # the notices to devices without a focused page
+            push = services.push = Push(cfg, store, bus)
+            tg.start_soon(push.run)
             from .intercom import Intercom      # messages between everyone, and their timer
             intercom = services.intercom = Intercom(store, dispatcher.notify)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules
@@ -444,6 +447,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     app.include_router(artifacts_api.router)
     from . import shares as shares_api
     app.include_router(shares_api.router)
+    from . import push as push_api
+    app.include_router(push_api.router)
     from .comfyui import api as comfyui_api
     app.include_router(comfyui_api.router)
     from .api import presets as presets_api

@@ -29,5 +29,6 @@ class Services:
     schedules: Any = None
     vault: Any = None
     approvals: Any = None
+    push: Any = None                # push.py: web push to the user's devices
     runners: Any = None             # core/runners.py: what runs for each service feature
     feature_probes: Any = None      # settings/features.py probe_all(): (monotonic, {id: probe})

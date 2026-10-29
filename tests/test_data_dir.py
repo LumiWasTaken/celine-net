@@ -112,7 +112,7 @@ def _tree(data: Path) -> set[str]:
 CORE = {"celine.db", "log.db", "notebook/.index.db", "notebook/.placeholders",
         "notebook/identity.md", "notebook/opinions/README.md", "notebook/curious.md",
         "settings/context.toml", "settings/features.toml", "keys/*", "logs/celine.log",
-        "blobs/"}
+        "secrets/push.vapid.key", "blobs/"}
 
 
 def _off(data: Path) -> None:

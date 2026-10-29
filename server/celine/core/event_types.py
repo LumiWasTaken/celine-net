@@ -89,6 +89,8 @@ OVERRIDES_CHANGED = "overrides.changed"
 
 PLAN_STATE = "plan.state"
 
+PUSH_SUBSCRIPTIONS = "push.subscriptions"
+
 RUN_STATE = "run.state"
 
 SETTINGS_CHANGED = "settings.changed"

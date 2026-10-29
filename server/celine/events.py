@@ -14,7 +14,8 @@ it happened. GET /api/events merges the sources newest first; the global event
 conversation events, `added` here for the rest).
 
 `notice` is the other global event here: one item the user hears about while the app's
-tab is hidden (a system notification, web/src/lib/notify.ts): its finished reply in a
+tab is hidden (a system notification, web/src/lib/notify.ts; a push to a device while no page
+is focused, push.py): its finished reply in a
 chat, an Intercom message to the user, a mission that waits for them, a failed run, an
 approval that waits. {kind, title, body, link, tag}: `link` the app path that opens it,
 `tag` the item, so a burst of one item replaces its notification."""
