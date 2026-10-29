@@ -26,7 +26,7 @@
    /api/health whether the session ended (lib/health.ts). */
 import { checkSession, reloadIfUpdated, useApiDown } from './health'
 import {
-  api, request, type Attachment, type Compaction, type ImageNotice, type Intercom, type Message, type Plan, type Snapshot, type ToolCall, type ToolWords, type TurnState,
+  api, request, type Attachment, type Compaction, type ImageNotice, type Intercom, type Message, type Plan, type Snapshot, type ToolCall, type ToolWords, type TurnState, type Unanswered,
 } from './api'
 import { emit, type ServerEvent } from './bus'
 import type { GuardBanner } from './guard'
@@ -113,7 +113,9 @@ export type Frame =
        fallback?: boolean; instead_of?: string; why?: string | null; ahead?: number; running?: number
        reason?: string | null; message?: string | null; holder?: string | null } & Of)
   | ({ type: 'turn.state'; turn_id: string; state: TurnState; reason?: string | null; reason_code?: string | null; cut?: string | null
-       continues?: number; continuable?: { ok: boolean; label: string | null; reason: string | null } | null } & Of)
+       continues?: number; continuable?: { ok: boolean; label: string | null; reason: string | null } | null
+       /** what Regenerate answers after this change */
+       unanswered?: Unanswered | null } & Of)
   | ({ type: 'context.compacted' } & Compaction & Of)
   | ({ type: 'context.compact_failed'; trigger: string } & Of)
   | ({ type: 'context.compact_skipped'; reason?: string } & Of)

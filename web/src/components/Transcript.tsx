@@ -4,19 +4,20 @@
    calls are not in the stream: a call at work is one shimmering line, its pictures and
    music are their blocks, and the reply's "..." has Activity. Wait words are the typing
    dots with the words as their tooltip; where an answer did not come, "Paused." with
-   Continue or "The reply failed." with Retry (Status TurnEnd). The agent's thinking follows
+   Continue, "The reply failed." with Retry, or under your message that has none (the
+   server's `unanswered`) its reason with Regenerate (Status TurnEnd). The agent's thinking follows
    Appearance: hidden with Hide thinking (moved to Thoughts in "..."), or shown above
    its reply as a fold ("The agent's thoughts") whose starting state follows Collapse thinking by
    default. While it thinks and has no words yet, one shimmering "Thinking" line. The agent's
    settled tool calls sit under its words as their rows (hidden with Hide tool calls,
    leaving Activity in "..."). Bastet's banners sit after the reply whose call she
    decided on (GuardBanner), and so does a request of hers that waits for you
-   (ApprovalAsk). Never hidden: Retry, Continue, Stop, reminders, intercom lines,
+   (ApprovalAsk). Never hidden: Retry, Continue, Regenerate, Stop, reminders, intercom lines,
    Bastet's banners and her requests. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   conversationApi, type Attachment, type Compaction, type ImageNotice, type Live, type Message, type Queued, type Switched,
-  type ToolCall, type Turn,
+  type ToolCall, type Turn, type Unanswered,
 } from '../lib/api'
 import { bytes, errorText, fullDate, stamp } from '../lib/format'
 import { TILE, fileUrl, tileUrl } from '../lib/media'
@@ -104,6 +105,8 @@ type Props = {
   messages: Message[]
   toolCalls: Record<string, ToolCall[]>
   turn: Turn | null
+  /** your message that has no answer, and why (the server's) */
+  unanswered: Unanswered | null
   running: boolean
   error: { message: string; retryable: boolean } | null
   pending: Pending | null
@@ -132,7 +135,7 @@ type Props = {
   assistant: string
   /** your name, for the brief you gave it ('' until the status is in) */
   user: string
-  /** answer the last message again (Retry) */
+  /** answer the last message again (Retry, Regenerate) */
   onRetry: () => Promise<void>
   /** read-only (a mission in the Trash): nothing here writes to it */
   closed?: boolean
@@ -145,7 +148,7 @@ type T = {
 }
 
 export function Transcript(
-  { conversationId, messages, toolCalls, turn, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
+  { conversationId, messages, toolCalls, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
     approvals = [], forming = [], note, assistant, user, onRetry, closed = false }: Props,
 ) {
   const streaming = running && turn?.state === 'streaming'
@@ -335,10 +338,8 @@ export function Transcript(
   )
   // the turns waiting after the one running: "Queued", one line each
   const later = queue.filter(q => q.turn_id !== turn?.id)
-  // a message that lands quietly (a notice with wake off) waits for no answer
-  const unanswered = last?.role === 'user' && last.intercom?.wake !== false
   // what the live region says: what the screen shows
-  const liveWords = held ? 'Queued' : pending || running ? (waiting ?? `${assistant} is writing.`) : endWords(turn, error, unanswered && !closed) ?? ''
+  const liveWords = held ? 'Queued' : pending || running ? (waiting ?? `${assistant} is writing.`) : endWords(turn, error, closed ? null : unanswered) ?? ''
 
   return (
     <div className="transcript__inner is-transcript">

@@ -415,6 +415,10 @@ export type Turn = { id: string; state: TurnState; reason: string | null; reason
   /** a running turn's reply: waiting for a slot, loading the model, thinking, flowing or done */
   live?: Live | null }
 
+/** the user's last message that has no answer while no turn runs (the server's): how the
+ *  turn that tried ended (null when none did) and why, in a sentence */
+export type Unanswered = { message_id: string; state: TurnState | null; reason: string }
+
 /** where the reply being written stands (the snapshot's `turn.live`, then the live events) */
 export type Live = { message_id: string; phase: 'waiting' | 'loading' | 'thinking' | 'flowing' | 'done'
   ahead?: number; running?: number; model?: string
@@ -511,6 +515,8 @@ export type Snapshot = {
   tool_calls: Record<string, ToolCall[]>
   compactions: Compaction[]
   turn: Turn | null
+  /** what Regenerate answers, null when nothing waits for it */
+  unanswered: Unanswered | null
   /** the live turns in the order they run */
   queue: Queued[]
   switched: Record<string, Switched>
