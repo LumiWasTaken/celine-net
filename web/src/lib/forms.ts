@@ -8,7 +8,8 @@
      <Form {...form.shown(auto.pending)} fields={form.res.data.fields} onChange={auto.set} />
 
    An onboarding card keeps its changes as a draft and calls `save(draft)` from its
-   saveRef. An action never saves: save first when the draft changed. */
+   saveRef. An action never saves: save first when the draft changed. Actions are offered
+   only while the view says `running`. */
 import { json, request } from './api'
 import { useResource, type Resource } from './useResource'
 import type { FormField, SecretState } from '../ui'
@@ -22,6 +23,8 @@ export type FormView = {
   secrets: Record<string, SecretState>
   version: string
   saved: boolean
+  /** its actions can run now (a plugin's code runs only while it is on) */
+  running: boolean
 }
 export type ActionResult = { ok: boolean; sentence: string }
 
@@ -49,7 +52,8 @@ export type UseForm = {
 }
 
 export function useForm(id: string): UseForm {
-  const res = useResource(() => formsApi.get(id), [id], { events: ev => ev.type === 'settings.changed' })
+  const res = useResource(() => formsApi.get(id), [id],
+                          { events: ev => ev.type === 'settings.changed' || (ev.type === 'features.changed' && ev.id === id) })
   const isSecret = (k: string) => res.data?.fields.some(f => f.key === k && f.type === 'secret') ?? false
   return {
     res,

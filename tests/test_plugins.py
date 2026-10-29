@@ -81,6 +81,8 @@ async def test_off_on_off_at_runtime(tmp_path, monkeypatch, store):
     mount, routes = plugins_api.mount()
     app.router.routes.append(mount)
     services = app.state.services
+    events: list = []
+    store.emit_global = events.append
     db = var / "plugins" / "echo" / "echo.db"
     assert "celine_plugins.echo" not in sys.modules
     assert "echo" not in services.registry.skills
@@ -99,10 +101,12 @@ async def test_off_on_off_at_runtime(tmp_path, monkeypatch, store):
         spec = services.registry.tools["echo__say"]
         assert (await spec.fn(None, text="hi")).content == "hi"
         assert (await c.get("/api/plugins/echo/heard")).json() == {"count": 1}
+        assert {"type": "features.changed", "id": "echo", "running": True} in events
 
         await c.put("/api/features", json={"features": {"echo": False}})
         await until(lambda: not runners["echo"].running)
         assert routes.routes == [] and p.file is None and db.is_file()
+        assert events[-1] == {"type": "features.changed", "id": "echo", "running": False}
         assert (await c.get("/api/plugins/echo/heard")).status_code == 404
         assert "echo__say" not in services.registry.tools
         tg.cancel_scope.cancel()
@@ -189,24 +193,63 @@ async def test_an_action_runs_only_while_its_plugin_runs(tmp_path, monkeypatch, 
     cfg = boot.load()
     app = make_app(cfg, store)
     async with client(app) as c:
+        assert (await c.get("/api/forms/echo")).json()["running"] is False
         off = await c.post("/api/forms/echo/check")
         assert off.status_code == 409 and "Echo is not running." in off.text
         assert "celine_plugins.echo" not in sys.modules
         assert (await c.post("/api/forms/echo/nope")).status_code == 404
         plugins.get("echo").data = var / "plugins" / "echo"       # what its runner sets
+        assert (await c.get("/api/forms/echo")).json()["running"] is True
         assert (await c.post("/api/forms/echo/check")).json() == {
             "ok": False, "sentence": "No token."}
         await c.put("/api/forms/echo", json={"values": {}, "secrets": {"token": "t"}})
         assert (await c.post("/api/forms/echo/check")).json()["ok"] is True
 
 
-def test_a_bad_form_is_a_problem_and_no_plugin(tmp_path, monkeypatch):
+@pytest.mark.parametrize("field, says", [
+    ('key = "x"\nlabel = "X"\ntype = "colour"', "no known type"),
+    ('key = "a/b"\nlabel = "A"\ntype = "secret"', "cannot name its file echo.a/b.key"),
+    (f'key = "{"k" * 60}"\nlabel = "K"\ntype = "secret"', "at most 64 in all"),
+    ('key = "n"\nlabel = "N"\ntype = "number"\ndefault = 5\nmin = 6\nmax = 9',
+     "the default of 'n'"),
+])
+def test_a_bad_form_is_a_problem_and_no_plugin(tmp_path, monkeypatch, field, says):
     var = scratch(tmp_path, monkeypatch)
     d = _echo(var)
-    (d / "settings.toml").write_text('[[fields]]\nkey = "x"\nlabel = "X"\ntype = "colour"\n')
+    (d / "settings.toml").write_text(f"[[fields]]\n{field}\n")
     cfg = boot.load()
     assert plugins.get("echo") is None
-    assert any(p.file == "plugins" and "no known type" in p.message for p in cfg.problems)
+    assert any(p.file == "plugins" and says in p.message for p in cfg.problems), cfg.problems
+
+
+async def test_a_failed_save_puts_the_secrets_back(tmp_path, monkeypatch, store):
+    import os
+    from celine import reload
+    var = scratch(tmp_path, monkeypatch)
+    _echo(var)
+    cfg = boot.load()
+    app = make_app(cfg, store)
+    key = var / "secrets" / "echo.token.key"
+    async with client(app) as c:
+        await c.put("/api/forms/echo", json={"values": {}, "secrets": {"token": "old-one"}})
+        os.utime(key, (1_700_000_000, 1_700_000_000))      # a fixed time to compare
+        before = (await c.get("/api/forms/echo")).json()
+
+        async def broken(services, changes):
+            raise OSError("disk full")
+        monkeypatch.setattr(reload, "commit", broken)
+        for change in ("new-one", None):
+            with pytest.raises(OSError):
+                await c.put("/api/forms/echo", json={"values": {"prefix": "x"},
+                                                     "secrets": {"token": change}})
+            assert key.read_text().strip() == "old-one"
+            assert key.stat().st_mtime == 1_700_000_000
+            assert (await c.get("/api/forms/echo")).json()["version"] == before["version"]
+        assert sorted(p.name for p in key.parent.iterdir()) == ["echo.token.key"]
+        key.unlink()
+        with pytest.raises(OSError):
+            await c.put("/api/forms/echo", json={"values": {}, "secrets": {"token": "new"}})
+        assert not key.exists(), "a secret that was not there is not left behind"
 
 
 def test_the_schema_cleans_what_it_keeps():
@@ -222,11 +265,25 @@ def test_the_schema_cleans_what_it_keeps():
                                                        "wait": 7}
     assert form.validate("x", fields, {"host": "  "}) == {}, "blank goes back to the default"
     for data, field in (({"host": "a b"}, "x.host"), ({"wait": 61}, "x.wait"),
-                        ({"names": "a"}, "x.names"), ({"pin": "1"}, "x.pin")):
+                        ({"wait": ""}, "x.wait"), ({"names": "a"}, "x.names"),
+                        ({"pin": "1"}, "x.pin")):
         with pytest.raises(Invalid) as e:
             form.validate("x", fields, data)
         assert e.value.field == field
     assert form.values(fields, {}) == {"host": "", "names": [], "wait": 5}
+    # the same rule for every text and every type, here and in each module's form
+    from celine.settings import general, mail, services
+    assert form.validate("x", [{"key": "bio", "label": "B", "type": "text", "default": "-"}],
+                         {"bio": " \n "}) == {}
+    with pytest.raises(Invalid, match="cannot be empty"):
+        general.validate({"user_name": "   "})
+    assert general.validate({"user_bio": "  "}) == {}
+    for data, field in (({"port": ""}, "email.port"), ({"tls": ""}, "email.tls")):
+        with pytest.raises(Invalid) as e:
+            mail.validate(data)
+        assert e.value.field == field
+    assert mail.validate({"host": " ", "user": "me@x.y "}) == {"user": "me@x.y"}
+    assert services.validate({"browser": {"url": "  "}}) == {"browser": {}}
 
 
 async def test_a_broken_plugin_switched_on_keeps_the_app_up(tmp_path, monkeypatch, store):

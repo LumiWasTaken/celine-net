@@ -3,7 +3,9 @@
 `settings.toml`; its values live in var/settings/<id>.toml, its secrets in
 var/secrets/<id>.<key>.key.
 
-- GET /api/forms/{id} -> {fields, actions, note?, values, secrets, version, saved}
+- GET /api/forms/{id} -> {fields, actions, note?, values, secrets, version, saved,
+  running}. `running`: its actions can run now (a plugin's code runs only while it is on;
+  `features.changed` says when that changes).
 - PUT /api/forms/{id} {values, secrets?} with If-Match -> the same view. `values` is the
   whole object (a key left out goes back to its default). A secret is set by a string,
   deleted by null, kept when absent, and never echoed: `secrets` says {state, set_at}.
@@ -47,7 +49,8 @@ def _view(request: Request, response: Response, p: Plugin) -> dict[str, Any]:
     s = settings_of(request)
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root),
            "actions": form.actions_view(p.form.get("actions", [])),
-           "version": etag(response, version(current)), "saved": bool(s.saved.get(p.id))}
+           "version": etag(response, version(current)), "saved": bool(s.saved.get(p.id)),
+           "running": p.data is not None}
     if p.form.get("note"):
         out["note"] = p.form["note"]
     return out

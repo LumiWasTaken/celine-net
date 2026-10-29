@@ -42,7 +42,8 @@ export function FormActions({ form, disabled, before, after }: {
   before?: () => Promise<void>
   after?: () => Promise<unknown>
 }) {
-  const actions = form.res.data?.actions ?? []
+  // a plugin's actions are its code, which runs only while it is on
+  const actions = form.res.data?.running ? form.res.data.actions : []
   return <>{actions.map(a => <ActionRow key={a.id} a={a} form={form} disabled={disabled} before={before} after={after} />)}</>
 }
 
