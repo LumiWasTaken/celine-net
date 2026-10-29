@@ -60,9 +60,12 @@ async def test_a_second_chat_from_the_same_place_starts_and_lists_the_thread(sto
     assert not again.is_error and again.content.startswith('Started the chat "Invoice again"')
     assert f'thread #{thread} "Invoice due"' in again.content
     assert "not answered yet): It is due tomorrow." in again.content
-    out = await skill.start_chat(ctx, title="Two gates that stop costing me missions",
-                                 text="x")
-    assert out.is_error and "2 to 4 plain words" in out.content
+    out = await skill.start_chat(ctx, title="Two gates that stop  costing me missions",
+                                 text=" x ")
+    assert not out.is_error
+    sent = await store.read(lambda c: c.execute(
+        "SELECT subject, text FROM intercom WHERE id=?", (out.display["id"],)).fetchone())
+    assert tuple(sent) == ("Two gates that stop  costing me missions", " x "), "as she wrote it"
 
 
 async def test_an_open_bug_report_of_the_last_day_is_listed_for_her_to_judge(store):

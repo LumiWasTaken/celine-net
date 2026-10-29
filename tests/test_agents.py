@@ -346,3 +346,17 @@ async def test_a_message_from_a_sibling_gets_no_report_to_the_parent(store):
     assert len(await worked(parent, "look", kind="brief")) == 1, "the brief's report"
     assert len(await worked(other, "psst")) == 1, "a sibling's message: no report"
     assert len(await worked(parent, "and now?")) == 2, "the parent's follow-up"
+
+
+async def test_a_sub_agent_is_addressed_by_its_exact_name(store):
+    from celine.intercom import addresses
+    parent = await conversations.create(store, "p")
+    sub = await conversations.create(store, "s", agent_of=parent, agent_name="Scout")
+    found = await store.read(lambda c: addresses.resolve(c, "Scout", f"agent:{parent}"))
+    assert found[1] == [(f"agent:{sub}", sub)]
+    try:
+        await store.read(lambda c: addresses.resolve(c, "scout", f"agent:{parent}"))
+    except (ValueError, KeyError):
+        pass
+    else:
+        raise AssertionError("a name in another case reaches nobody")
