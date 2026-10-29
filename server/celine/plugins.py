@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import ROOT
+from .errors import Busy
 
 BASE = ROOT / "plugins"
 PACKAGE = "celine_plugins"
@@ -64,6 +65,14 @@ class Plugin:
         """"module:attr" of its folder."""
         mod, _, name = ref.partition(":")
         return getattr(self.module(mod), name)
+
+    @property
+    def db(self) -> Any:
+        """Its file while it runs; between a switch and its runner, or after a runner
+        that failed, a CelineError that says so (a tool or a route answers with it)."""
+        if self.file is None:
+            raise Busy(f"{self.manifest['label']} is not running.")
+        return self.file
 
     @property
     def skills(self) -> dict[str, dict[str, Any]]:
