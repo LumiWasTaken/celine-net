@@ -143,7 +143,7 @@ class Routines:
             return ToolResult(content=f"There is no routine {name!r}: routines__list.",
                               is_error=True)
         if self.app.schedules is None:
-            return ToolResult(content="Routines start with the app while they are on.",
+            return ToolResult(content="Routines are off.",
                               is_error=True)
         run = await self.app.schedules.run_now(name, by="her")
         return ToolResult(content=f"Run run:{run['id']} of {run['label']} waits to start.",

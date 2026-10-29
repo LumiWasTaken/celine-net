@@ -54,9 +54,9 @@ def _view(s, cfg) -> dict:
 
 
 def _scheduler(request: Request):
-    """The running Scheduler; it starts with the app while Routines is on."""
+    """The running Scheduler: set while Routines is on."""
     if (s := request.app.state.services.schedules) is None:
-        raise CelineError("unavailable", "Routines start with the app while they are on.", 409)
+        raise CelineError("unavailable", "Routines are off.", 409)
     return s
 
 
