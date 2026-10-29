@@ -21,8 +21,9 @@ The steps, in this order:
 
 Steps 3 to 5 need knowledge bases and the `verify_citations` switch of the
 chat_archive skill (on by default); without them the text goes from step 2 to step 6.
-The check never fails the turn: an error inside it logs and returns the text as step 2
-left it. Every check appends a `citations.checked` event (refs counted, the invalid
+The check never fails the turn: an error inside it is logged and told to the user (an
+`error` event, code citation_check_failed, with the reason), and the text is stored as
+step 2 left it. Every check appends a `citations.checked` event (refs counted, the invalid
 ones listed).
 """
 from __future__ import annotations
@@ -33,7 +34,7 @@ import anyio
 
 from ..skills import web
 from . import verify
-from ..core.event_types import CITATIONS_CHECKED
+from ..core.event_types import CITATIONS_CHECKED, ERROR
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,10 @@ async def stored(store, cfg, cid: str, mid: str, text: str | None, messages, hid
                                                  "invalid": len(problems)})
             text = verify.mark_invalid(text, {p.ref for p in problems})
         return web.link(text, web_shown)
-    except Exception:
+    except Exception as e:
         log.exception("citation check failed", extra={"event": "turn.citations_failed"})
+        await store.append_event(cid, ERROR, {
+            "code": "citation_check_failed", "message_id": mid, "retryable": False,
+            "message": f"The citation check failed ({type(e).__name__}: {e}). The "
+                       f"citations in this reply are not checked."})
         return text

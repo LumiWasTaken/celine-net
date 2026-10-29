@@ -142,6 +142,24 @@ async def test_a_bad_citation_is_marked_invalid(store, cfg, archive):
     assert snap["turn"]["state"] == "done"
 
 
+async def test_a_citation_check_that_breaks_tells_the_user_and_keeps_the_text(
+        store, cfg, archive, monkeypatch):
+    from celine.turns import verify
+
+    def broken(*a, **kw):
+        raise RuntimeError("index gone")
+    monkeypatch.setattr(verify, "check", broken)
+    b = Script([
+        [_find(), Done(reason="tool_calls")],
+        [TextDelta("Alex said it [[whatsapp:1]]."), Done(reason="stop")],
+    ])
+    snap, events, final = await _turn(store, cfg, archive, b)
+    assert final["content"] == "Alex said it [[whatsapp:1]].", "no text rewrite"
+    [err] = [e["data"] for e in events if e["type"] == "error"]
+    assert err["code"] == "citation_check_failed" and "index gone" in err["message"]
+    assert snap["turn"]["state"] == "done"
+
+
 def test_a_tool_name_written_as_a_citation_is_marked_invalid():
     from celine.turns import verify
     text = "BAD BOY [[chat_archive__look_up: person discord:265 BAD BOY]] said hi [[discord:7]]."
