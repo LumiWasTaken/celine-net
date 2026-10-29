@@ -39,7 +39,7 @@ import {
 } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
-import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, TextArea } from '../ui'
+import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, SubHead, TextArea } from '../ui'
 import { FeatureRows, FeatureSwitch, blocked, isPlain, showsCard, stateTone } from './settings/Features'
 import { useConnector } from './settings/Connector'
 import { LoginProblem } from './settings/DiscordSource'
@@ -430,8 +430,8 @@ function FeatureStep({ feature: f, view, error, reload, update, back, next, form
 }
 
 /* ── a group's card ("Her computer": Container and Own computer): each feature of the group
-   as its switch (its `choice` for words), its state and its setup form; any of them may be
-   on. Next saves every form, then the features ── */
+   as its switch (its `choice` for words), and while it is on its setup form under its `choice` as
+   a SubHead; any of them may be on. Next saves every form, then the features ── */
 function GroupStep({ members, view, error, reload, update, back, next, forms, setForm }: Shared & {
   members: Feature[]
   forms: Record<string, unknown>
@@ -476,7 +476,10 @@ function GroupPart({ feature: f, view, update, form, setForm, saveRef }: {
     <FeatureSwitch feature={f} on={on} label={f.choice || undefined} disabled={!online || save.busy}
                    onChange={v => void save.run({ ...view, features: { ...view.features, [f.id]: v } })} />
     {error && <InlineError compact message={error} />}
-    {Form && (on || blocked(f)) && <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />}
+    {Form && on && !blocked(f) && <>
+      <SubHead>{f.choice || f.label}</SubHead>
+      <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />
+    </>}
   </>
 }
 
