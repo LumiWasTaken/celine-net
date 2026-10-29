@@ -306,6 +306,11 @@ class Scheduler:
 
     async def run(self, tg) -> None:
         self._tg = tg
+        from ..settings import files, seed
+        root, cfg = files.settings_dir(self.app.cfg), self.app.cfg
+        if seed.schedules(root):              # the first start with routines on
+            from . import load
+            cfg.schedules = load(seed.schedules_dir(root), cfg.problems, cfg.substitute)
         resume = await self.app.store.write(self._interrupted)
         if getattr(self.app.dispatcher, "on_end", None) is not None:
             # its turns in a run: behind every interactive request, on its own model

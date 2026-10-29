@@ -129,6 +129,7 @@ def _scratch_data_dir(tmp_path, monkeypatch, _template_db):
     from celine.settings import seed
     keys.ensure(tmp_path / "var")
     seed.seed(tmp_path / "var" / "settings")
+    seed.schedules(tmp_path / "var" / "settings")     # the Scheduler's start
 
 
 @pytest.fixture

@@ -119,7 +119,7 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
         log.info("keys made", extra={"event": "keys.made", "files": made,
                                      "dir": str(cfg.data_dir / "keys")})
     from .settings import files as settings_files, seed
-    seed.seed(settings_files.settings_dir(cfg))    # context shares, schedules: copied once
+    seed.seed(settings_files.settings_dir(cfg))    # the context shares: copied once
     version = migrate_all(cfg.db_path)
     cfg = _load_config()                            # everything, its row too
     cfg.server.update(reload.CLI_SERVER)

@@ -1,7 +1,7 @@
 """Schedules: jobs as data.
 
 One file per schedule, `var/settings/schedules/<name>.toml`, copied once from
-config/schedules (settings/seed.py) and read only from there:
+config/schedules at the Scheduler's first start (settings/seed.py) and read only from there:
 
     label = "Radar"
     summary = "Reads the news."  # one sentence for the onboarding's list ("": none)

@@ -1310,8 +1310,8 @@ the text to `user` from that chat. The title is 2 to 4 words.
 ## Schedules
 
 `schedules/`. A schedule is a job as data: `var/settings/schedules/<name>.toml`, copied
-once from `config/schedules/` with the partner prompts beside them (`*.md`), read only
-from there. Fields: `label`, `cron` (the app's time zone), `prompt`,
+once from `config/schedules/` at the Scheduler's first start with the partner prompts
+beside them (`*.md`), read only from there. Fields: `label`, `cron` (the app's time zone), `prompt`,
 `after` (the schedules whose runs of the same night it follows), `partner` (a prompt file
 it talks with first) and `rounds`, `note` (a notebook path the answer is written to),
 `role` (chat, tasks or small, default chat), `on`.

@@ -1,13 +1,13 @@
 """The settings that start as a copy of a shipped default: the context shares and the
-schedules. config/ ships the defaults; startup (__main__.preflight) copies each into
-var/settings/ when its place there does not exist (a deleted folder comes back), and from
-then on only var/settings is read: a schedule shipped later reaches an install that has
-the folder only by hand or on the Routines page. The agent's own row is celine.her.
+schedules. config/ ships the defaults; each is copied into var/settings/ when its place
+there does not exist (a deleted folder comes back), and from then on only var/settings is
+read: a schedule shipped later reaches an install that has the folder only by hand or on
+the Routines page. The agent's own row is celine.her.
 
 - `var/settings/context.toml`: config/context.toml, the shares of the window it
-  carries notes in, and the tokens of tools (turns/loads.py).
+  carries notes in, and the tokens of tools (turns/loads.py). At preflight (`seed`).
 - `var/settings/schedules/`: config/schedules/*.toml and the partner prompts *.md
-  (celine/schedules).
+  (celine/schedules). At the Scheduler's start (`schedules`), so only with routines on.
 Bastet's persona and voice are never seeded: config/guard/ is their default (guard/persona.py).
 """
 from __future__ import annotations
@@ -40,9 +40,15 @@ def context_path(root: Path) -> Path:
 
 
 def seed(root: Path) -> None:
-    """Copies what does not exist yet; never touches what does."""
+    """The context shares when they do not exist yet; never touches them when they do."""
     root.mkdir(parents=True, exist_ok=True)
     if not context_path(root).exists():
         write_bytes(context_path(root), (CONFIG_DIR / "context.toml").read_bytes())
-    if not schedules_dir(root).exists():
-        _copy(CONFIG_DIR / "schedules", schedules_dir(root), ("*.toml", "*.md"))
+
+
+def schedules(root: Path) -> bool:
+    """The shipped schedules when the folder does not exist yet. True: it copied them."""
+    if schedules_dir(root).exists():
+        return False
+    _copy(CONFIG_DIR / "schedules", schedules_dir(root), ("*.toml", "*.md"))
+    return True
