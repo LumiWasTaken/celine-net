@@ -134,6 +134,50 @@ async def test_an_image_in_a_result_is_kept_as_an_attachment_of_the_call(store):
     assert attachments.blob_path(sup.cfg, row["sha256"]).read_bytes() == PNG
 
 
+async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monkeypatch):
+    """A blob or text resource is saved for the call (its row shows it) and named to the
+    model; one over max_attachment_bytes is named as not kept."""
+    import base64
+    from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource,
+                           TextResourceContents)
+    from chat_fixtures import user_says
+    from celine.conversations import store as conversations, tree
+    from celine.turns import store as turns
+
+    class Client:
+        async def call_tool(self, name, args):
+            return CallToolResult(content=[
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///Users/her/Desktop/my%20notes.zip",
+                    mimeType="application/zip",
+                    blob=base64.b64encode(b"PK\x03\x04zip").decode())),
+                EmbeddedResource(type="resource", resource=TextResourceContents(
+                    uri="file:///tmp/a.txt", text="hello")),
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///big.bin", blob=base64.b64encode(b"x" * 64).decode()))])
+
+    sup = Supervisor(_cfg(), store, Registry())
+    real = sup.cfg.r
+    monkeypatch.setattr(sup.cfg, "r",
+                        lambda k: 32 if k == "max_attachment_bytes" else real(k))
+    sup.cfg.user = "Joe"
+    skill = McpSkill(sup.cfg.mcp["echo"])
+    skill.client, skill.status = Client(), "up"
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "fetch")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "x", "name": "echo__get",
+                                                    "arguments": "{}"}])
+    out = await sup._call(_ctx(store), skill, "get", {})
+    assert out.images is None and "[resource]" not in out.content
+    assert "my notes.zip (7 bytes), attached to this conversation for Joe." in out.content
+    assert "big.bin is 0.0 MB. The limit is 0 MB. It was not kept." in out.content
+    rows = await store.read(lambda c: [tuple(r) for r in c.execute(
+        "SELECT a.filename, b.media_type FROM attachments a JOIN blobs b USING (sha256) "
+        "WHERE a.tool_call_id='x' ORDER BY a.created_at, a.id")])
+    assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain")]
+
+
 async def test_a_server_that_does_not_answer_fails_with_the_plain_sentence(store):
     reg = Registry()
     cfg = _cfg("dead", transport="http", command=None, args=[], url="http://127.0.0.1:9/mcp",
