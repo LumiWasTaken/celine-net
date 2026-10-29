@@ -78,11 +78,6 @@ KEY_ALIASES = {
 }
 CTRL = re.compile(r"^(?:c-|ctrl[+-]|\^)(.)$", re.I)     # C-c, Ctrl+c, ctrl-c, ^C
 ALT = re.compile(r"^(?:m-|alt[+-])(.)$", re.I)           # M-x, Alt+x
-# a text that is only a key written out: it meant keys (llama.cpp hands strings over raw)
-KEY_AS_TEXT = re.compile(r"^(?:(?:c-|ctrl[+-]|\^|m-|alt[+-]).|\\u[0-9a-f]{4}|\\x[0-9a-f]{2}"
-                         r"|\\[nrte]|\\0?33|enter|return|escape|esc|tab|shifttab|backspace"
-                         r"|delete|space|up|down|left|right|pageup|pagedown|f[1-9]|f1[0-2])$",
-                         re.I)
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,15}$")    # the shellbox's NAME
 log = logging.getLogger("celine.skills.shell")
 
@@ -125,15 +120,6 @@ def parse_keys(value: Any) -> list[str]:
                           f"{KEY_NAMES}.")
         names.append(name)
     return names
-
-
-def check_text(text: str) -> None:
-    """A text that is only a key notation (C-c, ^C, \\u0003, Escape, Enter) is refused."""
-    t = text.strip()
-    if (len(t) == 1 and (ord(t) < 32 or t == "\x7f")) or KEY_AS_TEXT.match(t):
-        raise ToolRefused(f"text {json.dumps(t)} is a key, and text is typed as written. Special "
-                      f"keys go in keys, by name: keys=\"Escape\", keys=\"Enter\"; Ctrl-C is "
-                      f"shell__stop.")
 
 
 def check_name(name: str) -> str:
@@ -516,8 +502,6 @@ class Shell:
             name = check_name(str(terminal or "main"))
             text = "" if text is None else str(text)
             key_list = parse_keys(keys)
-            if text:
-                check_text(text)
             press = as_bool(enter, "enter")
         except ToolRefused as e:
             return self._refused(f"{e} Nothing was typed.", terminal)

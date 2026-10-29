@@ -189,6 +189,10 @@ async def test_type_stop_and_read_send_what_they_say(shell, box):
     await shell.type(ctx(), text="python3")
     assert box.sent[-1][:2] == ("/type", {"terminal": "main", "text": "python3", "keys": [],
                                           "enter": True})
+    # a text that reads like a key name is typed as written
+    await shell.type(ctx(), text="Escape")
+    assert box.sent[-1][:2] == ("/type", {"terminal": "main", "text": "Escape", "keys": [],
+                                          "enter": True})
     # Enter follows only a text; keys alone never press it
     for args in ({"text": "q", "enter": "false"}, {"keys": "Up", "enter": True}, {}):
         await shell.type(ctx(), **args)
@@ -218,8 +222,8 @@ async def test_a_screen_tells_once_that_her_last_run_ended(shell, box):
 
 
 async def test_bad_input_sends_nothing(shell, box):
-    for args in ({"text": "make", "keys": "Down Ctrl+Shift+x"}, {"text": "C-c"},
-                 {"text": "\x03"}, {"text": "Escape"}, {"text": "ls", "terminal": "Build"},
+    for args in ({"text": "make", "keys": "Down Ctrl+Shift+x"},
+                 {"text": "ls", "terminal": "Build"},
                  {"text": "ls", "enter": "maybe"}):
         assert (await shell.type(ctx(), **args)).is_error, args
     for args in ({"command": ""}, {"command": "ls", "timeout": "soon"},
