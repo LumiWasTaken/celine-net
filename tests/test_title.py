@@ -1,5 +1,5 @@
-"""The title of a conversation: the model's line in plain words, never a label it echoed;
-the small model, then the chat model, then the user's first line."""
+"""The title of a conversation: the first line the small model wrote, as it wrote it; a
+failure leaves it without one."""
 import anyio
 import pytest
 
@@ -11,29 +11,15 @@ from celine.boot import load
 from celine.conversations import store as conversations, tree
 from celine.core.bus import EventBus
 from celine.turns.dispatcher import Dispatcher
-from celine.turns.title import plain, title_for
+from celine.turns.title import title_for
 
 
-def test_title_skips_an_echoed_label():
+def test_the_title_is_the_first_line_as_the_model_wrote_it():
     async def run():
-        # the fake model echoes the prompt: "You said: First message:" is no title
-        assert await title_for(FakeBackend(echo=True), "hello there", "hi") == ""
-        real = FakeBackend([TextDelta("Saying hello\n"), Done(reason="stop")])
-        assert await title_for(real, "hello there", "hi") == "Saying hello"
-    anyio.run(run)
-
-
-def test_a_title_is_plain_words():
-    assert plain("**Saying** `hello`.") == "Saying hello"
-    assert plain("## A *quiet*  night") == "A quiet night"
-    assert plain("Invoice due,") == "Invoice due"
-
-
-def test_the_models_title_is_at_most_four_words():
-    async def run():
-        long = FakeBackend([TextDelta("Two gates that stop costing me whole missions.\n"),
+        made = FakeBackend([TextDelta("**Two gates** that stop costing me missions.\nmore"),
                             Done(reason="stop")])
-        assert plain(await title_for(long, "x", "y")) == "Two gates that stop"
+        assert await title_for(made, "x", "y") == \
+            "**Two gates** that stop costing me missions."
     anyio.run(run)
 
 
@@ -52,19 +38,30 @@ async def _first_exchange(store, cid):
 
 
 @pytest.mark.anyio
-async def test_a_failing_small_model_hands_the_title_to_the_chat_model(store):
-    made = iter([Broken(), FakeBackend([TextDelta("Rain in the hills"), Done(reason="stop")])])
-    d = Dispatcher(store, load(), EventBus(), backend_factory=lambda: next(made))
+async def test_the_small_models_title_is_stored_as_it_came(store):
+    asked = []
+
+    def small():
+        asked.append(1)
+        return FakeBackend([TextDelta("Rain, in the hills!"), Done(reason="stop")])
+    d = Dispatcher(store, load(), EventBus(), backend_factory=small)
     cid = await conversations.create(store)
     await _first_exchange(store, cid)
     await d._title(cid)
-    assert await conversations.title(store, cid) == "Rain in the hills"
+    assert await conversations.title(store, cid) == "Rain, in the hills!"
+    assert len(asked) == 1
 
 
 @pytest.mark.anyio
-async def test_with_no_model_answering_the_title_is_the_first_line(store):
-    d = Dispatcher(store, load(), EventBus(), backend_factory=Broken)
+async def test_a_failing_small_model_leaves_no_title_and_asks_no_other(store):
+    asked = []
+
+    def broken():
+        asked.append(1)
+        return Broken()
+    d = Dispatcher(store, load(), EventBus(), backend_factory=broken)
     cid = await conversations.create(store)
     await _first_exchange(store, cid)
     await d._title(cid)
-    assert await conversations.title(store, cid) == "Tell me about rain"
+    assert not await conversations.title(store, cid)
+    assert len(asked) == 1, "no fallback to the chat model"

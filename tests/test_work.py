@@ -258,7 +258,7 @@ def _titler(store, by_role):
     return dispatcher_mod.Dispatcher(store, load(), EventBus(), None, None, llm=llm)
 
 
-async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_error(
+async def test_a_title_waits_for_a_host_and_stays_empty_on_an_error(
         store, tmp_path, monkeypatch):
     from celine.backends.base import BackendError, Done, TextDelta
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles={})
@@ -272,17 +272,15 @@ async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_e
     assert not await conversations.title(store, cid)
     assert (await _row(store, wid))["tries"] == 0
 
-    d = _titler(store, {"small": _Raises(none),
-                        "chat": FakeBackend([TextDelta(""), Done(reason="stop")])})
+    d = _titler(store, {"small": FakeBackend([TextDelta(""), Done(reason="stop")])})
     await d._title(cid)
-    assert await conversations.title(store, cid) == "where did noor go", \
-        "a model answered with nothing: the first line, not another wait"
+    assert not await conversations.title(store, cid), "a model answered with nothing"
 
     cid = await _exchange(store, 2)
     bad = BackendError("bad request", retryable=False)
-    d = _titler(store, {"small": _Raises(bad), "chat": _Raises(bad)})
+    d = _titler(store, {"small": _Raises(bad)})
     await d._title(cid)
-    assert await conversations.title(store, cid) == "where did noor go"
+    assert not await conversations.title(store, cid), "a failure leaves no title"
 
 
 async def test_her_appraisal_is_a_work_item_and_a_stale_one_makes_no_call(

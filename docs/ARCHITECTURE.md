@@ -281,8 +281,9 @@ message reaches it at its next step. It returns `{intercom_id, message_id, turn_
 the last three null when it did not land at once. New in the UI only clears
 the selection; the conversation row is created on the first send. The title comes
 after the first reply: the dispatcher puts a `title` work item (see The work queue)
-that asks the backend for a 2 to 4 word name (`turns/title.py`), falls back to the first
-four words of the first message, and appends `conversation.title`.
+that asks the small model for a 2 to 4 word name (`turns/title.py`), stores the first
+line it wrote as it came, and appends `conversation.title`. A failure leaves the title
+empty and logs why.
 `POST /conversations/{id}/regenerate` queues a fresh turn for the last user message when
 nothing with words answered it: the store walks up from the active leaf past tool
 messages and empty assistant messages, moves the leaf back to the user message and roots
