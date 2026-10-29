@@ -47,9 +47,19 @@
   font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 
-/* the images it looked at in its shellbox */
+/* a file to download (FileLine): on a message and under a call */
+.msg__file {
+  display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.msg__file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.step > .msg__file { width: min(100%, 26rem); }
+.msg__file-size { flex: none; font-size: var(--t-xs); color: var(--text-muted); }
+
+/* the files kept with a call: picture tiles, then files to download */
 .tool__files { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-1) 0 var(--s-2); }
-.tool__file-image { max-width: min(480px, 100%); max-height: 360px; border-radius: var(--r-md); }
+.tool__files > .msg__file { flex-basis: 100%; max-width: 26rem; }
+.tool__picture { width: min(100%, 18rem); }
 
 /* a page it wrote: one card per page under its reply */
 .artcards { display: grid; gap: var(--s-2); margin: var(--s-3) 0 0; }

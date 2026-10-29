@@ -19,8 +19,9 @@ you want back every morning into ~/boot.sh.
 - Only your home stays. Everything outside it (what apt installed, /etc, /opt, /tmp,
   your login shell) goes back to a fresh Debian every morning, and whenever the
   shellbox is recreated. Running programs and open terminals end then too.
-- Every file {{username}} uploads (in a chat or to Documents) lands in ~/uploads/ by
-  itself; the message names where.
+- Every file {{username}} uploads (in a chat or to Documents) lands in
+  ~/uploads/<sha12>/<name> by itself (<sha12>: the start of its sha256); the message
+  names where.
 - The Messages archive, the app's data, the provider keys and your own notes are not in
   here.
 - The network is open: the internet and {{username}}'s machines. The shellbox is yours

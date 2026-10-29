@@ -123,3 +123,41 @@ async def test_search_down_points_at_her_browser_when_she_has_one():
     got = await Web(cfg, transport=httpx.MockTransport(down), check_addresses=False).search(
         _ctx(), query="celine")
     assert got.is_error and "browser" not in got.content
+
+
+async def test_save_attaches_the_file_at_the_url_to_the_call(store, monkeypatch):
+    from celine import attachments
+    from celine.conversations import tree
+    from celine.skills import words
+    data = b"\x89PNG\r\n\x1a\nnot really"
+
+    def files(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("big.zip"):
+            return httpx.Response(200, content=b"x" * 64,
+                                  headers={"content-type": "application/zip"})
+        return httpx.Response(200, content=data, headers={"content-type": "image/png"})
+    cfg = load()
+    cfg.user = "Joe"
+    real = cfg.r
+    monkeypatch.setattr(cfg, "r", lambda k: 32 if k == "max_attachment_bytes" else real(k))
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "get it")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "c1", "name": "web__read_page",
+                                                     "arguments": "{}"}])
+    ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="c1", store=store,
+                      config=cfg, emit=None)
+    w = Web(cfg, transport=httpx.MockTransport(files), check_addresses=False)
+    got = await w.read_page(ctx, "https://pics.example.com/a/cat%20face.png", save=True)
+    assert not got.is_error and got.content == (
+        "Saved cat face.png (18 bytes, image/png) from https://pics.example.com/a/"
+        "cat%20face.png, attached to this conversation for Joe.")
+    [row] = await store.read(lambda c: [dict(r) for r in c.execute(
+        "SELECT sha256, filename, kind FROM attachments WHERE tool_call_id='c1'")])
+    assert (row["filename"], row["kind"]) == ("cat face.png", "image")
+    assert attachments.blob_path(cfg, row["sha256"]).read_bytes() == data
+    big = await w.read_page(ctx, "https://pics.example.com/big.zip", save=True)
+    assert big.is_error and "over the 0 MB limit" in big.content
+    assert words.sentence("web__read_page", {"url": "https://pics.example.com/a.png",
+                                             "save": True}, {}) == \
+        "Saved a file from pics.example.com/a.png"

@@ -396,6 +396,8 @@ def _read_page(a, d, r):
     if title:
         return f"Read {quote(title)}"
     url = _str(d.get("url")) or _str(a.get("url"))
+    if a.get("save") is True:
+        return f"Saved a file from {_page_where(url) if url else 'the web'}"
     n = re.match(r"^\[*\s*web:(\d+)\s*\]*$", url) if url else None
     if n:
         return f"Read search result {n.group(1)}"
@@ -630,6 +632,7 @@ VERBS = {
     "Waited": ("Waiting", "wait"), "Set": ("Setting", "set"), "Clicked": ("Clicking", "click"),
     "Filed": ("Filing", "file"), "Paused": ("Pausing", "pause"), "Pressed": ("Pressing", "press"),
     "Chose": ("Choosing", "choose"), "Answered": ("Answering", "answer"),
+    "Saved": ("Saving", "save"),
 }
 
 

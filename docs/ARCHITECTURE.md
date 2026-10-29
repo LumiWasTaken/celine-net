@@ -917,7 +917,9 @@ Settings, Features (`settings/services.py`, seeded from `CELINE_SHELL_URL`) with
 
 Files go through the daemon's `PUT /file?path=` and `GET /file?path=` (streamed; a path
 leaving its home is refused). `box_files.py` is the app's side. Every file you upload is
-copied in the background to `~/uploads/<name>`; a chat attachment keeps where its copy
+copied in the background to `~/uploads/<sha12>/<name>` while the shellbox is on
+(`<sha12>`: the start of its sha256; bytes already there are not sent again, so her edits
+to that copy stay); a chat attachment keeps where its copy
 landed (`attachments.box_path`) and its context names it. The agent's default terminal is the
 conversation's own (`terminals/store.default_terminal`, written into the call's arguments
 by `turns/tools.py` for a tool with a `terminal_arg`); your own terminals it reads always and runs, types or

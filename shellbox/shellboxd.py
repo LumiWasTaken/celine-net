@@ -31,10 +31,9 @@ facts; the app (server/celine/skills/shell.py) words them.
     GET  /view?terminal=main                     -> the terminal's bytes, live, read-only
     GET  /log?id=<terminal id>&from=<offset>     -> the terminal's raw log from that byte
                    on, at most LOG_CHUNK bytes; X-Log-Size says the log's whole size
-    PUT  /file?path=<in its home>[&unique=1][&origin=<url>] -> the raw body as its file
+    PUT  /file?path=<in its home>[&origin=<url>] -> the raw body as its file
                    (Content-Length needed, at most what its disk has left), via a temp
-                   name; unique: never over an existing file, "name (2).ext" instead;
-                   origin: tagged with it; {"path", "bytes"}
+                   name; origin: tagged with it; {"path", "bytes"}
     GET  /file?path=<in its home>               -> its file, streamed; one byte range of it
                    with Range: bytes=a-b (206, 416 past its end); 404 when missing, 400
                    with "folder": true for a folder
@@ -1983,17 +1982,8 @@ def her_path(rel: str) -> Path:
     return p
 
 
-def free_name(p: Path) -> Path:
-    """p, or "name (2).ext", "name (3).ext"... when p is taken."""
-    n = 2
-    while p.exists() or p.is_symlink():
-        p = p.with_name(f"{Path(p.name).stem.removesuffix(f' ({n - 1})')} ({n}){p.suffix}")
-        n += 1
-    return p
-
-
-def put_file(rel: str, body, length: int, unique: bool = False, origin: str = "") -> dict:
-    """`length` bytes of `body` as its file at `rel` (unique: never over an existing one):
+def put_file(rel: str, body, length: int, origin: str = "") -> dict:
+    """`length` bytes of `body` as its file at `rel`:
     to a temp name, then renamed, so a broken upload never leaves half a file. Its own (it
     writes it, write_hers), mode 0644, parent folders made. With `origin`, tagged with
     where it came from (ORIGIN)."""
@@ -2008,8 +1998,6 @@ def put_file(rel: str, body, length: int, unique: bool = False, origin: str = ""
         d = d.parent
     if not d.is_dir():
         raise Problem(f"{d.relative_to(HOME)} is a file, not a folder.")
-    if unique:
-        p = free_name(p)
     if p.is_dir():
         raise Problem(f"{rel} is a folder.")
     tmp = p.with_name(f".{p.name}.part-{secrets.token_hex(3)}")
@@ -2155,7 +2143,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "A file upload needs its Content-Length."}, 411)
         try:
             res = put_file(q.get("path", [""])[0], self.rfile, int(length),
-                           unique=q.get("unique", [""])[0] == "1",
                            origin=q.get("origin", [""])[0])
         except Problem as e:
             self.close_connection = True      # the rest of the body is never read

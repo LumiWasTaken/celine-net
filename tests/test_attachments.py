@@ -119,6 +119,75 @@ async def test_gc_keeps_drafts_and_unused_files_for_keep(cfg, store):
     assert await attachments.gc(cfg, store, at=LATER) == 0 and there(sent)
 
 
+def picture(w: int, h: int, fmt: str = "PNG", **kw) -> bytes:
+    import io
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (w, h), (200, 40, 40)).save(out, fmt, **kw)
+    return out.getvalue()
+
+
+async def test_a_picture_keeps_its_size_and_one_smaller_copy_per_width(cfg, store):
+    from PIL import Image
+    big = await upload(cfg, store, picture(2000, 1000), "wide.png", "image/png")
+    size = await store.read(lambda c: tuple(c.execute(
+        "SELECT width, height FROM blobs WHERE sha256=?", (big["sha256"],)).fetchone()))
+    assert size == (2000, 1000)
+    # a phone photo turned by its EXIF orientation is as tall as it is shown
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    turned = await upload(cfg, store, picture(400, 300, "JPEG", exif=exif), "p.jpg",
+                          "image/jpeg")
+    assert await store.read(lambda c: tuple(c.execute(
+        "SELECT width, height FROM blobs WHERE sha256=?", (turned["sha256"],)).fetchone())) \
+        == (300, 400)
+    assert [attachments.snap(n) for n in (1, 320, 321, 900, 5000)] == [320, 320, 640, 1280,
+                                                                       1280]
+    small = attachments.resized(cfg, big["sha256"], 640)
+    assert small.name == f"{big['sha256']}.w640.webp"
+    with Image.open(small) as im:
+        assert (im.format, im.size) == ("WEBP", (640, 320))
+    made = small.stat().st_mtime_ns
+    assert attachments.resized(cfg, big["sha256"], 640) == small
+    assert small.stat().st_mtime_ns == made                    # made once
+    # never wider than the picture, never a copy of a file that is no picture
+    dot = await upload(cfg, store, PNG, "dot.png", "image/png")
+    assert attachments.resized(cfg, dot["sha256"], 320) == attachments.blob_path(
+        cfg, dot["sha256"])
+    # the copy goes with its blob
+    await attachments.delete_draft(store, big["id"])
+    await _made_at(store, big["sha256"], T0)
+    part = small.with_name(f"{small.name}.x.part")      # a copy that never finished
+    part.write_bytes(b"half")
+    os.utime(part, (T0.timestamp(), T0.timestamp()))
+    await attachments.gc(cfg, store, at=LATER)
+    assert not small.exists() and not attachments.blob_path(cfg, big["sha256"]).exists()
+    assert not part.exists()
+
+
+async def test_a_model_gets_a_picture_at_most_wire_edge_and_its_real_type(cfg, store):
+    import base64
+    import io
+    from PIL import Image
+    from celine import vision
+    tall = await upload(cfg, store, picture(1500, 3000), "tall.png", "image/png")
+    path, media = attachments.for_model(cfg, tall["sha256"], "image/png")
+    with Image.open(path) as im:
+        assert (media, im.size) == ("image/webp", (784, 1568))
+    dot = await upload(cfg, store, PNG, "dot.png", "image/png")
+    assert attachments.for_model(cfg, dot["sha256"], "image/png") == \
+        (attachments.blob_path(cfg, dot["sha256"]), "image/png")
+    part = {"type": attachments.IMAGE, "attachment": {**tall, "size": (1500, 3000)}}
+    sent = await attachments.Images(cfg, store, None, "x")._image(part)
+    head, b64 = sent["image_url"]["url"].split(",", 1)
+    assert head == "data:image/webp;base64"
+    with Image.open(io.BytesIO(base64.b64decode(b64))) as im:
+        assert im.size == (784, 1568)
+    jpeg = picture(8, 8, "JPEG")
+    [msg] = vision.messages(jpeg, "what?", "text")
+    assert msg["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
 async def test_a_file_whose_rows_fail_is_not_left_behind(cfg, store):
     with pytest.raises(KeyError):
         await attachments.save_generated(cfg, store, PNG, "x.png", "image/png", "no-call")

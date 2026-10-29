@@ -98,6 +98,12 @@ export function batchEvent(ev: ServerEvent, kind?: Kind): Batch | null {
 
 /** an attachment's file under its own name; `download` saves even an image */
 export const fileUrl = (f: { id: string }, download = false) => `/api/attachments/${f.id}/file${download ? '?download=1' : ''}`
+/** the width of a picture on a message or a tool row (.msg__picture, .tool__picture: 18rem) */
+export const TILE = 288
+/** a picture for a tile `px` CSS pixels wide on this screen: the server's smaller copy
+    (it snaps the width to a few); the Viewer and a download take fileUrl, the file itself */
+export const tileUrl = (f: { id: string }, px: number) =>
+  `/api/attachments/${f.id}/file?w=${Math.ceil(px * (window.devicePixelRatio || 1))}`
 
 export const mediaApi = {
   presets: (kind: Kind) => request<{ presets: Preset[] }>(`/generation-presets?kind=${kind}`),

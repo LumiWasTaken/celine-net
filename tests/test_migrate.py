@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 5
+LATEST = 6
 
 
 def _version(db) -> int:
@@ -314,3 +314,50 @@ def test_a_python_step_runs_up_with_no_transaction_open_once(tmp_path):
     c = sqlite3.connect(tmp_path / "other.db")
     assert c.execute("SELECT count(*) FROM moved").fetchone() == (1,)
     c.close()
+
+
+def test_0006_gives_each_call_with_its_own_files_a_files_block(tmp_path, monkeypatch):
+    """Old rows read like new ones: a shell look's files leave display.attachments for
+    the block; a browser shot its display names stays out of it; a call without files
+    of its own is not touched. Run twice, the same."""
+    import json
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.glob("000[1-5]_*.sql")):
+        shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate(db) == 5
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO conversations(id, kind, created_at, updated_at) "
+              "VALUES('c', 'chat', 'x', 'x')")
+    c.execute("INSERT INTO messages(id, conversation_id, role, created_at) "
+              "VALUES('m', 'c', 'assistant', 'x')")
+    look = {"paths": ["a.png"], "attachments": [{"id": "a1", "filename": "a.png"}]}
+    shot = {"tab": "main", "shot": {"id": "a2"}}
+    for cid, name, display in (("look", "shell__look", look), ("shot", "browser__look", shot),
+                               ("send", "shell__send", {"attachments": [{"id": "a3"}]})):
+        c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state, display) "
+                  "VALUES(?, 'm', ?, '{}', 'ok', ?)", (cid, name, json.dumps(display)))
+    c.execute("INSERT INTO blobs(sha256, bytes, media_type, width, height, created_at) "
+              "VALUES('s1', 5, 'image/png', 4, 3, 'x')")
+    for aid, call, mid in (("a1", "look", None), ("a2", "shot", None), ("a3", None, "m")):
+        c.execute("INSERT INTO attachments(id, message_id, tool_call_id, sha256, filename, "
+                  "kind, state, created_at) VALUES(?, ?, ?, 's1', 'a.png', 'image', 'ready', "
+                  "'x')", (aid, mid, call))
+    c.commit()
+    c.close()
+    shutil.copy(next(MIGRATIONS_DIR.glob("0006_*.py")), d)
+    for _ in range(2):
+        assert migrate(db) == 6
+        c = sqlite3.connect(db)
+        shown = {r[0]: json.loads(r[1]) for r in c.execute("SELECT id, display FROM tool_calls")}
+        c.execute("PRAGMA user_version = 5")
+        c.commit()
+        c.close()
+        assert shown["look"] == {"paths": ["a.png"], "blocks": [{
+            "type": "files", "where": "under", "files": [{
+                "id": "a1", "filename": "a.png", "kind": "image", "sha256": "s1", "bytes": 5,
+                "media_type": "image/png", "width": 4, "height": 3}]}]}
+        assert shown["shot"] == shot
+        assert shown["send"] == {"attachments": [{"id": "a3"}]}

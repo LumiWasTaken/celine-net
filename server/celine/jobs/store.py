@@ -8,6 +8,7 @@ import builtins
 import json
 import sqlite3
 
+from .. import attachments as files
 from ..core.ids import now
 from ..intercom.store import insert as intercom_insert
 from ..turns import store as turns
@@ -154,7 +155,8 @@ async def finish(store, job_id: str, call: dict, result, call_state: str,
 
     def fn(c: sqlite3.Connection) -> bool:
         ts = now()
-        display = json.dumps(result.display) if result.display else None
+        shown = files.with_files(c, call["id"], result.display)
+        display = json.dumps(shown) if shown else None
         row = c.execute(
             "UPDATE tool_calls SET state=?, display=?, "
             "finished_at=? WHERE id=? RETURNING result_message_id, display",

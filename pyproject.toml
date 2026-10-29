@@ -24,6 +24,7 @@ dependencies = [
     "trafilatura>=2.0",
     "webauthn>=2.7",
     "prometheus-client>=0.26.0",
+    "pillow>=13.0.0",
 ]
 
 [project.scripts]
