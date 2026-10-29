@@ -266,3 +266,63 @@ async def test_the_legend_names_the_marks_the_code_writes(cfg):
     assert "<outside>" not in text and "<outside>" in legend.legend(cfg, guarded=True, voiced=True)
     assert "[how you sound]" not in legend.legend(cfg, guarded=False, voiced=False)
     assert "Joe" in text and "—" not in text
+
+
+# ---- me__whoami ----------------------------------------------------------------------------
+
+async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_parent(
+        tmp_path, monkeypatch, store, clock):
+    """Every line is read when it is called: the turn's running event and the router
+    for the model, the probes for the devices, the conversation row for where it is."""
+    import httpx
+    from chat_fixtures import user_says
+    from settings_fixtures import scratch
+
+    from celine.backends.llm import LLM
+    from celine.backends.router import Router
+    from celine.conversations import store as conversations
+    from celine.core.event_types import LLM_QUEUE
+    from celine.settings import features
+
+    scratch(tmp_path, monkeypatch, roles={"chat": {"chain": ["main/big", "lan/small"]}})
+    cfg = load()
+    cfg.user = "Joe"
+
+    def reply(request):
+        if request.url.host == "127.0.0.1":           # main is down, lan answers
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json={"running": [], "models": []})
+    llm = LLM(cfg, router=Router(cfg, None, transport=httpx.MockTransport(reply)))
+    probes = {"shellbox": {"state": "missing",
+                           "detail": "The shellbox at box:8700 did not answer."},
+              "web": {"state": "ready", "detail": "SearXNG answers."}}
+
+    async def probe_all(cfg, services, *, cache=True):
+        return {f.id: probes.get(f.id, {"state": "none", "detail": ""})
+                for f in features.CATALOG}
+    monkeypatch.setattr(features, "probe_all", probe_all)
+    me = Me(cfg)
+    me.app = Services(cfg=cfg, store=store, llm=llm)
+
+    def ctx(cid, tid):
+        return ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="x", store=store,
+                           config=cfg, emit=None)  # type: ignore[arg-type]
+
+    parent = await conversations.create(store, "plans")
+    _, tid, _ = await user_says(store, parent, "hi")
+    await store.append_event(parent, LLM_QUEUE, {
+        "turn_id": tid, "state": "running", "role": "chat", "backend": "lan/small",
+        "model": "small", "endpoint": "gpu-box", "fallback": True, "instead_of": "big",
+        "why": "llama-swap does not answer."})
+    out = (await me.whoami(ctx(parent, tid))).content
+    assert "Model: lan/small for chat, a fallback. main/big: llama-swap does not answer." in out
+    assert 'You are working in the chat "plans"' in out and "This turn: Joe's message." in out
+    assert "Shellbox: The shellbox at box:8700 did not answer." in out
+    assert "Web search: SearXNG answers." in out and "Guard: off" in out
+    assert "[image]" not in out and "—" not in out
+
+    sub = await conversations.create(store, "s", agent_of=parent, agent_name="scout")
+    _, stid, _ = await user_says(store, sub, "go")
+    out = (await me.whoami(ctx(sub, stid))).content
+    assert "You are working in the sub-agent scout" in out
+    assert 'It reports to the chat "plans"' in out

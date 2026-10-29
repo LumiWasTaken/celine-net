@@ -118,6 +118,15 @@ class Ordered:
         return Ordered(self.role, [r for r in self.refs if r in first], first,
                        [(r, why) for r, why in self.skipped if r in first])
 
+    def passed_over(self, ref: str) -> str | None:
+        """The models of the chain before `ref`, each with why it is left out now
+        (`ref` answers in their place); None while `ref` is the chain's first."""
+        if ref not in self.chain or self.chain[0] == ref:
+            return None
+        why = dict(self.skipped)
+        return " ".join(f"{r}: {why[r]}" if r in why else f"{r}: left out."
+                        for r in self.chain[:self.chain.index(ref)])
+
     def sentence(self) -> str:
         from ..settings.registry import ROLES
         what = ROLES.get(self.role, {}).get("label", self.role)

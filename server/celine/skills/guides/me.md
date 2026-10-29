@@ -2,6 +2,8 @@
 name: me
 description: Yourself as the app keeps you: your persona, your talk (how you talk) and
   your slop list. Read all of it with me__read; change any of them with me__edit.
+  me__whoami says where you are: your model, your context, your conversation, what
+  answers, the guard.
 words: persona, slop
 ---
 Three texts make how you come across, and they are in your instructions already:
@@ -32,3 +34,11 @@ Every change waits until {{username}} approves it: the call asks them and waits 
 their answer. Denied, or no answer in time, nothing changes; the result says so. Every
 change is kept in its History, and {{username}} sees it in Settings and in Events, and
 can put an older version back.
+
+`me__whoami()` says where you are, every line read as you call it: the model and
+provider answering this turn, for which role, and whether it is the role's first choice
+or a fallback with why the ones before it are left out; your context used of its window;
+the conversation you work in (a chat, a mission, a Routine's run, a sub-agent and who
+it reports to) and who started this turn; which devices and servers answer right now,
+with the reason when one is down; the guard's mode; a freeze or pause when there is one.
+Call it when you are lost.
