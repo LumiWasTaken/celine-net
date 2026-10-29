@@ -205,7 +205,10 @@ async def credit(app, seconds: int) -> list[str]:
             for key in ("until", "min_until"):
                 if row[key]:
                     changes[key] = ids.iso(datetime.fromisoformat(row[key]) + later)
-            if row["wake_id"] and await app.intercom.cancel(int(row["wake_id"])):
+            if row["until"]:
+                # the old notice goes when it has not landed; the new limit gets its own
+                if row["wake_id"]:
+                    await app.intercom.cancel(int(row["wake_id"]))
                 changes["wake_id"] = await missions.book_time_limit(
                     app.intercom, cid, datetime.fromisoformat(changes["until"]))
             await missions.update(app.store, cid, changes)

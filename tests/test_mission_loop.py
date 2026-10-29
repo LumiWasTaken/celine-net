@@ -380,3 +380,19 @@ async def test_the_time_the_house_held_a_mission_moves_its_limits_later(store):
     assert await watch.ceilings(app, start + timedelta(hours=2, minutes=29)) == [], \
         "the ceiling counts the hold off"
     assert await watch.ceilings(app, start + timedelta(hours=2, minutes=31)) == [cid]
+
+
+async def test_a_held_mission_whose_notice_landed_gets_a_new_one(store):
+    intercom = Intercom(store)
+    app = SimpleNamespace(store=store, intercom=intercom, cfg=load())
+    until = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=3)
+    cid = await _mission(store, intercom, until=iso(until))
+    old = (await missions.get(store, cid))["wake_id"]
+    await store.write(lambda c: c.execute(
+        "UPDATE intercom_deliveries SET state='delivered' WHERE intercom_id=?", (int(old),)))
+    assert await watch.credit(app, 600) == [cid]
+    row = await missions.get(store, cid)
+    assert row["wake_id"] and int(row["wake_id"]) != int(old), "a landed notice: a new one"
+    due = await store.read(lambda c: c.execute(
+        "SELECT due_at FROM intercom WHERE id=?", (int(row["wake_id"]),)).fetchone()[0])
+    assert due == iso(until + timedelta(minutes=10) - timedelta(minutes=15))
