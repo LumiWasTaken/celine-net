@@ -807,9 +807,9 @@ instructions from its kind, never how it talks.
 tools are in its list, decided by one policy in every conversation and measured in tokens
 as shares of the model's window (`var/settings/context.toml`: `notes`, `tools`,
 `idle_turns`). `select` runs at every turn start (`when="start"`), again inside a turn
-after a `skills__load` (`"step"`), and without saving for /usage, /compact and the
-Context tab (`"dry"`). Its state is `context_loaded`: one row per note or skill it
-carries, with the turn that last touched it.
+after a step that loaded or unloaded something (`"step"`), and without saving for
+/usage, /compact and the Context tab (`"dry"`). Its state is `context_loaded`: one row
+per note, skill or tool it carries, with the turn that last touched it.
 - Notes, always: a note whose head has `load: always` and the notes on the user,
   `people/{{username}}*`. One over 1.5 KB (`loads.ALWAYS_MAX`) carries its head lines and
   the lines it marked with `!!`, then `rest via notebook__read(path="...")`. For a
@@ -818,13 +818,21 @@ carries, with the turn that last touched it.
   come back under `[your memory]`. Never: a note whose head says `load: off`, a note the
   user left out here (`conversations.notes_off`), anything outside a sub-agent's folder.
   The share is for the notes by need, the most recently touched first.
-- Skills, always: the core skills (`skills.CORE`) where they are offered. For a while: a
-  skill it loaded (`skills__load`), used (any call of one of its tools) or that a new
-  user message asks for (`loads.asked`: a word of the `words:` line in the skill's guide
-  frontmatter; an attached image counts as `image`, a link as `url`). A skill whose tools
-  are all off does not load. What fits the tools budget is loaded, the core first, then
-  the most recently touched; the rest is named in the index ("no room").
-- A note or skill no turn touched for `idle_turns` turns is unloaded.
+- Skills, always: the core skills (`skills.CORE`) where they are offered, every tool
+  with its parameters. For a while: a skill it loaded (`skills__load`), used (any call of
+  one of its tools) or that a new user message asks for (`loads.asked`: a word of the
+  `words:` line in the skill's guide frontmatter; an attached image counts as `image`, a
+  link as `url`). A skill whose tools are all off does not load. A loaded skill puts each
+  of its tools in the list by name and the first sentence of its description, with no
+  parameters (`ToolSpec.as_name`); a tool that takes no parameters goes in full.
+- Tools, for a while: a tool of a loaded skill it loaded by name (`skills__load` with
+  `skill__tool`) or called carries its parameters (`ToolSpec.as_wire`).
+- The tools budget counts parameters only: the core skills' tools, then the loaded tools,
+  the most recently touched first; a tool that does not fit is left out (`no room`). The
+  names are not counted; the Context tab shows what they take per skill.
+- A note, skill or tool no turn touched for `idle_turns` turns is unloaded; a skill takes
+  its tools with it. `skills__unload` (skills or `skill__tool` names) and the Context
+  tab's Unload let go of one now.
 
 **The system prompt**, in this order, the parts that change from turn to turn last so the
 start stays the same for the model server's cache: the persona, the legend of the app's
@@ -838,20 +846,25 @@ was.
 **The tools.** `prompt.tool_specs`: the tools the loaded skills offer here, in registry order
 (a skill with `offered_in` offers its tools only where that says so); a sub-agent with
 read access keeps the read-only ones and the intercom. Every tool of the list is in the
-request from the first step; after a step with `skills__load` the list, the index and
-the fragments are built again. A tool that is off (`gating.is_enabled`) or of a skill
-that is down stays in the list as a stub with no parameters and the refusal as its
-description: it sees what exists and says so. A call to a tool of a skill that is not
-loaded is answered "<skill> is not loaded. skills__load(name="<skill>") loads it for your
-next step."
+request from the first step, with its parameters or by name (`prompt.wire_tools`); after
+a step that loaded or unloaded a skill or a tool the list, the index and the fragments
+are built again. A tool that is off (`gating.is_enabled`) or of a skill that is down is
+not sent; the skill index says so, and a call to it is refused with why. A call to a
+tool of a skill that is not loaded is answered "<skill> is not loaded.
+skills__load(names=["<skill>"]) loads it for your next step." A call to a tool whose
+parameters are not in the list does not run: its result says so and carries the tool's
+full description and parameter schema, and the call loads the tool, so its parameters
+are in the list from the next step (when they fit the tools budget; the result says so
+when they do not).
 
 **Guides.** Each built-in skill has a guide, `server/celine/skills/guides/<skill>.md` (in the package, read once), SKILL.md style:
 frontmatter `name` and `description` (one line: what it is and when to use it), then the
 body (how its tools go together, examples). `skills__read_guide(name)` (skill `skills`,
 `skills/meta.py`) returns the guide of a skill offered here, loaded or not, and its
 notes on it (`skills/<name>.md` in its notebook); `name="skills"` returns the skill
-index. `skills__load(name)` loads a skill offered here (refused, with the sentence, when
-all its tools are off).
+index. `skills__load(names)` loads skills and tools offered here, several at once
+(refused, with the sentence, when all its tools are off, or for a tool whose parameters
+do not fit the tools budget); `skills__unload(names)` lets them go.
 
 `sub_agents` (`sub_agents/`): `start(brief, name, access, folder, model, cli)` starts a
 sub-agent, a conversation of kind `agent` on the tasks role, with `agent_of`,
