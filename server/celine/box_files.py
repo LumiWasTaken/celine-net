@@ -1,8 +1,10 @@
 """Files between the app and its shellbox (shellbox/shellboxd.py, PUT and GET /file),
 streamed both ways, never whole in memory.
 
-Every file the user uploads (a chat attachment, a Documents upload) is copied into its
-home at ~/uploads/<name> right after it is stored: in the background, so the upload never
+While the shellbox is on, every file the user uploads (a chat attachment, a Documents
+upload) is copied into its home at ~/uploads/<sha>/<name> (<sha> the first 12 characters
+of its bytes' sha256, so the same bytes uploaded again land on the same file) right
+after it is stored: in the background, so the upload never
 waits for the box nor fails with it. A box that is down or full only costs a line in the
 app log. A chat attachment keeps where its copy landed (attachments.box_path), and its
 context names it. Files it makes or fetches are not copied.
@@ -10,6 +12,7 @@ context names it. Files it makes or fetches are not copied.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -18,6 +21,7 @@ import anyio
 import httpx
 
 from . import shellbox
+from .settings import features
 
 log = logging.getLogger("celine.box_files")
 
@@ -39,7 +43,7 @@ async def _chunks(src: Path):
             yield chunk
 
 
-async def put(cfg, src: Path | bytes, rel: str, *, unique: bool = False, origin: str = "",
+async def put(cfg, src: Path | bytes, rel: str, *, origin: str = "",
               transport: httpx.AsyncBaseTransport | None = None) -> dict:
     """src (a file, or the bytes themselves) into its home at rel, tagged with `origin`
     when given (where others' text came from, for the guard). {"path", "bytes"};
@@ -47,7 +51,7 @@ async def put(cfg, src: Path | bytes, rel: str, *, unique: bool = False, origin:
     size = len(src) if isinstance(src, bytes) else src.stat().st_size
     async with shellbox.client(cfg, TRANSFER, transport) as c:
         r = await c.put(shellbox.url(cfg) + "/file",
-                        params={"path": rel, **({"unique": "1"} if unique else {}),
+                        params={"path": rel,
                                 **({"origin": origin} if origin else {})},
                         content=src if isinstance(src, bytes) else _chunks(src),
                         headers={"Content-Length": str(size)})
@@ -85,7 +89,8 @@ async def copy_upload(cfg, src: Path, filename: str, store=None, aid: str | None
     if not shellbox.url(cfg):
         return None
     try:
-        res = await put(cfg, src, f"{UPLOADS}/{safe_name(filename)}", unique=True,
+        sha = await anyio.to_thread.run_sync(_sha, src)
+        res = await put(cfg, src, f"{UPLOADS}/{sha[:12]}/{safe_name(filename)}",
                         origin=f"upload:{filename}", transport=transport)
     except (httpx.HTTPError, RuntimeError, OSError) as e:
         log.warning("%s did not reach the box: %s", filename,
@@ -98,9 +103,15 @@ async def copy_upload(cfg, src: Path, filename: str, store=None, aid: str | None
     return path
 
 
+def _sha(src: Path) -> str:
+    with src.open("rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
 def copy_later(cfg, src: Path, filename: str, store=None, aid: str | None = None) -> None:
-    """copy_upload in the background: the upload's answer never waits for it."""
-    if not shellbox.url(cfg):
+    """copy_upload in the background, while the shellbox is on: the upload's answer never
+    waits for it."""
+    if not features.on(cfg, "shellbox") or not shellbox.url(cfg):
         return
     t = asyncio.get_running_loop().create_task(copy_upload(cfg, src, filename, store, aid))
     _tasks.add(t)
