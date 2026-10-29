@@ -4,6 +4,7 @@
                                                          across reconnects; none the first time
      {"type": "subscribe", "conversation": id, "after": seq}   0: a snapshot first
      {"type": "unsubscribe", "conversation": id}
+     {"type": "focus", "on": bool}                       on open and on every focus change
    A frame with `gid` (the feed's own number) is the feed's and goes to lib/bus (a feed copy of a
    conversation event carries `conversation` and `seq` too). Any other frame with
    `conversation` goes to that conversation's follower (a snapshot carries the row
@@ -137,6 +138,11 @@ function send(frame: object) {
   if (sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify(frame))
 }
 
+/** whether this page is visible and focused: the server pushes to devices only while no page is
+    (server/celine/push.py) */
+const sendFocus = () => send({ type: 'focus', on: document.visibilityState === 'visible' && document.hasFocus() })
+const FOCUS: [string, EventTarget][] = [['focus', window], ['blur', window], ['visibilitychange', document]]
+
 /** the seq a conversation is followed after: its least advanced follower's */
 const seqOf = (set: Set<Follower>) => Math.min(...[...set].map(f => f.seq()))
 
@@ -226,6 +232,7 @@ function useSocket(): Connection {
         clearTimeout(grace); grace = undefined
         clearTimeout(gone); gone = undefined
         setState('connected')
+        sendFocus()
         if (opened) {
           // back after a while: an update in between reloads the page instead of a stale app
           void api.configStatus().then(st => reloadIfUpdated(st.build.commit), () => undefined)
@@ -258,11 +265,13 @@ function useSocket(): Connection {
     const onOnline = () => { if (sock && sock.readyState !== WebSocket.OPEN && sock.readyState !== WebSocket.CONNECTING) connect() }
     window.addEventListener('online', onOnline)
     const unping = keepAlive(() => sock)
+    for (const [t, on] of FOCUS) on.addEventListener(t, sendFocus)
 
     return () => {
       closed = true
       clearTimeout(retry); clearTimeout(grace); clearTimeout(gone); unping()
       window.removeEventListener('online', onOnline)
+      for (const [t, on] of FOCUS) on.removeEventListener(t, sendFocus)
       const s = sock
       sock = null
       if (s) { s.onclose = null; s.close() }
