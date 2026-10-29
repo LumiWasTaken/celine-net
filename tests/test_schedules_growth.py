@@ -2,8 +2,12 @@
 and the growth jobs that ship with a fresh install (schedules/)."""
 from __future__ import annotations
 
+import lzma
+import sqlite3
+import tarfile
 import tomllib
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +21,7 @@ from celine.conversations import store as conversations
 from celine.core.services import Services
 from celine.intercom import Intercom
 from celine.schedules import Schedule, parse, read_partner, runs as runs_mod
+from celine.schedules.backups import nightly
 from celine.schedules.runs import IN_USE, PASSED, Scheduler, binding, waited_on
 from celine.schedules.variables import tool_failures
 from celine.skills import Registry
@@ -157,6 +162,37 @@ async def test_a_note_she_touched_since_the_run_began_is_hers_whole(store, cfg):
     assert sched._note_touched("diary/w.md", "2026-10-17T01:30:00+00:00")
     assert sched._take("diary/w.md", None, "Done.", True) == ("# World\n\nThe news.", True)
     assert sched._take("diary/w.md", None, "Done.", False) == ("Done.", False)
+
+
+def test_the_nightly_backups_are_made_once_a_night_and_seven_kept(tmp_path):
+    nb = tmp_path / "notebook"
+    (nb / ".versions").mkdir(parents=True)
+    (nb / "a.md").write_text("a")
+    (nb / ".versions" / "a.md.1").write_text("old a")
+    db = tmp_path / "celine.db"
+    sqlite3.connect(db).execute("CREATE TABLE t(x)").connection.commit()
+    sqlite3.connect(tmp_path / "log.db").execute("CREATE TABLE e(x)").connection.commit()
+    made = nightly(tmp_path, db, nb, date(2026, 10, 16))
+    assert [p.relative_to(tmp_path).as_posix() for p in made] == [
+        "backups/notebook/2026-10-16.tar.xz", "backups/db/2026-10-16.db.xz",
+        "backups/log/2026-10-16.db.xz"]
+    with tarfile.open(made[0]) as tar:
+        assert {"notebook/a.md", "notebook/.versions/a.md.1"} <= set(tar.getnames())
+    restored = tmp_path / "restored.db"
+    restored.write_bytes(lzma.decompress(made[1].read_bytes()))
+    assert sqlite3.connect(restored).execute("SELECT name FROM sqlite_master").fetchone() \
+        == ("t",)
+    restored.write_bytes(lzma.decompress(made[2].read_bytes()))
+    assert sqlite3.connect(restored).execute("SELECT name FROM sqlite_master").fetchone() \
+        == ("e",)
+    assert nightly(tmp_path, db, nb, date(2026, 10, 16)) == [], "once a night"
+    assert not list(Path(tmp_path, "backups").rglob("*.part"))
+    (tmp_path / "backups" / "db" / "notes.xz").write_text("not a night")
+    for n in range(1, 10):
+        nightly(tmp_path, db, None, date(2026, 10, 16) + timedelta(days=n))
+    kept = sorted(p.name for p in (tmp_path / "backups" / "db").iterdir())
+    assert len(kept) == 7 + 1 and kept[0] == "2026-10-19.db.xz", "seven nights kept"
+    assert "notes.xz" in kept, "a name that is not a night stays"
 
 
 async def test_tool_failures_are_one_line_per_tool(store):
