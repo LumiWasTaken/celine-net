@@ -79,7 +79,7 @@ def media_type(image: bytes) -> str:
     try:
         with Image.open(io.BytesIO(image)) as im:
             return Image.MIME.get(im.format or "", "image/png")
-    except (OSError, Image.DecompressionBombError):
+    except Exception:            # a broken file: Pillow raises many kinds
         return "image/png"
 
 

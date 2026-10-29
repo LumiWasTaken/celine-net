@@ -377,7 +377,7 @@ def _pixels(path: Path) -> tuple[int, int] | None:
         with Image.open(path) as im:
             w, h = im.size
             return (h, w) if im.getexif().get(ExifTags.Base.Orientation) in _TURNED else (w, h)
-    except (OSError, Image.DecompressionBombError):
+    except Exception:            # a broken file: Pillow raises many kinds
         return None
 
 
@@ -409,7 +409,7 @@ def resized(cfg, sha: str, width: int) -> Path:
             im.thumbnail((width, im.height))
             alpha = "A" in im.getbands() or "transparency" in im.info
             im.convert("RGBA" if alpha else "RGB").save(part, "WEBP", quality=80)
-    except (OSError, ValueError, Image.DecompressionBombError):
+    except Exception:            # a broken file: Pillow raises many kinds
         part.unlink(missing_ok=True)
         return src
     part.replace(out)
@@ -507,7 +507,7 @@ def with_files(c: sqlite3.Connection, call_id: str, display: dict | None) -> dic
     files = [dict(r) for r in c.execute(
         "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, b.width, "
         "b.height FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 "
-        "WHERE a.tool_call_id=? ORDER BY a.created_at, a.id", (call_id,))
+        "WHERE a.tool_call_id=? ORDER BY a.rowid", (call_id,))
         if f'"{r["id"]}"' not in named]
     blocks = [b for b in (display or {}).get("blocks") or () if b.get("type") != "files"]
     if files:

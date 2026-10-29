@@ -174,7 +174,7 @@ async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monke
     assert "big.bin is 0.0 MB. The limit is 0 MB. It was not kept." in out.content
     rows = await store.read(lambda c: [tuple(r) for r in c.execute(
         "SELECT a.filename, b.media_type FROM attachments a JOIN blobs b USING (sha256) "
-        "WHERE a.tool_call_id='x' ORDER BY a.created_at, a.id")])
+        "WHERE a.tool_call_id='x' ORDER BY a.rowid")])
     assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain")]
 
 
