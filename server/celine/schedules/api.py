@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Request
 
 from ..core.ids import iso
-from ..errors import NotFound
+from ..errors import CelineError, NotFound
 from ..settings import files, seed
 from ..settings.files import Invalid
 from ..settings.registry import ROLES
@@ -54,7 +54,10 @@ def _view(s, cfg) -> dict:
 
 
 def _scheduler(request: Request):
-    return request.app.state.services.schedules
+    """The running Scheduler; it starts with the app while Routines is on."""
+    if (s := request.app.state.services.schedules) is None:
+        raise CelineError("unavailable", "Routines start with the app while they are on.", 409)
+    return s
 
 
 @router.get("/schedules")

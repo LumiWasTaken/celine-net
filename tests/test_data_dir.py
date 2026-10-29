@@ -76,12 +76,13 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-async def _start() -> None:
-    """preflight, then the lifespan up and down."""
+async def _start():
+    """preflight, then the lifespan up and down. -> the app's services."""
     cfg = main.preflight(argparse.Namespace(port=_free_port(), dev=False, verbose=False))
     app = main.build_app(cfg, dev=False)
     async with app.router.lifespan_context(app):
         pass
+    return app.state.services
 
 
 def _tree(data: Path) -> set[str]:
@@ -106,13 +107,15 @@ def _off(data: Path) -> None:
 @pytest.mark.anyio
 async def test_a_feature_off_makes_none_of_its_files(fresh):
     _off(fresh)
-    await _start()
+    services = await _start()
     tree = _tree(fresh)
-    assert not {p for p in tree if p.startswith(("kb/", "documents/", "notebook/appearance/"))}
+    assert not {p for p in tree if p.startswith((
+        "kb/", "documents/", "notebook/appearance/", "settings/schedules/"))}
+    assert (services.batches, services.triggers, services.schedules) == (None, None, None)
 
 
 @pytest.mark.anyio
 async def test_the_unsaved_defaults_make_the_files_of_the_features_on(fresh):
     await _start()
     tree = _tree(fresh)
-    assert {"kb/documents.db", "documents/"} <= tree
+    assert {"kb/documents.db", "documents/", "settings/schedules/radar.toml"} <= tree

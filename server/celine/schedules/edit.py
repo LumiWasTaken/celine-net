@@ -68,5 +68,6 @@ async def save(app, name: str, body: dict, by: str):
         applied = reload.apply(app)
     await app.store.write(lambda c: record_texts(c, s, by))
     app.store.emit_global({"type": SETTINGS_CHANGED, "what": ["schedules"]})
-    app.schedules.wake()
+    if app.schedules is not None:
+        app.schedules.wake()
     return app.cfg.schedules.get(name, s), applied

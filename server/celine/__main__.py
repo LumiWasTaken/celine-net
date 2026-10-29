@@ -245,15 +245,17 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             if on["images"] or on["music"]:
                 tg.start_soon(comfy_server.free_shared, cfg, llm)
             tg.start_soon(llm.router.watch)     # the host ping; paused without one
-            await comfy_batches.sweep(store)
-            services.batches = comfy_batches.Batches(services, tg)
+            if on["images"] or on["music"]:
+                await comfy_batches.sweep(store)
+                services.batches = comfy_batches.Batches(services, tg)
             await attachments.gc(cfg, store)
             await conversations.prune_events(store, keep=int(cfg.r("events_keep")),
                                              requests_days=int(cfg.r("requests_keep")))
             tg.start_soon(conversations.keep_pruned, store, cfg)    # and every so often
             swept = await turns.sweep(store, registry)
-            from .guard import store as guard_rows
-            await guard_rows.close_asked(store)     # Bastet's asks of the last run
+            if on["guard"]:
+                from .guard import store as guard_rows
+                await guard_rows.close_asked(store)     # Bastet's asks of the last run
             from .approvals import close_left
             await close_left(store)                 # the chats' requests of the last run
             if swept["total"]:
@@ -298,23 +300,29 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from . import leftovers              # a done mission's terminals and tabs close
             dispatcher.on_end(lambda cid, _turn: leftovers.on_end(services, cid))
             from .missions import watch as mission_watch    # a mission keeps going
-            mission_watch.start(services)
+            if on["missions"]:
+                mission_watch.start(services)
             from .skills import mind                 # its mood: the appraisal after a turn
             mind.start(services)
-            from .guard import talk                  # Bastet answers her on the Intercom
-            talk.start(services)
+            if on["guard"]:
+                from .guard import talk              # Bastet answers her on the Intercom
+                talk.start(services)
             await dispatcher.start(tg)
             await intercom.run(tg)
             from .sub_agents.skill import release_all     # queued before a restart
             await release_all(services)
-            triggers = services.triggers = Triggers(services)   # the skills' triggers
-            await triggers.run(tg)
-            from .guard import patrol
-            tg.start_soon(patrol.run, services)
-            tg.start_soon(mission_watch.run, services)     # the missions' check-ins
-            from .schedules.runs import Scheduler   # the schedules' runs
-            schedules = services.schedules = Scheduler(services)
-            await schedules.run(tg)
+            if on["routines"]:
+                triggers = services.triggers = Triggers(services)   # the skills' triggers
+                await triggers.run(tg)
+            if on["guard"]:
+                from .guard import patrol
+                tg.start_soon(patrol.run, services)
+            if on["missions"]:
+                tg.start_soon(mission_watch.run, services)     # the missions' check-ins
+            if on["routines"]:
+                from .schedules.runs import Scheduler   # the schedules' runs
+                schedules = services.schedules = Scheduler(services)
+                await schedules.run(tg)
             # its terminals, for the pages: the routes always have the sync, its loop
             # follows the shellbox only when there is one
             from .terminals.sync import TerminalSync
