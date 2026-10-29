@@ -490,3 +490,26 @@ def test_an_address_is_the_apps_only_when_this_machine_has_it():
     assert not browser_mod.ours(ipaddress.ip_address("203.0.113.9"))
     if (mine := local_address()) is not None:
         assert browser_mod.ours(ipaddress.ip_address(mine))
+
+
+async def test_the_vision_models_words_reach_her_as_it_said_them():
+    from celine import vision
+    from celine.backends.base import Done, TextDelta
+    words = "I see  no such button.\n\nOnly a  logo." + " more" * 100
+
+    class Bound:
+        answered = SimpleNamespace(model="far-vision")
+
+        async def stream(self, messages, tools):
+            yield TextDelta(words)
+            yield Done(reason="stop")
+
+    llm = SimpleNamespace(
+        router=SimpleNamespace(order=lambda role: _ordered()),
+        bind=lambda *a, **k: Bound(), turn_priority={})
+
+    async def _ordered():
+        return SimpleNamespace(refs=["far"], sentence=lambda: "")
+    got = await vision.ask(llm, b"png", "where is Sign in?", "box", conversation_id="c",
+                           turn_id="t")
+    assert got.value is None and got.said == words

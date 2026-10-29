@@ -46,7 +46,6 @@ ID = re.compile(r"e?(\d+)", re.I)
 # bare [x1, y1, x2, y2]; its four numbers follow
 BOX = re.compile(r"bbox_2d|<box>|<\|box_start\|>|(?=\[\s*-?\d)")
 NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
-SAID = 120          # characters of the model's own words kept with a none
 
 
 def box(said: str) -> tuple[int, int, int, int] | None:
@@ -70,7 +69,7 @@ class Unavailable(Exception):
 @dataclass
 class Answer:
     value: str | None   # the id (e14), the box ("x1,y1,x2,y2" on 0 to 1000) or the text; None: none
-    said: str           # the model's own words, at most SAID characters
+    said: str           # the model's own words, as it said them
     model: str          # the model that answered
 
 
@@ -118,16 +117,15 @@ async def ask(llm, image: bytes, question: str, answer_as: str, *, conversation_
     except BackendError as e:
         raise Unavailable(str(e)) from None
     raw = "".join(parts)
-    said = " ".join(raw.split())
-    word = said.strip(" .*\"'`")
+    word = raw.strip().strip(" .*\"'`")       # read for the id; she gets raw
     if answer_as == "text":
         value = raw if raw.strip() else None        # the words as the model said them
     elif answer_as == "box":
-        value = ",".join(map(str, b)) if (b := box(said)) else None
+        value = ",".join(map(str, b)) if (b := box(raw)) else None
     else:
         m = ID.fullmatch(word)
         value = "e" + m[1] if m else None
-    return Answer(value, said[:SAID], getattr(qb.answered, "model", ""))
+    return Answer(value, raw, getattr(qb.answered, "model", ""))
 
 
 async def describe(llm, data: bytes, conversation_id: str, turn_id: str,
