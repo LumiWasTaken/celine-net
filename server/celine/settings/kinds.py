@@ -21,8 +21,8 @@ from ..backends.openai import no_credits
 # it needs a key, its one address when it has one, where the router asks for its state
 # (`probe`: the path under the address root, "/..." on the server root), how that answer
 # lists the loaded models (`loaded`: llama-swap's /running, Ollama's /api/ps, a /models
-# list; None: it does not say), and how often its model list is read for the context it
-# states (`discover_every` seconds; None: never).
+# list; None: it does not say), and how often its model list is read for the context and
+# caps it states (`discover_every` seconds; None: never).
 KINDS: dict[str, dict[str, Any]] = {
     "llama-swap": {"label": "llama-swap", "backend": "llama-server", "key": "optional",
                    "probe": "/running", "loaded": "running", "discover_every": 60.0},
@@ -31,7 +31,7 @@ KINDS: dict[str, dict[str, Any]] = {
     "llama-server": {"label": "llama-server", "backend": "llama-server", "key": "optional",
                      "probe": "models", "loaded": "models", "discover_every": 60.0},
     "ollama": {"label": "Ollama", "backend": "ollama", "key": "optional",
-               "probe": "/api/ps", "loaded": "ps", "discover_every": None},
+               "probe": "/api/ps", "loaded": "ps", "discover_every": 3600.0},
     # /models answers without a key; /key checks it
     "openrouter": {"label": "OpenRouter", "backend": "openrouter", "key": "required",
                    "default_url": "https://openrouter.ai/api/v1",
@@ -115,6 +115,69 @@ def guess_caps(model_id: str, name: str = "") -> list[str]:
     return next((list(caps) for word, caps in NAMED_CAPS if word in s), ["chat", "tools"])
 
 
+# what a server states of a model: these caps follow it live (caps_of), the others
+# stay as saved
+STATED = ("tools", "vision")
+_live: dict[tuple[str, str], list[str]] = {}    # (server, model) -> the caps it states
+
+
+def stated_caps(base_url: str, caps: dict[str, list[str]]) -> bool:
+    """The caps each model of one provider states ({model: caps}, the router's
+    discovery), replacing what that provider said before. True when that changed
+    something."""
+    base_url = base_url.rstrip("/")
+    old = {k[1]: v for k, v in _live.items() if k[0] == base_url}
+    for model in old:
+        del _live[(base_url, model)]
+    _live.update({(base_url, m): list(c) for m, c in caps.items()})
+    return old != caps
+
+
+def server_caps(base_url: str, model: str) -> list[str] | None:
+    """The caps the server states for `model`; None when it states none."""
+    return _live.get((str(base_url or "").rstrip("/"), model))
+
+
+def caps_of(p: dict[str, Any], name: str) -> list[str]:
+    """One model's caps now: tools and vision as its server states them, else as saved
+    (or guessed when it was added); the rest as saved. A model with a vision twin sees
+    images as the twin does."""
+    m = (p.get("models") or {}).get(name) or {}
+    saved = list(m.get("caps") or [])
+    url = str(p.get("base_url") or "")
+    live = server_caps(url, name)
+    twin = m.get("vision_twin")
+    if twin and (seen := server_caps(url, twin)) is not None:
+        live = [c for c in live or saved if c != "vision"] + (
+            ["vision"] if "vision" in seen else [])
+    if live is None:
+        return saved
+    return [c for c in saved if c not in STATED] + [c for c in live if c in STATED]
+
+
+_outputs: dict[tuple[str, str], int] = {}   # (server, model) -> the most one answer takes
+
+
+def reported_outputs(base_url: str, outputs: dict[str, int]) -> None:
+    """The most one answer may take, as one provider's model list states it per model
+    ({model: n}, the router's discovery), replacing what it said before."""
+    base_url = base_url.rstrip("/")
+    for key in [k for k in _outputs if k[0] == base_url]:
+        del _outputs[key]
+    _outputs.update({(base_url, m): n for m, n in outputs.items()})
+
+
+def server_output(base_url: str, model: str) -> int | None:
+    return _outputs.get((str(base_url or "").rstrip("/"), model))
+
+
+def reset() -> None:
+    """Tests."""
+    _cache.clear()
+    _live.clear()
+    _outputs.clear()
+
+
 def reported_caps(m: dict[str, Any]) -> list[str] | None:
     """The caps a /models entry states itself (llama-swap, OpenRouter, TabbyAPI): image
     input is vision, a tools parameter or function calling is tools. None when it states
@@ -155,8 +218,9 @@ def headers(kind: str, key: str | None) -> dict[str, str]:
 
 async def discover(kind: str, base_url: str, key: str | None = None, *,
                    refresh: bool = False, transport=None) -> list[dict[str, Any]]:
-    """[{id, name, caps, context?, output?, loaded?, price?, thinking_levels?}] from the
-    provider itself. Raises httpx.HTTPError / ValueError when the provider cannot be asked."""
+    """[{id, name, caps, guessed?, context?, output?, loaded?, price?, thinking_levels?}]
+    from the provider itself (`guessed`: it states no caps, `caps` is a guess). Raises
+    httpx.HTTPError / ValueError when the provider cannot be asked."""
     ck = (kind, base_url, bool(key))
     hit = _cache.get(ck)
     if hit and not refresh and time.monotonic() - hit[0] < CACHE_SECONDS:
@@ -181,15 +245,12 @@ async def discover(kind: str, base_url: str, key: str | None = None, *,
                     continue
                 mid = str(m["id"])
                 name = str(m.get("name") or "")
+                told = reported_caps(m)
                 entry: dict[str, Any] = {"id": mid, "name": name or mid,
-                                         "caps": reported_caps(m) or guess_caps(mid, name)}
-                mparams = m.get("parameters") if isinstance(m.get("parameters"), dict) else {}
-                meta = m.get("meta") if isinstance(m.get("meta"), dict) else {}
+                                         "caps": told or guess_caps(mid, name),
+                                         **({} if told else {"guessed": True})}
                 status = (m.get("status") or {}) if isinstance(m.get("status"), dict) else {}
-                # llama-server's router mode lists each model's command line (`args`)
-                ctx = (m.get("context_length") or mparams.get("max_seq_len") or meta.get("n_ctx")
-                       or cmd_window(" ".join(str(a) for a in status.get("args") or [])))
-                if isinstance(ctx, int) and ctx > 0:
+                if ctx := window_of(m):
                     entry["context"] = ctx
                 eff = (m.get("reasoning") or {}).get("supported_efforts") if isinstance(
                     m.get("reasoning"), dict) else None
@@ -199,6 +260,10 @@ async def discover(kind: str, base_url: str, key: str | None = None, *,
                 if status.get("value"):
                     entry["loaded"] = status["value"] == "loaded"
                 out.append(entry)
+            if kind == "tabby" and (one := await _tabby_model(c, url, headers(kind, key))):
+                for e in out:              # the model it runs, with what it runs with
+                    if e["id"] == one[0]:
+                        e["context"] = one[1]
             if kind in SWAPS:
                 loaded = await _running(c, root_of(url))
                 for e in out:
@@ -211,20 +276,51 @@ async def discover(kind: str, base_url: str, key: str | None = None, *,
     return out
 
 
-def cmd_window(cmd: str | None) -> int | None:
+def window_of(m: dict[str, Any]) -> int | None:
+    """The context one request gets, from a /models entry: the running numbers first
+    (llama-server's `meta.n_ctx` with its command line in `status.args`, tabbyAPI's
+    `cache_size`), then the context the model states (`context_length`, `max_seq_len`),
+    which may be its training size. None when it states none."""
+    mparams = m.get("parameters") if isinstance(m.get("parameters"), dict) else {}
+    meta = m.get("meta") if isinstance(m.get("meta"), dict) else {}
+    status = m.get("status") if isinstance(m.get("status"), dict) else {}
+    cmd = " ".join(str(a) for a in status.get("args") or [])
+    return (cmd_window(cmd, _int(meta.get("n_ctx"))) or _int(mparams.get("cache_size"))
+            or _int(m.get("context_length")) or _int(mparams.get("max_seq_len")))
+
+
+def _int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else None
+
+
+async def _tabby_model(c: httpx.AsyncClient, url: str,
+                       hdrs: dict[str, str]) -> tuple[str, int] | None:
+    """(id, context) of the model tabbyAPI has loaded (/v1/model): the smaller of its
+    `max_seq_len` and `cache_size`. None when none is loaded or it does not say."""
+    try:
+        m = (await c.get(f"{url}/model", headers=hdrs)).json()
+        mp = m.get("parameters") or {}
+        sizes = [n for n in (_int(mp.get("max_seq_len")), _int(mp.get("cache_size"))) if n]
+        return (str(m["id"]), min(sizes)) if m.get("id") and sizes else None
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError, KeyError):
+        return None
+
+
+def cmd_window(cmd: str | None, n_ctx: int | None = None) -> int | None:
     """The context one request gets from a llama-server command line (llama-swap
-    `/running` shows it): `-c/--ctx-size`. With `--parallel N` the slots split it,
-    unless `--kv-unified`, where each request may use the whole of it. None when the
-    command line does not say: `--fit` sizes the context at load time and `--fit-ctx`
-    is only the least it may shrink to, so a `--fit` line says nothing (the loaded
-    server's /props does, backends/router.py)."""
+    `/running` shows it): `n_ctx` when the server states what it loaded with
+    (llama-server's `meta.n_ctx`), else `-c/--ctx-size`. With `--parallel N` the slots
+    split it, unless `--kv-unified`, where each request may use the whole of it. None
+    when neither says: `--fit` sizes the context at load time and `--fit-ctx` is only
+    the least it may shrink to, so a `--fit` line says nothing (the loaded server's
+    /props does, backends/router.py)."""
     args = (cmd or "").split()
     def val(*names: str) -> int | None:
         for i, a in enumerate(args[:-1]):
             if a in names and args[i + 1].isdigit():
                 return int(args[i + 1])
         return None
-    n = val("-c", "--ctx-size")
+    n = n_ctx or val("-c", "--ctx-size")
     if not n:
         return None
     parallel = val("-np", "--parallel") or 1
@@ -251,7 +347,8 @@ async def _ollama(c: httpx.AsyncClient, url: str) -> list[dict[str, Any]]:
         mid = str(m.get("name") or m.get("model") or "")
         if not mid:
             continue
-        entry: dict[str, Any] = {"id": mid, "name": mid, "caps": guess_caps(mid)}
+        entry: dict[str, Any] = {"id": mid, "name": mid, "caps": guess_caps(mid),
+                                 "guessed": True}
         try:
             s = (await c.post(f"{root}/api/show", json={"model": mid}, timeout=5.0)).json()
             caps = s.get("capabilities") or []
@@ -268,6 +365,7 @@ async def _ollama(c: httpx.AsyncClient, url: str) -> list[dict[str, Any]]:
                 entry["thinking_levels"] = ["low", "medium", "high"]
             if mapped:
                 entry["caps"] = mapped
+                del entry["guessed"]
             for k, v in (s.get("model_info") or {}).items():
                 if k.endswith(".context_length") and isinstance(v, int):
                     entry["context"] = v
@@ -285,8 +383,9 @@ async def _openrouter(c: httpx.AsyncClient, url: str, key: str | None) -> list[d
         mid = str(m.get("id") or "")
         if not mid:
             continue
+        told = reported_caps(m)
         entry: dict[str, Any] = {"id": mid, "name": str(m.get("name") or mid),
-                                 "caps": reported_caps(m) or ["chat"]}
+                                 "caps": told or ["chat"], **({} if told else {"guessed": True})}
         if isinstance(m.get("context_length"), int):
             entry["context"] = m["context_length"]
         top = m.get("top_provider") if isinstance(m.get("top_provider"), dict) else {}

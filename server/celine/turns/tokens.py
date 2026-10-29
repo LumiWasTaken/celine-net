@@ -92,7 +92,6 @@ _counters: dict[str, Counter] = {}
 _windows: dict[tuple[str, str], tuple[int, int | None]] = {}   # n_ctx, Settings then
 _running: dict[tuple[str, str], int] = {}   # n_ctx of a loaded model, from /props
 _reported: dict[tuple[str, str], int] = {}  # the context its provider's model list states
-_outputs: dict[tuple[str, str], int] = {}   # the most one answer may take, the same list says
 _current = Counter()
 
 
@@ -122,7 +121,6 @@ def reset() -> None:
     _windows.clear()
     _running.clear()
     _reported.clear()
-    _outputs.clear()
     _current = Counter()
 
 
@@ -184,19 +182,6 @@ def reported_windows(base_url: str, windows: dict[str, int]) -> bool:
     for model, n in windows.items():
         _reported[(base_url, model)] = n
     return old != windows
-
-
-def reported_outputs(base_url: str, outputs: dict[str, int]) -> None:
-    """The most one answer may take, as one provider's model list states it per model
-    ({model: n}, the router's discovery), replacing what it said before."""
-    base_url = base_url.rstrip("/")
-    for key in [k for k in _outputs if k[0] == base_url]:
-        del _outputs[key]
-    _outputs.update({(base_url, m): n for m, n in outputs.items()})
-
-
-def server_output(base_url: str, model: str) -> int | None:
-    return _outputs.get((base_url.rstrip("/"), model))
 
 
 def running_windows(base_url: str, windows: dict[str, int]) -> None:

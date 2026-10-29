@@ -173,7 +173,7 @@ def _offline_router(monkeypatch):
     from celine.settings import kinds   # discovery too (the ping, "Check provider")
     monkeypatch.setattr(kinds, "_client", lambda transport=None, timeout=8.0: client(
         httpx.AsyncClient)(timeout=timeout, transport=transport))
-    kinds._cache.clear()
+    kinds.reset()
     router_mod._standalone.clear()
     embed_mod.forget_fingerprints()
     tokens.reset()

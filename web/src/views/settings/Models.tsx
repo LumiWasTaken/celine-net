@@ -428,10 +428,11 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
             <Input mono {...text('slug')} placeholder="deepinfra/fp4" spellCheck={false} onChange={e => change({ slug: e.target.value }, 'blur')} />
           </Field>
         )}
-        <Field label="Capabilities" group>
+        <Field label="Capabilities" group hint={m.server_caps ? `Server: ${capWords(m.server_caps)}` : undefined}>
           <div className="settings__caps">
             {(['chat', 'tools', 'vision'] as const).map(c => (
-              <Switch key={c} label={c.charAt(0).toUpperCase() + c.slice(1)} checked={d.caps.includes(c)} disabled={!online}
+              <Switch key={c} label={c.charAt(0).toUpperCase() + c.slice(1)}
+                      checked={stated(m, c) ?? d.caps.includes(c)} disabled={!online || stated(m, c) !== null}
                       onChange={v => change({ caps: v ? [...d.caps, c] : d.caps.filter(x => x !== c) })} />
             ))}
           </div>
@@ -567,6 +568,9 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
 }
 
 /** capabilities as words: "chat, tools", "image generation" */
+/** whether the server states the model has `c` (tools, vision); null when it does not say */
+const stated = (m: ProviderModel, c: Cap): boolean | null =>
+  m.server_caps && (c === 'tools' || c === 'vision') ? m.server_caps.includes(c) : null
 const capWords = (caps: string[] | undefined) => (caps ?? []).map(c => c.replace(/_/g, ' ')).join(', ')
 
 /* ── Add a provider: check the address first, then save ── */
