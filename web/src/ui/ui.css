@@ -59,6 +59,11 @@
 .field-group { display: grid; gap: var(--s-2); min-width: 0; }
 .field-group__label { font-size: var(--t-md); font-weight: var(--fw-medium); color: var(--text-muted); }
 .field-group__hint { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.form { display: grid; gap: var(--s-4); }
+.form__control { display: flex; align-items: center; gap: var(--s-2); }
+.form__unit { font-size: var(--t-md); color: var(--text-muted); }
+.form__saved { font-size: var(--t-md); color: var(--text-primary); }
+.form__copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-2); }
 
 /* the one input look (the composer's): surface-2, an inset hairline; the hairline
    strengthens on hover and turns its colour with a halo on focus */

@@ -19,7 +19,7 @@ import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
 import { Button, ConfirmDialog, cx, Dot, InlineError, Loaded, Section, Switch, toast } from '../../ui'
-import { FORMS, type SaveRef } from '../WelcomeForms'
+import { formOf, type SaveRef } from '../WelcomeForms'
 import { Page } from './parts'
 import './settings.css'
 
@@ -31,7 +31,7 @@ export const showsCard = (f: Feature) =>
 /** the Dot of a feature's state: grey once its switch is off, whatever the probe found */
 export const stateTone = (f: Feature, on: boolean) => (f.state === 'ready' && !on ? 'muted' : STATE_TONE[f.state ?? 'none'])
 /** a plain switch: nothing to detect, nothing to set up */
-export const isPlain = (f: Feature) => !f.setup && f.state === 'none'
+export const isPlain = (f: Feature) => !f.setup && !f.form && f.state === 'none'
 const LATER = 'Turn on later in Settings'
 const MEDIA = new Set(['images', 'music'])
 
@@ -94,11 +94,11 @@ export function FeatureRows({ view, only, disabled = false, about = false, later
   reprobe?: (id: string) => Promise<void>
 }) {
   return (
-    <div className="schema-form">
+    <div className="form">
       {view.catalog.filter(f => !only || only.includes(f.id)).map(f => {
         // a feature with a page of its own links to it (Guard; Images & Music while on)
         const page = f.id === 'guard' ? 'guard' : MEDIA.has(f.id) && view.features[f.id] !== false ? 'media' : null
-        const Form = onOpen && f.setup && !page ? FORMS[f.setup] : undefined
+        const Form = onOpen && !page ? formOf(f) : undefined
         const isOpen = open === f.id
         return (
           <div key={f.id}>
@@ -128,7 +128,7 @@ export function FeatureRows({ view, only, disabled = false, about = false, later
 
 /** one setup form under its row (Settings): its own save ref, which its Check runs */
 function SetupForm({ Form, feature, value, onChange, reprobe }: {
-  Form: (typeof FORMS)[string]
+  Form: NonNullable<ReturnType<typeof formOf>>
   feature: Feature
   value: unknown
   onChange: (v: unknown) => void

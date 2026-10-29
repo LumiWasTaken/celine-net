@@ -74,7 +74,8 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
     status = (await api.get("/api/status")).json()
     assert status["features"]["web"] is False and status["setup"] is False
     box = next(f for f in status["catalog"] if f["id"] == "shellbox")
-    assert box == {"id": "shellbox", "about": features.get("shellbox").about,
+    assert box == {"id": "shellbox", "label": "Shellbox", "form": "",
+                   "about": features.get("shellbox").about,
                    "off_when": features.get("shellbox").off_when,
                    "places": ["terminals"], "pages": []}
     await api.put("/api/features", json={"features": {}})
@@ -83,7 +84,7 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
-    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "card", "kbs", "archive", "warn",
+    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "card", "kbs", "archive", "warn",
             "state", "detail"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}

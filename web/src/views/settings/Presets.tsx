@@ -14,17 +14,15 @@ import { ArrowDown, ArrowUp, Download, FileUp, Play, Star, Trash2, Undo2, Upload
 import { uploadAttachment } from '../../lib/api'
 import { useServerEvents } from '../../lib/bus'
 import { clock, errorText } from '../../lib/format'
-import { batchEvent, fileUrl, mediaApi, ROLE, workflowUrl, type Batch, type Kind, type Param, type Preset } from '../../lib/media'
+import { batchEvent, fileUrl, mediaApi, ROLE, tileUrl, workflowUrl, type Batch, type Kind, type Param, type Preset } from '../../lib/media'
 import { useOnline } from '../../lib/socket'
 import { SETTINGS_EVENTS, STATE_TONE, settingsApi, type Cap, type ProviderView, type RoleView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import { BatchGallery, StopBatch, doneWords, madeImages, type Made } from '../../components/Batch'
 import {
-  Button, Card, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead,
-  Switch, TextArea,
+  Button, Card, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Form, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead, Switch, TextArea,
 } from '../../ui'
-import { SchemaForm } from './parts'
 import './settings.css'
 
 const TASK: Record<Preset['task'], string> = { generate: 'new images', edit: 'edits', music: 'music' }
@@ -113,7 +111,7 @@ function Editor({ preset: p, onChanged, onRemoved }: { preset: Preset; onChanged
   const error = edit.error ?? replace.error ?? reset.error
   return (
     <div className="preset-open__edit">
-      <SchemaForm schema={p.fields} values={p.values} disabled={!online || edit.busy} onChange={(k, v) => void edit.run(k, v)} />
+      <Form fields={p.fields} values={p.values} disabled={!online || edit.busy} onChange={(k, v) => void edit.run(k, v)} />
       {error && <InlineError compact message={error} />}
       <div className="preset-open__actions">
         <FileButton icon={FileUp} accept=".json,application/json" disabled={!online || replace.busy}
@@ -236,6 +234,7 @@ function Recent({ kind, batches, error, reload }: { kind: Kind; batches?: Batch[
 
 /* ── the form: one field per parameter; empty is the preset's own value ── */
 type Values = Record<string, string | boolean>
+const PICK = 112      // a picture choice's width (.choice-tiles--picture: 7rem)
 const NUMBER = new Set<Param['type']>(['integer', 'number'])
 
 function initial(p: Preset): Values {
@@ -287,7 +286,7 @@ function Generate({ preset: p, sources, onStarted }: { preset: Preset; sources: 
             <FileButton icon={Upload} label="Upload" accept="image/*" disabled={upload.busy}
                         onFiles={([f]) => { if (f) void upload.run(f) }} />
             <Picks label="Image" values={picked} onChange={setPicked} max={p.images ?? 1}
-                   options={[...uploaded, ...sources].map(img => ({ value: img.id, label: img.filename, picture: fileUrl(img) }))} />
+                   options={[...uploaded, ...sources].map(img => ({ value: img.id, label: img.filename, picture: tileUrl(img, PICK) }))} />
           </div>
         </Field>
       )}

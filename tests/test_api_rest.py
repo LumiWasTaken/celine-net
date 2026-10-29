@@ -72,6 +72,25 @@ async def test_a_file_comes_back_under_its_own_name_and_type(c, store):
     assert (await c.get("/api/attachments/nope/file")).status_code == 404
 
 
+async def test_a_picture_comes_smaller_on_asking_for_a_width(c, store):
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (1000, 500)).save(buf, "PNG")
+    row = await attachments.save_generated(c.cfg, store, buf.getvalue(), "wide.png",
+                                           "image/png", None)
+    r = await c.get(f"/api/attachments/{row['id']}/file?w=300")
+    assert r.headers["content-type"] == "image/webp"
+    assert r.headers["content-disposition"] == 'inline; filename="wide.webp"'
+    with Image.open(io.BytesIO(r.content)) as im:
+        assert im.size == (320, 160)
+    # wider than the picture, or a download: the file itself
+    for q in ("w=2000", "w=300&download=1"):
+        r = await c.get(f"/api/attachments/{row['id']}/file?{q}")
+        assert r.headers["content-type"] == "image/png" and r.content == buf.getvalue()
+    assert (await c.get(f"/api/attachments/{row['id']}/file?w=0")).status_code == 400
+
+
 async def test_bad_targets_and_unknown_conversations_are_refused(c, store):
     cid = await conversations.create(store)
     r = await c.put(f"/api/conversations/{cid}/tool-settings/chat_archive__search",

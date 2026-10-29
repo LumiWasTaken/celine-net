@@ -4,8 +4,10 @@ runner itself (core/runners.py, started and stopped by its switch).
 
 A runner, in order: `<data>/plugins/<id>/`; its file `<id>.db` opened through KBFile with
 its `migrations/` (a plugin without them opens nothing); its routers under
-`/api/plugins/<id>`; its `run = "module:coroutine"` (services, plugin), or waiting until
-it stops. Stopped: its routes go, its file closes and stays on disk.
+`/api/plugins/<id>`; `features.changed` {id, running: true} on the global feed (its
+form's actions can run now: api/forms.py); its `run = "module:coroutine"` (services,
+plugin), or waiting until it stops. Stopped: its routes go, its file closes and stays on
+disk, and `features.changed` says {id, running: false}.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import anyio
 from starlette.exceptions import HTTPException
 from starlette.routing import Mount, Router
 
+from ..core.event_types import FEATURES_CHANGED
 from ..kb.db import KBFile
 from ..plugins import Plugin
 
@@ -30,6 +33,12 @@ def mount() -> tuple[Mount, Router]:
     return Mount("/api/plugins", app=routes), routes
 
 
+def _say(services, p: Plugin) -> None:
+    if services.store is not None:
+        services.store.emit_global({"type": FEATURES_CHANGED, "id": p.id,
+                                    "running": p.data is not None})
+
+
 async def run(services, routes: Router, p: Plugin) -> None:
     data = Path(services.cfg.data_dir) / "plugins" / p.id
     mounted: list[Mount] = []
@@ -42,6 +51,7 @@ async def run(services, routes: Router, p: Plugin) -> None:
             m = Mount(f"/{p.id}", app=p.attr(ref))
             routes.routes.append(m)
             mounted.append(m)
+        _say(services, p)
         if ref := p.manifest.get("run"):
             await p.attr(ref)(services, p)
         await anyio.sleep_forever()
@@ -50,4 +60,6 @@ async def run(services, routes: Router, p: Plugin) -> None:
             routes.routes.remove(m)
         if p.file is not None:
             p.file.close()
-        p.file = p.data = None
+        running, p.file, p.data = p.data is not None, None, None
+        if running:
+            _say(services, p)

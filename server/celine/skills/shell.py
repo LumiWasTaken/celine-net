@@ -29,7 +29,7 @@ from ..core.ids import now, when
 from ..terminals import store as terminals
 from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
-from ..errors import CelineError, ToolRefused, bad_key, not_set_up, unreachable_words
+from ..errors import CelineError, ToolRefused, TooLarge, bad_key, not_set_up, unreachable_words
 from .. import shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
@@ -647,9 +647,14 @@ class Shell:
             try:
                 row = await attachments.save_stream(
                     self.cfg, ctx.store, box_files.stream(self.cfg, rel, transport=self.transport),
-                    name, None, tool_call_id=ctx.tool_call_id)
+                    name, None, tool_call_id=ctx.tool_call_id,
+                    limit=int(self.cfg.r("max_attachment_bytes")))
             except (FileNotFoundError, RuntimeError) as e:
                 lines.append(str(e))
+                continue
+            except TooLarge as e:
+                lines.append(f"{e.message} Share it instead (shell__share), or zip it "
+                             f"smaller.")
                 continue
             except httpx.HTTPError as e:
                 return self._unreachable(None, e)
@@ -681,7 +686,7 @@ class Shell:
             return ToolResult(content="Only a conversation can look at images.",
                               is_error=True)
         sees = await attachments.turn_sees_images(self.cfg, ctx)
-        lines, ids, shown = [], [], []
+        lines, ids = [], []
         for rel in paths:
             name = rel.rsplit("/", 1)[-1]
             media = LOOKS.get(name.rsplit(".", 1)[-1].lower())
@@ -702,8 +707,6 @@ class Shell:
             except httpx.HTTPError as e:
                 return self._unreachable(None, e)
             ids.append(row["id"])
-            shown.append({k: row[k] for k in ("id", "sha256", "filename", "media_type",
-                                              "bytes")})
             if sees:
                 lines.append(f"{name} ({attachments.size(row['bytes'])}):")
             else:
@@ -713,7 +716,7 @@ class Shell:
                                              question)
                 lines.append(f"{name}: {said}")
         return ToolResult(content="\n".join(lines), is_error=not ids,
-                          display={"paths": paths, "attachments": shown},
+                          display={"paths": paths},
                           images=ids if sees and ids else None)
 
     @tool(read_only=False, destructive=False, open_world=True)

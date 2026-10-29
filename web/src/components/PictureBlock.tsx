@@ -11,7 +11,9 @@
 import { useContext, type CSSProperties } from 'react'
 import { Download, MoreHorizontal, RefreshCw, Settings } from 'lucide-react'
 import { api } from '../lib/api'
-import { fileUrl } from '../lib/media'
+import { fileUrl, tileUrl } from '../lib/media'
+
+const BLOCK = 640     // the widest a picture block is (.picture-block--wide)
 import { useNav } from '../lib/nav'
 import { madeWords, needsOwner, titleOf, type PictureState } from '../lib/pictures'
 import { useAction } from '../lib/useAction'
@@ -53,7 +55,7 @@ export function PictureBlock({ pic, onStop, onRetry, className }: {
     <figure className={cx('picture-block', w > h ? 'picture-block--wide' : w < h ? 'picture-block--tall' : 'picture-block--square', className)}
             style={shape}>
       {pic.status === 'done' && file ? <>
-        <Picture className="picture-block__open" src={src} name={title} ratio={`${w} / ${h}`} more={items}
+        <Picture className="picture-block__open" src={tileUrl(file, BLOCK)} full={src} name={title} ratio={`${w} / ${h}`} more={items}
                  onOpen={gallery ? () => gallery.openImage(file.id, {
                    id: file.id, sha256: file.sha256, filename: file.filename, width: w, height: h,
                    prompt: pic.prompt ?? undefined, preset: pic.preset ?? undefined, seed: pic.seed ?? undefined,

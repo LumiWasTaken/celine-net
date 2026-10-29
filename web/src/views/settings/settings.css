@@ -50,9 +50,6 @@
 .qr svg { width: 100%; height: 100%; display: block; }
 
 /* the generic settings form: one column */
-.schema-form { display: grid; gap: var(--s-4); }
-.schema-form__control { display: flex; align-items: center; gap: var(--s-2); }
-.schema-form__unit { font-size: var(--t-md); color: var(--text-muted); }
 
 /* a task: one quiet line where it was started */
 .task { display: grid; gap: var(--s-1); }

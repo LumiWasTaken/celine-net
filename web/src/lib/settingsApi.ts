@@ -9,6 +9,7 @@ import { del, json, post, request } from './api'
 import { LOCALE } from './format'
 import type { Her } from './her'
 import type { ServerEvent } from './bus'
+import type { FormField } from '../ui'
 
 const enc = encodeURIComponent
 
@@ -140,28 +141,8 @@ export type SkillView = {
 }
 
 /* ── general and sources: rendered from a field schema ── */
-export type FieldSchema = {
-  key: string
-  label: string
-  type: 'bool' | 'choice' | 'number' | 'duration' | 'text'
-  help?: string
-  default?: unknown
-  choices?: [string, string][]
-  unit?: string | null
-  min?: number | null
-  max?: number | null
-  where?: 'state' | 'config'
-  editable?: boolean
-  /** on the Advanced page (general settings) */
-  advanced?: boolean
-  /** an Advanced field's skill, by its label: a section of its own */
-  group?: string
-  /** a text of several lines: a text box */
-  long?: boolean
-}
-
 type EmailView = {
-  fields: FieldSchema[]
+  fields: FormField[]
   email: Record<string, unknown>
   password: { state: 'set' | 'not set'; set_at: string | null }
   version: string
@@ -201,7 +182,7 @@ export type ChatApproval = {
 }
 
 type VaultView = {
-  fields: FieldSchema[]
+  fields: FormField[]
   vault: Record<string, unknown>
   client_secret: SecretState
   /** the master password is stored nowhere: this says whether it was typed since the
@@ -254,6 +235,8 @@ export type Feature = {
   off_when: string
   /** the onboarding's setup form for it, or "" */
   setup: string
+  /** its form at /api/forms/<id> (a plugin's settings.toml), or "": its Settings page and its card's body */
+  form: string
   /** the onboarding's card: "detect" when the service answered or has an address and did
       not, "always" (shares, the guard, routines, the connectors), "" never (email, vault: the Later
       card and Settings) */
@@ -343,7 +326,7 @@ export const settingsApi = {
     request<{ skills: SkillView[] }>(`/tool-defaults/${enc(target)}`, json('PUT', { default: value })),
 
   /** `saved`: the general settings were saved at least once */
-  general: () => request<{ fields: FieldSchema[]; general: Record<string, unknown>; version: string; saved: boolean }>('/settings'),
+  general: () => request<{ fields: FormField[]; general: Record<string, unknown>; version: string; saved: boolean }>('/settings'),
   /** the whole object; a key left out goes back to its default */
   putGeneral: (general: Record<string, unknown>) =>
     request<{ general: Record<string, unknown> }>('/settings', json('PUT', { general })),

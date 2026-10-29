@@ -27,7 +27,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import anyio
 import httpx
@@ -39,7 +39,7 @@ from . import attachments
 from .config import ROOT, Problem, checked
 from .core.ids import now
 from .kb.identity import REF
-from .errors import unreachable_words
+from .errors import TooLarge, unreachable_words
 from .skills import BUILTIN, GUIDES_DIR, META, Annotations, ToolContext, ToolResult, ToolSpec, guide
 
 log = logging.getLogger("celine.mcp")
@@ -376,17 +376,27 @@ class Supervisor:
                                       f"its address).",
                               is_error=True)
         text = _text(res)
-        # an image part is kept for the call, as a browser shot is (skills/browser.py
-        # _keep), and the model gets it with the result (turns/context.py)
+        # a file part (an image, audio, a resource) is kept for the call, as a browser
+        # shot is (skills/browser.py _keep), and its row shows it; the model gets an
+        # image with the result (turns/context.py), any other file as a line
         images = []
+        limit = int(self.cfg.r("max_attachment_bytes"))
         for c in getattr(res, "content", None) or []:
-            if getattr(c, "type", "") == "image":
-                row = await attachments.save_generated(
-                    self.cfg, ctx.store, base64.b64decode(c.data),
-                    name + (mimetypes.guess_extension(c.mime_type) or ""), c.mime_type,
-                    ctx.tool_call_id or None, in_message=False)
+            got = _file(c, name)
+            if got is None:
+                continue
+            data, filename, media = got
+            if len(data) > limit:
+                text += f"\n{TooLarge(filename, len(data), limit).message} It was not kept."
+                continue
+            row = await attachments.save_generated(
+                self.cfg, ctx.store, data, filename, media, ctx.tool_call_id or None,
+                in_message=False)
+            text += f"\n{row['filename']} ({attachments.size(row['bytes'])})"
+            if row["kind"] == "image":
                 images.append(row["id"])
-                text += f"\n{row['filename']} ({attachments.size(row['bytes'])})"
+            else:
+                text += f", attached to this conversation for {self.cfg.user}."
         structured = getattr(res, "structured_content", None)
         display: dict[str, Any] = {"server": skill.name, "tool": name}
         is_error = bool(getattr(res, "is_error", False))
@@ -409,13 +419,32 @@ class Supervisor:
         return self.kbs.get(skill.cfg.kb)
 
 
+_FILES = ("image", "audio", "resource")      # the parts that carry a file (_file)
+
+
 def _text(res) -> str:
     parts = []
     for c in getattr(res, "content", None) or []:
         kind = getattr(c, "type", "")
-        if kind != "image":
+        if kind not in _FILES:
             parts.append(c.text if kind == "text" else f"[{kind}]")
     return "\n".join(parts)
+
+
+def _file(c, tool: str) -> tuple[bytes, str, str | None] | None:
+    """A result part that carries a file: (its bytes, its file name, its media type or
+    None to guess it); None for any other part."""
+    kind = getattr(c, "type", "")
+    if kind in ("image", "audio"):
+        return (base64.b64decode(c.data),
+                tool + (mimetypes.guess_extension(c.mime_type) or ""), c.mime_type)
+    if kind != "resource":
+        return None
+    r = c.resource
+    blob = getattr(r, "blob", None)
+    data = base64.b64decode(blob) if blob is not None else r.text.encode()
+    filename = unquote(urlsplit(str(r.uri)).path.rsplit("/", 1)[-1]) or tool
+    return data, filename, r.mime_type
 
 
 # ---- a connector's results as archive lines ------------------------------------------------

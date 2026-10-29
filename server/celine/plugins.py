@@ -22,7 +22,7 @@ import tomllib
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config import ROOT
 from .errors import Busy
@@ -88,9 +88,11 @@ LOADED: dict[str, Plugin] = {}
 _scanned: Path | None = None        # the data dir of the last scan
 
 
-def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset()) -> list[str]:
+def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
+         check_form: Callable[[str, Any], None] | None = None) -> list[str]:
     """Read every manifest, base then user (same id replaces), into LOADED. `reserved`:
-    the ids a plugin may not take (core features, settings sections). Again for the same
+    the ids a plugin may not take (core features, settings sections); `check_form`
+    raises ValueError on a settings.toml (settings/form.py check_toml). Again for the same
     data dir (a reload) only the manifests and forms of the plugins already known are read
     again: the running ones keep their records. -> problems, one sentence each."""
     global _scanned
@@ -104,7 +106,7 @@ def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset()) -> list[
             if not (d / "plugin.toml").is_file():
                 continue
             try:
-                p = _read(d, user, reserved)
+                p = _read(d, user, reserved, check_form)
             except (ValueError, tomllib.TOMLDecodeError, OSError) as e:
                 problems.append(f"plugins/{d.name}: {e}")
                 continue
@@ -122,7 +124,8 @@ def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset()) -> list[
     return problems
 
 
-def _read(d: Path, user: bool, reserved: frozenset[str]) -> Plugin:
+def _read(d: Path, user: bool, reserved: frozenset[str],
+          check_form: Callable[[str, Any], None] | None) -> Plugin:
     with (d / "plugin.toml").open("rb") as f:
         manifest = tomllib.load(f)
     pid = manifest.get("id")
@@ -138,6 +141,8 @@ def _read(d: Path, user: bool, reserved: frozenset[str]) -> Plugin:
             form = tomllib.load(f)
         if not isinstance(form.get("fields"), list):
             raise ValueError("settings.toml needs [[fields]]")
+        if check_form is not None:
+            check_form(pid, form)
     return Plugin(pid, d, user, manifest, form)
 
 

@@ -19,11 +19,11 @@ import {
   type ToolCall, type Turn,
 } from '../lib/api'
 import { bytes, errorText, fullDate, stamp } from '../lib/format'
-import { fileUrl } from '../lib/media'
+import { TILE, fileUrl, tileUrl } from '../lib/media'
 import { format } from '../lib/nav'
 import { getPref, setPref } from '../lib/prefs'
-import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Paperclip, Repeat, Shrink, type LucideIcon } from 'lucide-react'
-import { Button, EventLine, Fold, ICON, IconButton, InlineError, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey } from '../ui'
+import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Repeat, Shrink, type LucideIcon } from 'lucide-react'
+import { Button, EventLine, Fold, ICON, InlineError, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey } from '../ui'
 import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
@@ -33,7 +33,7 @@ import { useHer } from '../lib/her'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
-import { ArtifactCards, FormingRow, ShareCards, ToolLines, artifactsOf, sharesOf } from './ToolRow'
+import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, artifactsOf, sharesOf } from './ToolRow'
 import { GuardBanner } from './GuardBanner'
 import { ApprovalAsk } from './ApprovalAsk'
 import { useFrozen, type GuardBanner as Banner } from '../lib/guard'
@@ -412,7 +412,7 @@ function Attached({ list }: { list: Attachment[] }) {
 /* A picture on a message: its shape before it loads; a click shows it big, titled by what it
    shows (its description) */
 function YourPicture({ a }: { a: Attachment }) {
-  return <Picture className="msg__picture" src={fileUrl(a)} name={titleOf(a.description)}
+  return <Picture className="msg__picture" src={tileUrl(a, TILE)} full={fileUrl(a)} name={titleOf(a.description)}
                   ratio={a.width && a.height ? `${a.width} / ${a.height}` : '4 / 3'} />
 }
 
@@ -429,8 +429,6 @@ function Described({ attachments }: { attachments: Attachment[] }) {
   )
 }
 
-/* a file on a message: its name, size and Download on one line (only its name while
-   your message is on its way) */
 /* the files it sent you in this reply, each a card to download, under the reply */
 function FileCards({ list }: { list: Attachment[] }) {
   if (!list.length) return null
@@ -446,17 +444,6 @@ function FileCards({ list }: { list: Attachment[] }) {
           <Download size={ICON.md} aria-hidden />
         </a>
       ))}
-    </div>
-  )
-}
-
-function FileLine({ name, a }: { name: string; a?: Attachment }) {
-  return (
-    <div className="msg__file">
-      <Paperclip size={ICON.sm} aria-hidden />
-      <span className="msg__file-name">{name}</span>
-      {a && <span className="msg__file-size">{bytes(a.bytes)}</span>}
-      {a && <IconButton icon={Download} label="Download" size="sm" href={fileUrl(a, true)} download />}
     </div>
   )
 }

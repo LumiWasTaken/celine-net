@@ -40,6 +40,10 @@ How:
    sources or links at the end. A link goes in only when the link itself is what
    {{username}} asked for, like a download or a page to keep.
 
+To hand {{username}} a file you found on the web (a picture, a PDF, a zip), use
+web__read_page(url="...", save=true): the file itself is attached to this conversation
+and {{username}} sees it under your call. It is not read as text.
+
 When search is down or flaky, search somewhere else: open Google or DuckDuckGo in your
 browser, or read https://html.duckduckgo.com/html/?q=<words> with web__read_page.
 
@@ -47,4 +51,5 @@ Reddit: www.reddit.com/r/<sub>/search/?q=... in the browser, logged in with the 
 in the vault. Logged out, Reddit shows a login page (browser guide, Reddit).
 
 Only public http(s) addresses can be read. The app refuses local and private network
-addresses. HTML, PDF (with a text layer) and plain text work.
+addresses. HTML, PDF (with a text layer) and plain text can be read; save takes any
+file up to the size limit for attachments.

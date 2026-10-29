@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import mimetypes
 import re
 import socket
 import time
 from collections import OrderedDict
+from pathlib import Path
 from typing import Annotated, Any, Literal
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import anyio
 import httpx
@@ -617,10 +619,15 @@ class Web:
         url: Annotated[str, "An http or https URL, or a reference from web__search such "
                             "as web:3."],
         part: Annotated[int | None, "Which part of a long page, from 1."] = None,
+        save: Annotated[bool, "True: keep the file itself (a picture, a PDF, any file) and "
+                              "attach it to this conversation for {{username}}, instead "
+                              "of reading its text."] = False,
     ) -> ToolResult:
-        """Read the main text of one web page or PDF. Use it to check a search result or a
-        link from {{username}}. Local and private addresses are refused. Returns: a
-        `[web:n] title` line, the final URL, one part of the text."""
+        """Read the main text of one web page or PDF, or with save=true attach the file
+        at the URL to this conversation. Use it to check a search result or a link from
+        {{username}}, or to hand them a file you found. Local and private addresses are
+        refused. Returns: a `[web:n] title` line, the final URL, one part of the text;
+        saved, the file's name and size."""
         table = await _seed(ctx)
         raw = (url or "").strip()
         m = ARG_REF.match(raw)
@@ -637,6 +644,8 @@ class Web:
             _check_url(raw)
         except ToolRefused as e:
             return ToolResult(content=f"not read: {e}", is_error=True)
+        if save:
+            return await self._save(ctx, raw)
 
         key = _canon(raw)
         now = time.monotonic()
@@ -644,27 +653,10 @@ class Web:
         if hit and now - hit[0] < _PAGE_TTL:
             _, doc, final = hit
         else:
-            try:
-                page = await fetch(
-                    raw, ua=DEFAULT_UA, timeout=float(self.cfg.r("web.timeout")),
-                    max_bytes=int(self.cfg.r("web.page_max_mb")) * 1024 * 1024,
-                    pdf_max_bytes=int(self.cfg.r("web.pdf_max_mb")) * 1024 * 1024,
-                    transport=self.transport, check_addresses=self.check_addresses)
-            except ToolRefused as e:
-                return ToolResult(content=f"not read: {e}", is_error=True)
-            except (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError):
-                return ToolResult(content=f"could not fetch {raw}: the site did not answer "
-                                          f"within {self.cfg.r('web.timeout')} s.",
-                                  is_error=True)
-            except httpx.ConnectError:
-                return ToolResult(content=f"could not fetch {raw}: the site refused the "
-                                          f"connection.", is_error=True)
-            except (httpx.HTTPError, OSError) as e:
-                return ToolResult(content=f"could not fetch {raw}: the connection failed "
-                                          f"({type(e).__name__}).", is_error=True)
-            if page.status >= 400:
-                return ToolResult(content=f"could not read {raw}: HTTP {page.status}",
-                                  is_error=True)
+            page = await self._get(raw, int(self.cfg.r("web.page_max_mb")) * 1024 * 1024,
+                                   int(self.cfg.r("web.pdf_max_mb")) * 1024 * 1024)
+            if isinstance(page, ToolResult):
+                return page
             try:
                 doc = await anyio.to_thread.run_sync(extract, page)
             except ToolRefused as e:
@@ -708,6 +700,52 @@ class Web:
         return ToolResult(content=out, display={"ref": f"web:{n}", "url": final,
                                                 "title": title, "part": k,
                                                 "parts": len(parts)})
+
+    async def _get(self, raw: str, max_bytes: int, pdf_max_bytes: int) -> Page | ToolResult:
+        """The page at `raw`, or the failed result that says why not."""
+        try:
+            page = await fetch(
+                raw, ua=DEFAULT_UA, timeout=float(self.cfg.r("web.timeout")),
+                max_bytes=max_bytes, pdf_max_bytes=pdf_max_bytes,
+                transport=self.transport, check_addresses=self.check_addresses)
+        except ToolRefused as e:
+            return ToolResult(content=f"not read: {e}", is_error=True)
+        except (httpx.TimeoutException, TimeoutError, asyncio.TimeoutError):
+            return ToolResult(content=f"could not fetch {raw}: the site did not answer "
+                                      f"within {self.cfg.r('web.timeout')} s.",
+                              is_error=True)
+        except httpx.ConnectError:
+            return ToolResult(content=f"could not fetch {raw}: the site refused the "
+                                      f"connection.", is_error=True)
+        except (httpx.HTTPError, OSError) as e:
+            return ToolResult(content=f"could not fetch {raw}: the connection failed "
+                                      f"({type(e).__name__}).", is_error=True)
+        if page.status >= 400:
+            return ToolResult(content=f"could not read {raw}: HTTP {page.status}",
+                              is_error=True)
+        return page
+
+    async def _save(self, ctx: ToolContext, raw: str) -> ToolResult:
+        """The file at `raw` as an attachment of this call (its row shows it), within
+        max_attachment_bytes."""
+        if ctx.store is None:
+            return ToolResult(content="Only a conversation can take a file.", is_error=True)
+        from .. import attachments
+        limit = int(self.cfg.r("max_attachment_bytes"))
+        page = await self._get(raw, limit, limit)
+        if isinstance(page, ToolResult):
+            return page
+        name = Path(unquote(urlsplit(page.url).path.rsplit("/", 1)[-1])).name or \
+            urlsplit(page.url).hostname or "file"
+        if "." not in name and page.ctype:
+            name += mimetypes.guess_extension(page.ctype) or ""
+        row = await attachments.save_generated(self.cfg, ctx.store, page.body, name,
+                                               page.ctype or None, ctx.tool_call_id,
+                                               in_message=False)
+        return ToolResult(content=f"Saved {row['filename']} ({attachments.size(row['bytes'])}"
+                                  f", {row['media_type']}) from {page.url}, attached to this "
+                                  f"conversation for {self.cfg.user}.",
+                          display={"url": page.url})
 
 
 def _date(v: Any) -> str | None:

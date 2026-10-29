@@ -13,9 +13,9 @@ import { SETTINGS_EVENTS, settingsApi, type ProviderView } from '../../lib/setti
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import { kindInfo } from '../../components/ProviderFields'
-import { Button, ConfirmDialog, Dot, Field, InlineError, Input, Loaded, Section } from '../../ui'
+import { Button, ConfirmDialog, Dot, Field, Form, InlineError, Input, Loaded, Section } from '../../ui'
 import { KeySection, optionSchema, providerProblem, reach } from './Models'
-import { Page, SchemaForm } from './parts'
+import { Page } from './parts'
 import { Presets } from './Presets'
 import './settings.css'
 
@@ -94,8 +94,8 @@ function Comfy({ p, others, kinds, onChanged }: {
                onKeyDown={e => { if (e.key === 'Enter') void save.run(); if (e.key === 'Escape') setUrl(saved) }} />
       </Field>
       {p && schema.length > 0 && (
-        <SchemaForm schema={schema} values={p.provider.options ?? {}} disabled={saveOpt.busy || !online}
-                    onChange={(k, v) => void saveOpt.run(k, v)} />
+        <Form fields={schema} values={p.provider.options ?? {}} disabled={saveOpt.busy || !online}
+              onChange={(k, v) => void saveOpt.run(k, v)} />
       )}
       {saveOpt.error && <InlineError compact message={saveOpt.error} />}
     </Section>

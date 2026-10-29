@@ -23,10 +23,10 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Header, Request, Response
 
-from .. import plugins, reload
+from .. import reload
 from ..config import build as config_build
 from ..errors import CelineError, NotFound
-from ..settings import features as features_mod, files, form, general as general_mod, kinds
+from ..settings import features as features_mod, files, general as general_mod, kinds
 from ..settings import mail as mail_mod, services as services_mod
 from ..settings import vault as vault_mod, views, write
 from ..settings import secrets as secrets_mod
@@ -399,37 +399,6 @@ async def put_general(request: Request, response: Response,
         return {**(await get_general(request, response)), **out}
 
 
-# ---- a plugin's form (its settings.toml; values in var/settings/<id>.toml) -------------
-
-def _form_of(id: str) -> list[dict[str, Any]]:
-    p = plugins.get(id)
-    if p is None or p.form is None:
-        raise NotFound(f"There are no settings '{id}'.")
-    return p.form["fields"]
-
-
-@router.get("/settings/{id}")
-async def get_plugin_settings(request: Request, response: Response, id: str) -> dict:
-    fields = _form_of(id)
-    s = settings_of(request)
-    saved = s.plugins.get(id, {})
-    return {"fields": fields, "values": form.values(fields, saved),
-            "version": etag(response, version(saved)), "saved": bool(s.saved.get(id))}
-
-
-@router.put("/settings/{id}")
-async def put_plugin_settings(request: Request, response: Response, id: str,
-                              if_match: str | None = Header(default=None)) -> dict:
-    """The whole object: {"values": {...}}. A key left out goes back to its default."""
-    fields = _form_of(id)
-    body = await json_body(request, need=("values",), allow=("values",))
-    async with write.lock():
-        files.check_version(id, settings_of(request).plugins.get(id, {}), if_match)
-        out = await reload.commit(services_of(request),
-                                  {id: form.validate(id, fields, body["values"])})
-        return {**(await get_plugin_settings(request, response, id)), **out}
-
-
 # ---- features ------------------------------------------------------------------------
 
 @router.get("/features")
@@ -652,7 +621,8 @@ async def config_status(request: Request) -> dict:
             "user": cfg.user,
             "features": features_mod.effective(cfg.settings.features),
             "setup": features_mod.done(cfg.settings.features),
-            "catalog": [{"id": f.id, "about": f.about, "off_when": f.off_when,
+            "catalog": [{"id": f.id, "label": f.label, "form": f.form,
+                         "about": f.about, "off_when": f.off_when,
                          "places": list(f.places), "pages": list(f.pages)}
                         for f in features_mod.catalog()],
             "problems": [{"file": p.file, "message": p.message, "fatal": p.fatal}

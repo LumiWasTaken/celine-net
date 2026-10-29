@@ -4,7 +4,8 @@ Images and the model that answers: the conversation's model always answers, and 
 image adapts to it. `render` leaves each image as an `IMAGE` part; the queued backend
 (backends/llm.py) hands every request to `Images.wire` once it knows which model
 answers, so a fallback in the chat list gets what it can take:
-- a model that sees images (the `vision` capability) gets the image itself;
+- a model that sees images (the `vision` capability) gets the image itself, at most
+  WIRE_EDGE px on its long edge (`for_model`);
 - any other model gets the image's photo description as text, marked as one. The
   Photo descriptions role writes it the first time it is needed (kb/media.py, thinking
   off), and it is kept with the attachment, so later requests and other models reuse
@@ -24,7 +25,8 @@ list and edits never see it.
 What stays (`gc`, at each start; KEEP is 30 days). A file stays while an attachment of a
 message, a tool call or a batch, or its portrait, points at it. A draft (an upload not
 sent yet) keeps its file until it is sent, discarded or KEEP old. A file nothing points
-at goes once it is KEEP old, a half-written upload once untouched for KEEP. A file and
+at goes once it is KEEP old, a half-written upload once untouched for KEEP. A picture's
+smaller copies (`resized`) go with its file. A file and
 its rows are written and dropped in one writer job, so gc never sees one without the other.
 """
 from __future__ import annotations
@@ -40,6 +42,9 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+import anyio
+from PIL import ExifTags, Image, ImageOps
 
 from .conversations import store as conversations
 from .core.ids import iso, new_id, now
@@ -123,9 +128,11 @@ async def _finish(cfg, store, tmp: Path, sha: str, size: int, head: bytes,
         media_type = "text/plain"
     kind = _kind(media_type)
     final = blob_path(cfg, sha)
+    pixels = await anyio.to_thread.run_sync(_pixels, tmp) if kind == "image" else None
 
     def fn(c: sqlite3.Connection) -> dict:
-        row = _insert(c, sha, size, media_type, filename, kind, store=store, **where)
+        row = _insert(c, sha, size, media_type, filename, kind, store=store, pixels=pixels,
+                      **where)
         final.parent.mkdir(parents=True, exist_ok=True)
         tmp.replace(final)
         return row
@@ -286,7 +293,7 @@ class Images:
             if not _has_image(m):
                 out.append(m)
             elif sees and i in recent:
-                out.append({**m, "content": [self._image(p) if p.get("type") == IMAGE
+                out.append({**m, "content": [await self._image(p) if p.get("type") == IMAGE
                                              else p for p in m["content"]]})
             else:
                 texts = [await self._described(p["attachment"], model)
@@ -295,11 +302,13 @@ class Images:
                 out.append({**m, "content": "\n\n".join(t for t in texts if t)})
         return out
 
-    def _image(self, part: dict) -> dict:
+    async def _image(self, part: dict) -> dict:
+        """The image at most WIRE_EDGE px on its long edge (the copy `resized` keeps)."""
         a = part["attachment"]
-        b64 = base64.b64encode(blob_path(self.cfg, a["sha256"]).read_bytes()).decode()
-        return {"type": "image_url",
-                "image_url": {"url": f"data:{a['media_type']};base64,{b64}"}}
+        path, media = await anyio.to_thread.run_sync(for_model, self.cfg, a["sha256"],
+                                                     a["media_type"])
+        b64 = base64.b64encode(path.read_bytes()).decode()
+        return {"type": "image_url", "image_url": {"url": f"data:{media};base64,{b64}"}}
 
     async def _described(self, a: dict, model: str) -> str:
         """The image's photo description as a line for `model`, written now when the
@@ -358,6 +367,71 @@ def _image_size_of(path: str) -> tuple[int, int] | None:
     return image_size(Path(path).read_bytes())
 
 
+_TURNED = (5, 6, 7, 8)      # EXIF orientations that turn a picture by a quarter
+Image.MAX_IMAGE_PIXELS = 50_000_000   # Pillow refuses a picture past twice this (a bomb)
+
+
+def _pixels(path: Path) -> tuple[int, int] | None:
+    """(width, height) of a picture Pillow reads, as it is shown (its EXIF turn
+    applied), from its header; None for anything else."""
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            return (h, w) if im.getexif().get(ExifTags.Base.Orientation) in _TURNED else (w, h)
+    except Exception:            # a broken file: Pillow raises many kinds
+        return None
+
+
+WIDTHS = (320, 640, 1280)   # the widths a picture is shown at: few, so the copies stay few
+
+
+def snap(want: int) -> int:
+    """The first of WIDTHS at least `want` wide, else the widest."""
+    return next((w for w in WIDTHS if w >= want), WIDTHS[-1])
+
+
+def resized(cfg, sha: str, width: int) -> Path:
+    """The picture `width` px wide as WebP, made once and kept beside its blob as
+    `<sha>.w<width>.webp` (gc drops it with the blob). The blob itself when it is not
+    wider, moves (an animation) or is not a picture Pillow reads. The blob never
+    changes. Blocking: a thread's work."""
+    src = blob_path(cfg, sha)
+    out = src.with_name(f"{sha}.w{width}.webp")
+    if out.exists():
+        return out
+    part = out.with_name(f"{out.name}.{new_id()}.part")
+    try:
+        with Image.open(src) as im:
+            if getattr(im, "is_animated", False):
+                return src
+            im = ImageOps.exif_transpose(im)
+            if im.width <= width:
+                return src
+            im.thumbnail((width, im.height))
+            alpha = "A" in im.getbands() or "transparency" in im.info
+            im.convert("RGBA" if alpha else "RGB").save(part, "WEBP", quality=80)
+    except Exception:            # a broken file: Pillow raises many kinds
+        part.unlink(missing_ok=True)
+        return src
+    part.replace(out)
+    return out
+
+
+WIRE_EDGE = 1568     # the longest edge of a picture sent to a model; encoders scale a
+                     # larger one down anyway
+
+
+def for_model(cfg, sha: str, media_type: str) -> tuple[Path, str]:
+    """(the file, its media type) a model gets for a picture: at most WIRE_EDGE px on its
+    long edge. Blocking: a thread's work."""
+    pixels = _pixels(blob_path(cfg, sha))
+    if pixels is None or max(pixels) <= WIRE_EDGE:
+        return blob_path(cfg, sha), media_type
+    w, h = pixels
+    path = resized(cfg, sha, w * WIRE_EDGE // max(w, h))
+    return path, "image/webp" if path.suffix == ".webp" else media_type
+
+
 def size(b: int) -> str:
     return f"{b / 1048576:.1f} MB" if b >= 1048576 else f"{b} bytes"
 
@@ -385,7 +459,10 @@ async def gc(cfg, store, at: datetime | None = None) -> int:
             "(SELECT portrait FROM her WHERE portrait IS NOT NULL)", (iso(old),))]
         for sha in shas:
             c.execute("DELETE FROM blobs WHERE sha256=?", (sha,))
-            blob_path(cfg, sha).unlink(missing_ok=True)
+            path = blob_path(cfg, sha)
+            path.unlink(missing_ok=True)
+            for copy in path.parent.glob(f"{sha}.w*.webp"):     # resized()
+                copy.unlink(missing_ok=True)
         return shas
 
     orphans = await store.write(fn)
@@ -394,6 +471,9 @@ async def gc(cfg, store, at: datetime | None = None) -> int:
         for p in tmp_dir.iterdir():
             if p.stat().st_mtime < old.timestamp():
                 p.unlink(missing_ok=True)
+    for p in cfg.blobs_dir.glob("*/*/*.part"):         # a copy `resized` never finished
+        if p.stat().st_mtime < old.timestamp():
+            p.unlink(missing_ok=True)
     if orphans:
         log.info("blobs swept", extra={"event": "attachment.gc", "count": len(orphans)})
     return len(orphans)
@@ -408,16 +488,38 @@ MADE = ("SELECT je.value ->> '$.attachment.{}' FROM media_batches mb, json_each(
 
 def of_message(c: sqlite3.Connection, message_id: str) -> list[dict]:
     """A message's attachments, inside a read or write (conversations/tree.py). A
-    file a batch made has its batch_id (its gallery shows it). A picture it made has its size, from the batch item that made it, so its box has its
-    shape before it loads."""
+    file a batch made has its batch_id (its gallery shows it). A picture has its size,
+    from its blob or the batch item that made it, so its box has its shape before it
+    loads."""
     return [dict(r) for r in c.execute(
         "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, "
         "a.description, a.described_by, a.described_for, a.box_path, a.batch_id, "
-        f"({MADE.format('width')}) AS width, ({MADE.format('height')}) AS height "
+        f"coalesce(b.width, ({MADE.format('width')})) AS width, "
+        f"coalesce(b.height, ({MADE.format('height')})) AS height "
         "FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 "
         "WHERE a.message_id=?1 OR a.id = (SELECT json_extract(meta, '$.attachment') "
         "FROM messages WHERE id=?1 AND json_extract(meta, '$.kind') = 'image') "
         "ORDER BY a.created_at, a.id", (message_id,))]
+
+
+def with_files(c: sqlite3.Connection, call_id: str, display: dict | None) -> dict | None:
+    """The call's display with one `files` block (`where: under`): every file kept with
+    the call alone (an MCP image, a shell look, a document image), so its row shows it
+    whatever the tool. A file its display already names (a browser shot in its steps)
+    stays out; files on its message show there (shell__send)."""
+    named = json.dumps({k: v for k, v in (display or {}).items() if k != "blocks"})
+    files = [dict(r) for r in c.execute(
+        "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, b.width, "
+        "b.height FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 "
+        "WHERE a.tool_call_id=? ORDER BY a.rowid", (call_id,))
+        if f'"{r["id"]}"' not in named]
+    blocks = [b for b in (display or {}).get("blocks") or () if b.get("type") != "files"]
+    if files:
+        blocks.append({"type": "files", "where": "under", "files": files})
+    out = {k: v for k, v in (display or {}).items() if k != "blocks"}
+    if blocks:
+        out["blocks"] = blocks
+    return out or None
 
 
 async def add(store, sha: str, size: int, media_type: str, filename: str, kind: str, *,
@@ -435,10 +537,11 @@ async def add(store, sha: str, size: int, media_type: str, filename: str, kind: 
 
 def _insert(c: sqlite3.Connection, sha: str, size: int, media_type: str, filename: str,
             kind: str, *, store, tool_call_id: str | None = None, in_message: bool = True,
-            batch_id: str | None = None,
-            described: tuple[str, str] | None = None) -> dict:
+            batch_id: str | None = None, described: tuple[str, str] | None = None,
+            pixels: tuple[int, int] | None = None) -> dict:
     """The rows; a file that joins a message already there tells its conversation
-    (event `message.attachments`, the message's whole list)."""
+    (event `message.attachments`, the message's whole list). `pixels`: an image's
+    (width, height), kept on its blob."""
     aid, ts = new_id(), now()
     mid = call = None
     if tool_call_id is not None:
@@ -452,9 +555,11 @@ def _insert(c: sqlite3.Connection, sha: str, size: int, media_type: str, filenam
         else:
             call = tool_call_id
     text, by = described or (None, None)
-    c.execute("INSERT INTO blobs(sha256,bytes,media_type,created_at) "
-              "VALUES(?,?,?,?) ON CONFLICT(sha256) DO NOTHING",
-              (sha, size, media_type, ts))
+    w, h = pixels or (None, None)
+    c.execute("INSERT INTO blobs(sha256,bytes,media_type,width,height,created_at) "
+              "VALUES(?,?,?,?,?,?) ON CONFLICT(sha256) DO UPDATE SET "
+              "width=coalesce(width, excluded.width), height=coalesce(height, excluded.height)",
+              (sha, size, media_type, w, h, ts))
     c.execute("INSERT INTO attachments(id,message_id,tool_call_id,batch_id,sha256,"
               "filename,kind,state,created_at,description,described_by,described_for) "
               "VALUES(?,?,?,?,?,?,?,'ready',?,?,?,?)",

@@ -306,6 +306,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | New conversation, New recovery codes, New token | the New X of these | Claude "New conversation", GitHub "Generate new token" |
 | Open Browser, Open Gallery, Open in Studio, Open mission, Open Notebook, Open Studio | a link that names where it goes | VS Code "Open Settings" |
 | Remove key, Remove current Discord token | take a stored key or token out | Bitwarden "Remove" |
+| Saved, Remove | a stored secret in a form: it is there, never shown; take it out | Bitwarden "Remove"; Chrome passwords "Saved" |
 | Save key | keep a stored value | GitHub "Save" |
 | Set new Discord token | put in a new token | GitHub "Regenerate token" |
 | Reply, Reply to Bastet | answer a message; answer Bastet in her banner's thread | Gmail, Slack; built on Reply like Intercom's "Reply to" a sender |
