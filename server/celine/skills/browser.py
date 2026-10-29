@@ -1153,9 +1153,7 @@ class Browser:
         if code == "starting":
             return self._error("The browser is starting.", tab)
         if code == "down":
-            return self._error(f"The browser is down: {self._reason(f.get('reason'))}. A step "
-                               f"{{\"do\": \"restart\"}} tries again; if that fails too, tell "
-                               f"{user}.", tab)
+            return self._error(f"The browser is down: {self._reason(f.get('reason'))}.", tab)
         if code == "gone":
             return self._error("The browser went away during this call (a crash or a hang) and "
                                "is restarting. Whether this call happened is unknown; your next "
