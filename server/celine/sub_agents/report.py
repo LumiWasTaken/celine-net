@@ -18,7 +18,6 @@ from ..conversations.tree import final_words
 from ..core.states import LIVE_SQL
 from ..guard.sources import agent_read_outside
 from ..intercom.store import name_of
-from ..skills.web import uncite
 from ..turns import tokens
 
 
@@ -57,7 +56,7 @@ def last_answer(c: sqlite3.Connection, cid: str) -> str:
     r = c.execute("SELECT content FROM messages WHERE conversation_id=? AND "
                   "role='assistant' AND coalesce(content, '') <> '' ORDER BY created_at "
                   "DESC, rowid DESC LIMIT 1", (cid,)).fetchone()
-    return uncite(r["content"]).strip() if r else ""
+    return r["content"] if r else ""
 
 
 def _facts(c: sqlite3.Connection, cid: str) -> dict | None:

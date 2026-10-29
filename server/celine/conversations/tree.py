@@ -704,12 +704,10 @@ async def branch(store, cid: str, message_id: str) -> dict | None:
 
 
 def final_words(c: sqlite3.Connection, turn_id: str) -> str:
-    """The agent's answer of a turn: its last reply that called no tool, without web citation
-    marks (their numbers mean something only in its context). "" when it has none:
-    what it said between tool calls is no answer."""
-    from ..skills.web import uncite
+    """The agent's answer of a turn as she wrote it: its last reply that called no tool.
+    "" when it has none: what it said between tool calls is no answer."""
     r = c.execute("SELECT content FROM messages m WHERE turn_id = ? AND role = 'assistant' "
                   "AND coalesce(content, '') <> '' AND NOT EXISTS (SELECT 1 FROM tool_calls "
                   "tc WHERE tc.message_id = m.id) ORDER BY created_at DESC, rowid DESC "
                   "LIMIT 1", (turn_id,)).fetchone()
-    return uncite(r[0]).strip() if r else ""
+    return r[0] if r else ""
