@@ -28,7 +28,7 @@ from .api import commands as commands_api
 from .api import attachments as attachments_api, ws
 from .api import notebook as notebook_api
 from .api import skills as skills_api
-from .conversations import api as conversations_api, store as conversations
+from .conversations import api as conversations_api, store as conversations, tree
 from . import attachments, boot, keys, reload
 from .backends import llm as llm_mod
 from .core.services import Services
@@ -272,6 +272,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             dispatcher = services.dispatcher = Dispatcher(store, cfg, bus, None,
                                                           registry, llm=llm)
             dispatcher.ready = services.vault.ready
+            tree.prefills = lambda cid: conversations_api.prefills(services, cid)
 
             async def describe_again(p: dict) -> None:   # kb/documents_describe.py
                 if (kb := kbs.get(p["kb"])) is not None:

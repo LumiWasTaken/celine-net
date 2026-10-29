@@ -377,7 +377,8 @@ async def test_a_reply_that_said_nothing_leaves_the_message_unanswered(store):
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, load(), FakeBackend([ReasoningDelta("hm"), Done(reason="stop")]),
                    EventBus(), Token(turn["id"]))
-    told = {"message_id": mid, "state": "done", "reason": "The answer was empty."}
+    told = {"message_id": mid, "turn_id": turn["id"], "state": "done",
+            "reason": "The answer was empty.", "continues": False}
     assert (await view.snapshot(store, cid))["unanswered"] == told
     assert (await _last_state_event(store, cid))["unanswered"] == told
     await tree.regenerate(store, cid)
@@ -400,7 +401,32 @@ async def test_a_failed_turn_leaves_the_message_unanswered_with_its_reason(store
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, load(), Broken(), EventBus(), Token(turn["id"]))
     assert (await view.snapshot(store, cid))["unanswered"] == {
-        "message_id": mid, "state": "failed", "reason": "fake has no model called that."}
+        "message_id": mid, "turn_id": turn["id"], "state": "failed",
+        "reason": "fake has no model called that.", "continues": False}, "nothing to continue"
+
+
+@pytest.mark.parametrize("prefill", [True, False])
+async def test_a_failed_reply_that_said_something_offers_continue_where_the_model_can(
+        store, monkeypatch, prefill):
+    """Continue is offered beside Regenerate when the failed reply streamed words and the
+    conversation's chat model continues a reply in place; the server says which."""
+    from celine.backends.base import BackendError
+
+    class SaidThenBroke(FakeBackend):
+        async def stream(self, messages, tools):
+            yield TextDelta("Starting to answer...")
+            raise BackendError("The model sent an error.")
+
+    asked = []
+    monkeypatch.setattr(tree, "prefills", lambda c: asked.append(c) or prefill)
+    cid = await conversations.create(store)
+    mid, _, _ = await user_says(store, cid, "hello")
+    turn = await turns.claim(store, "w")
+    await run_turn(turn, store, load(), SaidThenBroke(), EventBus(), Token(turn["id"]))
+    told = (await view.snapshot(store, cid))["unanswered"]
+    assert (told["message_id"], told["turn_id"], told["continues"]) == (mid, turn["id"], prefill)
+    assert (await _last_state_event(store, cid))["unanswered"] == told
+    assert asked and set(asked) == {cid}
 
 
 async def test_regenerate_starts_a_turn_for_the_unanswered_message(store):

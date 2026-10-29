@@ -289,9 +289,12 @@ nothing with words answered it: the store walks up from the active leaf past too
 messages, empty assistant messages, a failed turn's text and quiet notices, moves the
 leaf back to the user message and roots the turn there. A reply with text raises 400.
 While no turn is live, the snapshot and every `turn.state` event carry that message as
-`unanswered: {message_id, state, reason}` (`tree.unanswered`: how the turn that tried
-ended and why, in a sentence), null otherwise; the transcript shows the reason under it
-with Regenerate.
+`unanswered: {message_id, turn_id, state, reason, continues}` (`tree.unanswered`: the
+turn that tried, how it ended and why, in a sentence), null otherwise; the transcript
+shows the reason under it with Regenerate. `continues`: that turn failed after its reply
+said something, Continue can pick it up (`view.continuable`) and the conversation's chat
+model continues a reply in place (`tree.prefills`, set at start to
+`conversations/api.prefills`); the transcript then shows Continue beside Regenerate.
 
 Workers (`max_concurrent_turns` of them) lease conversations: `turns.claim` picks a
 queued turn whose conversation has nothing in `preparing`, `streaming` or `tools`: the

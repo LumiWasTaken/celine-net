@@ -72,7 +72,7 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         return texts
     for call in calls:
         out = await _resolve(turn, call, store, cfg, registry, overrides, token, jobs)
-        if out is None:                            # shutdown: left pending, runs on resume
+        if out is None:                            # shutdown: left pending, settled interrupted
             break
         await write(call, out)
     return texts
@@ -177,9 +177,9 @@ TIME_UP = "Not run: the time for this turn is up."
 # unusable on the next request.
 async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     """-> (state, ToolResult, withheld_output), or None when the server is shutting
-    down and the step has not started (it stays pending and runs on resume). Never
-    raises. The steps, in order: stopped, replayed, frozen (the house refuses), offered,
-    valid, Bastet, then the call itself."""
+    down and the step has not started (it stays pending until its turn ends
+    interrupted). Never raises. The steps, in order: stopped, replayed, frozen (the
+    house refuses), offered, valid, Bastet, then the call itself."""
     if token.cancelled:
         return None if token.shutdown else ("cancelled", ToolResult(content="cancelled"),
                                             None)

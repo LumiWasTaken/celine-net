@@ -7,7 +7,9 @@
    TurnEnd is the line where an answer did not come, in soft words: "Paused." with
    Continue, "The reply failed." with Retry, the server's sentence as their tooltip. Under
    your message that has no answer (the server's `unanswered`: a turn that failed, was
-   interrupted, answered nothing or was stopped) its reason, with Regenerate. A line
+   interrupted, answered nothing or was stopped) its reason, with Regenerate, and Continue
+   before it when the server offers it (a failed reply that said something, on a model
+   that continues a reply). A line
    that needs the user (it names a setting, or the failure carries a reason) says it
    whole, with Open Settings when it names one. A reply that failed because its provider is
    busy (reason_code `busy`) offers Switch provider (the model chooser; the pick becomes the
@@ -145,6 +147,12 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
                         await settingsApi.patchConversationSettings(conversationId, { model: ref }); await onRetry()
                       }, document.body) }} />
       ) : providers.error && <InlineError compact message={providers.error} onRetry={providers.reload} />)}
+      {regen && unanswered.continues && unanswered.turn_id && (
+        <Button size="sm" icon={Play} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
+                onClick={e => { const el = e.currentTarget; const tid = unanswered.turn_id!; void act(() => conversationApi.continueTurn(conversationId, tid), el) }}>
+          Continue
+        </Button>
+      )}
       {(canContinue || canRetry || regen) && (
         <Button size="sm" icon={canContinue ? Play : RefreshCw} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
                 onClick={e => { const el = e.currentTarget; void act(canContinue ? () => conversationApi.continueTurn(conversationId, turn!.id) : onRetry, el) }}>

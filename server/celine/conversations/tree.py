@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 
 from ..core.ids import new_id, now
@@ -21,6 +22,8 @@ from ..core.event_types import (
     TURN_STATE,
     VERSION_CHANGED,
 )
+
+log = logging.getLogger("celine.tree")
 
 
 class Busy(errors.Busy):
@@ -465,9 +468,10 @@ def _no_reply(c: sqlite3.Connection, cid: str) -> tuple[str, str | None] | None:
     up from the leaf: a reply that never said anything (tool calls only, or a failed
     stream) or one a failed turn wrote does not count as an answer, and a message that
     landed quietly after it (a notice with wake off) waits for none. -> (its id, the
-    turn that tried to answer it or None); None when a reply answered it."""
+    turn that tried to answer it or None, whether that turn's reply said something);
+    None when a reply answered it."""
     mid = leaf(c, cid)
-    tried = None
+    tried, said = None, False
     while True:
         m = c.execute("SELECT m.id, m.role, m.parent_id, m.content, m.turn_id, i.wake "
                       "FROM messages m LEFT JOIN intercom i ON i.id = m.intercom_id "
@@ -480,13 +484,19 @@ def _no_reply(c: sqlite3.Connection, cid: str) -> tuple[str, str | None] | None:
                 m["turn_id"] and c.execute("SELECT 1 FROM turns WHERE id=? AND "
                                            "state='failed'", (m["turn_id"],)).fetchone()):
             return None
+        said = said or bool((m["content"] or "").strip())
         tried = tried or (m["turn_id"] if m["role"] == "assistant" else None)
         mid = m["parent_id"]
     # one that failed before it wrote anything
     tried = tried or (c.execute(
         "SELECT id FROM turns WHERE conversation_id=? AND root_message_id=? "
         "ORDER BY created_at DESC, rowid DESC LIMIT 1", (cid, mid)).fetchone() or [None])[0]
-    return mid, tried
+    return mid, tried, said
+
+
+# fn(cid) -> whether the conversation's chat model continues a reply in place
+# (turns/prompt.supports_prefill); the app sets it at start, None: it never does
+prefills = None
 
 
 # why no answer came, by how the turn that tried ended
@@ -497,22 +507,39 @@ _NO_ANSWER = {"failed": "The answer failed.", "interrupted": "The server restart
 
 def unanswered(c: sqlite3.Connection, cid: str) -> dict | None:
     """What Regenerate answers, while no turn of the conversation runs or waits:
-    {message_id, state (how the turn that tried ended, None when none tried), reason
-    (why no answer came, a sentence)}; None when the last message has its answer."""
+    {message_id, turn_id and state (the turn that tried and how it ended, None when
+    none tried), reason (why no answer came, a sentence), continues (Continue picks
+    up the reply it said before it failed: view.continuable, and the chat model
+    continues a reply in place)}; None when the last message has its answer."""
+    from .view import continuable
     if c.execute(f"SELECT 1 FROM turns WHERE conversation_id=? AND state IN {LIVE_SQL} "
                  "LIMIT 1", (cid,)).fetchone():
         return None
     found = _no_reply(c, cid)
     if found is None:
         return None
-    mid, tried = found
-    t = c.execute("SELECT state, reason FROM turns WHERE id=?", (tried,)).fetchone() \
+    mid, tried, said = found
+    t = c.execute("SELECT * FROM turns WHERE id=?", (tried,)).fetchone() \
         if tried else None
     if t is None:
-        return {"message_id": mid, "state": None, "reason": "No answer yet."}
+        return {"message_id": mid, "turn_id": None, "state": None,
+                "reason": "No answer yet.", "continues": False}
     told = t["reason"] if t["state"] in ("failed", "interrupted") else None
-    return {"message_id": mid, "state": t["state"],
-            "reason": told or _NO_ANSWER.get(t["state"], "No answer yet.")}
+    return {"message_id": mid, "turn_id": t["id"], "state": t["state"],
+            "reason": told or _NO_ANSWER.get(t["state"], "No answer yet."),
+            "continues": said and continuable(c, cid, t)["ok"] and _prefills(cid)}
+
+
+def _prefills(cid: str) -> bool:
+    """`prefills`, inside a write: a model lookup that breaks offers no Continue and
+    never fails the write that tells the turn's state."""
+    if prefills is None:
+        return False
+    try:
+        return bool(prefills(cid))
+    except Exception:
+        log.exception("prefill check failed", extra={"event": "tree.prefill_check_failed"})
+        return False
 
 
 async def regenerate(store, cid: str) -> tuple[str, int]:
@@ -526,7 +553,7 @@ async def regenerate(store, cid: str) -> tuple[str, int]:
         found = _no_reply(c, cid)
         if found is None:
             raise ValueError("the last message is not yours")
-        mid, tried = found
+        mid, tried, _ = found
         if mid != row["active_leaf_id"]:
             c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (mid, cid))
             c.execute("UPDATE messages SET preferred_child_id=NULL WHERE id=?", (mid,))

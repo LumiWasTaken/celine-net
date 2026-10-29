@@ -415,9 +415,10 @@ export type Turn = { id: string; state: TurnState; reason: string | null; reason
   /** a running turn's reply: waiting for a slot, loading the model, thinking, flowing or done */
   live?: Live | null }
 
-/** the user's last message that has no answer while no turn runs (the server's): how the
- *  turn that tried ended (null when none did) and why, in a sentence */
-export type Unanswered = { message_id: string; state: TurnState | null; reason: string }
+/** the user's last message that has no answer while no turn runs (the server's): the
+ *  turn that tried and how it ended (null when none did), why, in a sentence, and whether
+ *  Continue picks up the words its reply said before it failed */
+export type Unanswered = { message_id: string; turn_id: string | null; state: TurnState | null; reason: string; continues: boolean }
 
 /** where the reply being written stands (the snapshot's `turn.live`, then the live events) */
 export type Live = { message_id: string; phase: 'waiting' | 'loading' | 'thinking' | 'flowing' | 'done'
