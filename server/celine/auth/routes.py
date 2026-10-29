@@ -405,6 +405,7 @@ async def remove_credential(request: Request, cid: str):
         auth.store.remove_passkey(base64url_to_bytes(cid))
     else:
         auth.store.remove_credential(int(cid))
+    await _forget_devices(request)         # its sessions ended with it
     log.info("credential removed", extra={"event": "auth.credential_removed",
                                           "kind": this["kind"], "left": len(mine) - 1})
     return {"ok": True, "logged_out": this["this_session"]}
@@ -507,6 +508,7 @@ async def end_session(request: Request, sid: int):
     auth = _auth(request)
     if not auth.store.end_session_id(sid):
         return _err("not_found", "That session has ended.", 404)
+    await _forget_devices(request)
     log.info("session ended", extra={"event": "auth.session_ended", "client": _client(request)})
     if sid == _session(request).id:
         return _logged_out(auth, {"ok": True, "logged_out": True})
@@ -517,6 +519,7 @@ async def end_session(request: Request, sid: int):
 async def logout_others(request: Request) -> dict:
     """Every session but this one ends; `ended`: how many."""
     ended = _auth(request).store.end_other_sessions(_session(request))
+    await _forget_devices(request)
     log.info("other sessions ended", extra={"event": "auth.sessions_ended", "ended": ended,
                                             "client": _client(request)})
     return {"ok": True, "ended": ended}
@@ -526,4 +529,11 @@ async def logout_others(request: Request) -> dict:
 async def logout(request: Request):
     auth = _auth(request)
     auth.store.end_session(_session(request))
+    await _forget_devices(request)
     return _logged_out(auth, {"ok": True})
+
+
+async def _forget_devices(request: Request) -> None:
+    """An ended session's push subscriptions end with it (push.py)."""
+    if (push := request.app.state.services.push) is not None:
+        await push.forget_ended()

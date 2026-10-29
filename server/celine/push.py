@@ -7,8 +7,14 @@ browser (the service worker, web/public/sw.js) and posts the subscription to
 /api/push-subscriptions: one row per device, with the notice kinds it takes. Every `notice`
 on the global feed goes to each subscription that takes its kind, unless a page is open and
 focused (its socket says so: api/ws.py `focus`). The payload is the notice as the page
-shows it: {title, body, link, tag}. A push service's 404 or 410 means the subscription
-ended: its row is deleted (RFC 8030)."""
+shows it: {title, body, link, tag}, urgent for an approval ask (RFC 8030 Urgency). A push
+service's 404 or 410 means the subscription ended: its row is deleted.
+
+A subscription belongs to the login session that made it (session_id) and ends with it:
+the routes that end sessions call `forget_ended`, and every push and every listing calls it
+first, so a session that expired or ended with its passkey or credential takes its devices
+along too. With the login off there is no session: session_id is NULL and the device takes
+pushes until it is removed; once the login is on, those rows end as well."""
 from __future__ import annotations
 
 import base64
@@ -66,8 +72,8 @@ class Push:
     """`send(subscription row, body) -> HTTP status` is the push service's POST; a test
     gives its own."""
 
-    def __init__(self, cfg, store, bus, send=None):
-        self.store, self.bus = store, bus
+    def __init__(self, cfg, store, bus, auth=None, send=None):
+        self.store, self.bus, self.auth = store, bus, auth
         self.vapid, self.public_key = keys(secrets.secrets_dir(cfg.data_dir))
         origin = urlsplit(str(cfg.server.get("public_origin") or "http://localhost"))
         self.sub = f"https://{origin.hostname or 'localhost'}"    # RFC 8292 contact
@@ -91,8 +97,24 @@ class Push:
                 finally:
                     self.bus.unsubscribe("global", tx)
 
+    async def forget_ended(self) -> None:
+        """With the login on: the subscriptions of sessions that ended, and those made
+        while it was off, are deleted."""
+        if self.auth is None:
+            return
+        live = [s.id for s in self.auth.store.sessions()]
+
+        def fn(c: sqlite3.Connection) -> None:
+            if c.execute(f"DELETE FROM push_subscriptions WHERE session_id IS NULL OR "
+                         f"session_id NOT IN ({','.join('?' * len(live))})",
+                         live).rowcount:
+                self.store.global_event(c, PUSH_SUBSCRIPTIONS, {})
+        await self.store.write(fn)
+
     async def push(self, notice: dict) -> None:
         """One notice to every subscription that takes its kind."""
+        await self.forget_ended()
+        urgency = "high" if notice["kind"] == "approval" else "normal"
         rows = await self.store.read(lambda c: c.execute(
             "SELECT * FROM push_subscriptions").fetchall())
         body = json.dumps({k: notice[k] for k in ("title", "body", "link", "tag")},
@@ -101,7 +123,7 @@ class Push:
             if notice["kind"] not in json.loads(r["kinds"]):
                 continue
             try:
-                status = await self.send(r, body)
+                status = await self.send(r, body, urgency)
             except httpx.HTTPError as e:
                 log.warning("push failed", extra={"event": "push.failed", "device": r["device"],
                                                   "error": str(e)})
@@ -116,14 +138,14 @@ class Push:
                 log.warning("push refused", extra={"event": "push.refused",
                                                    "device": r["device"], "status": status})
 
-    async def _post(self, r: sqlite3.Row, body: bytes) -> int:
+    async def _post(self, r: sqlite3.Row, body: bytes, urgency: str) -> int:
         data = http_ece.encrypt(body, salt=os.urandom(16),
                                 private_key=ec.generate_private_key(ec.SECP256R1()),
                                 dh=_unb64(r["p256dh"]), auth_secret=_unb64(r["auth"]),
                                 version="aes128gcm")
         end = urlsplit(r["endpoint"])
         headers = {**self.vapid.sign({"aud": f"{end.scheme}://{end.netloc}", "sub": self.sub}),
-                   "TTL": str(TTL), "Content-Encoding": "aes128gcm",
+                   "TTL": str(TTL), "Urgency": urgency, "Content-Encoding": "aes128gcm",
                    "Content-Type": "application/octet-stream"}
         async with httpx.AsyncClient(timeout=30) as client:
             return (await client.post(r["endpoint"], content=data, headers=headers)).status_code
@@ -154,6 +176,7 @@ async def public_key(request: Request) -> dict:
 @router.get("/push-subscriptions")
 async def subscriptions(request: Request) -> dict:
     """The devices that take pushes, oldest first."""
+    await _push(request).forget_ended()
     rows = await _push(request).store.read(lambda c: c.execute(
         "SELECT * FROM push_subscriptions ORDER BY id").fetchall())
     return {"subscriptions": [_shown(r) for r in rows]}
@@ -182,15 +205,17 @@ async def subscribe(request: Request, body: SubscriptionBody) -> dict:
     if not ok:
         raise CelineError("invalid", "That is not a push subscription.")
     name = device(request.headers.get("user-agent", ""))
+    session = getattr(request.state, "session", None)     # none with the login off
     store = _push(request).store
 
     def fn(c: sqlite3.Connection) -> sqlite3.Row:
         row = c.execute(
-            "INSERT INTO push_subscriptions(endpoint, p256dh, auth, device, kinds, created_at) "
-            "VALUES(?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, "
-            "auth=excluded.auth, device=excluded.device, kinds=excluded.kinds RETURNING *",
+            "INSERT INTO push_subscriptions(endpoint, p256dh, auth, device, kinds, session_id, "
+            "created_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET "
+            "p256dh=excluded.p256dh, auth=excluded.auth, device=excluded.device, "
+            "kinds=excluded.kinds, session_id=excluded.session_id RETURNING *",
             (body.endpoint, body.keys.p256dh, body.keys.auth, name, json.dumps(body.kinds),
-             now())).fetchone()
+             session.id if session is not None else None, now())).fetchone()
         store.global_event(c, PUSH_SUBSCRIPTIONS, {})
         return row
     return _shown(await store.write(fn))

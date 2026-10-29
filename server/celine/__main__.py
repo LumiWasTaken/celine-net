@@ -298,7 +298,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             if on["documents"]:
                 await runners["documents"].start()
             from .push import Push              # the notices to devices without a focused page
-            push = services.push = Push(cfg, store, bus)
+            push = services.push = Push(cfg, store, bus, app.state.auth)
             tg.start_soon(push.run)
             from .intercom import Intercom      # messages between everyone, and their timer
             intercom = services.intercom = Intercom(store, dispatcher.notify)

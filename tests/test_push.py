@@ -1,6 +1,7 @@
 """Web push (push.py): the VAPID key is made once; a device subscribes and unsubscribes; a
 message to the user pushes only while no page is open and focused; a push service's 410
-removes the subscription."""
+removes the subscription; a subscription ends with the login session that made it; an
+approval ask is urgent."""
 from __future__ import annotations
 
 import base64
@@ -43,10 +44,11 @@ def _browser() -> tuple[ec.EllipticCurvePrivateKey, bytes, dict]:
 
 class FakeSender:
     def __init__(self, status: int = 201):
-        self.status, self.sent = status, []
+        self.status, self.sent, self.urgency = status, [], []
 
-    async def __call__(self, row, body: bytes) -> int:
+    async def __call__(self, row, body: bytes, urgency: str) -> int:
         self.sent.append((row["endpoint"], json.loads(body)))
+        self.urgency.append(urgency)
         return self.status
 
 
@@ -141,6 +143,63 @@ async def test_a_410_removes_the_subscription(store):
     assert await _count(store) == 0
 
 
+async def test_an_approval_ask_is_urgent(store):
+    cfg = boot.load()
+    sender = FakeSender()
+    p = push.Push(cfg, store, EventBus(), send=sender)
+    _, _, sub = _browser()
+    await _subscribe(store, {**sub, "kinds": ["approval", "reply"]})
+    for kind in ("approval", "reply"):
+        await p.push({"type": "notice", "kind": kind, "title": "t", "body": "b",
+                      "link": None, "tag": kind})
+    assert sender.urgency == ["high", "normal"]
+
+
+async def test_a_subscription_ends_with_its_session(store):
+    """Logout, a session ended from another, the login's expiry: each takes its devices
+    along; a row made while the login was off ends once it is on."""
+    from celine import auth as auth_mod
+    from celine.__main__ import build_app
+    cfg = boot.load()
+    cfg.server.update({"login": "on"})
+    app = build_app(cfg, dev=False)
+    auth = app.state.auth
+    now = [1_800_000_000]
+    auth.store.clock = lambda: now[0]
+    app.state.services = Services(cfg=cfg, store=store,
+                                  push=push.Push(cfg, store, EventBus(), auth))
+    rid = auth.store.add_credential("pin", "04815162", "")
+    base = "http://localhost:8766"
+
+    def client(token: str) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=base,
+                                 headers={"origin": base}, cookies={auth_mod.COOKIE: token})
+
+    async def endpoints(http) -> list[str]:
+        r = (await http.get("/api/push-subscriptions")).json()
+        return [d["endpoint"] for d in r["subscriptions"]]
+
+    tokens = [auth.store.new_session(credential=rid) for _ in range(3)]
+    subs = []
+    for i, token in enumerate(tokens):
+        _, _, sub = _browser()
+        subs.append({**sub, "endpoint": f"https://push.example/send/{i}"})
+        async with client(token) as http:
+            assert (await http.post("/api/push-subscriptions", json=subs[-1])).status_code == 200
+    _, _, off = _browser()
+    await _subscribe(store, {**off, "endpoint": "https://push.example/send/login-off"})
+    async with client(tokens[0]) as http:
+        assert (await http.post("/api/auth/logout")).status_code == 200
+    async with client(tokens[1]) as http:
+        assert await endpoints(http) == [subs[1]["endpoint"], subs[2]["endpoint"]]
+        [other] = [s for s in auth.store.sessions() if s.id != auth.store.session(tokens[1]).id]
+        assert (await http.delete(f"/api/auth/sessions/{other.id}")).status_code == 200
+        assert await endpoints(http) == [subs[1]["endpoint"]]
+    now[0] += 31 * 86400                       # the last one expires
+    async with client(auth.store.new_session(credential=rid)) as http:
+        assert await endpoints(http) == []
+
+
 async def test_the_push_is_encrypted_for_the_browser_and_signed(store, monkeypatch):
     """The real POST: the browser's key decrypts the body; the VAPID header names the
     endpoint's origin."""
@@ -159,6 +218,7 @@ async def test_the_push_is_encrypted_for_the_browser_and_signed(store, monkeypat
     await p.push({"type": "notice", "kind": "reply", "title": "Celine", "body": "hi",
                   "link": "/c/1", "tag": "reply:1"})
     [r] = got
+    assert r.headers["urgency"] == "normal"
     assert r.headers["authorization"].startswith("vapid t=") and \
         f"k={p.public_key}" in r.headers["authorization"]
     plain = http_ece.decrypt(r.content, private_key=key, auth_secret=auth, version="aes128gcm")
