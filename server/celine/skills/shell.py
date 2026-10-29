@@ -29,7 +29,7 @@ from ..core.ids import now, when
 from ..terminals import store as terminals
 from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
-from ..errors import CelineError, ToolRefused, bad_key, not_set_up, unreachable_words
+from ..errors import CelineError, ToolRefused, TooLarge, bad_key, not_set_up, unreachable_words
 from .. import shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
@@ -647,9 +647,14 @@ class Shell:
             try:
                 row = await attachments.save_stream(
                     self.cfg, ctx.store, box_files.stream(self.cfg, rel, transport=self.transport),
-                    name, None, tool_call_id=ctx.tool_call_id)
+                    name, None, tool_call_id=ctx.tool_call_id,
+                    limit=int(self.cfg.r("max_attachment_bytes")))
             except (FileNotFoundError, RuntimeError) as e:
                 lines.append(str(e))
+                continue
+            except TooLarge as e:
+                lines.append(f"{e.message} Share it instead (shell__share), or zip it "
+                             f"smaller.")
                 continue
             except httpx.HTTPError as e:
                 return self._unreachable(None, e)

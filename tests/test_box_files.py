@@ -125,6 +125,26 @@ async def test_send_attaches_her_file_to_the_conversation(home, cfg, store):
     assert many.is_error and "zip -r ~/out/files.zip" in many.content
 
 
+async def test_send_keeps_to_the_attachment_limit(home, cfg, store, monkeypatch):
+    (home / "big.bin").write_bytes(b"x" * 3_000_000)
+    real = cfg.r
+    monkeypatch.setattr(cfg, "r", lambda k: 2_000_000 if k == "max_attachment_bytes"
+                        else real(k))
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "send it")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "c1", "name": "shell__send",
+                                                     "arguments": "{}"}])
+    ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="c1", store=store,
+                      config=cfg, emit=None)
+    out = await Shell(cfg).send(ctx, path="big.bin")
+    # the size it names is what had come when the stream was cut
+    assert out.is_error and out.content.startswith("big.bin is ") and out.content.endswith(
+        "The limit is 2 MB. Share it instead (shell__share), or zip it smaller.")
+    assert await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM attachments").fetchone()[0]) == 0
+
+
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
                     "0000000d4944415478da63f8ffff3f0005fe02fea7d6a4b50000000049454e44ae426082")
 
