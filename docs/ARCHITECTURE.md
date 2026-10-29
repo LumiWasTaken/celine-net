@@ -107,7 +107,7 @@ applies at once:
 | `tool_timeout_seconds` | 180 | a blocking tool past this is cancelled |
 | `job_timeout_seconds` | 3600 | must exceed `tool_timeout_seconds` |
 | `turn_wall_clock_seconds` | 1800 | its work time in one turn, tools included |
-| `last_step_seconds` | 180 | after the work time: one step without tools, to answer |
+| `last_step_seconds` | 180 | after the work time: the step under way may still finish |
 | `events_keep` | 500 | log entries kept per conversation once it is idle |
 | `history_messages` | 200 | transcript sent to the model; 0 means no cap |
 | `backup_keep_days` | 7 | nights of backups kept |
@@ -292,16 +292,15 @@ Workers (`max_concurrent_turns` of them) lease conversations: `turns.claim` pick
 queued turn whose conversation has nothing in `preparing`, `streaming` or `tools`: the
 user's turns (`origin='user'`) first, then the oldest. A worker sleeps until `notify()`,
 which every write that queues a turn calls (no poll). When `turn_wall_clock_seconds` of
-work are over, no new tool call starts and a running one is stopped; it gets one last
-step without tools, and the turn ends `done` with `reason_code` `time_up` (a Stop ends it
-`aborted`). Time spent waiting for a model does not count. Past the work time plus
+work are over, no new tool call starts and a running one is stopped; no new step starts,
+and the turn ends `capped` with `reason_code` `wall_clock` (a Stop ends it `aborted`). Time spent waiting for a model does not count. Past the work time plus
 `last_step_seconds` the turn is `failed` with the reason and the conversation is free.
 
 States: `queued`, `preparing`, `streaming`, `tools`, then `done`, `aborted`, `failed`,
 `interrupted`, `capped`. Every transition is a write, and every write re-reads
 `abort_requested`. A terminal state carries `reason` (words) and `reason_code`
 (`stopped`, `restart`, `crash`, `wall_clock`, `max_tool_iterations`, `backend`,
-`backend_retryable`, `context_too_small`, `cut_length`, `time_up`); a `done` reply that
+`backend_retryable`, `context_too_small`, `cut_length`); a `done` reply that
 hit the output limit has `cut = 'length'`. **Every transition into a terminal state
 settles the calls the turn left open** in the same write: each `pending`/`running` call
 becomes `interrupted` with a `role=tool` row and a `tool.done {state: "interrupted"}`
@@ -489,7 +488,7 @@ One decision per conversation at a time (`context.lock`).
 
 Every request message carries its `origin` (the app's key; no backend sends it): the
 conversation, the turn, the stored message or the tool call, or the `note` the app
-added for this request only (system, tail, opening, screen, time_up, continue).
+added for this request only (system, tail, opening, screen, continue).
 Before a step goes out the runner holds it to `context.malformed`: a tool result right
 after the reply that made its call, each call answered once, no stored message twice,
 nothing from another conversation, its first reply after a user message. A request that

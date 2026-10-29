@@ -26,17 +26,12 @@ log = logging.getLogger("celine.turn")
 DELTA_EVERY = 0.075        # seconds between two writes of a streaming reply
 WAIT = "missions__wait"     # ran ok: the turn ends with its step, whatever else is open
 
-# the automatic note of a step without tools: it answers with what it has
-TIME_UP_NOTE = ("(Automatic note, not written by {{username}}.) The time for this turn is up. "
-                "You have no tools for this step. Answer {{username}} now in plain words "
-                "with what you found, and say what is missing.")
-
 
 async def run_turn(turn: dict, store: Store, cfg, backend, bus,
                    token=None, registry=None, jobs=None, clock=None) -> None:
     """`clock.deadline` (anyio time) is when the turn ends for good. The room of
-    `last_step_seconds` before it is kept for one last step without tools, so it
-    answers with what it has when its time is up."""
+    `last_step_seconds` before it is the step under way's: once the work time is up no
+    new step starts, and the turn ends `capped` with the reason wall_clock."""
     from .cancel import Token
     tid = turn["id"]
     token = token if token is not None else Token(tid)
@@ -172,15 +167,10 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     cap = int(cfg.r("max_tool_iterations"))
     # its voice cue: its talk is in every turn's prompt (system_blocks)
     anchor = prompt.voice_line(cfg)
-    # a quiet turn shows only its tool calls: its text is never streamed, and it gets
-    # none of the automatic notes (they ask it to answer the user)
+    # a quiet turn shows only its tool calls: its text is never streamed
     quiet = bool(turn.get("quiet"))
-    noted = not quiet
-    bare = False                   # the next step goes without tools
     grown = False                  # tool results appended since the last build
     emergency = False              # one emergency pass per run
-    note = None                    # a step without tools: (name, the automatic note it gets)
-    time_up = False
     base = int(turn.get("cap_base") or 0)    # a Continue on a capped turn starts here
     while True:
         if cap and iteration - base >= cap:       # 0: only the wall clock
@@ -188,13 +178,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                    reason_code="max_tool_iterations")
             return
         if time_left() <= 0:
-            if time_up:
-                # the last step made calls instead of answering: they were not run
-                await turns.transition(store, tid, cid, "capped", reason="wall_clock",
-                                       reason_code="wall_clock")
-                return
-            time_up, bare = True, not noted
-            note = ("time_up", TIME_UP_NOTE) if noted else None
+            await turns.transition(store, tid, cid, "capped", reason="wall_clock",
+                                   reason_code="wall_clock")
+            return
         if not await turns.transition(store, tid, cid, "streaming"):
             return
         # what reached this conversation since the last step joins the request here
@@ -216,12 +202,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             messages, hidden = built.messages, built.hidden
         grown = False
 
-        step_tools, step = (wire_tools, messages + reopen_tail) if note is None else (
-            [], messages + reopen_tail + [
-                {"role": "user", "content": cfg.substitute(note[1]),
-                 ORIGIN: context.origin(cid, turn=tid, note=note[0])}])
-        if bare:
-            step_tools = []
+        step_tools, step = wire_tools, messages + reopen_tail
         if why := context.malformed(step, cid):
             # a request that breaks the rules is never sent (turns/context.py malformed)
             await _failed(store, tid, cid, "malformed_request",
@@ -284,7 +265,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                     hidden)
             # the answer had fully streamed: a Stop now only cancelled the check
             reason, code = ("cut off at the reply limit", "cut_length") if cut else \
-                ("the time for this turn ran out", "time_up") if time_up else (None, None)
+                (None, None)
             await turns.transition(store, tid, cid, "done", cut=cut, reason=reason,
                                    reason_code=code, honor_abort=False)
             if not token.cancelled:

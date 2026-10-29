@@ -180,36 +180,14 @@ async def test_identical_calls_of_one_step_each_run(store, cfg):
     assert (await _tool_results(store))[-2:] == ["nothing found", "nothing found"]
 
 
-async def test_when_her_time_is_up_she_answers_in_a_last_step_without_tools(store, cfg):
-    """A turn that hits the wall clock mid-search still answers."""
+async def test_when_her_time_is_up_the_turn_ends_capped(store, cfg):
+    """A turn that hits the wall clock mid-search ends with its reason: no hidden note,
+    no extra step."""
     cfg.settings.general.update({"turn_wall_clock_seconds": 0.4, "last_step_seconds": 5})
     t = T()
-    b = Script([_call(0, "t__hang", {}),
-                [TextDelta("Here is what I found so far."), Done(reason="stop")]])
+    b = Script([_call(0, "t__hang", {}), [TextDelta("never asked"), Done(reason="stop")]])
     t0 = anyio.current_time()
-    snap, _, final = await _turn(store, cfg, _reg(t), b)
+    snap, _, _ = await _turn(store, cfg, _reg(t), b)
     assert anyio.current_time() - t0 < 2 and t.runs == 0
-    assert b.tools == [True, False] and final["content"] == "Here is what I found so far."
-    assert (snap["turn"]["state"], snap["turn"]["reason_code"]) == ("done", "time_up")
-
-
-async def test_a_stop_ends_the_last_step_too(store, cfg):
-    cfg.settings.general.update({"turn_wall_clock_seconds": 0.2, "last_step_seconds": 5})
-
-    class StopInLast(Script):
-        async def stream(self, messages, tools):
-            if not tools:                        # the last step: the user presses Stop
-                await turns.request_abort(store, cid)
-                token.cancel()
-            async for ev in super().stream(messages, tools):
-                yield ev
-    b = StopInLast([_call(0, "t__hang", {}),
-                    [TextDelta("too late"), Done(reason="stop")]])
-    cid = await conversations.create(store)
-    await user_says(store, cid, "go")
-    turn = await turns.claim(store, "w")
-    token = Token(turn["id"])
-    await run_turn(turn, store, cfg, b, EventBus(), token, _reg(T()))
-    snap = await view.snapshot(store, cid)
-    assert b.tools == [True, False] and snap["turn"]["state"] == "aborted"
-    assert "too late" not in [m["content"] for m in snap["messages"]]
+    assert len(b.calls) == 1, "no step after the time is up"
+    assert (snap["turn"]["state"], snap["turn"]["reason_code"]) == ("capped", "wall_clock")
