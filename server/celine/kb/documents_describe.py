@@ -22,7 +22,6 @@ models is back, or after work.DEFER_SECONDS, and so does the next upload or resc
 from __future__ import annotations
 
 import logging
-import re
 import sqlite3
 import time
 from typing import Any, Callable
@@ -35,7 +34,6 @@ log = logging.getLogger("celine.kb.documents")
 
 PART_CHARS = 8000
 MAX_PARTS = 12
-MAX_OUT = 1200
 
 # the prompts, beside this module: describe.md (the card), describe_part.md and
 # describe_part_late.md (one part of a long file, early and late), describe_check.md
@@ -79,8 +77,6 @@ def default_describer(kb) -> Callable[[str, str], tuple[str, str]]:
                 async for ev in events:
                     if isinstance(ev, TextDelta):
                         parts.append(ev.text)
-                        if sum(len(p) for p in parts) > 4 * MAX_OUT:
-                            break
                     elif isinstance(ev, Done):
                         break
             finally:
@@ -88,8 +84,8 @@ def default_describer(kb) -> Callable[[str, str], tuple[str, str]]:
         except NoModel as e:
             raise Soft(e.sentence) from None
         model = getattr(qb.answered, "model", "")
-        text = clean("".join(parts))
-        if not text:
+        text = "".join(parts)
+        if not text.strip():
             raise RuntimeError(f"{model} gave an empty answer")
         return text, model
 
@@ -113,21 +109,6 @@ def default_captioner(kb) -> Callable[[bytes, str], dict[str, Any]]:
         except media.Waiting as e:
             raise Soft(str(e)) from None
     return call
-
-
-_THINK = re.compile(r"<think>.*?</think>", re.S)
-
-
-def clean(text: str) -> str:
-    t = _THINK.sub("", text or "").strip()
-    t = re.sub(r"^(?:\*\*)?(?:description|catalogue card|card|notes)(?:\*\*)?\s*:\s*", "", t,
-               flags=re.I)
-    t = t.strip().strip('"“”').strip()
-    t = " ".join(t.split())
-    if len(t) > MAX_OUT:
-        cut = t.rfind(". ", 0, MAX_OUT)
-        t = t[:cut + 1] if cut > MAX_OUT // 2 else t[:MAX_OUT].rstrip() + "…"
-    return t
 
 
 # ---- what goes to the model -------------------------------------------------------------------
