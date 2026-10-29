@@ -279,6 +279,8 @@ async def _secret_from(cfg, path: Any, where: str, transport=None) -> str:
             data += chunk
             if len(data) > SECRET_READ:
                 raise Invalid(where, f"{path['file']} is larger than a secret.")
+    except Invalid:
+        raise
     except (FileNotFoundError, RuntimeError) as e:
         raise Invalid(where, str(e)) from None
     except Exception as e:      # the box does not answer

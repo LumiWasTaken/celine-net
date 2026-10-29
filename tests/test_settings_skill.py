@@ -196,6 +196,9 @@ async def test_a_secret_goes_from_her_box_to_var_secrets_and_nowhere_else(app, c
     gone = await sk.propose(ctx, target="email", changes={"password": {"file": "~/no"}},
                             why="w")
     assert gone.is_error and gone.content == "email.password: No file there."
+    big = await _skill(app, Box("x" * 70_000)).propose(
+        ctx, target="email", changes={"password": {"file": "~/pw.txt"}}, why="w")
+    assert big.content == "email.password: ~/pw.txt is larger than a secret."
     got, ask = await _answer(app, sk.propose(
         ctx, target="email", changes={"host": "imap.example.com",
                                       "password": {"file": "~/pw.txt"}},
