@@ -548,6 +548,8 @@ export type Queued = { turn_id: string }
 export type SentRequest = {
   step: number; model: string; provider: string; created_at: string
   prompt_tokens: number | null; completion_tokens: number | null; estimate: number | null; finish_reason: string | null
+  /** ms from the model's slot to its first token; prompt tokens read from the server's cache */
+  first_token_ms: number | null; cache_read: number | null
   body: { messages?: { role: string; content: unknown; name?: string; tool_name?: string }[]; tools?: { function?: { name?: string } }[] } & Record<string, unknown>
 }
 

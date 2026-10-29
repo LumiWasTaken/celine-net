@@ -85,7 +85,9 @@ function StepView({ n, step }: { n: number | null; step: Step }) {
   const talk = msgs.filter(m => m.role !== 'system')
   const tools = req?.body.tools ?? []
   const facts = req && [req.model, req.prompt_tokens != null && `${num(req.prompt_tokens)} in`,
+    req.cache_read != null && `${num(req.cache_read)} cached`,
     req.completion_tokens != null && `${num(req.completion_tokens)} out`,
+    req.first_token_ms != null && `first token ${(req.first_token_ms / 1000).toFixed(1)} s`,
     req.finish_reason && req.finish_reason !== 'stop' && req.finish_reason].filter(Boolean).join(', ')
   return (
     <section className="saw__step">

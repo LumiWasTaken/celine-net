@@ -108,7 +108,7 @@ class OpenAIBackend:
             # what they do not fill in (usage counts, choices, a call's index)
             if u := chunk.get("usage"):
                 usage = Usage(int(u.get("prompt_tokens") or 0),
-                              int(u.get("completion_tokens") or 0))
+                              int(u.get("completion_tokens") or 0), cached(chunk))
             for choice in chunk.get("choices") or []:
                 delta = choice.get("delta") or {}
                 # llama.cpp --reasoning-format deepseek uses reasoning_content, OpenRouter uses reasoning
@@ -238,6 +238,14 @@ def cap(raw: dict) -> dict:
         return raw
     return {"note": f"cut to {RAW_CAP // 1024} KB of {len(text) // 1024} KB",
             "text": text[:RAW_CAP]}
+
+
+def cached(chunk: dict) -> int:
+    """The prompt tokens the server read from its prompt cache, where it says so: the
+    OpenAI field (OpenRouter, vLLM) or llama.cpp's `timings.cache_n`; 0 otherwise."""
+    details = (chunk.get("usage") or {}).get("prompt_tokens_details") or {}
+    return int(details.get("cached_tokens") or (chunk.get("timings") or {}).get("cache_n")
+               or 0)
 
 
 def read_chunk(label: str, text: str) -> dict:

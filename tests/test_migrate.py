@@ -51,8 +51,8 @@ def test_a_fresh_database_gets_every_table_and_its_words_are_searchable(tmp_path
     assert LOG_TABLES <= logs and not (EXPECTED_TABLES | NOTEBOOK_TABLES) & logs
     notes = _tables(notebook_db(db))
     assert NOTEBOOK_TABLES <= notes and not (EXPECTED_TABLES | LOG_TABLES) & notes
-    for f in (log_path(db), notebook_db(db)):
-        assert sqlite3.connect(f).execute("PRAGMA user_version").fetchone() == (1,)
+    for f, n in ((log_path(db), 2), (notebook_db(db), 1)):
+        assert sqlite3.connect(f).execute("PRAGMA user_version").fetchone() == (n,)
     c = sqlite3.connect(db)
     c.execute("INSERT INTO conversations(id, title, next_seq, created_at, updated_at) "
               "VALUES('c1', 't', 1, 'x', 'x')")

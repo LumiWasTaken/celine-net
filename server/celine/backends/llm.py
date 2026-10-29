@@ -465,6 +465,11 @@ class QueuedBackend:
         (turns/store.record_usage keeps it with the reply)."""
         return self._shared.get("request")
 
+    @property
+    def first_token(self) -> float | None:
+        """Seconds from the last call's slot to its first event, None before one."""
+        return self._shared.get("first_token")
+
     def for_message(self, message_id: str | None,
                     thinking: str | None = None) -> "QueuedBackend":
         """The same task for one message; `thinking` in place of the task's (a reply
@@ -691,6 +696,7 @@ class QueuedBackend:
         outcome, usage = "cancelled", None
         try:
             self._shared["answered"] = backend
+            self._shared["first_token"] = None
             if waited or is_fallback or self.emit is not None:
                 head_model = self.llm.router.s.split(head)[1] if is_fallback else None
                 await self._send({"state": "running", "model": model,
@@ -716,8 +722,9 @@ class QueuedBackend:
                     except StopAsyncIteration:
                         break
                     if not yielded:
+                        self._shared["first_token"] = time.monotonic() - watch["t0"]
                         metrics.MODEL_FIRST_TOKEN.labels(self.role, label, model).observe(
-                            time.monotonic() - watch["t0"])
+                            self._shared["first_token"])
                     if not yielded and ref is not None:
                         self.llm.router.note_ok(ref)
                         # a load the watch saw start but not end (the first token came

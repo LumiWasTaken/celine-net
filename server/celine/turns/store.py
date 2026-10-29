@@ -471,13 +471,15 @@ async def record_usage(store, cid: str, turn_id: str, data: dict,
             c.execute(
                 "INSERT OR REPLACE INTO requests(message_id, step, turn_id, provider, "
                 "model, body, estimate, prompt_tokens, completion_tokens, window, "
-                "finish_reason, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "finish_reason, first_token_ms, cache_read, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (data["message_id"], int(data.get("iteration") or 0), turn_id,
                  request.get("provider", ""), request.get("model", ""),
                  pack_body(c, request.get("body")),
                  data.get("estimate"), data.get("prompt_tokens"),
                  data.get("completion_tokens"), data.get("window"),
-                 data.get("finish_reason"), now()))
+                 data.get("finish_reason"), data.get("first_token_ms"),
+                 data.get("cache_read"), now()))
 
     await store.write(fn)
 

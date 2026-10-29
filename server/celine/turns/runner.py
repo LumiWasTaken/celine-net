@@ -408,13 +408,18 @@ def _reopen_request(messages: list[dict], reopen: dict, cid: str,
 
 async def _record_usage(store, cid, tid, iteration, backend, counter, estimate,
                         done, message_id=None) -> None:
+    """One step's numbers: the estimate, the prompt and reply tokens the server counted,
+    what it read from its prompt cache, and the seconds to the first token (the queued
+    backend measures from the model's slot, backends/llm.py)."""
     usage = getattr(done, "usage", None)
     prompt = int(getattr(usage, "input_tokens", 0) or 0)
     if prompt:
         counter.observe(estimate, prompt)
+    first = getattr(backend, "first_token", None)
     await turns.record_usage(store, cid, tid, {
         "message_id": message_id, "iteration": iteration, "estimate": estimate,
         "prompt_tokens": prompt or None,
+        "first_token_ms": round(first * 1000) if first is not None else None,
         "completion_tokens": int(getattr(usage, "output_tokens", 0) or 0) or None,
         "cache_read": int(getattr(usage, "cache_read", 0) or 0) or None,
         "cache_write": int(getattr(usage, "cache_write", 0) or 0) or None,
