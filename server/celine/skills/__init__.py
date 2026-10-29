@@ -552,6 +552,7 @@ BUILTIN = (
     ("writer", "writer", "Writer"),
     ("models", "models", "Models"),
     ("appearance", "appearance", "Appearance"),
+    ("voice", "voice", "Voice"),
     ("me", "me", "Me"),
     ("bugreport", ".bugreports.skill", "BugReport"),
 )

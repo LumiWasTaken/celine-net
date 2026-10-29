@@ -247,6 +247,7 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Skills | it loads a skill's tools and reads its guide | Claude "Skills" |
 | Bugs | the problems with the app it files for you | as in Events |
 | Portrait | its profile picture | as in "Use as portrait" |
+| Voice notes | its voice notes to you, spoken by the Read aloud model | WhatsApp, Telegram "voice message" for the same job |
 | Persona | its description of itself | as above |
 | Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name, the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
 | Sub-agents | the helpers it gives instructions to | Claude Code "Sub-agents" |
