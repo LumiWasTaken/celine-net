@@ -151,10 +151,12 @@ async def what_she_sees(request: Request, cid: str) -> dict:
                  "why": x["why"]} for x in built.left_out],
             "loaded": {"notes": [{"path": p, "since": s} for (k, p), s in
                                  sorted(carried.since.items()) if k == "note"],
-                       "skills": [{"name": n, "since": carried.since[("skill", n)],
+                       "skills": [{"kind": "skills", "name": n,
+                                   "since": carried.since[("skill", n)],
                                    "tokens": carried.costs.get(n, 0), "core": n in loads.CORE,
                                    "label": labels[n],
-                                   "tools": [{"name": t, "since": carried.since[("tool", t)],
+                                   "tools": [{"kind": "tools", "name": t,
+                                              "since": carried.since[("tool", t)],
                                               "tokens": carried.costs[t]}
                                              for t in carried.tools
                                              if t.split("__")[0] == n]}
@@ -166,7 +168,7 @@ async def what_she_sees(request: Request, cid: str) -> dict:
 async def unload_skill(request: Request, cid: str, name: str) -> dict:
     """The agent lets go of a skill it carries here (the Context tab's Unload): its tools leave
     its list until it loads it again or a message needs it. A core skill always loads:
-    400."""
+    400; a skill not loaded here: 404."""
     return await _unload(request, cid, "skill", name)
 
 
@@ -174,7 +176,7 @@ async def unload_skill(request: Request, cid: str, name: str) -> dict:
 async def unload_tool(request: Request, cid: str, name: str) -> dict:
     """The agent lets go of a tool's parameters here (the Context tab's Unload): the tool
     keeps its name in the list while its skill is loaded. A core skill's tool always
-    has them: 400."""
+    has them: 400; a tool not loaded here: 404."""
     return await _unload(request, cid, "tool", name)
 
 
@@ -183,8 +185,11 @@ async def _unload(request: Request, cid: str, kind: str, name: str) -> dict:
     from ..turns import loads
     if name.split("__")[0] in loads.CORE:
         raise Invalid("name", "This skill always loads.")
-    if await loads.unload(store_of(request), cid, kind, [name]) is None:
+    gone = await loads.unload(store_of(request), cid, kind, [name])
+    if gone is None:
         raise NotFound("conversation")
+    if not gone:
+        raise NotFound(f"loaded {kind}")
     return {"ok": True}
 
 
