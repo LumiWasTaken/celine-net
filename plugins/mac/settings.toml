@@ -1,8 +1,25 @@
-secret = "token"
-check = true
+copies = "gateway:copies"
+
+[[fields]]
+key = "command"
+label = "Run on the Mac"
+type = "copy"
 
 [[fields]]
 key = "url"
 label = "Address"
 type = "text"
 default = ""
+word = true
+mono = true
+placeholder = "http://192.168.1.30:8765"
+
+[[fields]]
+key = "token"
+label = "Token"
+type = "secret"
+
+[[actions]]
+id = "check"
+label = "Check"
+run = "gateway:check"
