@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Literal, get_args, get_origin
 
 from .. import plugins
+from ..config import Problem
 from ..settings import features
 
 log = logging.getLogger("celine.skills")
@@ -245,9 +246,11 @@ GUIDES_DIR = Path(__file__).parent / "guides"
 def guide(name: str, *, file: str = __file__, rel: str = "", **fill: Any) -> Guide:
     """A skill's guide. Read lazily: the config dir is checked first (preflight), then
     check_guides parses every one, so a missing or misnamed guide refuses the start. A
-    plugin's skill names its own: `guide(name, file=__file__, rel="guide.md")`."""
+    plugin's skill names its own: `guide(name, file=__file__, rel="guide.md")`, checked
+    when `build` makes the skill (a bad one keeps that plugin out, not the app)."""
     g = Guide(name, fill=fill, file=file, rel=rel)
-    GUIDES.append(g)
+    if file == __file__:
+        GUIDES.append(g)
     return g
 
 
@@ -559,11 +562,24 @@ def build(app) -> Registry:
         skill.app = app
         reg.add(skill)
     for p in plugins.all():          # imported only while its switch is on
-        for name, spec in p.skills.items():
-            if cfg.skill_enabled(name):
-                skill = p.attr(spec["class"])(cfg, p)
-                skill.app = app
-                reg.add(skill)
+        try:
+            built = []
+            for name, spec in p.skills.items():
+                if cfg.skill_enabled(name):
+                    skill = p.attr(spec["class"])(cfg, p)
+                    if (g := getattr(type(skill), "guide", None)) is not None:
+                        g._parse()          # a missing or misnamed guide.md
+                    skill.app = app
+                    built.append(skill)
+        except Exception as e:      # a broken plugin: its skills stay out, the app runs
+            log.exception("plugin skills failed", extra={"event": "plugin.build_failed",
+                                                         "plugin": p.id})
+            problem = Problem(f"plugin {p.id}", f"{type(e).__name__}: {e}")
+            if problem not in cfg.problems:
+                cfg.problems.append(problem)
+            continue
+        for skill in built:
+            reg.add(skill)
     meta = Skills(reg, cfg)
     meta.app = app
     reg.add(meta)
