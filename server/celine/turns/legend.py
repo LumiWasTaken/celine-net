@@ -32,6 +32,8 @@ LINES = (
     "otherwise.",
     "- [earlier result, shortened to save room] and [cut: ...]: the app shortened a tool "
     "result. Call the tool again for the whole of it.",
+    "- [N lines, about T tokens, shortened; the call is kept: ...] in an older call's "
+    "argument: the app sent its first line only. The call ran with the whole of it.",
     "- [the screen from ...]: a picture of a screen your tool took.",
 )
 

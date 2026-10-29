@@ -41,6 +41,39 @@ def _args(arguments: str | None, limit: int = 300) -> str:
     return one_line(text, limit)
 
 
+ARG_TOKENS = 300          # a string argument of an aged call over this is shortened
+
+
+def short_arguments(arguments: str | None, call_id: str) -> str | None:
+    """An aged call's arguments as they go on the wire: every string value over about
+    ARG_TOKENS tokens becomes its first line and a mark that says it is shortened and
+    how to read the call back; the JSON stays valid. The arguments as they came when
+    nothing is that long, or they are not JSON. Byte-identical for the same input: the
+    prompt prefix stays cacheable. The stored call never changes."""
+    try:
+        args = json.loads(arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return arguments
+    counter = tokens.Counter()                 # uncalibrated: deterministic
+    changed = False
+
+    def short(v):
+        nonlocal changed
+        if isinstance(v, dict):
+            return {k: short(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [short(x) for x in v]
+        if not isinstance(v, str) or (n := counter.estimate(v, "tool")) <= ARG_TOKENS:
+            return v
+        changed = True
+        first = one_line(v.strip().split("\n", 1)[0], 200)
+        return (f"{first} \u2026 [{len(v.splitlines())} lines, about {n:,} tokens, "
+                f"shortened; the call is kept: {call_id}; read it back with "
+                f"past_conversations__read_tool_call(id=\"{call_id}\")]")
+    out = short(args)
+    return json.dumps(out, ensure_ascii=False) if changed else arguments
+
+
 MAX_CITED_LINES = 12
 
 

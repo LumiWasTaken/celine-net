@@ -276,9 +276,13 @@ class _Item:
                 "attachments": self.attachments, "calls": self.calls}
 
 
+def _kept(call: dict, policy: Policy) -> bool:
+    """A call that never ages (policy.never_age): its arguments and result go whole."""
+    return any((call.get("name") or "").startswith(p) for p in policy.never_age)
+
+
 def _agable(call: dict, policy: Policy, counter) -> bool:
-    name = call.get("name") or ""
-    if any(name.startswith(p) for p in policy.never_age):
+    if _kept(call, policy):
         return False
     if call.get("attachments") or (call.get("display") or {}).get("shot"):
         return True                     # an image goes with its result
@@ -364,9 +368,13 @@ class _Plan:
         if aged in it._wire:
             return it._wire[aged]
         if it.calls:
+            # an aged call's long string arguments go shortened (compact.short_arguments),
+            # whatever the size of its result; never_age keeps a notebook call whole
             out = [{"role": "assistant", "content": it.content, **_thought(it), "tool_calls": [
                 {"id": c["id"], "type": "function",
-                 "function": {"name": c["name"], "arguments": c["arguments"]}}
+                 "function": {"name": c["name"], "arguments":
+                              compact.short_arguments(c["arguments"], c["id"])
+                              if aged and not _kept(c, self.policy) else c["arguments"]}}
                 for c in it.calls], ORIGIN: origin(it.cid, turn=it.turn, message=it.id)}]
             screens = []
             for c in it.calls:

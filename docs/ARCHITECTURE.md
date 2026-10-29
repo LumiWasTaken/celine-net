@@ -432,7 +432,11 @@ newest valid compaction, tool results verbatim or, for replies at or before
 `context_state.aged_through`, as a stub (`compact.stub`: the call, its first lines, its
 size, up to 40 message refs, the lines whose refs it cited in a later reply kept whole).
 `notebook__*` and results under 300 tokens are never shortened; a result that carries an
-image is shortened like any other. Previous turns' calls go on the wire with their ids
+image is shortened like any other. The calls of those replies go with every string argument over
+about 300 tokens shortened (`compact.short_arguments`): its first line, then "… [N lines,
+about T tokens, shortened; the call is kept: <id>; read it back with
+past_conversations__read_tool_call(id=...)]", the JSON still valid (a heredoc written
+once does not ride along in every later request); `notebook__*` calls stay whole. Previous turns' calls go on the wire with their ids
 (`tool_calls` on the assistant message, `tool_call_id` on the result). Every result
 reaches the model with its tool's name (`backends/openai.wire_messages`; Ollama
 `tool_name`; Anthropic ties `tool_result` to `tool_use` by id).
