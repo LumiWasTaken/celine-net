@@ -130,3 +130,51 @@ async def test_the_form_round_trips(tmp_path, monkeypatch, store):
         assert (await c.put("/api/settings/echo", json={"values": {"nope": 1}})).status_code == 400
         assert (await c.get("/api/settings/nothing")).status_code == 404
         assert "celine_plugins.echo" not in sys.modules, "a form is read, never imported"
+
+
+async def test_a_broken_plugin_switched_on_keeps_the_app_up(tmp_path, monkeypatch, store):
+    from celine.errors import Busy
+    from celine.settings import files
+    var = scratch(tmp_path, monkeypatch)
+    d = _echo(var)
+    (d / "skill.py").write_text("raise RuntimeError('broken on purpose')\n")
+    files.write(var / "settings", "features", {"echo": True})
+    cfg = boot.load()
+    app = make_app(cfg, store)              # builds the registry, as the start does
+    reg = app.state.services.registry
+    assert "echo" not in reg.skills and not any(t.startswith("echo__") for t in reg.tools)
+    assert any(p.file == "plugin echo" and "broken on purpose" in p.message and not p.fatal
+               for p in cfg.problems)
+    async with client(app) as c:            # and again after a save at runtime
+        put = await c.put("/api/features", json={"features": {"echo": True, "web": False}})
+        assert put.status_code == 200
+        assert "echo" not in app.state.services.registry.skills
+    with pytest.raises(Busy, match="Echo is not running."):
+        plugins.get("echo").db
+
+
+async def test_a_bad_guide_keeps_the_plugin_out(tmp_path, monkeypatch, store):
+    from celine.settings import files
+    from celine.skills import build, check_guides
+    var = scratch(tmp_path, monkeypatch)
+    d = _echo(var)
+    (d / "guide.md").write_text("---\nname: other\ndescription: x\n---\nbody\n")
+    files.write(var / "settings", "features", {"echo": True})
+    cfg = boot.load()
+    app = make_app(cfg, store)
+    assert "echo" not in build(app.state.services).skills
+    assert any(p.file == "plugin echo" and "name must be 'echo'" in p.message
+               for p in cfg.problems)
+    assert check_guides() is None, "a plugin's guide never refuses the start"
+
+
+def test_a_closed_file_drops_its_readers_and_reads_again(tmp_path):
+    from celine.kb.db import KBFile
+    f = KBFile(tmp_path / "x.db", ECHO / "migrations")
+    first = f._reader()
+    assert f.read_sync(lambda c: c.execute("SELECT count(*) FROM heard").fetchone()[0]) == 0
+    f.close()
+    with pytest.raises(Exception, match="closed"):
+        first.execute("SELECT 1")
+    assert f.read_sync(lambda c: c.execute("SELECT count(*) FROM heard").fetchone()[0]) == 0
+    assert f._reader() is not first
