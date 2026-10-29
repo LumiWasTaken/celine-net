@@ -101,6 +101,39 @@ async def test_cached_connector_tools_show_while_the_server_starts(store):
     assert "chatlink__read_messages" in reg.tools and "chatlink__send" not in reg.tools
 
 
+async def test_an_image_in_a_result_is_kept_as_an_attachment_of_the_call(store):
+    """An image part is saved for the call and its id goes in ToolResult.images, as a
+    browser shot does; the text keeps no placeholder for it."""
+    import base64
+    from mcp.types import CallToolResult, ImageContent, TextContent
+    from chat_fixtures import PNG, user_says
+    from celine import attachments
+    from celine.conversations import store as conversations, tree
+    from celine.turns import store as turns
+
+    class Client:
+        async def call_tool(self, name, args):
+            return CallToolResult(content=[
+                TextContent(type="text", text="the screen"),
+                ImageContent(type="image", data=base64.b64encode(PNG).decode(),
+                             mimeType="image/png")])
+
+    sup = Supervisor(_cfg(), store, Registry())
+    skill = McpSkill(sup.cfg.mcp["echo"])
+    skill.client, skill.status = Client(), "up"
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "look")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "x", "name": "echo__shot",
+                                                    "arguments": "{}"}])
+    out = await sup._call(_ctx(store), skill, "shot", {})
+    assert not out.is_error and out.content.startswith("the screen")
+    assert "[image]" not in out.content and len(out.images) == 1
+    row = await attachments.get(store, out.images[0])
+    assert row["media_type"] == "image/png" and row["filename"] == "shot.png"
+    assert attachments.blob_path(sup.cfg, row["sha256"]).read_bytes() == PNG
+
+
 async def test_a_server_that_does_not_answer_fails_with_the_plain_sentence(store):
     reg = Registry()
     cfg = _cfg("dead", transport="http", command=None, args=[], url="http://127.0.0.1:9/mcp",
