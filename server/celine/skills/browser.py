@@ -1084,11 +1084,10 @@ class Browser:
                                f"typed on its page: {', '.join(f.get('tabs') or [])}. Close "
                                f"one first: browser__close(tab=\"<name>\").", tab)
         if code == "busy":
-            return self._error(f"Tab {tab} is busy with another call. Try again when that one "
-                               f"has answered.", tab)
+            return self._error(f"Tab {tab} is busy with another call.", tab)
         if code == "taken":
             return self._error(f"{user} took over the browser at {self._at(f.get('since'))}; "
-                               f"nothing was done. Try again later.", tab)
+                               f"nothing was done.", tab)
         if code == "dialog":
             return self._error(where + f"{self._dialog(f['dialog'])}", tab)
         if code == "profile":
@@ -1109,8 +1108,7 @@ class Browser:
                 "covered": f"{target} is covered by {what}: nothing was done. Answer or "
                            f"close what is on top first.",
                 "disabled": f"{target} is disabled: nothing was done.",
-                "moving": f"{target} kept moving for a second: nothing was done. Let the "
-                          f"page settle, then try again."}[code], tab)
+                "moving": f"{target} kept moving for a second: nothing was done."}[code], tab)
         if code == "no_source":
             return self._error(f"Tab {tab} has no source to show: the page is not loaded "
                                f"from an address.", tab)
@@ -1153,7 +1151,7 @@ class Browser:
         if code == "bad":
             return self._error(where + f"The browser box did not take {f.get('what')}.", tab)
         if code == "starting":
-            return self._error("The browser is starting. Try again in a few seconds.", tab)
+            return self._error("The browser is starting.", tab)
         if code == "down":
             return self._error(f"The browser is down: {self._reason(f.get('reason'))}. A step "
                                f"{{\"do\": \"restart\"}} tries again; if that fails too, tell "
