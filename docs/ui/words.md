@@ -180,6 +180,7 @@ block at the end of this file lists the words no UI string uses.
 | API tokens | named tokens for scripts that call the API | GitHub "Personal access tokens" |
 | You | the section of your name, time zone and about you (General, the onboarding) | Apple "You" in Contacts and Health |
 | Show notifications, Replies, Intercom, Missions, Routines, Approvals | Notifications: the switch for all of them, one per kind (her replies in a chat, an Intercom message to you, a mission waiting for you, a failed run, a Vault or Bastet request) | Chrome "Show notifications"; Slack notification preferences |
+| Push, Push to this device, This device, Remove | Notifications: this device's switch for pushes while no page of the app is open and focused, the list of every device that takes them (named by the server like Sessions), This device on this one, Remove on a row | Web Push; Chrome "Push notifications"; Security "This session" |
 | Allowed, Blocked | the browser's notification permission (Notifications) | Chrome site settings "Allowed", "Blocked" |
 | Blocked in this browser, Allow them in this site's settings in your browser., Notifications need https., This browser has no notifications. | Notifications: a permission revoked (the toast and the page), a page on plain http, a browser without them | plain |
 | Accent colour, Text size | Appearance | macOS "Accent color", iOS "Text Size" |
