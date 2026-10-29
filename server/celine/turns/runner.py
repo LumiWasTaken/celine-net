@@ -165,8 +165,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         return
 
     cap = int(cfg.r("max_tool_iterations"))
-    # its voice cue: its talk is in every turn's prompt (system_blocks)
-    anchor = prompt.voice_line(cfg)
     # a quiet turn shows only its tool calls: its text is never streamed
     quiet = bool(turn.get("quiet"))
     grown = False                  # tool results appended since the last build
@@ -312,10 +310,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             messages.append({"role": "tool", "tool_call_id": call["id"],
                              "content": texts.get(call["id"], "result unavailable"),
                              ORIGIN: context.origin(cid, turn=tid, call=call["id"])})
-        if anchor and calls:
-            # its voice cue (voice_line), at the end of what it reads last: added to
-            # the request only, after what was sent before, so the cached start holds
-            messages[-1]["content"] += f"\n\n{anchor}"
         parent = await turns.step_tail(store, mid)
         iteration += 1
         grown = True

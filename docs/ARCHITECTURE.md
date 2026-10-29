@@ -444,7 +444,7 @@ Every user-role message goes on the wire with its time first: the line `[Fri 2 O
 **One mark for what the app adds.** Everything the app puts into what it reads is a line
 in square brackets: the send time, the intercom headers, `[your mind]`, `[your memory]`,
 `[your notes]`, shortened and cut results (`[earlier result, shortened to save room]`,
-`[cut: ...]`), a screen and its voice cue (`[how you sound]`). The one exception is
+`[cut: ...]`) and a screen. The one exception is
 outside text inside `<outside>` tags while Bastet is on. The legend under her persona
 (`turns/legend.py`) names each mark; `tests/test_self.py` checks it names the marks the
 code writes. The stored row stays bare. The agent's clock is the newest message's line, and

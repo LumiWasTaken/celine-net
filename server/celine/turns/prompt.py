@@ -30,30 +30,6 @@ def supports_prefill(backend) -> bool:
     return hasattr(backend, "for_message") or not bool(kwargs.get("enable_thinking", False))
 
 
-VOICE_MAX = 200          # characters of the voice cue
-
-
-def voice_line(cfg) -> str | None:
-    """The agent's voice cue, "[how you sound] ...": the first line under the first ## heading
-    of its talk (her.talk_text), cut to about VOICE_MAX characters at a sentence or a
-    word. None without such a line."""
-    her = getattr(cfg, "her", None)
-    if her is None:
-        return None
-    lines = [x.strip() for x in her.talk_text.splitlines()]
-    at = next((i for i, x in enumerate(lines) if x.startswith("## ")), None)
-    line = next((x for x in lines[at + 1:] if x and not x.startswith("#")), None) \
-        if at is not None else None
-    if not line:
-        return None
-    line = cfg.substitute(line)
-    if len(line) > VOICE_MAX:
-        cut = line[:VOICE_MAX]
-        end = cut.rfind(". ")
-        line = cut[:end + 1] if end > VOICE_MAX // 2 else cut.rsplit(" ", 1)[0] + " ..."
-    return f"[how you sound] {line}"
-
-
 async def tool_specs(registry, store, cid: str, carried, without=frozenset()
                  ) -> tuple[dict, bool]:
     """The tools this conversation has, and whether it may only read: the tools the
@@ -250,8 +226,7 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
     parts = [("persona", cfg.substitute(her.persona).strip())] \
         if her is not None and her.persona.strip() else []
     # what the app's marks in its context mean (turns/legend.py), right under who it is
-    voiced = voice_line(cfg) is not None
-    parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid), voiced)))
+    parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
     line = await _chat_line(store, cid)
     if line:
         parts.append(("talk", cfg.substitute(line)))
