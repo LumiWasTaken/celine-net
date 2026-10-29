@@ -67,6 +67,6 @@ async def test_a_loaded_skill_brings_her_note_on_it(store, tmp_path):
     got = await select_turn(store, cfg, reg, cid, 2, "look at https://example.com")
     assert got.loaded_notes == {"skills/web.md"}
     assert ("note", "skills/web.md") not in got.since, "no row: it follows the skill"
-    await loads.unload(store, cid, "skill", "web")
+    await loads.unload(store, cid, "skill", ["web"])
     got = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
     assert got.loaded_notes == frozenset()

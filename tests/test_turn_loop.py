@@ -164,7 +164,7 @@ async def test_load_refuses_a_down_skill(store, cfg):
     cid = await conversations.create(store)
     ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
                       config=cfg, emit=None)
-    out = await reg.skills["skills"].load(ctx, name="browser")
+    out = await reg.skills["skills"].load(ctx, names=["browser"])
     assert out.is_error and out.content == (
         "browser is down: Not set up: see Settings, Tools. Its tools stay out.")
 

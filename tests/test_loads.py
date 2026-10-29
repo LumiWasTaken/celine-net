@@ -162,26 +162,25 @@ async def test_skills_load_by_need_and_unload_when_idle(store, tmp_path):
     ctx = ToolContext(conversation_id=cid, turn_id="t2", tool_call_id="x", store=store,
                       config=cfg, emit=None)
     meta = reg.skills["skills"]
-    out = await meta.load(ctx, name="shell")
+    out = await meta.load(ctx, names=["shell"])
     assert out.is_error and out.content.startswith("shell is off in Settings, Tools")
     cfg.settings.tools = {}
     from celine.skills.gating import clear_override, set_override
     await set_override(store, cid, "shell", False, 1)
-    out = await meta.load(ctx, name="shell")
+    out = await meta.load(ctx, names=["shell"])
     assert out.is_error and out.content.startswith("shell is off in this conversation")
     off = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
     assert "(off in this conversation: it cannot load)" in reg.index(cfg, off)
     await clear_override(store, cid, "shell")
-    out = await meta.load(ctx, name="shell")
-    assert out.content == "Loaded shell. Its tools are in your list from your next step."
+    out = await meta.load(ctx, names="shell")          # one string is a name too
+    assert out.content == "Loaded shell: its tools are in your list by name from your next step."
     got = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
     assert got.skills == ["notebook", "web", "shell", "skills"] and got.turn == 2
 
-    # what does not fit the tools budget is not loaded, and the index says so
+    # names are not counted: a skill loads whatever the budget
     cfg.context["tools"] = 0
     got = await select_turn(store, cfg, reg, cid, 3, "the web, please")
-    assert got.skills == ["notebook", "skills"] and got.others["web"] == "no room"
-    assert "- web: The public web. (no room for its tools now)" in reg.index(cfg, got)
+    assert got.skills == ["notebook", "web", "shell", "skills"] and got.tools == []
 
 
 async def test_the_feed_says_what_came_and_what_went(store, tmp_path):
@@ -201,8 +200,8 @@ async def test_the_feed_says_what_came_and_what_went(store, tmp_path):
     await feed()
     await select_turn(store, cfg, reg, cid, 1, "the lighthouse keeper")
     assert await feed() == [{"conversation": cid, "loaded": {
-        "notes": [], "skills": ["notebook", "skills"]},
-        "unloaded": {"notes": [], "skills": []}}]
+        "notes": [], "skills": ["notebook", "skills"], "tools": []},
+        "unloaded": {"notes": [], "skills": [], "tools": []}}]
     await loads.touch(store, cid, "skill", ["web"])
     await loads.touch(store, cid, "skill", ["web"])          # nothing new: no event
     assert [e["loaded"]["skills"] for e in await feed()] == [["web"]]
@@ -210,7 +209,7 @@ async def test_the_feed_says_what_came_and_what_went(store, tmp_path):
         await select_turn(store, cfg, reg, cid, n)
     got = await feed()
     assert len(got) == 7, "every turn start says so"
-    empty = {"notes": [], "skills": []}
+    empty = {"notes": [], "skills": [], "tools": []}
     assert [e["unloaded"] for e in got if e["unloaded"] != empty] == [
         {**empty, "notes": ["lore/keeper.md"]}, {**empty, "skills": ["web"]}]
 
@@ -229,50 +228,3 @@ def test_tools_is_a_flat_budget_and_a_share_is_a_problem(tmp_path):
     assert problems, "a share is no longer a tools budget"
 
 
-def _big():
-    async def go(self, ctx, where: str) -> ToolResult:
-        return ToolResult("went")
-    go.__doc__ = "Go somewhere. " + "far away " * 8000
-
-    class Big:
-        name = "big"
-        description = "A skill with a large schema."
-    Big.go = tool()(go)
-    return Big()
-
-
-async def test_a_skill_over_the_tools_budget_is_not_loaded_and_its_calls_say_why(
-        store, tmp_path):
-    from celine.turns import tokens
-    from celine.turns import tools as turn_tools
-    cfg = notes_cfg(tmp_path)
-    reg = Registry(cfg)
-    for s in (Notebook(), Web(), _big()):
-        reg.add(s)
-    reg.add(Skills(reg, cfg))
-    cid = await conversations.create(store)
-    got = await select_turn(store, cfg, reg, cid, 1, "hello")
-    budget = got.budgets["tools"]
-    ctx = ToolContext(conversation_id=cid, turn_id="t1", tool_call_id="x", store=store,
-                      config=cfg, emit=None)
-    meta = reg.skills["skills"]
-    out = await meta.load(ctx, name="big")
-    cost = loads.schema_cost(tokens.counter(BACKEND), reg.by_skill()["big"])
-    assert cost > budget
-    have = {n: got.costs[n] for n in got.skills}
-    assert out.is_error and out.content == (
-        f"big is not loaded: its tools take {cost} tokens, the tools budget is {budget}, "
-        f"and the skills loaded now take {sum(have.values())}: "
-        + ", ".join(f"{n} ({t})" for n, t in have.items()) + ".")
-    assert ("skill", "big") not in (await store.read(lambda c: loads.rows(c, cid)))[1]
-    assert (await meta.load(ctx, name="web")).content.startswith("Loaded web.")
-
-    # a skill touched another way (a tool loads it) that does not fit: its call says why
-    await loads.touch(store, cid, "skill", ["big"])
-    carried = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
-    assert carried.others["big"] == "no room"
-    turn = {"offered": frozenset(), "loaded": frozenset(carried.skills), "carried": carried}
-    need = sum(carried.costs[n] for n in carried.skills) + carried.costs["big"]
-    _, res, _ = turn_tools._not_offered(turn, "big__go", reg.tools["big__go"], reg, {}, cfg)
-    assert res.content == (f"big is not carried: over the tools budget ({need} of {budget} "
-                           f"tokens).")

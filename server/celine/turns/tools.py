@@ -35,9 +35,12 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
     texts: dict[str, str] = {}
-    # a skill it uses stays loaded (turns/loads.py)
-    await loads.touch(store, cid, "skill", [c["name"].split("__")[0] for c in calls
-                                            if c["name"] in turn.get("offered", ())])
+    # a skill it uses stays loaded, and so does a tool it calls, with its parameters
+    # (turns/loads.py)
+    used = [c["name"] for c in calls if c["name"] in turn.get("offered", ())]
+    await loads.touch(store, cid, "skill", [n.split("__")[0] for n in used])
+    await loads.touch(store, cid, "tool", [
+        n for n in used if n.split("__")[0] not in loads.CORE and not registry.get(n).bare])
 
     guarded = guard.enabled(cfg, cid)
 
@@ -228,8 +231,8 @@ async def _replayed(store, turn, call):
 
 def _not_offered(turn, name: str, spec, registry, overrides, cfg):
     """The refusal of a call to a tool this step does not have: made up, of a skill not
-    loaded, outside a read-only sub-agent's tools, of a skill that is down, or off.
-    None when it has it."""
+    loaded, outside a read-only sub-agent's tools, of a skill that is down, off, or
+    without its parameters in the list (_parameters). None when it has it."""
     offered, loaded = turn["offered"], turn["loaded"]
     skill = name.split("__")[0]
     if spec is None and not (skill in registry.skills and skill not in loaded):
@@ -241,14 +244,9 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
             if real else f"There is no tool {name}."), is_error=True), None
     if name not in offered:
         here = ", ".join(sorted(t for t in offered if t.startswith(skill + "__")))
-        carried = turn.get("carried")
-        if carried is not None and carried.others.get(skill) == "no room":
-            need = sum(carried.costs.get(n, 0) for n in carried.skills) + carried.costs[skill]
-            text = (f"{skill} is not carried: over the tools budget ({need} of "
-                    f"{carried.budgets['tools']} tokens).")
-        elif skill not in loaded:
-            text = (f"{skill} is not loaded. skills__load(name=\"{skill}\") loads it for "
-                    f"your next step.")
+        if skill not in loaded:
+            text = (f"{skill} is not loaded. skills__load(names=[\"{skill}\"]) loads it "
+                    f"for your next step.")
         elif turn.get("read_only") and not read_mode_has(spec):
             text = READ_ONLY_REFUSAL.format(skill=skill, reads=here or "none")
         else:
@@ -264,7 +262,27 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
                         if s.skill == spec.skill)
         return "gated", ToolResult(content=OFF.format(name=spec.skill if whole else name),
                                    display={"gated": True, "tool": name}), None
+    carried = turn.get("carried")
+    if carried is not None and not spec.bare and not carried.full(name):
+        return "gated", ToolResult(content=_parameters(spec, carried),
+                                   display={"gated": True, "tool": name}), None
     return None
+
+
+def _parameters(spec, carried) -> str:
+    """The answer to a call of a tool whose parameters are not in its list: it did not
+    run, the tool in full, and whether its parameters come from the next step (the call
+    loads it, run_tool_calls) or do not fit the tools budget."""
+    from . import tokens
+    name, budget = spec.wire_name, carried.budgets["tools"]
+    full = json.dumps(spec.as_wire()["function"], ensure_ascii=False)
+    cost = carried.costs.get(name) or loads.schema_cost(tokens.counter(), [spec])
+    if (have := carried.counted) + cost > budget:
+        return (f"{name} did not run: its parameters were not in your list, and they do "
+                f"not fit the tools budget ({have} of {budget} tokens in use, it takes "
+                f"{cost}). The tool:\n{full}")
+    return (f"{name} did not run: its parameters were not in your list. They are from "
+            f"your next step. The tool:\n{full}")
 
 
 def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:

@@ -44,6 +44,7 @@ async def _start(store, cfg, skill, tg):  # noqa: F811
     from celine.turns import loads
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", [skill.name])
+    await loads.touch(store, cid, "tool", list(reg.tools))
     await user_says(store, cid, "build it")
     turn = await turns.claim(store, "w")
     jobs = Jobs(store, cfg, lambda: None, tg)

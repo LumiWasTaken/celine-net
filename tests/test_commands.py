@@ -153,6 +153,9 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
         after = c.get(f"/api/conversations/{cid}/context").json()
         assert c.delete(f"/api/conversations/{cid}/context/skills/notebook").status_code == 400
         assert c.delete("/api/conversations/nope/context/skills/arch").status_code == 404
+        assert c.delete(f"/api/conversations/{cid}/context/skills/arch").status_code == 404, \
+            "not loaded now"
+        assert c.delete(f"/api/conversations/{cid}/context/tools/arch__x").status_code == 404
     assert got["window"] == 65_536 and got["tools"] >= 1
     blocks = {b["name"]: b for b in got["blocks"]}
     assert list(blocks) == ["persona", "talk", "about", "notes", "tools", "history"]
@@ -166,6 +169,7 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
     assert got["loaded"]["notes"] == [{"path": "voice/style.md", "since": 0}]
     [arch] = [k for k in got["loaded"]["skills"] if k["name"] == "arch"]
     assert arch["since"] == 0 and arch["tokens"] > 0 and arch["core"] is False
+    assert arch["kind"] == "skills" and arch["tools"] == []
     assert "arch" not in [k["name"] for k in after["loaded"]["skills"]], "unloaded here"
 
     assert model.calls == [], "no model call"

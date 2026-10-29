@@ -99,6 +99,7 @@ async def test_runner_links_good_web_refs_and_marks_bad_ones(store, monkeypatch)
     from celine.turns import loads
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", ["web"])
+    await loads.touch(store, cid, "tool", list(reg.tools))
     await user_says(store, cid, "what went wrong with the celine?")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), reg)

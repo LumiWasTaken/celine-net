@@ -139,6 +139,7 @@ async def test_her_turn_reads_the_marked_page_with_no_line_from_bastet(store, mo
                       [TextDelta("done"), Done(reason="stop")]])
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", ["web"])
+    await loads.touch(store, cid, "tool", ["web__read_page"])
     await user_says(store, cid, "find me a bread recipe")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), reg)

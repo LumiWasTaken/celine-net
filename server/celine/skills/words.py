@@ -175,7 +175,7 @@ def _mails(d: dict, a: Args) -> str:
 
 # a tool that needs no arguments to say what it did
 VERB = {
-    "skills__load": "Loaded skills",
+    "skills__load": "Loaded skills", "skills__unload": "Unloaded skills",
     "email__list_folders": "Listed the mail folders",
     "appearance__set_portrait": "Set a new portrait", "me__read": "Read the persona",
     "me__edit": "Changed the Example lines", "me__whoami": "Checked where it is",

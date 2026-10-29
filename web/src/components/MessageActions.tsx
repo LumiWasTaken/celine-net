@@ -115,7 +115,7 @@ export function useMessageActions(
   // a turn that stopped or was cut off picks up where it ended
   const canContinue = hers && !closed && last && !running && !!turn?.continuable?.ok
   const lovable = hers && !!message.content.trim()
-  const work = calls.filter(c => c.name !== 'skills__load' && c.name !== 'skills__read_guide').length > 0 ? calls : []
+  const work = calls.filter(c => !c.name.startsWith('skills__')).length > 0 ? calls : []
 
   const all: MenuItem[] = [
     ...(regen ? [{ label: 'Regenerate', icon: RefreshCw, onSelect: regenerate }] : []),

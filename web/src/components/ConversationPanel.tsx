@@ -17,7 +17,7 @@
    places that talk without this panel (a mission). */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeftRight, Plus, X } from 'lucide-react'
-import { conversationApi, notebookApi, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
+import { conversationApi, notebookApi, type Carried, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
 import { errorText, num } from '../lib/format'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
@@ -269,7 +269,7 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
   // the list sent last: two quick switches both count before the server's event comes back
   const sent = useRef(notesOff)
   useEffect(() => { sent.current = notesOff }, [notesOff])
-  const unload = useAction(async (name: string) => { await conversationApi.unloadSkill(cid, name); ctx.reload() })
+  const unload = useAction(async (k: Carried) => { await conversationApi.unload(cid, k.kind, k.name); ctx.reload() })
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(cid, on); ctx.reload() })
   const [loading, setLoading] = useState<'skill' | 'note' | null>(null)
   const c = ctx.data
@@ -313,11 +313,17 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
       <div className="chat-ctx__list" role="list" aria-label="Tools">
         <ListSection label="Tools" />
         {unload.error && <InlineError compact message={unload.error} />}
-        {c.loaded.skills.map(k => (
+        {c.loaded.skills.map(k => [
           <ListRow key={k.name} density="sm" title={k.label} subtitle={carriedWords(k.tokens, k.since)} trailingAlways
                    trailing={!k.core && <IconButton icon={X} size="sm" label={`Remove ${k.label}`} loading={unload.busy}
-                                                    onClick={() => void unload.run(k.name)} />} />
-        ))}
+                                                    onClick={() => void unload.run(k)} />} />,
+          ...k.tools.map(t => (
+            <ListRow key={t.name} density="sm" depth={1} title={t.name}
+                     subtitle={carriedWords(t.tokens, t.since)} trailingAlways
+                     trailing={<IconButton icon={X} size="sm" label={`Remove ${t.name}`} loading={unload.busy}
+                                           onClick={() => void unload.run(t)} />} />
+          )),
+        ])}
         <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add tools" onClick={() => setLoading('skill')}>Add</Button>
       </div>
       {loading && (

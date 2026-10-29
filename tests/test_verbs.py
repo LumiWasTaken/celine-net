@@ -13,7 +13,7 @@ from celine.skills import build
 VERBS = {"search", "read", "list", "get", "count", "look_up", "scroll", "write", "edit",
          "delete", "move", "mark", "start", "stop", "send", "cancel", "type", "open",
          "act", "look", "close", "find", "wait", "update", "generate", "read_guide",
-         "get_current", "set", "step", "change", "create", "continue", "request", "run", "load",
+         "get_current", "set", "step", "change", "create", "continue", "request", "run", "load", "unload",
          "rotate", "think", "feel", "ask",
          # a reference added from its box
          "add",

@@ -50,13 +50,15 @@ async def tool_specs(registry, store, cid: str, carried, without=frozenset()
     return tools, False
 
 
-def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
+def wire_tools(specs, registry, overrides, cfg, carried) -> list[dict]:
     """The tools it gets in this request: those of `specs` that are on (skills/
-    gating.py) and whose skill is up. A tool that is off or down is not sent at all
-    (an empty stub got called with no arguments in a loop): the skill index says so
-    (unusable), and a call to it is refused with why (turns/tools.py). Descriptions
-    are filled in at registration (skills.Registry.add_specs)."""
-    return [s.as_wire() for s in specs.values()
+    gating.py) and whose skill is up, with their parameters when `carried` has them
+    (loads.Carried.full), else by name and one line. A tool that is off or down is not
+    sent at all (an empty stub got called with no arguments in a loop): the skill index
+    says so (unusable), and a call to it is refused with why (turns/tools.py).
+    Descriptions are filled in at registration (skills.Registry.add_specs)."""
+    return [s.as_wire() if carried.full(s.wire_name) else s.as_name()
+            for s in specs.values()
             if registry.down(s.skill) is None and is_enabled(s, overrides, cfg)]
 
 
@@ -80,7 +82,7 @@ async def request_parts(store, cfg, registry, backend, cid: str):
     overrides = await overrides_for(store, cid)
     carried = await loads.select(store, cfg, registry, cid, backend)
     specs, _ = await tool_specs(registry, store, cid, carried)
-    tools = (wire_tools(specs, registry, overrides, cfg)
+    tools = (wire_tools(specs, registry, overrides, cfg, carried)
              if registry and getattr(backend, "supports_tools", False) else [])
     blocks = await system_blocks(cfg, registry, store, cid, "", carried)
     return blocks, tools, carried
