@@ -269,13 +269,13 @@ async def test_a_mission_a_freeze_cut_goes_on_after_the_unfreeze(store):
     await freeze.freeze(Services(cfg=cfg, store=store), by="user", why="a test")
     assert await watch.check(app, cid, tid) is None, "left active, not Needs you"
     assert (await missions.get(store, cid))["status"] == "active"
-    assert await watch.thaw(app) == [], "still frozen"
+    assert await watch.go_on(app) == [], "still frozen"
     await freeze.unfreeze(Services(cfg=cfg, store=store), by=OWNER)
-    assert await watch.thaw(app) == [cid]
+    assert await watch.go_on(app) == [cid]
     assert await store.read(lambda c: c.execute(
         "SELECT state FROM turns WHERE id=?", (tid,)).fetchone()[0]) == "queued", \
         "the cut turn goes on"
-    assert woke and await watch.thaw(app) == [], "once"
+    assert woke and await watch.go_on(app) == [], "once"
 
     cfg.settings.general["missions_resume_after_unfreeze"] = False
     other = await _mission(store, intercom)
@@ -284,7 +284,7 @@ async def test_a_mission_a_freeze_cut_goes_on_after_the_unfreeze(store):
         "UPDATE turns SET state='aborted', reason='frozen', reason_code='frozen' WHERE id=?",
         (tid,)))
     assert await watch.check(app, other, tid) == "needs_you", "switched off: as a Stop"
-    assert await watch.thaw(app) == []
+    assert await watch.go_on(app) == []
 
 
 async def test_a_reply_of_the_user_makes_a_waiting_mission_active_again(store):
@@ -317,3 +317,66 @@ async def test_a_stopped_sub_agent_lets_the_watch_move_its_mission_on(store):
     await hooks[0](sub, stid)                       # the Stop's turn end
     row = await missions.get(store, cid)
     assert (row["status"], row["note"]) == ("needs_you", watch.NOTE)
+
+
+async def test_a_mission_a_restart_cut_goes_on_in_that_turn(store):
+    intercom = Intercom(store)
+    cfg = load()
+    cfg.settings.general["missions_resume_after_unfreeze"] = False     # not for a restart
+    woke = []
+    app = SimpleNamespace(store=store, intercom=intercom, cfg=cfg, registry=None,
+                          dispatcher=SimpleNamespace(notify=lambda: woke.append(1)))
+    cid = await _mission(store, intercom)
+    await plans.save(store, cid, "", plans.clean(["Read", "Write"]))
+    tid = await _ended_turn(store, intercom, cid, tool=True)
+    await store.write(lambda c: c.execute(
+        "UPDATE turns SET state='interrupted', reason_code='restart' WHERE id=?", (tid,)))
+    assert await watch.check(app, cid, tid) is None, "left active, not Needs you"
+    assert await watch.go_on(app) == [cid]
+    assert await store.read(lambda c: c.execute(
+        "SELECT state FROM turns WHERE id=?", (tid,)).fetchone()[0]) == "queued"
+    assert woke and await watch.go_on(app) == [], "once"
+
+
+async def test_the_time_the_house_held_a_mission_moves_its_limits_later(store):
+    from celine.core.services import Services
+    from celine.guard import freeze
+    from test_bastet import OWNER
+    intercom = Intercom(store)
+    cfg = load()
+    cfg.settings.general["mission_max_hours"] = 2
+
+    async def abort(_cid):
+        pass
+    app = SimpleNamespace(store=store, intercom=intercom, cfg=cfg, llm=None, terminals=None,
+                          dispatcher=SimpleNamespace(abort_conversation=abort))
+    t0 = datetime.now(timezone.utc).replace(microsecond=0)    # the notice is due later
+    until = t0 + timedelta(hours=3)
+    cid = await _mission(store, intercom, until=iso(until))
+    await missions.update(store, cid, {"min_until": iso(t0 + timedelta(hours=1))})
+    done = await _mission(store, intercom)
+    await missions.update(store, done, {"status": "done"})
+    old_wake = (await missions.get(store, cid))["wake_id"]
+
+    assert await watch.held(app, t0, None) is None, "no hold"
+    await freeze.freeze(Services(cfg=cfg, store=store), by="user", why="a test")
+    since = await watch.held(app, t0, None)
+    assert since == t0
+    assert await watch.held(app, t0 + timedelta(minutes=10), since) == since
+    await freeze.unfreeze(Services(cfg=cfg, store=store), by=OWNER)
+    assert await watch.held(app, t0 + timedelta(minutes=30), since) is None
+
+    row = await missions.get(store, cid)
+    assert row["held_seconds"] == 1800
+    assert row["until"] == iso(until + timedelta(minutes=30))
+    assert row["min_until"] == iso(t0 + timedelta(hours=1, minutes=30))
+    assert (await missions.get(store, done))["held_seconds"] == 0, "only open missions"
+    due, gone = await store.read(lambda c: tuple(c.execute(
+        "SELECT due_at, (SELECT cancelled_at FROM intercom WHERE id=?) FROM intercom "
+        "WHERE id=?", (int(old_wake), int(row["wake_id"]))).fetchone()))
+    assert gone and due == iso(until + timedelta(minutes=15)), "the notice moved with it"
+
+    start = datetime.fromisoformat(row["created_at"])
+    assert await watch.ceilings(app, start + timedelta(hours=2, minutes=29)) == [], \
+        "the ceiling counts the hold off"
+    assert await watch.ceilings(app, start + timedelta(hours=2, minutes=31)) == [cid]
