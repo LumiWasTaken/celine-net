@@ -356,6 +356,7 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
         "gpu": {"kind": "llama-server", "label": "gpu", "base_url": "http://gpu:8080/v1",
                 "models": {"small": {"caps": ["chat", "tools"]}}}})
     monkeypatch.setattr(s, "key_missing", lambda pid: False)
+    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small"]}})
     asked = []
 
     class Approvals:
@@ -363,15 +364,16 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
                       **kw):
             asked.append((kind, action, facts, conversation))
             return "denied; nothing was done."
+    from types import SimpleNamespace
     agents = _registry(cfg).skills["sub_agents"]
-    agents.app = Services(approvals=Approvals())     # no dispatcher: nothing runs
+    agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store), approvals=Approvals(),
+                          dispatcher=SimpleNamespace(notify=lambda: None))   # nothing runs
     parent = await conversations.create(store)
 
     async def emit(note, **data):
         pass
     ctx = ToolContext(parent, "t", "x", store, cfg, emit)
     assert (await agents.start(ctx, brief="x", name="abc", model="or/big")).is_error
-    assert asked == [], "a start refused anyway asks nothing"
     out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
                              model="or/big")
     assert out.is_error and out.content == "denied; nothing was done."
@@ -380,7 +382,16 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
     out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
                              model="gpu/small")
     assert len(asked) == 1, "a local model starts without asking"
-    assert "cannot run here" in out.content, "it went on to start"
+    assert out.content.startswith("site reader started"), out.content
+    for model in ("or/big", None):
+        out = await agents.start(ctx, brief="again", name="site reader", model=model)
+        assert out.is_error and ("still working" in out.content or "exists with" in out.content)
+    assert len(asked) == 1, "a start refused anyway asks nothing"
+    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["or/big", "gpu/small"]}})
+    out = await agents.start(ctx, brief="Count the pages.", name="page counter")
+    assert out.is_error and asked[1][:2] == (
+        "model", "start the sub-agent page counter on the cloud model big on OpenRouter"), \
+        "no model given: the one its role runs it on"
 
 
 async def test_a_long_report_is_cut_from_the_parents_window_and_its_fragment_says_so(

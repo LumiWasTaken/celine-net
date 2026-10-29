@@ -210,18 +210,19 @@ class SubAgents:
                                    "link": sub["link"]})
 
     async def _cloud_approval(self, ctx: ToolContext, brief: str, name: str,
-                              model: str | None) -> str | None:
-        """The user's approval when the sub-agent would run on a cloud model: the one
-        given, else a resumed one's own, else this conversation's. None when it may
-        start, else the sentence for its result."""
+                              model: str | None, known: dict | None) -> str | None:
+        """The user's approval when the sub-agent would run on a cloud model: a resumed
+        one's own, else the one given, else this conversation's (_settings), else the
+        first of its role's chain (settings/roles.py: tasks, an empty one chat's). None
+        when it may start, else the sentence for its result."""
+        from ..settings.roles import role_of
         s = self.cfg.settings
-        if model is None:
-            name_ = " ".join(name.split())
-            mine = await ctx.store.read(lambda c: agents_of(c, ctx.conversation_id))
-            known = next((a for a in mine if _same(a["name"], name_)), None)
-            model = known["model"] if known else \
-                (await model_for_sub_agent(ctx.store, ctx.conversation_id))["model"]
-        if not model or model not in her_models.allowed(s) or not her_models.cloud(s, model):
+        if known is not None:
+            model = known["model"]
+        elif model is None:
+            model = (await model_for_sub_agent(ctx.store, ctx.conversation_id))["model"]
+        model = model or next(iter(s.chain(role_of("agent")) or s.chain("chat")), None)
+        if not model or not her_models.cloud(s, model):
             return None
         approvals = getattr(self.app, "approvals", None)
         if approvals is None:
@@ -237,8 +238,8 @@ class SubAgents:
 
 
     def _folder(self, folder: str, create: bool) -> tuple[str | None, str | None]:
-        """A relative notebook folder, created for a sub-agent that writes. (folder,
-        refusal)."""
+        """A relative notebook folder; one that does not exist only for a sub-agent that
+        writes (`create`), made by begin. (folder, refusal)."""
         root = self.cfg.her.notebook.resolve()
         rel = str(Path(folder.strip().rstrip("/")))
         p = (root / rel).resolve()
@@ -249,12 +250,37 @@ class SubAgents:
             return None, "tools/ is not part of your notebook."
         if p.exists() and not p.is_dir():
             return None, f"{rel} is a file. `folder` is a folder."
-        if not p.exists():
-            if not create:
-                return None, (f"There is no folder {rel} in your notebook to read. "
-                              f"Give it access work to let it write there.")
-            p.mkdir(parents=True)
+        if not p.exists() and not create:
+            return None, (f"There is no folder {rel} in your notebook to read. "
+                          f"Give it access work to let it write there.")
         return rel, None
+
+    async def _check(self, store, parent: str, name: str, given: dict, access: str,
+                     folder: str | None) -> tuple[list, dict | None, str | None, str | None]:
+        """What begin refuses once it knows the parent's sub-agents, reading only:
+        -> (them, the one called `name` or None, the folder, None) or the refusal last."""
+        mine = await store.read(lambda c: agents_of(c, parent))
+        known = next((a for a in mine if _same(a["name"], name)), None)
+        if known is not None and known["working"]:
+            return mine, known, None, (
+                f"{known['name']} is still working. Write to it with "
+                f"intercom__send(to={known['name']!r}), or pick another name.")
+        if known is not None and any(v is not None and v != known[k]
+                                     for k, v in given.items()):
+            where = f" and the folder {known['folder']}" if known["folder"] else ""
+            where += f", the model {known['model']}" if known["model"] else ""
+            where += f", the CLI {known['cli']}" if known["cli"] else ""
+            return mine, known, None, (
+                f"{known['name']} exists with {known['access']} access{where}; start it "
+                f"under another name or leave access, folder, model and cli out.")
+        if known is not None:
+            return mine, known, None, None
+        if (refusal := await self._over_cap(store, parent, len(mine))):
+            return mine, None, None, refusal
+        if folder is None:
+            return mine, None, None, None
+        folder, refusal = self._folder(folder, create=access == "work")
+        return mine, None, folder, refusal
 
     async def begin(self, store, parent: str, brief: str, name: str,
                     access: str | None = None, folder: str | None = None,
@@ -290,35 +316,27 @@ class SubAgents:
             return None, self.cfg.substitute(
                 f"Sub-agents go at most {MAX_DEPTH} levels below {{{{name}}}}, and this "
                 f"conversation is {deep} below: it starts none."), False, None
-        if asker is not None and (no := await self._cloud_approval(asker, brief, name, model)):
-            return None, no, False, None
         if self.dispatcher is None:         # tests run turns without one
             return None, ("Sub-agents cannot run here: nothing is there to run their "
                           "turns."), False, None
+        _, known, _, refusal = await self._check(store, parent, name, given, access, folder)
+        if refusal:
+            return None, refusal, False, None
+        # the user's answer may take minutes: asked outside the lock, checked again in it
+        if asker is not None and (no := await self._cloud_approval(
+                asker, brief, name, model, known)):
+            return None, no, False, None
         async with self._queueing:
-            mine = await store.read(lambda c: agents_of(c, parent))
-            known = next((a for a in mine if _same(a["name"], name)), None)
-            if known is not None and known["working"]:
-                return None, (f"{known['name']} is still working. Write to it with "
-                              f"intercom__send(to={known['name']!r}), or pick another "
-                              f"name."), False, None
-            if known is not None and any(v is not None and v != known[k]
-                                         for k, v in given.items()):
-                where = f" and the folder {known['folder']}" if known["folder"] else ""
-                where += f", the model {known['model']}" if known["model"] else ""
-                where += f", the CLI {known['cli']}" if known["cli"] else ""
-                return None, (f"{known['name']} exists with {known['access']} "
-                              f"access{where}; start it under another name or leave "
-                              f"access, folder, model and cli out."), False, None
+            mine, known, folder, refusal = await self._check(
+                store, parent, name, given, access, folder)
+            if refusal:
+                return None, refusal, False, None
             if known is not None:
                 sub = known["id"]
             else:
-                if (refusal := await self._over_cap(store, parent, len(mine))):
-                    return None, refusal, False, None
-                if folder is not None:
-                    folder, refusal = self._folder(folder, create=access == "work")
-                    if refusal:
-                        return None, refusal, False, None
+                if folder is not None and access == "work":
+                    (self.cfg.her.notebook.resolve() / folder).mkdir(parents=True,
+                                                                     exist_ok=True)
                 sub = await conversations.create(
                     store, title=name, agent_of=parent, agent_name=name,
                     notebook_folder=folder, access=access, agent_cli=cli)
