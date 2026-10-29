@@ -193,7 +193,7 @@ class McpSkill:
                             else f"Tools of the MCP server {cfg.id}.")
         self.status = "starting"        # starting | up | down (retrying) | dead
         self.error: str | None = None
-        self.restarts = 0               # failures in a row; over max_restarts: dead
+        self.restarts = 0               # failures in a row (_supervise)
         self.ups = 0                    # times it came up
         self.client: Client | None = None
         self.kick = anyio.Event()       # set to force a reconnect
@@ -358,7 +358,9 @@ class Supervisor:
                 skill.client = None
 
             skill.restarts += 1
-            if skill.restarts > skill.cfg.max_restarts:
+            # a server this app starts a process for is dead past max_restarts; one at a
+            # url alone comes back with its host, so it keeps reconnecting at the backoff
+            if skill.cfg.command and skill.restarts > skill.cfg.max_restarts:
                 skill.status = "dead"
                 log.warning("mcp server dead", extra={"event": "mcp.dead",
                                                       "server": skill.name})

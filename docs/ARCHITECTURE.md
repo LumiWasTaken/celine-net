@@ -1502,7 +1502,9 @@ the SDK's default environment plus `[servers.*.env]`; `http` uses streamable HTT
 Life cycle: connect, `list_tools` within `startup_timeout_seconds`, register, cache the
 list in `mcp_tools`, then `list_tools` every 15 s. A failed poll or transport error tears
 the session down and reconnects with backoff (1 s doubling to 30 s). Past `max_restarts`
-failures in a row the skill is `dead`; `POST /api/skills/{name}/restart` resets the count.
+failures in a row a server with a `command` is `dead`; `POST /api/skills/{name}/restart`
+resets the count. A server at a `url` alone is never `dead`: it stays `down` with its
+error and reconnects at the backoff until its host answers again.
 `/api/skills` carries `status` and `error` per skill.
 
 ## HTTP
