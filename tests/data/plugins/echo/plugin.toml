@@ -1,0 +1,7 @@
+id = "echo"
+label = "Echo"
+about = "Says back what it hears, and keeps a count."
+routes = ["api:router"]
+
+[skills.echo]
+class = "skill:Echo"
