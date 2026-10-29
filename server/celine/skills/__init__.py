@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Literal, get_args, get_origin
 
+from .. import plugins
 from ..settings import features
 
 log = logging.getLogger("celine.skills")
@@ -176,9 +177,12 @@ class Guide:
     when asked: `body`, `description` and `words` follow the file."""
 
     def __init__(self, name: str, description: str | None = None, body: str = "",
-                 words: tuple[str, ...] = (), fill: dict[str, Any] | None = None):
-        """With a `description`: a guide made of these words, no file (tests, a stub)."""
+                 words: tuple[str, ...] = (), fill: dict[str, Any] | None = None,
+                 file: str = __file__, rel: str = ""):
+        """With a `description`: a guide made of these words, no file (tests, a stub).
+        `rel` beside `file`: where it is read (a plugin's guide.md); else guides/<name>.md."""
         self.name = name
+        self._file, self._rel = file, rel or f"guides/{name}.md"
         self._fill = fill or {}
         self._parsed: tuple[str, dict[str, str], str] | None = None
         if description is not None:
@@ -189,7 +193,7 @@ class Guide:
         if self._parsed is not None and self._parsed[0] is None:    # fixed words
             return self._parsed[1], self._parsed[2]
         from .. import prompts
-        text = prompts.text(__file__, f"guides/{self.name}.md")
+        text = prompts.text(self._file, self._rel)
         if self._parsed is not None and self._parsed[0] == text:
             return self._parsed[1], self._parsed[2]
         filled = text
@@ -208,7 +212,7 @@ class Guide:
                     key = key.strip()
                     meta[key] = value.strip()
         if meta.get("name") != self.name:
-            raise ValueError(f"guides/{self.name}.md: name must be {self.name!r}")
+            raise ValueError(f"{self._rel}: name must be {self.name!r}")
         self._parsed = (text, meta, body.strip())
         return meta, body.strip()
 
@@ -238,10 +242,11 @@ GUIDES: list[Guide] = []        # every guide a skill declared, checked in prefl
 GUIDES_DIR = Path(__file__).parent / "guides"
 
 
-def guide(name: str, **fill: Any) -> Guide:
+def guide(name: str, *, file: str = __file__, rel: str = "", **fill: Any) -> Guide:
     """A skill's guide. Read lazily: the config dir is checked first (preflight), then
-    check_guides parses every one, so a missing or misnamed guide refuses the start."""
-    g = Guide(name, fill=fill)
+    check_guides parses every one, so a missing or misnamed guide refuses the start. A
+    plugin's skill names its own: `guide(name, file=__file__, rel="guide.md")`."""
+    g = Guide(name, fill=fill, file=file, rel=rel)
     GUIDES.append(g)
     return g
 
@@ -252,7 +257,7 @@ def check_guides() -> str | None:
         try:
             g._parse()
         except (OSError, ValueError) as e:
-            return f"guides/{g.name}.md: {e}"
+            return f"{g._rel}: {e}"
     return None
 
 
@@ -553,10 +558,21 @@ def build(app) -> Registry:
         skill = cls(cfg)
         skill.app = app
         reg.add(skill)
+    for p in plugins.all():          # imported only while its switch is on
+        for name, spec in p.skills.items():
+            if cfg.skill_enabled(name):
+                skill = p.attr(spec["class"])(cfg, p)
+                skill.app = app
+                reg.add(skill)
     meta = Skills(reg, cfg)
     meta.app = app
     reg.add(meta)
     return reg
+
+
+def names() -> list[str]:
+    """Every skill `build` may make but `skills`: BUILTIN's, then the plugins'."""
+    return [n for n, _, _ in BUILTIN] + [s for p in plugins.all() for s in p.skills]
 
 
 def module(name: str) -> types.ModuleType | None:
