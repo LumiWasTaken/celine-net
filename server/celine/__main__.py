@@ -168,11 +168,6 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             tg.start_soon(_semantic.run_scheduler, cfg, kbs)
             from .kb import media as _media           # image captions (Settings, General)
             tg.start_soon(_media.run_scheduler, cfg, kbs)
-            documents = kbs.documents()
-            if documents is not None:
-                scanned = await anyio.to_thread.run_sync(documents.rescan)
-                log.info("documents scanned", extra={"event": "documents.scanned", **scanned})
-                tg.start_soon(_watch_documents, documents, store)
             log.info("knowledge bases ready", extra={"event": "kb.ready",
                                                      "kbs": sorted(kbs.all)})
 
@@ -272,9 +267,25 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             async def describe_again(p: dict) -> None:   # kb/documents_describe.py
                 if (kb := kbs.get(p["kb"])) is not None:
                     await anyio.to_thread.run_sync(kb.kick_describe)
-            dispatcher.work.handle("documents.describe", ("small",), describe_again)
-            if documents is not None:
-                documents.work = dispatcher.work
+
+            async def documents_run() -> None:   # Documents: the folder, its index, its watcher
+                for kid in features.BY_ID["documents"].kbs:
+                    await anyio.to_thread.run_sync(kbs.open, kid)
+                try:
+                    dispatcher.work.handle("documents.describe", ("small",), describe_again)
+                    if (documents := kbs.documents()) is not None:
+                        documents.work = dispatcher.work
+                        scanned = await anyio.to_thread.run_sync(documents.rescan)
+                        log.info("documents scanned",
+                                 extra={"event": "documents.scanned", **scanned})
+                        await _watch_documents(documents, store)
+                    await anyio.sleep_forever()
+                finally:
+                    for kid in features.BY_ID["documents"].kbs:
+                        kbs.close(kid)
+            runners["documents"] = Runner(tg, documents_run)
+            if on["documents"]:
+                await runners["documents"].start()
             from .intercom import Intercom      # messages between everyone, and their timer
             intercom = services.intercom = Intercom(store, dispatcher.notify)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules

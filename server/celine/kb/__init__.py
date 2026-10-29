@@ -41,8 +41,7 @@ class KBs:
     def __init__(self, cfg, publish, llm=None) -> None:
         self.cfg = cfg
         self.llm = llm          # the app's LLM layer, for descriptions and captions
-        self.dir: Path = cfg.data_dir / "kb"
-        self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir: Path = cfg.data_dir / "kb"     # made by the first file's migrate
         self.all: dict[str, ChatKB | DocumentsKB] = {}
         self.tasks = Tasks(publish)
         from ..settings import features

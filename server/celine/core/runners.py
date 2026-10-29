@@ -2,7 +2,7 @@
 
 The lifespan registers one Runner per service feature on the services bag (`runners`):
 shellbox the TerminalSync loop, browser the browser watch, vault the login, discord and
-whatsapp their MCP server with its archive and feed. A features PUT or a services PUT
+whatsapp their MCP server with its archive and feed, documents its index and watcher. A features PUT or a services PUT
 calls `apply(on, changed)`: what became on starts, what became off stops, what changed
 its address stops and starts again. Each runner is one task in the lifespan's task
 group under its own CancelScope; stop cancels it and waits for it to end.

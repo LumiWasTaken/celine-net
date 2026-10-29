@@ -10,8 +10,8 @@ one `probe(cfg, services)` beside the module. The skills, the MCP servers, the a
 the UI places and Settings pages, `celine doctor` and the onboarding all follow.
 
 A feature off: its skills are not built (config.skill_enabled, skills_off), nor its tools
-of another feature's skill (`tools`, Registry.add_specs), its MCP server
-is not started and its archive not opened (discord, whatsapp), its service is not followed
+of another feature's skill (`tools`, Registry.add_specs), its MCP server is not started
+and its archive not opened (discord, whatsapp, documents), its service is not followed
 (shellbox, browser, vault), Bastet is off (guard). All of it hot: settings commit() and
 reload.apply rebuild the skills, and the lifespan's runners (core/runners.py) start and
 stop what runs for a feature on a features or services PUT.
@@ -138,7 +138,7 @@ CATALOG: tuple[Feature, ...] = (
     Feature("documents", "Documents", "",
             "A folder of your documents, searched, read and cited.",
             "No documents to give.",
-            skills=("user_documents",), places=("documents",)),
+            skills=("user_documents",), places=("documents",), kbs=("documents",)),
     Feature("messages", "Messages", "Turns on once Discord or WhatsApp is connected.",
             "Your chat history in one archive, searched by word or by topic.",
             "No Discord or WhatsApp connected.",
