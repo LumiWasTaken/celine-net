@@ -16,6 +16,9 @@ One service, four kinds:
   user already approved on Bastet's ask (`call`, its tool call id) is not asked again.
 - `share`, a public share (shell__share, skills/shell.py): anyone with its link opens
   it, so it waits for the user, guard or no guard, as an edit of herself does.
+- `settings`, a change of the settings (settings__propose, skills/settings.py): every
+  one waits for the user, guard or no guard. Its chat row carries `changes`, each field's
+  label, before and after (a secret's value never: its state), and her `why`.
 
 Every request but a gate (Bastet's banner is its ask there) shows in the chat that asked,
 after the message that made the call, with Approve and Deny: the conversation event
@@ -53,8 +56,9 @@ from .guard.sources import OUTSIDE   # skills whose results others wrote: one li
 log = logging.getLogger("celine.approvals")
 
 ASK_FOR = 120       # seconds a request waits for the user
-KINDS = ("vault", "gate", "her", "share")
-LABEL = {"vault": "Vault", "gate": "Bastet", "her": "Persona", "share": "Shares"}
+KINDS = ("vault", "gate", "her", "share", "settings")
+LABEL = {"vault": "Vault", "gate": "Bastet", "her": "Persona", "share": "Shares",
+         "settings": "Settings"}
 LINE_MAX = 200      # characters of a request's facts on its line in the chat
 APPROVED_KEPT = 64  # tool calls approved on Bastet's ask, kept so the tool asks no more
 
@@ -86,6 +90,7 @@ class Ask:
     answer: asyncio.Future = field(repr=False)
     ref: int | None = None  # gate: Bastet's row, so her banner can answer it
     call: str | None = None  # the tool call it is for
+    changes: list[dict] | None = None   # settings: [{label, before, after}]
 
     def view(self) -> dict:
         return {"id": self.id, "kind": self.kind, "action": self.action,
@@ -110,8 +115,11 @@ class Ask:
 def chat(ask: Ask, message_id: str | None) -> dict:
     """A request as its chat shows it: the kind's name, its line, Approve and Deny,
     after the message `message_id`."""
-    return {"id": ask.id, "kind": ask.kind, "label": LABEL[ask.kind], "line": ask.line(),
-            "tool_call_id": ask.call, "message_id": message_id}
+    out = {"id": ask.id, "kind": ask.kind, "label": LABEL[ask.kind], "line": ask.line(),
+           "tool_call_id": ask.call, "message_id": message_id}
+    if ask.changes is not None:
+        out |= {"changes": ask.changes, "why": ask.why}
+    return out
 
 
 def _open(rows) -> dict[str, tuple[str, dict]]:
@@ -173,7 +181,8 @@ class Approvals:
 
     async def ask(self, action: str, facts: list[str], conversation: str,
                   why: str = "", short: str = "", kind: str = "vault",
-                  ref: int | None = None, call: str | None = None) -> str | None:
+                  ref: int | None = None, call: str | None = None,
+                  changes: list[dict] | None = None) -> str | None:
         """Wait for the user's answer. -> None when approved, else one sentence for its
         tool result: denied, no answer in time (it starts with `{user} did not answer`),
         no reason given (vault), or another one waits. `call`: the tool call it is for;
@@ -196,7 +205,8 @@ class Approvals:
                   why=why, short=short, conversation=conversation,
                   read=self.read.get(conversation),
                   expires=None if turn is not None else now + ASK_FOR,
-                  answer=asyncio.get_running_loop().create_future(), ref=ref, call=call)
+                  answer=asyncio.get_running_loop().create_future(), ref=ref, call=call,
+                  changes=changes)
         self.waiting[ask.id] = ask
         log.info("approval asked", extra={"event": "approvals.asked", "kind": kind,
                                           "action": action.split(" ")[0]})

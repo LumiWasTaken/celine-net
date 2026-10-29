@@ -45,6 +45,13 @@ async def features(app, values: Any, done: bool = False,
     return out, probes
 
 
+async def roles(app, roles: dict[str, Any], if_match: str | None = None) -> dict:
+    """Every role at once; a role left out is emptied (off)."""
+    async with write.lock():
+        files.check_version("roles", app.cfg.settings.roles, if_match)
+        return await reload.commit(app, {"roles": roles})
+
+
 async def role(app, role: str, body: Any, if_match: str | None = None) -> dict:
     async with write.lock():
         s = app.cfg.settings

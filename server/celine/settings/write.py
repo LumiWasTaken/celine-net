@@ -54,13 +54,19 @@ def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
                for p in plugins.with_form()}}
 
 
+def check(cfg, changes: dict[str, Any]) -> dict[str, Any]:
+    """Validate `changes` (section -> whole new value) on top of the current settings,
+    as a save does, writing nothing. Raises Invalid; -> every section, clean."""
+    new = _current(cfg.settings)
+    new.update(changes)
+    return _validate_all(new)
+
+
 def save(cfg, changes: dict[str, Any]) -> list[str]:
     """Validate `changes` (section -> whole new value) on top of the current settings
     and write the sections they change. Raises Invalid; -> the sections written. The
     caller reloads (reload.commit)."""
-    new = _current(cfg.settings)
-    new.update(changes)
-    clean = _validate_all(new)
+    clean = check(cfg, changes)
     root = files.settings_dir(cfg)
     written = []
     for section in (*files.SECTIONS, *(p.id for p in plugins.with_form())):

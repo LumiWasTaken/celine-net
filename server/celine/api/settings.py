@@ -266,12 +266,9 @@ async def put_roles(request: Request, response: Response,
     body = await json_body(request, need=("roles",), allow=("roles",))
     if not isinstance(body["roles"], dict):
         raise Invalid("roles", "Roles are an object keyed by role.")
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("roles", s.roles, if_match)
-        out = await reload.commit(services_of(request), {"roles": body["roles"]})
-        s = settings_of(request)
-        return {"roles": views.roles(s), "version": etag(response, version(s.roles)), **out}
+    out = await saves.roles(services_of(request), body["roles"], if_match)
+    s = settings_of(request)
+    return {"roles": views.roles(s), "version": etag(response, version(s.roles)), **out}
 
 
 @router.put("/roles/{role}")
