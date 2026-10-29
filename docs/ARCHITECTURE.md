@@ -357,7 +357,8 @@ The runner then continues by what the tail holds: pending read-only calls run (s
 a reply with text and no calls is **continued in the same message**: the request ends
 with that partial reply as the final assistant message (prefill), and
 `message.reopened {message_id}` reopens it. A model without a prefill cannot continue it:
-the turn fails with `reason_code = 'no_prefill'` and the reply stays as it was. An empty
+Continue is refused before anything is written, and a turn queued again by a mission or
+a routine fails with `reason_code = 'no_prefill'`, the reply as it was. An empty
 reply is streamed into as a new step.
 
 The snapshot's `turn` carries `continuable: {ok, label, reason}` (computed on the

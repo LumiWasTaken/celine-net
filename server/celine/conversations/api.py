@@ -419,7 +419,8 @@ async def continue_turn(request: Request, cid: str, tid: str,
     registry = request.app.state.services.registry
     try:
         tid, seq = await turns.continue_turn(store_of(request), cid, tid, registry,
-                                             wait=bool(body and body.wait))
+                                             wait=bool(body and body.wait),
+                                             prefill=_prefills(request, cid))
     except KeyError:
         raise NotFound("turn") from None
     except ValueError as e:
@@ -427,6 +428,25 @@ async def continue_turn(request: Request, cid: str, tid: str,
                           {"reason": str(e)}) from None
     request.app.state.services.dispatcher.notify()
     return {"turn_id": tid, "seq": seq}
+
+
+def _chat_backend(request: Request, cid: str, **kw):
+    """The conversation's chat model as a turn binds it (its first model up front); the
+    fixed backend alone without a model queue (tests)."""
+    from ..backends.queue import Priority
+    factory = request.app.state.services.dispatcher.backend_factory
+    fixed = factory() if factory is not None else None
+    llm = request.app.state.services.llm
+    if llm is None:
+        return fixed
+    return llm.bind(fixed, role="chat", conversation_id=cid,
+                    **{"priority": Priority.INTERACTIVE, **kw})
+
+
+def _prefills(request: Request, cid: str) -> bool:
+    """Whether the conversation's chat model continues a reply in place."""
+    from ..turns.prompt import supports_prefill
+    return supports_prefill(_chat_backend(request, cid))
 
 
 @router.post("/conversations/{cid}/stop")
@@ -480,7 +500,8 @@ async def continue_message(request: Request, cid: str, mid: str) -> dict:
     is appended. -> {message_id, turn_id, seq}, or {refused: the sentence why}."""
     await writable(request, cid)
     try:
-        new, tid, seq = await tree.continue_message(store_of(request), cid, mid)
+        new, tid, seq = await tree.continue_message(store_of(request), cid, mid,
+                                                    prefill=_prefills(request, cid))
     except KeyError:
         raise NotFound("message") from None
     except ValueError as e:
@@ -526,12 +547,8 @@ async def impersonate(request: Request, cid: str,
             "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
         raise NotFound("conversation")
     await writable(request, cid)
-    factory = request.app.state.services.dispatcher.backend_factory
-    fixed = factory() if factory is not None else None
-    llm = request.app.state.services.llm
-    backend = llm.bind(fixed, role="chat", priority=Priority.INTERACTIVE,
-                       conversation_id=cid, thinking="off", voice=False,
-                       fallback=False) if llm is not None else fixed
+    backend = _chat_backend(request, cid, priority=Priority.INTERACTIVE, thinking="off",
+                            voice=False, fallback=False)
     if backend is None:
         raise CelineError("unavailable", "No chat model is set up.", 503)
     try:

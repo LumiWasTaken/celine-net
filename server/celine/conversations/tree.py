@@ -567,12 +567,17 @@ async def edit(store, cid: str, message_id: str,
 KEEP_TIME = "keep_time:"    # + a turn id: the conversation's time to put back after it
 
 
-async def continue_message(store, cid: str, message_id: str) -> tuple[str, str, int]:
+NO_PREFILL = "This model cannot continue a reply where it stopped."
+
+
+async def continue_message(store, cid: str, message_id: str, *,
+                           prefill: bool) -> tuple[str, str, int]:
     """The agent's finished reply at the active leaf, carried on: a new version of it holding
     its text, and a queued turn that streams on into that version (the runner's
     reopen step: its text as a prefilled assistant turn, thinking off). The old text
-    stays as the previous version. -> (message id, turn id, seq). ValueError with the
-    sentence why when it cannot be continued."""
+    stays as the previous version. `prefill`: whether the conversation's model takes
+    one; without it nothing is written. -> (message id, turn id, seq). ValueError with
+    the sentence why when it cannot be continued."""
     def fn(c: sqlite3.Connection) -> tuple[str, str, int]:
         m = c.execute("SELECT role, parent_id, content, created_at, turn_id, meta "
                       "FROM messages WHERE id=? AND conversation_id=?",
@@ -589,6 +594,8 @@ async def continue_message(store, cid: str, message_id: str) -> tuple[str, str, 
             raise ValueError("Only the last message can be continued.")
         if not (m["content"] or "").strip():
             raise ValueError("The reply has no text to continue.")
+        if not prefill:
+            raise ValueError(NO_PREFILL)
         # the new version keeps the reply's time, and the conversation its place in the
         # list: its time now is put back when the turn ends (turns/store.py set_state)
         was = c.execute("SELECT updated_at FROM conversations WHERE id=?", (cid,)).fetchone()[0]
