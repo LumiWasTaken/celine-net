@@ -28,7 +28,7 @@ from .api import commands as commands_api
 from .api import attachments as attachments_api, ws
 from .api import notebook as notebook_api
 from .api import skills as skills_api
-from .conversations import api as conversations_api, store as conversations
+from .conversations import api as conversations_api, store as conversations, tree
 from . import attachments, boot, keys, reload
 from .backends import llm as llm_mod
 from .core.services import Services
@@ -268,10 +268,11 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             if swept["total"]:
                 log.info("swept orphans", extra={"event": "startup.swept",
                                                  "count": swept["total"],
-                                                 "resumable": swept["resumable"]})
+                                                 "interrupted": swept["interrupted"]})
             dispatcher = services.dispatcher = Dispatcher(store, cfg, bus, None,
                                                           registry, llm=llm)
             dispatcher.ready = services.vault.ready
+            tree.prefills = lambda cid: conversations_api.prefills(services, cid)
 
             async def describe_again(p: dict) -> None:   # kb/documents_describe.py
                 if (kb := kbs.get(p["kb"])) is not None:
@@ -506,14 +507,12 @@ _ROOT_FILES = {".webmanifest", ".png", ".svg", ".ico", ".js"}
 
 
 async def _announce_shutdown(store, intercom) -> None:
-    """Every conversation at work hears that the app restarts, before its turn is put
-    down: a turn that resumes reads it at its first step, an idle one with a job finds
-    it in its next turn. What the restart cuts comes after the start (the sweep)."""
-    from .core.states import LIVE_SQL
+    """Every conversation with a job at work hears that the app restarts: it finds it in
+    its next turn. What the restart cuts comes after the start (the sweep); a turn it
+    cuts ends `interrupted` and waits for the user's Regenerate."""
     try:
         cids = await store.read(lambda c: [r[0] for r in c.execute(
-            f"SELECT conversation_id FROM turns WHERE state IN {LIVE_SQL} UNION "
-            "SELECT conversation_id FROM jobs WHERE state='running'")])
+            "SELECT DISTINCT conversation_id FROM jobs WHERE state='running'")])
         for cid in cids:
             await intercom.send("system:app", f"agent:{cid}", "The app is restarting now.",
                                 kind="notice", wake=False)

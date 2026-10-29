@@ -452,12 +452,16 @@ async def continue_turn(request: Request, cid: str, tid: str,
 
 
 def _chat_backend(request: Request, cid: str, **kw):
+    return chat_backend(request.app.state.services, cid, **kw)
+
+
+def chat_backend(services, cid: str, **kw):
     """The conversation's chat model as a turn binds it (its first model up front); the
     fixed backend alone without a model queue (tests)."""
     from ..backends.queue import Priority
-    factory = request.app.state.services.dispatcher.backend_factory
+    factory = services.dispatcher.backend_factory
     fixed = factory() if factory is not None else None
-    llm = request.app.state.services.llm
+    llm = services.llm
     if llm is None:
         return fixed
     return llm.bind(fixed, role="chat", conversation_id=cid,
@@ -465,9 +469,13 @@ def _chat_backend(request: Request, cid: str, **kw):
 
 
 def _prefills(request: Request, cid: str) -> bool:
+    return prefills(request.app.state.services, cid)
+
+
+def prefills(services, cid: str) -> bool:
     """Whether the conversation's chat model continues a reply in place."""
     from ..turns.prompt import supports_prefill
-    return supports_prefill(_chat_backend(request, cid))
+    return supports_prefill(chat_backend(services, cid))
 
 
 @router.post("/conversations/{cid}/stop")

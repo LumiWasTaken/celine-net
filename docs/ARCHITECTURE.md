@@ -298,8 +298,15 @@ line it wrote as it came, and appends `conversation.title`. A failure leaves the
 empty and logs why.
 `POST /conversations/{id}/regenerate` queues a fresh turn for the last user message when
 nothing with words answered it: the store walks up from the active leaf past tool
-messages and empty assistant messages, moves the leaf back to the user message and roots
-the turn there. A reply with text raises 400.
+messages, empty assistant messages, a failed turn's text and quiet notices, moves the
+leaf back to the user message and roots the turn there. A reply with text raises 400.
+While no turn is live, the snapshot and every `turn.state` event carry that message as
+`unanswered: {message_id, turn_id, state, reason, continues}` (`tree.unanswered`: the
+turn that tried, how it ended and why, in a sentence), null otherwise; the transcript
+shows the reason under it with Regenerate. `continues`: that turn failed after its reply
+said something, Continue can pick it up (`view.continuable`) and the conversation's chat
+model continues a reply in place (`tree.prefills`, set at start to
+`conversations/api.prefills`); the transcript then shows Continue beside Regenerate.
 
 Workers (`max_concurrent_turns` of them) lease conversations: `turns.claim` picks a
 queued turn whose conversation has nothing in `preparing`, `streaming` or `tools`: the
@@ -380,19 +387,20 @@ same `continuable`.
 ### Shutdown and restart
 
 At shutdown the app first sends a `notice` from `system:app` to every conversation with
-a live turn or a running job (`wake` off). Then `Dispatcher.stop()` runs before the store
-closes: every running turn's token is cancelled with reason `shutdown` (not a Stop:
-streams keep their partial text, steps not started stay `pending`). It waits up to
-`shutdown_grace_seconds` (10 s) only while a step with a side effect is in flight. Then
-`store.put_down` writes every turn this process held back to `queued`
-(`reason_code = 'restart'`).
+a running job (`wake` off). Then `Dispatcher.stop()` runs before the store closes: every
+running turn's token is cancelled with reason `shutdown` (not a Stop: streams keep their
+partial text, a step that said nothing goes). It waits up to `shutdown_grace_seconds`
+(10 s) only while a step with a side effect is in flight. Then `store.interrupt_held`
+ends every turn this process held `interrupted` (`reason_code = 'restart'`), its open
+calls settled, with the reason in a sentence (`journal.restarted` names a step with a
+side effect that was in flight).
 
-At startup, before the workers start, `turns.sweep(store, registry)` judges each live
-turn (`journal.classify`): no step in flight, or only steps known read-only and blocking
--> `queued`, and the runner re-runs those steps. Anything else in flight -> `interrupted`
-(`reason_code = 'restart'`), its calls settled. Running jobs end `interrupted`. Every
-conversation the restart cut gets one `notice` from `system:app` saying what was cut, so
-it decides what to redo. The runner also refuses to re-run a mutating step it finds
+At startup, before the workers start, `turns.sweep(store, registry)` ends every turn a
+crash left running the same way; queued turns wait for a worker. Nothing runs again on
+its own: the user's message shows its reason with Regenerate (the snapshot's and every
+`turn.state` event's `unanswered`), or Continue picks the turn up. Running jobs end
+`interrupted`; a conversation one of them was cut in gets one `notice` from
+`system:app` saying what was cut. The runner refuses to re-run a mutating step it finds
 pending.
 
 ### Token accounting
@@ -750,7 +758,7 @@ A tool declares `@tool(mode=...)`:
 The context (`turns/context.py`, `_Item.wire`) rebuilds the request from rows alone: an assistant message with
 `tool_calls` rows carries them as `tool_calls`, each `role=tool` row carries its
 `tool_call_id`, and a call whose result row is missing gets `result unavailable`, so a
-turn resumed after a restart sends the same shape the running loop does.
+turn continued after a restart sends the same shape the running loop does.
 
 Ownership is handed over synchronously so exactly one side settles each step. A job
 always has `deadline_at`. Stop reaches a handed-off step through
@@ -773,7 +781,7 @@ row plus the call it ran, joined from `tool_calls` (`jobs/store.py`): `tool_call
 appends the event and writes the same line on a running job's row in one transaction.
 Tool calls in the snapshot carry `started_at`, `finished_at` and `job_id`.
 
-At startup `journal.classify` looks at each non-terminal turn (see Shutdown and restart).
+At startup `turns.sweep` ends each turn a crash left running `interrupted` (see Shutdown and restart).
 Running jobs and their `detached` calls end `interrupted`; they do not survive a restart.
 
 ## Skills
@@ -1386,7 +1394,7 @@ stored context). Any other failure fails the run with the error, once: a model e
 tool error that ends its turn, its turn stopped, or its ceiling (3 hours, or the schedule's
 `wall_minutes`, counted from the run's start; a run that waited for its model starts
 with a new clock). A run that was running when the app stopped is still running at the next start:
-the dispatcher's sweep resumes its cut turn and the scheduler takes its answer once the
+the scheduler continues its cut turn and takes its answer once the
 conversation is quiet (a partner's talk that was cut ends there). Stop (`POST
 /api/runs/{id}/stop`) ends a waiting or running run as stopped; deleting a schedule skips
 its runs.

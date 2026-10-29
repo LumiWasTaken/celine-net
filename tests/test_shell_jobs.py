@@ -81,7 +81,7 @@ async def test_the_restart_sweep_settles_every_job_by_its_tool(store, cfg):  # n
     shell, paint = [await _notice(store, cid) for cid in (shell_cid, paint_cid)]
     assert "(shell__run): the app restarted while watching" in shell and "shell__read" in shell
     assert "(painter__draw): the server restarted" in paint
-    assert (await turns.sweep(store))["total"] == 2, "the two queued turns"
+    assert (await turns.sweep(store))["total"] == 0, "the two queued turns wait as they are"
     assert await _notice(store, shell_cid) == shell, "one notice each"
     job = await job_rows.get(store, shell_job)
     assert job["result"] in shell and job["terminal"] == "build", "the jobs row says it too"

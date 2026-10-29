@@ -7,7 +7,7 @@ import { asBatch } from './media'
 import { follow, isDown, snapshotAgain, useConnection, type Frame } from './socket'
 import type { ChatApproval, ConversationSettings } from './settingsApi'
 import type { GuardBanner } from './guard'
-import type { Plan } from './api'
+import type { Plan, Unanswered } from './api'
 
 /** a hidden tab runs no frames: the gathered text is applied this often there */
 const HIDDEN_FLUSH_MS = 250
@@ -51,6 +51,8 @@ type State = {
   toolCalls: Record<string, ToolCall[]>
   /** the one running or next; while turns wait behind it, never the one that just ended */
   turn: Turn | null
+  /** what Regenerate answers (the snapshot's, then turn.state) */
+  unanswered: Unanswered | null
   /** the live turns in the order they run (the snapshot's, then turn.state) */
   queue: Queued[]
   error: { message: string; retryable: boolean } | null
@@ -79,7 +81,7 @@ type State = {
 
 export interface Forming { message_id: string; index: number; name: string; chars: number; preview: string; words: string }
 
-const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
+const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
 
 export function useConversation(conversationId: string | null) {
   const [state, setState] = useState<State>(EMPTY)
@@ -171,7 +173,7 @@ function joinText(evs: TextFrame[]): TextFrame[] {
 
 function fromSnapshot(s: State, snap: Snapshot): State {
   return { ...s, conversation: snap.conversation, forming: [], messages: snap.messages, toolCalls: snap.tool_calls, compactions: snap.compactions,
-           turn: snap.turn, queue: snap.queue, live: snap.turn?.live ?? null, switched: snap.switched,
+           turn: snap.turn, unanswered: snap.unanswered, queue: snap.queue, live: snap.turn?.live ?? null, switched: snap.switched,
            imageNotices: snap.image_notices, banners: snap.guard, approvals: snap.approvals, plan: snap.plan }
 }
 
@@ -311,7 +313,7 @@ function apply(s: State, ev: Frame): State {
       const turn: Turn = !first || first.turn_id === ev.turn_id ? told
         : s.turn && s.turn.id === first.turn_id ? s.turn
         : { id: first.turn_id, state: 'queued', reason: null }
-      return { ...s, toolCalls, queue, turn, error: terminal ? s.error : null, live: terminal ? null : s.live,
+      return { ...s, toolCalls, queue, turn, unanswered: ev.unanswered ?? null, error: terminal ? s.error : null, live: terminal ? null : s.live,
                stopping: terminal ? null : s.stopping, forming: terminal ? [] : s.forming }
     }
     case 'tool.reset':

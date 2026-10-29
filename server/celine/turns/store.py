@@ -19,7 +19,7 @@ from ..skills import words
 from .. import homes
 from ..intercom.store import NAMES, insert as intercom_insert
 from ..plans import store as plans
-from .journal import classify, safe_to_rerun
+from .journal import restarted, safe_to_rerun
 from ..core.event_types import (
     CONTEXT_USAGE,
     MESSAGE_CREATED,
@@ -214,11 +214,10 @@ async def fail_if_active(store, turn_id: str, cid: str, reason: str,
     return await store.write(fn)
 
 
-async def put_down(store, worker_ids: list[str], reason: str = "the server restarted",
-                   code: str = "restart") -> list[str]:
-    """Shutdown: the turns these workers hold go back in the queue, unfinished,
-    instead of dying against a closed store. The next start resumes them (steps in
-    flight are judged by the startup sweep)."""
+async def put_down(store, worker_ids: list[str], reason: str | None = None,
+                   code: str | None = None) -> list[str]:
+    """Turns these workers claimed but did not run (a freeze, the shutdown before the
+    run began) go back in the queue."""
     if not worker_ids:
         return []
 
@@ -236,40 +235,48 @@ async def put_down(store, worker_ids: list[str], reason: str = "the server resta
     return await store.write(fn)
 
 
-async def sweep(store, registry=None) -> dict:
-    """At startup, before the workers start: turns left non-terminal by a crash or a
-    restart. Resumable if no step was in flight, or only read-only blocking steps (they
-    run again); a side effect or a detached step in flight is left for the user.
-    Running jobs end `interrupted`. Every conversation the restart cut something in
-    gets one notice, and a turn for it."""
+def _cut(c: sqlite3.Connection, store, rows, registry) -> None:
+    """Live turns the server stopped under ends `interrupted` with the reason; its steps
+    in flight with them. Nothing runs again on its own: Regenerate is the user's."""
     flags = tool_flags(registry)
+    for row in rows:
+        open_calls = c.execute(
+            "SELECT tc.name, tc.state, tc.mutating, tc.mode FROM tool_calls tc "
+            "JOIN messages m ON m.id = tc.message_id WHERE m.turn_id = ? AND "
+            "tc.state IN ('pending','running','detached')", (row["id"],)).fetchall()
+        why = restarted(open_calls, flags) or "The server restarted during the answer."
+        c.execute("UPDATE turns SET worker_id=NULL WHERE id=?", (row["id"],))
+        set_state(c, store, row["conversation_id"], row["id"], "interrupted", why, "restart")
 
+
+async def interrupt_held(store, worker_ids: list[str], registry=None) -> list[str]:
+    """Shutdown: the turns these workers run end `interrupted` (_cut)."""
+    if not worker_ids:
+        return []
+
+    def fn(c: sqlite3.Connection) -> list[str]:
+        marks = ",".join("?" * len(worker_ids))
+        rows = c.execute(
+            f"SELECT id, conversation_id FROM turns WHERE worker_id IN ({marks}) AND "
+            f"state IN ('preparing','streaming','tools')", worker_ids).fetchall()
+        _cut(c, store, rows, registry)
+        return [r["id"] for r in rows]
+
+    return await store.write(fn)
+
+
+async def sweep(store, registry=None) -> dict:
+    """At startup, before the workers start: turns a crash left running end
+    `interrupted` (_cut); queued ones wait for a worker as before. Running jobs end
+    `interrupted`, and a conversation one of them was cut in gets one notice."""
     def fn(c: sqlite3.Connection) -> dict:
-        live = c.execute("SELECT id, conversation_id, state FROM turns WHERE state IN "
-                         f"{LIVE_SQL}").fetchall()
-        resumable = 0
-        cut: dict[str, list[str]] = {}     # conversation -> what the restart cut
-        for row in live:
-            verdict = classify(c, row["id"], flags)
-            if verdict.safe:
-                if row["state"] != "queued" or verdict.rerun:
-                    c.execute("UPDATE turns SET state='queued', worker_id=NULL WHERE id=?",
-                              (row["id"],))
-                    tree.turn_state(c, store, row["conversation_id"], row["id"], "queued",
-                                    reason="resumed from the journal")
-                resumable += 1
-            else:
-                c.execute("UPDATE turns SET state='interrupted', reason=?, "
-                          "reason_code='restart', finished_at=?, worker_id=NULL WHERE id=?",
-                          (verdict.reason, now(), row["id"]))
-                settle_open_calls(c, store, row["conversation_id"], row["id"],
-                                  "the server restarted")
-                cut.setdefault(row["conversation_id"], []).append(
-                    f"Your reply was cut off: {verdict.reason}")
-                tree.turn_state(c, store, row["conversation_id"], row["id"], "interrupted",
-                                reason=verdict.reason, reason_code="restart")
+        live = c.execute("SELECT id, conversation_id FROM turns WHERE state IN "
+                         "('preparing','streaming','tools')").fetchall()
+        _cut(c, store, live, registry)
+        c.execute("UPDATE turns SET worker_id=NULL WHERE state='queued'")
         from ..jobs.store import interrupt_running
         jobs = interrupt_running(c, store)
+        cut: dict[str, list[str]] = {}
         for cid, line in jobs:
             cut.setdefault(cid, []).append(line)
         from ..intercom.deliver import deliver_idle_sync
@@ -279,8 +286,8 @@ async def sweep(store, registry=None) -> dict:
                                 "The app restarted and cut what was running:\n"
                                 + "\n".join(lines))
                 deliver_idle_sync(c, store, cid)
-        return {"total": len(live) + len(jobs), "resumable": resumable,
-                "interrupted": len(live) - resumable, "jobs": len(jobs)}
+        return {"total": len(live) + len(jobs), "interrupted": len(live),
+                "jobs": len(jobs)}
 
     return await store.write(fn)
 

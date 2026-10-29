@@ -361,16 +361,18 @@ async def test_a_run_is_over_only_once_its_sub_agents_have_reported(store):
 
 
 async def test_a_run_that_was_running_at_the_stop_runs_on_in_its_conversation(store, cfg):
-    """A graceful stop puts its turn down; the next start's sweep queues it again and
-    the scheduler picks the run up where it was: the same conversation, the same turn."""
+    """A graceful stop ends its turn `interrupted`; the next start's scheduler picks the
+    run up where it was and continues that turn: the same conversation, the same turn."""
     class Hang(FakeBackend):
         """Hangs until the restart; answers after it."""
         def __init__(self):
             super().__init__(echo=True)
             self.hang = True
+            self.asked = anyio.Event()
 
         async def stream(self, messages, tools, body=None):
             if self.hang:
+                self.asked.set()
                 await anyio.sleep_forever()
             async for ev in super().stream(messages, tools, body):
                 yield ev
@@ -391,12 +393,13 @@ async def test_a_run_that_was_running_at_the_stop_runs_on_in_its_conversation(st
         run = await sched.run_now("world")
         await sched.tick()
         await until(lambda: _live(store, run["id"]))
+        await backend.asked.wait()                  # its turn runs
         await d.stop(grace=0.2)
         tg.cancel_scope.cancel()
     [row] = await _runs(store)
     cid = row["conversation_id"]
     assert row["state"] == "running" and cid
-    assert (await store.read(lambda c: runs_mod.outcome(c, cid)))[0] == "queued", "put down"
+    assert (await store.read(lambda c: runs_mod.outcome(c, cid)))[0] == "interrupted"
 
     backend.hang = False                            # the next start
     await turns.sweep(store, app.registry)
@@ -414,7 +417,7 @@ async def test_a_run_that_was_running_at_the_stop_runs_on_in_its_conversation(st
         tg.cancel_scope.cancel()
     [row] = await _runs(store)
     assert row["conversation_id"] == cid, "the same conversation, no new one"
-    assert await _turns(store, cid) == 1, "the same turn, resumed"
+    assert await _turns(store, cid) == 1, "the same turn, continued"
     assert "News of 2026-10-09?" in row["result"]
     assert await store.read(lambda c: c.execute(
         "SELECT count(*) FROM conversations WHERE trigger_key LIKE 'run:%'").fetchone()[0]) == 1
