@@ -42,8 +42,6 @@ TURN_MARGIN = 3        # seconds a run's wait ends before its turn's time: the a
 HEAD, TAIL = 2000, 6000    # characters of a long output kept: its start and its end
 READ_CHARS = 8000      # characters one shell__read page carries
 PROBE_WAIT = 2.5       # seconds Settings, Features waits for the box's answer
-WEDGE_MAX = 3          # wedges in one conversation, then shell__run and new terminals are
-                       # refused there (the cap)
 
 # ---- words that never change ------------------------------------------------------------
 KEY_FORMAT = "keys is one string, names separated by spaces: keys=\"Escape\", keys=\"Down Down Enter\"."
@@ -415,12 +413,10 @@ class Shell:
         self.full_noted: set[str] = set()
         self.hinted: set[tuple[str, str]] = set()
         self.told: set[tuple[str, str]] = set()
-        # per conversation: its wedges so far (in memory: an app restart starts at 0)
-        self.wedges: dict[str, int] = {}
 
     def carry(self, old) -> None:
         """A reload's rebuild keeps what it was already told (reload.py)."""
-        for a in ("boots", "apt_noted", "full_noted", "hinted", "told", "wedges"):
+        for a in ("boots", "apt_noted", "full_noted", "hinted", "told"):
             setattr(self, a, getattr(old, a))
 
     @property
@@ -468,8 +464,6 @@ class Shell:
                 seconds = max(1, min(seconds, int(ctx.time_left - TURN_MARGIN)))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
-        if self._capped(ctx):
-            return self._refused(self._cap_words(), name)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         body = {"terminal": name, "command": command, "timeout": seconds,
@@ -527,14 +521,6 @@ class Shell:
             press = as_bool(enter, "enter")
         except ToolRefused as e:
             return self._refused(f"{e} Nothing was typed.", terminal)
-        if self._capped(ctx):
-            try:
-                status, listed = await self._post("/read", {}, read=60)
-            except (ToolRefused, httpx.HTTPError):
-                listed = {}
-            if name not in {t.get("name") for t in listed.get("terminals") or []
-                            if isinstance(t, dict)}:
-                return self._refused(f"{self._cap_words()} Nothing was typed.", name)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         notes = []
@@ -955,8 +941,7 @@ class Shell:
                                       f"terminal: {said}.",
                               is_error=True, display={"terminal": name, "state": "error"})
         if state == "busy":
-            wedge = self._wedge(ctx) if res.get("reason") != "paused" else None
-            return self._refused(" ".join(filter(None, [self._busy(res, name), wedge])), name)
+            return self._refused(self._busy(res, name), name)
         prog, pid = program_of(res)
         is_run = "cmd" in res and isinstance(res.get("cmd"), str)
         lines = [self._status(res, name, prog, pid, is_run)]
@@ -966,9 +951,6 @@ class Shell:
             ended_by = await terminals.last_ended_by(ctx.store, name)
         lines += self._notes(ctx, res, name, ended_by) + (notes or [])
         lines += self._explain(ctx, res, name, state, prog, pid, is_run)
-        if (tool_name == "run" and state == "waiting") or \
-                (tool_name == "stop" and state not in ("done", "prompt", "closed", "ended")):
-            lines.append(self._wedge(ctx))
         if is_run:
             self.told.add((ctx.conversation_id, res["cmd"]))
         else:
@@ -1014,26 +996,6 @@ class Shell:
             await terminals.upsert(ctx.store, str(res["id"]), name, owner, now(),
                                    ctx.conversation_id if mine else None)
         return ToolResult(content="\n".join(lines).rstrip(), display=display)
-
-    def _capped(self, ctx: ToolContext) -> bool:
-        return self.wedges.get(ctx.conversation_id, 0) >= WEDGE_MAX
-
-    def _cap_words(self) -> str:
-        return (f"Refused: you hit {WEDGE_MAX} wedged terminals in this conversation, so "
-                f"shell__run and new terminals are off here. Stop using the shell in this "
-                f"conversation and report what happened: bugreport__file, or tell "
-                f"{self.cfg.user}.")
-
-    def _wedge(self, ctx: ToolContext) -> str:
-        """One more wedge for this conversation (a run that waits for input or was refused,
-        a stop that did not free the terminal), in words."""
-        n = self.wedges[ctx.conversation_id] = self.wedges.get(ctx.conversation_id, 0) + 1
-        if n < WEDGE_MAX:
-            return (f"Wedge {n} of {WEDGE_MAX} in this conversation: at {WEDGE_MAX}, shell__run "
-                    f"and new terminals are refused here.")
-        return (f"Wedge {n} of {WEDGE_MAX} in this conversation: shell__run and new terminals "
-                f"are now refused here. Stop using the shell in this conversation and report "
-                f"what happened: bugreport__file, or tell {self.cfg.user}.")
 
     def _busy(self, res: dict, name: str) -> str:
         """Why a run was not sent, and how to get past it: one sentence."""

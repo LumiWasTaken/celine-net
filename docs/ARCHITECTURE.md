@@ -907,9 +907,6 @@ Settings, Features (`settings/services.py`, seeded from `CELINE_SHELL_URL`) with
 - `type(text, keys, terminal, enter)` types into the program in front and answers with the
   screen once the terminal printed nothing for 1 s.
 - `stop(terminal)` presses Ctrl-C; the next stop sends SIGTERM, then SIGKILL.
-- Wedges (`WEDGE_MAX` 3): a run that waits for input, is refused as busy, or a stop that
-  left something in front. At 3 in one conversation `run` is refused with a sentence
-  telling it to stop using the shell there and report it. The count is in memory.
 - `read(terminal, from)` pages the log of the terminal's latest run, or shows the screen;
   without a terminal it lists its terminals and yours.
 - `send(path)` attaches up to 5 files of its home to the message; `look(path, question)`

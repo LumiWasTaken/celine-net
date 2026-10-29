@@ -153,8 +153,7 @@ async def test_a_busy_terminal_refuses_with_what_runs_or_waits_and_how_out(shell
     assert out.is_error and out.content == (
         'Not run: command k3x9ab (read x) waits for input in main, and the line would go to '
         'it. shell__type answers it, shell__stop(terminal="main") stops it, or run in '
-        'another terminal. Wedge 2 of 3 in this conversation: at 3, shell__run and new '
-        'terminals are refused here.')
+        'another terminal.')
     out = await shell.run(ctx(), command="ls")
     assert out.content.startswith("Not run: node (pid 77) waits for input in main, from "
                                   "command k3x9ab (node build.mjs), and the line")
@@ -173,44 +172,6 @@ async def test_a_stop_names_what_outlived_ctrl_c_and_the_next_one_ends_it(shell,
     lines = (await shell.stop(ctx())).content.split("\n")
     assert lines[0].startswith("terminal main ~: exit 143 after")
     assert lines[1] == "Ctrl-C had not stopped python3, so this stop ended it with SIGTERM."
-
-
-async def test_three_wedges_in_a_conversation_turn_its_runs_and_new_terminals_off(shell, box):
-    waits = ran(state="waiting", exit=None, program="cat", pid=5,
-                front=[{"pid": 5, "name": "cat", "args": ["cat"]}])
-    box.answers = [waits,
-                   ran(state="busy", reason="paused", program="vim"),     # its user's pause
-                   ran(state="busy", reason="running", cmd="k3x9ab", command="cat",
-                       running_for=9, waiting=True),
-                   ran(state="done", exit=0),
-                   {**waits, "state": "waiting"}]
-    first = await shell.run(ctx(), command="cat")
-    assert first.content.split("\n")[-2] == ("Wedge 1 of 3 in this conversation: at 3, "
-                                             "shell__run and new terminals are refused here.")
-    assert "Wedge" not in (await shell.run(ctx(), command="ls")).content
-    assert "Wedge 2 of 3" in (await shell.run(ctx(), command="ls")).content
-    assert "Wedge" not in (await shell.stop(ctx())).content, "a stop that freed it"
-    third = await shell.stop(ctx())
-    assert ("Wedge 3 of 3 in this conversation: shell__run and new terminals are now "
-            "refused here. Stop using the shell in this conversation and report what "
-            "happened: bugreport__file, or tell Joe.") in third.content
-    sent = len(box.sent)
-    refused = await shell.run(ctx(), command="ls", terminal="fresh")
-    assert refused.is_error and len(box.sent) == sent
-    assert refused.content == (
-        "Refused: you hit 3 wedged terminals in this conversation, so shell__run and new "
-        "terminals are off here. Stop using the shell in this conversation and report what "
-        "happened: bugreport__file, or tell Joe.")
-    # typing goes on in a terminal that is open, never into a new one
-    box.answers = [{"terminals": [{"name": "main"}]}, screen(),
-                   {"terminals": [{"name": "main"}]}]
-    assert not (await shell.type(ctx(), text="exit()")).is_error
-    out = await shell.type(ctx(), text="ls", terminal="fresh")
-    assert out.is_error and out.content.startswith("Refused: you hit 3")
-    assert [p for p, _, _ in box.sent[sent:]] == ["/read", "/type", "/read"]
-    other = ToolContext(conversation_id="d", turn_id="t", tool_call_id="x", store=None,
-                        config=None, emit=None)
-    assert not (await shell.run(other, command="ls")).is_error, "a new conversation starts at 0"
 
 
 async def test_a_long_output_is_cut_once_with_lines_and_a_from(shell, box):

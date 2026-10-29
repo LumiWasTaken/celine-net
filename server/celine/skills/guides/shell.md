@@ -102,11 +102,6 @@ for their answer; denied, nothing is shared and the result says so. A share runs
   waiting for input. Answer with shell__type(text="y"), or stop it.
 - While something runs in a terminal, a new run there is refused, naming what runs and
   how to stop it. shell__type is never refused. Use another terminal for parallel work.
-- A wedge is a run that comes back waiting for input, a run refused because its
-  terminal is busy, or a stop that did not free the terminal; each result says which
-  wedge it is ("Wedge 2 of 3"). At 3 in one conversation, shell__run and new terminals
-  are refused there: stop using the shell in that conversation and report what
-  happened with bugreport__file, or tell {{username}}.
 - A long output shows its start and its end; the line in between says which lines are
   left out and the from= to read on, or `sed -n` on the log.
 - Exit 127 is command not found (after a reset: apt had installed it; install it again
