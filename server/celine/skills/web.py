@@ -135,12 +135,9 @@ async def _seed(ctx: ToolContext) -> dict[str, int]:
                 "JOIN messages r ON r.id = tc.result_message_id "
                 "WHERE a.conversation_id = ? AND tc.name LIKE 'web\\_\\_%' ESCAPE '\\' "
                 "ORDER BY tc.rowid", (cid,))]
-        try:
-            for content in await store.read(fn):
-                for n, url in refs_in(content).items():
-                    found.setdefault(_canon(url), n)
-        except Exception:
-            pass
+        for content in await store.read(fn):
+            for n, url in refs_in(content).items():
+                found.setdefault(_canon(url), n)
     got = _numbers.setdefault(cid, found)       # a concurrent call may have won
     while len(_numbers) > _KEEP:
         _numbers.popitem(last=False)
@@ -340,8 +337,8 @@ _TEXTUAL = ("text/plain", "text/markdown", "text/csv", "application/json", "text
 
 
 def extract(page: Page) -> dict[str, Any]:
-    """{title, text, date, author, kind} of a fetched page. Raises ToolRefused for a type
-    it cannot read."""
+    """{title, text, date, author, kind, problems} of a fetched page; problems are the
+    parts that could not be read. Raises ToolRefused for a type it cannot read."""
     ctype = page.ctype
     if _is_pdf(ctype, page.url) or page.body[:5] == b"%PDF-":
         return _pdf(page.body)
@@ -350,7 +347,7 @@ def extract(page: Page) -> dict[str, Any]:
         return _html(page.body, page.url)
     if ctype.startswith("text/") or ctype in _TEXTUAL or ctype.endswith("+json"):
         return {"title": None, "text": page.body.decode("utf-8", "replace"),
-                "date": None, "author": None, "kind": ctype}
+                "date": None, "author": None, "kind": ctype, "problems": []}
     raise ToolRefused(f"cannot read {ctype or 'this kind of file'} (HTML, PDF and text only)")
 
 
@@ -362,27 +359,27 @@ def _html(body: bytes, url: str) -> dict[str, Any]:
     text = trafilatura.extract(body, url=url, output_format="markdown",
                                include_tables=True, include_comments=False,
                                include_links=False, favor_recall=True, config=conf)
-    meta = None
+    meta, problems = None, []
     try:
         meta = trafilatura.extract_metadata(body.decode("utf-8", "replace"), default_url=url)
-    except Exception:
-        pass
+    except Exception as e:
+        problems.append(f"Its title, date and author could not be read ({e})")
     if not text:
-        text = _plain_html(body)
+        try:
+            text = _plain_html(body)
+        except Exception as e:
+            problems.append(f"Its text could not be read ({e})")
     return {"title": getattr(meta, "title", None), "text": text or "",
             "date": getattr(meta, "date", None), "author": getattr(meta, "author", None),
-            "kind": "html"}
+            "kind": "html", "problems": problems}
 
 
 def _plain_html(body: bytes) -> str:
-    try:
-        import lxml.html
-        doc = lxml.html.fromstring(body)
-        for bad in doc.xpath("//script|//style|//noscript|//template"):
-            bad.drop_tree()
-        return re.sub(r"\n\s*\n+", "\n\n", doc.text_content()).strip()
-    except Exception:
-        return ""
+    import lxml.html
+    doc = lxml.html.fromstring(body)
+    for bad in doc.xpath("//script|//style|//noscript|//template"):
+        bad.drop_tree()
+    return re.sub(r"\n\s*\n+", "\n\n", doc.text_content()).strip()
 
 
 def _pdf(body: bytes) -> dict[str, Any]:
@@ -398,23 +395,26 @@ def _pdf(body: bytes) -> dict[str, Any]:
             reader.decrypt("")
         except Exception:
             raise ToolRefused("the PDF is encrypted") from None
-    parts = []
+    parts, problems = [], []
     for i, pg in enumerate(reader.pages, 1):
         try:
             t = (pg.extract_text() or "").strip()
-        except Exception:
-            t = ""
+        except Exception as e:
+            problems.append(f"Page {i} could not be read ({e})")
+            continue
         if t:
             parts.append(f"[page {i}]\n{t}")
     title = None
     try:
         title = (reader.metadata or {}).get("/Title")
-    except Exception:
-        pass
+    except Exception as e:
+        problems.append(f"Its title could not be read ({e})")
     if not parts:
-        raise ToolRefused(f"the PDF ({len(reader.pages)} pages) has no text layer (scanned?)")
+        raise ToolRefused(f"the PDF ({len(reader.pages)} pages) has no text layer (scanned?)"
+                          + "".join(f". {p}" for p in problems))
     return {"title": str(title) if title else None, "text": "\n\n".join(parts),
-            "date": None, "author": None, "kind": f"pdf, {len(reader.pages)} pages"}
+            "date": None, "author": None, "kind": f"pdf, {len(reader.pages)} pages",
+            "problems": problems}
 
 
 def split_parts(text: str, part_tokens: int) -> list[str]:
@@ -673,6 +673,7 @@ class Web:
                              f"by {one_line(doc['author'], 60)}" if doc.get("author") else "")
                  if x]
         lines = [f"[web:{n}] {title}" + (f", {', '.join(about)}" if about else ""), final]
+        lines += [f"{p}." for p in doc.get("problems") or ()]
         if len(parts) > 1:
             lines.append(f"part {k} of {len(parts)}")
         body = parts[k - 1] if text else "(no readable text found on this page)"

@@ -319,15 +319,18 @@ def _parse(raw: bytes) -> email.message.EmailMessage:
 def _h(msg, name: str) -> str:
     try:
         return " ".join(str(msg.get(name) or "").split())
-    except Exception:                           # noqa: BLE001 - a malformed header
-        return ""
+    except Exception as e:                      # noqa: BLE001 - a malformed header
+        return f"(unreadable {name} header: {e})"
 
 
 def _date(msg, tz) -> str:
-    try:
-        d = parsedate_to_datetime(msg.get("date"))
-    except Exception:                           # noqa: BLE001 - missing or malformed
+    raw = msg.get("date")
+    if not raw:
         return "no date"
+    try:
+        d = parsedate_to_datetime(raw)
+    except Exception:                           # noqa: BLE001 - malformed
+        return f"unreadable date {str(raw)!r}"
     if d.tzinfo is None:
         d = d.replace(tzinfo=timezone.utc)
     return f"{d.astimezone(tz):%Y-%m-%d %H:%M}"
@@ -348,14 +351,16 @@ def _body(msg) -> str:
     part = msg.get_body(preferencelist=("plain", "html"))
     if part is None:
         return ""
+    note = ""
     try:
         text = part.get_content()
-    except Exception:                           # noqa: BLE001 - an unknown charset
+    except Exception as e:                      # noqa: BLE001 - an unknown charset
         text = (part.get_payload(decode=True) or b"").decode("utf-8", "replace")
+        note = f"[The text could not be decoded ({e}); shown as UTF-8.]\n\n"
     if part.get_content_type() == "text/html":
         from ..kb.documents_extract import html_text
         text = "\n\n".join(s.text for s in html_text(text).segments)
-    return text.strip()
+    return note + text.strip()
 
 
 def _files(msg) -> list:

@@ -255,3 +255,23 @@ def test_a_source_without_its_account_is_not_connected():
     assert status_of(services, "whatsapp", up) == "up"
     assert status_of(services, "whatsapp", NS(status="dead")) == "dead"
     assert status_of(services, "shell", up) == "up"
+
+
+async def test_a_failed_prompt_part_or_message_context_reaches_her(cfg):
+    class Broken:
+        name = "broken"
+
+        async def prompt_fragment(self, ctx):
+            raise RuntimeError("its notes file is gone")
+
+        async def message_context(self, ctx, message):
+            raise RuntimeError("its index is locked")
+    reg = Registry(cfg=cfg)
+    reg.skills["broken"] = Broken()
+    ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=None,
+                      config=cfg, emit=None)
+    assert await reg.prompt_fragments(ctx, {"broken"}) == [
+        "The broken skill's part of this prompt failed: its notes file is gone"]
+    text, report = await reg.message_context(ctx, {})
+    assert text == "The broken skill's context for this message failed: its index is locked"
+    assert report == {"broken": {"error": "its index is locked"}}

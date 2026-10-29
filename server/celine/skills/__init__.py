@@ -473,11 +473,11 @@ class Registry:
                 continue
             try:
                 text = await frag(ctx)
-            except Exception:
+            except Exception as e:
                 log.exception("prompt fragment failed",
                               extra={"event": "skill.fragment_failed",
                                      "skill": skill.name})
-                continue
+                text = f"The {skill.name} skill's part of this prompt failed: {e}"
             if text:
                 out.append(text)
         return out
@@ -495,11 +495,12 @@ class Registry:
                 continue
             try:
                 got = await hook(ctx, message)
-            except Exception:
+            except Exception as e:
                 log.exception("message context failed",
                               extra={"event": "skill.message_context_failed",
                                      "skill": skill.name})
-                continue
+                got = (f"The {skill.name} skill's context for this message failed: {e}",
+                       {"error": str(e)})
             if got and (got[0] or got[1]):     # a report alone: what it decided
                 if got[0]:
                     texts.append(got[0])
