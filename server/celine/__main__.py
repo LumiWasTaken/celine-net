@@ -252,6 +252,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             await conversations.prune_events(store, keep=int(cfg.r("events_keep")),
                                              requests_days=int(cfg.r("requests_keep")))
             tg.start_soon(conversations.keep_pruned, store, cfg)    # and every so often
+            from . import backups
+            tg.start_soon(backups.keep, cfg)        # every night, whatever is on
             swept = await turns.sweep(store, registry)
             if on["guard"]:
                 from .guard import store as guard_rows

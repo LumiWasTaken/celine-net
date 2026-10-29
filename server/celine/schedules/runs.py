@@ -44,8 +44,7 @@ is the result instead, and the app writes nothing over it (only what it
 added, when it added to its end). The agent's words beside the write are a lead-in, not the
 result (a turn ends with that step, skills.ToolSpec needs_answer). The run is over
 when its conversation and its sub-agents are quiet and every sub-agent has reported
-(looked at after every turn or job end, the dispatcher's `on_end`). Every run first keeps the
-night's backups (schedules/backups.py: once a night, the later runs find them made).
+(looked at after every turn or job end, the dispatcher's `on_end`).
 
 One try. A run is never re-asked, rewritten or retried. When its turn fails and the
 Router says the role's model cannot answer (it is unreachable, or none is set), the run
@@ -592,7 +591,6 @@ class Scheduler:
                                           "schedule": s.name, "conversation": cid,
                                           "fresh": fresh})
             night = date.fromisoformat(r["night"])
-            await self._backups(night)
             res = await store.read(lambda c: results(c, r["night"]))
             note = fill(cfg, s.note, day, res) if s.note else ""
             where = final_words(note)
@@ -667,20 +665,6 @@ class Scheduler:
         if not answer:
             raise RunFailed("No answer")
         return answer
-
-    async def _backups(self, night: date) -> None:
-        """The night's backups, when this is its first run (schedules/backups.py)."""
-        from .backups import nightly
-        cfg = self.app.cfg
-        data = getattr(cfg, "data_dir", None)
-        if data is None:
-            return
-        root = cfg.her.notebook if getattr(cfg, "her", None) else None
-        try:
-            await anyio.to_thread.run_sync(nightly, data, cfg.db_path, root, night,
-                                           cfg.r("backup_keep_days"))
-        except Exception:                      # noqa: BLE001 - the run goes on
-            log.exception("backup failed", extra={"event": "backup.failed"})
 
     def _note_path(self, note: str):
         return self.app.cfg.her.notebook / note if note and getattr(

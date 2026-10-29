@@ -1,10 +1,11 @@
-"""The nightly backups, made at the start of a night's first run and kept
-[runtime] backup_keep_days nights (config/celine.toml): older ones are deleted then: its whole
-notebook as one unit, `.versions`, `.trash` and its index `.index.db` included, as
-var/backups/notebook/<night>.tar.xz, the database as var/backups/db/<night>.db.xz and the
-logs as var/backups/log/<night>.db.xz (SQLite's online backup, then xz). A night that
-has them is not backed up again. Restore is by hand: unpack the notebook over its own, or
-unxz a database in place of var/celine.db or var/log.db with the app stopped."""
+"""The nightly backups, made every night at AT in the app's zone by the lifespan's timer
+(`keep`), whatever is switched on, and kept [runtime] backup_keep_days nights (Settings,
+Advanced): older ones are deleted then: its whole notebook as one unit, `.versions`,
+`.trash` and its index `.index.db` included, as var/backups/notebook/<night>.tar.xz, the
+database as var/backups/db/<night>.db.xz and the logs as var/backups/log/<night>.db.xz
+(SQLite's online backup, then xz). A night that has them is not backed up again. Restore
+is by hand: unpack the notebook over its own, or unxz a database in place of
+var/celine.db or var/log.db with the app stopped."""
 from __future__ import annotations
 
 import logging
@@ -12,15 +13,38 @@ import lzma
 import shutil
 import sqlite3
 import tarfile
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
-from ..db.migrate import log_path
+import anyio
+
+from .clock import zone
+from .db.migrate import log_path
 
 log = logging.getLogger("celine.backups")
 
 
 FOLDERS = ("notebook", "db", "log")
+AT = time(1, 0)            # after the evening, before the first shipped routine
+
+
+def next_at(now: datetime, tz) -> datetime:
+    """The next AT in `tz` after `now`; its date names the night."""
+    local = now.astimezone(tz)
+    at = local.replace(hour=AT.hour, minute=AT.minute, second=0, microsecond=0)
+    return at if at > local else at + timedelta(days=1)
+
+
+async def keep(cfg, clock=lambda: datetime.now(timezone.utc), sleep=anyio.sleep) -> None:
+    """The lifespan's timer: the night's backups at every AT."""
+    while True:
+        at = next_at(clock(), zone(cfg))
+        await sleep((at - clock()).total_seconds())
+        try:
+            await anyio.to_thread.run_sync(nightly, cfg.data_dir, cfg.db_path, cfg.her.notebook,
+                                           at.date(), int(cfg.r("backup_keep_days")))
+        except Exception:
+            log.exception("backup failed", extra={"event": "backup.failed"})
 
 
 def paths(data_dir: Path, night: date) -> tuple[Path, Path, Path]:

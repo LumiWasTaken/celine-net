@@ -120,8 +120,8 @@ in the app go to `app/settings/` and `app/secrets/`.
 
 ## Backups
 
-The app keeps its own nightly backups at the start of each night's first Routine run
-(`server/celine/schedules/backups.py`): its notebook as `backups/notebook/<night>.tar.xz`
+The app keeps its own nightly backups every night at 01:00 in its time zone
+(`server/celine/backups.py`): its notebook as `backups/notebook/<night>.tar.xz`
 and the database as `backups/db/<night>.db.xz` in the data volume. It keeps the last 7
 nights.
 
