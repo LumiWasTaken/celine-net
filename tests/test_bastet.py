@@ -611,6 +611,7 @@ async def _turn(store, cfg, reg, jobs=None):
                       [TextDelta("done"), Done(reason="stop")]])
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", list(reg.skills))
+    await loads.touch(store, cid, "tool", list(reg.tools))
     await user_says(store, cid, "find me pizza")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), reg, jobs)

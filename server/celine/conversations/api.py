@@ -153,7 +153,11 @@ async def what_she_sees(request: Request, cid: str) -> dict:
                                  sorted(carried.since.items()) if k == "note"],
                        "skills": [{"name": n, "since": carried.since[("skill", n)],
                                    "tokens": carried.costs.get(n, 0), "core": n in loads.CORE,
-                                   "label": labels[n]}
+                                   "label": labels[n],
+                                   "tools": [{"name": t, "since": carried.since[("tool", t)],
+                                              "tokens": carried.costs[t]}
+                                             for t in carried.tools
+                                             if t.split("__")[0] == n]}
                                   for n in carried.skills]},
             "tools": len(tools), "auto_context": auto}
 
@@ -163,11 +167,23 @@ async def unload_skill(request: Request, cid: str, name: str) -> dict:
     """The agent lets go of a skill it carries here (the Context tab's Unload): its tools leave
     its list until it loads it again or a message needs it. A core skill always loads:
     400."""
+    return await _unload(request, cid, "skill", name)
+
+
+@router.delete("/conversations/{cid}/context/tools/{name}")
+async def unload_tool(request: Request, cid: str, name: str) -> dict:
+    """The agent lets go of a tool's parameters here (the Context tab's Unload): the tool
+    keeps its name in the list while its skill is loaded. A core skill's tool always
+    has them: 400."""
+    return await _unload(request, cid, "tool", name)
+
+
+async def _unload(request: Request, cid: str, kind: str, name: str) -> dict:
     from ..settings.files import Invalid
     from ..turns import loads
-    if name in loads.CORE:
+    if name.split("__")[0] in loads.CORE:
         raise Invalid("name", "This skill always loads.")
-    if not await loads.unload(store_of(request), cid, "skill", name):
+    if await loads.unload(store_of(request), cid, kind, [name]) is None:
         raise NotFound("conversation")
     return {"ok": True}
 

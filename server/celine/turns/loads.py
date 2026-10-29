@@ -16,11 +16,14 @@ Never: a note whose `load:` line says off or names only other words, the notes t
 here (`conversations.notes_off`), and anything outside a sub-agent's folder.
 
 Skills, only where skills/places.PLACES offers them. Always: the core skills
-(skills.CORE). For a while: a skill it loaded (`skills__load`), used (a tool of it ran),
-the user loaded by hand, or that the new user message asks for (`asked`): a word or
-phrase of the `words:` line of the skill's own guide, as a whole word in any case; an
-attached image counts as `image`, a link as `url`, a Documents reference as `document`
-(never with `conversations.auto_context` off).
+(skills.CORE), every tool with its parameters. For a while: a skill it loaded
+(`skills__load`), used (a tool of it ran), the user loaded by hand, or that the new user
+message asks for (`asked`): a word or phrase of the `words:` line of the skill's own
+guide, as a whole word in any case; an attached image counts as `image`, a link as
+`url`, a Documents reference as `document` (never with `conversations.auto_context` off).
+A loaded skill puts each of its tools in the list by name and one line
+(ToolSpec.as_name). A tool of it carries its parameters (ToolSpec.as_wire) for a while
+when it loaded the tool (`skills__load` with `skill__tool`) or called it.
 Never: a skill whose tools are all off (Settings, Tools, or this conversation): what may
 load at all is still the switches'.
 
@@ -28,10 +31,12 @@ A note or skill no turn touched for `idle_turns` rounds is unloaded. The always-
 notes always load, even past the notes share (the Context tab shows the block over its
 share); the share is for the notes loaded by need, the most recently touched first,
 measured as the notes block it reads (headings and lines included). What does not fit
-is named. The core skills always load; the tools budget is for the others.
+is named. The tools budget counts parameters only: the core skills' tools and the
+loaded tools, the most recently touched first; a tool that does not fit is named (`no
+room`). The names of the loaded skills' tools are not counted.
 
-The state is per conversation: the `context_loaded` rows, what it carries, each with
-the round that last touched it, and `context_state.turns`, the round of its last turn
+The state is per conversation: the `context_loaded` rows (kinds note, skill and tool),
+what it carries, each with the round that last touched it, and `context_state.turns`, the round of its last turn
 start. A round is a turn of the conversation.
 """
 from __future__ import annotations
@@ -56,7 +61,7 @@ DEFAULTS = {"notes": 0.10, "tools": 10_000, "idle_turns": 6,
 WHOLE = ("idle_turns", "tools", "memory_sections", "memory_tokens")
 KEY_REPLY = 300          # the characters of its last reply a key is looked for in
 ALWAYS_MAX = 1536        # bytes of an always-loaded note carried whole; past it its head
-TOOLS_MAX = 200_000      # the most tokens of tool descriptions context.toml may give
+TOOLS_MAX = 200_000      # the most tokens of tool parameters context.toml may give
 OFF_HERE = "left out in this conversation"
 OVER = "over the notes share"
 
@@ -112,15 +117,19 @@ def read_shares(path: Path, problems: list) -> dict:
 class Carried:
     """One selection. `notes`: {path, text, tokens, state, why, since} each, state
     `included`, `left_out` (over the share) or `off` (its load line, or the user's
-    switch here); `skills`: the skills loaded, in registry order; `others`: the skills
-    offered here and not loaded, with why (`off`: every tool is off; `no room`: over the
-    tools budget; empty: not needed now); `since`: turns since each loaded note or skill
-    was touched, by (kind, name); `costs`: the tool schemas in tokens of each skill loaded or
-    left out for room;
-    `budgets`: notes as tokens of the window, tools as set."""
+    switch here); `skills`: the skills loaded, in registry order; `tools`: the tools of
+    the loaded skills that carry their parameters, but the core skills' (they always
+    do), in registry order; `others`: the skills offered here and not loaded, with why
+    (`off`: every tool is off; empty: not needed now), and the tools left out for room
+    (`no room`); `since`: turns since each loaded note, skill or tool was touched, by
+    (kind, name); `costs`: in tokens, each loaded skill's entries in the list (a core
+    skill's tools with their parameters, another's names) and each tool's parameters,
+    carried or left out for room; `budgets`: notes as tokens of the window, tools as
+    set."""
     turn: int = 0
     notes: list[dict] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list)
     others: dict[str, str] = field(default_factory=dict)
     since: dict[tuple[str, str], int] = field(default_factory=dict)
     budgets: dict[str, int] = field(default_factory=dict)
@@ -129,6 +138,21 @@ class Carried:
     @property
     def loaded_notes(self) -> frozenset[str]:
         return frozenset(n["path"] for n in self.notes if n["state"] == "included")
+
+    @property
+    def loaded(self) -> frozenset[str]:
+        """The skills and tools it carries, as its rows name them."""
+        return frozenset(self.skills) | frozenset(self.tools)
+
+    def full(self, name: str) -> bool:
+        """Whether tool `name` (skill__tool) is in its list with its parameters."""
+        return name.split("__")[0] in CORE or name in self.tools
+
+    @property
+    def counted(self) -> int:
+        """The tokens of parameters the tools budget counts now."""
+        return sum(self.costs.get(n, 0) for n in self.skills if n in CORE) + \
+            sum(self.costs[n] for n in self.tools)
 
 
 # ---- rows ------------------------------------------------------------------------------
@@ -162,26 +186,30 @@ async def touch(store, cid: str, kind: str, names) -> None:
     await store.write(lambda c: touch_sync(c, store, cid, kind, names))
 
 
-async def touched(store, cid: str) -> set[str]:
-    """The skills touched in its turn now: loaded, or to load from its next step."""
-    def fn(c: sqlite3.Connection) -> set[str]:
-        turn, got = rows(c, cid)
-        return {n for (k, n), t in got.items() if k == "skill" and t >= turn}
+async def loaded(store, cid: str) -> frozenset[str]:
+    """The skills and tools its rows hold now: Carried.loaded right after a saved
+    selection, another set once something was loaded or unloaded."""
+    def fn(c: sqlite3.Connection) -> frozenset[str]:
+        return frozenset(n for k, n in rows(c, cid)[1] if k in ("skill", "tool"))
 
     return await store.read(fn)
 
 
-async def unload(store, cid: str, kind: str, name: str) -> bool:
-    """A note or skill it carries is let go now (the user's Unload): it loads again
-    only by need. -> False when the conversation is not there."""
-    def fn(c: sqlite3.Connection) -> bool:
+async def unload(store, cid: str, kind: str, names) -> list[str] | None:
+    """Notes, skills or tools it carries are let go now (the user's Unload,
+    skills__unload): each loads again only by need; a skill takes its tools with it.
+    -> the names that were loaded, None when the conversation is not there."""
+    def fn(c: sqlite3.Connection) -> list[str] | None:
         if c.execute("SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone() is None:
-            return False
+            return None
         before = set(rows(c, cid)[1])
-        c.execute("DELETE FROM context_loaded WHERE conversation_id=? AND kind=? "
-                  "AND name=?", (cid, kind, name))
-        _changed(c, store, cid, before, before - {(kind, name)})
-        return True
+        gone = {(kind, n) for n in names}
+        if kind == "skill":
+            gone |= {(k, t) for k, t in before if k == "tool" and t.split("__")[0] in names}
+        c.executemany("DELETE FROM context_loaded WHERE conversation_id=? AND kind=? "
+                      "AND name=?", [(cid, k, n) for k, n in gone])
+        _changed(c, store, cid, before, before - gone)
+        return [n for n in names if (kind, n) in before]
 
     return await store.write(fn)
 
@@ -206,12 +234,12 @@ async def _save(store, cid: str, turn: int, keep: dict[tuple[str, str], int],
 
 def _changed(c: sqlite3.Connection, store, cid: str, before: set, after: set,
              always: bool = False) -> None:
-    """`context.changed` on the global feed: {conversation, loaded: {notes, skills},
-    unloaded: {...}}, what came and what went; nothing when nothing did, unless
+    """`context.changed` on the global feed: {conversation, loaded: {notes, skills,
+    tools}, unloaded: {...}}, what came and what went; nothing when nothing did, unless
     `always`."""
     def split(items) -> dict:
         return {word: sorted(n for kind, n in items if kind == k)
-                for k, word in (("note", "notes"), ("skill", "skills"))}
+                for k, word in (("note", "notes"), ("skill", "skills"), ("tool", "tools"))}
     if after != before or always:
         store.global_event(c, CONTEXT_CHANGED, {
             "conversation": cid, "loaded": split(after - before),
@@ -393,17 +421,23 @@ async def offered(registry, store, cid: str, turn_id: str | None = None
 
 
 def schema_cost(counter, specs) -> int:
-    """A skill's tool schemas in tokens, as the tools budget counts them."""
+    """Tools with their parameters in tokens, as the tools budget counts them."""
     return counter.estimate(json.dumps([s.as_wire() for s in specs], ensure_ascii=False),
+                            "schema")
+
+
+def names_cost(counter, specs) -> int:
+    """Tools by name and one line in tokens (the tools budget does not count them)."""
+    return counter.estimate(json.dumps([s.as_name() for s in specs], ensure_ascii=False),
                             "schema")
 
 
 async def _skills(store, cfg, registry, cid: str, rows: dict, turn: int, idle: int,
                   budget: int, counter, new: set[str]
-                  ) -> tuple[list[str], dict[str, str], dict, dict[str, int]]:
+                  ) -> tuple[list[str], list[str], dict[str, str], dict, dict[str, int]]:
     from ..skills.gating import is_enabled, overrides_for, reason
     if not registry:
-        return [], {}, {}, {}
+        return [], [], {}, {}, {}
     overrides = await overrides_for(store, cid)
     here = await offered(registry, store, cid)
     wanted: dict[str, int] = {}          # skill -> the turn that touched it
@@ -422,15 +456,22 @@ async def _skills(store, cfg, registry, cid: str, rows: dict, turn: int, idle: i
             wanted[name] = rows[("skill", name)]
         else:
             others[name] = ""
-    used, keep, costs = 0, {}, {}
-    for name in sorted(wanted, key=lambda n: (n not in core, -wanted[n])):
-        costs[name] = cost = schema_cost(counter, here[name])
-        if name not in core and used + cost > budget:
+    keep = {("skill", n): t for n, t in wanted.items()}
+    costs = {n: (schema_cost if n in core else names_cost)(counter, here[n]) for n in wanted}
+    used = sum(costs[n] for n in core)
+    specs = {s.wire_name: s for n in wanted if n not in core for s in here[n]
+             if is_enabled(s, overrides, cfg)}
+    tools = [(n, t) for (k, n), t in rows.items()
+             if k == "tool" and n in specs and turn - t <= idle]
+    for name, touched in sorted(tools, key=lambda x: -x[1]):
+        costs[name] = cost = schema_cost(counter, [specs[name]])
+        if used + cost > budget:
             others[name] = "no room"
             continue
         used += cost
-        keep[("skill", name)] = wanted[name]
-    return [n for n in registry.skills if ("skill", n) in keep], others, keep, costs
+        keep[("tool", name)] = touched
+    return ([n for n in registry.skills if ("skill", n) in keep],
+            [n for n in registry.tools if ("tool", n) in keep], others, keep, costs)
 
 
 # ---- one selection -------------------------------------------------------------------
@@ -450,7 +491,7 @@ async def select(store, cfg, registry, cid: str, backend, *, when: str = "dry",
                  turn_id: str | None = None, path: list[dict] | None = None) -> Carried:
     """What it carries. `when`: "start" (turn `turn_id` starts: its round is its round,
     the new message loads its skills, and the result is saved), "step" (inside the turn,
-    after skills__load: the rows again, saved), "dry" (what it carries now; nothing is
+    after a load or an unload: the rows again, saved), "dry" (what it carries now; nothing is
     saved). With the conversation's automatic context off (`conversations.auto_context`
     0) no message loads a skill: it carries the core skills, the always notes and what
     it or the user loaded. `path`: the conversation's active path when the caller read
@@ -477,7 +518,7 @@ async def select(store, cfg, registry, cid: str, backend, *, when: str = "dry",
         return Carried(budgets=budgets)
     conv = dict(conv)
     start = when == "start"
-    skills, others, kept, costs = await _skills(store, cfg, registry, cid, have, turn, idle,
+    skills, tools, others, kept, costs = await _skills(store, cfg, registry, cid, have, turn, idle,
                                                 budgets["tools"], counter,
                                                 asked(registry, unsent(chain))
                                                 if start and registry else set())
@@ -486,5 +527,5 @@ async def select(store, cfg, registry, cid: str, backend, *, when: str = "dry",
     keep |= kept
     if when != "dry":
         await _save(store, cid, turn, keep, start)
-    return Carried(turn, notes, skills, others, {k: turn - t for k, t in keep.items()},
-                   budgets, costs)
+    return Carried(turn, notes, skills, tools, others,
+                   {k: turn - t for k, t in keep.items()}, budgets, costs)

@@ -115,22 +115,22 @@ async def test_tools_load_by_need_and_a_load_counts_from_the_next_step(store, cf
     reg = _registry(cfg)
     chat = await conversations.create(store)
     b, _ = await _turn(store, cfg, reg, chat, [[TextDelta("hi"), Done(reason="stop")]])
-    assert set(b.offered[0]) == {"skills__read_guide", "skills__load"}
+    assert set(b.offered[0]) == {"skills__read_guide", "skills__load", "skills__unload"}
     assert "shell" not in CORE
 
     await user_says(store, chat, "draw me a picture of the sea")
     b, results = await _turn(store, cfg, reg, chat, [
         _call("shell__type", {"text": "ls"}),
-        _call("skills__load", {"name": "shell"}),
+        _call("skills__load", {"names": ["shell"]}),
         [TextDelta("ok"), Done(reason="stop")]])
     assert "image_generator__generate_image" in b.offered[0]
     assert "shell__type" not in b.offered[1] and "shell__type" in b.offered[2]
     assert "User's terminal" in b.offered[2]["shell__type"]["description"]
     assert results[-2] == {"name": "shell__type", "state": "gated",
-                           "content": "shell is not loaded. skills__load(name=\"shell\") "
+                           "content": "shell is not loaded. skills__load(names=[\"shell\"]) "
                                       "loads it for your next step."}
-    assert results[-1]["content"] == ("Loaded shell. Its tools are in your list from "
-                                      "your next step.")
+    assert results[-1]["content"] == ("Loaded shell: its tools are in your list by name "
+                                      "from your next step.")
 
 
 async def test_a_skill_a_tool_touched_loads_from_the_next_step(store, cfg, monkeypatch):
@@ -153,6 +153,7 @@ async def test_a_skill_a_tool_touched_loads_from_the_next_step(store, cfg, monke
     cfg.settings.tools = {**cfg.settings.tools, "image_generator__generate_image": "off"}
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", ["toucher"])
+    await loads.touch(store, cid, "tool", ["toucher__touch"])
     steps = []
     select = loads.select
 
@@ -218,7 +219,7 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     for near in ("Web", " web", "web__search"):
         out = await meta.read_guide(ctx, name=near)
         assert out.is_error and out.content.startswith(f"No skill called {near!r} here"), near
-        assert (await meta.load(ctx, name=near)).is_error, near
+    assert (await meta.load(ctx, names=["Web"])).is_error
 
 
 async def test_read_guide_brings_the_live_presets_and_the_guide_names_none(store, cfg,

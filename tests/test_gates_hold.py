@@ -92,6 +92,7 @@ async def _turn(store, cfg, reg, second=("web__search", {"query": "pizza near 12
                       _call(1, *second), [TextDelta("done"), Done(reason="stop")]])
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", list(reg.skills))
+    await loads.touch(store, cid, "tool", list(reg.tools))
     await send(store, "user", f"agent:{cid}", "find me pizza")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), reg, None)
@@ -233,6 +234,7 @@ async def test_frozen_no_tool_runs_even_in_a_turn_that_runs(store, no_judge):
     cfg, reg, web = _world("off")              # the freeze is the house's, any mode
     cid = await conversations.create(store)
     await loads.touch(store, cid, "skill", list(reg.skills))
+    await loads.touch(store, cid, "tool", list(reg.tools))
     await user_says(store, cid, "find me pizza")
     turn = await turns.claim(store, "w")       # claimed, then frozen
     await _frozen(store)

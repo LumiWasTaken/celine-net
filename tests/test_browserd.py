@@ -293,7 +293,7 @@ async def test_a_vault_entry_is_typed_with_no_draft_and_no_shot(box, monkeypatch
     assert shots == [] and box.tab.drafts == []
     assert pw not in out.content and "type e14 vault:example-shop/password" in out.content
     assert out.content.endswith("A password field: vault__get or vault__set.")
-    assert "vault" in await loads.touched(store, ctx.conversation_id)
+    assert "vault" in await loads.loaded(store, ctx.conversation_id)
     out = await b.open(ctx, url="https://x/home", tab="a")
     assert page.url == "https://x/home" and "Text you typed into" not in out.content
     page.url = "https://x/login"

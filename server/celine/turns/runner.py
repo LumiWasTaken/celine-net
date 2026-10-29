@@ -77,20 +77,20 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     chain = await store.read(lambda c: tree.path(c, cid))
     # this conversation's switches (skills/gating.py) and what it carries by need
     # (turns/loads.py), resolved once per turn: a config reload must not swap tools
-    # under a running turn; only skills__load changes them, between steps
+    # under a running turn; only a load or an unload changes them, between steps
     overrides = await overrides_for(store, cid)
     carried = await loads.select(store, cfg, registry, cid, backend, when="start",
                                  turn_id=tid, path=chain)
     specs, read_only = await prompt.tool_specs(registry, store, cid, carried)
     tools_on = bool(registry) and getattr(backend, "supports_tools", False)
-    wire_tools = prompt.wire_tools(specs, registry, overrides, cfg) if tools_on else []
+    wire_tools = prompt.wire_tools(specs, registry, overrides, cfg, carried) if tools_on else []
 
     counter = tokens.counter(backend)
     win = tokens.window(backend)
     tool_turn = {"id": tid, "conversation_id": cid, "origin": turn.get("origin") or "user",
                  "root_message_id": turn["root_message_id"],
                  "max_output_tokens": tokens.result_cap(win), "read_only": read_only,
-                 "time_left": time_left, "loaded": frozenset(carried.skills), "carried": carried,
+                 "time_left": time_left, "loaded": carried.loaded, "carried": carried,
                  "offered": frozenset(specs), "notes": _carried_notes(carried)}
 
     # where this turn stands: a fresh turn starts at its user message; a resumed or
@@ -319,14 +319,15 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         parent = await turns.step_tail(store, mid)
         iteration += 1
         grown = True
-        if await loads.touched(store, cid) - tool_turn["loaded"]:
-            # it loaded a skill (skills__load), or a tool did for it (a password field
-            # loads the vault): its tools, its index line and its fragment from the next
-            # step on (the request is built again from the stored path)
+        if await loads.loaded(store, cid) != tool_turn["loaded"]:
+            # it loaded or unloaded a skill or a tool (skills__load, skills__unload, a
+            # call to a tool without its parameters), or a tool did for it (a password
+            # field loads the vault): its tools, its index line and its fragment from the
+            # next step on (the request is built again from the stored path)
             carried = await loads.select(store, cfg, registry, cid, backend, when="step")
             specs, read_only = await prompt.tool_specs(registry, store, cid, carried)
-            wire_tools = prompt.wire_tools(specs, registry, overrides, cfg) if tools_on else []
-            tool_turn.update(read_only=read_only, loaded=frozenset(carried.skills), carried=carried,
+            wire_tools = prompt.wire_tools(specs, registry, overrides, cfg, carried) if tools_on else []
+            tool_turn.update(read_only=read_only, loaded=carried.loaded, carried=carried,
                              offered=frozenset(specs), notes=_carried_notes(carried))
             pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn,
                                               carried, wire_tools)

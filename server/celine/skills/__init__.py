@@ -3,17 +3,19 @@
 A skill is a Python class with `@tool` coroutines plus a guide, `guides/<skill>.md`
 (SKILL.md style: frontmatter `name`, `description`, optional `words`, then the body).
 What it has in context every turn: the skill index (the loaded skills, and one line per
-other skill, from the frontmatter) and every tool of the loaded skills (turns/loads.py
-decides which, from CORE below and each guide's `words:`). A tool that is off or a skill
+other skill, from the frontmatter) and the tools of the loaded skills, a core skill's
+with their parameters, another's by name and one line until it loads them
+(turns/loads.py decides which, from CORE below and each guide's `words:`). A tool that is off or a skill
 that is down stays in the list as a stub that says so (turns/prompt.py).
 `skills__read_guide(name)` returns a skill's guide and its notes on it,
-`skills__load(name)` loads a skill.
+`skills__load(names)` loads skills and tools, `skills__unload(names)` lets them go.
 """
 from __future__ import annotations
 
 import inspect
 import keyword
 import logging
+import re
 import types
 from pathlib import Path
 import typing
@@ -30,6 +32,7 @@ log = logging.getLogger("celine.skills")
 SEP = "__"          # skill__tool. Double, so split("__", 1) round-trips.
 META = "skills"     # the skill that shows the guides: skills__read_guide
 BODY = {"shell", "code", "browser"}     # the skills that run on its body (ToolSpec.runs)
+LINE_MAX = 200      # characters of a tool's line while its parameters are not loaded
 
 
 @dataclass
@@ -133,6 +136,19 @@ class ToolSpec:
                 "function": {"name": self.wire_name,
                              "description": self.description,
                              "parameters": self.schema}}
+
+    @property
+    def line(self) -> str:
+        """Its description's first sentence, at most LINE_MAX characters."""
+        first = re.split(r"(?<=[.!?])\s|\n", self.description.strip(), maxsplit=1)[0]
+        return first if len(first) <= LINE_MAX else first[:LINE_MAX].rsplit(" ", 1)[0]
+
+    def as_name(self) -> dict[str, Any]:
+        """Its entry while its parameters are not loaded: the name, one line, no
+        parameters (turns/loads.py)."""
+        return {"type": "function",
+                "function": {"name": self.wire_name, "description": self.line,
+                             "parameters": {"type": "object", "properties": {}}}}
 
 
 Mode = Literal["blocking", "detach"]
@@ -427,8 +443,6 @@ class Registry:
                 desc += " (off in Settings, Tools: it cannot load)"
             elif carried.others.get(name) == "off here":
                 desc += " (off in this conversation: it cannot load)"
-            elif carried.others.get(name) == "no room":
-                desc += " (no room for its tools now)"
             mark = " [notes]" if skill_note_path(cfg, name).is_file() else ""
             return f"- {name}{mark}: {desc}"
         loaded = [n for n in carried.skills if n != META]
@@ -437,14 +451,17 @@ class Registry:
             return None
         if META in carried.skills:
             head = (f"Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
-                    f"loaded skills are in your list. `skills__load` loads another one for "
-                    f"your next step; a skill you do not use for {idle} turns unloads. "
+                    f"loaded skills are in your list; a tool listed with no parameters "
+                    f"gets them when you load it or call it. `skills__load` loads skills "
+                    f"and tools for your next step, `skills__unload` lets them go; a skill "
+                    f"or tool you do not use for {idle} turns unloads. "
                     f"`skills__read_guide` shows a skill's guide, with examples, and your "
                     f"notes on a skill marked [notes] (skills/<name>.md).")
         else:       # its tools leave out the skills skill: they load by need only
             head = (f"Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
-                    f"loaded skills are in your list; another one loads when the talk "
-                    f"needs it, and a skill you do not use for {idle} turns unloads.")
+                    f"loaded skills are in your list; a tool listed with no parameters "
+                    f"gets them when you call it. Another skill loads when the talk needs "
+                    f"it, and a skill or tool you do not use for {idle} turns unloads.")
         out = [head, f"Loaded: {', '.join(loaded)}."]
         if others:
             out += ["Not loaded:", *others]

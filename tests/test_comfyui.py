@@ -288,7 +288,9 @@ async def test_her_call_returns_at_once_fills_in_place_and_never_wakes_her(app, 
     skill.app = app
     reg = Registry()
     reg.add(skill)
+    from celine.turns import loads
     cid = await conversations.create(store)
+    await loads.touch(store, cid, "tool", ["image_generator__generate"])
     await user_says(store, cid, "draw two")
     turn = await turns.claim(store, "w")
     call = ("image_generator__generate",
