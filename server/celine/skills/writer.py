@@ -88,7 +88,7 @@ class Writer:
             text = (await complete(qb, messages(self.cfg, brief, kind, context), math.inf,
                                    errors=True) or "").strip()
         except BackendError as e:
-            return ToolResult(content=f"The Writing model failed: {str(e)[:300]}",
+            return ToolResult(content=f"The Writing model failed: {e}",
                               is_error=True)
         model = getattr(qb.answered, "model", "")
         if not text:

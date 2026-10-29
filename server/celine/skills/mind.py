@@ -168,7 +168,7 @@ async def feel(store, emotion: str, strength: float, why: str, by: str,
     """One mood row (never deleted)."""
     await store.write(lambda c: c.execute(
         "INSERT INTO moods(at, emotion, strength, why, by, message_id) VALUES(?,?,?,?,?,?)",
-        (now(), emotion, min(1.0, max(0.0, float(strength))), why.strip()[:300], by,
+        (now(), emotion, min(1.0, max(0.0, float(strength))), why, by,
          message_id)))
 
 
@@ -434,7 +434,7 @@ def _turn_facts(c: sqlite3.Connection, cid: str, tid: str) -> dict | None:
 def appraisal_prompt(cfg, mood: str, said: str, reply: str) -> tuple[str, str]:
     system = prompts.fill(cfg, __file__, "mind_appraisal.md", emotions=", ".join(PAD))
     user = cfg.substitute(f"{{{{name}}}}'s mood before: {mood or 'none yet'}\n\n"
-                          f"{{{{username}}}}: {said[:2000]}\n\n{{{{name}}}}: {reply[:2000]}")
+                          f"{{{{username}}}}: {said}\n\n{{{{name}}}}: {reply}")
     return system, user
 
 
@@ -453,7 +453,7 @@ def parse_appraisal(text: str | None) -> dict | None:
     if isinstance(s, bool) or not isinstance(s, (int, float)):
         return None
     return {"emotion": got["emotion"], "strength": min(1.0, max(0.0, float(s))),
-            "why": str(got.get("why") or "")[:300]}
+            "why": str(got.get("why") or "")}
 
 
 async def appraise(app, cid: str, tid: str, backend=None) -> dict | None:

@@ -201,9 +201,10 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
                       config=cfg, emit=None)
     (cfg.her.notebook / "skills").mkdir(parents=True)
-    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night")
+    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night\n" * 500)
     out = await meta.read_guide(ctx, name="web")
     assert out.content.startswith("# web\n\n") and "searx is slow at night" in out.content
+    assert out.content.endswith(("searx is slow at night\n" * 500).strip()), "the whole note"
     assert reg.skills["web"].guide.body[:40] in out.content
     mission = await conversations.create(store, kind="mission")
     out = await meta.read_guide(ToolContext(conversation_id=mission, turn_id="t",

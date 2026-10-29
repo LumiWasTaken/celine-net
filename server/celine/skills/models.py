@@ -100,7 +100,7 @@ class Models:
         try:
             text = (await complete(qb, wire, math.inf, errors=True) or "").strip()
         except BackendError as e:
-            return ToolResult(content=f"{model} failed: {str(e)[:300]}", is_error=True)
+            return ToolResult(content=f"{model} failed: {e}", is_error=True)
         if not text:
             return ToolResult(content=f"{model} answered nothing.", is_error=True)
         return ToolResult(content=text, display={"model": model, "chars": len(text)})
