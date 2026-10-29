@@ -54,7 +54,7 @@ class ToolContext:
     config: Any
     # emit(note, **data): a progress line for the call's row (event tool.progress)
     emit: Callable[..., Awaitable[None]]
-    # the most one result may take, in tokens (~30% of the model's window); a tool
+    # the most one result may take, in tokens (turns/tokens.result_cap); a tool
     # that can cut at a natural boundary should, and say what it left out
     max_output_tokens: int | None = None
     # seconds left of the turn's work time, None when the turn has no clock; a tool

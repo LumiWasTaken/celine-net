@@ -1,7 +1,8 @@
 """What it carries besides the conversation: the notes it always carries, in its system
 prompt, and the skills offered here, decided at every turn start by one policy for every
 conversation (`var/settings/context.toml`, copied once from `config/context.toml`, holds
-the memory's numbers, skills/recall.py).
+the memory's numbers, skills/recall.py, and `result_tokens`, the most one tool result
+takes, tokens.result_cap).
 
 Notes, from its notebook: a note whose head has `load: always` and the notes on the user,
 `people/{{username}}.md` and `people/{{username}}-*.md`; one over ALWAYS_MAX bytes
@@ -32,8 +33,9 @@ from ..core.states import LIVE_SQL
 from ..conversations.samples import PATH as SAMPLES   # carried whole, whatever its size
 from ..skills.notebook import carried_text, inside, load_of, read_note
 
-DEFAULTS = {"memory_floor": 0.5, "memory_sections": 3, "memory_tokens": 1500}
-WHOLE = ("memory_sections", "memory_tokens")
+DEFAULTS = {"memory_floor": 0.5, "memory_sections": 3, "memory_tokens": 1500,
+            "result_tokens": 10_000}
+WHOLE = ("memory_sections", "memory_tokens", "result_tokens")
 KEY_REPLY = 300          # the characters of its last reply a key is looked for in
 ALWAYS_MAX = 1536        # bytes of an always-loaded note carried whole; past it its head
 OFF_HERE = "left out in this conversation"
@@ -76,6 +78,9 @@ def share_problem(key: str, value) -> str | None:
     if key == "memory_tokens" and not (number and value == int(value)
                                        and 0 <= value <= 20_000):
         return "memory_tokens is a whole number of tokens from 0 to 20000, such as 1500."
+    if key == "result_tokens" and not (number and value == int(value)
+                                       and 1000 <= value <= 200_000):
+        return "result_tokens is a whole number of tokens from 1000 to 200000, such as 10000."
     return None
 
 

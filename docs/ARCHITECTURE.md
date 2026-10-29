@@ -410,8 +410,9 @@ kind, times a per-model correction learned from every call's `usage.prompt_token
 window is what the server says (`/upstream/<model>/props` `n_ctx`, an overflow error
 body, else the provider's model list, `Router.discover`); the model's context size in
 Settings counts only where no server says and on Ollama; fallback 32,768. One tool
-result may take at most 30 % of the window (`ToolContext.max_output_tokens`;
-`tools._capped` cuts with a `[cut: ...]` line). Every model call appends
+result takes at most `result_tokens` of context.toml (10,000 by default) or 15 % of the
+window, the smaller (`tokens.result_cap`, `ToolContext.max_output_tokens`;
+`tools._capped` keeps its start and its end with a `[cut: ...]` line between). Every model call appends
 `context.usage {turn_id, iteration, estimate, prompt_tokens, completion_tokens, ...}`
 (log only) and bumps `turns.iterations`. `finish_reason = "length"` on a final reply
 gives `done` with `cut = 'length'`.

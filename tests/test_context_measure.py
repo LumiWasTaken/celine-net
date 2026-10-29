@@ -48,3 +48,22 @@ def test_cached_tokens_read_from_openai_and_llama_cpp_shapes():
     assert cached({"usage": {"prompt_tokens_details": {"cached_tokens": 7}}}) == 7
     assert cached({"usage": {"prompt_tokens": 9}, "timings": {"cache_n": 4}}) == 4
     assert cached({"usage": {"prompt_tokens": 9}}) == 0
+
+
+def test_a_result_is_capped_absolutely_and_keeps_its_start_and_end():
+    from types import SimpleNamespace
+    from celine.skills import ToolResult
+    from celine.turns import tokens, tools
+    assert tokens.result_cap(65_536) == 9_830, "15 % of the window, under 10,000"
+    assert tokens.result_cap(262_144) == 10_000, "the absolute cap on a large window"
+    assert tokens.result_cap(262_144, SimpleNamespace(context={"result_tokens": 4000})) \
+        == 4000, "the owner's number in context.toml"
+    text = "".join(f"line {i} of the build log\n" for i in range(2000))
+    out = tools._capped(ToolResult(content=text, images=["a1"]), {"max_output_tokens": 500})
+    head, rest = out.content.split("\n\n[cut: ", 1)
+    line, tail = rest.split("\n\n", 1)
+    assert head.startswith("line 0 of") and tail.rstrip().endswith("line 1999 of the build log")
+    assert line.endswith("tokens left out here, between the start and the end. Page through "
+                         "it, or read the part you need from its file.]")
+    assert out.images == ["a1"]
+    assert tokens.estimate(head + tail, "tool") <= 520

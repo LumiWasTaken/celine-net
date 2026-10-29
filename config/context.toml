@@ -15,3 +15,7 @@
 memory_floor = 0.5  # a section comes back only this similar to the talk (0 to 1)
 memory_sections = 3 # at most this many sections per message
 memory_tokens = 1500  # in at most this many tokens
+
+# One tool result takes at most this many tokens, or 15 % of the model's window when
+# that is less; past it its start and its end are kept, with a [cut: ...] line between.
+result_tokens = 10000

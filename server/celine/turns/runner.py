@@ -88,7 +88,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     win = tokens.window(backend)
     tool_turn = {"id": tid, "conversation_id": cid, "origin": turn.get("origin") or "user",
                  "root_message_id": turn["root_message_id"],
-                 "max_output_tokens": tokens.result_cap(win), "read_only": read_only,
+                 "max_output_tokens": tokens.result_cap(win, cfg), "read_only": read_only,
                  "time_left": time_left, "carried": carried,
                  "offered": frozenset(specs), "notes": _carried_notes(carried)}
 

@@ -131,16 +131,19 @@ def marked(result: ToolResult, guarded: bool) -> str:
 
 def _capped(result: ToolResult, turn) -> ToolResult:
     """The backstop for tools that ignore ctx.max_output_tokens (MCP, shell): one result
-    never takes more than its share of the window."""
+    never takes more than the cap (tokens.result_cap). Its start and its end are kept,
+    the cut line between them says how much is left out and how to get it."""
     cap = turn.get("max_output_tokens")
     if not cap or not result.content:
         return result
     from . import tokens
-    head, shown, total = tokens.cut_to(result.content, int(cap))
-    if shown >= total:
+    head, tail, shown, total = tokens.cut_middle(result.content, int(cap))
+    if not tail:
         return result
-    return replace(result, content=f"{head}\n\n[cut: {shown:,} of {total:,} tokens shown. "
-                                   f"Narrow the request, or read a specific part.]")
+    return replace(result, content=f"{head}\n\n[cut: {total - shown:,} of {total:,} tokens "
+                                   f"left out here, between the start and the end. Page "
+                                   f"through it, or read the part you need from its "
+                                   f"file.]\n\n{tail}")
 
 
 def _concurrent(calls, registry) -> bool:

@@ -16,7 +16,8 @@ thing Settings saves at once:
 - `tools`: each skill and tool, on or off.
 - `services`: the addresses of the shellbox, the browser and web search.
 - `email`, `vault`: their accounts.
-- `context`: your memory's numbers: `memory_floor`, `memory_sections`, `memory_tokens`.
+- `context`: your memory's numbers, `memory_floor`, `memory_sections`, `memory_tokens`,
+  and `result_tokens`, the most one tool result takes.
 - `forms.<id>`: a plugin's form.
 
 `settings__read(target)` gives its fields: key, label, type, the allowed values
