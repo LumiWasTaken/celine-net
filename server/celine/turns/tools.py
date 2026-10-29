@@ -39,8 +39,8 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
     # (turns/loads.py)
     used = [c["name"] for c in calls if c["name"] in turn.get("offered", ())]
     await loads.touch(store, cid, "skill", [n.split("__")[0] for n in used])
-    await loads.touch(store, cid, "tool", [n for n in used
-                                           if n.split("__")[0] not in loads.CORE])
+    await loads.touch(store, cid, "tool", [
+        n for n in used if n.split("__")[0] not in loads.CORE and not registry.get(n).bare])
 
     guarded = guard.enabled(cfg, cid)
 
@@ -263,7 +263,7 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
         return "gated", ToolResult(content=OFF.format(name=spec.skill if whole else name),
                                    display={"gated": True, "tool": name}), None
     carried = turn.get("carried")
-    if carried is not None and not carried.full(name):
+    if carried is not None and not spec.bare and not carried.full(name):
         return "gated", ToolResult(content=_parameters(spec, carried),
                                    display={"gated": True, "tool": name}), None
     return None

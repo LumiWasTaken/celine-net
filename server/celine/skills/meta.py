@@ -137,6 +137,11 @@ class Skills:
             elif skill in loads.CORE:
                 ok = True
                 lines.append(f"{name} is always in your list with its parameters.")
+            elif spec is not None and spec.bare:
+                ok = True
+                skills.append(skill)
+                lines.append(f"{name} takes no parameters: it is in your list in full while "
+                             f"{skill} is loaded, from your next step.")
             elif spec is None:
                 ok = True
                 skills.append(skill)

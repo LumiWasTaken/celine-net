@@ -42,6 +42,12 @@ def _mac():
         return tool(read_only=False)(run)
     for i in range(40):
         setattr(Mac, f"tool{i:02d}", make(i))
+
+    async def version(self, ctx) -> ToolResult:
+        RAN.append({"tool": "version"})
+        return ToolResult("26.7")
+    version.__doc__ = "The macOS version. " + "It explains a lot. " * 60
+    Mac.version = tool()(version)
     return Mac()
 
 
@@ -88,6 +94,8 @@ async def test_a_skill_loads_as_names_and_costs_its_names(store, tmp_path):
         "parameters": {"type": "object", "properties": {}}}
     assert wire["notebook__read"] == reg.tools["notebook__read"].as_wire(), \
         "a core skill keeps its parameters"
+    assert wire["mac__version"] == reg.tools["mac__version"].as_wire(), \
+        "a tool without parameters goes out in full"
 
 
 async def test_loading_one_tool_carries_just_its_parameters(store, tmp_path):
@@ -101,7 +109,7 @@ async def test_loading_one_tool_carries_just_its_parameters(store, tmp_path):
         "Loaded mac__tool03: its parameters are in your list from your next step.",
         "No skill called 'nope' here. The skills are: notebook, mac.",
         "There is no tool mac__x. The mac skill has "
-        + ", ".join(f"mac__tool{i:02d}" for i in range(40)) + "."]
+        + ", ".join(f"mac__tool{i:02d}" for i in range(40)) + ", mac__version."]
     got = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
     counter = tokens.counter(BACKEND)
     assert "mac" in got.skills and got.tools == ["mac__tool03"]
@@ -180,6 +188,23 @@ async def test_a_call_without_its_parameters_returns_the_tool_and_does_not_run(s
                      for o in b.offered[:2])
     assert first["mac__tool02"] == {"type": "object", "properties": {}}
     assert second["mac__tool02"] == spec.schema
+
+
+async def test_a_tool_without_parameters_runs_with_no_load_step(store):
+    cfg = load()
+    RAN.clear()
+    reg = _registry(cfg)
+    cid = await conversations.create(store)
+    await loads.touch(store, cid, "skill", ["mac"])
+    b = Replies([_calls(("mac__version", {})), [TextDelta("done"), Done(reason="stop")]])
+    await _run(store, cfg, reg, cid, b)
+    assert (await _results(store))[0][:2] == ("mac__version", "ok")
+    assert RAN == [{"tool": "version"}]
+    got = await loads.select(store, cfg, reg, cid, BACKEND)
+    assert got.tools == [], "nothing to carry"
+    out = await reg.skills["skills"].load(_ctx(store, cfg, cid), names=["mac__version"])
+    assert out.content == ("mac__version takes no parameters: it is in your list in full "
+                           "while mac is loaded, from your next step.")
 
 
 def test_the_name_form_goes_through_every_backend():

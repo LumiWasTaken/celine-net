@@ -143,9 +143,16 @@ class ToolSpec:
         first = re.split(r"(?<=[.!?])\s|\n", self.description.strip(), maxsplit=1)[0]
         return first if len(first) <= LINE_MAX else first[:LINE_MAX].rsplit(" ", 1)[0]
 
+    @property
+    def bare(self) -> bool:
+        """It takes no parameters: its name form is its full form, with no load step."""
+        return not self.schema.get("properties")
+
     def as_name(self) -> dict[str, Any]:
         """Its entry while its parameters are not loaded: the name, one line, no
-        parameters (turns/loads.py)."""
+        parameters (turns/loads.py); a bare tool in full."""
+        if self.bare:
+            return self.as_wire()
         return {"type": "function",
                 "function": {"name": self.wire_name, "description": self.line,
                              "parameters": {"type": "object", "properties": {}}}}

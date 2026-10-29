@@ -36,8 +36,8 @@ loaded tools, the most recently touched first; a tool that does not fit is named
 room`). The names of the loaded skills' tools are not counted.
 
 The state is per conversation: the `context_loaded` rows (kinds note, skill and tool),
-what it carries, each with the round that last touched it, and `context_state.turns`, the round of its last turn
-start. A round is a turn of the conversation.
+what it carries, each with the round that last touched it, and `context_state.turns`,
+the round of its last turn start. A round is a turn of the conversation.
 """
 from __future__ import annotations
 
@@ -427,7 +427,8 @@ def schema_cost(counter, specs) -> int:
 
 
 def names_cost(counter, specs) -> int:
-    """Tools by name and one line in tokens (the tools budget does not count them)."""
+    """Tools by name and one line in tokens, a tool without parameters in full (the
+    tools budget does not count them)."""
     return counter.estimate(json.dumps([s.as_name() for s in specs], ensure_ascii=False),
                             "schema")
 
@@ -457,10 +458,11 @@ async def _skills(store, cfg, registry, cid: str, rows: dict, turn: int, idle: i
         else:
             others[name] = ""
     keep = {("skill", n): t for n, t in wanted.items()}
-    costs = {n: (schema_cost if n in core else names_cost)(counter, here[n]) for n in wanted}
+    costs = {n: (schema_cost if n in core else names_cost)(counter, here[n])
+             for n in wanted}
     used = sum(costs[n] for n in core)
     specs = {s.wire_name: s for n in wanted if n not in core for s in here[n]
-             if is_enabled(s, overrides, cfg)}
+             if not s.bare and is_enabled(s, overrides, cfg)}
     tools = [(n, t) for (k, n), t in rows.items()
              if k == "tool" and n in specs and turn - t <= idle]
     for name, touched in sorted(tools, key=lambda x: -x[1]):
