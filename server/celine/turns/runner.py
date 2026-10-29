@@ -356,8 +356,8 @@ async def _all_ok(store, ids: list[str]) -> bool:
 
 async def _stopped(store, tid, cid, token) -> None:
     """The token was cancelled. A Stop ends the turn `aborted` (a freeze's with the
-    reason frozen, guard/freeze.py); a shutdown writes nothing here (the dispatcher puts
-    the turn back in the queue)."""
+    reason frozen, guard/freeze.py); a shutdown writes nothing here (the dispatcher ends
+    the turn `interrupted`)."""
     if getattr(token, "shutdown", False):
         return
     if getattr(token, "reason", None) == "frozen":
@@ -473,11 +473,10 @@ async def _failed(store, tid, cid, code: str, why: str, retryable: bool) -> None
     await turns.transition(store, tid, cid, "failed", reason=why, reason_code=code)
 
 
-async def _left(store, cid: str, mid: str, parts, thinking, token) -> str | None:
-    """A step a Stop ended before it said anything leaves no empty reply: it goes
-    (tree.drop_empty). A shutdown keeps it, the turn goes on in it. -> the message id,
-    None when it went."""
-    if "".join(parts) or "".join(thinking) or getattr(token, "shutdown", False):
+async def _left(store, cid: str, mid: str, parts, thinking) -> str | None:
+    """A step a Stop or a shutdown ended before it said anything leaves no empty reply:
+    it goes (tree.drop_empty). -> the message id, None when it went."""
+    if "".join(parts) or "".join(thinking):
         return mid
     return None if await tree.drop_empty(store, cid, mid) else mid
 
@@ -630,7 +629,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
                                             "".join(thinking) or None,
                                             raw=e.raw or {"error": str(e)})
         if token.cancelled:                  # stopped (maybe still in the queue): not a failure
-            return await _left(store, cid, mid, parts, thinking, token), \
+            return await _left(store, cid, mid, parts, thinking), \
                 "".join(parts), "".join(thinking), [], None
         code = getattr(e, "code", None) or ("backend_retryable" if e.retryable
                                             else "backend")
@@ -652,7 +651,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
                                         raw=done.raw if done else None,
                                         thinking=done.thinking if done else None)
     if token.cancelled and not any(s["name"] for s in acc.values()):
-        mid = await _left(store, cid, mid, parts, thinking, token)
+        mid = await _left(store, cid, mid, parts, thinking)
     if done and not token.cancelled and not quiet and not "".join(parts) and \
             not thinking and not any(s["name"] for s in acc.values()):
         # (a quiet turn that ends saying nothing has simply done its calls)

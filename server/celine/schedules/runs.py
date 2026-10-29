@@ -56,7 +56,7 @@ failure fails the run with the error, once: a model error, a tool error that end
 turn, its turn stopped, or its ceiling: the Routine time limit (Settings, Advanced, 0
 none; a schedule's own `wall_minutes` makes it shorter) counts from the run's start; a
 run that waited for its model starts with a new clock. A run that was running when the app stopped is running still at
-the next start: the dispatcher's sweep resumes its cut turn, the scheduler takes its
+the next start: the scheduler continues its cut turn (`_resume`) and takes its
 answer once the conversation is quiet (a partner's talk that was cut ends there). `end`
 ends a waiting or running run with a reason: Stop in the run's drawer (`stopped`), its
 schedule deleted (`skipped`), its ceiling (`failed`). A run keeps its schedule's

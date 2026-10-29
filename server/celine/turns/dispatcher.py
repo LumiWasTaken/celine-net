@@ -118,9 +118,9 @@ class Dispatcher:
         """Graceful shutdown, before the store closes. Every running turn is cancelled
         with reason "shutdown" (not a Stop): streams end and keep their partial text,
         steps not yet started stay pending. Waits up to `grace` for steps with a side
-        effect to land; read-only steps are not waited for, they run again on the next
-        start. Then every turn still held goes back in the queue (`put_down`); the
-        startup sweep of the next process resumes it."""
+        effect to land; read-only steps are not waited for. Then every turn still held
+        ends `interrupted` with the reason (`interrupt_held`); nothing of it runs again
+        on its own."""
         self._running = False
         self._stopping = True
         self._wake.set()
@@ -135,14 +135,14 @@ class Dispatcher:
                 break
             await anyio.sleep(0.05)
         await self.work.stop()
-        # a turn that returned during the wait wrote nothing terminal: put it down too
+        # a turn that returned during the wait wrote nothing terminal: it ends here too
         try:
-            down = await turns.put_down(self.store, self._workers)
+            down = await turns.interrupt_held(self.store, self._workers, self.registry)
         except Exception:
-            log.exception("put down failed", extra={"event": "shutdown.put_down_failed"})
+            log.exception("interrupt failed", extra={"event": "shutdown.interrupt_failed"})
             down = []
         log.info("shutdown done", extra={"event": "shutdown.done", "turns": len(held),
-                                         "put_down": len(down)})
+                                         "interrupted": len(down)})
 
     async def _waiting_on_side_effect(self) -> bool:
         """True while a held turn is inside a step that is not safe to run again, or
@@ -350,7 +350,7 @@ class Dispatcher:
         try:
             await self._run_one(turn, worker_id, token)
         except Exception:
-            # the store closed under a turn during shutdown: it was put down already
+            # the store closed under a turn during shutdown: it ended interrupted already
             if not self._stopping:
                 raise
             log.info("turn left to the next start", extra={

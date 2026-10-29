@@ -359,3 +359,90 @@ async def test_an_older_version_whose_later_lines_moved_ends_the_path_there(stor
     b, b2, later = await store.write(build)
     assert await store.read(lambda c: tree._deepest_leaf(c, b)) == b
     assert await store.read(lambda c: tree._deepest_leaf(c, b2)) == later
+
+
+async def _last_state_event(store, cid) -> dict:
+    events = (await view.resume(store, cid, 0))["events"]
+    return [e for e in events if e["type"] == "turn.state"][-1]["data"]
+
+
+async def test_a_reply_that_said_nothing_leaves_the_message_unanswered(store):
+    """Thinking and no words: the server names the message Regenerate answers, in the
+    snapshot and in the turn's last event; while a turn waits it names none."""
+    from celine.backends.base import ReasoningDelta
+    cid = await conversations.create(store)
+    mid, _, _ = await user_says(store, cid, "hello")
+    assert (await _last_state_event(store, cid))["unanswered"] is None, "queued"
+    assert (await view.snapshot(store, cid))["unanswered"] is None
+    turn = await turns.claim(store, "w")
+    await run_turn(turn, store, load(), FakeBackend([ReasoningDelta("hm"), Done(reason="stop")]),
+                   EventBus(), Token(turn["id"]))
+    told = {"message_id": mid, "state": "done", "reason": "The answer was empty."}
+    assert (await view.snapshot(store, cid))["unanswered"] == told
+    assert (await _last_state_event(store, cid))["unanswered"] == told
+    await tree.regenerate(store, cid)
+    assert (await view.snapshot(store, cid))["unanswered"] is None
+    await say(store, cid, "hi")
+    assert (await view.snapshot(store, cid))["unanswered"] is None
+    assert (await _last_state_event(store, cid))["unanswered"] is None
+
+
+async def test_a_failed_turn_leaves_the_message_unanswered_with_its_reason(store):
+    from celine.backends.base import BackendError
+
+    class Broken(FakeBackend):
+        async def stream(self, messages, tools):
+            raise BackendError("fake has no model called that.")
+            yield  # pragma: no cover
+
+    cid = await conversations.create(store)
+    mid, _, _ = await user_says(store, cid, "a")
+    turn = await turns.claim(store, "w")
+    await run_turn(turn, store, load(), Broken(), EventBus(), Token(turn["id"]))
+    assert (await view.snapshot(store, cid))["unanswered"] == {
+        "message_id": mid, "state": "failed", "reason": "fake has no model called that."}
+
+
+async def test_regenerate_starts_a_turn_for_the_unanswered_message(store):
+    from types import SimpleNamespace
+
+    import httpx
+    from fastapi import FastAPI
+    from celine.conversations import api as conversations_api
+    from celine.core.services import Services
+    from celine.errors import install_error_handler
+
+    cid = await conversations.create(store)
+    mid, tid, _ = await user_says(store, cid, "a")
+    await turns.claim(store, "w")
+    await turns.interrupt_held(store, ["w"])          # the app stopped during it
+    assert (await view.snapshot(store, cid))["unanswered"]["state"] == "interrupted"
+    app = FastAPI()
+    app.state.services = Services(store=store, cfg=load(),
+                                  dispatcher=SimpleNamespace(notify=lambda: None))
+    install_error_handler(app)
+    app.include_router(conversations_api.router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://t") as client:
+        r = await client.post(f"/api/conversations/{cid}/regenerate")
+        assert r.status_code == 200, r.text
+        again = await turns.claim(store, "w")
+        assert again["id"] == r.json()["turn_id"] != tid
+        assert again["root_message_id"] == mid
+        r = await client.post(f"/api/conversations/{cid}/regenerate")
+        assert r.status_code == 409, "a turn runs"
+
+
+async def test_a_quiet_notice_after_the_message_leaves_it_unanswered(store):
+    from celine.intercom import send
+    cid = await conversations.create(store)
+    mid, tid, _ = await user_says(store, cid, "a")
+    await turns.claim(store, "w")
+    await turns.interrupt_held(store, ["w"])
+    await send(store, "system:app", f"agent:{cid}", "The app is restarting now.",
+               kind="notice", wake=False)
+    snap = await view.snapshot(store, cid)
+    assert snap["messages"][-1]["intercom"]["wake"] is False, "it landed"
+    assert snap["unanswered"]["message_id"] == mid
+    await tree.regenerate(store, cid)
+    assert (await turns.claim(store, "w"))["root_message_id"] == mid

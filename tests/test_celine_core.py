@@ -123,21 +123,21 @@ async def test_terminal_transition_settles_open_calls(store, how):
     assert (await _turn(store, tid))["reason"], "the turn says why it ended"
     snap = await view.snapshot(store, cid)
     assert snap["tool_calls"][mid][0]["state"] == "interrupted"
-    if how == "sweep":       # the restart's notice started a turn: it decides what to redo
-        assert snap["turn"]["state"] == "queued"
-        assert snap["messages"][-1]["intercom"]["kind"] == "notice"
-    else:
-        assert snap["turn"]["continuable"]["ok"] is True
+    assert snap["turn"]["continuable"]["ok"] is True
 
 
-async def test_sweep_resumes_read_only_and_interrupts_mutating(store):
+async def test_sweep_interrupts_every_running_turn_with_its_reason(store):
+    """Nothing runs again on its own after a restart: a read-only step's turn ends
+    `interrupted` as a side effect's does, each with the sentence the UI shows."""
     _, tid_ro, _ = await _stranded(store, "arch__find", mutating=False)
     _, tid_mut, _ = await _stranded(store, "arch__write", mutating=True)
     out = await turns.sweep(store)
-    assert out["resumable"] == 1 and out["interrupted"] == 1
-    assert (await _turn(store, tid_ro))["state"] == "queued"
-    assert (await _calls(store, tid_ro))[0]["state"] == "pending", "runs again"
-    assert (await _turn(store, tid_mut))["state"] == "interrupted"
+    assert out["interrupted"] == 2
+    ro, mut = await _turn(store, tid_ro), await _turn(store, tid_mut)
+    assert (ro["state"], ro["reason_code"]) == ("interrupted", "restart")
+    assert ro["reason"] == "The server restarted during the answer."
+    assert (await _calls(store, tid_ro))[0]["state"] == "interrupted"
+    assert mut["state"] == "interrupted" and "arch__write" in mut["reason"]
     assert (await _calls(store, tid_mut))[0]["state"] == "interrupted"
 
 

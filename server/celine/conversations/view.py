@@ -108,7 +108,7 @@ async def snapshot(store, cid: str) -> dict:
                                  "link": (source_of(c, f"agent:{cid}") or {}).get("link")},
                 "messages": messages,
                 "tool_calls": calls, "compactions": compactions,
-                "turn": tdict, "switched": switched, "image_notices": image_notices,
+                "turn": tdict, "unanswered": tree.unanswered(c, cid), "switched": switched, "image_notices": image_notices,
                 "guard": guard, "plan": plans.get_sync(c, cid),
                 "approvals": [a for a in approvals.open_in(c, cid)
                               if a["message_id"] in on_path],
