@@ -18,8 +18,10 @@ type Shown = { src: string; name: string }
    right-click opens `more`. In a grid: a check while selecting, the favourite mark. While
    it is being made (`making`), a calm breathing surface in its shape; a file that does
    not load, the same surface with Retry. ── */
-export function Picture({ src, name, ratio = '1', more = [], gallery, at = 0, viewer, onOpen, current, pick, favourite, onFavourite, making, className }: {
+export function Picture({ src, full, name, ratio = '1', more = [], gallery, at = 0, viewer, onOpen, current, pick, favourite, onFavourite, making, className }: {
   src?: string
+  /** the file the Viewer shows when `src` is a smaller copy */
+  full?: string
   /** what it shows, never a file name: its alt, tip and the Viewer's title */
   name: string
   /** its shape ("3 / 4"); the picture is cut to it */
@@ -49,7 +51,7 @@ export function Picture({ src, name, ratio = '1', more = [], gallery, at = 0, vi
   const [failed, setFailed] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   const picking = pick?.checked !== undefined
-  const list = gallery ?? (src ? [{ src, name }] : [])
+  const list = gallery ?? (src ? [{ src: full ?? src, name }] : [])
   const style = { '--pic-ratio': ratio } as CSSProperties
   if (making !== undefined || !src) {
     return <div className={cx('picture', 'picture--making', className)} style={style} role="img" aria-label={name}>

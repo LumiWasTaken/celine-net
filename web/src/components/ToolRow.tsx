@@ -22,7 +22,7 @@ import { SHARE_DOT, shareEvent, shareOf, sharesApi, type ShareCardData } from '.
 import { useResource } from '../lib/useResource'
 import { bytes, duration, errorText, stamp } from '../lib/format'
 import { titleOf } from '../lib/pictures'
-import { asBatch, fileUrl, type MediaFile } from '../lib/media'
+import { TILE, asBatch, fileUrl, tileUrl, type MediaFile } from '../lib/media'
 import { format, refHref } from '../lib/nav'
 import { intercomApi } from '../lib/intercom'
 import { ConversationReminders } from '../lib/reminders'
@@ -383,7 +383,7 @@ function Files({ call }: { call: ToolCall }) {
   return (
     <div className="tool__files">
       {files.filter(f => f.kind === 'image').map(f => (
-        <Picture key={f.id} className="tool__picture" src={fileUrl(f)} name={titleOf(null)}
+        <Picture key={f.id} className="tool__picture" src={tileUrl(f, TILE)} full={fileUrl(f)} name={titleOf(null)}
                  ratio={f.width && f.height ? `${f.width} / ${f.height}` : '4 / 3'} />
       ))}
       {files.filter(f => f.kind !== 'image').map(f => <FileLine key={f.id} name={f.filename} a={f} />)}
@@ -472,6 +472,7 @@ function withRefs(text: string, kbs: Set<string>): ReactNode[] {
 }
 
 type Step = { step?: string; effect?: string; shot?: unknown }
+const SHOT = 240      // a shot's width in the strip (.tool__step)
 /** an effect that means the step did nothing */
 const IDLE = /^(nothing changed on the page|the view did not move)|is not on this page|did not appear within/
 
@@ -494,7 +495,7 @@ export function BrowserShots({ display }: { display: Record<string, unknown> | n
         <figure key={i} className={cx('tool__step', it.effect && IDLE.test(it.effect) && 'is-idle')}>
           {it.img && (
             <div className="tool__shot">
-              <Picture src={fileUrl(it.img)} name={it.step ?? 'Browser'} ratio={`${it.img.width || 16} / ${it.img.height || 10}`}
+              <Picture src={tileUrl(it.img, SHOT)} full={fileUrl(it.img)} name={it.step ?? 'Browser'} ratio={`${it.img.width || 16} / ${it.img.height || 10}`}
                        onOpen={gallery ? () => gallery.openImage(it.img!.id || it.img!.sha256, it.img!) : undefined} />
               {it.point && it.img.width && it.img.height && (
                 <span className="tool__point" aria-hidden

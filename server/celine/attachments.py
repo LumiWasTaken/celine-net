@@ -24,7 +24,8 @@ list and edits never see it.
 What stays (`gc`, at each start; KEEP is 30 days). A file stays while an attachment of a
 message, a tool call or a batch, or its portrait, points at it. A draft (an upload not
 sent yet) keeps its file until it is sent, discarded or KEEP old. A file nothing points
-at goes once it is KEEP old, a half-written upload once untouched for KEEP. A file and
+at goes once it is KEEP old, a half-written upload once untouched for KEEP. A picture's
+smaller copies (`resized`) go with its file. A file and
 its rows are written and dropped in one writer job, so gc never sees one without the other.
 """
 from __future__ import annotations
@@ -40,6 +41,9 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+import anyio
+from PIL import ExifTags, Image, ImageOps
 
 from .conversations import store as conversations
 from .core.ids import iso, new_id, now
@@ -123,9 +127,11 @@ async def _finish(cfg, store, tmp: Path, sha: str, size: int, head: bytes,
         media_type = "text/plain"
     kind = _kind(media_type)
     final = blob_path(cfg, sha)
+    pixels = await anyio.to_thread.run_sync(_pixels, tmp) if kind == "image" else None
 
     def fn(c: sqlite3.Connection) -> dict:
-        row = _insert(c, sha, size, media_type, filename, kind, store=store, **where)
+        row = _insert(c, sha, size, media_type, filename, kind, store=store, pixels=pixels,
+                      **where)
         final.parent.mkdir(parents=True, exist_ok=True)
         tmp.replace(final)
         return row
@@ -358,6 +364,55 @@ def _image_size_of(path: str) -> tuple[int, int] | None:
     return image_size(Path(path).read_bytes())
 
 
+_TURNED = (5, 6, 7, 8)      # EXIF orientations that turn a picture by a quarter
+
+
+def _pixels(path: Path) -> tuple[int, int] | None:
+    """(width, height) of a picture Pillow reads, as it is shown (its EXIF turn
+    applied), from its header; None for anything else."""
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            return (h, w) if im.getexif().get(ExifTags.Base.Orientation) in _TURNED else (w, h)
+    except (OSError, Image.DecompressionBombError):
+        return None
+
+
+WIDTHS = (320, 640, 1280)   # the widths a picture is shown at: few, so the copies stay few
+
+
+def snap(want: int) -> int:
+    """The first of WIDTHS at least `want` wide, else the widest."""
+    return next((w for w in WIDTHS if w >= want), WIDTHS[-1])
+
+
+def resized(cfg, sha: str, width: int) -> Path:
+    """The picture `width` px wide as WebP, made once and kept beside its blob as
+    `<sha>.w<width>.webp` (gc drops it with the blob). The blob itself when it is not
+    wider, moves (an animation) or is not a picture Pillow reads. The blob never
+    changes. Blocking: a thread's work."""
+    src = blob_path(cfg, sha)
+    out = src.with_name(f"{sha}.w{width}.webp")
+    if out.exists():
+        return out
+    part = out.with_name(f"{out.name}.{new_id()}.part")
+    try:
+        with Image.open(src) as im:
+            if getattr(im, "is_animated", False):
+                return src
+            im = ImageOps.exif_transpose(im)
+            if im.width <= width:
+                return src
+            im.thumbnail((width, im.height))
+            alpha = "A" in im.getbands() or "transparency" in im.info
+            im.convert("RGBA" if alpha else "RGB").save(part, "WEBP", quality=80)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        part.unlink(missing_ok=True)
+        return src
+    part.replace(out)
+    return out
+
+
 def size(b: int) -> str:
     return f"{b / 1048576:.1f} MB" if b >= 1048576 else f"{b} bytes"
 
@@ -385,7 +440,10 @@ async def gc(cfg, store, at: datetime | None = None) -> int:
             "(SELECT portrait FROM her WHERE portrait IS NOT NULL)", (iso(old),))]
         for sha in shas:
             c.execute("DELETE FROM blobs WHERE sha256=?", (sha,))
-            blob_path(cfg, sha).unlink(missing_ok=True)
+            path = blob_path(cfg, sha)
+            path.unlink(missing_ok=True)
+            for copy in path.parent.glob(f"{sha}.w*.webp"):     # resized()
+                copy.unlink(missing_ok=True)
         return shas
 
     orphans = await store.write(fn)
@@ -408,12 +466,14 @@ MADE = ("SELECT je.value ->> '$.attachment.{}' FROM media_batches mb, json_each(
 
 def of_message(c: sqlite3.Connection, message_id: str) -> list[dict]:
     """A message's attachments, inside a read or write (conversations/tree.py). A
-    file a batch made has its batch_id (its gallery shows it). A picture it made has its size, from the batch item that made it, so its box has its
-    shape before it loads."""
+    file a batch made has its batch_id (its gallery shows it). A picture has its size,
+    from its blob or the batch item that made it, so its box has its shape before it
+    loads."""
     return [dict(r) for r in c.execute(
         "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, "
         "a.description, a.described_by, a.described_for, a.box_path, a.batch_id, "
-        f"({MADE.format('width')}) AS width, ({MADE.format('height')}) AS height "
+        f"coalesce(b.width, ({MADE.format('width')})) AS width, "
+        f"coalesce(b.height, ({MADE.format('height')})) AS height "
         "FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 "
         "WHERE a.message_id=?1 OR a.id = (SELECT json_extract(meta, '$.attachment') "
         "FROM messages WHERE id=?1 AND json_extract(meta, '$.kind') = 'image') "
@@ -455,10 +515,11 @@ async def add(store, sha: str, size: int, media_type: str, filename: str, kind: 
 
 def _insert(c: sqlite3.Connection, sha: str, size: int, media_type: str, filename: str,
             kind: str, *, store, tool_call_id: str | None = None, in_message: bool = True,
-            batch_id: str | None = None,
-            described: tuple[str, str] | None = None) -> dict:
+            batch_id: str | None = None, described: tuple[str, str] | None = None,
+            pixels: tuple[int, int] | None = None) -> dict:
     """The rows; a file that joins a message already there tells its conversation
-    (event `message.attachments`, the message's whole list)."""
+    (event `message.attachments`, the message's whole list). `pixels`: an image's
+    (width, height), kept on its blob."""
     aid, ts = new_id(), now()
     mid = call = None
     if tool_call_id is not None:
@@ -472,9 +533,11 @@ def _insert(c: sqlite3.Connection, sha: str, size: int, media_type: str, filenam
         else:
             call = tool_call_id
     text, by = described or (None, None)
-    c.execute("INSERT INTO blobs(sha256,bytes,media_type,created_at) "
-              "VALUES(?,?,?,?) ON CONFLICT(sha256) DO NOTHING",
-              (sha, size, media_type, ts))
+    w, h = pixels or (None, None)
+    c.execute("INSERT INTO blobs(sha256,bytes,media_type,width,height,created_at) "
+              "VALUES(?,?,?,?,?,?) ON CONFLICT(sha256) DO UPDATE SET "
+              "width=coalesce(width, excluded.width), height=coalesce(height, excluded.height)",
+              (sha, size, media_type, w, h, ts))
     c.execute("INSERT INTO attachments(id,message_id,tool_call_id,batch_id,sha256,"
               "filename,kind,state,created_at,description,described_by,described_for) "
               "VALUES(?,?,?,?,?,?,?,'ready',?,?,?,?)",

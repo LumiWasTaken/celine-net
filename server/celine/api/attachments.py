@@ -1,7 +1,10 @@
 """Attachments over HTTP: upload a draft, drop a draft, serve a stored file."""
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Request, UploadFile
+from pathlib import Path
+
+import anyio
+from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import attachments, box_files
@@ -35,14 +38,24 @@ def shown_inline(media_type: str) -> bool:
 
 
 @router.get("/attachments/{aid}/file")
-async def attachment_file(request: Request, aid: str, download: bool = False):
-    """The file under its own name and type; `download` saves even an image."""
+async def attachment_file(request: Request, aid: str, download: bool = False,
+                          w: int | None = Query(None, ge=1)):
+    """The file under its own name and type; `download` saves even an image. `w`: a
+    picture as wide as the first of attachments.WIDTHS that is at least `w` (WebP),
+    the file itself when it is not wider."""
+    cfg = request.app.state.services.cfg
     row = await attachments.get(request.app.state.services.store, aid)
-    path = attachments.blob_path(request.app.state.services.cfg, row["sha256"]) if row else None
+    path = attachments.blob_path(cfg, row["sha256"]) if row else None
     if not row or not path.exists():
         raise NotFound("attachment")
-    inline = shown_inline(row["media_type"]) and not download
-    return FileResponse(path, media_type=row["media_type"], filename=row["filename"],
+    media, name = row["media_type"], row["filename"]
+    if w is not None and row["kind"] == "image" and shown_inline(media) and not download:
+        small = await anyio.to_thread.run_sync(attachments.resized, cfg, row["sha256"],
+                                               attachments.snap(w))
+        if small != path:
+            path, media, name = small, "image/webp", f"{Path(name).stem}.webp"
+    inline = shown_inline(media) and not download
+    return FileResponse(path, media_type=media, filename=name,
                         content_disposition_type="inline" if inline else "attachment",
                         headers={**SAFE_FILE_HEADERS,
                                  "Cache-Control": "private, max-age=604800, immutable"})

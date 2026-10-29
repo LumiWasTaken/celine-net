@@ -385,7 +385,7 @@ Shift+Enter is a new line; Send becomes Stop while it answers.
 
 ### Picture
 **When:** every picture shown small: on a message, a Gallery tile.
-**Props:** `src`, `name` (never a file name), `ratio`, `more` (its "...", right-click and
+**Props:** `src`, `full` (the file the Viewer shows when `src` is a smaller copy), `name` (never a file name), `ratio`, `more` (its "...", right-click and
 the Viewer's menu), `gallery` with `at` (the Viewer flips through them), `viewer`
 (`actions`, `panel`, `caption` for the Viewer), `onOpen` (a page of its own opens it in
 place of the Viewer here), `current` (the open one: the accent ring), `pick` (a check while

@@ -19,7 +19,7 @@ import {
   type ToolCall, type Turn,
 } from '../lib/api'
 import { bytes, errorText, fullDate, stamp } from '../lib/format'
-import { fileUrl } from '../lib/media'
+import { TILE, fileUrl, tileUrl } from '../lib/media'
 import { format } from '../lib/nav'
 import { getPref, setPref } from '../lib/prefs'
 import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Repeat, Shrink, type LucideIcon } from 'lucide-react'
@@ -412,7 +412,7 @@ function Attached({ list }: { list: Attachment[] }) {
 /* A picture on a message: its shape before it loads; a click shows it big, titled by what it
    shows (its description) */
 function YourPicture({ a }: { a: Attachment }) {
-  return <Picture className="msg__picture" src={fileUrl(a)} name={titleOf(a.description)}
+  return <Picture className="msg__picture" src={tileUrl(a, TILE)} full={fileUrl(a)} name={titleOf(a.description)}
                   ratio={a.width && a.height ? `${a.width} / ${a.height}` : '4 / 3'} />
 }
 
