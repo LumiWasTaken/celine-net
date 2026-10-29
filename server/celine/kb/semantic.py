@@ -162,20 +162,18 @@ def build(cfg, kb: ChatKB, ctx: ImportContext) -> dict[str, Any]:
                          pp=passages.PassageParams.from_settings(s),
                          check=ctx.check, progress=ctx.progress)
     t1 = time.monotonic()
-    embedded = embed_passages(cfg, kb.file.path, ctx,
-                              retries=int(s.get("build_retries", 9)), kb_id=kb.id)
+    embedded = embed_passages(cfg, kb.file.path, ctx, kb_id=kb.id)
     out = {**cut, "embedded": embedded, "cut_s": round(t1 - t0, 1),
            "embed_s": round(time.monotonic() - t1, 1)}
     log.info("semantic index built", extra={"event": "kb.semantic.built", "kb": kb.id, **out})
     return out
 
 
-def embed_passages(cfg, path, ctx: ImportContext, *, retries: int = 9,
-                   kb_id: str = "") -> int:
+def embed_passages(cfg, path, ctx: ImportContext, *, kb_id: str = "") -> int:
     """Vectors for every passage of the index at `path` without one (chat archives
     and Documents)."""
     e = build_embedder(cfg, path)
-    bulk = {**e.s, "retries": retries}
+    bulk = e.s
     log.info("semantic build model", extra={"event": "kb.semantic.endpoint", "kb": kb_id,
                                             "model": e.ref})
     return passages.embed(path, s=bulk, fp=e.fp, label=e.ref, pool=Pool(bulk, _embed),
@@ -200,7 +198,7 @@ def query_vector(cfg, q: str, timeout: float | None = None) -> Vec:
     quantised like the index, carrying the model's fingerprint (an index made by
     another model is skipped). `timeout`: the most seconds the server may take."""
     e = query_embedder(cfg)
-    over: dict[str, Any] = {"retries": 1, **({"timeout": timeout} if timeout else {})}
+    over: dict[str, Any] = {"timeout": timeout} if timeout else {}
     v = e.embed([e.s["query_prefix"] + q], **over)[0]
     dims = min(e.s["dims"], len(v))
     return quantize(v, dims - dims % 8, e.fp)

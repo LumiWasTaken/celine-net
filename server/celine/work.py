@@ -15,10 +15,9 @@ The five calls a worker makes, the same shape as turns.claim:
   (an item already leased runs to its end).
 - `heartbeat(id, worker)`: the lease again from now; a worker beats while it runs.
 - `finish(id, worker)`: done.
-- `defer(id, worker, why, until)`: deferred, no try counted: no host of its models
+- `defer(id, worker, why, until)`: deferred, not failed: no host of its models
   answers. It runs at `until`, or as soon as a host comes back (`wake`).
-- `fail(id, worker, error)`: one try; queued again after RETRY_SECONDS, failed with its
-  reason after MAX_TRIES.
+- `fail(id, worker, error)`: the one try failed, with its reason.
 and `put_down(workers)` for a worker that stops (its running items go back to queued).
 
 The pool: WORKERS loops. Before an item runs, its kind's roles are looked at: when every
@@ -45,8 +44,6 @@ log = logging.getLogger("celine.work")
 
 LEASE_SECONDS = 120.0
 DEFER_SECONDS = 60.0         # a deferred item looks again after this, or when a host is back
-RETRY_SECONDS = 60.0         # a failed try runs again after this
-MAX_TRIES = 3
 WORKERS = 2
 IDLE_MAX = 60.0              # an idle worker looks again at least this often
 KEEP_DAYS = 7                # done and failed items are kept this long
@@ -118,7 +115,7 @@ async def claim(store, worker: str, kinds: list[str], *,
             return None
         return _row(c.execute(
             "UPDATE work SET state='running', lease_worker=?, lease_until=?, started_at=? "
-            "WHERE id=? RETURNING id, kind, priority, payload, tries, conversation_id",
+            "WHERE id=? RETURNING id, kind, priority, payload, conversation_id",
             (worker, until, t, row[0])).fetchone())
     return await store.write(fn)
 
@@ -150,22 +147,18 @@ async def defer(store, wid: int, worker: str, why: str, *, until: datetime | Non
                 now: datetime | None = None) -> None:
     nb = iso(until) if until is not None else _after(now, DEFER_SECONDS)
     await store.write(lambda c: c.execute(
-        _end("state='deferred', not_before=?, error=?"), (nb, why[:300], wid, worker)))
+        _end("state='deferred', not_before=?, error=?"), (nb, why, wid, worker)))
 
 
 async def fail(store, wid: int, worker: str, error: str, *,
                now: datetime | None = None) -> str:
-    """One try spent. -> the item's state now: queued (tried again) or failed."""
+    """The one try failed. -> the item's state now: failed."""
     t = iso(_now(now))
-    again = _after(now, RETRY_SECONDS)
 
     def fn(c: sqlite3.Connection) -> str:
         r = c.execute(_end(
-            "tries=tries+1, error=?, "
-            "state=CASE WHEN tries+1 >= ? THEN 'failed' ELSE 'queued' END, "
-            "not_before=CASE WHEN tries+1 >= ? THEN not_before ELSE ? END, "
-            "finished_at=CASE WHEN tries+1 >= ? THEN ? ELSE NULL END") + " RETURNING state",
-            (error[:300], MAX_TRIES, MAX_TRIES, again, MAX_TRIES, t, wid, worker)).fetchone()
+            "error=?, state='failed', finished_at=?") + " RETURNING state",
+            (error, t, wid, worker)).fetchone()
         if r and r[0] == "failed":
             added(store, c, "work")
         return r[0] if r else "gone"
@@ -331,9 +324,9 @@ class Pool:
         if err is None:
             await finish(self.store, wid, worker, now=self.clock())
             return self._count(kind, "done")
-        why = f"{type(err).__name__}: {err}"[:300]
+        why = f"{type(err).__name__}: {err}"
         if deferrable(err):
-            await defer(self.store, wid, worker, str(err)[:300], now=self.clock())
+            await defer(self.store, wid, worker, str(err), now=self.clock())
             return self._count(kind, "deferred", why)
         state = await fail(self.store, wid, worker, why, now=self.clock())
         return self._count(kind, state, why)

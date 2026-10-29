@@ -65,7 +65,7 @@ async def test_one_lands_at_its_time_and_a_past_due_one_at_start(db_path, clock)
         await store.aclose()
 
 
-async def test_the_timer_tries_again_after_a_failure(store, monkeypatch):
+async def test_the_timer_tries_once_and_runs_again_on_the_next_message(store):
     from celine.intercom import service
     calls = []
 
@@ -74,12 +74,16 @@ async def test_the_timer_tries_again_after_a_failure(store, monkeypatch):
         if len(calls) == 1:
             raise RuntimeError("database is locked")
         return []
-    monkeypatch.setattr(service, "RETRY", 0)
-    monkeypatch.setattr(deliver, "deliver_due", due)
-    async with anyio.create_task_group() as tg:
-        await Intercom(store).run(tg)
-        await until(lambda: len(calls) >= 2, 2)
-        tg.cancel_scope.cancel()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(deliver, "deliver_due", due)
+        async with anyio.create_task_group() as tg:
+            ic = Intercom(store)
+            await ic.run(tg)
+            await until(lambda: len(calls) == 1, 2)
+            assert not hasattr(service, "RETRY")
+            ic._wake.set()                   # a message with a due time
+            await until(lambda: len(calls) >= 2, 2)
+            tg.cancel_scope.cancel()
 
 
 async def test_one_due_during_a_turn_joins_it_at_the_next_step(store, clock):

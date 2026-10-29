@@ -308,7 +308,7 @@ TABLES = {
                    "passage_overlap": "int", "embed_header": "bool"},
     # kb/media.py Settings.read
     "media": {"types": "list", "rate_per_minute": "num", "batch": "int",
-              "max_attempts": "int", "max_mb": "num", "poll_minutes": "num",
+              "max_mb": "num", "poll_minutes": "num",
               "msgstore": "str", "wa_download": "bool", "wa_media_retry": "bool",
               "wa_retry_per_run": "int", "wa_retry_interval_seconds": "num",
               "wa_retry_wait_seconds": "num"},

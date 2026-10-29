@@ -42,8 +42,6 @@ TURN_MARGIN = 3        # seconds a run's wait ends before its turn's time: the a
 HEAD, TAIL = 2000, 6000    # characters of a long output kept: its start and its end
 READ_CHARS = 8000      # characters one shell__read page carries
 PROBE_WAIT = 2.5       # seconds Settings, Features waits for the box's answer
-WEDGE_MAX = 3          # wedges in one conversation, then shell__run and new terminals are
-                       # refused there (the cap)
 
 # ---- words that never change ------------------------------------------------------------
 KEY_FORMAT = "keys is one string, names separated by spaces: keys=\"Escape\", keys=\"Down Down Enter\"."
@@ -80,11 +78,6 @@ KEY_ALIASES = {
 }
 CTRL = re.compile(r"^(?:c-|ctrl[+-]|\^)(.)$", re.I)     # C-c, Ctrl+c, ctrl-c, ^C
 ALT = re.compile(r"^(?:m-|alt[+-])(.)$", re.I)           # M-x, Alt+x
-# a text that is only a key written out: it meant keys (llama.cpp hands strings over raw)
-KEY_AS_TEXT = re.compile(r"^(?:(?:c-|ctrl[+-]|\^|m-|alt[+-]).|\\u[0-9a-f]{4}|\\x[0-9a-f]{2}"
-                         r"|\\[nrte]|\\0?33|enter|return|escape|esc|tab|shifttab|backspace"
-                         r"|delete|space|up|down|left|right|pageup|pagedown|f[1-9]|f1[0-2])$",
-                         re.I)
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,15}$")    # the shellbox's NAME
 log = logging.getLogger("celine.skills.shell")
 
@@ -127,15 +120,6 @@ def parse_keys(value: Any) -> list[str]:
                           f"{KEY_NAMES}.")
         names.append(name)
     return names
-
-
-def check_text(text: str) -> None:
-    """A text that is only a key notation (C-c, ^C, \\u0003, Escape, Enter) is refused."""
-    t = text.strip()
-    if (len(t) == 1 and (ord(t) < 32 or t == "\x7f")) or KEY_AS_TEXT.match(t):
-        raise ToolRefused(f"text {json.dumps(t)} is a key, and text is typed as written. Special "
-                      f"keys go in keys, by name: keys=\"Escape\", keys=\"Enter\"; Ctrl-C is "
-                      f"shell__stop.")
 
 
 def check_name(name: str) -> str:
@@ -400,7 +384,6 @@ SHELL_DETACHED = ("running in the background as job {job}, watching terminal {te
 
 class Shell:
     name = "shell"
-    exact_args = True   # turns/tools.py: in a terminal "a" is not "A"
     app = None          # the running app (core/services.py), from skills.build
     guide = guide("shell")
     description = described()
@@ -415,13 +398,19 @@ class Shell:
         self.full_noted: set[str] = set()
         self.hinted: set[tuple[str, str]] = set()
         self.told: set[tuple[str, str]] = set()
-        # per conversation: its wedges so far (in memory: an app restart starts at 0)
-        self.wedges: dict[str, int] = {}
 
     def carry(self, old) -> None:
         """A reload's rebuild keeps what it was already told (reload.py)."""
-        for a in ("boots", "apt_noted", "full_noted", "hinted", "told", "wedges"):
+        for a in ("boots", "apt_noted", "full_noted", "hinted", "told"):
             setattr(self, a, getattr(old, a))
+
+    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
+        """This conversation's own terminal (terminals/store.default_terminal)."""
+        if ctx.store is None:
+            return None
+        from ..terminals.store import default_terminal
+        name = await default_terminal(ctx.store, ctx.conversation_id)
+        return f"Your terminal in this conversation is `{name}`."
 
     @property
     def status(self) -> str:
@@ -436,18 +425,18 @@ class Shell:
     # ---- the tools ------------------------------------------------------------------------
 
     @tool(mode="detach", read_only=False, destructive=True, open_world=True,
-          background="background", timeout=SELF_END, terminal_arg="terminal",
+          background="background", timeout=SELF_END,
           detached=SHELL_DETACHED, detached_display={"head": 1})
     async def run(
         self,
         ctx: ToolContext,
         command: Annotated[str, "The command line, run by your shell as if typed at its "
                                 "prompt. Several lines are fine."],
+        terminal: Annotated[str, "Which terminal, by name. A new name opens a new "
+                                 "terminal."],
         timeout: Annotated[float | None, "Most seconds to wait, 1 to 3000. Without it, until "
                                          "the command ends or the time of your turn is up. "
                                          "The command keeps running after it."] = None,
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal; a new name opens a new terminal."] = None,
         background: Annotated[bool, "True hands the wait to a background job: the call "
                                     "answers within 5 seconds and the result reaches you as a "
                                     "message when the command ends."] = False,
@@ -458,7 +447,7 @@ class Shell:
         Returns: a status line (terminal, directory, exit status and duration, or still
         running), the output (its start and end when long) and the log's path."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
             command = "" if command is None else str(command)
             if not command.strip():
                 raise ToolRefused("command is the command line to run, like command=\"ls -la\".")
@@ -468,8 +457,6 @@ class Shell:
                 seconds = max(1, min(seconds, int(ctx.time_left - TURN_MARGIN)))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
-        if self._capped(ctx):
-            return self._refused(self._cap_words(), name)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         body = {"terminal": name, "command": command, "timeout": seconds,
@@ -496,10 +483,11 @@ class Shell:
             return self._unreachable(name, e)
         return await self._result(ctx, res, "run", name, text=command)
 
-    @tool(read_only=False, destructive=True, open_world=True, terminal_arg="terminal")
+    @tool(read_only=False, destructive=True, open_world=True)
     async def type(
         self,
         ctx: ToolContext,
+        terminal: Annotated[str, "Which terminal, by name."],
         text: Annotated[str, "Typed exactly as written. Several lines arrive as one paste. "
                              "Use real line breaks: a written \\n arrives as a backslash and "
                              "an n."] = "",
@@ -507,8 +495,6 @@ class Shell:
                              "Enter, Tab, Up, Down, Left, Right, Home, End, PageUp, PageDown, "
                              "Backspace, Delete, Space, F1 to F12, C-d (Ctrl), or one single "
                              "character. Examples: \"Escape\", \"Down Down Enter\"."] = "",
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal."] = None,
         enter: Annotated[bool, "Press Enter after text. False types without Enter, for a "
                                "single letter in a full-screen program."] = True,
     ) -> ToolResult:
@@ -519,22 +505,12 @@ class Shell:
         Returns: a status line (terminal, what is in front and whether it waits for input),
         then the screen."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
             text = "" if text is None else str(text)
             key_list = parse_keys(keys)
-            if text:
-                check_text(text)
             press = as_bool(enter, "enter")
         except ToolRefused as e:
             return self._refused(f"{e} Nothing was typed.", terminal)
-        if self._capped(ctx):
-            try:
-                status, listed = await self._post("/read", {}, read=60)
-            except (ToolRefused, httpx.HTTPError):
-                listed = {}
-            if name not in {t.get("name") for t in listed.get("terminals") or []
-                            if isinstance(t, dict)}:
-                return self._refused(f"{self._cap_words()} Nothing was typed.", name)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         notes = []
@@ -551,12 +527,11 @@ class Shell:
         return await self._result(ctx, res, "type", name, text=text, keys=key_list,
                                   notes=notes)
 
-    @tool(read_only=False, destructive=True, open_world=True, terminal_arg="terminal")
+    @tool(read_only=False, destructive=True, open_world=True)
     async def stop(
         self,
         ctx: ToolContext,
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal."] = None,
+        terminal: Annotated[str, "Which terminal, by name."],
     ) -> ToolResult:
         """Press Ctrl-C in a terminal: the program in front stops, or the run waiting
         there ends (usually exit 130). A program that reads Ctrl-C as a key (python3, nano)
@@ -564,7 +539,7 @@ class Shell:
         this call.
         Returns: how the run ended, or the screen."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
         if (refused := await self._not_hers(ctx, name)) is not None:
@@ -955,8 +930,7 @@ class Shell:
                                       f"terminal: {said}.",
                               is_error=True, display={"terminal": name, "state": "error"})
         if state == "busy":
-            wedge = self._wedge(ctx) if res.get("reason") != "paused" else None
-            return self._refused(" ".join(filter(None, [self._busy(res, name), wedge])), name)
+            return self._refused(self._busy(res, name), name)
         prog, pid = program_of(res)
         is_run = "cmd" in res and isinstance(res.get("cmd"), str)
         lines = [self._status(res, name, prog, pid, is_run)]
@@ -966,9 +940,6 @@ class Shell:
             ended_by = await terminals.last_ended_by(ctx.store, name)
         lines += self._notes(ctx, res, name, ended_by) + (notes or [])
         lines += self._explain(ctx, res, name, state, prog, pid, is_run)
-        if (tool_name == "run" and state == "waiting") or \
-                (tool_name == "stop" and state not in ("done", "prompt", "closed", "ended")):
-            lines.append(self._wedge(ctx))
         if is_run:
             self.told.add((ctx.conversation_id, res["cmd"]))
         else:
@@ -1014,26 +985,6 @@ class Shell:
             await terminals.upsert(ctx.store, str(res["id"]), name, owner, now(),
                                    ctx.conversation_id if mine else None)
         return ToolResult(content="\n".join(lines).rstrip(), display=display)
-
-    def _capped(self, ctx: ToolContext) -> bool:
-        return self.wedges.get(ctx.conversation_id, 0) >= WEDGE_MAX
-
-    def _cap_words(self) -> str:
-        return (f"Refused: you hit {WEDGE_MAX} wedged terminals in this conversation, so "
-                f"shell__run and new terminals are off here. Stop using the shell in this "
-                f"conversation and report what happened: bugreport__file, or tell "
-                f"{self.cfg.user}.")
-
-    def _wedge(self, ctx: ToolContext) -> str:
-        """One more wedge for this conversation (a run that waits for input or was refused,
-        a stop that did not free the terminal), in words."""
-        n = self.wedges[ctx.conversation_id] = self.wedges.get(ctx.conversation_id, 0) + 1
-        if n < WEDGE_MAX:
-            return (f"Wedge {n} of {WEDGE_MAX} in this conversation: at {WEDGE_MAX}, shell__run "
-                    f"and new terminals are refused here.")
-        return (f"Wedge {n} of {WEDGE_MAX} in this conversation: shell__run and new terminals "
-                f"are now refused here. Stop using the shell in this conversation and report "
-                f"what happened: bugreport__file, or tell {self.cfg.user}.")
 
     def _busy(self, res: dict, name: str) -> str:
         """Why a run was not sent, and how to get past it: one sentence."""

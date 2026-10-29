@@ -30,30 +30,6 @@ def supports_prefill(backend) -> bool:
     return hasattr(backend, "for_message") or not bool(kwargs.get("enable_thinking", False))
 
 
-VOICE_MAX = 200          # characters of the voice cue
-
-
-def voice_line(cfg) -> str | None:
-    """The agent's voice cue, "[how you sound] ...": the first line under the first ## heading
-    of its talk (her.talk_text), cut to about VOICE_MAX characters at a sentence or a
-    word. None without such a line."""
-    her = getattr(cfg, "her", None)
-    if her is None:
-        return None
-    lines = [x.strip() for x in her.talk_text.splitlines()]
-    at = next((i for i, x in enumerate(lines) if x.startswith("## ")), None)
-    line = next((x for x in lines[at + 1:] if x and not x.startswith("#")), None) \
-        if at is not None else None
-    if not line:
-        return None
-    line = cfg.substitute(line)
-    if len(line) > VOICE_MAX:
-        cut = line[:VOICE_MAX]
-        end = cut.rfind(". ")
-        line = cut[:end + 1] if end > VOICE_MAX // 2 else cut.rsplit(" ", 1)[0] + " ..."
-    return f"[how you sound] {line}"
-
-
 async def tool_specs(registry, store, cid: str, carried, without=frozenset()
                  ) -> tuple[dict, bool]:
     """The tools this conversation has, and whether it may only read: the tools the
@@ -207,16 +183,43 @@ async def request_text(store, cfg, registry, backend, cid: str, turn: dict, carr
         cfg.substitute(plan) if plan else None, notes_tail(cfg, carried)] if t]
 
 
+FALLBACK = "You are running in fallback mode. Instead of {first} you are running on {current}."
+
+
 async def fallback_line(backend, cid: str) -> str | None:
-    """One line while the turn's role runs on a model that is not its chain's first
-    (backends/llm.py walks the list): which, and why each one before it is left out.
-    None on the first choice, and for a turn that runs on the first model alone."""
+    """While the turn's role runs on a model that is not its chain's first
+    (backends/llm.py walks the list): the fixed FALLBACK sentence, what the app knows of
+    the model it runs on (its context window, whether it sees images and calls tools,
+    from its settings' caps and the live window; a fact it does not know is left out),
+    then why each one before it is left out. None on the first choice, and for a turn
+    that runs on the first model alone."""
     llm = getattr(backend, "llm", None)
     if llm is None or not getattr(backend, "fallback", False):
         return None
     ordered = await llm.router.order(backend.role, conversation_id=cid)
-    passed = ordered.passed_over(ordered.refs[0]) if ordered.refs else None
-    return f"Running on {ordered.refs[0]} for {backend.role}. {passed}" if passed else None
+    current = ordered.refs[0] if ordered.refs else None
+    passed = ordered.passed_over(current) if current else None
+    if not passed:
+        return None
+    return " ".join([FALLBACK.format(first=ordered.chain[0], current=current),
+                     *model_facts(llm.make(current)), passed])
+
+
+def model_facts(backend) -> list[str]:
+    """What the app knows of one model, one plain sentence each: its context window
+    (the live one, or its setting), whether it sees images and whether it calls tools
+    (its caps). A fact not known is not said."""
+    from . import tokens
+    if backend is None:
+        return []
+    out = []
+    if (n := tokens.known_window(backend)) is not None:
+        out.append(f"Its context window is {n:,} tokens.")
+    for attr, yes, no in (("supports_images", "It sees images.", "It does not see images."),
+                          ("supports_tools", "It calls tools.", "It does not call tools.")):
+        if (v := getattr(backend, attr, None)) is not None:
+            out.append(yes if v else no)
+    return out
 
 
 def notes_tail(cfg, carried) -> str | None:
@@ -250,8 +253,7 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
     parts = [("persona", cfg.substitute(her.persona).strip())] \
         if her is not None and her.persona.strip() else []
     # what the app's marks in its context mean (turns/legend.py), right under who it is
-    voiced = voice_line(cfg) is not None
-    parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid), voiced)))
+    parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
     line = await _chat_line(store, cid)
     if line:
         parts.append(("talk", cfg.substitute(line)))

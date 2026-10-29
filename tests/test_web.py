@@ -161,3 +161,15 @@ async def test_save_attaches_the_file_at_the_url_to_the_call(store, monkeypatch)
     assert words.sentence("web__read_page", {"url": "https://pics.example.com/a.png",
                                              "save": True}, {}) == \
         "Saved a file from pics.example.com/a.png"
+
+
+def test_a_part_of_a_page_that_could_not_be_read_is_said(monkeypatch):
+    import trafilatura
+
+    def broken(*_a, **_k):
+        raise ValueError("bad meta tag")
+    monkeypatch.setattr(trafilatura, "extract_metadata", broken)
+    doc = web.extract(web.Page("https://x.org/a", "text/html",
+                               b"<html><body><p>" + b"word " * 50 + b"</p></body></html>", 200))
+    assert doc["problems"] == ["Its title, date and author could not be read (bad meta tag)"]
+    assert "word" in doc["text"]

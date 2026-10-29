@@ -210,7 +210,7 @@ async def test_continue_her_reply_grows_a_new_version(store):
     snap = await view.snapshot(store, cid)
     old, was = snap["messages"][-1]["id"], snap["messages"][-1]["created_at"]
     before = await _updated(store, cid)
-    mid, tid, _ = await tree.continue_message(store, cid, old)
+    mid, tid, _ = await tree.continue_message(store, cid, old, prefill=True)
     turn = await turns.claim(store, "w")
     assert turn["id"] == tid
     backend = Prefill([TextDelta(", three"), Done(reason="stop")])
@@ -237,12 +237,11 @@ class _Notes:
         return ToolResult(f"wrote {path}")
 
 
-@pytest.mark.parametrize("prefill", [True, False])
-async def test_a_continued_reply_that_calls_a_tool_goes_on(store, prefill):
+async def test_a_continued_reply_that_calls_a_tool_goes_on(store):
     """The continued step ends in a call: the next request carries the whole reply once,
-    as stored, and neither the prefill nor the continue note."""
+    as stored, and not the prefill."""
     class Steps(FakeBackend):
-        supports_prefill = prefill
+        supports_prefill = True
 
         def __init__(self, replies):
             super().__init__()
@@ -263,7 +262,7 @@ async def test_a_continued_reply_that_calls_a_tool_goes_on(store, prefill):
     await user_says(store, cid, "count")
     await say(store, cid, "one, two")
     old = (await view.snapshot(store, cid))["messages"][-1]["id"]
-    mid, tid, _ = await tree.continue_message(store, cid, old)
+    mid, tid, _ = await tree.continue_message(store, cid, old, prefill=True)
     turn = await turns.claim(store, "w")
     backend = Steps([
         [TextDelta(", three"), ToolCallDelta(index=0, name="notes__write",
@@ -279,43 +278,69 @@ async def test_a_continued_reply_that_calls_a_tool_goes_on(store, prefill):
     replies = [m for m in second if m["role"] == "assistant"]
     assert [m["content"] for m in replies] == ["one, two, three"]
     assert replies[0]["tool_calls"][0]["function"]["name"] == "notes__write"
-    assert not any("cut off after" in str(m.get("content")) for m in second)
 
 
-async def test_continue_without_a_prefill_keeps_a_space_at_the_seam(store):
-    """A model that cannot be prefilled answers the note with a new text: the words on
-    either side of the seam stay apart, punctuation joins without a space."""
-    async def continued(text, *deltas):
-        cid = await conversations.create(store)
-        await user_says(store, cid, "go on")
-        await say(store, cid, text)
-        old = (await view.snapshot(store, cid))["messages"][-1]["id"]
-        mid, tid, _ = await tree.continue_message(store, cid, old)
-        turn = await turns.claim(store, "w")
-        backend = FakeBackend([*(TextDelta(d) for d in deltas), Done(reason="stop")])
-        await run_turn(turn, store, load(), backend, EventBus(), Token(tid))
-        assert "cut off after" in backend.calls[0][-1]["content"]
-        return (await view.snapshot(store, cid))["messages"][-1]["content"]
-    assert await continued("She walked to the", "", "door", " and knocked.") == \
-        "She walked to the door and knocked."
-    assert await continued("She walked to the door", ", then knocked.") == \
-        "She walked to the door, then knocked."
-    assert await continued("She walked to the ", "door.") == "She walked to the door."
+async def test_continue_without_a_prefill_is_refused_before_anything_is_written(store):
+    cid = await conversations.create(store)
+    await user_says(store, cid, "go on")
+    await say(store, cid, "She walked to the")
+    before = await view.snapshot(store, cid)
+    with pytest.raises(ValueError, match="cannot continue a reply where it stopped"):
+        await tree.continue_message(store, cid, before["messages"][-1]["id"], prefill=False)
+    after = await view.snapshot(store, cid)
+    assert after["messages"] == before["messages"], "no new version"
+    assert await turns.claim(store, "w") is None, "no turn queued"
+
+
+async def test_continue_of_a_cut_turn_without_a_prefill_writes_nothing(store):
+    cid = await conversations.create(store)
+    await user_says(store, cid, "go on")
+    turn = await turns.claim(store, "w")
+    await run_turn(turn, store, load(), FakeBackend([TextDelta("She walked to the"),
+                                                     Done(reason="length")]),
+                   EventBus(), Token(turn["id"]))
+    def row(c):
+        return dict(c.execute("SELECT * FROM turns WHERE id=?", (turn["id"],)).fetchone())
+    was = await store.read(row)
+    assert (was["state"], was["cut"]) == ("done", "length")
+    with pytest.raises(ValueError, match="cannot continue a reply where it stopped"):
+        await turns.continue_turn(store, cid, turn["id"], prefill=False)
+    assert await store.read(row) == was, "the turn as it was"
+
+
+async def test_a_cut_reply_without_a_prefill_ends_with_its_reason(store):
+    """A model that cannot be prefilled is never asked to continue behind a note: the turn
+    ends with the reason, and the reply stays as it was."""
+    cid = await conversations.create(store)
+    await user_says(store, cid, "go on")
+    await say(store, cid, "She walked to the")
+    old = (await view.snapshot(store, cid))["messages"][-1]["id"]
+    # the model changed between the check and the run
+    mid, tid, _ = await tree.continue_message(store, cid, old, prefill=True)
+    turn = await turns.claim(store, "w")
+    backend = FakeBackend([TextDelta("door"), Done(reason="stop")])
+    await run_turn(turn, store, load(), backend, EventBus(), Token(tid))
+    assert backend.calls == [], "no request"
+    row = await store.read(lambda c: dict(c.execute(
+        "SELECT state, reason_code, reason FROM turns WHERE id=?", (tid,)).fetchone()))
+    assert (row["state"], row["reason_code"]) == ("failed", "no_prefill")
+    assert "cannot continue a reply where it stopped" in row["reason"]
+    assert (await view.snapshot(store, cid))["messages"][-1]["content"] == "She walked to the"
 
 
 async def test_continue_is_refused_with_a_sentence(store):
     cid = await conversations.create(store)
     umid, _, _ = await user_says(store, cid, "hi")
     with pytest.raises(ValueError, match="replies can be continued"):
-        await tree.continue_message(store, cid, umid)
+        await tree.continue_message(store, cid, umid, prefill=True)
     await say(store, cid, "hello")
     hers = (await view.snapshot(store, cid))["messages"][-1]["id"]
     await user_says(store, cid, "more")
     with pytest.raises(ValueError, match="is still answering"):
-        await tree.continue_message(store, cid, hers)
+        await tree.continue_message(store, cid, hers, prefill=True)
     await say(store, cid, "sure")
     with pytest.raises(ValueError, match="last message"):
-        await tree.continue_message(store, cid, hers)
+        await tree.continue_message(store, cid, hers, prefill=True)
 
 
 async def test_an_older_version_whose_later_lines_moved_ends_the_path_there(store):

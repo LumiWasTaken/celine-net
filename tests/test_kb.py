@@ -34,7 +34,7 @@ def test_kb_file_version_and_old_file_refused(tmp_path):
 
     fresh = tmp_path / "fresh.db"
     KBFile(fresh, CHAT_MIGRATIONS)
-    assert sqlite3.connect(fresh).execute("PRAGMA user_version").fetchone() == (3,)
+    assert sqlite3.connect(fresh).execute("PRAGMA user_version").fetchone() == (4,)
 
     old = tmp_path / "old.db"
     sqlite3.connect(old).executescript("CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT);")

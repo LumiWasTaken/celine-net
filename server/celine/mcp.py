@@ -349,7 +349,7 @@ class Supervisor:
             except Exception as e:
                 # a server of ours that quit says so; anything else is the server at its
                 # address not answering (a connect error, a timeout, an ExceptionGroup)
-                skill.error = str(e)[:300] if isinstance(e, RuntimeError) else \
+                skill.error = str(e) if isinstance(e, RuntimeError) else \
                     unreachable_words(f"the {skill.name} server", skill.cfg.url, e)
                 log.warning("mcp server failed", extra={"event": "mcp.failed",
                                                         "server": skill.name,

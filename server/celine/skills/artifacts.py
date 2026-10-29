@@ -40,8 +40,7 @@ class Artifacts:
         a dashboard, or a document. Every write keeps the old versions.
         Returns: the id and version. Show it with [[artifact:<id>]] in your reply, never the
         page's text."""
-        from .web import uncite
-        title, aid, content = title.strip(), id.strip().lower(), uncite(content)
+        aid = id
         if kind not in artifacts.KINDS:
             return _refused(f"kind is html or markdown, not \"{kind}\".")
         if problem := _refusal(content, title, aid):
@@ -52,7 +51,7 @@ class Artifacts:
                             f"second page, give it another title.")
         try:
             v = await artifacts.add_version(ctx.store, aid or None, kind, title, content,
-                                            note.strip(), ctx.conversation_id,
+                                            note, ctx.conversation_id,
                                             ctx.tool_call_id)
         except artifacts.Refused as e:
             return _refused(f"There is no artifact {aid}. Leave id empty for a new one."
@@ -95,7 +94,7 @@ class Artifacts:
         version: Annotated[int | None, "A version number; empty: the newest."] = None,
     ) -> ToolResult:
         """Read a page whole: its title, its versions and the content of one version."""
-        aid = id.strip().lower()
+        aid = id
         row = await artifacts.get(ctx.store, aid) if artifacts.ID.match(aid) else None
         v = await artifacts.version(ctx.store, aid, version) if row else None
         if v is None:
@@ -120,7 +119,7 @@ def _refusal(content: str, title: str, aid: str) -> str | None:
         return "content is empty."
     if aid and not artifacts.ID.match(aid):
         return f"\"{aid}\" is no artifact id: an id is 6 letters and digits, like 7f3a9c."
-    if not aid and not title:
+    if not aid and not title.strip():
         return "a new artifact needs a title."
     try:
         size = len(content.encode())

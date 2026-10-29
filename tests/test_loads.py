@@ -227,3 +227,52 @@ def test_tools_is_a_flat_budget_and_a_share_is_a_problem(tmp_path):
     seed.context_path(root).write_text("tools = 0.5\n")
     loads.read_shares(seed.context_path(root), problems)
     assert problems, "a share is no longer a tools budget"
+
+
+def _big():
+    async def go(self, ctx, where: str) -> ToolResult:
+        return ToolResult("went")
+    go.__doc__ = "Go somewhere. " + "far away " * 8000
+
+    class Big:
+        name = "big"
+        description = "A skill with a large schema."
+    Big.go = tool()(go)
+    return Big()
+
+
+async def test_a_skill_over_the_tools_budget_is_not_loaded_and_its_calls_say_why(
+        store, tmp_path):
+    from celine.turns import tokens
+    from celine.turns import tools as turn_tools
+    cfg = notes_cfg(tmp_path)
+    reg = Registry(cfg)
+    for s in (Notebook(), Web(), _big()):
+        reg.add(s)
+    reg.add(Skills(reg, cfg))
+    cid = await conversations.create(store)
+    got = await select_turn(store, cfg, reg, cid, 1, "hello")
+    budget = got.budgets["tools"]
+    ctx = ToolContext(conversation_id=cid, turn_id="t1", tool_call_id="x", store=store,
+                      config=cfg, emit=None)
+    meta = reg.skills["skills"]
+    out = await meta.load(ctx, name="big")
+    cost = loads.schema_cost(tokens.counter(BACKEND), reg.by_skill()["big"])
+    assert cost > budget
+    have = {n: got.costs[n] for n in got.skills}
+    assert out.is_error and out.content == (
+        f"big is not loaded: its tools take {cost} tokens, the tools budget is {budget}, "
+        f"and the skills loaded now take {sum(have.values())}: "
+        + ", ".join(f"{n} ({t})" for n, t in have.items()) + ".")
+    assert ("skill", "big") not in (await store.read(lambda c: loads.rows(c, cid)))[1]
+    assert (await meta.load(ctx, name="web")).content.startswith("Loaded web.")
+
+    # a skill touched another way (a tool loads it) that does not fit: its call says why
+    await loads.touch(store, cid, "skill", ["big"])
+    carried = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
+    assert carried.others["big"] == "no room"
+    turn = {"offered": frozenset(), "loaded": frozenset(carried.skills), "carried": carried}
+    need = sum(carried.costs[n] for n in carried.skills) + carried.costs["big"]
+    _, res, _ = turn_tools._not_offered(turn, "big__go", reg.tools["big__go"], reg, {}, cfg)
+    assert res.content == (f"big is not carried: over the tools budget ({need} of {budget} "
+                           f"tokens).")

@@ -17,7 +17,6 @@ from ..skills import ToolContext, ToolResult
 from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
                              read_mode_has)
 from .cancel import until_stop
-from .ledger import STOPPED, Ledger, records_for
 from . import loads
 from . import store as turns
 
@@ -30,15 +29,12 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
 
     The calls of one reply run concurrently when each is read-only and blocking, or
     hands work that only adds (not destructive) to a job, like several sub-agents
-    started at once. Results are written in call order either way. A call identical to
-    one before it in the same reply runs once; the others get SAME_STEP. Each call's
-    arguments are parsed once, here (`args`: the object, or None when they are not one)."""
+    started at once. Results are written in call order either way. Every call runs.
+    Each call's arguments are parsed once, here (`args`: the object, or None when they
+    are not one)."""
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
     texts: dict[str, str] = {}
-    # answered without running: a repeat in the same reply
-    early: dict[str, tuple] = {c["id"]: ("ok", ToolResult(content=SAME_STEP), None)
-                               for c in calls if c["id"] in _dupes(calls, registry)}
     # a skill it uses stays loaded (turns/loads.py)
     await loads.touch(store, cid, "skill", [c["name"].split("__")[0] for c in calls
                                             if c["name"] in turn.get("offered", ())])
@@ -58,23 +54,21 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         metrics.TOOL_CALLS.labels(call["name"] if known else "unknown", state).inc()
         log.info("tool done", extra={"event": "tool.done", "turn": tid,
                                      "tool": call["name"], "state": state})
-    run = [c for c in calls if c["id"] not in early]
-    if _concurrent(run, registry):
-        done: dict[str, tuple] = dict(early)
+    if _concurrent(calls, registry):
+        done: dict[str, tuple] = {}
 
         async def one(call):
             done[call["id"]] = await _resolve(
                 turn, call, store, cfg, registry, overrides, token, jobs)
         async with anyio.create_task_group() as tg:
-            for call in run:
+            for call in calls:
                 tg.start_soon(one, call)
         for call in calls:
             if done.get(call["id"]) is not None:     # None: shutdown before it started
                 await write(call, done[call["id"]])
         return texts
     for call in calls:
-        out = early.get(call["id"]) or await _resolve(
-            turn, call, store, cfg, registry, overrides, token, jobs)
+        out = await _resolve(turn, call, store, cfg, registry, overrides, token, jobs)
         if out is None:                            # shutdown: left pending, runs on resume
             break
         await write(call, out)
@@ -169,59 +163,11 @@ def _concurrent(calls, registry) -> bool:
     return True
 
 
-REPEAT_LIMIT = 2      # the same call with the same result: the next one is not run
-REPEAT_SEEN = 40      # the turn's latest calls the repeat rule reads
 BACKGROUND_AFTER = 5  # seconds a call it asked into the background runs before it
                       # detaches: a quick one, or one that fails at once, still answers
                       # directly. Nothing detaches unasked: a call runs in its turn to
                       # its end or its time.
-REPEATED = "Not run: you made this exact call"
-SAME_STEP = "same as the call above in this step."
 TIME_UP = "Not run: the time for this turn is up."
-# refusals that end its search: when every call of a step gets one, the next step has
-# no tools and it answers (turns/runner.py)
-NOT_RUN_ANSWER = (REPEATED, STOPPED)
-
-
-def _spec(spec, name: str, args: dict) -> str:
-    """What makes two calls the same call, for the repeat rule: the loose spec of the
-    archive tools (ledger.Ledger.spec), or the exact arguments of a tool whose skill
-    says exact_args (skills.ToolSpec)."""
-    if spec is not None and spec.exact_args:
-        return json.dumps(args, sort_keys=True, ensure_ascii=False)
-    return Ledger.spec(name, args)
-
-
-def _dupes(calls, registry) -> set[str]:
-    """Ids of calls identical to an earlier call of the same reply (same tool, same
-    arguments). Tools with exact arguments are left out: a key pressed twice is two
-    presses."""
-    seen, out = set(), set()
-    for call in calls:
-        spec = registry.get(call["name"]) if registry is not None else None
-        if call["args"] is None or (spec is not None and spec.exact_args):
-            continue
-        key = _spec(spec, call["name"], call["args"])
-        if key in seen:
-            out.add(call["id"])
-        seen.add(key)
-    return out
-
-
-async def _repeats(store, turn_id: str, spec, name: str, args: dict) -> int:
-    """How often this turn already ran this exact call (same tool, same arguments), when
-    its last REPEAT_LIMIT runs gave the same result; else 0 (a command run again after a
-    change is fine). A model can loop on one call for the whole wall clock."""
-    key = _spec(spec, name, args)
-    results = []
-    for tool, arguments, content, _ in await records_for(store, turn_id, last=REPEAT_SEEN):
-        if tool != name or content is None or content.startswith((REPEATED, SAME_STEP)):
-            continue
-        earlier = parsed(arguments)
-        if earlier is not None and _spec(spec, tool, earlier) == key:
-            results.append(content)
-    last = results[-REPEAT_LIMIT:]
-    return len(results) if len(last) == REPEAT_LIMIT and len(set(last)) == 1 else 0
 
 
 # Every path returns a result: an unanswered tool_call makes the conversation
@@ -230,7 +176,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     """-> (state, ToolResult, withheld_output), or None when the server is shutting
     down and the step has not started (it stays pending and runs on resume). Never
     raises. The steps, in order: stopped, replayed, frozen (the house refuses), offered,
-    valid, her default terminal, repeated, Bastet, then the call itself."""
+    valid, Bastet, then the call itself."""
     if token.cancelled:
         return None if token.shutdown else ("cancelled", ToolResult(content="cancelled"),
                                             None)
@@ -245,12 +191,6 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
         return "error", ToolResult(content=f"invalid arguments: {wrong}", is_error=True), \
             None
-    resolved = await _default_terminal(store, turn["conversation_id"], spec, args)
-    if (n := await _repeats(store, turn["id"], spec, call["name"], args)) >= REPEAT_LIMIT:
-        return "error", ToolResult(
-            content=f"{REPEATED} {n} times in this turn, and the last {REPEAT_LIMIT} gave "
-                    f"the same result. Answer with what you have, or try a different call.",
-            is_error=True, display={"repeated": n}), None
 
     async def progress(note: str) -> None:
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
@@ -263,7 +203,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return None
     if gate.refusal is not None:
         return (*gate.refusal, None)
-    out = await _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs)
+    out = await _run_call(turn, call, spec, args, store, cfg, token, jobs)
     if out is None:
         await guard_passes.retell(store, gate.told)   # shutdown: its next result tells them
         return out
@@ -301,7 +241,12 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
             if real else f"There is no tool {name}."), is_error=True), None
     if name not in offered:
         here = ", ".join(sorted(t for t in offered if t.startswith(skill + "__")))
-        if skill not in loaded:
+        carried = turn.get("carried")
+        if carried is not None and carried.others.get(skill) == "no room":
+            need = sum(carried.costs.get(n, 0) for n in carried.skills) + carried.costs[skill]
+            text = (f"{skill} is not carried: over the tools budget ({need} of "
+                    f"{carried.budgets['tools']} tokens).")
+        elif skill not in loaded:
             text = (f"{skill} is not loaded. skills__load(name=\"{skill}\") loads it for "
                     f"your next step.")
         elif turn.get("read_only") and not read_mode_has(spec):
@@ -323,9 +268,9 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
 
 
 def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
-    """What is wrong with the arguments for `spec`'s schema (coerced in place where a
-    model sent the other plain form of a value); None when they fit. `arguments`: as
-    it sent them, read again only to say why they are not an object."""
+    """What is wrong with the arguments for `spec`'s schema; None when they fit. Nothing
+    is changed: a value of the wrong type fails the call. `arguments`: as it sent them,
+    read again only to say why they are not an object."""
     if args is None:
         try:
             json.loads(arguments or "{}")
@@ -345,20 +290,7 @@ def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
         if unknown:
             parts.append(f"unexpected {', '.join(sorted(unknown))}")
         return "; ".join(parts)
-    return coerce(args, spec.schema)
-
-
-async def _default_terminal(store, cid: str, spec, args: dict) -> str | None:
-    """The agent's default terminal (or its browser tab by the same name) where the tool's
-    terminal_arg is left out, set in `args` once: the row's arguments, the event, the
-    jobs list and the placeholder all carry the name. -> the arguments as stored now,
-    None when nothing was filled in."""
-    where = spec.terminal_arg
-    if not where or args.get(where):
-        return None
-    from ..terminals import store as terminals
-    args[where] = await terminals.default_terminal(store, cid)
-    return json.dumps(args)
+    return mistyped(args, spec.schema)
 
 
 # lists and objects are left to the tools: several read a string as one (a comma list,
@@ -376,39 +308,20 @@ def _kind(prop: dict) -> str | None:
     return kinds[0] if len(kinds) == 1 else None
 
 
-def coerce(args: dict, schema: dict) -> str | None:
-    """Each argument in place as its schema's type, where a model sent the other plain
-    form of it: a number for a string (an int stays exact, a Discord id too), a digit
-    string for an integer, "true"/"false" for a boolean; nothing else. -> what still
-    does not fit ("find is a string", a value outside its enum), or None. A null for a
-    parameter that is not required stays null (its default)."""
+def mistyped(args: dict, schema: dict) -> str | None:
+    """The arguments whose value is not of their schema's plain type or not in its
+    enum ("find is a string", "what is one of view, locate"), or None. Nothing is
+    converted. A null for a parameter that is not required is its default."""
     props, required = schema.get("properties", {}), set(schema.get("required", ()))
     wrong = []
     for key, v in args.items():
         kind = _kind(props.get(key) or {})
         if kind not in _FITS or (v is None and key not in required):
             continue
-        if kind == "string" and isinstance(v, (int, float)) and not isinstance(v, bool):
-            v = str(v)
-        elif kind == "integer" and isinstance(v, str) and v.strip().lstrip("-").isdigit():
-            v = int(v)
-        elif kind == "boolean" and isinstance(v, str) and v.strip().lower() in ("true",
-                                                                               "false"):
-            v = v.strip().lower() == "true"
-        elif kind == "integer" and isinstance(v, float) and v.is_integer():
-            v = int(v)
-        elif kind == "number" and isinstance(v, str):
-            try:
-                v = float(v)
-            except ValueError:
-                pass
         if not isinstance(v, _FITS[kind]) or (isinstance(v, bool) and kind != "boolean"):
             wrong.append(f"{key} is {_WORD[kind]}")
-            continue
-        if (opts := (props.get(key) or {}).get("enum")) and v not in opts:
+        elif (opts := (props.get(key) or {}).get("enum")) and v not in opts:
             wrong.append(f"{key} is one of {', '.join(map(str, opts))}")
-            continue
-        args[key] = v
     return "; ".join(wrong) or None
 
 
@@ -417,7 +330,7 @@ def _takes_any(fn) -> bool:
                for p in inspect.signature(fn).parameters.values())
 
 
-async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
+async def _run_call(turn, call, spec, args, store, cfg, token, jobs):
     """The call itself, after every check: the turn's time, then the tool, in its turn
     or handed to a job."""
     cid, tid, name = turn["conversation_id"], turn["id"], call["name"]
@@ -428,7 +341,7 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
                                    display={"time_up": True}), None
 
     # a parameter named like a Python keyword is `in` on the wire and `in_` in the
-    # coroutine (skills.derive_schema); the schema and repeat checks above saw the
+    # coroutine (skills.derive_schema); the schema check above saw the
     # wire form, the call below gets the Python one. A tool that takes **args (MCP)
     # passes them on as they came.
     wire = args
@@ -448,7 +361,7 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
     if left is not None and left < timeout:
         timeout, expired = left, "Stopped: the time for this turn is up."
     handoff = spec.mode if jobs is not None else "blocking"
-    await turns.tool_started(store, cid, call["id"], arguments=resolved)
+    await turns.tool_started(store, cid, call["id"])
 
     if handoff == "blocking":
         with metrics.TOOL_SECONDS.labels(name).time():

@@ -44,7 +44,6 @@ VARIABLES = ("date", "day_before", "weekday", "username", "name", "mood", "on_mi
              "tool_failures", "voice_counts")
 NONE = "(none)"
 PROMPT_MAX = 50_000          # characters
-ROUNDS_MAX = 30
 
 
 @dataclass(frozen=True)
@@ -136,8 +135,8 @@ def parse(name: str, raw: dict, partner_prompt: str | None) -> Schedule:
     if partner and not partner_prompt.strip():
         raise _invalid("partner_prompt", "The reviewer prompt is empty.")
     rounds = raw.get("rounds", 8)
-    if not isinstance(rounds, int) or isinstance(rounds, bool) or not 1 <= rounds <= ROUNDS_MAX:
-        raise _invalid("rounds", f"The turns are a whole number from 1 to {ROUNDS_MAX}.")
+    if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
+        raise _invalid("rounds", "The turns are a whole number from 1.")
     note = raw.get("note", "")
     if not isinstance(note, str) or (note and (
             not note.endswith(".md") or note.startswith("/") or ".." in note.split("/"))):

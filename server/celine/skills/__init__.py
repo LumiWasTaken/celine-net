@@ -104,12 +104,6 @@ class ToolSpec:
     annotations: Annotations = Annotations()
     background: str | None = None   # a detach tool's bool parameter: hand off at once
     timeout: float | None = None    # seconds, instead of tool_timeout_seconds
-    # the parameter that names its terminal (or its browser tab, by the same name): left
-    # out, it is its default terminal, resolved once for the row, the event and the job
-    terminal_arg: str | None = None
-    # the repeat rule compares its arguments exactly: in a terminal or a page "a" is not
-    # "A", and Enter is not Space; a key pressed twice in one reply is two presses
-    exact_args: bool = False
     # what it reads while a job has the call: {job} and the call's arguments filled in,
     # with `detached_display` on its row
     detached: str | None = None
@@ -146,7 +140,7 @@ Mode = Literal["blocking", "detach"]
 
 def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
          destructive: bool | None = None, open_world: bool = False, background: str | None = None,
-         timeout: float | None = None, terminal_arg: str | None = None,
+         timeout: float | None = None,
          detached: str | None = None, detached_display: dict[str, Any] | None = None,
          needs_answer: bool = True):
     """Marks a coroutine as a tool. The docstring is the model-facing description:
@@ -154,11 +148,10 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
     A tool that changes anything says `read_only=False`. `background` names a bool
     parameter of a detach tool: true hands the call to a background job after
     BACKGROUND_AFTER seconds instead of the detach window (turns/tools.py). `timeout`
-    replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec.
-    A skill whose tools compare their arguments exactly says `exact_args = True`."""
+    replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec."""
     def deco(fn):
         fn.__celine_tool__ = {"mode": mode, "background": background, "timeout": timeout,
-                              "terminal_arg": terminal_arg, "detached": detached,
+                              "detached": detached,
                               "detached_display": detached_display,
                               "needs_answer": needs_answer,
                               "annotations": Annotations.of(
@@ -371,8 +364,7 @@ def collect(skill: Any) -> list[ToolSpec]:
         if name.endswith("_"):      # continue_ is continue, status_ is status (the skill's
             name = name[:-1]        # own `status` says whether it is up)
         out.append(ToolSpec(skill=skill.name, name=name, description=doc.strip(),
-                            schema=derive_schema(fn), fn=fn,
-                            exact_args=bool(getattr(skill, "exact_args", False)), **meta))
+                            schema=derive_schema(fn), fn=fn, **meta))
     return sorted(out, key=lambda t: t.name)
 
 
@@ -473,11 +465,11 @@ class Registry:
                 continue
             try:
                 text = await frag(ctx)
-            except Exception:
+            except Exception as e:
                 log.exception("prompt fragment failed",
                               extra={"event": "skill.fragment_failed",
                                      "skill": skill.name})
-                continue
+                text = f"The {skill.name} skill's part of this prompt failed: {e}"
             if text:
                 out.append(text)
         return out
@@ -495,11 +487,12 @@ class Registry:
                 continue
             try:
                 got = await hook(ctx, message)
-            except Exception:
+            except Exception as e:
                 log.exception("message context failed",
                               extra={"event": "skill.message_context_failed",
                                      "skill": skill.name})
-                continue
+                got = (f"The {skill.name} skill's context for this message failed: {e}",
+                       {"error": str(e)})
             if got and (got[0] or got[1]):     # a report alone: what it decided
                 if got[0]:
                     texts.append(got[0])

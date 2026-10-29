@@ -13,12 +13,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from ..turns import ledger
 from ..config import CONFIG_DIR
 from ..turns.compact import one_line
 from . import ToolContext, ToolResult, guide, knob, tool, described
 from . import notebook_index
-from .web import linked
 from .anchors import Edit, EditRefused, apply, is_stamp, lines_of, numbered, plan
 from ..clock import zone
 from ..errors import ToolRefused
@@ -266,7 +264,6 @@ class Notebook:
                 f"{path} is {{{{username}}}}'s, not yours to change. You can read it. "
                 f"Write your own version somewhere else if you want one."), is_error=True)
         p.parent.mkdir(parents=True, exist_ok=True)
-        content = await linked(ctx, content)
         body = stamped(p.read_text() + content if mode == "append" and p.exists()
                        else content, self.cfg)
         keep_version(self.root, p, path)
@@ -323,10 +320,6 @@ class Notebook:
         if not lines:
             body = "(empty)"
         content = head + body
-        led = ledger.get(ctx.turn_id, ledger.NOTEBOOK)
-        args = {"path": path, "from_line": from_line}
-        led.record("read", led.spec("read", args), content, search=False,
-                   refs=ledger.note_refs("read", args, content))
         await _touch(ctx, path, read=True)
         return ToolResult(content=content, display={"path": path, "bytes": len(text),
                                                     "owner": self.owner(path),
@@ -363,7 +356,7 @@ class Notebook:
         text = p.read_text(newline="")
         lines, newline, trailing = lines_of(text)
         has_stamp = bool(lines) and is_stamp(lines[0])
-        edits = [{**e, "text": await linked(ctx, _joined(e["text"]))}
+        edits = [{**e, "text": _joined(e["text"])}
                  if isinstance(e, dict) and e.get("text") else e for e in edits]
         try:
             planned = plan(edits, lines, has_stamp)
@@ -400,14 +393,6 @@ class Notebook:
         """Search your notes by word search over paths, summaries and text. Search before
         you write a fact. Search when {{username}} asks what you know. Returns: one line
         per note with a snippet."""
-        # searches that keep finding no note it has not seen get a note, then are not
-        # run, as in the Messages archive (turns/ledger.py); a read with new text resets it
-        led = ledger.get(ctx.turn_id, ledger.NOTEBOOK)
-        spec = led.spec("search", {"query": query, "limit": limit})
-        if stop := led.blocked(broad=False):
-            led.refuse(spec, broad=False)
-            return ToolResult(content=stop, is_error=True, display={"narrow": True})
-        call = led.begin("search", spec, search=True)
         folder = await folder_of(ctx)
         if folder:
             hits = [h for h in await notebook_index.search(ctx.store, query,
@@ -426,16 +411,7 @@ class Notebook:
                 f"{h['path']} - {one_line(h['summary'])}{self.tag(h['path'])}\n"
                 f"  ...{one_line(h['snippet'])}..." for h in hits)
         else:
-            content = f"{ledger.NO_NOTE} {query!r}."
-        led.finish(call, content, ledger.note_refs("search", {}, content))
-        n, _ = led.dry_streak()
-        if n >= ledger.NUDGE_AFTER:
-            content += (f"\n\n{n} searches of your notes in a row found no note you have "
-                        f"not seen. Other words will not change that. Read the notes you "
-                        f"found with notebook__read, or answer with what you have and say "
-                        f"what is missing. After {ledger.STOP_AFTER} in a row, no search "
-                        f"is run.")
-            display["narrow"] = True
+            content = f"No note contains {query!r}."
         return ToolResult(content=content, display=display)
 
     @tool()

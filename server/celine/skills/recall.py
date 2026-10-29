@@ -103,7 +103,7 @@ def _embed(cfg, query: str, texts: list[str]) -> tuple[list[float], list[list[fl
     Embeddings task that answers; raises SemanticError when none does."""
     from ..kb import semantic
     e = semantic.query_embedder(cfg)
-    vecs = e.embed([e.s["query_prefix"] + query, *texts], retries=1, timeout=EMBED_SECONDS)
+    vecs = e.embed([e.s["query_prefix"] + query, *texts], timeout=EMBED_SECONDS)
     return vecs[0], vecs[1:]
 
 

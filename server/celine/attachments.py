@@ -324,7 +324,7 @@ class Images:
                                                                 lane=self.lane)
         except (Waiting, CaptionError, OSError) as e:
             log.info("no photo description", extra={
-                "event": "attachment.not_described", "error": str(e)[:200]})
+                "event": "attachment.not_described", "error": str(e)})
             return (f"[Image {a['filename']}: {model} cannot see images, and no photo "
                     f"description is available.]")
         text = out["caption"]
@@ -642,7 +642,7 @@ async def her_image(store, ref: str, cid: str | None, user: str) -> dict | str:
     """An image it may use by its short id (or a longer start of its id): one it made
     (an attachment of its own message, in any conversation) or one the user attached to
     conversation `cid`. -> its attachment row, or the sentence that says why not."""
-    wanted = ref.strip().lower()
+    wanted = ref
     if not re.fullmatch(r"[0-9a-f]{4,32}", wanted):
         return (f"{wanted} is not an image's short id: use the {SHORT} characters from "
                 f"its result or list_images, like f5ef648c.")

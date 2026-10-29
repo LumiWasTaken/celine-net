@@ -15,7 +15,6 @@ from .store import insert, read
 from ..core.event_types import INTERCOM_STATE
 
 log = logging.getLogger("celine.intercom")
-RETRY = 30.0        # seconds before the timer tries again after it failed
 
 
 async def send(store, from_addr: str, to: str, text: str, *, kind: str = "message",
@@ -186,7 +185,7 @@ class Intercom:
     async def _timer(self) -> None:
         """Delivers what is due (at start: what came due while the app was down), then
         sleeps until the next due time or a new message with one; after a failure it
-        tries again in RETRY seconds."""
+        logs the reason and waits for the next new message."""
         while True:
             try:
                 if await deliver.deliver_due(self.store):
@@ -197,7 +196,7 @@ class Intercom:
                 ).total_seconds())
             except Exception:
                 log.exception("intercom timer failed", extra={"event": "intercom.failed"})
-                delay = RETRY
+                delay = None
             with anyio.move_on_after(delay):
                 await self._wake.wait()
             self._wake = anyio.Event()

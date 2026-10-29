@@ -108,3 +108,13 @@ def test_an_entrys_sites_are_exact_https_origins():
     it = {"login": {"uris": [{"uri": "https://a.com"}, {"uri": "http://b.com"},
                              {"uri": "a.com/x"}, {"uri": None}]}}
     assert origins(it) == ["https://a.com:443"]
+
+
+async def test_her_why_is_shown_as_she_wrote_it(monkeypatch):
+    a = _taps(monkeypatch)
+    why = "the order script\n  needs to log in, " + "because " * 80
+    task = asyncio.create_task(a.ask("a", [], "c", why))
+    await _waits(a)
+    assert a.view()[0]["why"] == why
+    await _answer(a, True)
+    assert await task is None

@@ -52,7 +52,6 @@ export function Status({ words, queued = false }: { words: string | null; queued
 const REASON: Record<string, string> = {
   restart: 'The server restarted during the answer.',
   wall_clock: 'The answer took too long and was stopped.',
-  time_up: 'The answer took too long and was stopped.',
   max_tool_iterations: 'Stopped at the step limit.',
   cut_length: 'The answer reached the length limit.',
 }

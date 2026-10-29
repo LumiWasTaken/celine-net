@@ -69,7 +69,7 @@ async def test_no_page_answers_without_its_sandbox(store):
 async def test_a_deleted_conversation_leaves_her_page(store):
     cid = await conversations.create(store)
     aid = (await _write(store, cid, title="Plan", content="<p>v1</p>")).display["artifact"]["id"]
-    again = await _write(store, cid, title="plan ", content="<p>new</p>")
+    again = await _write(store, cid, title="Plan", content="<p>new</p>")
     assert again.is_error and aid in again.content, "a second page with the title is refused"
     await _write(store, cid, title="", content="<p>v2</p>", id=aid, note="shorter")
     assert await conversations.delete(store, cid)
@@ -80,3 +80,22 @@ async def test_a_deleted_conversation_leaves_her_page(store):
         (1, "Plan", ""), (2, "Plan", "shorter")]
     assert meta["conversation_id"] == cid
     assert v1.text.endswith("<p>v1</p>")
+
+
+async def test_a_page_is_stored_as_she_wrote_it(store):
+    cid = await conversations.create(store)
+    text = "# Prices\n\nbolts are cheap [[web:3]] and [web:9]【2†source】"
+    aid = (await _write(store, cid, title="Prices", content=text, kind="markdown")
+           ).display["artifact"]["id"]
+    async with _client(_app(store)) as c:
+        source = await c.get(f"/api/artifacts/{aid}/versions/1/source")
+    assert source.text == text
+
+
+async def test_an_artifact_id_and_title_match_exactly(store):
+    cid = await conversations.create(store)
+    aid = (await _write(store, cid, title="Plan", content="<p>v1</p>")).display["artifact"]["id"]
+    ctx = ToolContext(cid, "t", "call-1", store, load(), None)  # type: ignore[arg-type]
+    out = await Artifacts(load()).read(ctx, id=aid.upper())
+    assert out.is_error and out.content.startswith(f"There is no artifact {aid.upper()}")
+    assert not (await _write(store, cid, title="plan", content="<p>other</p>")).is_error

@@ -58,16 +58,16 @@ def _working(c: sqlite3.Connection) -> list[str]:
 
 
 def _by_name(c: sqlite3.Connection, name: str, me: sqlite3.Row | None) -> str | None:
-    """A sub-agent of the sender, a sibling, or a mission, by name (any case)."""
+    """A sub-agent of the sender, a sibling, or a mission, by name."""
     if me is not None:
         family = [me["id"]] + ([me["agent_of"]] if me["agent_of"] else [])
         marks = ",".join("?" * len(family))
         r = c.execute(f"SELECT id FROM conversations WHERE agent_of IN ({marks}) AND "
-                      "lower(agent_name)=lower(?) ORDER BY created_at DESC",
+                      "agent_name=? ORDER BY created_at DESC",
                       (*family, name)).fetchone()
         if r:
             return r[0]
-    r = c.execute("SELECT conversation_id FROM missions WHERE lower(name)=lower(?)",
+    r = c.execute("SELECT conversation_id FROM missions WHERE name=?",
                   (name,)).fetchone()
     return r[0] if r else None
 
@@ -117,7 +117,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
             addr = f"agent:{me['agent_of']}"
         elif addr == "team":
             addr = f"team:{me['agent_of'] or me['id']}"
-        elif addr.casefold() in GUARD_NAMES and sender.startswith("agent:"):
+        elif addr in GUARD_NAMES and sender.startswith("agent:"):
             addr = GUARD                 # she talks to Bastet; anyone else's reply is the user's
         elif addr.startswith("system:") or c.execute(
                 "SELECT 1 FROM intercom_tokens WHERE name=?", (addr,)).fetchone():

@@ -149,6 +149,9 @@ async def test_the_appraisal_after_a_chat_turn_sets_her_mood(store):
     assert "jealous" in system and "—" not in system
     assert mind.parse_appraisal('ok {"emotion": "sad", "strength": 2, "why": "x"}') == \
         {"emotion": "sad", "strength": 1.0, "why": "x"}
+    long = "because " * 100
+    assert mind.parse_appraisal(json.dumps({"emotion": "sad", "strength": 0.5,
+                                            "why": long}))["why"] == long, "taken whole"
     for bad in ('{"emotion": null}', '{"emotion": "meh", "strength": 0.5}', "no json"):
         assert mind.parse_appraisal(bad) is None, bad
 

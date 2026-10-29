@@ -593,7 +593,7 @@ class DocumentsKB:
                  ex.pages, len(ids), n_chars, n_words, json.dumps(meta) if meta else None,
                  iid))
             if ai is not None:
-                conn.execute("UPDATE items SET ai_state = ?, ai_error = ?, ai_attempts = 0 "
+                conn.execute("UPDATE items SET ai_state = ?, ai_error = ? "
                              "WHERE id = ?", (ai[0], ai[1], iid))
             self.index_meta(conn, iid)
             self._apply_mode(conn, iid)
@@ -766,7 +766,7 @@ class DocumentsKB:
         from .importers import Cancelled, Unreachable
         try:
             from . import semantic
-            n = semantic.embed_passages(cfg, self.path, ctx, retries=3, kb_id=self.id)
+            n = semantic.embed_passages(cfg, self.path, ctx, kb_id=self.id)
             return {"embedded": n}
         except Unreachable as e:               # no embedding model now: next scan
             return {"embed_waiting": str(e)}
@@ -774,21 +774,19 @@ class DocumentsKB:
             raise
         except Exception as e:                 # noqa: BLE001
             log.warning("documents embedding failed", extra={
-                "event": "documents.embed_failed", "kb": self.id, "error": str(e)[:300]})
-            return {"embed_error": str(e)[:300]}
+                "event": "documents.embed_failed", "kb": self.id, "error": str(e)})
+            return {"embed_error": str(e)}
 
     def semantic_hits(self, q: str, item_ids: list[int] | None = None,
                       k: int = 20) -> list[dict[str, Any]]:
-        """Passages by meaning; [] when there is no index or no embedding endpoint."""
+        """Passages by meaning; [] when there is no index or no embedding endpoint. A
+        failed query embedding raises SemanticError."""
         cfg = self.app_cfg
         from . import semantic
         if cfg is None or not semantic.embeddings_available(cfg) \
                 or not self.file.read_sync(P.has_index):
             return []
-        try:
-            qvec = semantic.query_vector(cfg, q)
-        except semantic.SemanticError:
-            return []                          # no embedding model answers now
+        qvec = semantic.query_vector(cfg, q)
 
         def run(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             scored = P.dense(conn, qvec, k, chat_ids=item_ids or None)
@@ -1308,7 +1306,7 @@ class DocumentsKB:
             n = conn.execute("UPDATE items SET state = 'pending', error = NULL WHERE id = ?",
                              (iid,)).rowcount
             if describe:
-                conn.execute("UPDATE items SET ai_state = 'pending', ai_attempts = 0, "
+                conn.execute("UPDATE items SET ai_state = 'pending', "
                              "ai_error = NULL, ai_source_hash = NULL WHERE id = ?", (iid,))
                 conn.execute("DELETE FROM describe_parts WHERE item_id = ?", (iid,))
             return n

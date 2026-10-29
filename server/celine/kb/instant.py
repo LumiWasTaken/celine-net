@@ -233,6 +233,7 @@ class Indexer:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self.ready = False
+        self.error: str | None = None       # why the last build failed
         self.vocab = VocabCache()
 
     def open(self) -> None:
@@ -274,14 +275,15 @@ class Indexer:
                     log.info("instant index built",
                              extra={"event": "kb.instant.built", "kb": self.path.stem,
                                     "seconds": round(time.perf_counter() - t0, 1)})
-                self.ready = True
+                self.ready, self.error = True, None
                 while drain(conn, BATCH * 5):
                     time.sleep(0.02)
                 # warm the typo vocabulary so the first zero-hit search is quick
                 self.vocab.get(conn, generation(conn))
             finally:
                 conn.close()
-        except Exception as e:          # never take the server down; search falls back
+        except Exception as e:          # never take the server down; a search says it
+            self.error = str(e)
             log.warning("instant index failed",
                         extra={"event": "kb.instant.failed", "kb": self.path.stem,
                                "error": str(e)})

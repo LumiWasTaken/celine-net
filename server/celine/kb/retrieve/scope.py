@@ -263,7 +263,7 @@ def resolve(kbs, *, kb_ids: str | list[str] | None = None,
     if not chat_kbs:
         raise ValueError(f"no chat source called {kb_ids!r}")
     scope = Scope(kbs=[k.id for k in chat_kbs])
-    me_words = ME_WORDS | {w.casefold() for w in (me_names or set())}
+    me_words = ME_WORDS | set(me_names or ())
 
     rng = parse_when(when, now)
     if rng:
@@ -286,7 +286,7 @@ def resolve(kbs, *, kb_ids: str | list[str] | None = None,
     if people:
         scope.senders = {}
         for name in people:
-            if str(name).strip().casefold() in me_words:
+            if name in me_words:
                 scope.me = True
                 scope.labels.append(f"person: {name} → you")
                 continue

@@ -9,16 +9,9 @@ If it has a note at `skills/<name>.md` in its notebook, it is appended to the re
 """
 from __future__ import annotations
 
-import logging
 from typing import Annotated
 
-from . import META, SEP, ToolContext, ToolResult, guide_text, tool
-
-log = logging.getLogger(__name__)
-
-# Skill notes longer than this (characters) are truncated: they ride inside the same
-# tool result as the guide.
-_NOTE_MAX_CHARS = 4000
+from . import META, ToolContext, ToolResult, guide_text, tool
 
 
 def skill_note_path(cfg, skill_name: str):
@@ -29,9 +22,8 @@ def skill_note_path(cfg, skill_name: str):
 def read_skill_note(cfg, skill_name: str) -> str | None:
     """Read skills/<name>.md from the notebook, if it exists.
 
-    Returns the file text (capped to _NOTE_MAX_CHARS), or None when there is no note.
-    Path traversal is blocked: the resolved path must stay inside the notebook.
-    OS errors are swallowed and logged.
+    Returns the file text, or None when there is no note; a note it cannot read says
+    why. Path traversal is blocked: the resolved path must stay inside the notebook.
     """
     root = cfg.her.notebook.resolve()
     p = skill_note_path(cfg, skill_name).resolve()
@@ -39,18 +31,10 @@ def read_skill_note(cfg, skill_name: str) -> str | None:
         return None
     try:
         text = p.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        log.debug("could not read skill note %s", p, exc_info=True)
-        return None
+    except OSError as e:
+        return f"skills/{skill_name}.md could not be read: {e}"
     if not text.strip():
         return None
-    if len(text) > _NOTE_MAX_CHARS:
-        # cut at a line boundary inside the budget
-        cut = text[:_NOTE_MAX_CHARS]
-        nl = cut.rfind("\n")
-        if nl > _NOTE_MAX_CHARS // 2:
-            cut = cut[:nl]
-        return cut + f"\n\n[truncated; full note: notebook__read(path=\"skills/{skill_name}.md\")]"
     return text
 
 
@@ -78,7 +62,7 @@ class Skills:
         it offers now (such as its presets), and your notes on it when you keep any.
         The skill does not have to be loaded."""
         from ..turns import loads
-        key = str(name or "").strip().lower().split(SEP)[0]
+        key = name
         if key == META:
             carried = await loads.select(ctx.store, self.cfg, self.registry,
                                          ctx.conversation_id, None)
@@ -116,7 +100,7 @@ class Skills:
         you use them. Load one when the work needs it."""
         from ..turns import loads
         from .gating import down_why, is_enabled, overrides_for, reason
-        key = str(name or "").strip().lower().split(SEP)[0]
+        key = name
         here = await self._here(ctx)
         if key not in here:
             return ToolResult(content=f"No skill called {name!r} here. The skills are: "
@@ -131,6 +115,19 @@ class Skills:
             return ToolResult(content=self.cfg.substitute(
                 f"{key} is off {where}, so it cannot load. Ask {{{{username}}}} "
                 f"to turn it on, or work without it."), is_error=True)
+        carried = await loads.select(ctx.store, self.cfg, self.registry,
+                                     ctx.conversation_id, None)
+        if key not in carried.skills and key not in loads.CORE:
+            from ..turns import tokens
+            cost = loads.schema_cost(tokens.counter(), here[key])
+            have = {n: carried.costs.get(n, 0) for n in carried.skills}
+            budget = carried.budgets["tools"]
+            if sum(have.values()) + cost > budget:
+                listed = ", ".join(f"{n} ({t})" for n, t in have.items()) or "none"
+                return ToolResult(content=(
+                    f"{key} is not loaded: its tools take {cost} tokens, the tools budget "
+                    f"is {budget}, and the skills loaded now take {sum(have.values())}: "
+                    f"{listed}."), is_error=True, display={"skill": key, "no_room": True})
         await loads.touch(ctx.store, ctx.conversation_id, "skill", [key])
         return ToolResult(content=f"Loaded {key}. Its tools are in your list from your "
                                   f"next step.", display={"skill": key})

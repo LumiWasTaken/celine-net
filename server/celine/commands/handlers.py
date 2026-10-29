@@ -216,7 +216,7 @@ command("model", "Which model answers in this conversation. Checked against the 
 
 
 # ---- /usage -------------------------------------------------------------------------------
-PARTS = ("system", "summary", "warning", "tool_schemas", "history_verbatim",
+PARTS = ("system", "summary", "tool_schemas", "history_verbatim",
          "history_aged", "reserve_output", "margin")
 
 

@@ -201,9 +201,10 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
                       config=cfg, emit=None)
     (cfg.her.notebook / "skills").mkdir(parents=True)
-    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night")
+    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night\n" * 500)
     out = await meta.read_guide(ctx, name="web")
     assert out.content.startswith("# web\n\n") and "searx is slow at night" in out.content
+    assert out.content.endswith(("searx is slow at night\n" * 500).strip()), "the whole note"
     assert reg.skills["web"].guide.body[:40] in out.content
     mission = await conversations.create(store, kind="mission")
     out = await meta.read_guide(ToolContext(conversation_id=mission, turn_id="t",
@@ -214,6 +215,10 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     assert "[notes]" in reg.index(cfg, carried).split("- web")[1].split("\n")[0]
     out = await meta.read_guide(ctx, name="skills")
     assert not out.is_error and out.content == reg.index(cfg, carried)
+    for near in ("Web", " web", "web__search"):
+        out = await meta.read_guide(ctx, name=near)
+        assert out.is_error and out.content.startswith(f"No skill called {near!r} here"), near
+        assert (await meta.load(ctx, name=near)).is_error, near
 
 
 async def test_read_guide_brings_the_live_presets_and_the_guide_names_none(store, cfg,
@@ -251,3 +256,23 @@ def test_a_source_without_its_account_is_not_connected():
     assert status_of(services, "whatsapp", up) == "up"
     assert status_of(services, "whatsapp", NS(status="dead")) == "dead"
     assert status_of(services, "shell", up) == "up"
+
+
+async def test_a_failed_prompt_part_or_message_context_reaches_her(cfg):
+    class Broken:
+        name = "broken"
+
+        async def prompt_fragment(self, ctx):
+            raise RuntimeError("its notes file is gone")
+
+        async def message_context(self, ctx, message):
+            raise RuntimeError("its index is locked")
+    reg = Registry(cfg=cfg)
+    reg.skills["broken"] = Broken()
+    ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=None,
+                      config=cfg, emit=None)
+    assert await reg.prompt_fragments(ctx, {"broken"}) == [
+        "The broken skill's part of this prompt failed: its notes file is gone"]
+    text, report = await reg.message_context(ctx, {})
+    assert text == "The broken skill's context for this message failed: its index is locked"
+    assert report == {"broken": {"error": "its index is locked"}}

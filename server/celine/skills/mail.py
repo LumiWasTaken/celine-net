@@ -319,15 +319,18 @@ def _parse(raw: bytes) -> email.message.EmailMessage:
 def _h(msg, name: str) -> str:
     try:
         return " ".join(str(msg.get(name) or "").split())
-    except Exception:                           # noqa: BLE001 - a malformed header
-        return ""
+    except Exception as e:                      # noqa: BLE001 - a malformed header
+        return f"(unreadable {name} header: {e})"
 
 
 def _date(msg, tz) -> str:
-    try:
-        d = parsedate_to_datetime(msg.get("date"))
-    except Exception:                           # noqa: BLE001 - missing or malformed
+    raw = msg.get("date")
+    if not raw:
         return "no date"
+    try:
+        d = parsedate_to_datetime(raw)
+    except Exception:                           # noqa: BLE001 - malformed
+        return f"unreadable date {str(raw)!r}"
     if d.tzinfo is None:
         d = d.replace(tzinfo=timezone.utc)
     return f"{d.astimezone(tz):%Y-%m-%d %H:%M}"
@@ -348,14 +351,16 @@ def _body(msg) -> str:
     part = msg.get_body(preferencelist=("plain", "html"))
     if part is None:
         return ""
+    note = ""
     try:
         text = part.get_content()
-    except Exception:                           # noqa: BLE001 - an unknown charset
+    except Exception as e:                      # noqa: BLE001 - an unknown charset
         text = (part.get_payload(decode=True) or b"").decode("utf-8", "replace")
+        note = f"[The text could not be decoded ({e}); shown as UTF-8.]\n\n"
     if part.get_content_type() == "text/html":
         from ..kb.documents_extract import html_text
         text = "\n\n".join(s.text for s in html_text(text).segments)
-    return text.strip()
+    return note + text.strip()
 
 
 def _files(msg) -> list:
@@ -664,8 +669,7 @@ class Email:
         """Mark messages read or unread, or flag and unflag them. Reading a message
         already marks it read. Returns: what changed."""
         flag = {"read": ("+", "\\Seen"), "unread": ("-", "\\Seen"),
-                "flagged": ("+", "\\Flagged"), "unflagged": ("-", "\\Flagged")}.get(
-            state.strip().lower())
+                "flagged": ("+", "\\Flagged"), "unflagged": ("-", "\\Flagged")}.get(state)
         if flag is None:
             return ToolResult(content="state is read, unread, flagged or unflagged.",
                               is_error=True)
@@ -677,7 +681,7 @@ class Email:
             done, gone = await self._change(ids, each)
         except MailError as e:
             return ToolResult(content=str(e), is_error=True)
-        return self._said(f"marked {state.strip().lower()}", done, gone)
+        return self._said(f"marked {state}", done, gone)
 
     @tool(read_only=False, open_world=True)
     async def move(self, ctx: ToolContext,
@@ -764,8 +768,7 @@ class Email:
         except MailError as e:
             return ToolResult(content=str(e), is_error=True)
         files = _files(msg)
-        p = next((f for f in files if f.get_filename() == name), None) or \
-            next((f for f in files if f.get_filename().lower() == name.strip().lower()), None)
+        p = next((f for f in files if f.get_filename() == name), None)
         if p is None:
             have = ", ".join(f.get_filename() for f in files) or "none"
             return ToolResult(content=f"{folder}:{uid} has no attachment {name!r}. Its "

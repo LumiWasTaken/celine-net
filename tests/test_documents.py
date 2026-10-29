@@ -159,6 +159,14 @@ async def test_celines_tools_search_and_read_on(tmp_path, monkeypatch):
     assert (await sk.read(tc, document="does not exist")).is_error
     before = await sk.read(tc, document="reise", direction="before", max_tokens=600)
     assert "Tag 0:" in before.content and "None" not in before.content
+    from celine.kb import semantic
+
+    def broken(*_a, **_k):
+        raise semantic.SemanticError("the embedding server refused")
+    monkeypatch.setattr(type(kb), "semantic_hits", broken)
+    out = (await sk.search(tc, query="minsk blini")).content
+    assert ("Semantic topic search failed (the embedding server refused); these are the "
+            "word search hits.") in out and "[documents:" in out
 
 
 def test_the_largest_upload_is_an_advanced_setting(tmp_path):
@@ -359,3 +367,18 @@ def test_a_scoped_search_narrows_before_the_result_cap(tmp_path):
     mine = kb.find_item("mine.txt")["id"]
     hits = kb.search_segments("segel", item_ids=[mine])
     assert [g["item"]["id"] for g in hits["items"]] == [mine]
+
+
+def test_the_description_is_stored_as_the_model_wrote_it():
+    from celine.backends.base import Done, TextDelta
+    from celine.kb.documents_describe import default_describer
+    said = '**Description:** "A long  letter.\n\nIt goes on." ' + "and on. " * 400
+
+    class Bound:
+        answered = SimpleNamespace(model="far-small")
+
+        async def stream(self, messages, tools):
+            yield TextDelta(said)
+            yield Done(reason="stop")
+    kb = SimpleNamespace(tasks=None, llm=SimpleNamespace(bind=lambda *a, **k: Bound()))
+    assert default_describer(kb)("system", "user") == (said, "far-small")

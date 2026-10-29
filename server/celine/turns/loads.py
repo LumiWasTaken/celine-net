@@ -115,7 +115,8 @@ class Carried:
     switch here); `skills`: the skills loaded, in registry order; `others`: the skills
     offered here and not loaded, with why (`off`: every tool is off; `no room`: over the
     tools budget; empty: not needed now); `since`: turns since each loaded note or skill
-    was touched, by (kind, name); `costs`: each loaded skill's tool schemas in tokens;
+    was touched, by (kind, name); `costs`: the tool schemas in tokens of each skill loaded or
+    left out for room;
     `budgets`: notes as tokens of the window, tools as set."""
     turn: int = 0
     notes: list[dict] = field(default_factory=list)
@@ -391,6 +392,12 @@ async def offered(registry, store, cid: str, turn_id: str | None = None
     return {n: specs for n, specs in out.items() if specs}
 
 
+def schema_cost(counter, specs) -> int:
+    """A skill's tool schemas in tokens, as the tools budget counts them."""
+    return counter.estimate(json.dumps([s.as_wire() for s in specs], ensure_ascii=False),
+                            "schema")
+
+
 async def _skills(store, cfg, registry, cid: str, rows: dict, turn: int, idle: int,
                   budget: int, counter, new: set[str]
                   ) -> tuple[list[str], dict[str, str], dict, dict[str, int]]:
@@ -417,14 +424,12 @@ async def _skills(store, cfg, registry, cid: str, rows: dict, turn: int, idle: i
             others[name] = ""
     used, keep, costs = 0, {}, {}
     for name in sorted(wanted, key=lambda n: (n not in core, -wanted[n])):
-        cost = counter.estimate(json.dumps([s.as_wire() for s in here[name]],
-                                           ensure_ascii=False), "schema")
+        costs[name] = cost = schema_cost(counter, here[name])
         if name not in core and used + cost > budget:
             others[name] = "no room"
             continue
         used += cost
         keep[("skill", name)] = wanted[name]
-        costs[name] = cost
     return [n for n in registry.skills if ("skill", n) in keep], others, keep, costs
 
 

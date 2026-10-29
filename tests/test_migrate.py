@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 6
+LATEST = 7
 
 
 def _version(db) -> int:
@@ -127,6 +127,7 @@ def test_a_run_has_one_try(tmp_path):
     c = sqlite3.connect(db)
     cols = {r[1] for r in c.execute("PRAGMA table_info(runs)")}
     assert not cols & {"attempt", "attempts", "not_before"}
+    assert "tries" not in {r[1] for r in c.execute("PRAGMA table_info(work)")}
     assert {"conversation_id", "started_at", "finished_at"} <= cols
     c.close()
 

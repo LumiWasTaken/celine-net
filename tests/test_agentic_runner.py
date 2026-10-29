@@ -1,6 +1,5 @@
-"""The turn loop: concurrent tool calls, the repeat guard and the ledger it seeds after a
-restart, the wall clock, Stop, and the citation check. Fake backend, tiny
-synthetic archive."""
+"""The turn loop: concurrent tool calls, every call runs, the wall clock, Stop, and the
+citation check. Fake backend, tiny synthetic archive."""
 from __future__ import annotations
 
 from chat_fixtures import Script, user_says
@@ -15,7 +14,6 @@ from celine.backends.base import Done, TextDelta, ToolCallDelta
 from celine.boot import load
 from celine.core.bus import EventBus
 from celine.skills import Registry, ToolResult, tool
-from celine.turns import ledger
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 from celine.turns import store as turns
@@ -141,7 +139,25 @@ async def test_a_bad_citation_is_marked_invalid(store, cfg, archive):
     assert {f["reason"] for f in checked[0]["invalid"]} == {"quote", "not_shown"}
     rewritten = [e["data"] for e in events if e["type"] == "message.rewritten"]
     assert [r["text"] for r in rewritten] == [final["content"]], "the marks, once"
-    assert snap["turn"]["state"] == "done" and ledger._open == {}
+    assert snap["turn"]["state"] == "done"
+
+
+async def test_a_citation_check_that_breaks_tells_the_user_and_keeps_the_text(
+        store, cfg, archive, monkeypatch):
+    from celine.turns import verify
+
+    def broken(*a, **kw):
+        raise RuntimeError("index gone")
+    monkeypatch.setattr(verify, "check", broken)
+    b = Script([
+        [_find(), Done(reason="tool_calls")],
+        [TextDelta("Alex said it [[whatsapp:1]]."), Done(reason="stop")],
+    ])
+    snap, events, final = await _turn(store, cfg, archive, b)
+    assert final["content"] == "Alex said it [[whatsapp:1]].", "no text rewrite"
+    [err] = [e["data"] for e in events if e["type"] == "error"]
+    assert err["code"] == "citation_check_failed" and "index gone" in err["message"]
+    assert snap["turn"]["state"] == "done"
 
 
 def test_a_tool_name_written_as_a_citation_is_marked_invalid():
@@ -149,24 +165,6 @@ def test_a_tool_name_written_as_a_citation_is_marked_invalid():
     text = "BAD BOY [[chat_archive__look_up: person discord:265 BAD BOY]] said hi [[discord:7]]."
     assert verify.mark_tool_citations(text) == \
         "BAD BOY [[chat_archive__look_up|invalid]] said hi [[discord:7]]."
-
-
-def test_the_ledger_seeds_from_stored_calls_after_a_restart():
-    led = ledger.Ledger("t")
-    led.seed([("chat_archive__search", '{"queries": ["a"]}', "> [whatsapp:1] x", "ok"),
-              ("chat_archive__search", '{"queries": ["a"]}', "same as call 1.", "ok"),
-              ("chat_archive__read_session", '{"ref": "whatsapp:1"}',
-               "[whatsapp:1] [whatsapp:2]", "ok")])
-    assert led.searches == 1 and len(led.calls) == 2, "a repeat is not a call"
-    assert led.shown == {"whatsapp:1": 1, "whatsapp:2": 2}
-    assert led.same_as(led.spec("search", {"queries": [" A "]})).n == 1
-    again = ledger.Ledger("t")
-    again.seed([("chat_archive__search", '{"scope": ["all"]}',
-                 f"{ledger.BLOCKED}: 6 searches in a row found nothing new", "error"),
-                ("chat_archive__search", '{"scope": ["whatsapp:1"]}',
-                 "Not run: you made this exact call 2 times in this turn", "error")])
-    assert again.searches == 0 and again.dry_streak() == (1, True)
-    assert len(again.calls) == 1, "a call refused before the tool never reached the ledger"
 
 
 async def test_only_non_mutating_calls_of_one_reply_run_concurrently(store, cfg):
@@ -181,56 +179,45 @@ async def test_only_non_mutating_calls_of_one_reply_run_concurrently(store, cfg)
         assert mine == "a done" if first == "a" else "w done" not in mine, "one after another"
 
 
-async def test_the_same_call_with_the_same_result_is_not_run_a_third_time(store, cfg):
-    """A model that repeats one call with the same result is stopped."""
+async def test_the_same_call_with_the_same_result_runs_every_time(store, cfg):
+    """A call she repeats runs again, with tools offered on every step."""
     t = T()
-    b = Script([_call(i, "t__same", {"q": "Pizza"} if i % 2 else {"q": " pizza "})
-                for i in range(3)] + [[TextDelta("Nothing found."), Done(reason="stop")]])
+    b = Script([_call(i, "t__same", {"q": "pizza"}) for i in range(4)]
+               + [[TextDelta("Nothing found."), Done(reason="stop")]])
     _, _, final = await _turn(store, cfg, _reg(t), b)
-    assert t.runs == 2 and (await _tool_results(store))[2].startswith("Not run:")
-    assert b.tools == [True, True, True, False] and final["content"] == "Nothing found."
+    assert t.runs == 4 and await _tool_results(store) == ["nothing found"] * 4
+    assert b.tools == [True] * 5 and final["content"] == "Nothing found."
 
 
-async def test_identical_calls_of_one_step_run_once(store, cfg):
+async def test_a_malformed_argument_fails_with_its_reason(store, cfg):
+    """A value of the wrong type is not converted: the call fails with the schema's
+    reason and the tool never runs."""
+    t = T()
+    b = Script([_call(0, "t__same", {"q": 5}), [TextDelta("k"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(t), b)
+    assert t.runs == 0
+    assert await _tool_results(store) == ["invalid arguments: q is a string"]
+    state = await store.read(lambda c: c.execute("SELECT state FROM tool_calls").fetchone()[0])
+    assert state == "error"
+
+
+async def test_identical_calls_of_one_step_each_run(store, cfg):
     t = T()
     calls = [ToolCallDelta(index=i, id=f"s{i}", name="t__same", arguments='{"q": "pizza"}')
              for i in range(2)] + [Done(reason="tool_calls")]
     await _turn(store, cfg, _reg(t), Script([calls, [TextDelta("k"), Done(reason="stop")]]))
-    assert t.runs == 1
-    assert (await _tool_results(store))[-2:] == ["nothing found",
-                                                 "same as the call above in this step."]
+    assert t.runs == 2
+    assert (await _tool_results(store))[-2:] == ["nothing found", "nothing found"]
 
 
-async def test_when_her_time_is_up_she_answers_in_a_last_step_without_tools(store, cfg):
-    """A turn that hits the wall clock mid-search still answers."""
+async def test_when_her_time_is_up_the_turn_ends_capped(store, cfg):
+    """A turn that hits the wall clock mid-search ends with its reason: no hidden note,
+    no extra step."""
     cfg.settings.general.update({"turn_wall_clock_seconds": 0.4, "last_step_seconds": 5})
     t = T()
-    b = Script([_call(0, "t__hang", {}),
-                [TextDelta("Here is what I found so far."), Done(reason="stop")]])
+    b = Script([_call(0, "t__hang", {}), [TextDelta("never asked"), Done(reason="stop")]])
     t0 = anyio.current_time()
-    snap, _, final = await _turn(store, cfg, _reg(t), b)
+    snap, _, _ = await _turn(store, cfg, _reg(t), b)
     assert anyio.current_time() - t0 < 2 and t.runs == 0
-    assert b.tools == [True, False] and final["content"] == "Here is what I found so far."
-    assert (snap["turn"]["state"], snap["turn"]["reason_code"]) == ("done", "time_up")
-
-
-async def test_a_stop_ends_the_last_step_too(store, cfg):
-    cfg.settings.general.update({"turn_wall_clock_seconds": 0.2, "last_step_seconds": 5})
-
-    class StopInLast(Script):
-        async def stream(self, messages, tools):
-            if not tools:                        # the last step: the user presses Stop
-                await turns.request_abort(store, cid)
-                token.cancel()
-            async for ev in super().stream(messages, tools):
-                yield ev
-    b = StopInLast([_call(0, "t__hang", {}),
-                    [TextDelta("too late"), Done(reason="stop")]])
-    cid = await conversations.create(store)
-    await user_says(store, cid, "go")
-    turn = await turns.claim(store, "w")
-    token = Token(turn["id"])
-    await run_turn(turn, store, cfg, b, EventBus(), token, _reg(T()))
-    snap = await view.snapshot(store, cid)
-    assert b.tools == [True, False] and snap["turn"]["state"] == "aborted"
-    assert "too late" not in [m["content"] for m in snap["messages"]]
+    assert len(b.calls) == 1, "no step after the time is up"
+    assert (snap["turn"]["state"], snap["turn"]["reason_code"]) == ("capped", "wall_clock")

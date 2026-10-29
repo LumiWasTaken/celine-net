@@ -81,8 +81,6 @@ class Policy:
     never_age_below: int = 300     # small results are cheap and often load-bearing
     never_age: tuple[str, ...] = ("notebook__",)
     summary_cap: int = 3000        # tokens of the summary
-    warn_at: float = 0.60          # request share of the window from which it is told
-                                   # that a summary is coming
     summary_input_share: float = 0.5   # of the window, per summary request
 
 
@@ -345,9 +343,6 @@ class _Plan:
         self.mark = self.pos.get(view["aged"] or "", -1)
         self.limit = limit
         self.opening = ""           # what goes before its first message (history)
-        self.warning = 0            # per cent of the window in use, once past warn_at
-        # where it keeps what it must: "report" with read access
-        self.keep_in: str | None = "notebook"
         # the refs it cited in its replies: an aged result keeps those lines whole
         self.cited = frozenset(r for it in items if it.role == "assistant"
                                for r in compact.refs_in(it.content))
@@ -497,20 +492,7 @@ class _Plan:
                 f"Earlier in this conversation (a summary of {c['covers_messages']} "
                 f"older messages; {{{{username}}}} can still see the messages "
                 f"themselves):\n{c['text']}"))
-        if self.warning:
-            parts.append(self.warning_text())
         return "\n\n".join(parts)
-
-    def warning_text(self) -> str:
-        """The line that tells it a summary is coming; empty below warn_at."""
-        if not self.warning:
-            return ""
-        keep = {"report": " Say what you must keep in your report.",
-                "notebook": " Write what you must keep to your notebook now."}.get(
-                    self.keep_in or "", "")
-        return (f"Context: about {self.warning} % of your window is in use. The older "
-                f"messages of this conversation become a summary soon and their details "
-                f"go out of view.{keep}")
 
     def messages(self, base: str) -> list[dict]:
         sys = self.system(base)
@@ -639,16 +621,8 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
                 "results": n, "tokens_saved": saved, "scope": mode,
                 "tokens_before": now_used})
 
-    # 4. the warning: past warn_at it is told a summary is coming, in steps of 5 %
-    # so the line stays the same between steps
     msgs = plan.messages(system)
     est = counter.request(msgs, tools)
-    if est > policy.warn_at * win:
-        from ..sub_agents.skill import reads_only
-        plan.warning = int(est * 100 / win) // 5 * 5
-        plan.keep_in = "report" if await reads_only(store, cid) else "notebook"
-        msgs = plan.messages(system)
-        est = counter.request(msgs, tools)
 
     left_out = [{"name": p.name, "why": p.why, "tokens": p.tokens}
                 for p in plan.tail if p.why]
@@ -656,14 +630,12 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
                  for c in it.calls or [] if _agable(c, policy, counter))
     verb = sum(plan.cost(it) for it in plan.items if not plan.aged(it))
     aged_t = sum(plan.cost(it) for it in plan.items if plan.aged(it))
-    warning = plan.warning_text()
-    warning_t = counter.estimate(warning) if warning else 0
     summary_t = counter.estimate(plan.system(system)) - counter.estimate(system) \
-        - warning_t if plan.compaction else 0
+        if plan.compaction else 0
     tail_t = counter.estimate(plan.tail_text())
     parts = {"system": counter.estimate(system) + tokens.PER_MESSAGE,
              "summary": max(0, summary_t), "tool_schemas": schema,
-             "warning": warning_t, "tail": tail_t,
+             "tail": tail_t,
              "history_verbatim": verb, "history_aged": aged_t,
              "aged_results": aged_n, "messages_sent": len(msgs),
              "messages_on_version": len(plan.chain),

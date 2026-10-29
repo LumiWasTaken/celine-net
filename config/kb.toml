@@ -78,7 +78,6 @@ embed_header     = false    # embed the header (chat, people, date) too; it is a
 types    = ["photo", "sticker"]   # message media types whose image files get photo descriptions
 rate_per_minute = 0     # images started per minute; 0 = no limit
 batch    = 20           # images picked per database read
-max_attempts = 3        # a failing image is tried this often, then left alone
 max_mb   = 15           # larger files are skipped
 poll_minutes = 5        # with auto: how often to look for new images
 # A decrypted msgstore.db: exact file hashes and phone file names for the folder matcher

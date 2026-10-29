@@ -19,7 +19,6 @@ TEXT_MAX = 60       # characters of a scheduled message's text in its instructio
 LISTED = 5          # scheduled messages listed there, the rest a count
 PER_COUNTERPART = 3  # threads intercom__read lists per counterpart, the rest a count
 AWAY = ("background", "mission")     # kinds where start_chat is offered
-TITLE_WORDS = 4     # a chat's title names its topic in 2 to 4 words (turns/title.py)
 COVERS = timedelta(hours=24)    # a thread to the user from the same source this recent
 ACTIONS = 6         # the source's last tool calls the new chat's opening names
 WAIT_MAX = 600      # seconds send(wait=true) holds its turn for the user's answer at most
@@ -136,9 +135,7 @@ class IntercomSkill:
         new_thread starts one. With in or at it lands
         later; to "me" that is a reminder that starts your turn then, or joins the one
         running."""
-        from ..skills.web import uncite
-        text = uncite(text).strip()
-        if not text:
+        if not text.strip():
             return ToolResult(content="text is the message.", is_error=True)
         if not to.strip() and reply_to is None:
             return ToolResult(content="to says who it goes to, or reply_to answers a "
@@ -156,7 +153,7 @@ class IntercomSkill:
                 return ToolResult(content='until is like "05:00" or "2 h".', is_error=True)
         from .. import guard
         if not guard.enabled(self.cfg) and any(
-                w.strip().casefold() in GUARD_NAMES for w in to.split(",")):
+                w.strip() in GUARD_NAMES for w in to.split(",")):
             return ToolResult(content="Bastet is off; nobody reads this.", is_error=True)
         try:
             out = await self.app.intercom.send(
@@ -298,31 +295,17 @@ class IntercomSkill:
                               "a headline."],
         text: Annotated[str, "What {{username}} reads first: what happened and what it "
                              "needs from them, short and complete."],
-        different: Annotated[bool, "True when start_chat listed what came from here "
-                                   "in the last 24 h and yours is another matter."] = False,
     ) -> ToolResult:
         """Start a chat for {{username}} about something they need to act on or know now.
         Check intercom__read first: when they have it already (a thread, an open bug
         report), add to that thread instead. Your text is your first message in the new
         chat and waits for them on the intercom; when they answer, you go on there."""
         from ..conversations import store as conversations, tree
-        title, text = " ".join(title.split()), text.strip()
-        if not title or not text:
+        if not title.strip() or not text.strip():
             return ToolResult(content="title and text are both needed.", is_error=True)
-        if len(title.split()) > TITLE_WORDS:
-            return ToolResult(content=f"\"{title}\" is a sentence. The title names the "
-                                      "topic in 2 to 4 plain words, like \"Shell wedge\".",
-                              is_error=True)
         src = ctx.conversation_id
         since = iso(datetime.now(timezone.utc) - COVERS)
         has = await ctx.store.read(lambda c: covered(c, src, since, self.tz))
-        if has and not different:
-            return ToolResult(content=f"Not started yet. In the last 24 h {self.cfg.user} "
-                                      "got this from here:\n- " + "\n- ".join(has) +
-                                      "\nWhen one of them is this matter, add to it with "
-                                      "intercom__send(reply_to=<number>). When yours is "
-                                      "another matter, call start_chat again with "
-                                      "different=true.", is_error=True)
         new = await conversations.create(ctx.store, title=title)
 
         def first(c):
@@ -334,8 +317,10 @@ class IntercomSkill:
         # from the new chat, so the user's answer lands there
         out = await self.app.intercom.send(f"agent:{new}", "user", text, subject=title,
                                            data={"chat": new, "from": src})
+        listed = (f"\nIn the last 24 h {self.cfg.user} also got this from here:\n- "
+                  + "\n- ".join(has)) if has else ""
         return ToolResult(content=f"Started the chat \"{title}\" (/chat/{new}); it waits "
-                                  f"for {self.cfg.user} as #{out['intercom_id']}.",
+                                  f"for {self.cfg.user} as #{out['intercom_id']}.{listed}",
                           display={"chat": new, "id": out["intercom_id"]})
 
     @tool(read_only=False, destructive=True)

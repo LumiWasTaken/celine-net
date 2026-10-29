@@ -1,4 +1,4 @@
-"""The work queue (work.py) and its pause (hold.py): leases, tries, deferral until a
+"""The work queue (work.py) and its pause (hold.py): leases, one try, deferral until a
 host is back, and no turn claimed while no chat host answers. Fixed clocks, fake
 servers."""
 from __future__ import annotations
@@ -42,7 +42,7 @@ def s(n: float) -> timedelta:
 
 async def _row(store, wid: int) -> dict:
     return await store.read(lambda c: dict(c.execute(
-        "SELECT state, tries, error, lease_worker FROM work WHERE id=?", (wid,)).fetchone()))
+        "SELECT state, error, lease_worker FROM work WHERE id=?", (wid,)).fetchone()))
 
 
 def _gateway(tmp_path, monkeypatch, roles, events=None):
@@ -92,7 +92,7 @@ async def test_a_lease_that_runs_out_puts_the_item_back(store):
     assert (await _row(store, wid))["state"] == "done"
 
 
-async def test_a_real_error_fails_after_three_tries_with_its_reason(store):
+async def test_a_real_error_fails_at_once_with_its_reason(store):
     now = [T0]
     pool = work.Pool(store, clock=lambda: now[0])
 
@@ -100,17 +100,12 @@ async def test_a_real_error_fails_after_three_tries_with_its_reason(store):
         raise RuntimeError("the answer was not JSON")
     pool.handle("x", (), boom)
     wid = await pool.put("x", {})
-    states = []
-    for _ in range(work.MAX_TRIES):
-        item = await work.claim(store, "w", ["x"], now=now[0])
-        states.append(await pool.run_one(item, "w"))
-        assert await work.claim(store, "w", ["x"], now=now[0] + s(1)) is None, "not at once"
-        now[0] += s(work.RETRY_SECONDS)
-    assert states == ["queued", "queued", "failed"]
+    item = await work.claim(store, "w", ["x"], now=now[0])
+    assert await pool.run_one(item, "w") == "failed"
     row = await _row(store, wid)
-    assert (row["state"], row["tries"]) == ("failed", 3)
+    assert row["state"] == "failed"
     assert row["error"] == "RuntimeError: the answer was not JSON"
-    assert await work.claim(store, "w", ["x"], now=now[0]) is None
+    assert await work.claim(store, "w", ["x"], now=now[0] + s(3600)) is None
 
 
 async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
@@ -129,7 +124,6 @@ async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
         wid = await pool.put("title", {"conversation_id": "c1"})
         await until(async_state(store, wid, "deferred"))
         assert ran == [], "no call to a host that is down"
-        assert (await _row(store, wid))["tries"] == 0, "waiting spends no try"
         up["lan"] = True
         await ping()
         await until(async_state(store, wid, "done"))
@@ -258,7 +252,7 @@ def _titler(store, by_role):
     return dispatcher_mod.Dispatcher(store, load(), EventBus(), None, None, llm=llm)
 
 
-async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_error(
+async def test_a_title_waits_for_a_host_and_stays_empty_on_an_error(
         store, tmp_path, monkeypatch):
     from celine.backends.base import BackendError, Done, TextDelta
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles={})
@@ -266,23 +260,20 @@ async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_e
     cid = await _exchange(store, 1)
     d = _titler(store, {"small": _Raises(none), "chat": _Raises(none)})
     d.work.clock = lambda: T0
-    wid = await d.work.put("title", {"conversation_id": cid})
+    await d.work.put("title", {"conversation_id": cid})
     item = await work.claim(store, "w", ["title"], now=T0)
     assert await d.work.run_one(item, "w") == "deferred", "no host answered: it waits"
     assert not await conversations.title(store, cid)
-    assert (await _row(store, wid))["tries"] == 0
 
-    d = _titler(store, {"small": _Raises(none),
-                        "chat": FakeBackend([TextDelta(""), Done(reason="stop")])})
+    d = _titler(store, {"small": FakeBackend([TextDelta(""), Done(reason="stop")])})
     await d._title(cid)
-    assert await conversations.title(store, cid) == "where did noor go", \
-        "a model answered with nothing: the first line, not another wait"
+    assert not await conversations.title(store, cid), "a model answered with nothing"
 
     cid = await _exchange(store, 2)
     bad = BackendError("bad request", retryable=False)
-    d = _titler(store, {"small": _Raises(bad), "chat": _Raises(bad)})
+    d = _titler(store, {"small": _Raises(bad)})
     await d._title(cid)
-    assert await conversations.title(store, cid) == "where did noor go"
+    assert not await conversations.title(store, cid), "a failure leaves no title"
 
 
 async def test_her_appraisal_is_a_work_item_and_a_stale_one_makes_no_call(

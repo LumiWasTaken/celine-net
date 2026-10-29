@@ -678,6 +678,10 @@ class ChatKB:
     def search_ready(self) -> bool:
         return self.indexer.ready
 
+    @property
+    def search_error(self) -> str | None:
+        return self.indexer.error
+
     def ix_filters(self, query: Query, *, chat: int | None = None,
                    people: list[int] | None = None, ts_from: int | None = None,
                    ts_to: int | None = None) -> instant.Filters | None:

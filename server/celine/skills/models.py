@@ -98,9 +98,9 @@ class Models:
                       conversation_id=ctx.conversation_id, turn_id=ctx.turn_id,
                       label=f"models__ask {model}", fallback=False)
         try:
-            text = (await complete(qb, wire, math.inf, errors=True) or "").strip()
+            text = await complete(qb, wire, math.inf, errors=True) or ""
         except BackendError as e:
-            return ToolResult(content=f"{model} failed: {str(e)[:300]}", is_error=True)
-        if not text:
+            return ToolResult(content=f"{model} failed: {e}", is_error=True)
+        if not text.strip():
             return ToolResult(content=f"{model} answered nothing.", is_error=True)
         return ToolResult(content=text, display={"model": model, "chars": len(text)})

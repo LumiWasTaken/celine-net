@@ -135,12 +135,9 @@ async def _seed(ctx: ToolContext) -> dict[str, int]:
                 "JOIN messages r ON r.id = tc.result_message_id "
                 "WHERE a.conversation_id = ? AND tc.name LIKE 'web\\_\\_%' ESCAPE '\\' "
                 "ORDER BY tc.rowid", (cid,))]
-        try:
-            for content in await store.read(fn):
-                for n, url in refs_in(content).items():
-                    found.setdefault(_canon(url), n)
-        except Exception:
-            pass
+        for content in await store.read(fn):
+            for n, url in refs_in(content).items():
+                found.setdefault(_canon(url), n)
     got = _numbers.setdefault(cid, found)       # a concurrent call may have won
     while len(_numbers) > _KEEP:
         _numbers.popitem(last=False)
@@ -190,35 +187,9 @@ def normalize(text: str) -> str:
     return SINGLE_WEB.sub(lambda m: f"[[web:{m[1]}]]", text)
 
 
-# a web citation as it may write it ([[web:3]], [web:3], [[web:3 | title]]) and the
-# 【3†source】 marks some models print (only that shape: 【注意】 is ordinary CJK text)
-_ANY_CITE = re.compile(r"[ \t]*(?:\[\[\s*web:\d+[^\]\n]*\]\]|(?<!\[)\[\s*web:\d+\s*\](?![\](])|"
-                       r"【\d+[^】\n]*†[^】\n]*】)")
-# [web:3](https://...): a link with a citation for its words keeps only the address
-_CITE_LINK = re.compile(r"\[\s*web:\d+\s*\]\((https?://[^)\s]+)\)")
-
-
-def uncite(text: str) -> str:
-    """Text it writes down (a note, a document, an artifact, a message) without web
-    citation marks: their numbers mean something only in its own conversation, and
-    {{username}} wants the facts in its words, not a list of sources."""
-    if not text or ("web:" not in text and "【" not in text):
-        return text
-    return _ANY_CITE.sub("", _CITE_LINK.sub(r"\1", text))
-
-
 def _label(url: str) -> str:
     host = urlsplit(url).hostname or "link"
     return host[4:] if host.startswith("www.") else host
-
-
-async def linked(ctx: ToolContext, text: str) -> str:
-    """Text for a note: each [[web:n]] (or [web:n]) of this conversation becomes the
-    page's link next to the fact; a mark with no page behind it goes, as in uncite."""
-    if not text or "web:" not in text:
-        return uncite(text)
-    table = {n: url for url, n in (await _seed(ctx)).items()}
-    return uncite(link(normalize(text), table))
 
 
 def link(text: str, table: dict[int, str]) -> str:
@@ -350,8 +321,8 @@ _TEXTUAL = ("text/plain", "text/markdown", "text/csv", "application/json", "text
 
 
 def extract(page: Page) -> dict[str, Any]:
-    """{title, text, date, author, kind} of a fetched page. Raises ToolRefused for a type
-    it cannot read."""
+    """{title, text, date, author, kind, problems} of a fetched page; problems are the
+    parts that could not be read. Raises ToolRefused for a type it cannot read."""
     ctype = page.ctype
     if _is_pdf(ctype, page.url) or page.body[:5] == b"%PDF-":
         return _pdf(page.body)
@@ -360,7 +331,7 @@ def extract(page: Page) -> dict[str, Any]:
         return _html(page.body, page.url)
     if ctype.startswith("text/") or ctype in _TEXTUAL or ctype.endswith("+json"):
         return {"title": None, "text": page.body.decode("utf-8", "replace"),
-                "date": None, "author": None, "kind": ctype}
+                "date": None, "author": None, "kind": ctype, "problems": []}
     raise ToolRefused(f"cannot read {ctype or 'this kind of file'} (HTML, PDF and text only)")
 
 
@@ -372,27 +343,27 @@ def _html(body: bytes, url: str) -> dict[str, Any]:
     text = trafilatura.extract(body, url=url, output_format="markdown",
                                include_tables=True, include_comments=False,
                                include_links=False, favor_recall=True, config=conf)
-    meta = None
+    meta, problems = None, []
     try:
         meta = trafilatura.extract_metadata(body.decode("utf-8", "replace"), default_url=url)
-    except Exception:
-        pass
+    except Exception as e:
+        problems.append(f"Its title, date and author could not be read ({e})")
     if not text:
-        text = _plain_html(body)
+        try:
+            text = _plain_html(body)
+        except Exception as e:
+            problems.append(f"Its text could not be read ({e})")
     return {"title": getattr(meta, "title", None), "text": text or "",
             "date": getattr(meta, "date", None), "author": getattr(meta, "author", None),
-            "kind": "html"}
+            "kind": "html", "problems": problems}
 
 
 def _plain_html(body: bytes) -> str:
-    try:
-        import lxml.html
-        doc = lxml.html.fromstring(body)
-        for bad in doc.xpath("//script|//style|//noscript|//template"):
-            bad.drop_tree()
-        return re.sub(r"\n\s*\n+", "\n\n", doc.text_content()).strip()
-    except Exception:
-        return ""
+    import lxml.html
+    doc = lxml.html.fromstring(body)
+    for bad in doc.xpath("//script|//style|//noscript|//template"):
+        bad.drop_tree()
+    return re.sub(r"\n\s*\n+", "\n\n", doc.text_content()).strip()
 
 
 def _pdf(body: bytes) -> dict[str, Any]:
@@ -408,23 +379,26 @@ def _pdf(body: bytes) -> dict[str, Any]:
             reader.decrypt("")
         except Exception:
             raise ToolRefused("the PDF is encrypted") from None
-    parts = []
+    parts, problems = [], []
     for i, pg in enumerate(reader.pages, 1):
         try:
             t = (pg.extract_text() or "").strip()
-        except Exception:
-            t = ""
+        except Exception as e:
+            problems.append(f"Page {i} could not be read ({e})")
+            continue
         if t:
             parts.append(f"[page {i}]\n{t}")
     title = None
     try:
         title = (reader.metadata or {}).get("/Title")
-    except Exception:
-        pass
+    except Exception as e:
+        problems.append(f"Its title could not be read ({e})")
     if not parts:
-        raise ToolRefused(f"the PDF ({len(reader.pages)} pages) has no text layer (scanned?)")
+        raise ToolRefused(f"the PDF ({len(reader.pages)} pages) has no text layer (scanned?)"
+                          + "".join(f". {p}" for p in problems))
     return {"title": str(title) if title else None, "text": "\n\n".join(parts),
-            "date": None, "author": None, "kind": f"pdf, {len(reader.pages)} pages"}
+            "date": None, "author": None, "kind": f"pdf, {len(reader.pages)} pages",
+            "problems": problems}
 
 
 def split_parts(text: str, part_tokens: int) -> list[str]:
@@ -683,6 +657,7 @@ class Web:
                              f"by {one_line(doc['author'], 60)}" if doc.get("author") else "")
                  if x]
         lines = [f"[web:{n}] {title}" + (f", {', '.join(about)}" if about else ""), final]
+        lines += [f"{p}." for p in doc.get("problems") or ()]
         if len(parts) > 1:
             lines.append(f"part {k} of {len(parts)}")
         body = parts[k - 1] if text else "(no readable text found on this page)"

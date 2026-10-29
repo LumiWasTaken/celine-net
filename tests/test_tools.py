@@ -119,9 +119,8 @@ async def test_an_overwritten_or_deleted_note_is_kept_for_the_user(store, cfg):
     assert len(trashed) == 1 and "second" in trashed[0].read_text(), "the user keeps a copy"
 
 
-def test_coerce_fixes_the_plain_other_form_of_a_type_as_her_real_calls_sent_it():
-    """browser__look(find=192) crashed, Discord ids as ints were refused by the server."""
-    from celine.turns.tools import coerce
+def test_a_value_of_another_type_is_named_and_never_converted():
+    from celine.turns.tools import mistyped
     schema = {"properties": {
         "find": {"type": "string"}, "part": {"type": "integer"},
         "wait": {"type": "boolean"},
@@ -130,10 +129,11 @@ def test_coerce_fixes_the_plain_other_form_of_a_type_as_her_real_calls_sent_it()
         "required": ["server_id"]}
     args = {"find": 192, "part": "2", "wait": "true", "before": 1111111111111111001,
             "server_id": 1111111111111111002, "tab": None}
-    assert coerce(args, schema) is None
-    assert args == {"find": "192", "part": 2, "wait": True, "before": "1111111111111111001",
-                    "server_id": "1111111111111111002", "tab": None}
-    assert coerce({"part": "two", "wait": 1}, schema) == ("part is a whole number; wait "
-                                                          "is true or false")
+    sent = dict(args)
+    assert mistyped(args, schema) == ("find is a string; part is a whole number; wait is "
+                                      "true or false; before is a string; server_id is a "
+                                      "string")
+    assert args == sent, "nothing converted"
+    assert mistyped({"find": "x", "part": 2, "wait": True, "server_id": "1"}, schema) is None
     look = {"properties": {"what": {"type": "string", "enum": ["view", "locate"]}}}
-    assert coerce({"what": "find"}, look) == "what is one of view, locate"
+    assert mistyped({"what": "find"}, look) == "what is one of view, locate"

@@ -332,7 +332,7 @@ class LLM:
                                                 "complete": not waited.cancelled_caught})
         except (httpx.HTTPError, ValueError) as e:
             log.info("unload failed", extra={"event": "llm.unload_failed", "provider": pid,
-                                             "error": str(e)[:200] or type(e).__name__})
+                                             "error": str(e) or type(e).__name__})
         await self.router.probe(pid, max_age=0)
 
     def wait_timeout(self, priority: Priority) -> float:

@@ -41,7 +41,7 @@ async def test_the_call_that_opened_a_terminal_names_her_conversation(store, mon
     # the sync listed it first, without an opener; then its call answers
     await terminals.upsert(store, "m1m1m1", "main", "celine", T0)
     box.answers = [ran(opened=True)]
-    await sh.run(ctx(store=store), command="ls")
+    await sh.run(ctx(store=store), terminal="main", command="ls")
     assert (await terminals.get(store, "m1m1m1"))["opened_by"] == "c"
     box.answers = [ran(id="b2b2b2", terminal="build", opened=False)]
     await sh.run(ctx(store=store), command="ls", terminal="build")
@@ -272,6 +272,6 @@ async def test_her_next_result_says_the_app_closed_it_not_the_user(store, monkey
         await terminals.upsert(store, f"x{ended_by}", "main", "celine", T0)
         await terminals.end(store, f"x{ended_by}", ended_by, None)
         box.answers = [ran(opened=True, notes=[f"closed:{epoch}"])]
-        out = await sh.run(ctx(store=store), command="ls")
+        out = await sh.run(ctx(store=store), terminal="main", command="ls")
         at = datetime.fromtimestamp(epoch, zone(sh.cfg)).strftime("%H:%M")
         assert said.format(at) in out.content.split("\n")
