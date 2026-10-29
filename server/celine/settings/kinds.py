@@ -141,15 +141,15 @@ def server_caps(base_url: str, model: str) -> list[str] | None:
 def caps_of(p: dict[str, Any], name: str) -> list[str]:
     """One model's caps now: tools and vision as its server states them, else as saved
     (or guessed when it was added); the rest as saved. A model with a vision twin sees
-    images as the twin does."""
+    images as the twin does: as the twin's server states, else as saved."""
     m = (p.get("models") or {}).get(name) or {}
     saved = list(m.get("caps") or [])
     url = str(p.get("base_url") or "")
     live = server_caps(url, name)
-    twin = m.get("vision_twin")
-    if twin and (seen := server_caps(url, twin)) is not None:
-        live = [c for c in live or saved if c != "vision"] + (
-            ["vision"] if "vision" in seen else [])
+    if twin := m.get("vision_twin"):
+        seen = server_caps(url, twin)
+        sees = "vision" in (saved if seen is None else seen)
+        live = [c for c in live or saved if c != "vision"] + (["vision"] if sees else [])
     if live is None:
         return saved
     return [c for c in saved if c not in STATED] + [c for c in live if c in STATED]

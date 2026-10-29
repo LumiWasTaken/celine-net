@@ -140,6 +140,9 @@ async def test_a_vision_twin_sees_as_its_server_says(router):
     kinds.stated_caps("http://home:8080/v1", {"text": ["chat", "tools"],
                                               "text-vision": ["chat"]})
     assert kinds.caps_of(p, "text") == ["chat", "tools"]
+    kinds.stated_caps("http://home:8080/v1", {"text": ["chat", "tools"]})
+    assert kinds.caps_of(p, "text") == ["chat", "tools", "vision"], \
+        "the twin's server states nothing: the saved vision"
 
 
 async def test_loaded_is_what_the_status_says_and_windows_are_the_running_ones(router):
