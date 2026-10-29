@@ -253,7 +253,8 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Persona | its description of itself | as above |
 | Settings | it reads every setting and proposes changes you approve | the Settings place |
 | Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name, the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
-| Sub-agents | the helpers it gives instructions to | Claude Code "Sub-agents" |
+| Sub-agents | the helpers it gives instructions to; also the side panel's tab with every sub-agent of the chain, each under the one that started it | Claude Code "Sub-agents" |
+| Cloud model | the approval card of a sub-agent that would run on a model of a cloud provider (OpenRouter, Anthropic): its name, the model and the start of its brief | OpenRouter, Anthropic: cloud providers |
 | Discord, WhatsApp | read live from your accounts | their own names |
 
 ### Events

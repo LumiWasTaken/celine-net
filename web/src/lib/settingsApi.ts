@@ -154,12 +154,12 @@ type EmailView = {
 
 type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 
-type AskKind = 'vault' | 'gate' | 'her' | 'share' | 'settings'
+type AskKind = 'vault' | 'gate' | 'her' | 'share' | 'settings' | 'model'
 
 /** one request waiting for you (server/celine/approvals.py): `vault` a tap, `gate` a
     tool Bastet asks you about, `her` an edit of herself, `share` a public share,
-    `settings` a change of Settings; every word is the server's, built from fixed
-    sentences and the call's own data */
+    `settings` a change of Settings, `model` a sub-agent on a cloud model; every word is
+    the server's, built from fixed sentences and the call's own data */
 export type VaultAsk = {
   id: string
   kind: AskKind

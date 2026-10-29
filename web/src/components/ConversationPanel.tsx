@@ -8,6 +8,9 @@
      Pages    its pages and documents (ArtifactPanel)
      Context  what the next request holds, per block; its notes, each with a switch (PATCH
               notes_off); the tools it has loaded, each with its x; Add loads one by hand
+     Sub-agents  while the conversation's chain has any: the tree under its top (GET
+              /conversations/{id}/sub-agents), each with its state, model, tokens and
+              time; a row opens its conversation
 
    Celine.tsx holds the tab and the page on screen, so a chip, a card or its first write of
    a page can open them. For a new conversation (/new_chat) the same panel holds the
@@ -19,7 +22,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeftRight, Plus, X } from 'lucide-react'
 import { conversationApi, notebookApi, type Carried, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
-import { errorText, num } from '../lib/format'
+import { duration, errorText, num } from '../lib/format'
+import { agentsApi, type TreeAgent } from '../lib/agents'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useFeatureOn } from '../lib/features'
 import { format } from '../lib/nav'
@@ -30,7 +34,7 @@ import { useResource } from '../lib/useResource'
 import { useConversationSettings } from '../lib/useConversationSettings'
 import {
   Button, Choice, cx, Dialog, Drawer, EmptyState, IconButton, InlineError, ListRow, ListSection, Loaded, LoadingRow, Progress, SearchField,
-  Switch, Tabs, VirtualList,
+  Switch, Tabs, VirtualList, type DotTone,
 } from '../ui'
 import { ModelChooser, findModel, modelName } from './ModelChooser'
 import { ToolList } from './ToolList'
@@ -38,9 +42,10 @@ import { Jobs } from './Jobs'
 import { ArtifactPanel } from './ArtifactPanel'
 import './Composer.css'
 
-export type PanelTab = 'model' | 'tools' | 'pages' | 'context'
+export type PanelTab = 'model' | 'tools' | 'pages' | 'context' | 'agents'
 const ALL_TABS: { value: PanelTab; label: string }[] = [
   { value: 'model', label: 'Model' }, { value: 'tools', label: 'Tools' }, { value: 'pages', label: 'Pages' }, { value: 'context', label: 'Context' },
+  { value: 'agents', label: 'Sub-agents' },
 ]
 const PANEL = 'Model, Tools, Pages, Context'
 
@@ -69,7 +74,10 @@ export function ConversationPanel({
   assistant: string
 }) {
   const guardOn = useFeatureOn('guard')
-  const tabs = conversationId ? ALL_TABS : ALL_TABS.filter(t => t.value !== 'context')
+  const tree = useResource(() => (conversationId ? agentsApi.tree(conversationId) : Promise.resolve(null)), [conversationId],
+    { enabled: open, events: ev => ev.type === 'agent.state', resetOnChange: true })
+  const agents = tree.data?.agents ?? []
+  const tabs = ALL_TABS.filter(t => (t.value !== 'context' || conversationId) && (t.value !== 'agents' || agents.length))
   const tab = tabs.some(t => t.value === wanted) ? wanted : 'model'
   return (
     <Drawer open={open} label={PANEL} onClose={onClose} fill={tab === 'pages'}
@@ -91,7 +99,30 @@ export function ConversationPanel({
         <ArtifactPanel conversationId={conversationId} artifact={artifact} onPick={onArtifact} assistant={assistant} active={open} />
       )}
       {tab === 'context' && conversationId && <ContextTab key={conversationId} cid={conversationId} notesOff={notesOff} turnKey={turnKey} enabled={open} />}
+      {tab === 'agents' && <AgentsTab agents={agents} here={conversationId} />}
     </Drawer>
+  )
+}
+
+/* ── the sub-agents under the top of the chain, each under the one that started it ── */
+const AGENT_WORD: Record<TreeAgent['state'], string> = {
+  queued: 'Queued', working: 'Running', done: 'Done', stopped: 'Stopped', failed: 'Failed', paused: 'Paused',
+}
+const AGENT_DOT: Record<TreeAgent['state'], DotTone> = {
+  queued: 'running', working: 'running', done: 'ok', stopped: 'muted', failed: 'error', paused: 'warn',
+}
+
+function AgentsTab({ agents, here }: { agents: TreeAgent[]; here: string | null }) {
+  return (
+    <div className="chat-panel" role="list" aria-label="Sub-agents">
+      {agents.map(a => (
+        <ListRow key={a.id} density="md" depth={a.depth - 1} dot={AGENT_DOT[a.state]} title={a.name}
+                 subtitle={a.state === 'working' ? a.step_words ?? AGENT_WORD.working : AGENT_WORD[a.state]}
+                 meta={duration(a.seconds * 1000)} aside={a.model ?? undefined}
+                 detail={`${num(a.prompt_tokens)} in, ${num(a.completion_tokens)} out`}
+                 muted={a.state !== 'working' && a.state !== 'queued'} selected={a.id === here} href={a.link} />
+      ))}
+    </div>
   )
 }
 
