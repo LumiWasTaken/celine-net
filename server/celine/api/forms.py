@@ -13,8 +13,8 @@ var/secrets/<id>.<key>.key.
 - POST /api/forms/{id}/{action} {input?} -> {ok, sentence, lines?}; `lines` [{text,
   tone}] are one Dot each. An action never saves.
 
-A save (`save`, also a plugin's own route) of a plugin with [servers] starts its runner
-again, so its servers run with what was saved. Errors are 400 with `field =
+A save (settings/saves.plugin_form, also a plugin's own route) of a plugin with
+[servers] starts its runner again, so its servers run with what was saved. Errors are 400 with `field =
 "<id>.<key>"`; a stale If-Match is 412.
 """
 from __future__ import annotations
@@ -23,11 +23,11 @@ from typing import Any
 
 from fastapi import APIRouter, Header, Request, Response
 
-from .. import plugins, reload
+from .. import plugins
 from ..errors import Busy, NotFound
 from ..plugins import Plugin
-from ..settings import files, form, views, write
-from ..settings.files import Invalid, version
+from ..settings import form, saves
+from ..settings.files import version
 from .deps import etag, json_body, services_of, settings_of
 
 router = APIRouter(prefix="/api")
@@ -40,44 +40,19 @@ def _plugin(id: str) -> Plugin:
     return p
 
 
-def _current(s, p: Plugin) -> tuple[dict[str, Any], dict[str, Any]]:
-    """(the saved values, the version's input: the values and each secret's state)."""
-    saved = s.plugins.get(p.id, {})
-    states = form.secret_states(p.id, p.form["fields"], s.secrets_root)
-    return saved, {"values": saved, "secrets": states}
-
-
 async def _view(request: Request, response: Response, p: Plugin) -> dict[str, Any]:
     s = settings_of(request)
-    saved, current = _current(s, p)
+    saved = s.plugins.get(p.id, {})
     copies = {}
     if p.data is not None and (ref := p.form.get("copies")):
         copies = await p.attr(ref)(services_of(request), p, request)
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root, copies),
            "actions": form.actions_view(p.form.get("actions", [])),
-           "version": etag(response, version(current)), "saved": bool(s.saved.get(p.id)),
+           "version": etag(response, version(saves.form_version(s, p))),
+           "saved": bool(s.saved.get(p.id)),
            "running": p.data is not None}
     if p.form.get("note"):
         out["note"] = p.form["note"]
-    return out
-
-
-async def save(services, p: Plugin, values: Any, secrets: Any,
-               if_match: str | None = None) -> dict[str, Any]:
-    """Validate and save plugin `p`'s whole `values` and the `secrets` given; `if_match`:
-    the version the client saw (None: no check). -> reload.commit's answer."""
-    s = services.cfg.settings
-    async with write.lock():
-        _, current = _current(s, p)
-        files.check_version(p.manifest["label"], current, if_match)
-        clean = form.validate(p.id, p.form["fields"], values)
-        checked = form.check_secrets(p.id, p.form["fields"], secrets)
-        if checked and s.secrets_root is None:
-            raise Invalid(f"{p.id}.secrets", "This instance keeps no secrets.")
-        with form.written(p.id, s.secrets_root, checked):   # a failed save puts them back
-            out = await reload.commit(services, {p.id: clean})
-    if p.manifest.get("servers"):
-        await views.apply_runners(services, {p.id})
     return out
 
 
@@ -91,8 +66,8 @@ async def put_form(request: Request, response: Response, id: str,
                    if_match: str | None = Header(default=None)) -> dict:
     p = _plugin(id)
     body = await json_body(request, need=("values",), allow=("values", "secrets"))
-    out = await save(services_of(request), p, body["values"], body.get("secrets", {}),
-                     if_match)
+    out = await saves.plugin_form(services_of(request), p, body["values"],
+                                  body.get("secrets", {}), if_match)
     return {**await _view(request, response, p), **out}
 
 
