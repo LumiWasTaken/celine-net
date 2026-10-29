@@ -567,7 +567,11 @@ through the same Router (below) but do not queue here.
   handed on) or until the reader stops (`aclose`); never during tool execution.
 - **Your turn: one model.** A turn the user waits on (`fallback=False` on `LLM.bind`) runs
   on exactly the first model of its list. When that model fails, the turn fails with its
-  error; no other model is tried. Only background work walks its list.
+  error; no other model is tried. Only background work walks its list. A turn on a model
+  that is not its list's first gets one tail line (`prompt.fallback_line`): "You are
+  running in fallback mode. Instead of <first> you are running on <current>.", what the
+  app knows of <current> (its context window, whether it sees images and calls tools;
+  an unknown fact is left out), then why each model before it is left out.
 - **Failure.** A failure before the first token (a request every model would refuse, too long or with an image it cannot take, fails the call as it is) marks the model and moves to the next one;
   after the first token, never. When every model failed with an error, the call fails with
   the last one; when they were unreachable, the call waits and tries whatever the Router
