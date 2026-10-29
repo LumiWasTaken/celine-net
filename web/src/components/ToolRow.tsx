@@ -329,8 +329,8 @@ export function ToolGroup({ calls }: { calls: ToolCall[] }) {
   return <div className="tool-list" role="list" aria-label="Activity">{shown.map(c => <CallRow key={c.id} call={c} />)}</div>
 }
 
-/* loading a skill or reading its guide: plumbing, named only when it is all there is */
-const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
+/* loading, unloading, reading a guide: plumbing, named only when it is all there is */
+const PLUMBING = new Set(['skills__load', 'skills__unload', 'skills__read_guide'])
 
 /** In the stream, under its words: a call at work as one shimmering line (with its Stop or
     Open), a message it set for later while it waits (with Cancel), and the pictures and
