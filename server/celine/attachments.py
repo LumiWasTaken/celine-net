@@ -123,6 +123,8 @@ async def save_generated(cfg, store, data: bytes, filename: str, media_type: str
 async def _finish(cfg, store, tmp: Path, sha: str, size: int, head: bytes,
                   filename: str, content_type: str | None, **where) -> dict:
     """The rows, then the file into place, in one writer job (the module docstring)."""
+    if content_type == "application/octet-stream":     # "some bytes": its name says more
+        content_type = None
     media_type = content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
     if media_type == "application/octet-stream" and _looks_like_text(head):
         media_type = "text/plain"

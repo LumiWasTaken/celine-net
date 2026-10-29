@@ -136,7 +136,8 @@ async def test_an_image_in_a_result_is_kept_as_an_attachment_of_the_call(store):
 
 async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monkeypatch):
     """A blob or text resource is saved for the call (its row shows it) and named to the
-    model; one over max_attachment_bytes is named as not kept."""
+    model, its media type from its name when the server says only octet-stream; one over
+    max_attachment_bytes is named as not kept."""
     import base64
     from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource,
                            TextResourceContents)
@@ -153,6 +154,9 @@ async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monke
                     blob=base64.b64encode(b"PK\x03\x04zip").decode())),
                 EmbeddedResource(type="resource", resource=TextResourceContents(
                     uri="file:///tmp/a.txt", text="hello")),
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///tmp/report.pdf", mimeType="application/octet-stream",
+                    blob=base64.b64encode(b"%PDF-1.7").decode())),
                 EmbeddedResource(type="resource", resource=BlobResourceContents(
                     uri="file:///big.bin", blob=base64.b64encode(b"x" * 64).decode()))])
 
@@ -175,7 +179,8 @@ async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monke
     rows = await store.read(lambda c: [tuple(r) for r in c.execute(
         "SELECT a.filename, b.media_type FROM attachments a JOIN blobs b USING (sha256) "
         "WHERE a.tool_call_id='x' ORDER BY a.rowid")])
-    assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain")]
+    assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain"),
+                    ("report.pdf", "application/pdf")]
 
 
 async def test_a_url_server_stays_down_with_its_reason_and_comes_back_by_itself(store):
