@@ -97,6 +97,18 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     assert rows[running]["group"] != "Running" and rows[running]["state"] is None
 
 
+async def test_a_sub_agent_working_three_levels_down_runs_its_chat_first(c, store):
+    top = await conversations.create(store, "top")
+    await conversations.create(store, "quiet")
+    deep = top
+    for n in ("one", "two", "three"):
+        deep = await conversations.create(store, n, agent_of=deep, agent_name=n)
+    await user_says(store, deep, "work")                   # queued: live
+    body = (await c.get("/api/conversations", params={"place": "celine"})).json()
+    assert body["conversations"][0]["id"] == top
+    assert body["conversations"][0]["group"] == "Running"
+
+
 async def test_the_list_pages_by_rank_and_counts_each_shelf(c, store):
     ids = [await conversations.create(store, f"c{i}") for i in range(5)]
     await conversations.update(store, ids[2], pinned=True)

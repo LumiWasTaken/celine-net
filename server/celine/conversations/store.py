@@ -542,10 +542,11 @@ _SUMMARY = (
 # a turn that waits in the queue while Bastet holds her frozen (guard/freeze.py) does
 # not run: its conversation is not under Running and its row has no step
 _HELD = "EXISTS (SELECT 1 FROM kv WHERE k = 'frozen')"
-# Running first (a live turn in it or in one of its sub-agents), then pinned, then the rest
-_RANK = (f"CASE WHEN EXISTS (SELECT 1 FROM turns t JOIN conversations k "
-         f"ON k.id = t.conversation_id WHERE (k.id = c.id OR k.agent_of = c.id) "
-         f"AND t.state IN {LIVE_SQL} AND NOT (t.state = 'queued' AND {_HELD})) "
+# Running first (a live turn in it or in a sub-agent under it), then pinned, then the rest
+_RANK = (f"CASE WHEN EXISTS (WITH RECURSIVE fam(id) AS (SELECT c.id UNION ALL SELECT "
+         f"s.id FROM conversations s JOIN fam ON s.agent_of = fam.id) SELECT 1 FROM turns t "
+         f"JOIN fam ON fam.id = t.conversation_id WHERE t.state IN {LIVE_SQL} "
+         f"AND NOT (t.state = 'queued' AND {_HELD})) "
          f"THEN 2 WHEN c.pinned THEN 1 ELSE 0 END")
 # the step words of a live turn ('' : the dots); a running tool says its label
 _STEP = {"queued": "", "preparing": "Thinking", "streaming": ""}
