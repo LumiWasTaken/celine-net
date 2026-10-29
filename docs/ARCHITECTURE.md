@@ -610,8 +610,8 @@ Image captions and the topic search index keep their own schedulers.
   `defer(why, until)` and `fail(error)`; `put_down` at a stop.
 - **The pool.** Two workers in the app (`work.Pool`). When every model an item's kind
   asks for is on a provider the ping sees down, it is deferred without a call; a
-  `NoModel` or unreachable error defers it for 60 s. Any other error is a try: queued
-  again after 60 s, failed after 3 tries. Done and failed rows are deleted after 7 days.
+  `NoModel` or unreachable error defers it for 60 s. Any other error fails it with its
+  reason: one try. Done and failed rows are deleted after 7 days.
 - **Admission stays** with the model queue; the work queue only decides what is due.
 
 ### House and body

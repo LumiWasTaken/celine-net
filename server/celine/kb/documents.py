@@ -593,7 +593,7 @@ class DocumentsKB:
                  ex.pages, len(ids), n_chars, n_words, json.dumps(meta) if meta else None,
                  iid))
             if ai is not None:
-                conn.execute("UPDATE items SET ai_state = ?, ai_error = ?, ai_attempts = 0 "
+                conn.execute("UPDATE items SET ai_state = ?, ai_error = ? "
                              "WHERE id = ?", (ai[0], ai[1], iid))
             self.index_meta(conn, iid)
             self._apply_mode(conn, iid)
@@ -766,7 +766,7 @@ class DocumentsKB:
         from .importers import Cancelled, Unreachable
         try:
             from . import semantic
-            n = semantic.embed_passages(cfg, self.path, ctx, retries=3, kb_id=self.id)
+            n = semantic.embed_passages(cfg, self.path, ctx, kb_id=self.id)
             return {"embedded": n}
         except Unreachable as e:               # no embedding model now: next scan
             return {"embed_waiting": str(e)}
@@ -1306,7 +1306,7 @@ class DocumentsKB:
             n = conn.execute("UPDATE items SET state = 'pending', error = NULL WHERE id = ?",
                              (iid,)).rowcount
             if describe:
-                conn.execute("UPDATE items SET ai_state = 'pending', ai_attempts = 0, "
+                conn.execute("UPDATE items SET ai_state = 'pending', "
                              "ai_error = NULL, ai_source_hash = NULL WHERE id = ?", (iid,))
                 conn.execute("DELETE FROM describe_parts WHERE item_id = ?", (iid,))
             return n

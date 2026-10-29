@@ -62,7 +62,7 @@ async def test_lora_manager_absent_means_no_metadata_not_an_error():
 # ---- the embedding server ----------------------------------------------------------------
 
 def test_embedding_server_failures_are_one_sentence_each(monkeypatch):
-    s = {"url": "http://emb:8081/v1/embeddings", "model": "qwen3-embed", "retries": 1,
+    s = {"url": "http://emb:8081/v1/embeddings", "model": "qwen3-embed",
          "timeout": 20}
     answer = {}
 
@@ -72,7 +72,6 @@ def test_embedding_server_failures_are_one_sentence_each(monkeypatch):
             raise a
         return a
     monkeypatch.setattr(httpx, "post", post)
-    monkeypatch.setattr(embed.time, "sleep", lambda s: None)
 
     answer["a"] = httpx.ConnectError("refused")
     with pytest.raises(embed.SemanticError, match=r"^the embedding server at emb:8081 refused "

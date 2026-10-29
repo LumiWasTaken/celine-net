@@ -22,6 +22,20 @@ def test_a_too_long_answer_retries_with_shorter_input(monkeypatch):
     assert out == [[1.0]] and sizes == [3000, 1500, 750]
 
 
+def test_a_failed_embedding_is_tried_once_and_says_why(monkeypatch):
+    import pytest
+    posts = []
+
+    def post(url, json, **kw):
+        posts.append(url)
+        return httpx.Response(503)
+
+    monkeypatch.setattr(httpx, "post", post)
+    with pytest.raises(embed.SemanticError, match="answered 503"):
+        embed.embed_sync({"url": "http://x/embeddings", "model": "m"}, ["a"])
+    assert len(posts) == 1
+
+
 def test_a_search_waits_for_its_embedding_as_long_as_advanced_says(tmp_path, monkeypatch):
     """A query's embedding (and the fingerprint the first one asks) waits the Search
     embedding time limit, 60 s unless changed; a build keeps its own longer limit."""

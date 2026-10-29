@@ -1,7 +1,7 @@
 """The embedding client and the vector formats of the semantic index.
 
-- `embed_sync(s, texts)`: one OpenAI-compatible `/embeddings` call, with retries and
-  a shrinking input limit when the server says an input is too long.
+- `embed_sync(s, texts)`: one OpenAI-compatible `/embeddings` call, with a shrinking
+  input limit when the server says an input is too long.
 - `Pool`: several batches in flight on one endpoint.
 - `fingerprint(s)`: the vectors of three fixed texts (PROBES). An index stores the
   fingerprint of the model that made it, and a model may add to or search an index
@@ -26,7 +26,6 @@ import logging
 import math
 import struct
 import threading
-import time
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -72,38 +71,28 @@ def _embed_once(s: dict[str, Any], texts: list[str]) -> list[list[float]]:
     headers = {**s.get("headers", {})}
     if s.get("key"):
         headers["Authorization"] = f"Bearer {s['key']}"
-    tries = max(1, int(s.get("retries", 4)))      # a build passes more: a model swap takes a while
-    for attempt in range(tries):
-        try:
-            r = httpx.post(s["url"], json={"model": s["model"], "input": texts},
-                           headers=headers,
-                           timeout=httpx.Timeout(float(s.get("timeout", 300.0))))
-        except httpx.HTTPError as e:
-            if attempt == tries - 1:
-                raise SemanticError(_no_answer(s, e)) from None
-            time.sleep(min(2 ** attempt, 30))
-            continue
-        if r.status_code >= 500 and attempt < tries - 1:
-            time.sleep(min(2 ** attempt, 30))
-            continue
-        if r.status_code in (401, 403):
-            raise SemanticError(f"the embedding server at {_host(s)} rejected the API key "
-                                f"(Settings, Models)")
-        if r.status_code == 404:
-            raise SemanticError(f"the embedding server at {_host(s)} has no model "
-                                f"{s.get('model')} (Settings, Models)")
-        if r.status_code >= 400:
-            msg = f"the embedding server at {_host(s)} answered {r.status_code}"
-            if r.status_code in (400, 413, 422) and any(w in r.text.lower() for w in _TOO_LONG):
-                raise InputTooLong(f"{msg}: {r.text[:200]}")
-            raise SemanticError(msg)
-        try:
-            data = sorted(r.json()["data"], key=lambda d: d["index"])
-            return [d["embedding"] for d in data]
-        except (ValueError, KeyError, TypeError):
-            raise SemanticError(f"the embedding server at {_host(s)} answered without "
-                                f"vectors: is {s.get('url')} an /embeddings endpoint?") from None
-    raise SemanticError(f"the embedding server at {_host(s)} kept failing")
+    try:
+        r = httpx.post(s["url"], json={"model": s["model"], "input": texts},
+                       headers=headers, timeout=httpx.Timeout(float(s.get("timeout", 300.0))))
+    except httpx.HTTPError as e:
+        raise SemanticError(_no_answer(s, e)) from None
+    if r.status_code in (401, 403):
+        raise SemanticError(f"the embedding server at {_host(s)} rejected the API key "
+                            f"(Settings, Models)")
+    if r.status_code == 404:
+        raise SemanticError(f"the embedding server at {_host(s)} has no model "
+                            f"{s.get('model')} (Settings, Models)")
+    if r.status_code >= 400:
+        msg = f"the embedding server at {_host(s)} answered {r.status_code}"
+        if r.status_code in (400, 413, 422) and any(w in r.text.lower() for w in _TOO_LONG):
+            raise InputTooLong(f"{msg}: {r.text[:200]}")
+        raise SemanticError(msg)
+    try:
+        data = sorted(r.json()["data"], key=lambda d: d["index"])
+        return [d["embedding"] for d in data]
+    except (ValueError, KeyError, TypeError):
+        raise SemanticError(f"the embedding server at {_host(s)} answered without "
+                            f"vectors: is {s.get('url')} an /embeddings endpoint?") from None
 
 
 def _host(s: dict[str, Any]) -> str:
@@ -174,7 +163,7 @@ def fingerprint(s: dict[str, Any], embed: Callable[[dict[str, Any], list[str]],
         hit = _fingerprints.get(key)
     if hit is not None:
         return hit
-    vecs = (embed or embed_sync)({**s, "retries": 1}, PROBES)
+    vecs = (embed or embed_sync)(s, PROBES)
     fp = tuple(tuple(truncate(v, len(v))) for v in vecs)
     with _fp_lock:
         _fingerprints[key] = fp

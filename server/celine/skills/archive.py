@@ -464,7 +464,7 @@ class ChatArchive:
             return None, "", str(why).rstrip(".")
 
         def embed(texts):
-            return e.embed(texts, max_input_chars=1200, retries=1)
+            return e.embed(texts, max_input_chars=1200)
         embed.fp = e.fp                         # type: ignore[attr-defined]
         return embed, e.s["query_prefix"], None
 

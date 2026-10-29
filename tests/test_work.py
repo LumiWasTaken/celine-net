@@ -92,7 +92,7 @@ async def test_a_lease_that_runs_out_puts_the_item_back(store):
     assert (await _row(store, wid))["state"] == "done"
 
 
-async def test_a_real_error_fails_after_three_tries_with_its_reason(store):
+async def test_a_real_error_fails_at_once_with_its_reason(store):
     now = [T0]
     pool = work.Pool(store, clock=lambda: now[0])
 
@@ -100,17 +100,12 @@ async def test_a_real_error_fails_after_three_tries_with_its_reason(store):
         raise RuntimeError("the answer was not JSON")
     pool.handle("x", (), boom)
     wid = await pool.put("x", {})
-    states = []
-    for _ in range(work.MAX_TRIES):
-        item = await work.claim(store, "w", ["x"], now=now[0])
-        states.append(await pool.run_one(item, "w"))
-        assert await work.claim(store, "w", ["x"], now=now[0] + s(1)) is None, "not at once"
-        now[0] += s(work.RETRY_SECONDS)
-    assert states == ["queued", "queued", "failed"]
+    item = await work.claim(store, "w", ["x"], now=now[0])
+    assert await pool.run_one(item, "w") == "failed"
     row = await _row(store, wid)
-    assert (row["state"], row["tries"]) == ("failed", 3)
+    assert (row["state"], row["tries"]) == ("failed", 1)
     assert row["error"] == "RuntimeError: the answer was not JSON"
-    assert await work.claim(store, "w", ["x"], now=now[0]) is None
+    assert await work.claim(store, "w", ["x"], now=now[0] + s(3600)) is None
 
 
 async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
