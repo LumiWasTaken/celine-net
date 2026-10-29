@@ -183,6 +183,24 @@ async def test_aged_results_keep_cited_lines_and_a_full_window_warns(store, cfg)
     assert built.messages[0]["content"] == "sys", "the system prompt as given, no warning"
 
 
+async def test_a_completion_past_its_time_is_a_failure_never_the_part_so_far():
+    import anyio
+
+    from celine.backends.base import BackendError, TextDelta
+
+    class Slow:
+        model = "slow-model"
+
+        async def stream(self, messages, tools):
+            yield TextDelta("half a ")
+            await anyio.Event().wait()           # never ends: the limit does
+            yield TextDelta("never")
+    asked = [{"role": "user", "content": "go"}]
+    assert await compact.complete(Slow(), asked, 0) is None
+    with pytest.raises(BackendError, match="slow-model did not finish its reply within 0"):
+        await compact.complete(Slow(), asked, 0, errors=True)
+
+
 async def test_a_chat_past_history_messages_keeps_the_last_ones(store, cfg):
     """A chat cuts history_messages at the first user message past the limit, as it
     always did; the big steps are a scene's."""

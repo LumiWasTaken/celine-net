@@ -198,7 +198,7 @@ async def summarize(backend, cfg, previous: str, items: list[dict], *, window: i
     the conversation's chat model and nothing else (thinking off is the model default).
     Input larger than `input_share` of the window goes in pieces, each folding into the
     summary so far. Raises SummaryFailed with the reason when the model gives nothing
-    usable: its error, or no text within `limit` seconds."""
+    usable: its error, its time limit, or no text."""
     words = max(150, int(cap_tokens * 0.6 / 1.3))
     system = prompts.fill(cfg, __file__, "compact.md", words=words)
     if focus:
@@ -213,7 +213,7 @@ async def summarize(backend, cfg, previous: str, items: list[dict], *, window: i
     except BackendError as e:
         raise SummaryFailed(str(e)) from None
     if not summary:
-        raise SummaryFailed(f"{model} gave no summary within {limit:.0f} seconds.")
+        raise SummaryFailed(f"{model} gave an empty summary.")
     if tokens.estimate(summary) > cap_tokens:
         summary, _, _ = tokens.cut_to(summary, cap_tokens, "prose")
     return summary
@@ -242,12 +242,13 @@ async def fold(backend, system: str, previous: str, lines: list[str], *, window:
 
 async def complete(backend, messages, limit: float, tools=(), token=None,
                    errors: bool = False) -> str | None:
-    """One non-streamed completion; text only, tool calls ignored. None on failure, at
-    `limit` seconds, or when `token` stops it. `errors`: a backend error is raised
-    instead (a work item tells a host that is down from a real error, work.py)."""
+    """One non-streamed completion; text only, tool calls ignored. None on failure,
+    when `limit` seconds run out before the reply ends (never the part written so far),
+    or when `token` stops it. `errors`: a backend error, and the time limit as one, is
+    raised instead (a work item tells a host that is down from a real error, work.py)."""
     parts: list[str] = []
     try:
-        with anyio.move_on_after(limit):
+        with anyio.move_on_after(limit) as scope:
             # a queued backend frees its model slot as soon as we stop reading
             async with closing(stoppable(backend, messages, tools, token)) as events:
                 async for ev in events:
@@ -257,6 +258,9 @@ async def complete(backend, messages, limit: float, tools=(), token=None,
                         parts.append(ev.text)
                     elif isinstance(ev, Done):
                         break
+        if scope.cancelled_caught:
+            raise BackendError(f"{getattr(backend, 'model', None) or 'The model'} did not "
+                               f"finish its reply within {limit:.0f} seconds.")
     except BackendError as e:
         log.warning("completion failed", extra={"event": "llm.complete_failed",
                                                 "error": str(e)[:200]})

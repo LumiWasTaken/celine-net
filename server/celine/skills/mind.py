@@ -486,7 +486,7 @@ async def appraise(app, cid: str, tid: str, backend=None) -> dict | None:
     if text is None:
         log.info("feeling skipped", extra={"event": "mind.appraisal_skipped",
                                            "conversation": cid, "turn": tid,
-                                           "why": "the small model did not answer in 30 s"})
+                                           "why": "the small model wrote nothing"})
         return None
     got = parse_appraisal(text)
     if got is not None:
