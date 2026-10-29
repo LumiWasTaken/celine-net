@@ -128,15 +128,21 @@ def role_presets(cfg, role: str) -> list[presets_mod.Preset]:
     return [found[i] for i in ids if i in found]
 
 
+# while the media runner is down (both switches off, or between its stop and start)
+OFF = {"images": "Images are off.", "music": "Music is off."}
+
+
 async def batch_generate(app, ctx: ToolContext, role: str, items, count: int, wait: bool,
                          text: Callable[[dict, bool], str], **kw) -> ToolResult:
+    if (batches := app.batches) is None:
+        return ToolResult(content=OFF[role], is_error=True)
     try:
-        b = await app.batches.create(role, items, count=count,
+        b = await batches.create(role, items, count=count,
                                      conversation_id=ctx.conversation_id,
                                      tool_call_id=ctx.tool_call_id, **kw)
     except batches_mod.TooMany as e:
         return ToolResult(content=str(e), is_error=True)
-    b = await app.batches.begin(b, wait=wait, time_left=ctx.time_left)
+    b = await batches.begin(b, wait=wait, time_left=ctx.time_left)
     # the call's display is the batch's own: it fills it in place (batches._publish)
     return ToolResult(content=text(b, b["state"] == "running" and not wait),
                       is_error=b["state"] != "running" and not any(
@@ -154,11 +160,13 @@ async def batch_read(ctx: ToolContext, role: str, batch: str,
 
 async def batch_stop(app, ctx: ToolContext, role: str, batch: str,
                      text: Callable[[dict, bool], str]) -> ToolResult:
+    if (batches := app.batches) is None:
+        return ToolResult(content=OFF[role], is_error=True)
     try:
         b = await batches_mod.find(ctx.store, role, batch)
     except presets_mod.ImageError as e:
         return ToolResult(content=str(e), is_error=True)
-    if not await app.batches.stop(b["id"]):
+    if not await batches.stop(b["id"]):
         return ToolResult(content=f"Batch {short(b['id'])} is not running: it is "
                                   f"{b['state']}.")
     b = await batches_mod.get(ctx.store, b["id"])
