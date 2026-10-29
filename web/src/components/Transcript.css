@@ -34,13 +34,10 @@
 .msg__text a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .msg__text blockquote { margin-left: 0; padding-left: var(--s-3); border-left: 2px solid var(--bubble-meta); }
 .msg__picture { width: min(100%, 18rem); }
-.msg__file, .msg__audio {
+.msg__audio {
   display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md);
   background: var(--surface-2);
 }
-.msg__file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
-.step > .msg__file { width: min(100%, 26rem); }
-.msg__file-size { flex: none; font-size: var(--t-xs); color: var(--text-muted); }
 .msg__audio { flex-direction: column; align-items: stretch; gap: var(--s-1); width: min(30rem, 100%); }
 .msg__audio-title { font-weight: var(--fw-medium); }
 .msg__audio audio { width: 100%; height: var(--h-md); }
