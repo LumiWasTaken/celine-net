@@ -605,7 +605,7 @@ Background model jobs that nobody waits on are rows of `work` (`work.py`): `titl
 Image captions and the topic search index keep their own schedulers.
 
 - **Shape.** An item: kind, priority, state (queued, running, done, deferred, failed),
-  payload, not_before, a lease (worker, until), tries, error, conversation_id. A worker
+  payload, not_before, a lease (worker, until), error, conversation_id. A worker
   makes five calls: `claim(worker, kinds)` (under a 120 s lease), `heartbeat`, `finish`,
   `defer(why, until)` and `fail(error)`; `put_down` at a stop.
 - **The pool.** Two workers in the app (`work.Pool`). When every model an item's kind

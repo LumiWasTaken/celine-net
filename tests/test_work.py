@@ -1,4 +1,4 @@
-"""The work queue (work.py) and its pause (hold.py): leases, tries, deferral until a
+"""The work queue (work.py) and its pause (hold.py): leases, one try, deferral until a
 host is back, and no turn claimed while no chat host answers. Fixed clocks, fake
 servers."""
 from __future__ import annotations
@@ -42,7 +42,7 @@ def s(n: float) -> timedelta:
 
 async def _row(store, wid: int) -> dict:
     return await store.read(lambda c: dict(c.execute(
-        "SELECT state, tries, error, lease_worker FROM work WHERE id=?", (wid,)).fetchone()))
+        "SELECT state, error, lease_worker FROM work WHERE id=?", (wid,)).fetchone()))
 
 
 def _gateway(tmp_path, monkeypatch, roles, events=None):
@@ -103,7 +103,7 @@ async def test_a_real_error_fails_at_once_with_its_reason(store):
     item = await work.claim(store, "w", ["x"], now=now[0])
     assert await pool.run_one(item, "w") == "failed"
     row = await _row(store, wid)
-    assert (row["state"], row["tries"]) == ("failed", 1)
+    assert row["state"] == "failed"
     assert row["error"] == "RuntimeError: the answer was not JSON"
     assert await work.claim(store, "w", ["x"], now=now[0] + s(3600)) is None
 
@@ -124,7 +124,6 @@ async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
         wid = await pool.put("title", {"conversation_id": "c1"})
         await until(async_state(store, wid, "deferred"))
         assert ran == [], "no call to a host that is down"
-        assert (await _row(store, wid))["tries"] == 0, "waiting spends no try"
         up["lan"] = True
         await ping()
         await until(async_state(store, wid, "done"))
@@ -261,11 +260,10 @@ async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_e
     cid = await _exchange(store, 1)
     d = _titler(store, {"small": _Raises(none), "chat": _Raises(none)})
     d.work.clock = lambda: T0
-    wid = await d.work.put("title", {"conversation_id": cid})
+    await d.work.put("title", {"conversation_id": cid})
     item = await work.claim(store, "w", ["title"], now=T0)
     assert await d.work.run_one(item, "w") == "deferred", "no host answered: it waits"
     assert not await conversations.title(store, cid)
-    assert (await _row(store, wid))["tries"] == 0
 
     d = _titler(store, {"small": _Raises(none),
                         "chat": FakeBackend([TextDelta(""), Done(reason="stop")])})

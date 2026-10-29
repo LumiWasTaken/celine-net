@@ -15,7 +15,7 @@ The five calls a worker makes, the same shape as turns.claim:
   (an item already leased runs to its end).
 - `heartbeat(id, worker)`: the lease again from now; a worker beats while it runs.
 - `finish(id, worker)`: done.
-- `defer(id, worker, why, until)`: deferred, no try counted: no host of its models
+- `defer(id, worker, why, until)`: deferred, not failed: no host of its models
   answers. It runs at `until`, or as soon as a host comes back (`wake`).
 - `fail(id, worker, error)`: the one try failed, with its reason.
 and `put_down(workers)` for a worker that stops (its running items go back to queued).
@@ -115,7 +115,7 @@ async def claim(store, worker: str, kinds: list[str], *,
             return None
         return _row(c.execute(
             "UPDATE work SET state='running', lease_worker=?, lease_until=?, started_at=? "
-            "WHERE id=? RETURNING id, kind, priority, payload, tries, conversation_id",
+            "WHERE id=? RETURNING id, kind, priority, payload, conversation_id",
             (worker, until, t, row[0])).fetchone())
     return await store.write(fn)
 
@@ -157,7 +157,7 @@ async def fail(store, wid: int, worker: str, error: str, *,
 
     def fn(c: sqlite3.Connection) -> str:
         r = c.execute(_end(
-            "tries=tries+1, error=?, state='failed', finished_at=?") + " RETURNING state",
+            "error=?, state='failed', finished_at=?") + " RETURNING state",
             (error, t, wid, worker)).fetchone()
         if r and r[0] == "failed":
             added(store, c, "work")
