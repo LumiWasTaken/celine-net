@@ -48,4 +48,6 @@ async def run(services, routes: Router, p: Plugin) -> None:
     finally:
         for m in mounted:
             routes.routes.remove(m)
+        if p.file is not None:
+            p.file.close()
         p.file = p.data = None
