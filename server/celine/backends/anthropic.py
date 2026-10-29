@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from .base import TAIL, Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage
+from .base import Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage
 from .ollama import _arguments
 from .openai import OpenAIBackend, RawReply, _sse_data, http_error, read_chunk
 
@@ -66,9 +66,8 @@ class AnthropicBackend(OpenAIBackend):
             body["thinking"] = {"type": "adaptive",
                                 "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
         # prompt cache breakpoints: the end of the system blocks (tools and system), and
-        # the end of the conversation so far: the block before the tail (what holds now,
-        # rebuilt every turn: turns/context.py) and the last block when it is a tool
-        # result; without a tail its last block. The next request reads them back
+        # the end of the conversation so far, its last block. The next request reads
+        # them back
         cache = {"type": "ephemeral",
                  **({"ttl": "1h"} if self.cfg.raw.get("cache_ttl") == "1h" else {})}
         if system:
@@ -178,18 +177,10 @@ def wire_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
 
 
 def breakpoints(wire: list[dict]) -> list[dict]:
-    """The blocks that get a cache breakpoint (see request_body). The tail's mark is
-    taken off its block here."""
+    """The blocks that get a cache breakpoint (see request_body): the last one; a request
+    only ever grows at its end (turns/context.py)."""
     flat = [b for m in wire for b in m["content"]]
-    tail = next((i for i, b in enumerate(flat) if b.pop(TAIL, None)), None)
-    if not flat:
-        return []
-    if tail is None:
-        return [flat[-1]]
-    out = [flat[tail - 1]] if tail > 0 else []
-    if flat[-1].get("type") == "tool_result" and flat[-1] is not flat[tail]:
-        out.append(flat[-1])
-    return out
+    return [flat[-1]] if flat else []
 
 
 def _blocks(content: Any) -> list[dict]:
@@ -199,8 +190,7 @@ def _blocks(content: Any) -> list[dict]:
     out: list[dict] = []
     for p in parts:
         if p.get("type") == "text" and str(p.get("text") or "").strip():
-            out.append({"type": "text", "text": p["text"], **({TAIL: True}
-                                                             if p.get(TAIL) else {})})
+            out.append({"type": "text", "text": p["text"]})
         elif p.get("type") == "image_url":
             url = str((p.get("image_url") or {}).get("url") or "")
             media, _, data = url.removeprefix("data:").partition(";base64,")

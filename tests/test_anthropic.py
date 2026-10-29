@@ -20,7 +20,7 @@ from celine.settings import kinds, thinking
 from celine.settings.files import Invalid
 from celine.settings.registry import Settings, backend_config, validate_provider
 from celine.skills import Registry, ToolResult, tool
-from celine.turns import context, loads, store as turns
+from celine.turns import context, store as turns
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 from chat_fixtures import user_says
@@ -387,7 +387,6 @@ async def thought_and_called(store, monkeypatch):
     registry = Registry()
     registry.add(Echo())
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", ["t"])
     await user_says(store, cid, "echo hi")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), registry)

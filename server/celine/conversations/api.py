@@ -95,19 +95,16 @@ BLOCKS = ("persona", "talk", "about", "notes", "tools", "history")
 async def what_she_sees(request: Request, cid: str) -> dict:
     """The next request of this conversation as a turn would build it now, measured in
     tokens, without a model call (turns/context.py, mode "dry", the same estimate
-    /usage uses), with its tail: {window, shares: {notes} (the most notes by need may
-    take, in tokens, turns/loads.py), blocks: [{name, tokens}] (persona, talk: the line
-    about where it is and how it talks, about: what the user wrote about themselves,
-    notes: the notes block, tools: the skill index, the skills' fragments and the tool
-    schemas, history: the rest of the request estimate (the messages sent, the summary
-    and its tail), so the blocks add up to the estimate the compaction check uses),
-    notes: [{path, tokens, state, why}] (the notes it
-    carries or would: included, left_out or off), loaded: {notes: [{path, since}]}
-    (each with the turns since a turn touched it), tools: how many, auto_context: the
-    Load automatically switch (api/context.py)}."""
+    /usage uses): {window, blocks: [{name, tokens}] (persona, talk: the lines about
+    where it is and how it talks, about: what the user wrote about themselves, notes:
+    the notes block, tools: the skill index, the skills' fragments and the tool schemas,
+    history: the rest of the request estimate (the messages sent with their stored
+    tails, and the summary), so the blocks add up to the estimate the compaction check
+    uses), notes: [{path, tokens, state, why}] (the notes it always carries: included,
+    or off here), tools: how many, auto_context: the Load automatically switch
+    (api/context.py)}."""
     from ..turns.prompt import turn_parts
     from ..turns import context, tokens
-    from ..turns.prompt import notes_tail, request_text
     db, cfg = store_of(request), cfg_of(request)
 
     def who(c):
@@ -118,33 +115,21 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     auto = await db.read(who)
     backend, blocks, tools, carried = await turn_parts(request.app.state.services, cid)
     system = "\n\n".join(t for _, t in blocks)
-    reg = request.app.state.services.registry
-    _, tail = await request_text(db, cfg, reg, backend, cid,
-                                 {"id": None, "root_message_id": None}, carried, tools,
-                                 touch=False)
     built = await context.build(db, cfg, backend, cid, system=system, tools=tools,
-                                mode="dry", tail=tail)
+                                mode="dry")
     counter, p = tokens.counter(backend), built.parts
     out = {name: {"name": name, "tokens": 0} for name in BLOCKS}
     for name, text in blocks:
         out.setdefault(name, {"name": name, "tokens": 0})["tokens"] += counter.estimate(text)
     out["tools"]["tokens"] += int(p.get("tool_schemas") or 0)
-    # the notes it carries by need ride in the tail: they count as notes, not history
-    carried_notes = counter.estimate(notes_tail(cfg, carried) or "")
-    out["notes"]["tokens"] += carried_notes
     # history is the rest of the request estimate the compaction check uses, so the
     # blocks add up to exactly that number (the per-block estimates of the system text
     # and the request's count differ by the message overhead and rounding)
     out["history"]["tokens"] = max(0, int(p.get("estimate") or 0) - sum(
         b["tokens"] for n, b in out.items() if n != "history"))
-    return {"window": built.window, "shares": carried.budgets,
-            "blocks": list(out.values()),
+    return {"window": built.window, "blocks": list(out.values()),
             "notes": [{k: n[k] for k in ("path", "tokens", "state", "why")}
-                      for n in carried.notes] + [
-                {"path": x["name"], "tokens": x["tokens"], "state": "left_out",
-                 "why": x["why"]} for x in built.left_out],
-            "loaded": {"notes": [{"path": p, "since": s} for (k, p), s in
-                                 sorted(carried.since.items()) if k == "note"]},
+                      for n in carried.notes],
             "tools": len(tools), "auto_context": auto}
 
 

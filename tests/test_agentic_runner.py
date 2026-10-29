@@ -57,10 +57,7 @@ def _call(i, name, args):
 
 
 async def _turn(store, cfg, registry, backend):
-    from celine.turns import loads
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", list(registry.skills))   # loaded before
-    await loads.touch(store, cid, "tool", list(registry.tools))
     await user_says(store, cid, "when did we talk about the celine?")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), registry)

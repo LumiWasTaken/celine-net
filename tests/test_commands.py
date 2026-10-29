@@ -147,12 +147,11 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
     assert got["window"] == 65_536 and got["tools"] >= 1
     blocks = {b["name"]: b for b in got["blocks"]}
     assert list(blocks) == ["persona", "talk", "about", "notes", "tools", "history"]
-    assert "bytes" not in blocks["persona"] and got["shares"] == {"notes": 6553}
+    assert "bytes" not in blocks["persona"]
     assert blocks["persona"]["tokens"] > 0 and blocks["history"]["tokens"] > 0
     assert blocks["tools"]["tokens"] > 0
     assert {n["path"]: (n["state"], n["why"]) for n in got["notes"]} == {
         "voice/draft.md": ("off", "left out in this conversation"),
         "voice/style.md": ("included", "")}
-    assert got["loaded"] == {"notes": [{"path": "voice/style.md", "since": 0}]}
 
     assert model.calls == [], "no model call"

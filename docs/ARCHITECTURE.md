@@ -175,8 +175,8 @@ change with the validators of a save (`settings/write.check`), waits for your ap
 Settings screen's own function (`saves.py`) on the version it was proposed
 against; a target that changed meanwhile is not overwritten. A secret comes from a file
 in her shellbox, so its value never passes her context, the request, an event or a log.
-The skill is not core: it loads by need, so its parameters cost nothing in the turns
-that do not touch Settings.
+The skill is not core: its tools go by name, so their parameters cost nothing in the
+turns that do not touch Settings.
 
 A llama-swap, tabby or llama-server model's `llama` block in Settings goes into the
 request body; `llama.grammar.file` (relative to `config/`) is sent as `grammar`. The
@@ -334,11 +334,11 @@ event. Calls record what the tool was (`tool_calls.mutating`, `mode`).
    journal). Read-only calls it left in flight run again with the same ids; a reply
    without calls at the tail is continued in place (below).
 1. Resolve the tool list once. A tool disabled for this conversation stays in the list.
-2. Build the system prompt (`turns/prompt.py`): its persona, one line saying who it is talking to and where,
-   in a chat how it talks (`talk`), the notes it always carries, skill fragments, a
-   note if anything is disabled here. The notes it carries by need go in the tail, with
-   the latest message, rebuilt every turn (`prompt.notes_tail`). `/compact` and `/usage`
-   build the same prompt (`prompt.request_parts`). Then the request, through the context
+2. Build the system prompt (`turns/prompt.py`): its persona, who it is talking to, where
+   it is, how it talks (`talk`), the notes it always carries, the skill index and the
+   core skills' fragments. The user message the turn answers gets the turn's tail once
+   (`prompt.tail_text`: the time, its plan, what is off or down, its notebook's index).
+   `/compact` and `/usage` build the same prompt (`prompt.request_parts`). Then the request, through the context
    builder (`turns/context.py`, below): old tool results may go as stubs and older turns
    as a summary.
 
@@ -823,31 +823,34 @@ it talks belongs to a chat, which runs on the chat role; a conversation of anoth
 runs on the `tasks` role (a run on its schedule's role, `settings/roles.py`) and gets its
 instructions from its kind, never how it talks.
 
-**What it carries** (`turns/loads.py`): the notes loaded in full, decided by one policy
-in every conversation and measured in tokens as a share of the model's window
-(`var/settings/context.toml`: `notes`, `idle_turns`), and the skills offered here.
-`select` runs at every turn start (`when="start"`, saved) and without saving for
-/usage, /compact and the Context tab (`"dry"`). Its state is `context_loaded`: one row
-per note it carries, with the turn that last touched it.
-- Notes, always: a note whose head has `load: always` and the notes on the user,
+**What it carries** (`turns/loads.py` `select`, at every turn start and for /usage,
+/compact and the Context tab): the notes it always carries and the skills offered here.
+- Notes: a note whose head has `load: always` and the notes on the user,
   `people/{{username}}*`. One over 1.5 KB (`loads.ALWAYS_MAX`) carries its head lines and
-  the lines it marked with `!!`, then `rest via notebook__read(path="...")`. For a
-  while: a note it read, wrote or edited, or the user loaded by hand. A note whose
-  `keys:` head line comes up in the talk is not loaded in full: its matching sections
-  come back under `[your memory]`. Never: a note whose head says `load: off`, a note the
-  user left out here (`conversations.notes_off`), anything outside a sub-agent's folder.
-  The share is for the notes by need, the most recently touched first.
-- Skills: every skill offered here with a tool on. A note no turn touched for
-  `idle_turns` turns is unloaded.
+  the lines it marked with `!!`, then `rest via notebook__read(path="...")`. Never: a
+  note whose head says `load: off`, a note the user left out here
+  (`conversations.notes_off`), anything outside a sub-agent's folder. Any other note
+  comes back as the result of `notebook__read`, which ages like any other result
+  (`compact.stub`); a note whose `keys:` head line comes up in the talk brings its
+  matching sections under `[your memory]`.
+- Skills: every skill offered here with a tool on.
 
-**The system prompt**, in this order, the parts that change from turn to turn last so the
-start stays the same for the model server's cache: the persona, the legend of the app's
-marks (`turns/legend.py`), the line about who it is talking to and where (`_chat_line`),
-its `talk` (a chat only), the **notes block** (`skills/notebook.py` `notes_block`), the
-**skill index** (`Registry.index`: one line per skill offered here, the core ones marked
-`[core]`), then each core skill's fragment and the sub_agents fragment. The notes it
-carries by need go in the tail with the latest message (`prompt.notes_tail`), so a note
-that comes or goes leaves the cached prompt as it was.
+**The system prompt** holds nothing that changes from turn to turn, so the start of
+every request is the bytes of the one before: the persona, the legend of the app's
+marks (`turns/legend.py`), the line about who it is talking to (`_chat_line`), **where
+it is** (`conversations/here.py` `where`, from ids: its kind and address, the place, the
+device its tools run on, its model role, who started it, who it reports to and its depth
+in the chain of agents), its `talk`, the **notes block** (`skills/notebook.py`
+`notes_block`), the **skill index** (`Registry.index`: one line per skill offered here,
+the core ones marked `[core]`), then each core skill's fragment and the sub_agents
+fragment.
+
+**The tail** of a turn (`prompt.tail_text`): the date and the time now, the fallback
+line, the other conversations working now (`here.busy`), its plan, the skills it
+cannot use now (`prompt.unusable`), its notebook's index. It is written once on the user
+message the turn answers (`message_context.tail`, `message_context.put_tail`) and sent
+after that message's context block in every later request (`context._Item`), so it never
+moves; a later turn on the same message (a Continue, a restart) sends the same bytes.
 
 **The tools.** `prompt.tool_specs`: the tools the skills offer here, in registry order
 (a skill with `offered_in` offers its tools only where that says so); a sub-agent with
@@ -1678,8 +1681,7 @@ states, titles, the archive's tasks and sources, the model queue, settings chang
 bare signals such as `terminal.state` and `browser.state`; `conversation.created`,
 `conversation.deleted`, `conversation.restored`, `conversation.pinned`,
 `conversation.archived`, `conversation.unarchived`; `agent.state`, `mission.state`,
-`intercom.state`, `artifact.updated`, `images.batch` and `music.batch`, `context.changed`
-(what a conversation carries by need came or went), `events.added` (a row of Events
+`intercom.state`, `artifact.updated`, `images.batch` and `music.batch`, `events.added` (a row of Events
 landed), `notice` (one item for a system notification while the tab is hidden: its
 reply in a chat, an Intercom message to you, a mission waiting for you, a failed run, a
 request to approve; `{kind, title, body, link, tag}`, events.py `notice`, web

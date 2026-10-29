@@ -11,9 +11,8 @@
 [notebook]
 enabled = true
 # The agent's notes. Real files in var/notebook, in whatever format it picks.
-# An index it maintains is injected into every system prompt, capped both ways
-# (Settings, Advanced). Notes loaded in full (by need, var/settings/context.toml,
-# turns/loads.py) are left out of the index.
+# An index it maintains goes at the end of the message each turn answers, capped both
+# ways (Settings, Advanced). The notes it always carries are left out of the index.
 # Files it can read and never write or delete: identity.md is yours, it goes into
 # every system prompt in full, so editing it is how you edit who it is; the two
 # READMEs keep opinions/ and appearance/ in place and tell it what goes there.

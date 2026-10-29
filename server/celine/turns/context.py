@@ -13,8 +13,8 @@ Principles:
 The order of what is sent, most stable first:
   system = persona + skill fragments + ["Earlier in this conversation" summary]
   history after the newest compaction: user/assistant messages verbatim (a user
-  message under its time line), tool results verbatim or (at or before
-  `aged_through`) as stubs.
+  message under its time line, its context block and its turn's tail after it), tool
+  results verbatim or (at or before `aged_through`) as stubs.
 
 Modes (who asks):
 - "start"      turn start: age above 60 %, compact above 75 % (to 40 %).
@@ -27,10 +27,10 @@ Modes (who asks):
 - "manual"     /compact: summarises all but the latest exchange, now.
 - "dry"        /usage: computes, writes nothing, calls no model.
 
-The tail (`tail`, built per turn, never stored) is appended to the last user-role
-message: what holds now, which changes every turn and so stays out of the cached prefix.
-It comes in parts (`Part`). What a request leaves out is in `Built.left_out` (the
-Context tab), never in its request.
+The tail of a turn (turns/prompt.py tail_text: the time now, where else it works, its
+plan, what cannot be used, its notebook's index) is written once on the user message the
+turn answers (`message_context.tail`) and sent after it in every later request: it never
+moves, so every request starts with the bytes of the one before.
 
 Every message of a request says where it came from (`origin`, the app's key, no backend
 sends it): a list of {conversation, turn, message, call, note}, more than one when
@@ -54,7 +54,7 @@ from typing import Any
 import anyio
 
 from .. import attachments, guard
-from ..backends.base import ORIGIN, TAIL
+from ..backends.base import ORIGIN
 from ..core.ids import when
 from ..guard import mark, sources
 from ..intercom.render import header
@@ -87,36 +87,6 @@ class Policy:
 POLICY = Policy()
 
 
-@dataclass(frozen=True)
-class Part:
-    """One piece of a tail. `rank` 0 always goes; the by-need ones go out in rank order
-    when the window is short, the last of a rank first. Consecutive parts with one
-    `head` are written under it once.
-    `name`: what the Context tab calls it when it is left out. A part with `why` was
-    left out before (over its share): never sent, only named, with its `tokens`."""
-    text: str
-    rank: int = 0
-    name: str = ""
-    head: str = ""
-    why: str = ""
-    tokens: int = 0
-
-
-def render(parts: list[Part]) -> str:
-    """The parts as it reads them, a blank line between two."""
-    out: list[str] = []
-    head = ""
-    for p in parts:
-        if not p.text or p.why:
-            continue
-        if p.head and p.head == head:
-            out[-1] += "\n\n" + p.text
-        else:
-            out.append(f"{p.head}\n{p.text}" if p.head else p.text)
-        head = p.head
-    return "\n\n".join(out)
-
-
 def room(backend, system: str, tools: list[dict], win: int | None = None) -> int:
     """What a request has for the history and the tail: the window (`win`, else the
     backend's) less the system prompt, the tool schemas and the reserve."""
@@ -142,8 +112,6 @@ class Built:
                                                        # verbatim (citation check)
     actions: list[str] = field(default_factory=list)   # what this build changed
     parts: dict[str, Any] = field(default_factory=dict)  # tokens per part (/usage)
-    left_out: list[dict] = field(default_factory=list)   # tail parts with no room:
-                                                         # {name, tokens, why}
 
 
 _locks: weakref.WeakValueDictionary[str, anyio.Lock] = weakref.WeakValueDictionary()
@@ -293,6 +261,8 @@ class _Item:
                 + self.content
             if m.get("context"):                # turns/message_context.py
                 self.content += "\n\n" + m["context"]
+            if m.get("tail"):                   # its turn's tail, stored once
+                self.content += "\n\n" + m["tail"]
         self.reasoning = (m.get("reasoning") or None) if self.role == "assistant" else None
         self.thinking = m.get("thinking") if self.role == "assistant" else None
         self.current = False                # its thinking goes on the wire (see _select)
@@ -317,12 +287,11 @@ def _agable(call: dict, policy: Policy, counter) -> bool:
 
 class _Plan:
     def __init__(self, view: dict, cfg, backend, counter, policy: Policy, limit: int,
-                 tail: list[Part] = (), cid: str = ""):
+                 cid: str = ""):
         self.cfg, self.backend, self.counter, self.policy = cfg, backend, counter, policy
         self.cid = cid
-        self.view, self.tail = view, list(tail)
+        self.view = view
         self.guarded = guard.enabled(cfg, cid)        # a chat can turn Bastet off
-        self.dropped: set[int] = set()       # tail parts left out for room
         chain = view["chain"]
         self.chain = chain
         self.pos = {m["id"]: i for i, m in enumerate(chain)}
@@ -451,11 +420,7 @@ class _Plan:
             # chat templates want one, with where it came from
             out.insert(0, {"role": "user", "content": self.opening or HER_FIRST,
                            ORIGIN: origin(self.cid, note="opening")})
-        tail = self.tail_text()
-        return _with_tail(out, tail, self.cid) if tail else out
-
-    def tail_text(self) -> str:
-        return render([p for i, p in enumerate(self.tail) if i not in self.dropped])
+        return out
 
     def history_tokens(self) -> int:
         """The history part: the messages after its summary, as they are sent."""
@@ -509,40 +474,21 @@ def wire_message(cfg, it: _Item) -> list[dict]:
     return [{"role": it.role, "content": it.content, **_thought(it), ORIGIN: came}]
 
 
-def _with_tail(out: list[dict], tail: str, cid: str) -> list[dict]:
-    """The history with the tail as its own content block at the end of the last
-    user-role message, or as a user message by itself when its own reply would be last
-    (or there is none). add_user never merges across it: it is a list."""
-    block = {"type": "text", "text": tail, TAIL: True}
-    alone = {"role": "user", "content": [block], ORIGIN: origin(cid, note="tail")}
-    if not out or out[-1]["role"] == "assistant" and not out[-1].get("tool_calls"):
-        return [*out, alone]
-    last = next((i for i in range(len(out) - 1, -1, -1) if out[i]["role"] == "user"), None)
-    if last is None:
-        return [*out, alone]
-    content = out[last]["content"]
-    parts = content if isinstance(content, list) else \
-        [{"type": "text", "text": content}] if content else []
-    return [*out[:last], {**out[last], "content": [*parts, block]}, *out[last + 1:]]
-
-
 # ---- build --------------------------------------------------------------------------------
 async def build(store, cfg, backend, cid: str, *, system: str, tools: list[dict],
                 mode: str = "start", focus: str | None = None,
-                policy: Policy | None = None, tail: list[Part] = (),
-                path: list[dict] | None = None) -> Built:
+                policy: Policy | None = None, path: list[dict] | None = None) -> Built:
     """The request for this conversation, after whatever aging or compaction `mode`
-    calls for (see the module docstring), with the `tail` parts after the last
-    user-role message. `path`: the active path when the turn read it already. A summary
+    calls for (see the module docstring). `path`: the active path when the turn read it already. A summary
     this build needs and does not get raises compact.SummaryFailed, but in the background
     (module docstring)."""
     policy = policy or POLICY
     if mode == "dry":                  # reads only: never waits for a summary
         return await _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
-                            tail, path)
+                            path)
     async with lock(cid):
         return await _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
-                            tail, path)
+                            path)
 
 
 @dataclass
@@ -586,12 +532,12 @@ class Rule:
 
 
 async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
-                 tail=(), path=None) -> Built:
+                 path=None) -> Built:
     counter = tokens.counter(backend)
     win = tokens.window(backend)
     view = await compactions.context_view(store, cid, path)
     plan = _Plan(view, cfg, backend, counter, policy, int(cfg.r("history_messages") or 0),
-                 tail, cid)
+                 cid)
     plan.opening = await store.read(lambda c: (c.execute(
         "SELECT v FROM kv WHERE k=?", (OPENING + cid,)).fetchone() or [""])[0])
     run = _Run(store, cfg, backend, cid, plan, system, tools, mode, focus, policy,
@@ -624,18 +570,14 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
     msgs = plan.messages(system)
     est = counter.request(msgs, tools)
 
-    left_out = [{"name": p.name, "why": p.why, "tokens": p.tokens}
-                for p in plan.tail if p.why]
     aged_n = sum(1 for it in plan.items if plan.aged(it)
                  for c in it.calls or [] if _agable(c, policy, counter))
     verb = sum(plan.cost(it) for it in plan.items if not plan.aged(it))
     aged_t = sum(plan.cost(it) for it in plan.items if plan.aged(it))
     summary_t = counter.estimate(plan.system(system)) - counter.estimate(system) \
         if plan.compaction else 0
-    tail_t = counter.estimate(plan.tail_text())
     parts = {"system": counter.estimate(system) + tokens.PER_MESSAGE,
              "summary": max(0, summary_t), "tool_schemas": schema,
-             "tail": tail_t,
              "history_verbatim": verb, "history_aged": aged_t,
              "aged_results": aged_n, "messages_sent": len(msgs),
              "messages_on_version": len(plan.chain),
@@ -644,7 +586,7 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
              "free": win - est - reserve}
     return Built(messages=msgs, estimate=est, window=win, aged=aged_n,
                  compaction=plan.compaction, hidden=plan.hidden(), actions=run.actions,
-                 parts=parts, left_out=left_out)
+                 parts=parts)
 
 
 async def _age(run: _Run) -> None:

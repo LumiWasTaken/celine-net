@@ -13,7 +13,7 @@ from celine.conversations import store as conversations
 from celine.core.bus import EventBus
 from celine.errors import redact
 from celine.skills import Registry, ToolResult, tool
-from celine.turns import loads, store as turns
+from celine.turns import store as turns
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 from chat_fixtures import Script, until, user_says
@@ -261,7 +261,6 @@ async def test_what_she_reads_from_the_file_is_stored_nowhere(vault_app, store):
         [TextDelta(f"It is {pw[:12]}"), TextDelta(f"{pw[12:]}, friend."),
          Done(reason="stop", raw={"text": f"It is {pw}"})]])
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", ["t"])
     await user_says(store, cid, "what is the example-shop password?")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, vault_app.cfg, backend, EventBus(), Token(turn["id"]), reg)

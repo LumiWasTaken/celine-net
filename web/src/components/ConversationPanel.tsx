@@ -18,9 +18,9 @@
 
    `ModelRow` is the model alone with a button that opens the chooser, for the heads of
    places that talk without this panel (a mission). */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeftRight, Plus } from 'lucide-react'
-import { conversationApi, notebookApi, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeftRight } from 'lucide-react'
+import { conversationApi, type ContextView, type Job, type NewConversationSettings } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
 import { duration, errorText, num } from '../lib/format'
 import { agentsApi, type TreeAgent } from '../lib/agents'
@@ -33,8 +33,8 @@ import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useConversationSettings } from '../lib/useConversationSettings'
 import {
-  Button, Choice, cx, Dialog, Drawer, EmptyState, IconButton, InlineError, ListRow, ListSection, Loaded, LoadingRow, Progress, SearchField,
-  Switch, Tabs, VirtualList, type DotTone,
+  Button, Choice, cx, Drawer, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Switch, Tabs,
+  type DotTone,
 } from '../ui'
 import { ModelChooser, findModel, modelName } from './ModelChooser'
 import { ToolList } from './ToolList'
@@ -264,8 +264,7 @@ export function ModelRow({ cid, enabled = true, live, head = false }: {
 
 /* ── Context: the tokens of the window in use, per block; its notes, each with its state
    and a switch that leaves it out of this conversation (PATCH notes_off, the whole list).
-   Measured again after every turn state, every
-   change of the list and every `context.changed` of this conversation. Tokens only. ── */
+   Measured again after every turn state and every change of the list. Tokens only. ── */
 type Block = ContextView['blocks'][number]['name']
 const BLOCK: Record<Exclude<Block, 'persona' | 'talk'>, string> = {
   about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Conversation',
@@ -278,15 +277,9 @@ function blockWord(b: Block, subject: string): string {
   return BLOCK[b]
 }
 
-/** the tokens, and how many turns ago a turn last used it (nothing for this turn) */
-const carriedWords = (tokens: number, since: number | undefined) =>
-  `${num(tokens)} tokens${since ? `, used ${since} ${since === 1 ? 'turn' : 'turns'} ago` : ''}`
-
-function noteWord(n: ContextView['notes'][number], off: boolean, since: number | undefined): string {
+function noteWord(n: ContextView['notes'][number], off: boolean): string {
   if (off) return 'Left out here'
-  if (n.state === 'included') return carriedWords(n.tokens, since)
-  if (n.state === 'left_out') return `Left out, ${n.why || 'over the share'}`
-  return `Off, ${n.why || 'by its own line'}`
+  return `${num(n.tokens)} tokens`
 }
 
 function ContextTab({ cid, notesOff, turnKey, enabled }: {
@@ -294,18 +287,15 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
 }) {
   const { subject } = usePronouns()
   const ctx = useResource(() => conversationApi.context(cid), [cid, turnKey, notesOff.join('\n')],
-    { enabled, events: ev => (ev.type === 'context.changed' && ev.conversation === cid)
-      || (ev.type === 'conversation.auto_context' && ev.id === cid) })
+    { enabled, events: ev => ev.type === 'conversation.auto_context' && ev.id === cid })
   const [error, setError] = useState<string | null>(null)
   // the list sent last: two quick switches both count before the server's event comes back
   const sent = useRef(notesOff)
   useEffect(() => { sent.current = notesOff }, [notesOff])
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(cid, on); ctx.reload() })
-  const [loading, setLoading] = useState(false)
   const c = ctx.data
   if (!c) return <Loaded res={ctx} compact inline />
   const used = c.blocks.reduce((n, b) => n + b.tokens, 0)
-  const since = new Map(c.loaded.notes.map(n => [n.path, n.since]))
   const toggle = async (path: string, on: boolean) => {
     setError(null)
     const next = on ? sent.current.filter(p => p !== path) : [...sent.current.filter(p => p !== path), path]
@@ -333,51 +323,13 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
           // a note off by its own load line stays off whatever the switch says
           const own = n.state === 'off' && !off
           return (
-            <ListRow key={n.path} density="sm" title={n.path.replace(/\.md$/, '')} tooltip={n.path} subtitle={noteWord(n, off, since.get(n.path))}
+            <ListRow key={n.path} density="sm" title={n.path.replace(/\.md$/, '')} tooltip={n.path} subtitle={noteWord(n, off)}
                      muted={off || n.state !== 'included'} trailingAlways
                      trailing={<Switch hideLabel checked={!off} disabled={own} label={n.path} onChange={on => void toggle(n.path, on)} />} />
           )
         })}
-        <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add a note" onClick={() => setLoading(true)}>Add</Button>
       </div>
-      {loading && (
-        <LoadDialog cid={cid} skip={c.loaded.notes.map(n => n.path)}
-                    onDone={() => { setLoading(false); ctx.reload() }} onClose={() => setLoading(false)} />
-      )}
     </div>
   )
 }
 
-/* loading by hand: every note of its notebook, with a search; one click loads it for its
-   next step */
-function LoadDialog({ cid, skip, onDone, onClose }: {
-  cid: string; skip: string[]; onDone: () => void; onClose: () => void
-}) {
-  const [q, setQ] = useState('')
-  const items = useResource<{ key: string; title: string; detail: string }[]>(async () => {
-    const files: { key: string; title: string; detail: string }[] = []
-    const walk = (ns: NotebookNode[]) => ns.forEach(n => (n.kind === 'dir' ? walk(n.children ?? [])
-      : files.push({ key: n.path, title: n.path.replace(/\.md$/, ''), detail: '' })))
-    walk((await notebookApi.tree()).tree)
-    return files
-  }, [])
-  const load = useAction(async (key: string) => {
-    await contextApi.loadNote(cid, key)
-    onDone()
-  })
-  const shown = useMemo(() => {
-    const f = q.trim().toLowerCase()
-    return (items.data ?? []).filter(i => !skip.includes(i.key) && (!f || i.title.toLowerCase().includes(f) || i.key.toLowerCase().includes(f)))
-  }, [items.data, q, skip])
-  return (
-    <Dialog title="Add a note" onClose={onClose} size="md">
-      <SearchField value={q} onChange={setQ} placeholder="Search" autoFocus />
-      {load.error && <InlineError compact message={load.error} />}
-      {items.error ? <InlineError compact message={items.error} onRetry={items.reload} />
-        : !items.data ? <LoadingRow />
-        : shown.length === 0 ? <EmptyState compact title={q ? 'Nothing matches' : 'Everything is loaded'} />
-        : <VirtualList items={shown} getKey={i => i.key} estimate={() => 44} label="Notebook"
-                       renderRow={i => <ListRow title={i.title} subtitle={i.detail || undefined} onClick={() => void load.run(i.key)} />} />}
-    </Dialog>
-  )
-}

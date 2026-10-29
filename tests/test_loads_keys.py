@@ -29,15 +29,7 @@ def _why(got, path):
     return next(n["why"] for n in got.notes if n["path"] == path)
 
 
-def test_her_last_reply_counts_for_its_first_300_characters():
-    def chain(reply):
-        return [{"role": "user", "content": "hi"}, {"role": "assistant", "content": reply},
-                {"role": "tool", "content": "noor"}, {"role": "assistant", "content": ""},
-                {"role": "user", "content": "go on"}]
-    assert loads.key_in(loads.talk(chain("Noor said so")), ["noor"]) == "noor"
-    assert loads.key_in(loads.talk(chain("x" * 300 + " noor")), ["noor"]) is None
-    assert loads.talk([{"role": "user", "content": "a"}, {"role": "user", "content": "b"}]) \
-        == "a\nb\n", "both new messages, no reply yet"
+def test_a_key_is_a_whole_word_or_phrase():
     assert loads.key_in("the artist", ["art"]) is None
     assert loads.key_in("art.", ["art"]) == "art"
 

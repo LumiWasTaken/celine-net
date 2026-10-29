@@ -1,20 +1,17 @@
 # What it carries in one request besides its persona, how it talks and the
-# conversation itself (server/celine/turns/loads.py): notes as a
-# share of the model's window. Copied once to
+# conversation itself (server/celine/turns/loads.py). Copied once to
 # var/settings/context.toml; edit that copy.
 #
-# Notes load by need: the always-loaded ones (a `load: always` line, the notes on you)
-# and the ones it read or wrote. Every tool is in its list, a core skill's with its
-# parameters, every other by name; skills__load answers with the parameters, and a
-# message that asks for a skill (an image, a link, a document, a word of the `words:`
-# line in its guide) gets that load at its end.
+# Notes: the always-loaded ones (a `load: always` line, the notes on you) are in its
+# instructions; any other note comes back as the result of reading it. Every tool is in
+# its list, a core skill's with its parameters, every other by name; skills__load answers
+# with the parameters, and a message that asks for a skill (an image, a link, a document,
+# a word of the `words:` line in its guide) gets that load at its end.
 #
 # The agent's memory: a note whose `keys:` line names a word or phrase of the new message or
 # the start of its last reply brings up its sections, graded by embedding similarity,
 # under [your memory] at the end of the message (server/celine/skills/recall.py).
 
-notes = 0.10        # notes loaded in full: at most this share of the window
-idle_turns = 6      # a note no turn touched for this many turns is unloaded
 memory_floor = 0.5  # a section comes back only this similar to the talk (0 to 1)
 memory_sections = 3 # at most this many sections per message
 memory_tokens = 1500  # in at most this many tokens

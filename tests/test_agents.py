@@ -154,7 +154,8 @@ async def test_start_returns_at_once_and_the_report_comes_later(store, cfg):
     assert top.startswith("[car scout, done") and top.endswith("; changed agents/cars/found.md]"), \
         "its head: name, state, work, the notes it changed"
     assert answer.startswith("car scout done: ")
-    assert answer.endswith("\nfind the red cars"), "its brief, under its header"
+    assert "[Brief from Celine (#2)]\nfind the red cars\n\nToday is" in answer, \
+        "its brief, under its header, then the tail of its turn (the test model echoes it)"
     assert (cfg.her.notebook / "agents/cars/found.md").read_text().endswith("\nred, red, red")
 
 

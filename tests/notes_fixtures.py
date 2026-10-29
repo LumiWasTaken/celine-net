@@ -9,7 +9,7 @@ from chat_fixtures import user_says
 from celine.skills import notebook_index
 from celine.turns import loads
 
-WINDOW = 10_000         # notes 1,000 tokens, tools 800
+WINDOW = 10_000
 BACKEND = SimpleNamespace(cfg=SimpleNamespace(raw={"context": WINDOW}, base_url="test",
                                               params={}), model="loads")
 TEXTS: dict[str, str] = {}        # what write_notes wrote, by path
@@ -36,7 +36,7 @@ async def select_turn(store, cfg, reg, cid, n: int, text: str = "fine"):
     """A user message, the selection of the turn it starts, and its short answer."""
     from celine.conversations import tree
     mid, tid, _ = await user_says(store, cid, text)
-    got = await loads.select(store, cfg, reg, cid, BACKEND, when="start", turn_id=tid)
+    got = await loads.select(store, cfg, reg, cid, BACKEND)
     reply = await tree.start_assistant_message(store, cid, mid, tid)
     await tree.finish_assistant_message(store, cid, reply, "ok", None)
     await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))

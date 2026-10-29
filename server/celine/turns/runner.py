@@ -72,15 +72,14 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         token.cancel()
     await turns.set_backend(store, tid, backend.name, backend.model)
 
-    # the path, read once for the turn's start: what it carries by need, the user
-    # messages it sends first, the tail and the first request
+    # the path, read once for the turn's start: the user messages it sends first, the
+    # tail and the first request
     chain = await store.read(lambda c: tree.path(c, cid))
-    # this conversation's switches (skills/gating.py) and what it carries by need
+    # this conversation's switches (skills/gating.py) and what it carries
     # (turns/loads.py), resolved once per turn: a config reload must not swap tools
     # under a running turn, and a load never changes them (its result carries it)
     overrides = await overrides_for(store, cid)
-    carried = await loads.select(store, cfg, registry, cid, backend, when="start",
-                                 turn_id=tid)
+    carried = await loads.select(store, cfg, registry, cid, backend)
     specs, read_only = await prompt.tool_specs(registry, store, cid, carried)
     tools_on = bool(registry) and getattr(backend, "supports_tools", False)
     wire_tools = prompt.wire_tools(specs, registry, overrides, cfg) if tools_on else []
@@ -126,19 +125,25 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         parent = await turns.step_tail(store, calls[-1]["message_id"])
         chain = await store.read(lambda c: tree.path(c, cid))
 
-    pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn, carried,
-                                      wire_tools, path=chain)
+    pieces = [t for _, t in await prompt.system_blocks(
+        cfg, registry, store, cid, tid, carried, getattr(backend, "role", None))]
     system = "\n\n".join(pieces)
 
     async def build(mode: str, path: list[dict] | None = None):
-        """The request from the context builder (turns/context.py), with the system,
-        the tools and the tail of now."""
+        """The request from the context builder (turns/context.py), with the system and
+        the tools."""
         return await context.build(store, cfg, backend, cid, system=system,
-                                   tools=wire_tools, mode=mode, tail=tail, path=path)
+                                   tools=wire_tools, mode=mode, path=path)
 
-    # the user messages this turn sends first get their context block, stored once
+    # the user messages this turn sends first get their context block, stored once,
+    # and the message it answers gets the turn's tail, once (a later turn on it, a
+    # Continue or a restart sends the same bytes)
     await message_context.ensure(store, cfg, registry, cid, tid,
                                  message_context.unsent(chain), tool_turn["max_output_tokens"])
+    answers, stored = await message_context.tail_of(store, chain)
+    if answers is not None and stored is None:
+        await message_context.put_tail(store, answers, await prompt.tail_text(
+            store, cfg, registry, backend, cid, carried))
     # the context builder (turns/context.py): old results as stubs and older turns as
     # a summary when the conversation nears the window; decisions are persisted
     built = await build("start", chain)
@@ -319,16 +324,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         parent = await turns.step_tail(store, mid)
         iteration += 1
         grown = True
-        said = next((p.text for p in tail if p.name == prompt.FALLBACK_PART), None)
-        if await prompt.fallback_line(store, backend, cid) != said:
-            # another model answered than the one its fallback line names: the tail
-            # with the line is built again for the next step
-            pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn,
-                                                     carried, wire_tools)
-            system = "\n\n".join(pieces)
-            built = await build("turn")
-            messages, hidden = built.messages, built.hidden
-            grown = False
 
 
 def _aside(registry, name: str) -> bool:

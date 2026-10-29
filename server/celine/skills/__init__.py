@@ -435,18 +435,13 @@ class Registry:
 
     def index(self, cfg, carried) -> str | None:
         """The skill index for the system prompt: one line per skill offered here, what
-        it is for, a core one marked."""
+        it is for, a core one marked. What is down or off now is said in the tail
+        (turns/prompt.py unusable), so a skill going down leaves the prompt as it was."""
         from .meta import skill_note_path
 
         def line(name: str) -> str:
             desc = " ".join(cfg.substitute(str(getattr(self.skills[name], "description",
                                                        ""))).split())
-            if why := self.down(name):
-                desc += f" (down: {cfg.substitute(why)})"
-            elif carried.others.get(name) == "off":
-                desc += " (off in Settings, Tools)"
-            elif carried.others.get(name) == "off here":
-                desc += " (off in this conversation)"
             mark = " [core]" if name in CORE else ""
             mark += " [notes]" if skill_note_path(cfg, name).is_file() else ""
             return f"- {name}{mark}: {desc}"

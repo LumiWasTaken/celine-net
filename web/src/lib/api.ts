@@ -556,14 +556,8 @@ export type SentRequest = {
 /** GET /conversations/{cid}/context: blocks in order persona, talk, about, notes, tools, history */
 export type ContextView = {
   window: number
-  /** the most notes by need may take, in tokens */
-  shares: { notes: number }
   blocks: { name: 'persona' | 'talk' | 'about' | 'notes' | 'tools' | 'history'; tokens: number }[]
-  notes: { path: string; tokens: number; state: 'included' | 'left_out' | 'off'; why: string | null }[]
-  /** what it carries, each with the turns since a turn last touched it */
-  loaded: {
-    notes: { path: string; since: number }[]
-  }
+  notes: { path: string; tokens: number; state: 'included' | 'off'; why: string | null }[]
   tools: number
   /** the Load automatically switch */
   auto_context: boolean

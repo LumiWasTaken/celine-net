@@ -137,8 +137,6 @@ async def test_a_turn_counts_its_origin_outcome_and_tool_calls(store):
     pongs = calls_of("ping__pong")
     made_up = value("celine_tool_calls_total", tool="unknown", state="error")
     cid = await conversations.create(store)
-    from celine.turns import loads
-    await loads.touch(store, cid, "skill", ["ping"])
     await user_says(store, cid, "ping twice")
     async with anyio.create_task_group() as tg:
         cfg = load()

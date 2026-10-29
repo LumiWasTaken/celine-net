@@ -246,21 +246,6 @@ async def test_a_web_citation_she_writes_down_is_stored_as_written(store, cfg):
     assert "prices [[web:3]] and [web:9]【2†source】.\ndownload: https://example.com/a.zip" in text
 
 
-async def test_a_note_she_only_read_ages_out_after_one_turn(store, cfg):
-    nb = Notebook(cfg)
-    cid = await conversations.create(store)
-    ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
-    await nb.write(ctx, "a.md", "written", "a")
-    (cfg.her.notebook / "b.md").write_text("only read\n")
-    await nb.read(ctx, "b.md")
-    await nb.read(ctx, "a.md")          # a read never shortens a write
-    got = dict(await store.read(lambda c: c.execute(
-        "SELECT name, touched FROM context_loaded WHERE conversation_id=?",
-        (cid,)).fetchall()))
-    idle = int(cfg.context.get("idle_turns", 6))
-    assert got == {"a.md": 0, "b.md": 0 - idle + 1}
-
-
 async def test_the_apps_own_files_are_not_notes(store, cfg):
     """A refusal is the tool's answer, never a crash: no tool raises on a path."""
     nb = Notebook(cfg)

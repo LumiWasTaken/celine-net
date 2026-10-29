@@ -7,7 +7,6 @@ from typing import Literal
 
 # the app's mark on the tail's content block (turns/context.py): the Anthropic backend
 # puts a cache breakpoint on it, the others leave it out of what they send
-TAIL = "tail"
 # where a request message came from (turns/context.py origin): the app's own key, no
 # backend sends it
 ORIGIN = "origin"

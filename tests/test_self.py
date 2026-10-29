@@ -303,7 +303,8 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
         "why": "llama-swap does not answer."})
     out = (await me.whoami(ctx(parent, tid))).content
     assert "Model: lan/small for chat, a fallback. main/big: llama-swap does not answer." in out
-    assert 'You are working in the chat "plans"' in out and "This turn: Joe's message." in out
+    assert f"Where you are: a chat (address {parent})." in out
+    assert "This turn: Joe's message." in out
     assert "Shellbox: The shellbox at box:8700 did not answer." in out
     assert "Web search: SearXNG answers." in out and "Guard: off" in out
     assert "[image]" not in out and "—" not in out
@@ -311,5 +312,5 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
     sub = await conversations.create(store, "s", agent_of=parent, agent_name="scout")
     _, stid, _ = await user_says(store, sub, "go")
     out = (await me.whoami(ctx(sub, stid))).content
-    assert "You are working in the sub-agent scout" in out
-    assert 'It reports to the chat "plans"' in out
+    assert f"Where you are: the sub-agent scout (address {sub})." in out
+    assert f"You report to: a chat (address {parent})." in out and "Depth: 1 " in out

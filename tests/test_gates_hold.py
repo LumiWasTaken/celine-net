@@ -31,7 +31,7 @@ from celine.guard import store as decisions
 from celine.guard.owner import Owner
 from celine.settings.files import Invalid
 from celine.skills import Registry, ToolResult, tool
-from celine.turns import loads, store as turns
+from celine.turns import store as turns
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 
@@ -91,8 +91,6 @@ async def _turn(store, cfg, reg, second=("web__search", {"query": "pizza near 12
     backend = Script([_call(0, "notebook__read", {"path": "people/sam.md"}),
                       _call(1, *second), [TextDelta("done"), Done(reason="stop")]])
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", list(reg.skills))
-    await loads.touch(store, cid, "tool", list(reg.tools))
     await send(store, "user", f"agent:{cid}", "find me pizza")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), reg, None)
@@ -233,8 +231,6 @@ async def test_frozen_no_turn_and_no_work_item_is_leased(store):
 async def test_frozen_no_tool_runs_even_in_a_turn_that_runs(store, no_judge):
     cfg, reg, web = _world("off")              # the freeze is the house's, any mode
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", list(reg.skills))
-    await loads.touch(store, cid, "tool", list(reg.tools))
     await user_says(store, cid, "find me pizza")
     turn = await turns.claim(store, "w")       # claimed, then frozen
     await _frozen(store)

@@ -269,7 +269,6 @@ class Notebook:
         keep_version(self.root, p, path)
         p.write_text(body)
         await notebook_index.upsert(ctx.store, path, summary, len(body), body)
-        await _touch(ctx, path)
         return ToolResult(content=f"Saved {path}.",
                           display={"path": path, "bytes": len(body), "mode": mode})
 
@@ -320,7 +319,6 @@ class Notebook:
         if not lines:
             body = "(empty)"
         content = head + body
-        await _touch(ctx, path, read=True)
         return ToolResult(content=content, display={"path": path, "bytes": len(text),
                                                     "owner": self.owner(path),
                                                     "class": class_line(text)})
@@ -374,7 +372,6 @@ class Notebook:
         if not summary:
             summary = await notebook_index.summary(ctx.store, path) or ""
         await notebook_index.upsert(ctx.store, path, summary, len(body), body)
-        await _touch(ctx, path)
         n = len(planned)
         shown = "\n...\n".join("\n".join(numbered(new, a, b)) or "(the note is empty now)"
                                 for a, b in regions)
@@ -515,42 +512,17 @@ class Notebook:
         return out + (f" [{cls}]" if cls != UNCLASSED else "")
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        parts = []
         if identity := self.identity():
-            parts.append(self.cfg.substitute(
-                "identity.md, from your notebook ({{username}} wrote it, you read it):\n\n")
-                + identity.strip())
-        folder = await folder_of(ctx)
-        if index := await build_index_fragment(ctx.store, self.cfg, self.tag,
-                                               folder, ctx.loaded_notes):
-            parts.append(index)
-        return "\n\n".join(parts) or None
+            return self.cfg.substitute(
+                "identity.md, from your notebook ({{username}} wrote it, you read it):\n\n"
+            ) + identity.strip()
+        return None
 
-
-async def _touch(ctx: ToolContext, path: str, read: bool = False) -> None:
-    """A note it wrote or edited is loaded in full from its next turn on, and stays
-    while it uses it (turns/loads.py). A note it only
-    `read` stays for its next turn alone: touched as if `idle_turns` less one turns ago,
-    unless a write keeps it longer."""
-    if ctx.store is None:
-        return
-    from ..turns import loads
-    if not read:
-        await loads.touch(ctx.store, ctx.conversation_id, "note", [path])
-        return
-    idle = int(loads.shares(ctx.config)["idle_turns"])
-    cid = ctx.conversation_id
-
-    def fn(c) -> None:
-        before = loads.rows(c, cid)[1].get(("note", path))
-        loads.touch_sync(c, ctx.store, cid, "note", [path])
-        got = loads.rows(c, cid)[1].get(("note", path))
-        if got is not None:
-            aged = got - idle + 1
-            c.execute("UPDATE context_loaded SET touched=? WHERE conversation_id=? AND "
-                      "kind='note' AND name=?",
-                      (max(aged, before if before is not None else aged), cid, path))
-    await ctx.store.write(fn)
+    async def index(self, ctx: ToolContext) -> str | None:
+        """Its notebook's index, for the tail of a turn (turns/prompt.py tail_text): it
+        changes as it writes, so it stays out of the system prompt."""
+        return await build_index_fragment(ctx.store, self.cfg, self.tag,
+                                          await folder_of(ctx), ctx.loaded_notes)
 
 
 def _day(at: str | None, tz) -> str:
@@ -676,8 +648,8 @@ def head_line(text: str, key: str) -> list[str] | None:
 
 
 def load_line(text: str) -> list[str] | None:
-    """What a note's `load:` line says: ["always"] or ["off"]; None without one (loaded
-    by need, turns/loads.py)."""
+    """What a note's `load:` line says: ["always"] or ["off"]; None without one
+    (turns/loads.py)."""
     return head_line(text, "load")
 
 
@@ -718,7 +690,7 @@ def carried_text(text: str) -> str:
 
 
 def load_of(rel: str, head: str, user: str) -> str | None:
-    """What a note's head says: "always", "off", or None (by need). The notes on the
+    """What a note's head says: "always", "off", or None. The notes on the
     user, `people/<user>.md` and `people/<user>-*.md`, are always loaded (not
     `people/<user>s-<name>.md`)."""
     load = load_line(head)
@@ -744,24 +716,19 @@ def _keys_at(root: Path, rel: str, mtime: int) -> tuple[str, ...]:
     return tuple(keys_line(read_note(root, rel, head=True) or ""))
 
 
-def notes_block(cfg, notes: list[dict], head: bool = True) -> str | None:
-    """The notes it carries in full (turns/loads.py) as one block, by path so the block
-    changes only where a note comes or goes; the ones over the share and the ones the
-    user left out here named in one line each. `head`: the line that says what they are
-    (the system prompt's block; the by-need ones in the tail go without)."""
+def notes_block(cfg, notes: list[dict]) -> str | None:
+    """The notes it always carries (turns/loads.py) as one block, by path so the block
+    changes only where a note comes or goes; the ones the user left out here named in
+    one line."""
     from ..turns.loads import OFF_HERE
     loaded = sorted((n for n in notes if n["state"] == "included"), key=lambda n: n["path"])
-    over = [n["path"] for n in notes if n["state"] == "left_out"]
     off = [n["path"] for n in notes if n["why"] == OFF_HERE]
-    if not loaded and not over and not off:
+    if not loaded and not off:
         return None
     parts = [cfg.substitute(
-        f"{NOTES_HEAD} loaded now: your notes about {{{{username}}}} always, other notes "
-        "while the talk needs them.") if head else
-        f"{NOTES_HEAD} loaded for now, the talk needs them:"]
+        f"{NOTES_HEAD} you always carry: your notes about {{{{username}}}} and the ones "
+        "marked load: always. Read any other with notebook__read.")]
     parts += [f"### {n['path']}\n{n['text']}" for n in loaded]
-    if over:
-        parts.append(f"Not loaded, no room for them now: {', '.join(over)}.")
     if off:
         parts.append(cfg.substitute(f"Left out by {{{{username}}}} in this conversation: "
                                     f"{', '.join(off)}."))

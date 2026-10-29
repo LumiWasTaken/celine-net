@@ -44,7 +44,7 @@ async def test_retry_and_edit_keep_every_version_and_swipe_back(store):
         await tree.retry(store, cid, (await view.snapshot(store, cid))["messages"][1]["id"])
         backend = await say(store, cid, f"A{n}")
     sent = [m for m in backend.calls[0] if m["role"] != "system"]
-    assert [m["content"][0]["text"].split("\n", 1)[1] for m in sent] == ["a"], \
+    assert [m["content"].split("\n", 1)[1].split("\n\n")[0] for m in sent] == ["a"], \
         "the model sees only the active branch (the time line precedes, the tail follows)"
     sib = await tree.siblings(store, cid, first)
     assert [s["content"] for s in sib["siblings"]] == ["A1", "A2", "A3"]

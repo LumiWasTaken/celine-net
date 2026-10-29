@@ -150,8 +150,10 @@ async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg):
     assert all(t["parameters"].get("properties") for t in sent)
     rows = await _results(store)
     assert rows[0][2] == "browser is down: Not set up: see Settings, Tools. Work without it."
-    system = b.calls[0][0]["content"]
-    assert "browser is down: Not set up: see Settings, Tools. Work without it." in system
+    tail = b.calls[0][-1]["content"]
+    assert "browser is down: Not set up: see Settings, Tools. Work without it." in tail, \
+        "said in the tail, the system prompt stays as it was"
+    assert "browser is down" not in b.calls[0][0]["content"]
 
 
 async def test_load_refuses_a_down_skill(store, cfg):

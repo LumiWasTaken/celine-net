@@ -17,13 +17,13 @@ EXPECTED_TABLES = {
     "identities", "identity_members", "terminals",
     "missions", "messages_fts", "artifacts", "artifact_versions",
     "artifact_errors", "artifact_data", "shares", "intercom", "intercom_deliveries",
-    "message_context", "media_batches", "context_loaded", "context_state", "runs", "moods",
+    "message_context", "media_batches", "context_state", "runs", "moods",
     "guard_decisions", "her", "text_versions", "compactions", "freezes", "guard_passes", "work",
     "tabs", "bugreports", "plans", "push_subscriptions",
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 12
+LATEST = 13
 
 
 def _version(db) -> int:

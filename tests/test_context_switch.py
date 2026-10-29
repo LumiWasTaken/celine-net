@@ -1,4 +1,4 @@
-"""The automatic context switch and loading by hand (api/context.py)."""
+"""The automatic context switch (api/context.py)."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,6 @@ from settings_fixtures import client, make_app, scratch
 from celine import boot
 from celine.api import context as context_api
 from celine.conversations import store as conversations
-from celine.skills import notebook_index
 
 pytestmark = pytest.mark.anyio
 
@@ -20,7 +19,7 @@ async def _events(store, kind: str) -> list[dict]:
         "SELECT data FROM global_events WHERE type=? ORDER BY id", (kind,))])
 
 
-async def test_the_switch_holds_for_her_sub_agents_and_she_loads_by_hand(
+async def test_the_switch_holds_for_her_sub_agents(
         tmp_path, monkeypatch, store):
     scratch(tmp_path, monkeypatch)
     cfg = boot.load()
@@ -28,7 +27,6 @@ async def test_the_switch_holds_for_her_sub_agents_and_she_loads_by_hand(
     app.include_router(context_api.router)
     mission = await conversations.create(store, "Learn", kind="mission")
     sub = await conversations.create(store, "scout", agent_of=mission, agent_name="scout")
-    await notebook_index.upsert(store, "howto/blender.md", "a note", 3, "abc")
     async with client(app) as c:
         assert (await c.get(f"/api/conversations/{mission}/auto-context")).json() == \
             {"on": True}
@@ -40,16 +38,6 @@ async def test_the_switch_holds_for_her_sub_agents_and_she_loads_by_hand(
             {"id": mission, "on": False}, {"id": sub, "on": False}]
         assert (await c.put("/api/conversations/nope/auto-context",
                             json={"on": True})).status_code == 404
-
-        chat = await conversations.create(store)
-        assert (await c.post(f"/api/conversations/{chat}/context/notes",
-                             json={"path": "howto/blender.md"})).json() == {"ok": True}
-        assert (await c.post(f"/api/conversations/{chat}/context/notes",
-                             json={"path": "nope.md"})).status_code == 404
-    loaded = await store.read(lambda c: {(r[0], r[1]) for r in c.execute(
-        "SELECT kind, name FROM context_loaded WHERE conversation_id=?", (chat,))})
-    assert loaded == {("note", "howto/blender.md")}
-    assert any(e["conversation"] == chat for e in await _events(store, "context.changed"))
 
 
 async def test_a_reply_shows_her_own_block_for_the_message_it_answers(

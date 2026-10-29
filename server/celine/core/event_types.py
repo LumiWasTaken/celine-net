@@ -18,7 +18,6 @@ BROWSER_STATE = "browser.state"
 CITATIONS_CHECKED = "citations.checked"
 
 CONTEXT_AGED = "context.aged"
-CONTEXT_CHANGED = "context.changed"
 CONTEXT_COMPACT_FAILED = "context.compact_failed"
 CONTEXT_COMPACT_SKIPPED = "context.compact_skipped"
 CONTEXT_COMPACTED = "context.compacted"

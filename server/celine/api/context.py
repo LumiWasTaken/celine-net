@@ -1,16 +1,15 @@
-"""A conversation's automatic context and what the user loads into it by hand.
+"""A conversation's automatic context.
 
 `conversations.auto_context` (1: on, Load automatically): with it on, a new message loads
 the skills its words ask for (skills/meta.py message_context), brings up the graded sections of the
 notes its keys name (`[your memory]`, skills/recall.py) and its mind block
 (skills/mind.py: the time, its mood, how long since the last message). Off, it carries
-the always notes and what it or the user loaded. The switch holds for
+the always notes alone. The switch holds for
 the conversation and its sub-agents.
 
 Routes: GET and PUT /conversations/{cid}/auto-context ({on}), GET
-/conversations/{cid}/messages/{mid}/context (what a reply's message brought up) and POST
-/conversations/{cid}/context/notes ({path}). Events: `conversation.auto_context` {id, on} for every conversation it
-changed, `context.changed` from the loads (turns/loads.py)."""
+/conversations/{cid}/messages/{mid}/context (what a reply's message brought up). Event:
+`conversation.auto_context` {id, on} for every conversation it changed."""
 from __future__ import annotations
 
 import json
@@ -79,17 +78,3 @@ async def reply_context(request: Request, cid: str, mid: str) -> dict:
     return {"text": r[0], "report": json.loads(r[1] or "{}")}
 
 
-@router.post("/conversations/{cid}/context/notes")
-async def load_note(request: Request, cid: str, body: NotePath) -> dict:
-    """The user loads one of its notes here by hand, in full, while it is used. 404: no
-    such note."""
-    from ..turns import loads
-    s = services_of(request)
-    if not await _exists(s.store, cid):
-        raise NotFound("conversation")
-    path = body.path.strip().lstrip("/")
-    if not await s.store.read(lambda c: c.execute(
-            "SELECT 1 FROM notebook_index WHERE path=?", (path,)).fetchone()):
-        raise NotFound("note")
-    await loads.touch(s.store, cid, "note", [path])
-    return {"ok": True}

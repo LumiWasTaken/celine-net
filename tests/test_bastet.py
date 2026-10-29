@@ -605,13 +605,10 @@ def _setup(mode):
 
 
 async def _turn(store, cfg, reg, jobs=None):
-    from celine.turns import loads
     backend = Script([_call(0, "notebook__read", {"path": "people/sam.md"}),
                       _call(1, "web__search", {"query": "pizza near 12 Example Road"}),
                       [TextDelta("done"), Done(reason="stop")]])
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", list(reg.skills))
-    await loads.touch(store, cid, "tool", list(reg.tools))
     await user_says(store, cid, "find me pizza")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), reg, jobs)

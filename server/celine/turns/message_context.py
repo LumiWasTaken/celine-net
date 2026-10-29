@@ -1,9 +1,10 @@
 """The context block of a user message: what skills add to the end of it on the wire.
 
 It is computed once, when the message is first sent (a turn starts at it, or a turn
-takes it at a step boundary), and stored in `message_context`. Every later request
-reads the stored text, so the history it reads stays byte-stable for the KV cache
-even when what the skill would compute has changed since. A message no skill adds
+takes it at a step boundary), and stored in `message_context`; so is the tail of the
+turn that answers it (put_tail, turns/prompt.py tail_text), sent after the block. Every
+later request reads the stored text, so the history it reads stays byte-stable for the
+KV cache even when what the skill would compute has changed since. A message no skill adds
 anything to stores an empty row, so a resent message is never asked again and its
 wire never gains text later.
 """
@@ -40,6 +41,25 @@ async def ensure(store, cfg, registry, cid: str, tid: str, msgs: list[dict],
                       "VALUES(?,?,?)", (m["id"], text, json.dumps(report, ensure_ascii=False)))
         await store.write(put)
         m["context"] = text
+
+
+async def tail_of(store, chain: list[dict]) -> tuple[str | None, str | None]:
+    """(the newest user message on `chain`, the tail stored on it, None when none is)."""
+    mid = next((m["id"] for m in reversed(chain) if m["role"] == "user"), None)
+    if mid is None:
+        return None, None
+    r = await store.read(lambda c: c.execute(
+        "SELECT tail FROM message_context WHERE message_id=?", (mid,)).fetchone())
+    return mid, r[0] if r else None
+
+
+async def put_tail(store, mid: str, tail: str) -> None:
+    """The tail of the turn that answers user message `mid`, written once: a message
+    with a tail keeps it (a later turn on it sends the same bytes)."""
+    await store.write(lambda c: c.execute(
+        "INSERT INTO message_context(message_id, text, tail) VALUES(?, '', ?) "
+        "ON CONFLICT(message_id) DO UPDATE SET tail=excluded.tail "
+        "WHERE message_context.tail IS NULL", (mid, tail)))
 
 
 def unsent(chain: list[dict]) -> list[dict]:

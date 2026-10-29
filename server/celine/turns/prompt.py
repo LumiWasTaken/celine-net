@@ -1,5 +1,5 @@
 """The prompt of a turn: the system prompt's pieces (system_blocks), the tail of now
-(request_text), the tools a request carries (specs, wire_tools) and the last request as
+(tail_text, stored once on the message the turn answers), the tools a request carries (specs, wire_tools) and the last request as
 it went out (keep_request, last_request: /usage). The turn loop is turns/runner.py; the
 Context tab, /compact, /usage and impersonate read the same assembly from here."""
 from __future__ import annotations
@@ -12,7 +12,7 @@ from .. import clock, guard
 from ..plans import flow as plan_flow
 from ..skills import CORE, ToolContext
 from ..skills.gating import OFF, down_sentence, is_enabled, overrides_for
-from . import context, legend, loads
+from . import legend, loads
 
 def supports_prefill(backend) -> bool:
     """Whether a final assistant message is continued by the server (llama.cpp with
@@ -65,8 +65,8 @@ def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
 
 
 def unusable(specs, registry, overrides, cfg) -> list[str]:
-    """One line per loaded skill that sends no tool now: down with its reason, or off
-    here. Under the skill index."""
+    """One line per skill offered here that sends no tool now: down with its reason, or
+    off. In the tail (tail_text)."""
     out = []
     for skill in dict.fromkeys(s.skill for s in specs.values()):
         mine = [s for s in specs.values() if s.skill == skill]
@@ -79,14 +79,15 @@ def unusable(specs, registry, overrides, cfg) -> list[str]:
 
 async def request_parts(store, cfg, registry, backend, cid: str):
     """The system prompt's pieces, named (system_blocks), the tool list a request of
-    this conversation carries now and what it carries by need (turns/loads.py, nothing
-    saved), built as a turn builds them (for /compact, /usage and what it sees)."""
+    this conversation carries now and what it carries (turns/loads.py), built as a turn
+    builds them (for /compact, /usage and what it sees)."""
     overrides = await overrides_for(store, cid)
     carried = await loads.select(store, cfg, registry, cid, backend)
     specs, _ = await tool_specs(registry, store, cid, carried)
     tools = (wire_tools(specs, registry, overrides, cfg)
              if registry and getattr(backend, "supports_tools", False) else [])
-    blocks = await system_blocks(cfg, registry, store, cid, "", carried)
+    blocks = await system_blocks(cfg, registry, store, cid, "", carried,
+                                 getattr(backend, "role", None))
     return blocks, tools, carried
 
 
@@ -165,32 +166,28 @@ async def _chat_line(store, cid: str) -> str | None:
     return "You are talking with {{username}} in the app right now."
 
 
-async def request_text(store, cfg, registry, backend, cid: str, turn: dict, carried,
-                       tools: list[dict] = (), touch: bool = True,
-                       path: list[dict] | None = None
-                       ) -> tuple[list[str], list[context.Part]]:
-    """(the system prompt's pieces, the tail's parts) of a turn: system_blocks (the
-    notes it always carries in the system prompt) and the notes it carries by need in
-    the tail. `touch` False: a look that changes nothing (the Context tab). `path`: the
-    conversation's path when the turn read it already."""
-    pieces = [t for _, t in await system_blocks(cfg, registry, store, cid, turn["id"],
-                                                carried)]
-    # what changes from turn to turn, in the tail: the time now, the model it runs on
-    # when that is not the first, where else it works, its plan, its notes by need. The tail is built once at a turn's start (again only
-    # when a skill load rebuilds the request), so the time of step 0 holds for the
-    # whole turn: good enough, and the steps of one turn share their prefix
+async def tail_text(store, cfg, registry, backend, cid: str, carried) -> str:
+    """The tail of a turn: what holds now and changes from turn to turn, stored once on
+    the user message the turn answers (turns/message_context.py put_tail) so it never
+    moves: the date and time now, the model it runs on when that is not the first,
+    where else it works, its plan, the skills it cannot use now, its notebook's index."""
     from ..conversations import here
+    parts = [clock.today(cfg), clock.now_line(cfg), await fallback_line(store, backend, cid),
+             await store.read(lambda c: here.busy(c, cid))]
     plan = plan_flow.block(await plan_flow.current(store, cid))
-    line = await fallback_line(store, backend, cid)
-    return pieces, [p for p in [
-        context.Part(clock.now_line(cfg)), context.Part(line or "", name=FALLBACK_PART),
-        context.Part(await store.read(lambda c: here.busy(c, cid)) or ""),
-        context.Part(cfg.substitute(plan) if plan else ""),
-        context.Part(notes_tail(cfg, carried) or "")] if p.text]
+    parts.append(cfg.substitute(plan) if plan else None)
+    if registry:
+        specs, _ = await tool_specs(registry, store, cid, carried)
+        parts += unusable(specs, registry, await overrides_for(store, cid), cfg)
+        book = registry.skills.get("notebook")
+        if "notebook" in carried.skills and hasattr(book, "index"):
+            parts.append(await book.index(ToolContext(
+                conversation_id=cid, turn_id="", tool_call_id="", store=store, config=cfg,
+                emit=None, loaded_notes=carried.loaded_notes)))  # type: ignore[arg-type]
+    return "\n\n".join(p for p in parts if p)
 
 
 FALLBACK = "You are running in fallback mode. Instead of {first} you are running on {current}."
-FALLBACK_PART = "fallback"        # the tail part that holds it (turns/runner.py rebuilds it)
 
 
 def answered_ref(backend) -> str | None:
@@ -248,32 +245,24 @@ def model_facts(backend) -> list[str]:
     return out
 
 
-def notes_tail(cfg, carried) -> str | None:
-    """The notes it carries by need, the ones over the share and the ones left out
-    here: what changes between turns, out of the cached system prompt."""
-    from ..skills.notebook import notes_block
-    return notes_block(cfg, [n for n in carried.notes if not n.get("always")],
-                       head=False) if "notebook" in carried.skills else None
-
-
 def about_user(cfg) -> str:
     """What the user wrote about themselves (General settings), placeholders filled;
     empty when they wrote nothing."""
     return cfg.substitute(f"About {{{{user}}}}:\n{cfg.bio}") if cfg.bio else ""
 
 
-async def system_blocks(cfg, registry, store, cid, tid, carried
+async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | None = None
                         ) -> list[tuple[str, str]]:
     """The system prompt's pieces, each named for what it is (persona, talk, about,
-    notes, tools): its persona, who it is talking to and where, how it talks (it
-    `talk`), what the user wrote about themselves, the notes it always
-    carries (turns/loads.py; the ones by need go in the tail, notes_tail), the skill
-    index, then what each loaded skill adds every turn (the Messages archive's sources, the
-    notebook index), then the date. What changes from turn to turn comes last, so the
-    start of the prompt stays the same for the model server's cache. Who a sub-agent is
-    (the sub_agents fragment) is told in every conversation. Every kind gets all of it:
-    a chat, a mission, a sub-agent and a background run or task alike;
-    what the kind adds (a brief, a trigger's prompt) comes as its messages."""
+    notes, tools): its persona, who it is talking to, where it is (conversations/here.py
+    where, from ids; `role` its model role), how it talks (its `talk`), what the user
+    wrote about themselves, the notes it always carries (turns/loads.py), the skill
+    index, then what each core skill adds every turn and who a sub-agent is (the
+    sub_agents fragment, told in every conversation). Nothing here changes from turn to
+    turn: what does is in the tail (tail_text), so the start of the request stays the
+    same for the model server's cache. Every kind gets all of it: a chat, a mission, a
+    sub-agent and a background run or task alike; what the kind adds (a brief, a
+    trigger's prompt) comes as its messages."""
     from ..skills.notebook import notes_block
     her = getattr(cfg, "her", None)
     parts = [("persona", cfg.substitute(her.persona).strip())] \
@@ -284,9 +273,9 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
     if line:
         parts.append(("talk", cfg.substitute(line)))
     from ..conversations import here
-    where = await store.read(lambda c: here.where(c, cid))
+    where = await store.read(lambda c: here.where(c, cid, role))
     if where:
-        parts.append(("talk", where))
+        parts.append(("talk", cfg.substitute(where)))
     if her is not None:
         parts.append(("talk", cfg.substitute(her.talk_text)))
     parts.append(("about", about_user(cfg)))
@@ -294,25 +283,18 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
                       store=store, config=cfg, emit=None,  # type: ignore[arg-type]
                       loaded_notes=carried.loaded_notes)
     if "notebook" in carried.skills:
-        # the notes it always carries; the ones by need go in the tail (notes_tail)
-        parts.append(("notes", notes_block(cfg, [n for n in carried.notes
-                                                 if n.get("always")])))
+        parts.append(("notes", notes_block(cfg, carried.notes)))
     if registry:
-        specs, _ = await tool_specs(registry, store, cid, carried)
-        lines = unusable(specs, registry, await overrides_for(store, cid), cfg)
-        parts.append(("tools", "\n".join(x for x in [registry.index(cfg, carried), *lines]
-                                         if x)))
+        parts.append(("tools", registry.index(cfg, carried)))
         # the core skills' parts; another skill's comes with skills__load
         parts.extend(("tools", f) for f in await registry.prompt_fragments(
             ctx, (set(carried.skills) & CORE) | {"sub_agents"}))
-    parts.append(("tools", clock.today(cfg)))
     return [(name, text) for name, text in parts if text]
-
 
 
 async def turn_parts(services, cid: str):
     """The backend, the system prompt's pieces, named (request_parts), the tool list a
-    turn of this conversation would use now and what it carries by need (turns/loads.py),
+    turn of this conversation would use now and what it carries (turns/loads.py),
     for the estimates; /compact keeps only the latest exchange anyway."""
     from ..backends.queue import Priority
     backend = services.dispatcher.bound(cid, role="chat", priority=Priority.INTERACTIVE)

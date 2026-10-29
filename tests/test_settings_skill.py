@@ -125,9 +125,9 @@ async def test_an_invalid_proposal_fails_at_once_and_asks_nothing(app):
     assert got.is_error and "longer than the tool time limit" in got.content
     got = await sk.propose(ctx, target="roles", changes={"chat": ["nope/x"]}, why="x")
     assert got.is_error and "no provider 'nope'" in got.content
-    got = await sk.propose(ctx, target="context", changes={"idle_turns": 0}, why="x")
-    assert got.content == "context.idle_turns: idle_turns is a whole number of turns " \
-                          "from 1 to 100."
+    got = await sk.propose(ctx, target="context", changes={"memory_sections": 99}, why="x")
+    assert got.content == "context.memory_sections: memory_sections is a whole number " \
+                          "from 0 to 20, such as 3."
     got = await sk.propose(ctx, target="general", changes={"nope": 1}, why="x")
     assert got.is_error and got.content.startswith("Not a setting of general: nope.")
     assert not app.approvals.waiting and not await _approval_events(app)
@@ -252,12 +252,12 @@ async def test_every_target_saves_through_its_settings_save(app):
         got = await sk.propose(ctx, target=target, changes=changes, why="w")
         assert not got.is_error, (target, got.content)
         assert check(app.cfg.settings), target
-    got = await sk.propose(ctx, target="context", changes={"idle_turns": 9}, why="w")
+    got = await sk.propose(ctx, target="context", changes={"memory_sections": 9}, why="w")
     assert not got.is_error, got.content
-    assert app.cfg.context["idle_turns"] == 9
+    assert app.cfg.context["memory_sections"] == 9
     kept = tomllib.loads((app.var / "settings" / "context.toml").read_text())
-    assert kept == {"idle_turns": 9}, "only what differs from the defaults"
-    again = await sk.propose(ctx, target="context", changes={"idle_turns": 9}, why="w")
+    assert kept == {"memory_sections": 9}, "only what differs from the defaults"
+    again = await sk.propose(ctx, target="context", changes={"memory_sections": 9}, why="w")
     assert again.content == "Nothing changes: these are the values already."
 
 
@@ -284,7 +284,7 @@ async def test_a_refused_reload_is_reported(app, monkeypatch):
             return None
     app.approvals = Yes()
     got = await _skill(app).propose(await _ctx(app), target="context",
-                                    changes={"idle_turns": 9}, why="w")
+                                    changes={"memory_sections": 9}, why="w")
     assert got.is_error and got.content == (
-        "Saved Context (idle_turns: 6 \u2192 9), but the app refused to load it and keeps "
+        "Saved Context (memory_sections: 3 \u2192 9), but the app refused to load it and keeps "
         "its last good settings: llm.toml does not parse.")
