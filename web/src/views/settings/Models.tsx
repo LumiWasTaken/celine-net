@@ -428,7 +428,7 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
             <Input mono {...text('slug')} placeholder="deepinfra/fp4" spellCheck={false} onChange={e => change({ slug: e.target.value }, 'blur')} />
           </Field>
         )}
-        <Field label="Capabilities" group hint={m.server_caps ? `Server: ${capWords(m.server_caps)}` : undefined}>
+        <Field label="Capabilities" group>
           <div className="settings__caps">
             {(['chat', 'tools', 'vision'] as const).map(c => (
               <Switch key={c} label={c.charAt(0).toUpperCase() + c.slice(1)}
