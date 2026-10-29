@@ -100,9 +100,10 @@ async def test_her_request_tells_her_now_and_the_zone_of_every_time(store, monke
 
 
 async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch, store):
-    """One tail line while the turn's role runs on a model that is not its chain's
-    first (a turn that walks the list); none on the first choice, none for a turn
-    that runs on the first model alone."""
+    """One tail line while the model that answered the turn's role is not its chain's
+    first: this turn's last answer, before its first call the role's last answer in the
+    conversation (its `llm.queue` running event). None on the first choice, none before
+    any model answered, none for a turn that runs on the first model alone."""
     from types import SimpleNamespace
 
     import httpx
@@ -111,6 +112,7 @@ async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch,
     from celine.backends.llm import LLM
     from celine.backends.queue import Priority
     from celine.backends.router import Router
+    from celine.core.event_types import LLM_QUEUE
     from celine.turns.prompt import request_text
 
     scratch(tmp_path, monkeypatch, roles={"chat": {"chain": ["main/big", "lan/small"]}})
@@ -124,25 +126,30 @@ async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch,
     llm = LLM(cfg, router=Router(cfg, None, transport=httpx.MockTransport(reply)))
     cid = await conversations.create(store)
     carried = SimpleNamespace(notes=[], skills=set(), loaded_notes=frozenset())
+    backend = llm.bind(role="chat", priority=Priority.AGENT, conversation_id=cid)
 
-    async def tail(fallback=True):
-        backend = llm.bind(role="chat", priority=Priority.AGENT, conversation_id=cid,
-                           fallback=fallback)
-        _, parts = await request_text(store, cfg, None, backend, cid, {"id": "t"}, carried)
+    async def tail(b=backend):
+        _, parts = await request_text(store, cfg, None, b, cid, {"id": "t"}, carried)
         return [p.text for p in parts if p.text.startswith("You are running in fallback")]
+    assert await tail() == [], "no model answered yet"
+    await store.append_event(cid, LLM_QUEUE, {"state": "running", "role": "chat",
+                                              "backend": "lan/small"})
     [line] = await tail()
     assert line.startswith("You are running in fallback mode. Instead of main/big you are "
                            "running on lan/small. ")
     assert line.endswith(" main/big: llama-swap does not answer.")
-    assert await tail(fallback=False) == [], "a turn on the first model alone fails instead"
-    down.clear()
-    llm.router._providers["main"].checked = 0.0          # the cached probe has run out
+    alone = llm.bind(role="chat", priority=Priority.AGENT, conversation_id=cid,
+                     fallback=False)
+    assert await tail(alone) == [], "a turn on the first model alone fails instead"
+    backend._shared["answered"] = llm.make("main/big")     # this turn: the first answered
     assert await tail() == []
+    backend._shared["answered"] = llm.make("lan/small")    # and then the next one
+    assert len(await tail()) == 1
 
 
-async def test_the_fallback_line_says_what_the_app_knows_of_the_model():
-    """The fixed sentence, the facts of the model it runs on, the reasons; a fact the app
-    does not know is left out."""
+async def test_the_fallback_line_says_what_the_app_knows_of_the_model(store):
+    """The fixed sentence, the facts of the model that answered, the reasons; a fact the
+    app does not know is left out."""
     from types import SimpleNamespace
 
     from celine.backends.router import Ordered
@@ -155,14 +162,15 @@ async def test_the_fallback_line_says_what_the_app_knows_of_the_model():
 
     def backend(model):
         llm = SimpleNamespace(router=Router(), make=lambda ref: model)
-        return SimpleNamespace(llm=llm, fallback=True, role="chat")
+        return SimpleNamespace(llm=llm, fallback=True, role="chat", answered=SimpleNamespace(
+            cfg=SimpleNamespace(id="lan/small")))
     known = SimpleNamespace(context_window=32_768, supports_images=False,
                             supports_tools=True, cfg=None)
-    assert await fallback_line(backend(known), "c") == (
+    assert await fallback_line(store, backend(known), "c") == (
         "You are running in fallback mode. Instead of main/big you are running on "
         "lan/small. Its context window is 32,768 tokens. It does not see images. It calls "
         "tools. main/big: llama-swap does not answer.")
     unknown = SimpleNamespace(cfg=None)
-    assert await fallback_line(backend(unknown), "c") == (
+    assert await fallback_line(store, backend(unknown), "c") == (
         "You are running in fallback mode. Instead of main/big you are running on "
         "lan/small. main/big: llama-swap does not answer.")

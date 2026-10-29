@@ -319,6 +319,16 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         parent = await turns.step_tail(store, mid)
         iteration += 1
         grown = True
+        said = next((p.text for p in tail if p.name == prompt.FALLBACK_PART), None)
+        if await prompt.fallback_line(store, backend, cid) != said:
+            # another model answered than the one its fallback line names: the tail
+            # with the line is built again for the next step
+            pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn,
+                                                     carried, wire_tools)
+            system = "\n\n".join(pieces)
+            built = await build("turn")
+            messages, hidden = built.messages, built.hidden
+            grown = False
         if await loads.loaded(store, cid) != tool_turn["loaded"]:
             # it loaded or unloaded a skill or a tool (skills__load, skills__unload, a
             # call to a tool without its parameters), or a tool did for it (a password

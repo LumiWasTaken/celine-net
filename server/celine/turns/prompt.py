@@ -179,28 +179,49 @@ async def request_text(store, cfg, registry, backend, cid: str, turn: dict, carr
     # whole turn: good enough, and the steps of one turn share their prefix
     from ..conversations import here
     plan = plan_flow.block(await plan_flow.current(store, cid))
-    return pieces, [context.Part(t) for t in [
-        clock.now_line(cfg), await fallback_line(backend, cid),
-        await store.read(lambda c: here.busy(c, cid)),
-        cfg.substitute(plan) if plan else None, notes_tail(cfg, carried)] if t]
+    line = await fallback_line(store, backend, cid)
+    return pieces, [p for p in [
+        context.Part(clock.now_line(cfg)), context.Part(line or "", name=FALLBACK_PART),
+        context.Part(await store.read(lambda c: here.busy(c, cid)) or ""),
+        context.Part(cfg.substitute(plan) if plan else ""),
+        context.Part(notes_tail(cfg, carried) or "")] if p.text]
 
 
 FALLBACK = "You are running in fallback mode. Instead of {first} you are running on {current}."
+FALLBACK_PART = "fallback"        # the tail part that holds it (turns/runner.py rebuilds it)
 
 
-async def fallback_line(backend, cid: str) -> str | None:
-    """While the turn's role runs on a model that is not its chain's first
+def answered_ref(backend) -> str | None:
+    """The model that answered this turn's last call (backends/llm.py), None before."""
+    return getattr(getattr(getattr(backend, "answered", None), "cfg", None), "id", None)
+
+
+def _last_answered(c, cid: str, role: str) -> str | None:
+    """The model of the conversation's newest `llm.queue` running event of `role`."""
+    r = c.execute(
+        "SELECT json_extract(data, '$.backend') FROM events WHERE conversation_id=? AND "
+        "type='llm.queue' AND json_extract(data, '$.state')='running' AND "
+        "json_extract(data, '$.role')=? ORDER BY seq DESC LIMIT 1", (cid, role)).fetchone()
+    return r[0] if r else None
+
+
+async def fallback_line(store, backend, cid: str) -> str | None:
+    """While the model that answers the turn's role is not its chain's first
     (backends/llm.py walks the list): the fixed FALLBACK sentence, what the app knows of
-    the model it runs on (its context window, whether it sees images and calls tools,
-    from its settings' caps and the live window; a fact it does not know is left out),
-    then why each one before it is left out. None on the first choice, and for a turn
-    that runs on the first model alone."""
+    that model (model_facts), then why each one before it is left out. The model is the
+    one that answered this turn's last call; before the turn's first call, the one that
+    answered the role last in this conversation (its `llm.queue` running event). None on
+    the first choice, before any model answered, and for a turn that runs on the first
+    model alone."""
     llm = getattr(backend, "llm", None)
     if llm is None or not getattr(backend, "fallback", False):
         return None
+    current = answered_ref(backend) or await store.read(
+        lambda c: _last_answered(c, cid, backend.role))
+    if current is None:
+        return None
     ordered = await llm.router.order(backend.role, conversation_id=cid)
-    current = ordered.refs[0] if ordered.refs else None
-    passed = ordered.passed_over(current) if current else None
+    passed = ordered.passed_over(current)
     if not passed:
         return None
     return " ".join([FALLBACK.format(first=ordered.chain[0], current=current),
@@ -210,7 +231,8 @@ async def fallback_line(backend, cid: str) -> str | None:
 def model_facts(backend) -> list[str]:
     """What the app knows of one model, one plain sentence each: its context window
     (the live one, or its setting), whether it sees images and whether it calls tools
-    (its caps). A fact not known is not said."""
+    (its caps: what its server states, else its settings; settings/kinds.py caps_of).
+    A fact not known is not said."""
     from . import tokens
     if backend is None:
         return []
