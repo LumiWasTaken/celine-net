@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from .. import homes
+from ..attachments import draft_of, her_file
 from ..core.ids import clock, iso, parse_when, when
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
@@ -120,14 +121,18 @@ class IntercomSkill:
         reply_to: Annotated[int | None, "The number of the message this answers."] = None,
         new_thread: Annotated[bool, "Start a new thread, not the one you are in."] = False,
         in_: Annotated[str | None, 'Lands later, like "30 min" or "1 h 30 min".'] = None,
-        at: Annotated[str | None, 'Lands at a time today, like "02:00". Tomorrow once it '
-                                  'has passed.'] = None,
+        at: Annotated[str | None, 'Lands at a time today, like "02:00", tomorrow once it '
+                                  'has passed; or on a day, like "2026-11-02 09:00".'] = None,
         until: Annotated[str | None, 'To "all": an announcement that stands until then, '
                                      'like "05:00" or "2 h". Everyone who starts work '
                                      'before then sees it.'] = None,
         wait: Annotated[bool, 'To "user": your turn holds here until {{username}} '
                               'answers, up to 10 minutes; the answer comes in as their '
                               'message. Not with in or at.'] = False,
+        attachments: Annotated[list[str] | None, "Files it carries, by their short ids: "
+                                                 "one on your own message (a voice note, a "
+                                                 "file you sent) or one {{username}} "
+                                                 "attached here."] = None,
     ) -> ToolResult:
         """Write to {{username}}, yourself, your parent, your team, everyone working,
         Bastet, or a sub-agent or mission by name. It answers in the thread you are in (the one
@@ -146,7 +151,8 @@ class IntercomSkill:
             due = parse_when(in_, at, self.tz, now_)
             if due is None:
                 return ToolResult(content='in is like "30 min" or "1 h 30 min", or give '
-                                          'at="02:00".', is_error=True)
+                                          'at="02:00" or at="2026-11-02 09:00" still ahead.',
+                                  is_error=True)
         if until:
             until_at = parse_when(until, until, self.tz, now_)
             if until_at is None:
@@ -155,12 +161,19 @@ class IntercomSkill:
         if not guard.enabled(self.cfg) and any(
                 w.strip() in GUARD_NAMES for w in to.split(",")):
             return ToolResult(content="Bastet is off; nobody reads this.", is_error=True)
+        files = []
+        for ref in attachments or []:
+            row = await her_file(ctx.store, ref.strip(), ctx.conversation_id, self.cfg.user)
+            if isinstance(row, str):
+                return ToolResult(content=row, is_error=True)
+            files.append(row["id"])
+        drafts = [await draft_of(ctx.store, aid) for aid in files]
         try:
             out = await self.app.intercom.send(
                 f"agent:{ctx.conversation_id}", to, text, subject=subject,
                 reply_to=reply_to, due_at=iso(due) if due else None,
                 until_at=iso(until_at) if until_at else None,
-                turn=None if new_thread else ctx.turn_id)
+                turn=None if new_thread else ctx.turn_id, attachments=drafts or None)
         except KeyError as e:
             return ToolResult(content=f"No conversation or message {e.args[0]}.",
                               is_error=True)

@@ -396,7 +396,7 @@ function Line({ t, m, steps, calls, writing = false, thoughts = null, sawTitle, 
 }
 
 /* The files on a message: pictures, tracks, and other files to download */
-function Attached({ list }: { list: Attachment[] }) {
+export function Attached({ list }: { list: Attachment[] }) {
   if (!list.length) return null
   return <>
     {list.filter(a => a.kind === 'image').map(a => <YourPicture key={a.id} a={a} />)}

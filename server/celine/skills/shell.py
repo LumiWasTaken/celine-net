@@ -605,7 +605,7 @@ class Shell:
         """Send {{username}} files from your shellbox: they are attached to this
         conversation, images shown, other files to download. Up to 5 at once; for more,
         zip them first (`zip -r ~/out/files.zip <folder>`) and send the zip.
-        Returns: each file's name and size."""
+        Returns: each file's name, size and short id (intercom__send takes it)."""
         from .. import attachments, box_files
         paths = path_list(path)
         if isinstance(paths, str):
@@ -635,7 +635,8 @@ class Shell:
                 return self._unreachable(None, e)
             sent.append({k: row[k] for k in ("id", "sha256", "filename", "media_type",
                                              "bytes")})
-            lines.append(f"Sent {self.cfg.user} {name} ({attachments.size(row['bytes'])}).")
+            lines.append(f"Sent {self.cfg.user} {name} ({attachments.size(row['bytes'])}), "
+                         f"short id {row['id'][:attachments.SHORT]}.")
         return ToolResult(content="\n".join(lines), is_error=not sent,
                           display={"paths": paths, "attachments": sent})
 

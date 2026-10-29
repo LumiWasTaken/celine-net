@@ -130,8 +130,9 @@ async def test_send_attaches_her_file_to_the_conversation(home, cfg, store):
     ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="c1", store=store,
                       config=cfg, emit=None)
     out = await sh.send(ctx, path=["~/out/report.md"])
-    assert not out.is_error and out.content == "Sent Joe report.md (2.0 MB)."
     row = await attachments.get(store, out.display["attachments"][0]["id"])
+    assert not out.is_error and out.content == \
+        f"Sent Joe report.md (2.0 MB), short id {row['id'][:8]}."
     assert row["message_id"] == mid
     assert attachments.blob_path(cfg, row["sha256"]).read_bytes() == data
     # its message holds it from now on, and the open conversation is told so
