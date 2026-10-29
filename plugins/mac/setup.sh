@@ -120,16 +120,15 @@ fi
 eval "$("$BREW" shellenv)"
 
 say packages
-brew install --quiet node openclaw/tap/peekaboo
-brew install --quiet --cask google-chrome    # the browser Playwright MCP drives
+brew install node openclaw/tap/peekaboo
+brew install --cask google-chrome    # the browser Playwright MCP drives
 NODE=$(brew --prefix)/bin/node
 
 say servers
 mkdir -p "$LIB" "$(dirname "$LOG")" "$(dirname "$PLIST")"
 cd "$LIB"
 [ -f package.json ] || echo '{ "private": true }' > package.json
-npm install --save-exact --no-audit --no-fund \
-  supergateway@4.2.1 @playwright/mcp@0.0.83 @wonderwhy-er/desktop-commander@0.3.1
+npm install supergateway @playwright/mcp @wonderwhy-er/desktop-commander
 
 say token
 mkdir -p "$CONF" && chmod 700 "$CONF"
@@ -196,8 +195,8 @@ fi
 
 line=$(report)
 if [ -n "$APP" ]; then   # the app saves the address and the token into its "Her computer" card
-  curl -fsS -m 30 -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $KEY" \
-    --data "$line" "$APP/api/plugins/mac/gateway" >/dev/null || echo "Could not reach $APP: paste the address and the token below instead." >&2
+  curl -fsS -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $KEY" \
+    --data "$line" "$APP/api/plugins/mac/gateway" >/dev/null
 fi
 if [ -n "$JSON" ]; then
   echo "$line"

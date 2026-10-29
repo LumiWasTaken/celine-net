@@ -11,9 +11,9 @@ Account):
 | node | the servers |
 | Google Chrome (brew cask) | the browser Playwright MCP drives |
 | [Peekaboo](https://github.com/openclaw/Peekaboo) (brew) | `screen`: see, click, type, menus, windows |
-| [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP) 0.3.1 | `shell`: commands, processes, files |
-| [Playwright MCP](https://github.com/microsoft/playwright-mcp) 0.0.83 | `browser` |
-| [Supergateway](https://github.com/supercorp-ai/supergateway) 4.2.1 | the three at `http://<mac>:8765/{screen,shell,browser}/mcp` behind a bearer token |
+| [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP) | `shell`: commands, processes, files |
+| [Playwright MCP](https://github.com/microsoft/playwright-mcp) | `browser` |
+| [Supergateway](https://github.com/supercorp-ai/supergateway) | the three at `http://<mac>:8765/{screen,shell,browser}/mcp` behind a bearer token |
 
 | Where | What |
 |---|---|
