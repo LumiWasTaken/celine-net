@@ -157,8 +157,12 @@ async def test_a_picture_keeps_its_size_and_one_smaller_copy_per_width(cfg, stor
     # the copy goes with its blob
     await attachments.delete_draft(store, big["id"])
     await _made_at(store, big["sha256"], T0)
+    part = small.with_name(f"{small.name}.x.part")      # a copy that never finished
+    part.write_bytes(b"half")
+    os.utime(part, (T0.timestamp(), T0.timestamp()))
     await attachments.gc(cfg, store, at=LATER)
     assert not small.exists() and not attachments.blob_path(cfg, big["sha256"]).exists()
+    assert not part.exists()
 
 
 async def test_a_model_gets_a_picture_at_most_wire_edge_and_its_real_type(cfg, store):

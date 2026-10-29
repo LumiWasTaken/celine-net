@@ -30,6 +30,7 @@ import re
 import socket
 import time
 from collections import OrderedDict
+from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
@@ -734,7 +735,7 @@ class Web:
         page = await self._get(raw, limit, limit)
         if isinstance(page, ToolResult):
             return page
-        name = unquote(urlsplit(page.url).path.rsplit("/", 1)[-1]) or \
+        name = Path(unquote(urlsplit(page.url).path.rsplit("/", 1)[-1])).name or \
             urlsplit(page.url).hostname or "file"
         if "." not in name and page.ctype:
             name += mimetypes.guess_extension(page.ctype) or ""

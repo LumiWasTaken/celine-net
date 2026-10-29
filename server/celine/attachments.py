@@ -368,6 +368,7 @@ def _image_size_of(path: str) -> tuple[int, int] | None:
 
 
 _TURNED = (5, 6, 7, 8)      # EXIF orientations that turn a picture by a quarter
+Image.MAX_IMAGE_PIXELS = 50_000_000   # Pillow refuses a picture past twice this (a bomb)
 
 
 def _pixels(path: Path) -> tuple[int, int] | None:
@@ -470,6 +471,9 @@ async def gc(cfg, store, at: datetime | None = None) -> int:
         for p in tmp_dir.iterdir():
             if p.stat().st_mtime < old.timestamp():
                 p.unlink(missing_ok=True)
+    for p in cfg.blobs_dir.glob("*/*/*.part"):         # a copy `resized` never finished
+        if p.stat().st_mtime < old.timestamp():
+            p.unlink(missing_ok=True)
     if orphans:
         log.info("blobs swept", extra={"event": "attachment.gc", "count": len(orphans)})
     return len(orphans)
