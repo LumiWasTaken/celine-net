@@ -131,10 +131,8 @@ class SubAgents:
         Only the paths, one per line.", name="trip finder")
         Returns at once. End your turn to wait, or sub_agents__read with wait."""
         store = ctx.store
-        if no := await self._cloud_approval(ctx, brief, name, model):
-            return _error(no)
         sub, refusal, resumed, brief_id = await self.begin(
-            store, ctx.conversation_id, brief, name, access, folder, model, cli)
+            store, ctx.conversation_id, brief, name, access, folder, model, cli, asker=ctx)
         if refusal:
             return _error(refusal)
         [row] = await store.read(lambda c: agents_of(c, agent=sub))
@@ -260,12 +258,14 @@ class SubAgents:
 
     async def begin(self, store, parent: str, brief: str, name: str,
                     access: str | None = None, folder: str | None = None,
-                    model: str | None = None, cli: str | None = None
+                    model: str | None = None, cli: str | None = None,
+                    asker: ToolContext | None = None
                     ) -> tuple[str | None, str | None, bool]:
         """Start a sub-agent of `parent`, in the parent's mode: its conversation,
         settings and brief; the name of one that is done gives that one the brief,
         refused when a given access or folder is not its own. The agent's tool and the API
-        share it. -> (its conversation id, None, resumed, its brief's number) or
+        share it; the tool's call (`asker`) asks the user first for a cloud model
+        (_cloud_approval). -> (its conversation id, None, resumed, its brief's number) or
         (None, the refusal, False, None)."""
         name = " ".join(name.split())
         given = {"access": access,
@@ -290,6 +290,8 @@ class SubAgents:
             return None, self.cfg.substitute(
                 f"Sub-agents go at most {MAX_DEPTH} levels below {{{{name}}}}, and this "
                 f"conversation is {deep} below: it starts none."), False, None
+        if asker is not None and (no := await self._cloud_approval(asker, brief, name, model)):
+            return None, no, False, None
         if self.dispatcher is None:         # tests run turns without one
             return None, ("Sub-agents cannot run here: nothing is there to run their "
                           "turns."), False, None

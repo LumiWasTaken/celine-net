@@ -370,6 +370,8 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
     async def emit(note, **data):
         pass
     ctx = ToolContext(parent, "t", "x", store, cfg, emit)
+    assert (await agents.start(ctx, brief="x", name="abc", model="or/big")).is_error
+    assert asked == [], "a start refused anyway asks nothing"
     out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
                              model="or/big")
     assert out.is_error and out.content == "denied; nothing was done."
