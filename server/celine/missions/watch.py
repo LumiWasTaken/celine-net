@@ -232,7 +232,11 @@ async def run(app) -> None:
 def start(app) -> None:
     """Hooks the rule onto the dispatcher's turn ends (app.dispatcher.on_end). Called
     once at startup, before the workers start."""
+    from ..settings import features
+
     async def on_end(cid: str, turn_id: str | None) -> None:
+        if not features.on(app.cfg, "missions"):
+            return
         # a sub-agent's end can be what leaves its mission quiet: look at the mission,
         # after its own latest turn
         parent = await app.store.read(lambda c: (c.execute(

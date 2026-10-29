@@ -303,7 +303,7 @@ async def test_a_stopped_sub_agent_lets_the_watch_move_its_mission_on(store):
     sub-agent's turn ends, the watch looks at the mission again."""
     intercom = Intercom(store)
     hooks = []
-    app = SimpleNamespace(store=store, intercom=intercom,
+    app = SimpleNamespace(cfg=None, store=store, intercom=intercom,
                           dispatcher=SimpleNamespace(on_end=hooks.append))
     watch.start(app)
     cid = await _mission(store, intercom)

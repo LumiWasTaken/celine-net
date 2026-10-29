@@ -1,11 +1,13 @@
 """What runs for a feature while it is on, started and stopped while the app runs.
 
-The lifespan registers one Runner per service feature on the services bag (`runners`):
-shellbox the TerminalSync loop, browser the browser watch, vault the login, discord and
-whatsapp their MCP server with its archive and feed, documents its index and watcher. A features PUT or a services PUT
-calls `apply(on, changed)`: what became on starts, what became off stops, what changed
-its address stops and starts again. Each runner is one task in the lifespan's task
-group under its own CancelScope; stop cancels it and waits for it to end.
+The lifespan registers one Runner per feature that runs something on the services bag
+(`runners`): shellbox the TerminalSync loop, browser the browser watch, vault the login,
+discord and whatsapp their MCP server with its archive and feed, documents its index and
+watcher, routines the Scheduler and the triggers, missions the check-ins, guard the
+patrol and Bastet's answers, and `media` (images or music) the batches. A features PUT or
+a services PUT calls `apply(on, changed)`: what became on starts, what became off stops,
+what changed its address stops and starts again. Each runner is one task in the
+lifespan's task group under its own CancelScope; stop cancels it and waits for it to end.
 """
 from __future__ import annotations
 
@@ -18,9 +20,11 @@ log = logging.getLogger("celine.runners")
 
 
 class Runner:
-    def __init__(self, tg: anyio.abc.TaskGroup, fn: Callable[[], Awaitable[Any]]):
+    def __init__(self, tg: anyio.abc.TaskGroup, fn: Callable[[], Awaitable[Any]],
+                 features: tuple[str, ...] = ()):
         self.tg = tg
         self.what = fn
+        self.features = features    # on while any of them is on; () its own id
         self.scope: anyio.CancelScope | None = None
         self.done: anyio.Event | None = None
 
@@ -57,7 +61,7 @@ class Runners(dict[str, Runner]):
         """`on`: every feature's switch (features.effective); `changed`: the services
         whose address changed, started again when on."""
         for fid, r in self.items():
-            if not on.get(fid, True):
+            if not any(on.get(f, True) for f in r.features or (fid,)):
                 await r.stop()
             elif fid in changed:
                 await r.stop()

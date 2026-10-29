@@ -4,12 +4,14 @@ preflight and the lifespan holds the core's files and nothing of a feature that 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import socket
 import stat
 from pathlib import Path
 
+import httpx
 import pytest
 
 from celine import __main__ as main, keys
@@ -76,11 +78,18 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-async def _start():
-    """preflight, then the lifespan up and down. -> the app's services."""
+@contextlib.asynccontextmanager
+async def _running():
+    """preflight, then the lifespan up until the block ends. -> the app."""
     cfg = main.preflight(argparse.Namespace(port=_free_port(), dev=False, verbose=False))
     app = main.build_app(cfg, dev=False)
     async with app.router.lifespan_context(app):
+        yield app
+
+
+async def _start():
+    """preflight, then the lifespan up and down. -> the app's services."""
+    async with _running() as app:
         pass
     return app.state.services
 
@@ -123,3 +132,36 @@ async def test_the_unsaved_defaults_make_the_files_of_the_features_on(fresh):
     await _start()
     tree = _tree(fresh)
     assert {"kb/documents.db", "documents/", "settings/schedules/radar.toml"} <= tree
+
+
+@pytest.mark.anyio
+async def test_a_feature_switched_on_at_runtime_starts_its_loops_and_off_stops_them(
+        fresh, monkeypatch):
+    from chat_fixtures import until
+    from celine.guard import talk
+    monkeypatch.setattr(features, "DEMO", True)          # every probe answers at once
+    _off(fresh)
+    async with _running() as app:
+        s = app.state.services
+        base = f"http://127.0.0.1:{s.cfg.port}"
+        loops = ("routines", "missions", "guard", "media")
+
+        def running() -> dict:
+            return {"batches": s.batches is not None, "schedules": s.schedules is not None,
+                    "triggers": s.triggers is not None,
+                    "talk": talk.KIND in s.dispatcher.work.handlers,
+                    **{fid: s.runners[fid].running for fid in loops}}
+
+        async def put(on: bool) -> None:
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                         base_url=base, headers={"origin": base}) as c:
+                r = await c.put("/api/features", json={"features": {
+                    f.id: on and f.id in ("images", "routines", "missions", "guard")
+                    for f in features.CATALOG}})
+            assert r.status_code == 200, r.text
+
+        assert not any(running().values())
+        await put(True)
+        await until(lambda: all(running().values()))
+        await put(False)
+        await until(lambda: not any(running().values()))

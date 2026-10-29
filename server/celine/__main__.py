@@ -245,17 +245,23 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             if on["images"] or on["music"]:
                 tg.start_soon(comfy_server.free_shared, cfg, llm)
             tg.start_soon(llm.router.watch)     # the host ping; paused without one
-            if on["images"] or on["music"]:
+
+            async def media_run() -> None:     # images and music: the batches
                 await comfy_batches.sweep(store)
-                services.batches = comfy_batches.Batches(services, tg)
+                async with anyio.create_task_group() as g:
+                    services.batches = comfy_batches.Batches(services, g)
+                    try:
+                        await anyio.sleep_forever()
+                    finally:
+                        services.batches = None
+            runners["media"] = Runner(tg, media_run, features=("images", "music"))
+            if on["images"] or on["music"]:
+                await runners["media"].start()
             await attachments.gc(cfg, store)
             await conversations.prune_events(store, keep=int(cfg.r("events_keep")),
                                              requests_days=int(cfg.r("requests_keep")))
             tg.start_soon(conversations.keep_pruned, store, cfg)    # and every so often
             swept = await turns.sweep(store, registry)
-            if on["guard"]:
-                from .guard import store as guard_rows
-                await guard_rows.close_asked(store)     # Bastet's asks of the last run
             from .approvals import close_left
             await close_left(store)                 # the chats' requests of the last run
             if swept["total"]:
@@ -275,6 +281,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                     await anyio.to_thread.run_sync(kbs.open, kid)
                 try:
                     dispatcher.work.handle("documents.describe", ("small",), describe_again)
+                    dispatcher.work.notify()
                     if (documents := kbs.documents()) is not None:
                         documents.work = dispatcher.work
                         scanned = await anyio.to_thread.run_sync(documents.rescan)
@@ -300,29 +307,43 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from . import leftovers              # a done mission's terminals and tabs close
             dispatcher.on_end(lambda cid, _turn: leftovers.on_end(services, cid))
             from .missions import watch as mission_watch    # a mission keeps going
-            if on["missions"]:
-                mission_watch.start(services)
+            mission_watch.start(services)
             from .skills import mind                 # its mood: the appraisal after a turn
             mind.start(services)
-            if on["guard"]:
-                from .guard import talk              # Bastet answers her on the Intercom
-                talk.start(services)
             await dispatcher.start(tg)
             await intercom.run(tg)
             from .sub_agents.skill import release_all     # queued before a restart
             await release_all(services)
-            if on["routines"]:
-                triggers = services.triggers = Triggers(services)   # the skills' triggers
-                await triggers.run(tg)
-            if on["guard"]:
-                from .guard import patrol
-                tg.start_soon(patrol.run, services)
-            if on["missions"]:
-                tg.start_soon(mission_watch.run, services)     # the missions' check-ins
-            if on["routines"]:
-                from .schedules.runs import Scheduler   # the schedules' runs
-                schedules = services.schedules = Scheduler(services)
-                await schedules.run(tg)
+            from .schedules.runs import Scheduler   # the schedules' runs
+            scheduler = Scheduler(services)          # made once: its turn-end hook
+
+            async def routines_run() -> None:       # the skills' triggers, the schedules
+                try:
+                    async with anyio.create_task_group() as g:
+                        services.triggers = Triggers(services)
+                        await services.triggers.run(g)
+                        services.schedules = scheduler
+                        await scheduler.run(g)
+                        await anyio.sleep_forever()
+                finally:
+                    services.triggers = services.schedules = None
+
+            async def guard_run() -> None:          # Bastet: its answers, its patrol
+                from .guard import patrol, store as guard_rows, talk
+                await guard_rows.close_asked(store)     # its asks of the last run
+                talk.start(services)                    # it answers her on the Intercom
+                dispatcher.work.notify()
+                try:
+                    await patrol.run(services)
+                finally:
+                    for kind in (talk.KIND, talk.NOTE):
+                        dispatcher.work.handlers.pop(kind, None)
+            runners["routines"] = Runner(tg, routines_run)
+            runners["guard"] = Runner(tg, guard_run)
+            runners["missions"] = Runner(tg, lambda: mission_watch.run(services))  # check-ins
+            for fid in ("routines", "guard", "missions"):
+                if on[fid]:
+                    await runners[fid].start()
             # its terminals, for the pages: the routes always have the sync, its loop
             # follows the shellbox only when there is one
             from .terminals.sync import TerminalSync
