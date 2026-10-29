@@ -98,14 +98,17 @@ source = { editable = "." }
 dependencies = [
     { name = "anyio" },
     { name = "croniter" },
+    { name = "cryptography" },
     { name = "dateparser" },
     { name = "fastapi" },
+    { name = "http-ece" },
     { name = "httpcore" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "phonenumbers" },
     { name = "pillow" },
     { name = "prometheus-client" },
+    { name = "py-vapid" },
     { name = "pydantic" },
     { name = "pypdf" },
     { name = "python-docx" },
@@ -121,7 +124,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "cryptography" },
     { name = "import-linter" },
     { name = "pytest" },
     { name = "pytest-xdist" },
@@ -133,14 +135,17 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.6" },
     { name = "croniter", specifier = ">=3.0" },
+    { name = "cryptography", specifier = ">=50.0.1" },
     { name = "dateparser", specifier = ">=1.4.3" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "http-ece", specifier = ">=1.2.1" },
     { name = "httpcore", specifier = ">=1.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.2" },
     { name = "phonenumbers", specifier = ">=9.0.39" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "prometheus-client", specifier = ">=0.26.0" },
+    { name = "py-vapid", specifier = ">=1.9.6" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pypdf", specifier = ">=6.19.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
@@ -156,7 +161,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cryptography", specifier = ">=50.0.1" },
     { name = "import-linter", specifier = ">=2.15" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
@@ -548,6 +552,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/44/4d/3303caa82c75cd81e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/42/f8/6139fc95b889f44e9a4b373778f10315ade81b395a6298adf3c08415de64/htmldate-1.11.0-py3-none-any.whl", hash = "sha256:2a5a0d80cce38d3f986a64bb9ab64ba03e5953159b38fd78a841492131ead348", size = 33365, upload-time = "2026-10-02T14:24:45.42Z" },
 ]
+
+[[package]]
+name = "http-ece"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/af/249d1576653b69c20b9ac30e284b63bd94af6a175d72d87813235caf2482/http_ece-1.2.1.tar.gz", hash = "sha256:8c6ab23116bbf6affda894acfd5f2ca0fb8facbcbb72121c11c75c33e7ce8cff", size = 8830, upload-time = "2024-08-08T00:10:47.301Z" }
 
 [[package]]
 name = "httpcore"
@@ -993,6 +1006,17 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/52/73/f1334c29c2af4cd9dba6c7817e61b611bd0215e2eb5565c6064a4de18802/prometheus_client-0.26.0.tar.gz", hash = "sha256:04a91bcf94e2cf74a44a1a874d651a2e853ed354b6e822f3b7487751465d5c2b", size = 92910, upload-time = "2026-07-24T19:36:41.893Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/a3/b69efbf4143b5b9859b977770bbbabcc2796b702fa69dc40271e45cd5a56/prometheus_client-0.26.0-py3-none-any.whl", hash = "sha256:fa93d06737aa02bacd05794768508bb97d2fbee28cb3bca04eaae92f0ca953d6", size = 64494, upload-time = "2026-07-24T19:36:40.854Z" },
+]
+
+[[package]]
+name = "py-vapid"
+version = "1.9.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/46/8843d8e00eb4fcece8e12c109ecf5b17a3d4cc9355dab23c2585cb51ed3c/py_vapid-1.9.6-py2.py3-none-any.whl", hash = "sha256:06d775951016f63f0d0d6dd8babd333fc2f831f0769fd5db2e1ec8cfbbccc70f", size = 19428, upload-time = "2026-10-14T19:13:04.404Z" },
 ]
 
 [[package]]
