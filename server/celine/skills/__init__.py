@@ -553,6 +553,7 @@ BUILTIN = (
     ("models", "models", "Models"),
     ("appearance", "appearance", "Appearance"),
     ("me", "me", "Me"),
+    ("settings", "settings", "Settings"),
     ("bugreport", ".bugreports.skill", "BugReport"),
 )
 

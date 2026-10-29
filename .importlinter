@@ -48,6 +48,7 @@ forbidden_modules =
     celine.ops
     celine.plans
     celine.reload
+    celine.saves
     celine.schedules
     celine.settings
     celine.shares

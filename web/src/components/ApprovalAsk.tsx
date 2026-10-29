@@ -1,6 +1,7 @@
 /* A request of hers that waits for you (server/celine/approvals.py: an edit of herself, a
-   vault tap, a public share), after the message that made the call, drawn as Bastet's ask
-   is (GuardBanner): the kind's name and the server's line, Approve and Deny. Your answer
+   vault tap, a public share, a change of Settings), after the message that made the call,
+   drawn as Bastet's ask is (GuardBanner): the kind's name and the server's line, Approve
+   and Deny; a change of Settings lists each field before and after, and her why. Your answer
    is the server's to apply; the row goes by the event approval.closed, here and in every
    other tab. */
 import { CircleHelp } from 'lucide-react'
@@ -23,6 +24,14 @@ export function ApprovalAsk({ ask }: { ask: ChatApproval }) {
           <Button size="sm" variant="ghost" disabled={answer.busy} onClick={() => void answer.run(false)}>Deny</Button>
         </span>
       </div>
+      {ask.changes && (
+        <div className="guard-banner__thread">
+          {ask.changes.map(c => (
+            <p key={c.label} className="guard-banner__said"><b>{c.label}</b> {c.before} {'→'} {c.after}</p>
+          ))}
+          {ask.why && <p className="guard-banner__said">{ask.why}</p>}
+        </div>
+      )}
       {answer.error && <InlineError compact message={answer.error} />}
     </div>
   )

@@ -166,6 +166,18 @@ the persona stays yours. Every edit waits for your approval first (`approvals.py
 as `her:persona`, `her:talk` and `her:voice`, and `POST /api/text-versions/{vid}/revert`
 makes a version the text again.
 
+Settings are hers to read and to propose (`skills/settings.py`): `settings__read` gives
+every target Settings saves at once (features, general, roles, a provider, tools,
+services, email, the vault, the context shares, a plugin's form) as fields with values,
+allowed values and a version, a secret only as its state. `settings__propose` checks a
+change with the validators of a save (`settings/write.check`), waits for your approval
+(kind `settings`: each field before and after, and her why) and saves it with the
+Settings screen's own function (`saves.py`) on the version it was proposed
+against; a target that changed meanwhile is not overwritten. A secret comes from a file
+in her shellbox, so its value never passes her context, the request, an event or a log.
+The skill is not core: it loads by need, so its parameters cost nothing in the turns
+that do not touch Settings.
+
 A llama-swap, tabby or llama-server model's `llama` block in Settings goes into the
 request body; `llama.grammar.file` (relative to `config/`) is sent as `grammar`. The
 Banned words (its row's `voice`, shipped `config/her/voice.toml`) are the list of words

@@ -74,43 +74,42 @@ def shares(cfg) -> dict:
 def read_shares(path: Path, problems: list) -> dict:
     """context.toml, checked: a bad value is one Problem and keeps its default."""
     from ..config import ConfigError, Problem, shown_path
-    out = dict(DEFAULTS)
     try:
         raw = tomllib.loads(path.read_text()) if path.is_file() else {}
     except tomllib.TOMLDecodeError as e:          # celine exits 2 naming the file
         raise ConfigError(f"{shown_path(path)}: {e}") from None
     except OSError as e:
         problems.append(Problem(shown_path(path), f"not read, the defaults count: {e}"))
-        return out
+        return dict(DEFAULTS)
+    out = dict(DEFAULTS)
     for key, value in raw.items():
-        number = isinstance(value, (int, float)) and not isinstance(value, bool)
-        if key not in DEFAULTS:
-            problems.append(Problem(shown_path(path), f"unknown key {key}, ignored."))
-        elif key == "idle_turns" and not (number and value == int(value)
-                                          and 1 <= value <= 100):
-            problems.append(Problem(shown_path(path), "idle_turns is a whole number of turns "
-                                                "from 1 to 100."))
-        elif key == "tools" and not (number and value == int(value)
-                                     and 0 <= value <= TOOLS_MAX):
-            problems.append(Problem(shown_path(path), f"tools is a whole number of tokens from "
-                                                f"0 to {TOOLS_MAX}, such as 10000."))
-        elif key == "memory_floor" and not (number and 0 <= value <= 1):
-            problems.append(Problem(shown_path(path), "memory_floor is a similarity from 0 to 1, "
-                                                "such as 0.5."))
-        elif key == "memory_sections" and not (number and value == int(value)
-                                               and 0 <= value <= 20):
-            problems.append(Problem(shown_path(path), "memory_sections is a whole number from 0 "
-                                                "to 20, such as 3."))
-        elif key == "memory_tokens" and not (number and value == int(value)
-                                             and 0 <= value <= 20_000):
-            problems.append(Problem(shown_path(path), "memory_tokens is a whole number of tokens "
-                                                "from 0 to 20000, such as 1500."))
-        elif key == "notes" and not (number and 0 <= value <= 0.5):
-            problems.append(Problem(shown_path(path), f"{key} is a share of the window from 0 "
-                                                f"to 0.5, such as 0.1."))
-        else:
+        if (why := share_problem(key, value)) is None:
             out[key] = int(value) if key in WHOLE else float(value)
+        else:
+            problems.append(Problem(shown_path(path), why))
     return out
+
+
+def share_problem(key: str, value) -> str | None:
+    """Why `value` cannot be the share `key`, or None when it can."""
+    number = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if key not in DEFAULTS:
+        return f"unknown key {key}, ignored."
+    if key == "idle_turns" and not (number and value == int(value) and 1 <= value <= 100):
+        return "idle_turns is a whole number of turns from 1 to 100."
+    if key == "tools" and not (number and value == int(value) and 0 <= value <= TOOLS_MAX):
+        return f"tools is a whole number of tokens from 0 to {TOOLS_MAX}, such as 10000."
+    if key == "memory_floor" and not (number and 0 <= value <= 1):
+        return "memory_floor is a similarity from 0 to 1, such as 0.5."
+    if key == "memory_sections" and not (number and value == int(value)
+                                         and 0 <= value <= 20):
+        return "memory_sections is a whole number from 0 to 20, such as 3."
+    if key == "memory_tokens" and not (number and value == int(value)
+                                       and 0 <= value <= 20_000):
+        return "memory_tokens is a whole number of tokens from 0 to 20000, such as 1500."
+    if key == "notes" and not (number and 0 <= value <= 0.5):
+        return "notes is a share of the window from 0 to 0.5, such as 0.1."
+    return None
 
 
 @dataclass
