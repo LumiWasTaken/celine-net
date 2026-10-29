@@ -38,7 +38,7 @@ import httpx
 from .. import attachments, shares, vision
 from ..browser import sync
 from ..browser.sync import BrowserRefused
-from ..turns import loads, tokens
+from ..turns import tokens
 from .. import vault as vault_mod
 from ..vault import EntryError, VaultError, reason
 from . import ToolContext, ToolResult, guide, tool, described
@@ -699,8 +699,6 @@ class Browser:
                 res = await post(body) if post else await sync.post(self.cfg, body)
         except BrowserRefused as e:
             out = self._refusal(e, name, steps)
-            if e.facts.get("error") == "password_field":
-                await self._meet_vault(ctx)
             done = e.facts.get("effects") or []
             if done:
                 out.content += "\n" + "\n".join(self._effects(steps, done))
@@ -722,15 +720,8 @@ class Browser:
             display["steps"] = await self._shots(ctx, name, steps, res["effects"])
         content = self._page(res, budget, {**body, "steps": steps})
         if any(PASSWORD_FIELD.match(ln) for ln in res.get("lines") or []):
-            await self._meet_vault(ctx)
             content += "\nA password field: vault__get or vault__set."
         return ToolResult(content=content, display=display)
-
-    @staticmethod
-    async def _meet_vault(ctx: ToolContext | None) -> None:
-        """A password field on its page: the vault loads, from its next step."""
-        if ctx is not None:
-            await loads.touch(ctx.store, ctx.conversation_id, "skill", ["vault"])
 
     async def _shots(self, ctx: ToolContext | None, name: str, steps: list[dict],
                      effects: list[dict]) -> list[dict]:

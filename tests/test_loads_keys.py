@@ -58,7 +58,8 @@ def test_a_message_loads_a_skill_only_by_a_whole_word_of_its_own_guide():
         | {"bare": SimpleNamespace()})
 
     def asked(text, **kw):
-        return loads.asked(reg, [{"content": text, **kw}])
+        from celine.skills.meta import asked as asked_of
+        return asked_of(reg, {"content": text, **kw})
     assert asked("draw me a cat") == {"image_generator"}
     assert asked("let's talk about your voice") == set(), "no stray word loads me"
     assert asked("keep track of the game schedule") == set()

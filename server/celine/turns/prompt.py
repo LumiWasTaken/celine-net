@@ -10,7 +10,7 @@ import anyio
 
 from .. import clock, guard
 from ..plans import flow as plan_flow
-from ..skills import ToolContext
+from ..skills import CORE, ToolContext
 from ..skills.gating import OFF, down_sentence, is_enabled, overrides_for
 from . import context, legend, loads
 
@@ -32,8 +32,8 @@ def supports_prefill(backend) -> bool:
 
 async def tool_specs(registry, store, cid: str, carried, without=frozenset()
                  ) -> tuple[dict, bool]:
-    """The tools this conversation has, and whether it may only read: the tools the
-    loaded skills offer here (turns/loads.py: a skill with offered_in() offers its tools
+    """The tools this conversation has, and whether it may only read: the tools its
+    skills offer here (turns/loads.py: a skill with offered_in() offers its tools
     only where that says so, missions in a mission's own conversation; it may also name
     the tools it offers there, as a set), in registry order, but those named in
     `without`; a sub-agent started with read access gets the read-only tools and the
@@ -41,7 +41,8 @@ async def tool_specs(registry, store, cid: str, carried, without=frozenset()
     if not registry:
         return {}, False
     here = await loads.offered(registry, store, cid)
-    names = {s.wire_name for n in carried.skills for s in here.get(n, ())} - set(without)
+    names = {s.wire_name for n in [*carried.skills, *carried.others]
+             for s in here.get(n, ())} - set(without)
     tools = {k: s for k, s in registry.tools.items() if k in names}
     from ..skills.gating import read_mode_has
     from ..sub_agents.skill import reads_only
@@ -50,14 +51,15 @@ async def tool_specs(registry, store, cid: str, carried, without=frozenset()
     return tools, False
 
 
-def wire_tools(specs, registry, overrides, cfg, carried) -> list[dict]:
+def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
     """The tools it gets in this request: those of `specs` that are on (skills/
-    gating.py) and whose skill is up, with their parameters when `carried` has them
-    (loads.Carried.full), else by name and one line. A tool that is off or down is not
+    gating.py) and whose skill is up, a core skill's with their parameters, every
+    other by name and one line (skills.ToolSpec.as_name). Loads never change it: only
+    the switches and a skill going down or up do. A tool that is off or down is not
     sent at all (an empty stub got called with no arguments in a loop): the skill index
     says so (unusable), and a call to it is refused with why (turns/tools.py).
     Descriptions are filled in at registration (skills.Registry.add_specs)."""
-    return [s.as_wire() if carried.full(s.wire_name) else s.as_name()
+    return [s.as_wire() if s.skill in CORE else s.as_name()
             for s in specs.values()
             if registry.down(s.skill) is None and is_enabled(s, overrides, cfg)]
 
@@ -82,7 +84,7 @@ async def request_parts(store, cfg, registry, backend, cid: str):
     overrides = await overrides_for(store, cid)
     carried = await loads.select(store, cfg, registry, cid, backend)
     specs, _ = await tool_specs(registry, store, cid, carried)
-    tools = (wire_tools(specs, registry, overrides, cfg, carried)
+    tools = (wire_tools(specs, registry, overrides, cfg)
              if registry and getattr(backend, "supports_tools", False) else [])
     blocks = await system_blocks(cfg, registry, store, cid, "", carried)
     return blocks, tools, carried
@@ -300,8 +302,9 @@ async def system_blocks(cfg, registry, store, cid, tid, carried
         lines = unusable(specs, registry, await overrides_for(store, cid), cfg)
         parts.append(("tools", "\n".join(x for x in [registry.index(cfg, carried), *lines]
                                          if x)))
+        # the core skills' parts; another skill's comes with skills__load
         parts.extend(("tools", f) for f in await registry.prompt_fragments(
-            ctx, set(carried.skills) | {"sub_agents"}))
+            ctx, (set(carried.skills) & CORE) | {"sub_agents"}))
     parts.append(("tools", clock.today(cfg)))
     return [(name, text) for name, text in parts if text]
 

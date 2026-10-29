@@ -117,9 +117,7 @@ async def test_an_answer_with_a_note_written_ends_the_turn_in_one_step(store, cf
     assert state == "done" and texts == ["Sure, noted."]
 
 
-async def test_a_tool_that_fails_the_same_way_stays_usable(store, cfg, monkeypatch):
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE | {"web"})
+async def test_a_tool_that_fails_the_same_way_stays_usable(store, cfg):
     reg = _registry(cfg, Web())
     cid = await conversations.create(store)
     b = Replies([_calls(("web__search", {"query": "cats"})),
@@ -142,9 +140,7 @@ async def test_a_step_runs_every_call(store, cfg):
     assert [r[1] for r in rows] == ["ok"] * 30
 
 
-async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg, monkeypatch):
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE | {"browser"})
+async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg):
     reg = _registry(cfg, Browser(), Notebook())
     cid = await conversations.create(store)
     b = Replies([_calls(("browser__open", {})), [TextDelta("ok"), Done(reason="stop")]])

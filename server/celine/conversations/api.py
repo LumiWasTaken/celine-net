@@ -95,21 +95,18 @@ BLOCKS = ("persona", "talk", "about", "notes", "tools", "history")
 async def what_she_sees(request: Request, cid: str) -> dict:
     """The next request of this conversation as a turn would build it now, measured in
     tokens, without a model call (turns/context.py, mode "dry", the same estimate
-    /usage uses), with its tail: {window, shares: {notes, tools} (the most each may
+    /usage uses), with its tail: {window, shares: {notes} (the most notes by need may
     take, in tokens, turns/loads.py), blocks: [{name, tokens}] (persona, talk: the line
     about where it is and how it talks, about: what the user wrote about themselves,
     notes: the notes block, tools: the skill index, the skills' fragments and the tool
     schemas, history: the rest of the request estimate (the messages sent, the summary
     and its tail), so the blocks add up to the estimate the compaction check uses),
     notes: [{path, tokens, state, why}] (the notes it
-    carries or would: included, left_out or off), loaded: {notes: [{path, since}],
-    skills: [{name, since, tokens, core}]} (what it carries, each with the turns since
-    a turn touched it; a skill's tool schemas in tokens, `core` when it always loads,
-    `label` its name), tools: how many, auto_context: the Load automatically switch
-    (api/context.py)}."""
+    carries or would: included, left_out or off), loaded: {notes: [{path, since}]}
+    (each with the turns since a turn touched it), tools: how many, auto_context: the
+    Load automatically switch (api/context.py)}."""
     from ..turns.prompt import turn_parts
-    from ..settings.tools_meta import skill_meta
-    from ..turns import context, loads, tokens
+    from ..turns import context, tokens
     from ..turns.prompt import notes_tail, request_text
     db, cfg = store_of(request), cfg_of(request)
 
@@ -140,9 +137,6 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     # and the request's count differ by the message overhead and rounding)
     out["history"]["tokens"] = max(0, int(p.get("estimate") or 0) - sum(
         b["tokens"] for n, b in out.items() if n != "history"))
-    labels = {n: skill_meta(n, getattr(reg.skills.get(n) if reg else None,
-                                       "description", ""), cfg.substitute)["label"]
-              for n in carried.skills}
     return {"window": built.window, "shares": carried.budgets,
             "blocks": list(out.values()),
             "notes": [{k: n[k] for k in ("path", "tokens", "state", "why")}
@@ -150,47 +144,10 @@ async def what_she_sees(request: Request, cid: str) -> dict:
                 {"path": x["name"], "tokens": x["tokens"], "state": "left_out",
                  "why": x["why"]} for x in built.left_out],
             "loaded": {"notes": [{"path": p, "since": s} for (k, p), s in
-                                 sorted(carried.since.items()) if k == "note"],
-                       "skills": [{"kind": "skills", "name": n,
-                                   "since": carried.since[("skill", n)],
-                                   "tokens": carried.costs.get(n, 0), "core": n in loads.CORE,
-                                   "label": labels[n],
-                                   "tools": [{"kind": "tools", "name": t,
-                                              "since": carried.since[("tool", t)],
-                                              "tokens": carried.costs[t]}
-                                             for t in carried.tools
-                                             if t.split("__")[0] == n]}
-                                  for n in carried.skills]},
+                                 sorted(carried.since.items()) if k == "note"]},
             "tools": len(tools), "auto_context": auto}
 
 
-@router.delete("/conversations/{cid}/context/skills/{name}")
-async def unload_skill(request: Request, cid: str, name: str) -> dict:
-    """The agent lets go of a skill it carries here (the Context tab's Unload): its tools leave
-    its list until it loads it again or a message needs it. A core skill always loads:
-    400; a skill not loaded here: 404."""
-    return await _unload(request, cid, "skill", name)
-
-
-@router.delete("/conversations/{cid}/context/tools/{name}")
-async def unload_tool(request: Request, cid: str, name: str) -> dict:
-    """The agent lets go of a tool's parameters here (the Context tab's Unload): the tool
-    keeps its name in the list while its skill is loaded. A core skill's tool always
-    has them: 400; a tool not loaded here: 404."""
-    return await _unload(request, cid, "tool", name)
-
-
-async def _unload(request: Request, cid: str, kind: str, name: str) -> dict:
-    from ..settings.files import Invalid
-    from ..turns import loads
-    if name.split("__")[0] in loads.CORE:
-        raise Invalid("name", "This skill always loads.")
-    gone = await loads.unload(store_of(request), cid, kind, [name])
-    if gone is None:
-        raise NotFound("conversation")
-    if not gone:
-        raise NotFound(f"loaded {kind}")
-    return {"ok": True}
 
 
 @router.get("/conversations/{cid}/messages/{mid}/raw")

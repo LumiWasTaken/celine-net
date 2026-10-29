@@ -42,17 +42,13 @@ async def test_the_switch_holds_for_her_sub_agents_and_she_loads_by_hand(
                             json={"on": True})).status_code == 404
 
         chat = await conversations.create(store)
-        assert (await c.put(f"/api/conversations/{chat}/context/skills/shell")
-                ).json() == {"ok": True}
-        assert (await c.put(f"/api/conversations/{chat}/context/skills/bonds")
-                ).status_code == 404, "not offered in a chat"
         assert (await c.post(f"/api/conversations/{chat}/context/notes",
                              json={"path": "howto/blender.md"})).json() == {"ok": True}
         assert (await c.post(f"/api/conversations/{chat}/context/notes",
                              json={"path": "nope.md"})).status_code == 404
     loaded = await store.read(lambda c: {(r[0], r[1]) for r in c.execute(
         "SELECT kind, name FROM context_loaded WHERE conversation_id=?", (chat,))})
-    assert loaded == {("skill", "shell"), ("note", "howto/blender.md")}
+    assert loaded == {("note", "howto/blender.md")}
     assert any(e["conversation"] == chat for e in await _events(store, "context.changed"))
 
 

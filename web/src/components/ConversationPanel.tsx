@@ -19,8 +19,8 @@
    `ModelRow` is the model alone with a button that opens the chooser, for the heads of
    places that talk without this panel (a mission). */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeftRight, Plus, X } from 'lucide-react'
-import { conversationApi, notebookApi, type Carried, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
+import { ArrowLeftRight, Plus } from 'lucide-react'
+import { conversationApi, notebookApi, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
 import { duration, errorText, num } from '../lib/format'
 import { agentsApi, type TreeAgent } from '../lib/agents'
@@ -263,8 +263,8 @@ export function ModelRow({ cid, enabled = true, live, head = false }: {
 }
 
 /* ── Context: the tokens of the window in use, per block; its notes, each with its state
-   and a switch that leaves it out of this conversation (PATCH notes_off, the whole list);
-   the tools it has loaded, each with its x. Measured again after every turn state, every
+   and a switch that leaves it out of this conversation (PATCH notes_off, the whole list).
+   Measured again after every turn state, every
    change of the list and every `context.changed` of this conversation. Tokens only. ── */
 type Block = ContextView['blocks'][number]['name']
 const BLOCK: Record<Exclude<Block, 'persona' | 'talk'>, string> = {
@@ -300,9 +300,8 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
   // the list sent last: two quick switches both count before the server's event comes back
   const sent = useRef(notesOff)
   useEffect(() => { sent.current = notesOff }, [notesOff])
-  const unload = useAction(async (k: Carried) => { await conversationApi.unload(cid, k.kind, k.name); ctx.reload() })
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(cid, on); ctx.reload() })
-  const [loading, setLoading] = useState<'skill' | 'note' | null>(null)
+  const [loading, setLoading] = useState(false)
   const c = ctx.data
   if (!c) return <Loaded res={ctx} compact inline />
   const used = c.blocks.reduce((n, b) => n + b.tokens, 0)
@@ -339,51 +338,31 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
                      trailing={<Switch hideLabel checked={!off} disabled={own} label={n.path} onChange={on => void toggle(n.path, on)} />} />
           )
         })}
-        <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add a note" onClick={() => setLoading('note')}>Add</Button>
-      </div>
-      <div className="chat-ctx__list" role="list" aria-label="Tools">
-        <ListSection label="Tools" />
-        {unload.error && <InlineError compact message={unload.error} />}
-        {c.loaded.skills.map(k => [
-          <ListRow key={k.name} density="sm" title={k.label} subtitle={carriedWords(k.tokens, k.since)} trailingAlways
-                   trailing={!k.core && <IconButton icon={X} size="sm" label={`Remove ${k.label}`} loading={unload.busy}
-                                                    onClick={() => void unload.run(k)} />} />,
-          ...k.tools.map(t => (
-            <ListRow key={t.name} density="sm" depth={1} title={t.name}
-                     subtitle={carriedWords(t.tokens, t.since)} trailingAlways
-                     trailing={<IconButton icon={X} size="sm" label={`Remove ${t.name}`} loading={unload.busy}
-                                           onClick={() => void unload.run(t)} />} />
-          )),
-        ])}
-        <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add tools" onClick={() => setLoading('skill')}>Add</Button>
+        <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add a note" onClick={() => setLoading(true)}>Add</Button>
       </div>
       {loading && (
-        <LoadDialog cid={cid} what={loading} skip={loading === 'skill' ? c.loaded.skills.map(k => k.name) : c.loaded.notes.map(n => n.path)}
-                    onDone={() => { setLoading(null); ctx.reload() }} onClose={() => setLoading(null)} />
+        <LoadDialog cid={cid} skip={c.loaded.notes.map(n => n.path)}
+                    onDone={() => { setLoading(false); ctx.reload() }} onClose={() => setLoading(false)} />
       )}
     </div>
   )
 }
 
-/* loading by hand: every skill of this conversation, or every note of its notebook, with a
-   search; one click loads it for its next step */
-function LoadDialog({ cid, what, skip, onDone, onClose }: {
-  cid: string; what: 'skill' | 'note'; skip: string[]; onDone: () => void; onClose: () => void
+/* loading by hand: every note of its notebook, with a search; one click loads it for its
+   next step */
+function LoadDialog({ cid, skip, onDone, onClose }: {
+  cid: string; skip: string[]; onDone: () => void; onClose: () => void
 }) {
   const [q, setQ] = useState('')
   const items = useResource<{ key: string; title: string; detail: string }[]>(async () => {
-    if (what === 'skill') {
-      const r = await conversationApi.skills(cid)
-      return r.skills.filter(k => k.status === 'up').map(k => ({ key: k.name, title: k.label, detail: k.summary }))
-    }
     const files: { key: string; title: string; detail: string }[] = []
     const walk = (ns: NotebookNode[]) => ns.forEach(n => (n.kind === 'dir' ? walk(n.children ?? [])
       : files.push({ key: n.path, title: n.path.replace(/\.md$/, ''), detail: '' })))
     walk((await notebookApi.tree()).tree)
     return files
-  }, [cid, what])
+  }, [])
   const load = useAction(async (key: string) => {
-    await (what === 'skill' ? contextApi.loadSkill(cid, key) : contextApi.loadNote(cid, key))
+    await contextApi.loadNote(cid, key)
     onDone()
   })
   const shown = useMemo(() => {
@@ -391,13 +370,13 @@ function LoadDialog({ cid, what, skip, onDone, onClose }: {
     return (items.data ?? []).filter(i => !skip.includes(i.key) && (!f || i.title.toLowerCase().includes(f) || i.key.toLowerCase().includes(f)))
   }, [items.data, q, skip])
   return (
-    <Dialog title={what === 'skill' ? 'Add tools' : 'Add a note'} onClose={onClose} size="md">
+    <Dialog title="Add a note" onClose={onClose} size="md">
       <SearchField value={q} onChange={setQ} placeholder="Search" autoFocus />
       {load.error && <InlineError compact message={load.error} />}
       {items.error ? <InlineError compact message={items.error} onRetry={items.reload} />
         : !items.data ? <LoadingRow />
         : shown.length === 0 ? <EmptyState compact title={q ? 'Nothing matches' : 'Everything is loaded'} />
-        : <VirtualList items={shown} getKey={i => i.key} estimate={() => 44} label={what === 'skill' ? 'Tools' : 'Notebook'}
+        : <VirtualList items={shown} getKey={i => i.key} estimate={() => 44} label="Notebook"
                        renderRow={i => <ListRow title={i.title} subtitle={i.detail || undefined} onClick={() => void load.run(i.key)} />} />}
     </Dialog>
   )

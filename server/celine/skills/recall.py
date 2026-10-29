@@ -73,8 +73,8 @@ def _hash(text: str) -> str:
 def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, limit: int | None,
            idle: int) -> dict | None:
     """What the block needs from the database, in one read: the conversation's switch,
-    folder and left-out notes, the place, its last reply before `mid`, the notes and
-    skills it carries now, and the sections shown on this branch since the last
+    folder and left-out notes, the place, its last reply before `mid`, the notes it
+    carries now, and the sections shown on this branch since the last
     compaction ({id: hash})."""
     from .places import place_of
     from ..turns import loads
@@ -94,8 +94,7 @@ def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, limit: int | Non
     return {"auto": bool(conv[0]), "folder": conv[1],
             "off": set(json.loads(conv[2] or "[]")), "place": place_of(c, cid, tid),
             "reply": reply, "shown": shown,
-            "notes": {n for k, n in now if k == "note"},
-            "skills": {n for k, n in now if k == "skill"}}
+            "notes": {n for k, n in now if k == "note"}}
 
 
 def _embed(cfg, query: str, texts: list[str]) -> tuple[list[float], list[list[float]]]:
@@ -113,7 +112,7 @@ async def block(cfg, store, cid: str, tid: str, message: dict
     block empty when no section passed, None when nothing came up (no key in the talk,
     or not here)."""
     from ..kb.embed import SemanticError, cosine
-    from . import CORE, notebook, notebook_index
+    from . import notebook, notebook_index
     from .places import offered
     from ..turns import loads, tokens
     from ..turns.message_context import history_limit
@@ -124,7 +123,7 @@ async def block(cfg, store, cid: str, tid: str, message: dict
         return None
     talk = "\n".join([message.get("content") or "", f["reply"][:loads.KEY_REPLY]]).strip()
     root, user = cfg.her.notebook, (getattr(cfg, "user", "") or "").lower()
-    carried = f["notes"] | {f"skills/{n}.md" for n in f["skills"] | CORE}
+    carried = f["notes"]
     found: list[dict] = []
     for r in await notebook_index.list(store, f["folder"]):
         rel = r["path"]

@@ -2,13 +2,13 @@
 
 A skill is a Python class with `@tool` coroutines plus a guide, `guides/<skill>.md`
 (SKILL.md style: frontmatter `name`, `description`, optional `words`, then the body).
-What it has in context every turn: the skill index (the loaded skills, and one line per
-other skill, from the frontmatter) and the tools of the loaded skills, a core skill's
-with their parameters, another's by name and one line until it loads them
-(turns/loads.py decides which, from CORE below and each guide's `words:`). A tool that is off or a skill
-that is down stays in the list as a stub that says so (turns/prompt.py).
+What it has in context every turn: the skill index (one line per skill offered here,
+from the frontmatter) and every tool offered here, a core skill's (CORE below) with its
+parameters, another's by name and one line (turns/prompt.py wire_tools). A tool that is
+off or a skill that is down is not sent; the index says so.
 `skills__read_guide(name)` returns a skill's guide and its notes on it,
-`skills__load(names)` loads skills and tools, `skills__unload(names)` lets them go.
+`skills__load(names)` returns the parameters of skills and tools and a skill's part of
+the prompt as its result (skills/meta.py).
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ log = logging.getLogger("celine.skills")
 SEP = "__"          # skill__tool. Double, so split("__", 1) round-trips.
 META = "skills"     # the skill that shows the guides: skills__read_guide
 BODY = {"shell", "code", "browser"}     # the skills that run on its body (ToolSpec.runs)
-LINE_MAX = 200      # characters of a tool's line while its parameters are not loaded
+LINE_MAX = 200      # characters of a tool's line in its name entry (ToolSpec.as_name)
 
 
 @dataclass
@@ -149,13 +149,13 @@ class ToolSpec:
         return not self.schema.get("properties")
 
     def as_name(self) -> dict[str, Any]:
-        """Its entry while its parameters are not loaded: the name, one line, no
-        parameters (turns/loads.py); a bare tool in full."""
+        """Its name entry: the name, one line, open parameters (turns/tools.py checks a
+        call against the real schema); a bare tool in full."""
         if self.bare:
             return self.as_wire()
         return {"type": "function",
                 "function": {"name": self.wire_name, "description": self.line,
-                             "parameters": {"type": "object", "properties": {}}}}
+                             "parameters": {"type": "object"}}}
 
 
 Mode = Literal["blocking", "detach"]
@@ -434,12 +434,9 @@ class Registry:
         return " ".join(str(getattr(skill, "error", None) or f"it is {status}").split())[:200]
 
     def index(self, cfg, carried) -> str | None:
-        """The skill index for the system prompt (turns/loads.py decides `carried`): the
-        loaded skills by name, then one line per skill that is not loaded, what it is
-        for."""
+        """The skill index for the system prompt: one line per skill offered here, what
+        it is for, a core one marked."""
         from .meta import skill_note_path
-        from ..turns.loads import shares
-        idle = int(shares(cfg)["idle_turns"])
 
         def line(name: str) -> str:
             desc = " ".join(cfg.substitute(str(getattr(self.skills[name], "description",
@@ -447,32 +444,29 @@ class Registry:
             if why := self.down(name):
                 desc += f" (down: {cfg.substitute(why)})"
             elif carried.others.get(name) == "off":
-                desc += " (off in Settings, Tools: it cannot load)"
+                desc += " (off in Settings, Tools)"
             elif carried.others.get(name) == "off here":
-                desc += " (off in this conversation: it cannot load)"
-            mark = " [notes]" if skill_note_path(cfg, name).is_file() else ""
+                desc += " (off in this conversation)"
+            mark = " [core]" if name in CORE else ""
+            mark += " [notes]" if skill_note_path(cfg, name).is_file() else ""
             return f"- {name}{mark}: {desc}"
-        loaded = [n for n in carried.skills if n != META]
-        others = [line(n) for n in self.skills if n in carried.others]
-        if not loaded and not others:
+        names = [n for n in self.skills if n != META and
+                 (n in carried.skills or n in carried.others)]
+        if not names:
             return None
         if META in carried.skills:
-            head = (f"Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
-                    f"loaded skills are in your list; a tool listed with no parameters "
-                    f"gets them when you load it or call it. `skills__load` loads skills "
-                    f"and tools for your next step, `skills__unload` lets them go; a skill "
-                    f"or tool you do not use for {idle} turns unloads. "
-                    f"`skills__read_guide` shows a skill's guide, with examples, and your "
-                    f"notes on a skill marked [notes] (skills/<name>.md).")
-        else:       # its tools leave out the skills skill: they load by need only
-            head = (f"Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
-                    f"loaded skills are in your list; a tool listed with no parameters "
-                    f"gets them when you call it. Another skill loads when the talk needs "
-                    f"it, and a skill or tool you do not use for {idle} turns unloads.")
-        out = [head, f"Loaded: {', '.join(loaded)}."]
-        if others:
-            out += ["Not loaded:", *others]
-        return "\n".join(out)
+            head = ("Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
+                    "skills marked [core] are in your list with their parameters; every "
+                    "other tool is there by name and one line. `skills__load` returns the "
+                    "parameters of skills or tools and a skill's own instructions. "
+                    "`skills__read_guide` shows a skill's guide, with examples, and your "
+                    "notes on a skill marked [notes] (skills/<name>.md).")
+        else:       # its tools leave out the skills skill
+            head = ("Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
+                    "skills marked [core] are in your list with their parameters; every "
+                    "other tool is there by name and one line, and a call with arguments "
+                    "that do not fit says what it takes.")
+        return "\n".join([head, *map(line, names)])
 
     def by_skill(self) -> dict[str, list[ToolSpec]]:
         out: dict[str, list[ToolSpec]] = {s: [] for s in self.skills}
@@ -558,9 +552,9 @@ BUILTIN = (
     ("bugreport", ".bugreports.skill", "BugReport"),
 )
 
-# What it carries by need (turns/loads.py). The core skills are loaded wherever they
-# are offered; every other skill loads when it asks for it (skills__load), uses it, or
-# a new user message says a word of its guide's `words:` line.
+# The core skills: their tools go with their parameters and their part of the prompt is
+# in the system prompt, wherever they are offered; every other skill's tools go by name
+# (turns/prompt.py wire_tools) and its part comes with skills__load (skills/meta.py).
 CORE = {META, "notebook", "intercom", "sub_agents", "past_conversations",
         "missions", "mind", "plan", "bugreport"}
 

@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 11
+LATEST = 12
 
 
 def _version(db) -> int:

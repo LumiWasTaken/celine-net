@@ -556,24 +556,18 @@ export type SentRequest = {
 /** GET /conversations/{cid}/context: blocks in order persona, talk, about, notes, tools, history */
 export type ContextView = {
   window: number
-  /** the most notes and tools may take, in tokens */
-  shares: { notes: number; tools: number }
+  /** the most notes by need may take, in tokens */
+  shares: { notes: number }
   blocks: { name: 'persona' | 'talk' | 'about' | 'notes' | 'tools' | 'history'; tokens: number }[]
   notes: { path: string; tokens: number; state: 'included' | 'left_out' | 'off'; why: string | null }[]
   /** what it carries, each with the turns since a turn last touched it */
   loaded: {
     notes: { path: string; since: number }[]
-    /** a skill's tools in tokens (a core skill's with their parameters, another's by name);
-        `core` when it always loads (no Unload); `tools`: those of its tools that carry their parameters */
-    skills: (Carried & { core: boolean; label: string; tools: Carried[] })[]
   }
   tools: number
   /** the Load automatically switch */
   auto_context: boolean
 }
-
-/** a skill or tool it carries; `kind` names its collection under .../context/ */
-export type Carried = { kind: 'skills' | 'tools'; name: string; since: number; tokens: number }
 
 export const RUNNING: TurnState[] = ['queued', 'preparing', 'streaming', 'tools']
 
@@ -672,9 +666,6 @@ export const conversationApi = {
     request<{ requests: SentRequest[] }>(`/conversations/${id}/messages/${message_id}/requests`),
   /** what the next request would hold, measured per block, and its notes with their state */
   context: (id: string) => request<ContextView>(`/conversations/${id}/context`),
-  /** it lets go of a skill or a tool it carries here (`kind` as the context row says); it loads again by need */
-  unload: (id: string, kind: Carried['kind'], name: string) =>
-    del<{ ok: true }>(`/conversations/${id}/context/${kind}/${encodeURIComponent(name)}`),
   /** the notes left out of this conversation (the whole list) */
   setNotesOff: (id: string, notes_off: string[]) =>
     request<{ ok: true }>(`/conversations/${id}`, json('PATCH', { notes_off })),

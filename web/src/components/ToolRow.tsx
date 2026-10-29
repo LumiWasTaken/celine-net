@@ -330,7 +330,7 @@ export function ToolGroup({ calls }: { calls: ToolCall[] }) {
 }
 
 /* loading, unloading, reading a guide: plumbing, named only when it is all there is */
-const PLUMBING = new Set(['skills__load', 'skills__unload', 'skills__read_guide'])
+const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
 
 /** In the stream, under its words: a call at work as one shimmering line (with its Stop or
     Open), a message it set for later while it waits (with Cancel), and the pictures and

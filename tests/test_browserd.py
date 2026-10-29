@@ -15,7 +15,6 @@ from celine.browser import sync
 from celine.browser.sync import BrowserRefused
 from celine.conversations import store as conversations
 from celine.skills.browser import Browser
-from celine.turns import loads
 from vault_fixtures import by_hand, ctx_for, fake_bw, vault_app  # noqa: F401
 
 ROOT = Path(__file__).parent.parent
@@ -293,7 +292,6 @@ async def test_a_vault_entry_is_typed_with_no_draft_and_no_shot(box, monkeypatch
     assert shots == [] and box.tab.drafts == []
     assert pw not in out.content and "type e14 vault:example-shop/password" in out.content
     assert out.content.endswith("A password field: vault__get or vault__set.")
-    assert "vault" in await loads.loaded(store, ctx.conversation_id)
     out = await b.open(ctx, url="https://x/home", tab="a")
     assert page.url == "https://x/home" and "Text you typed into" not in out.content
     page.url = "https://x/login"

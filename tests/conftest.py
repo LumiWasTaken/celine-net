@@ -90,15 +90,18 @@ def _probe_reply(request):
     return httpx.Response(200, json={"data": []})
 
 
-# the skills tests make up for their turns: always loaded, as the core skills are
-# (turns/loads.py loads the real ones by need)
+# the skills tests make up for their turns: core, sent with their parameters (the real
+# ones but the core go by name, turns/prompt.py wire_tools)
 TEST_SKILLS = {"arch", "painter", "slow", "t", "door", "echo", "chatlink", "slowpoke"}
 
 
 @pytest.fixture(autouse=True)
-def _test_skills_always_loaded(monkeypatch):
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE | TEST_SKILLS)
+def _test_skills_core():
+    from celine.skills import CORE
+    added = TEST_SKILLS - CORE
+    CORE.update(added)
+    yield
+    CORE.difference_update(added)
 
 
 @pytest.fixture(autouse=True)

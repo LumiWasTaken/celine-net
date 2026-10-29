@@ -145,19 +145,15 @@ def _registry(cfg):
     return reg
 
 
-async def test_skills_load_by_need_and_unload_when_idle(store, tmp_path):
+async def test_every_offered_skill_is_in_the_index_and_off_ones_say_so(store, tmp_path):
     cfg = notes_cfg(tmp_path, tools={"shell": "off"})
     reg = _registry(cfg)
     cid = await conversations.create(store)
     got = await select_turn(store, cfg, reg, cid, 1, "hello")
-    assert got.skills == ["notebook", "skills"]
-    assert got.others == {"web": "", "shell": "off"}
+    assert got.skills == ["notebook", "web", "skills"] and got.others == {"shell": "off"}
     index = reg.index(cfg, got)
-    assert "Loaded: notebook." in index and "- web: The public web." in index
-    assert "- shell: Her terminals. (off in Settings, Tools: it cannot load)" in index
-
-    got = await select_turn(store, cfg, reg, cid, 2, "look at https://example.com")
-    assert got.skills == ["notebook", "web", "skills"]
+    assert "- web: The public web." in index
+    assert "- shell: Her terminals. (off in Settings, Tools)" in index
 
     ctx = ToolContext(conversation_id=cid, turn_id="t2", tool_call_id="x", store=store,
                       config=cfg, emit=None)
@@ -169,18 +165,11 @@ async def test_skills_load_by_need_and_unload_when_idle(store, tmp_path):
     await set_override(store, cid, "shell", False, 1)
     out = await meta.load(ctx, names=["shell"])
     assert out.is_error and out.content.startswith("shell is off in this conversation")
-    off = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
-    assert "(off in this conversation: it cannot load)" in reg.index(cfg, off)
+    off = await loads.select(store, cfg, reg, cid, BACKEND)
+    assert "(off in this conversation)" in reg.index(cfg, off)
     await clear_override(store, cid, "shell")
     out = await meta.load(ctx, names="shell")          # one string is a name too
-    assert out.content == "Loaded shell: its tools are in your list by name from your next step."
-    got = await loads.select(store, cfg, reg, cid, BACKEND, when="step")
-    assert got.skills == ["notebook", "web", "shell", "skills"] and got.turn == 2
-
-    # names are not counted: a skill loads whatever the budget
-    cfg.context["tools"] = 0
-    got = await select_turn(store, cfg, reg, cid, 3, "the web, please")
-    assert got.skills == ["notebook", "web", "shell", "skills"] and got.tools == []
+    assert not out.is_error and out.content.startswith("# shell\n\n")
 
 
 async def test_the_feed_says_what_came_and_what_went(store, tmp_path):
@@ -199,32 +188,42 @@ async def test_the_feed_says_what_came_and_what_went(store, tmp_path):
     await loads.touch(store, cid, "note", ["lore/keeper.md"])
     await feed()
     await select_turn(store, cfg, reg, cid, 1, "the lighthouse keeper")
-    assert await feed() == [{"conversation": cid, "loaded": {
-        "notes": [], "skills": ["notebook", "skills"], "tools": []},
-        "unloaded": {"notes": [], "skills": [], "tools": []}}]
-    await loads.touch(store, cid, "skill", ["web"])
-    await loads.touch(store, cid, "skill", ["web"])          # nothing new: no event
-    assert [e["loaded"]["skills"] for e in await feed()] == [["web"]]
+    assert await feed() == [{"conversation": cid, "loaded": {"notes": []},
+                             "unloaded": {"notes": []}}]
+    await loads.touch(store, cid, "note", ["lore/keeper.md"])     # nothing new: no event
+    assert await feed() == []
     for n in range(2, 9):
         await select_turn(store, cfg, reg, cid, n)
     got = await feed()
     assert len(got) == 7, "every turn start says so"
-    empty = {"notes": [], "skills": [], "tools": []}
-    assert [e["unloaded"] for e in got if e["unloaded"] != empty] == [
-        {**empty, "notes": ["lore/keeper.md"]}, {**empty, "skills": ["web"]}]
+    assert [e["unloaded"] for e in got if e["unloaded"] != {"notes": []}] == [
+        {"notes": ["lore/keeper.md"]}]
 
 
 
-def test_tools_is_a_flat_budget_and_a_share_is_a_problem(tmp_path):
+def test_the_shares_read_and_an_unknown_key_is_a_problem(tmp_path):
     from celine.settings import seed
     root = tmp_path / "settings"
     root.mkdir()
-    seed.context_path(root).write_text("notes = 0.10\ntools = 10000\n")
+    seed.context_path(root).write_text("notes = 0.10\n")
     problems: list = []
     s = loads.read_shares(seed.context_path(root), problems)
-    assert s["tools"] == 10_000 and s["notes"] == 0.10 and not problems
-    seed.context_path(root).write_text("tools = 0.5\n")
+    assert s["notes"] == 0.10 and not problems
+    seed.context_path(root).write_text("tools = 10000\n")
     loads.read_shares(seed.context_path(root), problems)
-    assert problems, "a share is no longer a tools budget"
+    assert problems, "no tools budget"
+
+
+def test_the_migration_drops_the_tools_budget_from_context_toml(tmp_path):
+    import importlib.util
+    from celine.db.migrate import MIGRATIONS_DIR
+    spec = importlib.util.spec_from_file_location(
+        "m12", MIGRATIONS_DIR / "0012_loads_append.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    path = tmp_path / "context.toml"
+    path.write_text("# shares\nnotes = 0.10\ntools = 10000  # gone\nmemory_floor = 0.5\n")
+    m.drop_keys(path, ("tools",))
+    assert path.read_text() == "# shares\nnotes = 0.10\nmemory_floor = 0.5\n"
 
 

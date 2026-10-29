@@ -122,11 +122,6 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
                        "touched_at, created_at) VALUES(?, 's', 1, 't', 't')",
                        [("voice/style.md",), ("voice/old.md",), ("voice/draft.md",)])
         db.execute("UPDATE conversations SET notes_off='[\"voice/draft.md\"]'")
-        # a skill it loaded by need (the tests' skills are core otherwise)
-        db.execute("INSERT INTO context_loaded(conversation_id, kind, name, touched) "
-                   "VALUES(?, 'skill', 'arch', 0)", (cid,))
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE - {"arch"})
     model = Model(window=65_536)
 
     @asynccontextmanager
@@ -149,27 +144,15 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
     with TestClient(app) as c:
         got = c.get(f"/api/conversations/{cid}/context").json()
         assert c.get("/api/conversations/nope/context").status_code == 404
-        assert c.delete(f"/api/conversations/{cid}/context/skills/arch").json() == {"ok": True}
-        after = c.get(f"/api/conversations/{cid}/context").json()
-        assert c.delete(f"/api/conversations/{cid}/context/skills/notebook").status_code == 400
-        assert c.delete("/api/conversations/nope/context/skills/arch").status_code == 404
-        assert c.delete(f"/api/conversations/{cid}/context/skills/arch").status_code == 404, \
-            "not loaded now"
-        assert c.delete(f"/api/conversations/{cid}/context/tools/arch__x").status_code == 404
     assert got["window"] == 65_536 and got["tools"] >= 1
     blocks = {b["name"]: b for b in got["blocks"]}
     assert list(blocks) == ["persona", "talk", "about", "notes", "tools", "history"]
-    assert "bytes" not in blocks["persona"] and got["shares"] == {
-        "notes": 6553, "tools": 10_000}
+    assert "bytes" not in blocks["persona"] and got["shares"] == {"notes": 6553}
     assert blocks["persona"]["tokens"] > 0 and blocks["history"]["tokens"] > 0
     assert blocks["tools"]["tokens"] > 0
     assert {n["path"]: (n["state"], n["why"]) for n in got["notes"]} == {
         "voice/draft.md": ("off", "left out in this conversation"),
         "voice/style.md": ("included", "")}
-    assert got["loaded"]["notes"] == [{"path": "voice/style.md", "since": 0}]
-    [arch] = [k for k in got["loaded"]["skills"] if k["name"] == "arch"]
-    assert arch["since"] == 0 and arch["tokens"] > 0 and arch["core"] is False
-    assert arch["kind"] == "skills" and arch["tools"] == []
-    assert "arch" not in [k["name"] for k in after["loaded"]["skills"]], "unloaded here"
+    assert got["loaded"] == {"notes": [{"path": "voice/style.md", "since": 0}]}
 
     assert model.calls == [], "no model call"

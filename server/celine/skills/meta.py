@@ -1,19 +1,28 @@
-"""skills__read_guide, skills__load and skills__unload: a skill's guide with its notes
-on it, and what it carries.
+"""skills__read_guide and skills__load: a skill's guide with its notes on it, and the
+parameters of its tools.
 
-Every turn it sees the skill index (the loaded skills, one line per other skill) and the
-tools of the loaded skills (turns/loads.py): a core skill's with their parameters,
-another's by name and one line, but the tools it loaded. The guide of a skill says how
-its tools go together, with examples; `skills__read_guide(name)` returns it, loaded or
-not. If it has a note at `skills/<name>.md` in its notebook, it is appended to the
-result. `skills__load(names)` loads skills and tools from its next step,
-`skills__unload(names)` lets them go.
+Every turn it sees the skill index (one line per skill offered here) and every tool
+offered here: a core skill's with its parameters, another's by name and one line
+(turns/prompt.py wire_tools). The guide of a skill says how its tools go together, with
+examples; `skills__read_guide(name)` returns it. If it has a note at `skills/<name>.md`
+in its notebook, it is appended to the result. `skills__load(names)` answers with the
+parameters of the tools named, or of every tool of a skill named, with that skill's own
+part of the prompt and its note: the result is the load. Nothing in the request is
+rebuilt, so the start of the request stays as the model server cached it; the result
+ages like any other.
+
+A new user message that says a word of a skill's `words:` line (an attached image says
+`image`, a link `url`, a Documents reference `document`) gets that load at its end, once
+per skill on its branch since the last summary, while the conversation loads
+automatically (`conversations.auto_context`; message_context).
 """
 from __future__ import annotations
 
+import json
+import re
 from typing import Annotated
 
-from . import META, SEP, ToolContext, ToolResult, guide_text, tool
+from . import CORE, META, SEP, ToolContext, ToolResult, guide_text, tool
 
 
 def skill_note_path(cfg, skill_name: str):
@@ -40,6 +49,27 @@ def read_skill_note(cfg, skill_name: str) -> str | None:
     return text
 
 
+_URL = re.compile(r"https?://", re.I)
+HEAD = "[loaded for this message]"
+BROUGHT = "$.skills.brought"      # the report path of a message's loads (message_context)
+
+
+def asked(registry, message: dict) -> set[str]:
+    """The skills a user message asks for: a word or phrase of the `words:` line of a
+    skill's own guide comes up in it (loads.key_in: a whole word, any case). An
+    attached image says `image`, a link `url`, a Documents reference `document`."""
+    from ..turns.loads import key_in
+    text = message.get("content") or ""
+    marks = {m for m, hit in (("url", _URL.search(text)),
+                              ("document", "[[documents:" in text),
+                              ("image", any(a.get("kind") == "image" for a in
+                                            message.get("attachments") or [])))
+             if hit}
+    said = "\n".join([text, *sorted(marks)])
+    return {name for name, skill in registry.skills.items()
+            if key_in(said, list(getattr(getattr(skill, "guide", None), "words", ())))}
+
+
 class Skills:
     name = META
     description = "Shows the guide of a skill and loads a skill."
@@ -61,8 +91,7 @@ class Skills:
         name: Annotated[str, "A skill name from the skill index, such as shell."],
     ) -> ToolResult:
         """Read the guide of one skill: how its tools go together, with examples, what
-        it offers now (such as its presets), and your notes on it when you keep any.
-        The skill does not have to be loaded."""
+        it offers now (such as its presets), and your notes on it when you keep any."""
         from ..turns import loads
         key = name
         if key == META:
@@ -90,8 +119,8 @@ class Skills:
                      f"(from your notebook, skills/{key}.md):\n\n{note.strip()}")
         return ToolResult(content=f"# {key}\n\n{body}", display={"skill": key})
 
-    # read-only to the world: they change what it carries, nothing else, so a sub-agent
-    # with read access may load too and a step with them may run again after a restart
+    # read-only to the world: it reads, so a sub-agent with read access may load too and
+    # a step with it may run again after a restart
     @tool()
     async def load(
         self,
@@ -99,103 +128,113 @@ class Skills:
         names: Annotated[list[str], "Skill names from the skill index, such as web, or "
                                     "tool names, such as web__fetch."],
     ) -> ToolResult:
-        """Load skills or tools, several at once. A skill puts each of its tools in your
-        list by name and one line. A tool (skill__tool) puts its parameters there too,
-        so you can call it. Both from your next step, and they stay while you use
-        them."""
-        from ..turns import loads, tokens
+        """Load skills or tools, several at once: the parameters of the tools named, or
+        of every tool of a skill named, with that skill's own instructions. Call the
+        tools with them."""
+        text, skills, tools, ok = await self.loaded(ctx, listed(names))
+        if not text:
+            return ToolResult(content="Name a skill or a tool to load.", is_error=True)
+        return ToolResult(content=text, is_error=not ok,
+                          display={"skills": skills, "tools": tools})
+
+    async def loaded(self, ctx: ToolContext, names: list[str]
+                     ) -> tuple[str, list[str], list[str], bool]:
+        """(the load of `names` as it reads it, the skills and the tools loaded, whether
+        anything loaded). A skill whose parameters are over what one result holds
+        (`ctx.max_output_tokens`) gives its part of the prompt and says so: its tools
+        then load by name."""
+        from ..turns import tokens
         from .gating import down_why, is_enabled, overrides_for, reason
         here = await self._here(ctx)
         overrides = await overrides_for(ctx.store, ctx.conversation_id)
-        carried = await loads.select(ctx.store, self.cfg, self.registry,
-                                     ctx.conversation_id, None)
-        budget = carried.budgets["tools"]
-        have = {n: carried.costs[n] for n in carried.skills if n in loads.CORE} | {
-            n: carried.costs[n] for n in carried.tools}
-        lines, skills, tools, ok = [], [], [], False
-        for name in listed(names):
+        counter = tokens.counter()
+        room = ctx.max_output_tokens
+        out, skills, tools = [], [], []
+        for name in names:
             skill = name.split(SEP)[0]
             specs = here.get(skill)
             spec = next((s for s in specs or () if s.wire_name == name), None)
-            off = [spec] if spec else specs     # what must be on for it to load
+            on = [s for s in ([spec] if spec else specs or ())
+                  if is_enabled(s, overrides, self.cfg)]
             if specs is None:
-                lines.append(f"No skill called {skill!r} here. The skills are: "
-                             f"{', '.join(here)}.")
+                out.append(f"No skill called {skill!r} here. The skills are: "
+                           f"{', '.join(here)}.")
             elif SEP in name and spec is None:
-                lines.append(f"There is no tool {name}. The {skill} skill has "
-                             f"{', '.join(s.wire_name for s in specs)}.")
+                out.append(f"There is no tool {name}. The {skill} skill has "
+                           f"{', '.join(s.wire_name for s in specs)}.")
             elif why := self.registry.down(skill):
-                lines.append(self.cfg.substitute(
+                out.append(self.cfg.substitute(
                     f"{skill} is down: {down_why(why)} Its tools stay out."))
-            elif not any(is_enabled(s, overrides, self.cfg) for s in off):
+            elif not on:
+                off = [spec] if spec else specs
                 where = ("in this conversation" if any(reason(s, overrides, self.cfg) ==
                                                        "here" for s in off)
                          else "in Settings, Tools")
-                lines.append(self.cfg.substitute(
+                out.append(self.cfg.substitute(
                     f"{name} is off {where}, so it cannot load. Ask {{{{username}}}} to "
                     f"turn it on, or work without it."))
-            elif skill in loads.CORE:
-                ok = True
-                lines.append(f"{name} is always in your list with its parameters.")
-            elif spec is not None and spec.bare:
-                ok = True
-                skills.append(skill)
-                lines.append(f"{name} takes no parameters: it is in your list in full while "
-                             f"{skill} is loaded, from your next step.")
-            elif spec is None:
-                ok = True
-                skills.append(skill)
-                lines.append(f"Loaded {skill}: its tools are in your list by name from "
-                             f"your next step.")
-            else:
-                cost = loads.schema_cost(tokens.counter(), [spec])
-                if name not in have and sum(have.values()) + cost > budget:
-                    listed_now = ", ".join(f"{n} ({t})" for n, t in have.items()) or "none"
-                    lines.append(f"{name} is not loaded: its parameters take {cost} tokens, "
-                                 f"the tools budget is {budget}, and the parameters in "
-                                 f"your list take {sum(have.values())}: {listed_now}.")
-                    continue
-                ok = True
-                have[name] = cost
-                skills.append(skill)
+            elif spec is not None:
                 tools.append(name)
-                lines.append(f"Loaded {name}: its parameters are in your list from your "
-                             f"next step.")
-        if not lines:
-            return ToolResult(content="Name a skill or a tool to load.", is_error=True)
-        await loads.touch(ctx.store, ctx.conversation_id, "skill", skills)
-        await loads.touch(ctx.store, ctx.conversation_id, "tool", tools)
-        return ToolResult(content="\n".join(lines), is_error=not ok,
-                          display={"skills": sorted(set(skills)), "tools": tools})
+                out.append(f"{name}, with its parameters:\n{_schemas([spec])}")
+            else:
+                skills.append(skill)
+                part = await self._part(ctx, skill)
+                schemas = _schemas(on)
+                size = counter.estimate(schemas, "schema")
+                if room and size > room:
+                    out.append(f"# {skill}\n\n{part}The parameters of its tools take about "
+                               f"{size:,} tokens, more than one result holds ({room:,}): "
+                               f"load the tools you need by name, such as "
+                               f"{on[0].wire_name}.".strip())
+                else:
+                    out.append(f"# {skill}\n\n{part}Its tools, with their parameters:\n"
+                               f"{schemas}")
+        return "\n\n".join(out), skills, tools, bool(skills or tools)
 
-    @tool()
-    async def unload(
-        self,
-        ctx: ToolContext,
-        names: Annotated[list[str], "Skill names, such as web, or tool names, such as "
-                                    "web__fetch."],
-    ) -> ToolResult:
-        """Unload skills or tools, several at once, to free room in your list. A skill
-        takes its tools with it; a tool keeps its name in your list while its skill is
-        loaded. From your next step."""
-        from ..turns import loads
-        lines, skills, tools = [], [], []
-        for name in listed(names):
-            skill = name.split(SEP)[0]
-            if skill in loads.CORE:
-                lines.append(f"{name} is always in your list.")
-            elif SEP in name:
-                tools.append(name)
-            else:
-                skills.append(skill)
-        gone = [*(await loads.unload(ctx.store, ctx.conversation_id, "skill", skills) or []),
-                *(await loads.unload(ctx.store, ctx.conversation_id, "tool", tools) or [])]
-        lines += [f"Unloaded {n}." if n in gone else f"{n} was not loaded."
-                  for n in [*skills, *tools]]
-        if not lines:
-            return ToolResult(content="Name a skill or a tool to unload.", is_error=True)
-        return ToolResult(content="\n".join(lines), is_error=not gone,
-                          display={"names": gone})
+    async def _part(self, ctx: ToolContext, skill: str) -> str:
+        """A skill's own part of the prompt (a core skill's is in the system prompt
+        already) and its note, each followed by a blank line; empty without either."""
+        out = []
+        if skill not in CORE:
+            out += await self.registry.prompt_fragments(ctx, {skill})
+        if note := read_skill_note(self.cfg, skill):
+            out.append(f"Your notes about {skill} (from your notebook, "
+                       f"skills/{skill}.md):\n\n{note.strip()}")
+        return "".join(f"{x}\n\n" for x in out)
+
+    async def message_context(self, ctx: ToolContext, message: dict):
+        """The load of the skills a new user message asks for (asked), each once on its
+        branch since the last summary, not the core ones (always in full): (text,
+        {brought}). None with the automatic context off or nothing asked."""
+        from ..turns.message_context import history_limit, reports
+        if message.get("role") != "user":
+            return None
+        cid = ctx.conversation_id
+
+        def before(c):
+            on = c.execute("SELECT auto_context FROM conversations WHERE id=?",
+                           (cid,)).fetchone()
+            if not on or not on[0]:
+                return None
+            return {s for _, _, v in reports(c, cid, message["id"], BROUGHT,
+                                             history_limit(self.cfg)) for s in v or ()}
+        brought = await ctx.store.read(before)
+        if brought is None:
+            return None
+        here = await self._here(ctx)
+        want = [n for n in self.registry.skills if n in asked(self.registry, message)
+                and n in here and n not in CORE and n not in brought]
+        if not want:
+            return None
+        text, skills, _, _ = await self.loaded(ctx, want)
+        return (f"{HEAD}\n{text}" if skills else "",
+                {"brought": skills})
+
+
+def _schemas(specs) -> str:
+    """Tools with their parameters as the tools array carries them, one JSON per line."""
+    return "\n".join(json.dumps(s.as_wire()["function"], ensure_ascii=False)
+                     for s in specs)
 
 
 def listed(names) -> list[str]:

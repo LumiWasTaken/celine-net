@@ -13,11 +13,10 @@ from .. import guard, metrics
 from ..errors import mask, mask_all
 from ..guard import calls as bastet_calls, facts as guard_facts, mark
 from ..guard import page as guard_page, passes as guard_passes, sources
-from ..skills import ToolContext, ToolResult
+from ..skills import CORE, ToolContext, ToolResult
 from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
                              read_mode_has)
 from .cancel import until_stop
-from . import loads
 from . import store as turns
 
 log = logging.getLogger("celine.tools")
@@ -35,13 +34,6 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
     texts: dict[str, str] = {}
-    # a skill it uses stays loaded, and so does a tool it calls, with its parameters
-    # (turns/loads.py)
-    used = [c["name"] for c in calls if c["name"] in turn.get("offered", ())]
-    await loads.touch(store, cid, "skill", [n.split("__")[0] for n in used])
-    await loads.touch(store, cid, "tool", [
-        n for n in used if n.split("__")[0] not in loads.CORE and not registry.get(n).bare])
-
     guarded = guard.enabled(cfg, cid)
 
     async def write(call, out) -> None:
@@ -192,8 +184,11 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return no
     args = call["args"]
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
-        return "error", ToolResult(content=f"invalid arguments: {wrong}", is_error=True), \
-            None
+        # a tool sent by name: its parameters with the error
+        full = "" if spec.skill in CORE else \
+            "\nThe tool: " + json.dumps(spec.as_wire()["function"], ensure_ascii=False)
+        return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
+                                   is_error=True), None
 
     async def progress(note: str) -> None:
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
@@ -230,12 +225,12 @@ async def _replayed(store, turn, call):
 
 
 def _not_offered(turn, name: str, spec, registry, overrides, cfg):
-    """The refusal of a call to a tool this step does not have: made up, of a skill not
-    loaded, outside a read-only sub-agent's tools, of a skill that is down, off, or
-    without its parameters in the list (_parameters). None when it has it."""
-    offered, loaded = turn["offered"], turn["loaded"]
+    """The refusal of a call to a tool this step does not have: made up, not offered
+    here, outside a read-only sub-agent's tools, of a skill that is down or off. None
+    when it has it."""
+    offered = turn["offered"]
     skill = name.split("__")[0]
-    if spec is None and not (skill in registry.skills and skill not in loaded):
+    if spec is None:
         # a made-up tool of a real skill: name the ones it has
         real = sorted(t for t in offered if t.startswith(skill + "__"))
         return "error", ToolResult(content=(
@@ -244,10 +239,7 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
             if real else f"There is no tool {name}."), is_error=True), None
     if name not in offered:
         here = ", ".join(sorted(t for t in offered if t.startswith(skill + "__")))
-        if skill not in loaded:
-            text = (f"{skill} is not loaded. skills__load(names=[\"{skill}\"]) loads it "
-                    f"for your next step.")
-        elif turn.get("read_only") and not read_mode_has(spec):
+        if turn.get("read_only") and not read_mode_has(spec):
             text = READ_ONLY_REFUSAL.format(skill=skill, reads=here or "none")
         else:
             text = (f"{name} is not in this conversation; its {skill} tools are: {here}."
@@ -262,27 +254,7 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
                         if s.skill == spec.skill)
         return "gated", ToolResult(content=OFF.format(name=spec.skill if whole else name),
                                    display={"gated": True, "tool": name}), None
-    carried = turn.get("carried")
-    if carried is not None and not spec.bare and not carried.full(name):
-        return "gated", ToolResult(content=_parameters(spec, carried),
-                                   display={"gated": True, "tool": name}), None
     return None
-
-
-def _parameters(spec, carried) -> str:
-    """The answer to a call of a tool whose parameters are not in its list: it did not
-    run, the tool in full, and whether its parameters come from the next step (the call
-    loads it, run_tool_calls) or do not fit the tools budget."""
-    from . import tokens
-    name, budget = spec.wire_name, carried.budgets["tools"]
-    full = json.dumps(spec.as_wire()["function"], ensure_ascii=False)
-    cost = carried.costs.get(name) or loads.schema_cost(tokens.counter(), [spec])
-    if (have := carried.counted) + cost > budget:
-        return (f"{name} did not run: its parameters were not in your list, and they do "
-                f"not fit the tools budget ({have} of {budget} tokens in use, it takes "
-                f"{cost}). The tool:\n{full}")
-    return (f"{name} did not run: its parameters were not in your list. They are from "
-            f"your next step. The tool:\n{full}")
 
 
 def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:

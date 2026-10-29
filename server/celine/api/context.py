@@ -1,16 +1,15 @@
 """A conversation's automatic context and what the user loads into it by hand.
 
 `conversations.auto_context` (1: on, Load automatically): with it on, a new message loads
-the skills its words ask for (turns/loads.asked), brings up the graded sections of the
+the skills its words ask for (skills/meta.py message_context), brings up the graded sections of the
 notes its keys name (`[your memory]`, skills/recall.py) and its mind block
 (skills/mind.py: the time, its mood, how long since the last message). Off, it carries
-the core skills, the always notes and what it or the user loaded. The switch holds for
+the always notes and what it or the user loaded. The switch holds for
 the conversation and its sub-agents.
 
 Routes: GET and PUT /conversations/{cid}/auto-context ({on}), GET
-/conversations/{cid}/messages/{mid}/context (what a reply's message brought up), PUT
-/conversations/{cid}/context/skills/{name} and POST /conversations/{cid}/context/notes
-({path}). Events: `conversation.auto_context` {id, on} for every conversation it
+/conversations/{cid}/messages/{mid}/context (what a reply's message brought up) and POST
+/conversations/{cid}/context/notes ({path}). Events: `conversation.auto_context` {id, on} for every conversation it
 changed, `context.changed` from the loads (turns/loads.py)."""
 from __future__ import annotations
 
@@ -78,21 +77,6 @@ async def reply_context(request: Request, cid: str, mid: str) -> dict:
     if r is None:
         raise NotFound("context")
     return {"text": r[0], "report": json.loads(r[1] or "{}")}
-
-
-@router.put("/conversations/{cid}/context/skills/{name}")
-async def load_skill(request: Request, cid: str, name: str) -> dict:
-    """The user loads a skill here by hand: its tools are in its list from its next
-    step, and it stays while it is used (turns/loads.py). 404: not offered here."""
-    from ..turns import loads
-    s = services_of(request)
-    if not await _exists(s.store, cid):
-        raise NotFound("conversation")
-    here = await loads.offered(s.registry, s.store, cid) if s.registry else {}
-    if name not in here:
-        raise NotFound("skill")
-    await loads.touch(s.store, cid, "skill", [name])
-    return {"ok": True}
 
 
 @router.post("/conversations/{cid}/context/notes")
