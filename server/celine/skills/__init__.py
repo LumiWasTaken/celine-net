@@ -107,9 +107,6 @@ class ToolSpec:
     # the parameter that names its terminal (or its browser tab, by the same name): left
     # out, it is its default terminal, resolved once for the row, the event and the job
     terminal_arg: str | None = None
-    # the repeat rule compares its arguments exactly: in a terminal or a page "a" is not
-    # "A", and Enter is not Space; a key pressed twice in one reply is two presses
-    exact_args: bool = False
     # what it reads while a job has the call: {job} and the call's arguments filled in,
     # with `detached_display` on its row
     detached: str | None = None
@@ -154,8 +151,7 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
     A tool that changes anything says `read_only=False`. `background` names a bool
     parameter of a detach tool: true hands the call to a background job after
     BACKGROUND_AFTER seconds instead of the detach window (turns/tools.py). `timeout`
-    replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec.
-    A skill whose tools compare their arguments exactly says `exact_args = True`."""
+    replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec."""
     def deco(fn):
         fn.__celine_tool__ = {"mode": mode, "background": background, "timeout": timeout,
                               "terminal_arg": terminal_arg, "detached": detached,
@@ -371,8 +367,7 @@ def collect(skill: Any) -> list[ToolSpec]:
         if name.endswith("_"):      # continue_ is continue, status_ is status (the skill's
             name = name[:-1]        # own `status` says whether it is up)
         out.append(ToolSpec(skill=skill.name, name=name, description=doc.strip(),
-                            schema=derive_schema(fn), fn=fn,
-                            exact_args=bool(getattr(skill, "exact_args", False)), **meta))
+                            schema=derive_schema(fn), fn=fn, **meta))
     return sorted(out, key=lambda t: t.name)
 
 

@@ -400,7 +400,6 @@ SHELL_DETACHED = ("running in the background as job {job}, watching terminal {te
 
 class Shell:
     name = "shell"
-    exact_args = True   # turns/tools.py: in a terminal "a" is not "A"
     app = None          # the running app (core/services.py), from skills.build
     guide = guide("shell")
     description = described()

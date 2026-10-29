@@ -16,21 +16,17 @@ from ..skills import words
 from ..skills.gating import overrides_for
 from ..intercom import deliver
 from ..plans import flow as plan_flow
-from . import context, ledger, loads, message_context, prompt, reply, tokens, waiting
+from . import context, loads, message_context, prompt, reply, tokens, waiting
 from . import store as turns
 from .compact import SummaryFailed, closing, stoppable
-from .tools import NOT_RUN_ANSWER, run_tool_calls
+from .tools import run_tool_calls
 from ..core.event_types import CONTEXT_EMERGENCY, ERROR, MESSAGE_REASONING, TOOL_FORMING
 
 log = logging.getLogger("celine.turn")
 DELTA_EVERY = 0.075        # seconds between two writes of a streaming reply
 WAIT = "missions__wait"     # ran ok: the turn ends with its step, whatever else is open
 
-# the automatic notes of a step without tools: it answers with what it has
-NOT_RUN_NOTE = ("(Automatic note, not written by {{username}}.) Your last calls were not run: "
-                "they would not find anything new. You have no tools for this step. Answer "
-                "{{username}} now in plain words with what you found, and say what is "
-                "missing.")
+# the automatic note of a step without tools: it answers with what it has
 TIME_UP_NOTE = ("(Automatic note, not written by {{username}}.) The time for this turn is up. "
                 "You have no tools for this step. Answer {{username}} now in plain words "
                 "with what you found, and say what is missing.")
@@ -41,8 +37,6 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
     """`clock.deadline` (anyio time) is when the turn ends for good. The room of
     `last_step_seconds` before it is kept for one last step without tools, so it
     answers with what it has when its time is up."""
-    # the ledger is rebuilt from this turn's stored tool calls, so a turn resumed after
-    # a restart or a Continue keeps its counts and its repeat detection
     from .cancel import Token
     tid = turn["id"]
     token = token if token is not None else Token(tid)
@@ -58,7 +52,6 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
     # waits for their answer, its clock held meanwhile
     waits = waiting.TURN.set(waiting.Turn(
         interactive=(turn.get("origin") or "user") == "user", clock=clock, token=token))
-    ledger.open_for(tid, await ledger.records_for(store, tid))
     try:
         await _run_turn(turn, store, cfg, backend, bus, token, registry, jobs, clock)
     except SummaryFailed as e:
@@ -67,7 +60,6 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
         await _failed(store, tid, turn["conversation_id"], "summary_failed",
                       f"The older messages could not be summarised: {e}", True)
     finally:
-        ledger.close(tid)
         waiting.TURN.reset(waits)
 
 
@@ -156,7 +148,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     # a summary when the conversation nears the window; decisions are persisted
     built = await build("start", chain)
     messages, hidden = built.messages, built.hidden
-    ledger.view(tid, messages)
     if point.get("complete"):
         # the answer had fully streamed before the server stopped: finish it (the
         # citation check, without asking the model again), never write it a second time
@@ -223,7 +214,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                       context.POLICY.turn_at):
             built = await build("turn")
             messages, hidden = built.messages, built.hidden
-            ledger.view(tid, messages)
         grown = False
 
         step_tools, step = (wire_tools, messages + reopen_tail) if note is None else (
@@ -264,7 +254,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                 return
             built = await build("emergency")
             messages, hidden = built.messages, built.hidden
-            ledger.view(tid, messages)
             need = counter.request(messages, wire_tools) * ratio
             if not _fits(need, win):
                 await _too_small(store, tid, cid, cfg, backend, int(need), win,
@@ -332,12 +321,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                 await _all_ok(store, [c["id"] for c in calls])):
             await turns.transition(store, tid, cid, "done")
             return
-        # a model can loop on a refused call for the whole wall clock: the next step
-        # gets no tools, so it answers with what it has
-        if not time_up:
-            refused = all(texts.get(c["id"], "").startswith(NOT_RUN_ANSWER) for c in calls)
-            note = ("not_run", NOT_RUN_NOTE) if refused and noted else None
-            bare = refused and not noted
         # as the context builder sends a stored reply: as stored, with its signed
         # thinking (the next step continues the tool loop)
         messages.append({"role": "assistant", "content": text,
@@ -369,7 +352,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             system = "\n\n".join(pieces)
             built = await build("turn")
             messages, hidden = built.messages, built.hidden
-            ledger.view(tid, messages)
             grown = False
 
 

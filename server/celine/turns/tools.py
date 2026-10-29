@@ -17,7 +17,6 @@ from ..skills import ToolContext, ToolResult
 from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
                              read_mode_has)
 from .cancel import until_stop
-from .ledger import STOPPED, Ledger, records_for
 from . import loads
 from . import store as turns
 
@@ -30,15 +29,12 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
 
     The calls of one reply run concurrently when each is read-only and blocking, or
     hands work that only adds (not destructive) to a job, like several sub-agents
-    started at once. Results are written in call order either way. A call identical to
-    one before it in the same reply runs once; the others get SAME_STEP. Each call's
-    arguments are parsed once, here (`args`: the object, or None when they are not one)."""
+    started at once. Results are written in call order either way. Every call runs.
+    Each call's arguments are parsed once, here (`args`: the object, or None when they
+    are not one)."""
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
     texts: dict[str, str] = {}
-    # answered without running: a repeat in the same reply
-    early: dict[str, tuple] = {c["id"]: ("ok", ToolResult(content=SAME_STEP), None)
-                               for c in calls if c["id"] in _dupes(calls, registry)}
     # a skill it uses stays loaded (turns/loads.py)
     await loads.touch(store, cid, "skill", [c["name"].split("__")[0] for c in calls
                                             if c["name"] in turn.get("offered", ())])
@@ -58,23 +54,21 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         metrics.TOOL_CALLS.labels(call["name"] if known else "unknown", state).inc()
         log.info("tool done", extra={"event": "tool.done", "turn": tid,
                                      "tool": call["name"], "state": state})
-    run = [c for c in calls if c["id"] not in early]
-    if _concurrent(run, registry):
-        done: dict[str, tuple] = dict(early)
+    if _concurrent(calls, registry):
+        done: dict[str, tuple] = {}
 
         async def one(call):
             done[call["id"]] = await _resolve(
                 turn, call, store, cfg, registry, overrides, token, jobs)
         async with anyio.create_task_group() as tg:
-            for call in run:
+            for call in calls:
                 tg.start_soon(one, call)
         for call in calls:
             if done.get(call["id"]) is not None:     # None: shutdown before it started
                 await write(call, done[call["id"]])
         return texts
     for call in calls:
-        out = early.get(call["id"]) or await _resolve(
-            turn, call, store, cfg, registry, overrides, token, jobs)
+        out = await _resolve(turn, call, store, cfg, registry, overrides, token, jobs)
         if out is None:                            # shutdown: left pending, runs on resume
             break
         await write(call, out)
@@ -169,59 +163,11 @@ def _concurrent(calls, registry) -> bool:
     return True
 
 
-REPEAT_LIMIT = 2      # the same call with the same result: the next one is not run
-REPEAT_SEEN = 40      # the turn's latest calls the repeat rule reads
 BACKGROUND_AFTER = 5  # seconds a call it asked into the background runs before it
                       # detaches: a quick one, or one that fails at once, still answers
                       # directly. Nothing detaches unasked: a call runs in its turn to
                       # its end or its time.
-REPEATED = "Not run: you made this exact call"
-SAME_STEP = "same as the call above in this step."
 TIME_UP = "Not run: the time for this turn is up."
-# refusals that end its search: when every call of a step gets one, the next step has
-# no tools and it answers (turns/runner.py)
-NOT_RUN_ANSWER = (REPEATED, STOPPED)
-
-
-def _spec(spec, name: str, args: dict) -> str:
-    """What makes two calls the same call, for the repeat rule: the loose spec of the
-    archive tools (ledger.Ledger.spec), or the exact arguments of a tool whose skill
-    says exact_args (skills.ToolSpec)."""
-    if spec is not None and spec.exact_args:
-        return json.dumps(args, sort_keys=True, ensure_ascii=False)
-    return Ledger.spec(name, args)
-
-
-def _dupes(calls, registry) -> set[str]:
-    """Ids of calls identical to an earlier call of the same reply (same tool, same
-    arguments). Tools with exact arguments are left out: a key pressed twice is two
-    presses."""
-    seen, out = set(), set()
-    for call in calls:
-        spec = registry.get(call["name"]) if registry is not None else None
-        if call["args"] is None or (spec is not None and spec.exact_args):
-            continue
-        key = _spec(spec, call["name"], call["args"])
-        if key in seen:
-            out.add(call["id"])
-        seen.add(key)
-    return out
-
-
-async def _repeats(store, turn_id: str, spec, name: str, args: dict) -> int:
-    """How often this turn already ran this exact call (same tool, same arguments), when
-    its last REPEAT_LIMIT runs gave the same result; else 0 (a command run again after a
-    change is fine). A model can loop on one call for the whole wall clock."""
-    key = _spec(spec, name, args)
-    results = []
-    for tool, arguments, content, _ in await records_for(store, turn_id, last=REPEAT_SEEN):
-        if tool != name or content is None or content.startswith((REPEATED, SAME_STEP)):
-            continue
-        earlier = parsed(arguments)
-        if earlier is not None and _spec(spec, tool, earlier) == key:
-            results.append(content)
-    last = results[-REPEAT_LIMIT:]
-    return len(results) if len(last) == REPEAT_LIMIT and len(set(last)) == 1 else 0
 
 
 # Every path returns a result: an unanswered tool_call makes the conversation
@@ -230,7 +176,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     """-> (state, ToolResult, withheld_output), or None when the server is shutting
     down and the step has not started (it stays pending and runs on resume). Never
     raises. The steps, in order: stopped, replayed, frozen (the house refuses), offered,
-    valid, her default terminal, repeated, Bastet, then the call itself."""
+    valid, her default terminal, Bastet, then the call itself."""
     if token.cancelled:
         return None if token.shutdown else ("cancelled", ToolResult(content="cancelled"),
                                             None)
@@ -246,11 +192,6 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return "error", ToolResult(content=f"invalid arguments: {wrong}", is_error=True), \
             None
     resolved = await _default_terminal(store, turn["conversation_id"], spec, args)
-    if (n := await _repeats(store, turn["id"], spec, call["name"], args)) >= REPEAT_LIMIT:
-        return "error", ToolResult(
-            content=f"{REPEATED} {n} times in this turn, and the last {REPEAT_LIMIT} gave "
-                    f"the same result. Answer with what you have, or try a different call.",
-            is_error=True, display={"repeated": n}), None
 
     async def progress(note: str) -> None:
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
@@ -428,7 +369,7 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
                                    display={"time_up": True}), None
 
     # a parameter named like a Python keyword is `in` on the wire and `in_` in the
-    # coroutine (skills.derive_schema); the schema and repeat checks above saw the
+    # coroutine (skills.derive_schema); the schema check above saw the
     # wire form, the call below gets the Python one. A tool that takes **args (MCP)
     # passes them on as they came.
     wire = args

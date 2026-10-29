@@ -85,7 +85,6 @@ def arch_registry(arch=None):
 async def seed_exchange(store, cid, q, results, answer="answered"):
     """One finished exchange: the question, one reply with calls, their results, the
     answer. results: [(tool name, content)]."""
-    from celine.turns import ledger  # noqa: F401  (import order as the runner)
     await user_says(store, cid, q)
     turn = await turns.claim(store, "w")
     tid = turn["id"]

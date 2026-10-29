@@ -653,11 +653,9 @@ def _first_sentence(s: str) -> str:
 
 
 def not_run(state: str, d: dict) -> bool:
-    """A call that did not run: on purpose (a search after many that found nothing, the
-    same call again, the turn's time up), or gated (its skill down, not loaded or off)."""
-    return state == "gated" or (state == "error" and (
-        d.get("narrow") is True or _num(d.get("repeated")) is not None
-        or d.get("time_up") is True))
+    """A call that did not run: the turn's time was up, or gated (its skill down, not
+    loaded or off)."""
+    return state == "gated" or (state == "error" and d.get("time_up") is True)
 
 
 def _state_words(said: str, state: str, d: dict, result: str) -> str:

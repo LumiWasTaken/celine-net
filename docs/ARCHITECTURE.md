@@ -489,7 +489,7 @@ One decision per conversation at a time (`context.lock`).
 
 Every request message carries its `origin` (the app's key; no backend sends it): the
 conversation, the turn, the stored message or the tool call, or the `note` the app
-added for this request only (system, tail, opening, screen, not_run, time_up, continue).
+added for this request only (system, tail, opening, screen, time_up, continue).
 Before a step goes out the runner holds it to `context.malformed`: a tool result right
 after the reply that made its call, each call answered once, no stored message twice,
 nothing from another conversation, its first reply after a user message. A request that
@@ -635,7 +635,7 @@ the token per delta and closes the upstream request. Partial text is kept; the t
 ### The tool chokepoint
 
 `turns/tools._resolve` always returns a result. Its steps, in order: stopped, replayed,
-frozen, offered, valid, her default terminal, repeated, Bastet, the call. A call's
+frozen, offered, valid, her default terminal, Bastet, the call. A call's
 arguments are parsed once (`run_tool_calls`). Paths: frozen (state `gated`, in any mode
 of the guard), unknown tool, not in this request's list (`gated`), a skill that is down,
 off (`gating.off_sentence` by `gating.reason`), arguments not JSON, arguments the wrong
@@ -643,11 +643,8 @@ shape (`tools.coerce` first turns a plain form of a value into its schema's type
 raised, timed out, cancelled, cancelled but finished, journal replay, detached, not run.
 `turns.finish_tool_call` writes the `role=tool` row for every one of them.
 
-Not run: the same call (same tool, same arguments) when its last 2 runs among the turn's
-latest 40 calls gave the same result (`display.repeated`), and any call after the turn's
-work time is up (`display.time_up`). When every call of a step was refused as a repeat or
-by the ledger's `STOPPED` (`turns/ledger.py`), the next step has no tools and a note tells
-it to answer with what it has.
+Every call she makes runs, a repeated one too. Not run: a call after the turn's work time
+is up (`display.time_up`).
 
 ### Bastet (the guard)
 
@@ -656,7 +653,7 @@ it to answer with what it has.
 are in `guard/__init__.py`; this section is the contract with the rest of the app.
 
 Bastet's character is the user's to edit on Settings, Guard (`guard/persona.py`: her persona, her replies on the Intercom and her notes to the user, kv `bastet:<field>` with History, the shipped `config/guard/bastet.md`, `talk.md`, `note.md` the defaults; `GET /api/guard/texts`, `PUT /api/guard/texts/{field}`); her Intercom address is `system:guard`. In `_resolve`, after
-the repeat check and before the time check (`guard/calls.at_call`), it answers its rule set on the call. The
+the argument check and before the time check (`guard/calls.at_call`), it answers its rule set on the call. The
 General switch `guard` is the one switch (`guard/switch.py`, asked through the port in
 `guard/__init__.py`): `off` (nothing runs, no gate, no patrol, no answer on the
 intercom), `watch` (the call runs at once, the rules are answered in the background and

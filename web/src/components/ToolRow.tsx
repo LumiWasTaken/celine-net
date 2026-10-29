@@ -60,11 +60,10 @@ const firstLine = (s: string, max = 80) => {
 type ScopeChat = { ref: string; name?: string; kind?: string; platform?: string; missing?: boolean }
 /** the chats a search was kept to (`display.scope_chats`) */
 const scopeChats = (d: Record<string, unknown> | null): ScopeChat[] => (Array.isArray(d?.scope_chats) ? d.scope_chats as ScopeChat[] : [])
-/* a call that did not run: on purpose (a search after many that found nothing, the
-   same call again, the turn's time up: not a failure), gated (its skill down, not
-   loaded or off) */
+/* a call that did not run: the turn's time was up (not a failure), or gated (its
+   skill down, not loaded or off) */
 const notRun = (call: ToolCall) => call.state === 'gated' || (call.state === 'error' &&
-  (call.display?.narrow === true || typeof call.display?.repeated === 'number' || call.display?.time_up === true))
+  call.display?.time_up === true)
 
 /** the row's words, by its state, as the server says them (skills/words.py) */
 const rowWords = (call: ToolCall): string => (busy(call) ? call.words.running : call.words.settled)
@@ -141,12 +140,11 @@ function took(call: ToolCall): ReactNode {
   return Number.isNaN(ms) ? null : duration(Math.max(ms, 1000))
 }
 
-/** next to the sentence only what the sentence does not say: a repeat, an ambiguous
-   name, a failed exit. Counts and sizes stay in the opened call. */
+/** next to the sentence only what the sentence does not say: an ambiguous name, a
+   failed exit. Counts and sizes stay in the opened call. */
 function outcome(call: ToolCall): string | null {
   const d = call.display
   if (!d) return null
-  if (typeof d.same_as === 'number') return 'same as before'
   if (d.ambiguous === true) return 'the name matches more than one'
   if (typeof d.exit === 'number' && d.exit !== 0) return `exit ${d.exit}`
   return null

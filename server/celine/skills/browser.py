@@ -339,7 +339,6 @@ def steps_of(steps) -> list[dict]:
 
 class Browser:
     name = "browser"
-    exact_args = True   # turns/tools.py: on a page Enter is not Space
     guide = guide("browser", max_tabs=MAX_TABS)
     description = described()
 

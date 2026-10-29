@@ -16,7 +16,7 @@ import anyio
 from .. import prompts
 from ..backends.base import BackendError, Done, TextDelta
 from . import tokens
-from .ledger import MSG_REF
+from .verify import MSG_REF
 
 log = logging.getLogger("celine.compact")
 
