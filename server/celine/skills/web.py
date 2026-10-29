@@ -187,22 +187,6 @@ def normalize(text: str) -> str:
     return SINGLE_WEB.sub(lambda m: f"[[web:{m[1]}]]", text)
 
 
-# a web citation as it may write it ([[web:3]], [web:3], [[web:3 | title]]) and the
-# 【3†source】 marks some models print (only that shape: 【注意】 is ordinary CJK text)
-_ANY_CITE = re.compile(r"[ \t]*(?:\[\[\s*web:\d+[^\]\n]*\]\]|(?<!\[)\[\s*web:\d+\s*\](?![\](])|"
-                       r"【\d+[^】\n]*†[^】\n]*】)")
-# [web:3](https://...): a link with a citation for its words keeps only the address
-_CITE_LINK = re.compile(r"\[\s*web:\d+\s*\]\((https?://[^)\s]+)\)")
-
-
-def uncite(text: str) -> str:
-    """Its answer handed to another conversation without web citation marks: their
-    numbers mean something only in its own conversation."""
-    if not text or ("web:" not in text and "【" not in text):
-        return text
-    return _ANY_CITE.sub("", _CITE_LINK.sub(r"\1", text))
-
-
 def _label(url: str) -> str:
     host = urlsplit(url).hostname or "link"
     return host[4:] if host.startswith("www.") else host
