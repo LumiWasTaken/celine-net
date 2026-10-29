@@ -1,11 +1,14 @@
 """Her Mac: setup.sh served to the Mac, the report it posts back saved into the form,
-the command the form shows, and Check.
+her scripts' messages to her, the command the form shows, and Check.
 
 - GET /api/plugins/mac/setup.sh: the script, so the Mac needs nothing but the app.
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
   report line {address, token, ...}; the address and the token are saved into the form
   (api/forms.py save), so the servers start again with them.
-Both are `open` in plugin.toml: the Mac has no session. The link key is made once
+- POST /api/plugins/mac/events with the link key: {text, conversation?}, a message from
+  her to herself (intercom__send to "me") in that conversation, else her newest chat: it
+  starts her turn there, or reaches the one running.
+All three are `open` in plugin.toml: the Mac has no session. The link key is made once
 (var/secrets/mac.link.key) and is part of the command."""
 from __future__ import annotations
 
@@ -29,7 +32,8 @@ from celine.settings.files import Invalid
 
 LINK = "link"                       # its secret: var/secrets/mac.link.key
 SCRIPT = Path(__file__).with_name("setup.sh")
-NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser"}
+NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser",
+         "macfiles": "Files"}
 
 router = APIRouter()
 
@@ -62,19 +66,52 @@ async def setup_sh() -> FileResponse:
     return FileResponse(SCRIPT, media_type="text/x-shellscript", filename="setup.sh")
 
 
-@router.post("/gateway")
-async def gateway(request: Request) -> dict[str, Any]:
+def _linked(request: Request):
+    """The services, when the request carries the link key; else 404."""
     services = services_of(request)
     key = _link(services.cfg)
     sent = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
     if key is None or not hmac.compare_digest(sent.encode(), key.encode()):
         raise NotFound(request.url.path)
+    return services
+
+
+@router.post("/gateway")
+async def gateway(request: Request) -> dict[str, Any]:
+    services = _linked(request)
     body = await json_body(request, need=("address", "token"))
     if not isinstance(body["address"], str) or not isinstance(body["token"], str):
         raise Invalid("body", "The address and the token are text.")
     p = plugins.get("mac")
     values = {**services.cfg.settings.plugins.get(p.id, {}), "url": body["address"]}
     return await save(services, p, values, {"token": body["token"]})
+
+
+_NEWEST = ("SELECT id FROM conversations WHERE kind='chat' AND agent_of IS NULL AND "
+           "trashed_at IS NULL AND archived_at IS NULL ORDER BY updated_at DESC LIMIT 1")
+
+
+@router.post("/events")
+async def events(request: Request) -> dict[str, Any]:
+    services = _linked(request)
+    body = await json_body(request, need=("text",), allow=("text", "conversation"))
+    text, cid = body["text"], body.get("conversation")
+    if not isinstance(text, str) or not text.strip():
+        raise Invalid("text", "The text is the message.")
+    if cid is None:
+        row = await services.store.read(lambda c: c.execute(_NEWEST).fetchone())
+        if row is None:
+            raise NotFound("conversation")
+        cid = row[0]
+    elif not isinstance(cid, str):
+        raise Invalid("conversation", "The conversation is its id.")
+    try:
+        out = await services.intercom.send(f"agent:{cid}", f"agent:{cid}", text)
+    except KeyError:
+        raise NotFound("conversation") from None
+    except ValueError as e:
+        raise Invalid("conversation", str(e)) from None
+    return {"intercom_id": out["intercom_id"], "conversation": cid, "turn_id": out["turn_id"]}
 
 
 async def check(services, p, _input) -> dict[str, Any]:
