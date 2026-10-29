@@ -58,17 +58,21 @@ async def test_an_upload_lands_in_uploads_once_per_bytes(home, tmp_path):
     src.write_bytes(os.urandom(3 * 1024 * 1024 + 7))
     sha = hashlib.sha256(src.read_bytes()).hexdigest()[:12]
     first = await box_files.copy_upload(load(), src, "game.zip")
-    again = await box_files.copy_upload(load(), src, "game.zip")
-    assert first == again == str(home / "uploads" / sha / "game.zip")
+    assert first == f"~/uploads/{sha}/game.zip"
+    landed = home / "uploads" / sha / "game.zip"
+    assert landed.read_bytes() == src.read_bytes()
+    assert os.getxattr(landed, "user.celine.origin") == b"upload:game.zip"
+    assert landed.stat().st_mode & 0o777 == 0o644
+    # the same bytes again: the file there stays as it is, her edits too
+    landed.write_bytes(b"her edit")
+    assert await box_files.copy_upload(load(), src, "game.zip") == first
+    assert landed.read_bytes() == b"her edit"
     assert [p.name for p in (home / "uploads").iterdir()] == [sha]
     assert [p.name for p in (home / "uploads" / sha).iterdir()] == ["game.zip"]
-    assert Path(first).read_bytes() == src.read_bytes()
-    assert os.getxattr(first, "user.celine.origin") == b"upload:game.zip"
-    assert Path(first).stat().st_mode & 0o777 == 0o644
     # other bytes under the same name land beside it, never over it
     src.write_bytes(b"other")
     other = await box_files.copy_upload(load(), src, "game.zip")
-    assert other != first and Path(first).stat().st_size == 3 * 1024 * 1024 + 7
+    assert other != first and landed.read_bytes() == b"her edit"
 
 
 async def test_no_copy_while_the_shellbox_is_off(home, tmp_path, monkeypatch):
@@ -85,9 +89,10 @@ async def test_nasty_names_land_as_plain_files_in_uploads(home, tmp_path):
     src = tmp_path / "x"
     src.write_bytes(b"x")
     up = home / "uploads" / hashlib.sha256(b"x").hexdigest()[:12]
-    assert await box_files.copy_upload(load(), src, "../../etc/x") == str(up / "x")
-    assert await box_files.copy_upload(load(), src, ".bashrc") == str(up / "bashrc")
-    assert await box_files.copy_upload(load(), src, "a\x1b\nb") == str(up / "ab")
+    for name, plain in (("../../etc/x", "x"), (".bashrc", "bashrc"), ("a\x1b\nb", "ab")):
+        assert await box_files.copy_upload(load(), src, name) == \
+            f"~/uploads/{up.name}/{plain}"
+        assert (up / plain).read_bytes() == b"x"
     assert not (home / ".bashrc").exists()
 
 

@@ -85,22 +85,37 @@ async def stream(cfg, rel: str, *, transport: httpx.AsyncBaseTransport | None = 
 async def copy_upload(cfg, src: Path, filename: str, store=None, aid: str | None = None,
                       transport: httpx.AsyncBaseTransport | None = None) -> str | None:
     """The user's upload into ~/uploads/; with aid, the attachment keeps where it landed.
-    The agent's box's path, or None when it did not get there (said in the log)."""
+    Where it is in its home (~/uploads/<sha12>/<name>), or None when it did not get there
+    (said in the log). Bytes already there are not sent again."""
     if not shellbox.url(cfg):
         return None
     try:
         sha = await anyio.to_thread.run_sync(_sha, src)
-        res = await put(cfg, src, f"{UPLOADS}/{sha[:12]}/{safe_name(filename)}",
-                        origin=f"upload:{filename}", transport=transport)
+        rel = f"{UPLOADS}/{sha[:12]}/{safe_name(filename)}"
+        # the same bytes landed before: that file stays as it is, her edits too
+        if not await _there(cfg, rel, transport):
+            await put(cfg, src, rel, origin=f"upload:{filename}", transport=transport)
     except (httpx.HTTPError, RuntimeError, OSError) as e:
         log.warning("%s did not reach the box: %s", filename,
                     e if isinstance(e, RuntimeError) else "the shellbox is not reachable.")
         return None
-    path = str(res["path"])
+    path = f"~/{rel}"
     if store is not None and aid is not None:
         from .attachments import set_box_path
         await set_box_path(store, aid, path)
     return path
+
+
+async def _there(cfg, rel: str, transport: httpx.AsyncBaseTransport | None) -> bool:
+    """Whether the file at rel is in its home (its first byte asked for)."""
+    async with shellbox.client(cfg, TRANSFER, transport) as c:
+        r = await c.get(shellbox.url(cfg) + "/file", params={"path": rel},
+                        headers={"Range": "bytes=0-0"})
+    if r.status_code == 404:
+        return False
+    if r.status_code not in (200, 206, 416):        # 416: an empty file
+        raise RuntimeError(f"The shellbox answered {r.status_code}.")
+    return True
 
 
 def _sha(src: Path) -> str:
