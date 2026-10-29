@@ -286,7 +286,7 @@ const useOffers = () => useResource(async () => {
 const modelOptions = (offers: Offer[], cap: Cap, none: boolean, any = false) => [
   ...(none ? [{ value: '', label: 'None' }] : []),
   ...offers.flatMap(({ p, available }) => {
-    const saved = p.models.filter(m => m.offered && (m.caps ?? []).includes(cap)).map(m => ({ value: m.ref, label: m.name }))
+    const saved = p.models.filter(m => m.offered && m.caps_now.includes(cap)).map(m => ({ value: m.ref, label: m.name }))
     const have = new Set(p.models.map(m => m.ref.slice(p.id.length + 1)))
     const more = available.filter(a => !a.added && !have.has(a.id) && (any || (a.caps ?? []).includes(cap)))
       .map(a => ({ value: `+${p.id}/${a.id}`, label: a.name || a.id }))

@@ -7,12 +7,15 @@ whose provider has its key is its own, in the providers' order.
 """
 from __future__ import annotations
 
+from .kinds import caps_of
+
 
 def allowed(s) -> list[str]:
-    """Every model in the providers that can chat and has its key, in their order."""
+    """Every model in the providers that can chat (settings/kinds.py caps_of) and has
+    its key, in their order."""
     return [f"{pid}/{name}" for pid, p in s.providers.items()
             if not s.key_missing(pid)
-            for name, m in (p.get("models") or {}).items() if "chat" in (m.get("caps") or [])]
+            for name in (p.get("models") or {}) if "chat" in caps_of(p, name)]
 
 
 def label(s, ref: str) -> str:

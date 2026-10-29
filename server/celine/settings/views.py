@@ -51,6 +51,10 @@ def provider(s, pid: str, router) -> dict[str, Any]:
                        # the context the server says it runs with: turns budget with
                        # it over `context` (turns/tokens.py); null when no server says
                        "server_context": router.server_context(pid, name, m.get("context")),
+                       # the caps the server states (its tools and vision count over
+                       # `caps`, settings/kinds.py caps_of); null when it states none
+                       "server_caps": kinds.server_caps(p["base_url"], name),
+                       "caps_now": kinds.caps_of(p, name),
                        "thinking_offered": levels(p, m),
                        "used_by": _task_labels(used.get(name, [])),
                        # a provider without its key offers nothing to choose from

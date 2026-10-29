@@ -228,6 +228,11 @@ def test_max_tokens_and_the_cache_time_come_from_the_model_options():
     with pytest.raises(Invalid, match="Anthropic option"):
         validate_provider("o", {"kind": "openai", "base_url": "http://h:1",
                                 "models": {"m": {"cache_ttl": "1h"}}})
+    # the most is what the provider states for the model, once it has
+    assert validate_provider("a", {"kind": "anthropic", "models": {
+        "m": {"max_tokens": 200_000}}})["models"]["m"]["max_tokens"] == 200_000
+    from celine.settings import kinds
+    kinds.reported_outputs(URL, {"m": 128_000})
     with pytest.raises(Invalid, match="1 to 128,000"):
         validate_provider("a", {"kind": "anthropic", "models": {"m": {"max_tokens": 200_000}}})
 

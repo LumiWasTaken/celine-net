@@ -41,7 +41,7 @@ from fastapi.responses import JSONResponse, Response
 from .. import keys, metrics
 from ..backends.queue import Priority, Ticket
 from ..settings import her_models
-from ..settings.kinds import headers as provider_headers
+from ..settings.kinds import headers as provider_headers, server_output
 from ..settings.registry import backend_config
 from ..turns import tokens
 from .deps import LLM_PROXY
@@ -220,7 +220,7 @@ def _sizes(s, ref: str) -> dict:
     bc = backend_config(s, ref)
     if bc is None:
         return {}
-    out = (s.model(ref) or {}).get("max_tokens") or tokens.server_output(bc.base_url, bc.model)
+    out = (s.model(ref) or {}).get("max_tokens") or server_output(bc.base_url, bc.model)
     return {k: v for k, v in (("context_length", tokens.config_window(bc)),
                               ("max_output_tokens", out)) if v}
 

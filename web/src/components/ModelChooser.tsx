@@ -20,7 +20,7 @@ const capWords = (caps: string[] | undefined) => (caps ?? []).map(c => c.replace
 /** what tells two similar models apart: the capabilities, the context */
 export const modelDetail = (m: ProviderModel) => {
   const n = m.server_context ?? m.context
-  return [capWords(m.caps), n ? contextWords(n) : ''].filter(Boolean).join(', ').replace(/^./, c => c.toUpperCase())
+  return [capWords(m.caps_now), n ? contextWords(n) : ''].filter(Boolean).join(', ').replace(/^./, c => c.toUpperCase())
 }
 
 /** "Loaded", or "Not loaded, about 12 s" with what its last load took */
@@ -62,7 +62,7 @@ export function ModelChooser({ title, providers, needs, current, skip, onPick, o
     const out: Row[] = extra ? [{ type: 'extra' }] : []
     for (const p of providers) {
       const models = p.models.filter(m => m.offered && !skip?.includes(m.ref))
-        .filter(m => !needs || needs.every(c => (m.caps ?? []).includes(c)))
+        .filter(m => !needs || needs.every(c => m.caps_now.includes(c)))
         .filter(m => !f || modelName(m).toLowerCase().includes(f) || m.name.toLowerCase().includes(f))
       if (!models.length) continue
       out.push({ type: 'provider', p })

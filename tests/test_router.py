@@ -151,7 +151,8 @@ async def test_a_running_model_teaches_its_real_window(tmp_path, monkeypatch):
 async def test_the_context_the_server_reports_wins_over_settings(tmp_path, monkeypatch):
     """The server's context is larger than Settings says: the model list the ping reads (the modality router's /v1/models) wins for
     a model that is not loaded yet, so its first turn budgets with the new number.
-    Ollama's list is not read: Settings is its num_ctx, the list says the model's most."""
+    Ollama's list counts for its caps only: Settings is its num_ctx, the list says the
+    model's most."""
     from types import SimpleNamespace
     from celine.turns import tokens
     providers = {**PROVIDERS, "swap": {**PROVIDERS["swap"], "models": {
@@ -182,7 +183,7 @@ async def test_the_context_the_server_reports_wins_over_settings(tmp_path, monke
     await r.ping_once()
     assert tokens.window(big) == 262144
     assert tokens.server_window("http://swap:1/v1", "not-added") is None, "only added models"
-    assert tokens.window(small) == 8192 and ("oll", "/api/tags") not in asked
+    assert tokens.window(small) == 8192 and ("oll", "/api/show") in asked
     ctx["big"] = 196608
     await r.ping_once()
     assert tokens.window(big) == 262144, "the list is read once a minute"

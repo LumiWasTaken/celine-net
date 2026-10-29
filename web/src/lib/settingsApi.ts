@@ -85,6 +85,10 @@ export type ProviderModel = ModelConfig & {
   state: ModelState
   /** the context the server says it runs with; turns budget with it over `context` */
   server_context: number | null
+  /** the caps the server states; its tools and vision count over `caps`. null when it states none */
+  server_caps: Cap[] | null
+  /** its caps now: the server's tools and vision where it states them, else the saved ones */
+  caps_now: Cap[]
 }
 
 export type ProviderView = {

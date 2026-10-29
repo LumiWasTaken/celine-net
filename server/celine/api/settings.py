@@ -207,7 +207,8 @@ async def put_model(request: Request, response: Response, pid: str, model: str,
         if p is None:
             raise NotFound("provider")
         files.check_version("model", (p.get("models") or {}).get(model), if_match)
-        clean = validate_model(p["kind"], model, await json_body(request), "model")
+        clean = validate_model(p["kind"], model, await json_body(request), "model",
+                               p["base_url"])
         providers = copy.deepcopy(s.providers)
         providers[pid].setdefault("models", {})[model] = clean
         out = await reload.commit(services_of(request), {"providers": providers})

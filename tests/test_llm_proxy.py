@@ -130,11 +130,12 @@ async def test_models_carry_the_sizes_the_app_knows(proxy):
     """context_length is the window its turns budget with (a loaded model's /props over
     the context in Settings); max_output_tokens what the provider's list states; a size
     nobody knows is left out."""
+    from celine.settings import kinds
     from celine.turns import tokens
     s = proxy.cfg.settings
     s.providers["main"]["models"]["small"]["context"] = 65536
     tokens.running_windows("http://main:8080/v1", {"big": 262144})
-    tokens.reported_outputs("http://main:8080/v1", {"big": 32768})
+    kinds.reported_outputs("http://main:8080/v1", {"big": 32768})
     r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {KEY}"})
     sizes = {m["id"]: {k: m[k] for k in ("context_length", "max_output_tokens") if k in m}
              for m in r.json()["data"]}
