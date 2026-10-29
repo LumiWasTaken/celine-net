@@ -33,7 +33,8 @@ export function FormPage({ id, label }: { id: string; label: string }) {
   )
 }
 
-/** a form's actions, each a button (with the one text it asks for), its answer as a Dot.
+/** a form's actions, each a button (with the one text it asks for), its answer as a Dot
+    and its lines as one Dot each.
     `before`: what runs first (the onboarding saves its draft); `after`: what follows (its
     card's probe, asked anew) */
 export function FormActions({ form, disabled, before, after }: {
@@ -67,8 +68,13 @@ function ActionRow({ a, form, disabled, before, after }: {
     <div className="form__control">
       <Button loading={run.busy} disabled={disabled || (!!a.input && !input)}
               onClick={() => void run.run()}>{a.label}</Button>
-      {result && <Dot tone={result.ok ? 'ok' : 'error'} text={result.sentence} />}
+      {result?.sentence && <Dot tone={result.ok ? 'ok' : 'error'} text={result.sentence} />}
     </div>
+    {result?.lines && (
+      <div className="form__lines">
+        {result.lines.map((l, i) => <Dot key={i} tone={l.tone} text={l.text} />)}
+      </div>
+    )}
     {run.error && <InlineError compact message={run.error} />}
   </>
 }

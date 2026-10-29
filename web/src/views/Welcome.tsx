@@ -9,7 +9,9 @@
    Routines and the connectors, whose `needs` says how to run them; email and vault never): its `about` under the title, its switch (greyed while the service
    is missing; a feature shown off is saved off; a service that answers while nothing is saved
    yet is shown on), its state line (grey once the switch is off), then its setup form
-   (WelcomeForms.tsx, its draft kept by feature id) whose Check saves and asks the probe anew
+   (WelcomeForms.tsx, its draft kept by feature id) whose Check saves and asks the probe anew;
+   the features of a group (`group`: the shellbox and the Mac, "Her computer") share one
+   card with a switch each, saved at once (GroupStep)
    (Check again in the head only on a card without a form), one card "Features" with the
    plain switches and their `about` lines (PUT /features), one card "Later" with every feature
    that got no card (off, greyed, "Turn on later in Settings": Settings, Features opens the
@@ -51,13 +53,16 @@ import { formOf, type SaveRef } from './WelcomeForms'
 import './Welcome.css'
 
 const FIXED = ['her', 'you', 'model']
+/** a feature on its group's card ("Her computer"): a feature of the group gets a card */
+const inGroup = (catalog: Feature[], f: Feature) => !!f.group_label && catalog.some(g => g.group === f.group && showsCard(g))
 /** a feature with no card and no plain switch: the Later card's */
-const isLater = (f: Feature) => !showsCard(f) && !isPlain(f)
-/** the step ids in order: the fixed three, the feature cards (their feature id), Features,
-    Later (when a feature got no card), done */
+const isLater = (catalog: Feature[]) => (f: Feature) => !showsCard(f) && !isPlain(f) && !inGroup(catalog, f)
+/** the step ids in order: the fixed three, the feature cards (their feature id, or their
+    group's id once), Features, Later (when a feature got no card), done */
 const stepsOf = (view: FeaturesView | null) => {
   const catalog = view?.catalog ?? []
-  return [...FIXED, ...catalog.filter(showsCard).map(f => f.id), 'features', ...(catalog.some(isLater) ? ['later'] : []), 'done']
+  const cards = catalog.filter(f => showsCard(f) || inGroup(catalog, f)).map(f => (f.group_label ? f.group : f.id))
+  return [...FIXED, ...new Set(cards), 'features', ...(catalog.some(isLater(catalog)) ? ['later'] : []), 'done']
 }
 
 /** the view before anything was saved: a service that answers is shown on (the server
@@ -87,8 +92,10 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
   const name = status?.owner.name ?? ''
   const id = steps[at]!
   const feature = view?.catalog.find(f => f.id === id)
-  const plain = (view?.catalog ?? []).filter(isPlain).map(f => f.id)
-  const later = (view?.catalog ?? []).filter(isLater).map(f => f.id)
+  const catalog = view?.catalog ?? []
+  const plain = catalog.filter(f => isPlain(f) && !inGroup(catalog, f)).map(f => f.id)
+  const later = catalog.filter(isLater(catalog)).map(f => f.id)
+  const members = catalog.filter(f => f.group_label && f.group === id)
   const shared = { view, error: res.error, reload: res.reload, update: setLocal, ...nav2 }
   return (
     <div className="onb">
@@ -106,6 +113,10 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
             : id === 'her' ? <HerStep key="her" {...nav2} />
             : id === 'you' ? <YouStep key="you" {...nav2} />
             : id === 'model' ? <ModelStep key="model" {...nav2} />
+            : members.length ? (
+              <GroupStep key={id} members={members} {...shared}
+                         forms={forms} setForm={(fid, v) => setForms(x => ({ ...x, [fid]: v }))} />
+            )
             : feature ? (
               <FeatureStep key={id} feature={feature} {...shared}
                            form={forms[feature.id]} setForm={v => setForms({ ...forms, [feature.id]: v })} />
@@ -416,6 +427,57 @@ function FeatureStep({ feature: f, view, error, reload, update, back, next, form
       </>}
     </StepCard>
   )
+}
+
+/* ── a group's card ("Her computer": Container and Own computer): each feature of the group
+   as its switch (its `choice` for words), its state and its setup form; any of them may be
+   on. Next saves every form, then the features ── */
+function GroupStep({ members, view, error, reload, update, back, next, forms, setForm }: Shared & {
+  members: Feature[]
+  forms: Record<string, unknown>
+  setForm: (id: string, v: unknown) => void
+}) {
+  const refs = useRef(new Map<string, SaveRef>())
+  const refOf = (id: string) => refs.current.get(id) ?? refs.current.set(id, { current: null }).get(id)!
+  const onNext = async () => {
+    if (!view) return
+    for (const f of members) await refOf(f.id).current?.()
+    await putFeatures(view, update)
+    next()
+  }
+  return (
+    <StepCard title={members[0]!.group_label} back={back} next={next} onNext={onNext} disabled={!view && (error ?? 'Loading')}>
+      {!view ? <Pending error={error} reload={reload} />
+        : members.map(f => <GroupPart key={f.id} feature={f} view={view} update={update} form={forms[f.id]}
+                                      setForm={v => setForm(f.id, v)} saveRef={refOf(f.id)} />)}
+    </StepCard>
+  )
+}
+
+function GroupPart({ feature: f, view, update, form, setForm, saveRef }: {
+  feature: Feature
+  view: FeaturesView
+  update: (v: FeaturesView) => void
+  form: unknown
+  setForm: (v: unknown) => void
+  saveRef: SaveRef
+}) {
+  const online = useOnline()
+  const check = useAction(async () => {
+    const p = await settingsApi.probeFeature(f.id)
+    update({ ...view, catalog: view.catalog.map(x => x.id === f.id ? { ...x, ...p } : x) })
+  })
+  // saved at once: a plugin's form (the command, Check) is there only while it runs
+  const save = useAction((v: FeaturesView) => putFeatures(v, update))
+  const Form = formOf(f)
+  const on = view.features[f.id] !== false
+  const error = check.error ?? save.error
+  return <>
+    <FeatureSwitch feature={f} on={on} label={f.choice || undefined} disabled={!online || save.busy}
+                   onChange={v => void save.run({ ...view, features: { ...view.features, [f.id]: v } })} />
+    {error && <InlineError compact message={error} />}
+    {Form && (on || blocked(f)) && <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />}
+  </>
 }
 
 /* ── a connector's card (Discord, WhatsApp) while its connector answers: the feature is

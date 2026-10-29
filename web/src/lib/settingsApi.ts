@@ -247,6 +247,11 @@ export type Feature = {
   archive: string
   /** what switching it on asks first (shares), or "" */
   warn: string
+  /** the onboarding card it shares with the rest of its group, that card's title and its
+      switch's label there; "" for a card of its own */
+  group: string
+  group_label: string
+  choice: string
   /** what the probe found; "none": nothing to detect */
   state: FeatureState
   detail: string

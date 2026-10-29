@@ -12,7 +12,7 @@
    only while the view says `running`. */
 import { json, request } from './api'
 import { useResource, type Resource } from './useResource'
-import type { FormField, SecretState } from '../ui'
+import type { DotTone, FormField, SecretState } from '../ui'
 
 export type FormAction = { id: string; label: string; /** the label of the one text it asks for */ input?: string }
 export type FormView = {
@@ -26,7 +26,8 @@ export type FormView = {
   /** its actions can run now (a plugin's code runs only while it is on) */
   running: boolean
 }
-export type ActionResult = { ok: boolean; sentence: string }
+/** `lines`: what it found, one Dot each (the Mac's Check: each server, each permission) */
+export type ActionResult = { ok: boolean; sentence: string; lines?: { text: string; tone: DotTone }[] }
 
 const enc = encodeURIComponent
 
