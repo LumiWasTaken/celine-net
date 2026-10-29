@@ -134,6 +134,21 @@ async def test_a_stale_anchor_is_refused_and_fresh_ones_apply(store, cfg):
                              "- pineapple: fine\n- olives: fine\n\n## drinks\n- coffee: yes\n")
 
 
+async def test_the_appearance_is_seeded_only_with_images_on(store, cfg):
+    nb = Notebook(cfg)
+    cfg.settings.features = {**cfg.settings.features, "images": False}
+    made = await nb.seed(store)
+    assert "identity.md" in made and "curious.md" in made
+    assert not any(p.startswith("appearance/") for p in made)
+    assert not (cfg.her.notebook / "appearance").exists()
+    cfg.settings.features = {**cfg.settings.features, "images": True}
+    assert sorted(await nb.seed(store)) == [
+        "appearance/README.md", "appearance/body.md", "appearance/clothes.md",
+        "appearance/face.md", "appearance/hair.md"], "turned on later: made at the next start"
+    (cfg.her.notebook / "appearance/body.md").unlink()
+    assert await nb.seed(store) == [], "a placeholder it deleted stays deleted"
+
+
 async def test_the_seed_waits_for_the_names(store, cfg):
     nb = Notebook(cfg)
     cfg.user = "User"                                   # the default, before the first run

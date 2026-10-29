@@ -37,7 +37,9 @@ SEEDS = {
     "opinions/README.md": "what goes under opinions/",
     "appearance/README.md": "what goes under appearance/",
 }
-# its own: created empty once, never protected, never re-created once it deletes them
+# its own: created empty once, never protected, never re-created once it deletes them;
+# appearance/ only with images on, made at the first start that has it on (the folder is
+# the mark: its README is a seed, so the folder stays)
 PLACEHOLDERS = {
     "appearance/body.md": "(empty. yours to fill, or leave.)\n",
     "appearance/face.md": "(empty. yours to fill, or leave.)\n",
@@ -123,11 +125,14 @@ class Notebook:
 
     async def seed_one(self, store) -> list[str]:
         """Write the files {{username}} owns if they are missing. Never overwrites."""
+        from ..settings import features
         made = []
         self.root.mkdir(parents=True, exist_ok=True)
+        images = features.on(self.cfg, "images")
+        looks = images and not (self.root / "appearance").exists()
         for rel, summary in SEEDS.items():
             target = self.root / rel
-            if target.exists():
+            if target.exists() or (rel.startswith("appearance/") and not images):
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             # kept as written: {{name}} and {{username}} are filled in when read, so
@@ -137,29 +142,33 @@ class Notebook:
             await notebook_index.upsert(store, rel, self.cfg.substitute(summary),
                                          len(body), body)
             made.append(rel)
+        for rel, body in PLACEHOLDERS.items():
+            if rel.startswith("appearance/") and looks:
+                made.append(await self._placeholder(store, rel, body))
         marker = self.root / ".placeholders"
         first = not marker.exists()
         if first or marker.read_text() == WAITING:
             waiting = False
             for rel, body in PLACEHOLDERS.items():
                 named = "{{username}}" in rel
-                if not first and not named:
+                if rel.startswith("appearance/") or (not first and not named):
                     continue
                 if named and self.cfg.user in UNNAMED:
                     waiting = True          # named after the user, once there is a name
                     continue
                 rel = self.cfg.substitute(rel)
-                target = self.root / rel
-                if target.exists():
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                body = self.cfg.substitute(body or (CONFIG_DIR / "notebook_seed" / rel).read_text())
-                target.write_text(body)
-                await notebook_index.upsert(store, rel, "placeholder, not written yet",
-                                             len(body), body)
-                made.append(rel)
+                if not (self.root / rel).exists():
+                    made.append(await self._placeholder(store, rel, body))
             marker.write_text(WAITING if waiting else "placeholders were created once\n")
         return made
+
+    async def _placeholder(self, store, rel: str, body: str | None) -> str:
+        target = self.root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        body = self.cfg.substitute(body or (CONFIG_DIR / "notebook_seed" / rel).read_text())
+        target.write_text(body)
+        await notebook_index.upsert(store, rel, "placeholder, not written yet", len(body), body)
+        return rel
 
     async def reconcile(self, store) -> dict[str, int]:
         """The files and the index agree at startup. A

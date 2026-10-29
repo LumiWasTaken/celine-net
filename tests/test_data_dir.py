@@ -108,7 +108,7 @@ async def test_a_feature_off_makes_none_of_its_files(fresh):
     _off(fresh)
     await _start()
     tree = _tree(fresh)
-    assert not {p for p in tree if p.startswith(("kb/", "documents/"))}
+    assert not {p for p in tree if p.startswith(("kb/", "documents/", "notebook/appearance/"))}
 
 
 @pytest.mark.anyio
