@@ -102,3 +102,11 @@ def test_a_name_in_written_by_or_scope_is_looked_up_not_refused(tmp_path, monkey
                                         written_by=["Bea"]))
     assert not out.is_error, out.content
     assert "Bea" in out.content and "Chess club" in out.content
+
+
+def test_a_source_name_in_scope_matches_exactly(tmp_path):
+    from celine.skills.archive import check_scope
+    kbs = build(tmp_path)
+    assert check_scope(kbs, ["whatsapp"])[:2] == ("platforms", ["whatsapp"])
+    assert check_scope(kbs, ["WHATSAPP"])[:3] == ("chats", [], ["WHATSAPP"])
+    assert check_scope(kbs, ["ALL"])[0] == "chats"

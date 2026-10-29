@@ -174,17 +174,16 @@ def check_scope(kbs, scope) -> tuple[str, list[str], list[str], str | None]:
     for k in kbs.chats():
         for word in (k.id, getattr(k, "title", ""), getattr(k, "platform", "")):
             if word:
-                platforms[str(word).casefold()] = k.id
+                platforms[str(word)] = k.id
     example = (f'["all"], ["{ids[0]}"] or chat references from chat_archive__look_up '
                f'like ["{ids[0]}:213"]') if ids else '["all"]'
     items = _as_list(scope)
     if not items:
         return "", [], [], f"scope is required: {example}."
-    if any(x.casefold() in _ALL for x in items):
+    if any(x in _ALL for x in items):
         return "all", [], [], None
-    plats = [platforms[x.casefold()] for x in items
-             if x.casefold() in platforms and not REF.match(x)]
-    chats = [x for x in items if x.casefold() not in platforms or REF.match(x)]
+    plats = [platforms[x] for x in items if x in platforms and not REF.match(x)]
+    chats = [x for x in items if x not in platforms or REF.match(x)]
     if plats and chats:
         return "", [], [], (f"scope mixes sources ({', '.join(plats)}) and chats "
                             f"({', '.join(chats)}). Pass one kind: the source ids, or the "
