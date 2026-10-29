@@ -291,8 +291,8 @@ class ImageGenerator:
                 f"{'edits' if p.task == 'edit' else 'new images'}: {p.good_at}"
                 for p in found) or "No preset is set.", display={"count": len(found)})
         with_catalog = [p for p in found if p.models or p.loras]
-        want = (preset or "").strip().lower()
-        p = next((x for x in with_catalog if want in (x.id, x.label.lower())), None) \
+        want = preset or ""
+        p = next((x for x in with_catalog if want in (x.id, x.label)), None) \
             if want else next((x for x in with_catalog if x.task == "generate"),
                               with_catalog[0] if with_catalog else None)
         if p is None:
