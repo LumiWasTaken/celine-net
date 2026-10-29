@@ -23,18 +23,27 @@ app. It installs with Homebrew and npm only (no Apple Account):
 
 ## Run
 
-Logged in at the Mac as her (an admin), in Terminal or over ssh:
+Logged in at the Mac as her (an admin), in Terminal. The app serves the script; download
+it, then run it from the file:
 
 ```sh
-bash setup.sh                              # install or update; ends with the address and the token
-bash setup.sh --json                       # the same, the report as one JSON line
-bash setup.sh --status                     # only the report, nothing installed
-bash setup.sh --app http://<celine>:8765   # also posts the report to the app
+curl -fsSLo setup.sh http://<celine>:8766/devices/mac/setup.sh
+bash setup.sh --app http://<celine>:8766   # install or update; posts the report to the app
 ```
 
-The report names each server's tool count (`null` when it does not answer) and the macOS
-permissions it lacks. Homebrew asks for her password once. A second run updates the
-gateway's config and restarts it; the token stays.
+Not `curl ... | bash`: the script reads the terminal for her password, and Homebrew's
+installer reads it too.
+
+```sh
+bash setup.sh            # install or update; ends with the address and the token
+bash setup.sh --json     # the same, the report as one JSON line
+bash setup.sh --status   # only the report, nothing installed
+```
+
+On a fresh Mac it asks for her password once (`sudo -v`) before Homebrew's installer, and
+keeps sudo unlocked until the installer ends. The report names each server's tool count
+(`null` when it does not answer) and the macOS permissions it lacks. A second run updates
+the gateway's config and restarts it; the token stays.
 
 In the app this folder goes to `<data>/plugins/mac/`: the Address field is the address
 printed, the token its secret.

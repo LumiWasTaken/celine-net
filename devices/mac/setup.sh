@@ -19,7 +19,7 @@ PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
 LOG=$HOME/Library/Logs/celine-gateway.log   # crashes only: info would log every message, screenshots too
 BREW=/opt/homebrew/bin/brew      # Apple silicon only; Intel brew lives in /usr/local
 
-APP= JSON= STATUS=
+APP='' JSON='' STATUS=''
 while [ $# -gt 0 ]; do
   case $1 in
     --app) APP=${2%/}; shift ;;
@@ -37,12 +37,13 @@ say() { [ -n "$JSON$STATUS" ] || printf '== %s\n' "$*"; }
 report() {
   local ip
   ip=$(ipconfig getifaddr "$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')" 2>/dev/null || true)
-  ADDRESS="http://${ip:-127.0.0.1}:$PORT" TOKEN_FILE="$TOKEN" PORT="$PORT" \
+  # shellcheck disable=SC2016  # JavaScript, not shell
+  ADDRESS="http://${ip:-127.0.0.1}:$PORT" TOKEN_FILE="$TOKEN" GATEWAY_PORT="$PORT" \
     "$(brew --prefix)/bin/node" --input-type=module -e '
-const { ADDRESS, TOKEN_FILE, PORT } = process.env;
+const { ADDRESS, TOKEN_FILE, GATEWAY_PORT } = process.env;
 const fs = await import("node:fs");
 const token = fs.existsSync(TOKEN_FILE) ? fs.readFileSync(TOKEN_FILE, "utf8").trim() : null;
-const base = `http://127.0.0.1:${PORT}`;
+const base = `http://127.0.0.1:${GATEWAY_PORT}`;
 const head = { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
                Accept: "application/json, text/event-stream" };
 
@@ -94,14 +95,25 @@ console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, se
 }
 
 if [ -n "$STATUS" ]; then
+  if [ ! -x "$BREW" ] || [ ! -x "$(dirname "$BREW")/node" ]; then
+    echo "Nothing is installed yet: run bash setup.sh first." >&2
+    exit 1
+  fi
   eval "$("$BREW" shellenv)"
   report
   exit
 fi
 
+echo "This installs Homebrew, the Xcode command line tools, Node, tmux, ripgrep, Peekaboo, Google Chrome and three MCP servers, and runs them as a background service."
 say homebrew   # its installer also installs the Xcode command line tools when missing
 if [ ! -x "$BREW" ]; then
+  # The installer asks nothing and needs sudo unlocked; the command line tools download
+  # can outlast sudo's five minutes, so the loop keeps it unlocked until the installer ends.
+  sudo -v
+  while kill -0 $$ 2>/dev/null && sudo -n -v 2>/dev/null; do sleep 50; done &
+  keep=$!
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  kill "$keep" 2>/dev/null || true
 fi
 eval "$("$BREW" shellenv)"
 export HOMEBREW_NO_AUTO_UPDATE=1
@@ -198,6 +210,7 @@ if [ -n "$JSON" ]; then
   echo "$line"
   exit
 fi
+# shellcheck disable=SC2016  # JavaScript, not shell
 echo "$line" | "$NODE" -e '
 const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
 console.log(`\nAddress: ${r.address}\nToken:   ${r.token}\n`);
