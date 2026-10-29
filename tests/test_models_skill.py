@@ -66,7 +66,7 @@ async def test_ask_sends_her_messages_to_exactly_that_model(skill):
     sched.acquire = recorded
     r = await skill.ask(CTX, model="main/small", system="be brief", temperature=0.2,
                         messages=[{"role": "user", "content": "a cat name?"}])
-    assert not r.is_error and r.content == "a grey cat called Ash"
+    assert not r.is_error and r.content == " a grey cat called Ash ", "as the model said it"
     assert seen == [Priority.INTERACTIVE], "in the queue, at its turn's priority"
     [(model, body)] = Rec.calls
     assert model == "small" and body["temperature"] == 0.2
