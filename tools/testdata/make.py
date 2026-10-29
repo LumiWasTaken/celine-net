@@ -280,7 +280,7 @@ class Gen:
             "music_generation": {"chain": ["comfy/yue2"]},
             "transcription": {"chain": ["local/whisper"]}, "speech": {"chain": ["local/kokoro"]}})
         if self.done:                   # every feature on, the onboarding finished
-            settings_files.write(root, "features", {**{f.id: True for f in features.CATALOG},
+            settings_files.write(root, "features", {**{f.id: True for f in features.catalog()},
                                                     "done": True})
         settings_files.write(root, "general", {"user_name": USER, "timezone": TZ})
         settings_files.write(root, "guard", {"chain": {"provider": "", "model": ""}})

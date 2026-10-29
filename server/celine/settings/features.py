@@ -5,8 +5,9 @@ once saved, every feature is on until the file says otherwise, but one with `sta
 False (shares, guard), which is on only once the file says so. `done` is False until a
 PUT says the onboarding finished (config status `setup`).
 
-The plug: CATALOG declares each feature once. Adding a module is one Feature here and
-one `probe(cfg, services)` beside the module. The skills, the MCP servers, the archives,
+The plug: CORE declares each core feature once, and each plugin is one more
+(`catalog()`, from its plugin.toml: celine/plugins.py). Adding a core module is one
+Feature here and one `probe(cfg, services)` beside the module. The skills, the MCP servers, the archives,
 the UI places and Settings pages, `celine doctor` and the onboarding all follow.
 
 A feature off: its skills are not built (config.skill_enabled, skills_off), nor its tools
@@ -28,6 +29,7 @@ from typing import Any
 
 import anyio
 
+from .. import plugins
 from .files import Invalid
 
 log = logging.getLogger("celine.features")
@@ -68,8 +70,8 @@ class Feature:
     warn: str = ""
 
 
-# The order is the UI's.
-CATALOG: tuple[Feature, ...] = (
+# The order is the UI's; the plugins come after.
+CORE: tuple[Feature, ...] = (
     Feature("shellbox", "Shellbox", "Turns on once the shellbox answers.",
             "An isolated Linux computer with a terminal, files and programs of its own, nothing on your machine.",
             "No shellbox container is running.",
@@ -161,7 +163,45 @@ CATALOG: tuple[Feature, ...] = (
             "One conversation at a time on a small model server.",
             skills=("sub_agents",)),
 )
-BY_ID = {f.id: f for f in CATALOG}
+
+
+def of_plugin(p: plugins.Plugin) -> Feature:
+    """A plugin's switch, from its plugin.toml; off until saved on unless it says
+    `start_on = true`."""
+    m = p.manifest
+    return Feature(p.id, m["label"], m.get("needs", ""), m.get("about", ""),
+                   m.get("off_when", ""), skills=tuple(p.skills),
+                   places=tuple(m.get("places", ())),
+                   pages=(p.id,) if p.form is not None else (),
+                   card=m.get("card", ""), start_on=bool(m.get("start_on", False)),
+                   warn=m.get("warn", ""))
+
+
+def catalog() -> tuple[Feature, ...]:
+    return CORE + tuple(of_plugin(p) for p in plugins.all())
+
+
+def get(fid: str) -> Feature:
+    return next(f for f in catalog() if f.id == fid)
+
+
+def ids() -> tuple[str, ...]:
+    return tuple(f.id for f in catalog())
+
+
+def skill_owners() -> dict[str, str]:
+    """skill id -> its feature"""
+    return {s: f.id for f in catalog() for s in f.skills}
+
+
+def tool_owners() -> dict[str, str]:
+    """tool wire name -> its feature"""
+    return {t: f.id for f in catalog() for t in f.tools}
+
+
+def connector_owners() -> dict[str, str]:
+    """MCP server or kb id -> its feature"""
+    return {c: f.id for f in catalog() for c in f.mcp + f.kbs}
 
 
 def needs_service(f: Feature) -> bool:
@@ -172,13 +212,7 @@ def needs_service(f: Feature) -> bool:
 def seed() -> dict[str, bool]:
     """The section while features.toml is unsaved: nothing that needs a service starts,
     nor what starts off."""
-    return {f.id: False for f in CATALOG if needs_service(f) or not f.start_on}
-
-
-IDS = tuple(BY_ID)
-SKILLS = {s: f.id for f in CATALOG for s in f.skills}          # skill id -> feature
-TOOLS = {t: f.id for f in CATALOG for t in f.tools}            # tool wire name -> feature
-CONNECTORS = {c: f.id for f in CATALOG for c in f.mcp + f.kbs}  # server or kb id -> feature
+    return {f.id: False for f in catalog() if needs_service(f) or not f.start_on}
 
 
 def view(f: Feature) -> dict[str, Any]:
@@ -221,8 +255,9 @@ def validate(data: Any) -> dict[str, bool]:
     if not isinstance(data, dict):
         raise Invalid("features", "Features are an object.")
     out: dict[str, bool] = {}
+    known = ids()
     for k, v in data.items():
-        if k not in IDS and k != "done":
+        if k not in known and k != "done":
             raise Invalid(f"features.{k}", f"'{k}' is not a feature.")
         if not isinstance(v, bool):
             raise Invalid(f"features.{k}", "This must be true or false.")
@@ -232,7 +267,7 @@ def validate(data: Any) -> dict[str, bool]:
 
 def effective(saved: dict[str, bool] | None) -> dict[str, bool]:
     """Every feature, a missing one on unless it starts off."""
-    return {f.id: (saved or {}).get(f.id, f.start_on) for f in CATALOG}
+    return {f.id: (saved or {}).get(f.id, f.start_on) for f in catalog()}
 
 
 def done(saved: dict[str, bool] | None) -> bool:
@@ -251,17 +286,17 @@ def on(cfg, feature: str) -> bool:
 def skills_off(features: dict[str, bool] | None) -> frozenset[str]:
     """The skills whose feature is off (config.skill_enabled)."""
     on = effective(features)
-    return frozenset(s for s, f in SKILLS.items() if not on[f])
+    return frozenset(s for s, f in skill_owners().items() if not on[f])
 
 
 def tool_on(cfg, wire_name: str) -> bool:
     """False for a tool whose feature is off (`tools`): it is not built."""
-    f = TOOLS.get(wire_name)
+    f = tool_owners().get(wire_name)
     return f is None or on(cfg, f)
 
 
 def allows_connector(cfg, server_or_kb_id: str) -> bool:
-    f = CONNECTORS.get(server_or_kb_id)
+    f = connector_owners().get(server_or_kb_id)
     return f is None or on(cfg, f)
 
 
@@ -280,7 +315,8 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
     service at its default address while none is saved (the setup form prefills it).
     "none" when it has nothing to detect; a probe that does not answer within
     PROBE_SECONDS, or raises, is "missing"."""
-    fn = probe_fn(BY_ID[feature])
+    f = get(feature)
+    fn = probe_fn(f)
     if fn is None:
         return {"state": "none", "detail": ""}
     if DEMO:
@@ -289,13 +325,13 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
         with anyio.fail_after(PROBE_SECONDS):
             result = await fn(cfg, services)
     except TimeoutError:
-        return {"state": "missing", "detail": f"{BY_ID[feature].label} did not answer in time."}
+        return {"state": "missing", "detail": f"{f.label} did not answer in time."}
     except Exception as e:                       # a probe never takes the page down
         log.warning("feature probe failed", extra={"event": "features.probe_failed",
                                                    "feature": feature,
                                                    "error": type(e).__name__})
         return {"state": "missing",
-                "detail": f"{BY_ID[feature].label} could not be checked ({type(e).__name__})."}
+                "detail": f"{f.label} could not be checked ({type(e).__name__})."}
     if result is None:
         return {"state": "none", "detail": ""}
     out = {"state": result["state"], "detail": result.get("detail", "")}
@@ -316,9 +352,9 @@ async def probe_all(cfg, services, *, cache: bool = True) -> dict[str, dict[str,
         out[f.id] = await probe(cfg, services, f.id)
 
     async with anyio.create_task_group() as tg:
-        for f in CATALOG:
+        for f in catalog():
             tg.start_soon(one, f)
-    out = {f.id: out[f.id] for f in CATALOG}
+    out = {f.id: out[f.id] for f in catalog()}
     if services is not None:
         services.feature_probes = (time.monotonic(), out)
     return out

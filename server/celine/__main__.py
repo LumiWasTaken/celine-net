@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import logging
 import os
 import socket
@@ -234,7 +235,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                         for kid in f.kbs:
                             kbs.close(kid)
                 return Runner(tg, run)
-            for f in features.CATALOG:
+            for f in features.catalog():
                 if f.mcp:
                     runners[f.id] = connector_runner(f)
                     if on[f.id]:
@@ -277,7 +278,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                     await anyio.to_thread.run_sync(kb.kick_describe)
 
             async def documents_run() -> None:   # Documents: the folder, its index, its watcher
-                for kid in features.BY_ID["documents"].kbs:
+                for kid in features.get("documents").kbs:
                     await anyio.to_thread.run_sync(kbs.open, kid)
                 try:
                     dispatcher.work.handle("documents.describe", ("small",), describe_again)
@@ -290,7 +291,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                         await _watch_documents(documents, store)
                     await anyio.sleep_forever()
                 finally:
-                    for kid in features.BY_ID["documents"].kbs:
+                    for kid in features.get("documents").kbs:
                         kbs.close(kid)
             runners["documents"] = Runner(tg, documents_run)
             if on["documents"]:
@@ -355,6 +356,13 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             for fid in ("shellbox", "browser"):
                 if on[fid]:
                     await runners[fid].start()
+            from . import plugins                # each plugin's runner, by its switch
+            from .api import plugins as plugins_api
+            for p in plugins.all():
+                runners[p.id] = Runner(tg, functools.partial(
+                    plugins_api.run, services, app.state.plugin_routes, p))
+                if on[p.id]:
+                    await runners[p.id].start()
             tg.start_soon(reload.watch, services)
 
             auth = app.state.auth
@@ -450,6 +458,11 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from . import events as events_api
     app.include_router(events_api.router)
     app.include_router(ws.router)
+
+    # the plugins' routes, appended and removed by their runners (api/plugins.py)
+    from .api import plugins as plugins_api
+    plugins_mount, app.state.plugin_routes = plugins_api.mount()
+    app.router.routes.append(plugins_mount)
 
     @app.get("/api/health", include_in_schema=False)
     async def _health() -> dict:

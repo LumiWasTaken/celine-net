@@ -9,7 +9,7 @@ import watchfiles
 
 from . import boot, config as config_mod
 from .errors import set_secrets
-from .skills import BUILTIN, build as build_registry
+from .skills import build as build_registry, names as skill_names
 from .clock import use_zone
 from .core.event_types import SETTINGS_CHANGED
 
@@ -94,7 +94,7 @@ def apply(app, *, only_if_changed: bool = False) -> bool:
         from .conversations.store import keep_lock
         keep_lock(app.store, cfg)
     built = build_registry(app)
-    for name, _, _ in BUILTIN:
+    for name in skill_names():
         new, old = built.skills.get(name), registry.skills.get(name)
         if new is None:
             registry.remove(name)

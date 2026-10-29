@@ -17,6 +17,7 @@ import functools
 from typing import Any
 
 from .files import Invalid
+from .form import check
 
 FIELDS: list[dict[str, Any]] = [
     {"key": "user_name", "label": "Your name", "type": "text",
@@ -152,35 +153,7 @@ def validate(data: Any) -> dict[str, Any]:
             raise Invalid(path, f"'{k}' is not a general setting.")
         if v is None:
             continue
-        if f["type"] == "bool":
-            if not isinstance(v, bool):
-                raise Invalid(path, "This must be true or false.")
-        elif f["type"] == "choice":
-            if v not in [c[0] for c in f["choices"]]:
-                raise Invalid(path, "This must be one of " +
-                              ", ".join(c[0] for c in f["choices"]) + ".")
-        elif f["type"] == "number":
-            if isinstance(f["default"], float):
-                if not isinstance(v, (int, float)) or isinstance(v, bool):
-                    raise Invalid(path, "This must be a number.")
-            elif not isinstance(v, int) or isinstance(v, bool):
-                raise Invalid(path, "This must be a whole number.")
-            if v < f.get("min", v) or v > f.get("max", v):
-                raise Invalid(path, f"This must be between {f['min']} and {f['max']}.")
-        elif f["type"] == "text":
-            if not isinstance(v, str):
-                raise Invalid(path, "This must be text.")
-            if f.get("required") and not v.strip():
-                raise Invalid(path, "This cannot be empty.")
-            if len(v) > f.get("max_len", len(v)):
-                raise Invalid(path, f"This is at most {f['max_len']} characters.")
-            if f.get("zone"):
-                try:
-                    from zoneinfo import ZoneInfo
-                    ZoneInfo(v)
-                except Exception:
-                    raise Invalid(path, f"'{v}' is not a time zone. Try America/New_York.") \
-                        from None
+        check(path, f, v)
         out[k] = v
     if value(out, "job_timeout_seconds") <= value(out, "tool_timeout_seconds"):
         raise Invalid("general.job_timeout_seconds", "The job time limit must be longer "

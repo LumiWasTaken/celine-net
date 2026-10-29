@@ -165,11 +165,12 @@ class Supervisor:
         self.skills: dict[str, McpSkill] = {}
 
     async def start(self, tg: anyio.abc.TaskGroup) -> None:
-        """Every enabled server that no feature owns; a feature's (features.CONNECTORS)
+        """Every enabled server that no feature owns; a feature's (features.connector_owners)
         runs through `run_one` under its runner (core/runners.py)."""
         from .settings import features
+        owned = features.connector_owners()
         for scfg in self.cfg.mcp.values():
-            if not scfg.enabled or scfg.id in features.CONNECTORS:
+            if not scfg.enabled or scfg.id in owned:
                 continue
             skill = await self._open(scfg.id)
             if skill is not None:

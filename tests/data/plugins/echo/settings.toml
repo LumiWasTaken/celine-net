@@ -1,0 +1,6 @@
+[[fields]]
+key = "prefix"
+label = "Prefix"
+type = "text"
+default = ""
+max_len = 20

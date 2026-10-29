@@ -157,13 +157,14 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
         lines.append("This turn: " + ("{{username}}'s message." if turn["origin"] == "user"
                                       else "a message through the intercom."))
     probes = await features.probe_all(cfg, app)
-    for f in features.CATALOG:
+    for f in features.catalog():
         p = probes.get(f.id)
         if p and p["state"] != "none" and features.on(cfg, f.id):
             lines.append(f"{f.label}: {p['detail'] or p['state']}")
     mcp = getattr(app, "mcp", None)
+    owned = features.connector_owners()
     for s in (mcp.skills.values() if mcp is not None else ()):
-        if s.name not in features.CONNECTORS:
+        if s.name not in owned:
             lines.append(f"{s.name} (MCP): {s.status}" + (f", {s.error}" if s.error else ""))
     lines.append(f"Guard: {switch.mode(cfg, cid)}")
     if held := await hold.her_hold(store, llm):

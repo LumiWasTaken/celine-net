@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from .. import plugins
 from ..config import ConfigError, Problem, shown_path
-from . import features as features_mod, files, general as general_mod
+from . import features as features_mod, files, form, general as general_mod
 from . import mail as mail_mod, services as services_mod, vault as vault_mod
 from .files import Invalid
 from .registry import (
@@ -89,12 +90,16 @@ def load(cfg) -> Settings:
     s.triggers = pick("triggers", validate_triggers)
     from ..guard import rules as guard_rules
     s.guard = pick("guard", guard_rules.validate)
-    s.features = pick("features", features_mod.validate)
+    known = set(features_mod.ids())          # a removed plugin's switch goes with it
+    s.features = pick("features", lambda v: features_mod.validate(
+        {k: x for k, x in v.items() if k in known or k == "done"}))
     if not s.saved["features"]:          # nothing that needs a service before Setup saved it
         s.features = features_mod.seed()
     s.services = pick("services", services_mod.validate)
     if not s.saved["services"]:          # the environment, read nowhere else
         s.services = services_mod.seed()
+    for p in plugins.with_form():        # var/settings/<id>.toml
+        s.plugins[p.id] = pick(p.id, lambda v, p=p: form.validate(p.id, p.form["fields"], v))
     return s
 
 

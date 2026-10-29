@@ -215,7 +215,7 @@ async def features(services, probes: dict | None = None) -> dict[str, Any]:
     return {"features": features_mod.effective(s.features),
             "catalog": [{**features_mod.view(f), **probes[f.id],
                          "card": features_mod.card_now(services.cfg, f, probes[f.id])}
-                        for f in features_mod.CATALOG],
+                        for f in features_mod.catalog()],
             "saved": bool(s.saved.get("features")), "done": features_mod.done(s.features),
             "version": version(s.features)}
 

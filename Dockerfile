@@ -69,6 +69,7 @@ ENTRYPOINT ["docker-entrypoint"]
 # the code last: a --link layer after a changed one makes a builder fetch the layers below
 COPY --link config/ ./config/
 COPY --link server/ ./server/
+COPY --link plugins/ ./plugins/
 
 # Data lives on a volume. The server binds all interfaces, so the passkey login is on
 # (with it off, startup refuses any address but loopback). The health check asks the

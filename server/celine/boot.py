@@ -7,14 +7,14 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from . import config, her, keys, schedules, settings
+from . import config, her, keys, plugins, schedules, settings
 from .backends.llm import QUEUE_KEYS
 from .comfyui import presets
-from .config import Config, shown_path, read_toml, tables
+from .config import Config, Problem, shown_path, read_toml, tables
 from .db.migrate import read_only
 from .kb import read_config as read_kb
 from .mcp import read_servers
-from .settings import seed
+from .settings import features, seed
 from .skills import BUILTIN
 from .turns import loads
 
@@ -22,6 +22,9 @@ from .turns import loads
 def load() -> Config:
     cfg = config.load()
     p = cfg.problems
+    # every manifest before the settings, so the plugins' switches and forms are known
+    reserved = frozenset(f.id for f in features.CORE) | frozenset(settings.files.SECTIONS)
+    p += [Problem("plugins", m) for m in plugins.scan(cfg.data_dir, reserved)]
 
     def file(name: str) -> tuple[str, dict]:
         path = config.CONFIG_DIR / name

@@ -114,7 +114,7 @@ def doctor(cfg: config_mod.Config) -> int:
     import anyio
     from .settings import features
     probes = anyio.run(features.probe_all, cfg, None)
-    for f in features.CATALOG:
+    for f in features.catalog():
         state = "on" if features.on(cfg, f.id) else "off"
         pr = probes[f.id]
         said = f"{f.id}: {state}" + (f", {pr['state']}: {pr['detail']}" if pr["detail"] else "")
