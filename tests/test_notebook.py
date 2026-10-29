@@ -236,18 +236,14 @@ async def test_a_write_says_where_it_saved_and_the_list_has_dates(store, cfg):
     assert "diary/x.md (16 Oct) - my day" in listed
 
 
-async def test_a_web_citation_she_writes_down_is_taken_out(store, cfg):
-    """A note holds the facts in its words: no citation marks, no source links."""
+async def test_a_web_citation_she_writes_down_is_stored_as_written(store, cfg):
     nb = Notebook(cfg)
     cid = await conversations.create(store)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
     await nb.write(ctx, "research/mail.md", "prices [[web:3]] and [web:9]【2†source】.\n"
                    "download: https://example.com/a.zip", "mail")
     text = (cfg.her.notebook / "research/mail.md").read_text()
-    assert "prices and.\ndownload: https://example.com/a.zip" in text
-    from celine.skills.web import uncite
-    assert uncite("日本語【注意】これは大事【3†source】") == "日本語【注意】これは大事"
-    assert uncite("see [web:3](https://a.b/c) ok") == "see https://a.b/c ok"
+    assert "prices [[web:3]] and [web:9]【2†source】.\ndownload: https://example.com/a.zip" in text
 
 
 async def test_a_note_she_only_read_ages_out_after_one_turn(store, cfg):

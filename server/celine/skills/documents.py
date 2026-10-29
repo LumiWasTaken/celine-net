@@ -423,8 +423,6 @@ class UserDocuments:
             k = self._kb()
         except RuntimeError as e:
             return ToolResult(content=str(e), is_error=True)
-        from .web import uncite
-        content = uncite(content)
         try:
             out = await anyio.to_thread.run_sync(
                 lambda: k.write(path, content, author="celine"))

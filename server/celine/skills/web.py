@@ -199,9 +199,8 @@ _CITE_LINK = re.compile(r"\[\s*web:\d+\s*\]\((https?://[^)\s]+)\)")
 
 
 def uncite(text: str) -> str:
-    """Text it writes down (a note, a document, an artifact, a message) without web
-    citation marks: their numbers mean something only in its own conversation, and
-    {{username}} wants the facts in its words, not a list of sources."""
+    """Its answer handed to another conversation without web citation marks: their
+    numbers mean something only in its own conversation."""
     if not text or ("web:" not in text and "【" not in text):
         return text
     return _ANY_CITE.sub("", _CITE_LINK.sub(r"\1", text))
@@ -210,15 +209,6 @@ def uncite(text: str) -> str:
 def _label(url: str) -> str:
     host = urlsplit(url).hostname or "link"
     return host[4:] if host.startswith("www.") else host
-
-
-async def linked(ctx: ToolContext, text: str) -> str:
-    """Text for a note: each [[web:n]] (or [web:n]) of this conversation becomes the
-    page's link next to the fact; a mark with no page behind it goes, as in uncite."""
-    if not text or "web:" not in text:
-        return uncite(text)
-    table = {n: url for url, n in (await _seed(ctx)).items()}
-    return uncite(link(normalize(text), table))
 
 
 def link(text: str, table: dict[int, str]) -> str:

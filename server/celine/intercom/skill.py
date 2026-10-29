@@ -136,9 +136,7 @@ class IntercomSkill:
         new_thread starts one. With in or at it lands
         later; to "me" that is a reminder that starts your turn then, or joins the one
         running."""
-        from ..skills.web import uncite
-        text = uncite(text).strip()
-        if not text:
+        if not text.strip():
             return ToolResult(content="text is the message.", is_error=True)
         if not to.strip() and reply_to is None:
             return ToolResult(content="to says who it goes to, or reply_to answers a "

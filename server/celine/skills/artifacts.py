@@ -40,8 +40,7 @@ class Artifacts:
         a dashboard, or a document. Every write keeps the old versions.
         Returns: the id and version. Show it with [[artifact:<id>]] in your reply, never the
         page's text."""
-        from .web import uncite
-        title, aid, content = title.strip(), id.strip().lower(), uncite(content)
+        title, aid = title.strip(), id.strip().lower()
         if kind not in artifacts.KINDS:
             return _refused(f"kind is html or markdown, not \"{kind}\".")
         if problem := _refusal(content, title, aid):

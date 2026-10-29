@@ -18,7 +18,6 @@ from ..config import CONFIG_DIR
 from ..turns.compact import one_line
 from . import ToolContext, ToolResult, guide, knob, tool, described
 from . import notebook_index
-from .web import linked
 from .anchors import Edit, EditRefused, apply, is_stamp, lines_of, numbered, plan
 from ..clock import zone
 from ..errors import ToolRefused
@@ -266,7 +265,6 @@ class Notebook:
                 f"{path} is {{{{username}}}}'s, not yours to change. You can read it. "
                 f"Write your own version somewhere else if you want one."), is_error=True)
         p.parent.mkdir(parents=True, exist_ok=True)
-        content = await linked(ctx, content)
         body = stamped(p.read_text() + content if mode == "append" and p.exists()
                        else content, self.cfg)
         keep_version(self.root, p, path)
@@ -363,7 +361,7 @@ class Notebook:
         text = p.read_text(newline="")
         lines, newline, trailing = lines_of(text)
         has_stamp = bool(lines) and is_stamp(lines[0])
-        edits = [{**e, "text": await linked(ctx, _joined(e["text"]))}
+        edits = [{**e, "text": _joined(e["text"])}
                  if isinstance(e, dict) and e.get("text") else e for e in edits]
         try:
             planned = plan(edits, lines, has_stamp)
