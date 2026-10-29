@@ -117,7 +117,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
             addr = f"agent:{me['agent_of']}"
         elif addr == "team":
             addr = f"team:{me['agent_of'] or me['id']}"
-        elif addr.casefold() in GUARD_NAMES and sender.startswith("agent:"):
+        elif addr in GUARD_NAMES and sender.startswith("agent:"):
             addr = GUARD                 # she talks to Bastet; anyone else's reply is the user's
         elif addr.startswith("system:") or c.execute(
                 "SELECT 1 FROM intercom_tokens WHERE name=?", (addr,)).fetchone():

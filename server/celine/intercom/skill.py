@@ -153,7 +153,7 @@ class IntercomSkill:
                 return ToolResult(content='until is like "05:00" or "2 h".', is_error=True)
         from .. import guard
         if not guard.enabled(self.cfg) and any(
-                w.strip().casefold() in GUARD_NAMES for w in to.split(",")):
+                w.strip() in GUARD_NAMES for w in to.split(",")):
             return ToolResult(content="Bastet is off; nobody reads this.", is_error=True)
         try:
             out = await self.app.intercom.send(

@@ -513,3 +513,12 @@ async def test_the_vision_models_words_reach_her_as_it_said_them():
     got = await vision.ask(llm, b"png", "where is Sign in?", "box", conversation_id="c",
                            turn_id="t")
     assert got.value is None and got.said == words
+
+
+def test_keys_are_named_exactly():
+    from celine.errors import ToolRefused
+    assert browser_mod.key_names("Control+a Shift+Enter ArrowDown x") == \
+        "Control+a Shift+Enter ArrowDown x"
+    for bad in ("ctrl+a", "enter", "esc", "Control+enter"):
+        with pytest.raises(ToolRefused, match="Keys: Enter, Tab, Escape"):
+            browser_mod.key_names(bad)

@@ -71,19 +71,15 @@ SHOW = Literal["all", "main", "none"]
 SHOW_HELP = ("What comes back: all, the outline of the view; main, the outline without "
              "navigation, banners, footers and sidebars; none, no outline, for a step you "
              "will look at later.")
-# what it may write for a key (any case) -> the name browserd knows
-KEYS = {k.lower(): k for k in ("Enter", "Tab", "Escape", "Backspace", "Delete", "Space",
-                                "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp",
-                                "PageDown", "Home", "End", "Insert", "F1", "F2", "F3", "F4",
-                                "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12")}
-KEYS.update({"return": "Enter", "esc": "Escape", "del": "Delete", "up": "ArrowUp",
-             "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight",
-             "pgup": "PageUp", "pgdn": "PageDown"})
-MODS = {"ctrl": "Control", "control": "Control", "alt": "Alt", "shift": "Shift",
-        "meta": "Meta", "cmd": "Meta", "super": "Meta"}
+# the key names browserd knows, written exactly so
+KEYS = {"Enter", "Tab", "Escape", "Backspace", "Delete", "Space", "ArrowUp", "ArrowDown",
+        "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Insert", "F1", "F2",
+        "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"}
+MODS = {"Control", "Alt", "Shift", "Meta"}
 KEY_NAMES = ("Enter, Tab, Escape, Backspace, Delete, Space, ArrowUp, ArrowDown, ArrowLeft, "
-             "ArrowRight, PageUp, PageDown, Home, End, F1 to F12, or one single character; "
-             "a chord joins them with +, like Control+a or Shift+Enter")
+             "ArrowRight, PageUp, PageDown, Home, End, Insert, F1 to F12, or one single "
+             "character; a chord joins them with + after Control, Alt, Shift or Meta, like "
+             "Control+a or Shift+Enter")
 CRASHES = {"killed": "killed, most likely out of memory", "oom": "out of memory"}
 LAUNCH = {"no_answer": "Brave did not answer within 10 s, twice"}
 SHOTS = {"id": "marks", "text": "plain"}   # what the answering model sees
@@ -248,18 +244,16 @@ async def refusal(url: str) -> str | None:
 
 
 def key_names(text: str) -> str:
-    """The agent's keys and chords -> the names browserd knows: ctrl+a -> Control+a."""
+    """The agent's keys and chords, checked against the names browserd knows."""
     out = []
     for chord in text.split():
         parts = chord.split("+") if chord != "+" else ["+"]
         names = []
         for i, p in enumerate(parts):
             last = i == len(parts) - 1
-            name = (MODS.get(p.lower()) if not last else None) or KEYS.get(p.lower()) or \
-                (p if len(p) == 1 else None)
-            if name is None:
+            if not ((not last and p in MODS) or p in KEYS or len(p) == 1):
                 raise ToolRefused(f"Unknown key {p!r}. Keys: {KEY_NAMES}.")
-            names.append(name)
+            names.append(p)
         out.append("+".join(names))
     if not out:
         raise ToolRefused(f"press needs text: the keys, like \"Enter\". Keys: {KEY_NAMES}.")
