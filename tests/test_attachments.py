@@ -161,6 +161,29 @@ async def test_a_picture_keeps_its_size_and_one_smaller_copy_per_width(cfg, stor
     assert not small.exists() and not attachments.blob_path(cfg, big["sha256"]).exists()
 
 
+async def test_a_model_gets_a_picture_at_most_wire_edge_and_its_real_type(cfg, store):
+    import base64
+    import io
+    from PIL import Image
+    from celine import vision
+    tall = await upload(cfg, store, picture(1500, 3000), "tall.png", "image/png")
+    path, media = attachments.for_model(cfg, tall["sha256"], "image/png")
+    with Image.open(path) as im:
+        assert (media, im.size) == ("image/webp", (784, 1568))
+    dot = await upload(cfg, store, PNG, "dot.png", "image/png")
+    assert attachments.for_model(cfg, dot["sha256"], "image/png") == \
+        (attachments.blob_path(cfg, dot["sha256"]), "image/png")
+    part = {"type": attachments.IMAGE, "attachment": {**tall, "size": (1500, 3000)}}
+    sent = await attachments.Images(cfg, store, None, "x")._image(part)
+    head, b64 = sent["image_url"]["url"].split(",", 1)
+    assert head == "data:image/webp;base64"
+    with Image.open(io.BytesIO(base64.b64decode(b64))) as im:
+        assert im.size == (784, 1568)
+    jpeg = picture(8, 8, "JPEG")
+    [msg] = vision.messages(jpeg, "what?", "text")
+    assert msg["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
 async def test_a_file_whose_rows_fail_is_not_left_behind(cfg, store):
     with pytest.raises(KeyError):
         await attachments.save_generated(cfg, store, PNG, "x.png", "image/png", "no-call")

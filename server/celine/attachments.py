@@ -4,7 +4,8 @@ Images and the model that answers: the conversation's model always answers, and 
 image adapts to it. `render` leaves each image as an `IMAGE` part; the queued backend
 (backends/llm.py) hands every request to `Images.wire` once it knows which model
 answers, so a fallback in the chat list gets what it can take:
-- a model that sees images (the `vision` capability) gets the image itself;
+- a model that sees images (the `vision` capability) gets the image itself, at most
+  WIRE_EDGE px on its long edge (`for_model`);
 - any other model gets the image's photo description as text, marked as one. The
   Photo descriptions role writes it the first time it is needed (kb/media.py, thinking
   off), and it is kept with the attachment, so later requests and other models reuse
@@ -292,7 +293,7 @@ class Images:
             if not _has_image(m):
                 out.append(m)
             elif sees and i in recent:
-                out.append({**m, "content": [self._image(p) if p.get("type") == IMAGE
+                out.append({**m, "content": [await self._image(p) if p.get("type") == IMAGE
                                              else p for p in m["content"]]})
             else:
                 texts = [await self._described(p["attachment"], model)
@@ -301,11 +302,13 @@ class Images:
                 out.append({**m, "content": "\n\n".join(t for t in texts if t)})
         return out
 
-    def _image(self, part: dict) -> dict:
+    async def _image(self, part: dict) -> dict:
+        """The image at most WIRE_EDGE px on its long edge (the copy `resized` keeps)."""
         a = part["attachment"]
-        b64 = base64.b64encode(blob_path(self.cfg, a["sha256"]).read_bytes()).decode()
-        return {"type": "image_url",
-                "image_url": {"url": f"data:{a['media_type']};base64,{b64}"}}
+        path, media = await anyio.to_thread.run_sync(for_model, self.cfg, a["sha256"],
+                                                     a["media_type"])
+        b64 = base64.b64encode(path.read_bytes()).decode()
+        return {"type": "image_url", "image_url": {"url": f"data:{media};base64,{b64}"}}
 
     async def _described(self, a: dict, model: str) -> str:
         """The image's photo description as a line for `model`, written now when the
@@ -411,6 +414,21 @@ def resized(cfg, sha: str, width: int) -> Path:
         return src
     part.replace(out)
     return out
+
+
+WIRE_EDGE = 1568     # the longest edge of a picture sent to a model; encoders scale a
+                     # larger one down anyway
+
+
+def for_model(cfg, sha: str, media_type: str) -> tuple[Path, str]:
+    """(the file, its media type) a model gets for a picture: at most WIRE_EDGE px on its
+    long edge. Blocking: a thread's work."""
+    pixels = _pixels(blob_path(cfg, sha))
+    if pixels is None or max(pixels) <= WIRE_EDGE:
+        return blob_path(cfg, sha), media_type
+    w, h = pixels
+    path = resized(cfg, sha, w * WIRE_EDGE // max(w, h))
+    return path, "image/webp" if path.suffix == ".webp" else media_type
 
 
 def size(b: int) -> str:
