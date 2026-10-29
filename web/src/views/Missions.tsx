@@ -108,7 +108,7 @@ export function Missions({ active }: { active: boolean }) {
                                active={active} onChange={reload} />
           : agent && ids.has(agent.parent) ? <AgentPage key={agent.id} a={agent} mission={every.find(m => m.conversation_id === agent.parent)!}
                                                        active={active} />
-          : loaded && !agent ? <ShelvedAgent key={selected} cid={selected} active={active} />
+          : loaded ? <ShelvedAgent key={selected} cid={selected} active={active} />
           : <LoadingRow label="Loading the mission" />
       ) : view === 'agents' ? <AgentsList agents={theirs} missions={every} />
         : <MissionsList shelf={shelf} setShelf={setShelf} lists={{ list: missions, archive: archived, trash: trashed }}
@@ -507,8 +507,8 @@ function Settings({ m, live, agents, onChange }: {
 }
 
 /* one sub-agent of a mission: its conversation; its result and details are a page under it */
-/* a sub-agent in the Archive or the Trash: the sub-agents list leaves it out, its
-   conversation is still there; any other id is no mission */
+/* a sub-agent another sub-agent started, or one in the Archive or the Trash (the
+   sub-agents list leaves it out): its conversation; any other id is no mission */
 function ShelvedAgent({ cid, active }: { cid: string; active: boolean }) {
   const convo = useConversation(cid)
   const row = useResource(() => request<{ conversation: { title: string; agent_of: string | null } }>(`/conversations/${cid}`), [cid])
