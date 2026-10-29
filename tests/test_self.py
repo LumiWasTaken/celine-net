@@ -299,7 +299,7 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
 
     async def probe_all(cfg, services, *, cache=True):
         return {f.id: probes.get(f.id, {"state": "none", "detail": ""})
-                for f in features.CATALOG}
+                for f in features.catalog()}
     monkeypatch.setattr(features, "probe_all", probe_all)
     me = Me(cfg)
     me.app = Services(cfg=cfg, store=store, llm=llm)

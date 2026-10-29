@@ -116,7 +116,7 @@ CORE = {"celine.db", "log.db", "notebook/.index.db", "notebook/.placeholders",
 
 
 def _off(data: Path) -> None:
-    settings_files.write(data / "settings", "features", {f.id: False for f in features.CATALOG})
+    settings_files.write(data / "settings", "features", {f.id: False for f in features.catalog()})
 
 
 @pytest.mark.anyio
@@ -157,7 +157,7 @@ async def test_a_feature_switched_on_at_runtime_starts_its_loops_and_off_stops_t
                                          base_url=base, headers={"origin": base}) as c:
                 r = await c.put("/api/features", json={"features": {
                     f.id: on and f.id in ("images", "routines", "missions", "guard")
-                    for f in features.CATALOG}})
+                    for f in features.catalog()}})
             assert r.status_code == 200, r.text
 
         assert not any(running().values())

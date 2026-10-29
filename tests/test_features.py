@@ -74,8 +74,8 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
     status = (await api.get("/api/status")).json()
     assert status["features"]["web"] is False and status["setup"] is False
     box = next(f for f in status["catalog"] if f["id"] == "shellbox")
-    assert box == {"id": "shellbox", "about": features.BY_ID["shellbox"].about,
-                   "off_when": features.BY_ID["shellbox"].off_when,
+    assert box == {"id": "shellbox", "about": features.get("shellbox").about,
+                   "off_when": features.get("shellbox").off_when,
                    "places": ["terminals"], "pages": []}
     await api.put("/api/features", json={"features": {}})
     assert "web" in _skills(api)
@@ -92,7 +92,7 @@ async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api)
     # and does not answer; the guard always; email and vault never (the Later card and
     # Settings). On this fake app (no kbs: the config's word) only the archive probe is ready.
     assert {f["id"] for f in catalog if f["card"] == "detect"} == {"messages"}
-    assert {f.id for f in features.CATALOG if f.card == "detect"} == \
+    assert {f.id for f in features.catalog() if f.card == "detect"} == \
         {"shellbox", "browser", "images", "music", "web", "messages"}
     assert {f["id"] for f in catalog if f["card"] == "always"} == \
         {"shares", "discord", "whatsapp", "guard", "routines", "speech_input", "speech_output"}
@@ -144,18 +144,18 @@ async def test_the_shellbox_probe_tries_the_default_address_and_hands_it_over(ap
     found = await features.probe(api.cfg, api.services, "shellbox")
     assert found == {"state": "ready", "detail": "Found at http://127.0.0.1:8770.",
                      "url": "http://127.0.0.1:8770"}
-    assert features.card_now(api.cfg, features.BY_ID["shellbox"], found) == "detect"
+    assert features.card_now(api.cfg, features.get("shellbox"), found) == "detect"
     box(lambda r: httpx.Response(401 if r.url.path == "/status" else 200, json={}))
     bad = await features.probe(api.cfg, api.services, "shellbox")
     assert bad["state"] == "missing" and bad["url"] == "http://127.0.0.1:8770"
-    assert features.card_now(api.cfg, features.BY_ID["shellbox"], bad) == "detect"
+    assert features.card_now(api.cfg, features.get("shellbox"), bad) == "detect"
 
     def down(r):
         raise httpx.ConnectError("refused")
     box(down)
     none = await features.probe(api.cfg, api.services, "shellbox")
     assert none["state"] == "unset" and "url" not in none
-    assert features.card_now(api.cfg, features.BY_ID["shellbox"], none) == ""
+    assert features.card_now(api.cfg, features.get("shellbox"), none) == ""
 
 
 async def test_the_browser_probe_reads_browserd_state(api, monkeypatch):
@@ -344,7 +344,7 @@ async def test_a_switch_or_an_address_change_starts_and_stops_what_runs(api, mon
     from celine.core.runners import Runners
 
     async def unset(cfg, services, cache=True):      # no probe of the made-up addresses
-        return {f.id: {"state": "unset", "detail": ""} for f in features.CATALOG}
+        return {f.id: {"state": "unset", "detail": ""} for f in features.catalog()}
     monkeypatch.setattr(features, "probe_all", unset)
     runners = api.services.runners = Runners()
     runners["shellbox"] = box = FakeRunner()
@@ -521,7 +521,7 @@ async def test_put_answers_from_the_probes_the_page_saw(api, monkeypatch):
         raise AssertionError("the PUT probed")
     monkeypatch.setattr(features, "probe_all", never)
     r = await api.put("/api/features", json={"features": {"web": False}})
-    assert r.status_code == 200 and {f["id"] for f in r.json()["catalog"]} == set(features.IDS)
+    assert r.status_code == 200 and {f["id"] for f in r.json()["catalog"]} == set(features.ids())
     assert api.services.feature_probes is None, "the next GET probes anew"
 
 
@@ -533,7 +533,7 @@ async def test_shares_start_off_and_their_switch_saves_on(api):
     tools = {"shell__share", "shell__unshare", "shell__list_shares"}
     _fresh(api)
     assert features.on(api.cfg, "shares") is False
-    assert set(features.BY_ID["shares"].tools) == tools
+    assert set(features.get("shares").tools) == tools
     await api.put("/api/features", json={"features": {}})
     assert features.on(api.cfg, "shares") is False, "an id left out stays off"
     reg = api.services.registry
@@ -549,7 +549,7 @@ async def test_shares_start_off_and_their_switch_saves_on(api):
     await api.put("/api/features", json={"features": {"shares": True, "shellbox": False}})
     assert (await api.get("/api/features/shares/probe")).json() == \
         {"state": "unset", "detail": "The shellbox is off."}
-    assert f"{shares.PRIVATE_HOURS} hours" in features.BY_ID["shares"].warn
+    assert f"{shares.PRIVATE_HOURS} hours" in features.get("shares").warn
 
 
 async def test_the_guard_starts_off_until_the_user_switches_it_on(api):
