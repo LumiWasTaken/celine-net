@@ -95,6 +95,9 @@ def test_one_bad_image_leaves_the_task_done_with_one_failed(tmp_path, monkeypatc
     assert task.state == "done" and (task.result["done"], task.result["failed"]) == (1, 1)
     row = media.caption_of(kb, [sha(CAT)])[sha(CAT)]
     assert row["state"] == "failed" and row["caption"] is None and "RecursionError" in row["error"]
+    again = FakeEngine()
+    assert media.run(kb, settings(), again, CTX)["failed"] == 0 and again.calls == [], \
+        "a failed image is tried once"
 
 
 def test_no_model_marks_nothing_and_a_cancel_keeps_what_was_done(tmp_path):

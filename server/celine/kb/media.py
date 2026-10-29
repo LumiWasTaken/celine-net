@@ -72,7 +72,6 @@ class Settings:
     types: tuple[str, ...] = ("photo", "sticker")
     batch: int = 20
     rate_per_minute: float = 0.0             # 0: no limit
-    max_attempts: int = 3
     max_mb: float = 15.0
     poll_minutes: float = 10.0
     msgstore: str = ""
@@ -88,7 +87,6 @@ class Settings:
         return cls(types=tuple(str(x) for x in raw.get("types", ("photo", "sticker"))),
                    batch=max(1, int(raw.get("batch", 20))),
                    rate_per_minute=float(raw.get("rate_per_minute", 0)),
-                   max_attempts=max(1, int(raw.get("max_attempts", 3))),
                    max_mb=float(raw.get("max_mb", 15)),
                    poll_minutes=float(raw.get("poll_minutes", 10)),
                    msgstore=str(raw.get("msgstore", "")),
@@ -117,9 +115,8 @@ def _is_image(f: dict[str, Any]) -> bool:
     return Path(str(f.get("name") or "")).suffix.lower() in IMAGE_EXT
 
 
-def _caption_state(conn: sqlite3.Connection) -> dict[str, tuple[str, int]]:
-    return {r[0]: (r[1], r[2]) for r in conn.execute(
-        "SELECT sha256, state, attempts FROM media_captions")}
+def _caption_state(conn: sqlite3.Connection) -> dict[str, str]:
+    return {r[0]: r[1] for r in conn.execute("SELECT sha256, state FROM media_captions")}
 
 
 def image_files(conn: sqlite3.Connection, types: tuple[str, ...]) -> dict[str, Job]:
@@ -148,16 +145,14 @@ def image_files(conn: sqlite3.Connection, types: tuple[str, ...]) -> dict[str, J
 
 def pick(conn: sqlite3.Connection, s: Settings, limit: int,
          exclude: set[str] | None = None) -> list[Job]:
-    """Up to `limit` image files without a caption, newest first. Failed ones come
-    back until they failed `max_attempts` times."""
+    """Up to `limit` image files without a caption, newest first. Each is tried once."""
     state = _caption_state(conn)
     exclude = exclude or set()
     out = []
     for sha, job in image_files(conn, s.types).items():
         if sha in exclude:
             continue
-        st = state.get(sha)
-        if st is not None and (st[0] in ("done", "skipped") or st[1] >= s.max_attempts):
+        if sha in state:
             continue
         out.append(job)
         if len(out) >= limit:
@@ -173,11 +168,9 @@ def stats(kb, s: Settings) -> dict[str, Any]:
         on_disk = sum(1 for sha in files if (d / sha).is_file())
         counts = {"done": 0, "failed": 0, "skipped": 0}
         for sha in files:
-            st = state.get(sha)
-            if st is not None and st[0] in counts:
-                counts[st[0]] += 1
-        waiting = sum(1 for sha in files if sha not in state
-                      or (state[sha][0] == "failed" and state[sha][1] < s.max_attempts))
+            if state.get(sha) in counts:
+                counts[state[sha]] += 1
+        waiting = sum(1 for sha in files if sha not in state)
         media = {r[0]: r[1] for r in conn.execute(
             "SELECT json_extract(media, '$.type'), COUNT(*) FROM messages "
             "WHERE kind = 'media' GROUP BY 1")}
@@ -213,13 +206,13 @@ def store(conn: sqlite3.Connection, job: Job, *, state: str, caption: str | None
     and for the passages, so both pick the text up."""
     conn.execute(
         """INSERT INTO media_captions (sha256, state, caption, visible_text, model, endpoint,
-                                       prompt_ver, attempts, error, ms, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                                       prompt_ver, error, ms, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (sha256) DO UPDATE SET
              state = excluded.state, caption = excluded.caption,
              visible_text = excluded.visible_text, model = excluded.model,
              endpoint = excluded.endpoint, prompt_ver = excluded.prompt_ver,
-             attempts = media_captions.attempts + 1, error = excluded.error,
+             error = excluded.error,
              ms = excluded.ms, created_at = excluded.created_at""",
         (job.sha256, state, caption, visible_text, model, endpoint, PROMPT_VER, error, ms,
          now_ms()))
@@ -337,7 +330,7 @@ class Engine:
         except NoModel as e:
             raise Waiting(e.sentence) from None
         except BackendError as e:
-            raise CaptionError(str(e)[:300]) from None
+            raise CaptionError(str(e)) from None
         answered = qb.answered
         model = answered.model
         if done is not None and done.reason == "length":
@@ -416,7 +409,7 @@ def run(kb, s: Settings, engine: Engine, ctx: ImportContext, *,
             ctx.progress(res["done"] + res["failed"] + res["skipped"], total_hint, "images")
             raise Unreachable(f"Photo descriptions wait for a model. {e}") from None
         except CaptionError as e:
-            write(job, state="failed", error=str(e)[:300])
+            write(job, state="failed", error=str(e))
             res["failed"] += 1
         except Exception as e:                 # noqa: BLE001 - one image never stops the rest
             log.warning("caption failed", exc_info=True,
