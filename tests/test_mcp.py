@@ -136,7 +136,8 @@ async def test_an_image_in_a_result_is_kept_as_an_attachment_of_the_call(store):
 
 async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monkeypatch):
     """A blob or text resource is saved for the call (its row shows it) and named to the
-    model; one over max_attachment_bytes is named as not kept."""
+    model, its media type from its name when the server says only octet-stream; one over
+    max_attachment_bytes is named as not kept."""
     import base64
     from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource,
                            TextResourceContents)
@@ -153,6 +154,9 @@ async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monke
                     blob=base64.b64encode(b"PK\x03\x04zip").decode())),
                 EmbeddedResource(type="resource", resource=TextResourceContents(
                     uri="file:///tmp/a.txt", text="hello")),
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///tmp/report.pdf", mimeType="application/octet-stream",
+                    blob=base64.b64encode(b"%PDF-1.7").decode())),
                 EmbeddedResource(type="resource", resource=BlobResourceContents(
                     uri="file:///big.bin", blob=base64.b64encode(b"x" * 64).decode()))])
 
@@ -175,21 +179,39 @@ async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monke
     rows = await store.read(lambda c: [tuple(r) for r in c.execute(
         "SELECT a.filename, b.media_type FROM attachments a JOIN blobs b USING (sha256) "
         "WHERE a.tool_call_id='x' ORDER BY a.rowid")])
-    assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain")]
+    assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain"),
+                    ("report.pdf", "application/pdf")]
 
 
-async def test_a_server_that_does_not_answer_fails_with_the_plain_sentence(store):
+async def test_a_url_server_stays_down_with_its_reason_and_comes_back_by_itself(store):
     reg = Registry()
-    cfg = _cfg("dead", transport="http", command=None, args=[], url="http://127.0.0.1:9/mcp",
+    cfg = _cfg("away", transport="http", command=None, args=[], url="http://127.0.0.1:9/mcp",
                startup_timeout_seconds=1, max_restarts=0)
     sup = Supervisor(cfg, store, reg, ping_seconds=0.5)
+    connect = sup._connect
     async with anyio.create_task_group() as tg:
         await sup.start(tg)
-        skill = sup.skills["dead"]
-        await until(lambda: skill.status == "dead")
+        skill = sup.skills["away"]
+        await until(lambda: skill.restarts >= 2)
+        assert skill.status == "down", "past max_restarts a url server is not dead"
+        assert skill.error == ("The away server did not answer at 127.0.0.1:9. Start it, or "
+                               "fix the address.")
+        here = _cfg().mcp["echo"]                   # its host answers again
+        sup._connect = lambda _cfg: connect(here)
+        skill.kick.set()
+        await until(lambda: skill.status == "up")
+        assert skill.error is None and "away__echo" in reg.tools
         tg.cancel_scope.cancel()
-    assert skill.error == ("The dead server did not answer at 127.0.0.1:9. Start it, or fix "
-                           "the address.")
+
+
+async def test_a_server_the_app_starts_is_dead_past_max_restarts(store):
+    reg = Registry()
+    sup = Supervisor(_cfg("gone", command="/nonexistent/server", max_restarts=0), store, reg,
+                     ping_seconds=0.5)
+    async with anyio.create_task_group() as tg:
+        await sup.start(tg)
+        await until(lambda: sup.skills["gone"].status == "dead")
+        tg.cancel_scope.cancel()
 
 
 def test_an_mcp_argument_named_like_a_python_keyword_keeps_its_name():

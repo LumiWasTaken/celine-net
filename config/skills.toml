@@ -51,6 +51,11 @@ enabled = true
 # Self (skills/me.py): it reads its persona, talk and slop list, and changes its talk
 # and slop list; every change is in its History (Settings, the agent's page) and in Events.
 
+[settings]
+enabled = true
+# Settings (skills/settings.py): it reads every setting you see in Settings, and proposes
+# a change; each one waits for your Approve and is saved as Settings saves it.
+
 [appearance]
 enabled = true
 # The agent's portrait, set by it from one of its images or a document image

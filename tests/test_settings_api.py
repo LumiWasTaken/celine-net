@@ -46,6 +46,11 @@ async def test_providers_round_trip_idempotent_versioned_and_config_untouched(ap
                       if p.is_file()}, "config/ is never written"
 
 
+async def test_a_key_for_no_provider_is_404_before_its_body_is_read(api):
+    r = await api.put("/api/secrets/nope", content=b"{not json")
+    assert r.status_code == 404
+
+
 async def test_bad_writes_are_refused_with_a_field_and_change_nothing(api):
     before = (api.var / "settings" / "providers.toml").read_bytes()
     r = await api.put("/api/providers/new", json={

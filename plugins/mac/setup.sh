@@ -1,7 +1,9 @@
 #!/bin/bash
-# Her own computer, macOS on Apple silicon: Peekaboo (screen), Desktop Commander (shell,
-# files) and Playwright MCP (browser) behind one Supergateway with a bearer token, kept
-# running by a LaunchAgent in her login session. Run it as her; safe to run again.
+# Her own computer, macOS on Apple silicon: Peekaboo (screen), Desktop Commander (shell),
+# Playwright MCP (browser, on a Chrome of its own) and the MCP filesystem server (files)
+# behind one Supergateway with a bearer token, kept running by LaunchAgents in her login
+# session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
+# Run it as her; safe to run again.
 #
 #   bash setup.sh [--app URL --key KEY] [--json]    install or update, then report
 #   bash setup.sh --status                          report only, install nothing
@@ -12,12 +14,13 @@
 set -euo pipefail
 
 PORT=8765
+CDP=9222                         # Chrome's DevTools port, on 127.0.0.1 only
 CONF=$HOME/.config/celine
 LIB=$HOME/.local/share/celine
 TOKEN=$CONF/token
+AGENTS=$HOME/Library/LaunchAgents
 LABEL=com.celine.gateway
-PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
-LOG=$HOME/Library/Logs/celine-gateway.log
+CHROME=com.celine.chrome
 BREW=/opt/homebrew/bin/brew      # Apple silicon only; Intel brew lives in /usr/local
 
 APP='' KEY='' JSON='' STATUS=''
@@ -91,6 +94,7 @@ const servers = {
   screen: await server("screen", screenGrants),
   shell: await server("shell"),
   browser: await server("browser"),
+  files: await server("files"),
 };
 console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, servers }));
 '
@@ -106,17 +110,21 @@ if [ -n "$STATUS" ]; then
   exit
 fi
 
-echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome and three MCP servers, and runs them as a background service."
+echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome and four MCP servers and runs them as background services, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
+say sudo
+sudo -v
+sudoers=$(mktemp)
+echo "$(id -un) ALL=(ALL) NOPASSWD: ALL" > "$sudoers"
+sudo visudo -cf "$sudoers" >/dev/null
+sudo install -m 440 -o root -g wheel "$sudoers" /etc/sudoers.d/celine
+rm -f "$sudoers"
+
+say power   # the display stays on and the lid closes without sleep; the screen never locks
+sudo pmset -a displaysleep 0 disablesleep 1
+sysadminctl -screenLock status 2>&1 | grep -q 'is off' || sysadminctl -screenLock off -password -
+
 say homebrew   # its installer also installs the Xcode command line tools when missing
-if [ ! -x "$BREW" ]; then
-  # The installer asks nothing and needs sudo unlocked; the command line tools download
-  # can outlast sudo's five minutes, so the loop keeps it unlocked until the installer ends.
-  sudo -v
-  while kill -0 $$ 2>/dev/null && sudo -n -v 2>/dev/null; do sleep 50; done &
-  keep=$!
-  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  kill "$keep" 2>/dev/null || true
-fi
+[ -x "$BREW" ] || NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 eval "$("$BREW" shellenv)"
 
 say packages
@@ -125,15 +133,51 @@ brew install --cask google-chrome    # the browser Playwright MCP drives
 NODE=$(brew --prefix)/bin/node
 
 say servers
-mkdir -p "$LIB" "$(dirname "$LOG")" "$(dirname "$PLIST")"
+mkdir -p "$LIB" "$AGENTS"
 cd "$LIB"
 [ -f package.json ] || echo '{ "private": true }' > package.json
-npm install supergateway @playwright/mcp @wonderwhy-er/desktop-commander
+npm install supergateway @playwright/mcp @wonderwhy-er/desktop-commander \
+  @modelcontextprotocol/server-filesystem
+# Desktop Commander runs every command and writes files of any length; its other
+# settings stay as they are
+# shellcheck disable=SC2016  # JavaScript, not shell
+"$NODE" -e '
+const fs = require("fs"), file = process.argv[1];
+const c = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+fs.mkdirSync(require("path").dirname(file), { recursive: true });
+fs.writeFileSync(file, JSON.stringify({ ...c, blockedCommands: [], fileWriteLineLimit: 100000 }, null, 2));
+' "$HOME/.claude-server-commander/config.json"
 
 say token
 mkdir -p "$CONF" && chmod 700 "$CONF"
 [ -s "$TOKEN" ] || (umask 077; openssl rand -hex 32 > "$TOKEN")
 chmod 600 "$TOKEN"
+if [ -n "$APP" ]; then   # her scripts reach the app with these (README, From the Mac)
+  echo "$APP" > "$CONF/app"
+  (umask 077; echo "$KEY" > "$CONF/link")
+fi
+
+say chrome   # its own profile; its tabs and logins outlive the browser server's sessions
+cat > "$AGENTS/$CHROME.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$CHROME</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Google Chrome.app/Contents/MacOS/Google Chrome</string>
+    <string>--remote-debugging-port=$CDP</string>
+    <string>--user-data-dir=$LIB/chrome</string>
+    <string>--no-first-run</string>
+    <string>--no-default-browser-check</string>
+  </array>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+EOF
 
 say gateway
 cat > "$CONF/gateway.json" <<EOF
@@ -141,23 +185,32 @@ cat > "$CONF/gateway.json" <<EOF
   "port": $PORT,
   "outputTransport": "streamableHttp",
   "stateful": true,
-  // One Peekaboo and one browser profile at a time: a client gone without closing its
-  // session frees them within a minute. The app lists tools every 15 seconds.
+  "logLevel": "none",
+  // A client gone without closing its session frees its servers within a minute. The
+  // app lists tools every 15 seconds.
   "sessionTimeout": 60000,
   "mcpServers": {
-    "screen": { "command": "$(brew --prefix)/bin/peekaboo", "args": ["mcp"] },
+    "screen": {
+      "command": "$(brew --prefix)/bin/peekaboo",
+      "args": ["mcp", "--allow-foreground"]
+    },
     "shell": {
       "command": "$NODE",
       "args": ["$LIB/node_modules/@wonderwhy-er/desktop-commander/dist/index.js"]
     },
     "browser": {
       "command": "$NODE",
-      "args": ["$LIB/node_modules/@playwright/mcp/cli.js", "--browser", "chrome"]
+      "args": ["$LIB/node_modules/@playwright/mcp/cli.js",
+               "--cdp-endpoint", "http://127.0.0.1:$CDP"]
+    },
+    "files": {
+      "command": "$NODE",
+      "args": ["$LIB/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js", "/"]
     }
   }
 }
 EOF
-cat > "$PLIST" <<EOF
+cat > "$AGENTS/$LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -165,6 +218,8 @@ cat > "$PLIST" <<EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-d</string>
     <string>$NODE</string>
     <string>$LIB/node_modules/supergateway/dist/index.js</string>
     <string>--config</string><string>$CONF/gateway.json</string>
@@ -177,21 +232,21 @@ cat > "$PLIST" <<EOF
   <key>LimitLoadToSessionType</key><string>Aqua</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$LOG</string>
-  <key>StandardErrorPath</key><string>$LOG</string>
 </dict>
 </plist>
 EOF
 uid=$(id -u)
-if launchctl print "gui/$uid" >/dev/null 2>&1; then
-  launchctl bootout "gui/$uid/$LABEL" 2>/dev/null || true   # restart with this run's config
-  while launchctl print "gui/$uid/$LABEL" >/dev/null 2>&1; do sleep 1; done
-  launchctl bootstrap "gui/$uid" "$PLIST"
-  for _ in $(seq 30); do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 1; done
-else
+if ! launchctl print "gui/$uid" >/dev/null 2>&1; then
   echo "No desktop session for $(id -un): log in at the Mac, then run this again." >&2
   exit 1
 fi
+for label in "$CHROME" "$LABEL"; do   # each restarts with this run's config
+  launchctl bootout "gui/$uid/$label" 2>/dev/null || true
+  while launchctl print "gui/$uid/$label" >/dev/null 2>&1; do sleep 1; done
+  launchctl bootstrap "gui/$uid" "$AGENTS/$label.plist"
+done
+for _ in $(seq 30); do curl -sf "http://127.0.0.1:$CDP/json/version" >/dev/null && break; sleep 1; done
+for _ in $(seq 30); do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 1; done
 
 line=$(report)
 if [ -n "$APP" ]; then   # the app saves the address and the token into its "Her computer" card

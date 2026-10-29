@@ -1,4 +1,4 @@
-# Her own computer, a Mac: the three servers setup.sh runs behind its gateway, filled from
+# Her own computer, a Mac: the four servers setup.sh runs behind its gateway, filled from
 # the form (settings.toml): ${URL} is the Address, ${TOKEN} the Token.
 id = "mac"
 label = "Her Mac"
@@ -9,7 +9,7 @@ group = "computer"
 choice = "Own computer"
 routes = ["gateway:router"]
 run = "gateway:run"
-open = ["GET /setup.sh", "POST /gateway"]   # the Mac reaches these without a session
+open = ["GET /setup.sh", "POST /gateway", "POST /events"]   # the Mac reaches these without a session
 
 [servers.macscreen]               # Peekaboo: see, click, type, menus, windows
 enabled   = true
@@ -29,11 +29,20 @@ sends     = "house"
 [servers.macshell.headers]
 Authorization = "Bearer ${TOKEN}"
 
-[servers.macbrowser]              # Playwright MCP: a browser with its own profile
+[servers.macbrowser]              # Playwright MCP: Chrome with its own profile
 enabled   = true
 transport = "http"
 url       = "${URL}/browser/mcp"
 sends     = "public"
 
 [servers.macbrowser.headers]
+Authorization = "Bearer ${TOKEN}"
+
+[servers.macfiles]                # the MCP filesystem server: its files, any file into the chat
+enabled   = true
+transport = "http"
+url       = "${URL}/files/mcp"
+sends     = "house"
+
+[servers.macfiles.headers]
 Authorization = "Bearer ${TOKEN}"

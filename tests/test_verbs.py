@@ -26,7 +26,9 @@ VERBS = {"search", "read", "list", "get", "count", "look_up", "scroll", "write",
          # its shares (shares.py)
          "share", "unshare",
          # where it is (skills/me.py)
-         "whoami"}
+         "whoami",
+         # a change of settings that waits for the user (skills/settings.py)
+         "propose"}
 PAGING = {"part", "from", "count", "offset", "page", "from_line", "before", "after",
           "limit"}
 

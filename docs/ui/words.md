@@ -249,6 +249,7 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Bugs | the problems with the app it files for you | as in Events |
 | Portrait | its profile picture | as in "Use as portrait" |
 | Persona | its description of itself | as above |
+| Settings | it reads every setting and proposes changes you approve | the Settings place |
 | Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name, the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
 | Sub-agents | the helpers it gives instructions to | Claude Code "Sub-agents" |
 | Discord, WhatsApp | read live from your accounts | their own names |
@@ -294,7 +295,8 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Close tab, Close terminal | close one of its tabs or terminals | Chrome "Close tab", VS Code "Close terminal" |
 | Copy link, Copy message link, Copy prompt | copy one of these | Slack "Copy link", Discord "Copy Message Link" |
 | Custom range | a date range you pick | Google Analytics, Gmail |
-| Approve, Deny | say yes or no to a request (the Vault, a gate, Bastet's banner of an ask) | macOS, Android permissions |
+| Approve, Deny | say yes or no to a request (the Vault, a gate, Bastet's banner of an ask, a change of Settings) | macOS, Android permissions |
+| Settings, Change {target}., Default, Empty, On, Off, Saved, Not set, New value, Removed | her request to change Settings in the chat: the kind's name, its line, then each field's before and after (a secret by its state only) | macOS "Change Settings"; Bitwarden "Saved" |
 | Edit prompt | change a picture's prompt | Midjourney, Leonardo |
 | Freeze, Unfreeze, Frozen | stop everything she does until you let her go on (the guard, or you by hand); Frozen in the rail and Unfreeze on Bastet's banner | Revolut, Monzo "Freeze card" |
 | Go to the original message | jump to the message a reply or result came from | Slack, Discord "Jump to message" |

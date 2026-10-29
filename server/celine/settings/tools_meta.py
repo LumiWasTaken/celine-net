@@ -63,6 +63,9 @@ SKILLS: dict[str, dict[str, str]] = {
     "me": {"label": "Persona", "summary": "{{Her}} persona, Example lines and Banned words: "
                                           "{{name}} reads all three and changes the Example "
                                           "lines and Banned words."},
+    "settings": {"label": "Settings", "summary": "Reads every setting in Settings and "
+                                                 "proposes changes; each waits for your "
+                                                 "Approve."},
     "mind": {"label": "Mood and thoughts", "summary": "{{Her}} mood and {{her}} own "
                                          "thoughts."},
     "sub_agents": {"label": "Sub-agents",
@@ -272,6 +275,12 @@ TOOLS: dict[str, dict[str, str]] = {
     "me__edit": {"label": "Persona: edit",
                  "summary": "Changes {{her}} Example lines or Banned words, kept in their "
                             "History."},
+    "settings__read": {"label": "Settings: read",
+                       "summary": "Reads the settings of Settings; a secret only as set "
+                                  "or not set."},
+    "settings__propose": {"label": "Settings: propose",
+                          "summary": "Proposes a change of settings; it is saved once you "
+                                     "approve it."},
     "me__whoami": {"label": "Persona: whoami",
                    "summary": "Says which model answers {{her}} turn and why, how full "
                               "{{her}} context is, where {{she}} works, which devices "

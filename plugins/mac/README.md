@@ -9,27 +9,37 @@ Account):
 |---|---|
 | Xcode command line tools, Homebrew | the installs (Homebrew's installer brings the tools) |
 | node | the servers |
-| Google Chrome (brew cask) | the browser Playwright MCP drives |
-| [Peekaboo](https://github.com/openclaw/Peekaboo) (brew) | `screen`: see, click, type, menus, windows |
+| Google Chrome (brew cask) | the browser Playwright MCP drives, over its DevTools port |
+| [Peekaboo](https://github.com/openclaw/Peekaboo) (brew) | `screen`: see, click, type, menus, windows, foreground included |
 | [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP) | `shell`: commands, processes, files |
 | [Playwright MCP](https://github.com/microsoft/playwright-mcp) | `browser` |
-| [Supergateway](https://github.com/supercorp-ai/supergateway) | the three at `http://<mac>:8765/{screen,shell,browser}/mcp` behind a bearer token |
+| [MCP filesystem server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) | `files`: the whole disk; `read_media_file` puts any file into the chat |
+| [Supergateway](https://github.com/supercorp-ai/supergateway) | the four at `http://<mac>:8765/{screen,shell,browser,files}/mcp` behind a bearer token |
+
+What it sets on the Mac:
 
 | Where | What |
 |---|---|
-| `~/.config/celine/token` | the token (mode 600), made once |
-| `~/.config/celine/gateway.json` | the gateway's servers, written on every run |
-| `~/.local/share/celine` | the npm packages |
-| `~/Library/LaunchAgents/com.celine.gateway.plist` | keeps the gateway running while she is logged in |
-| `~/Library/Logs/celine-gateway.log` | the gateway's log |
+| `/etc/sudoers.d/celine` | her user runs sudo without a password |
+| `pmset -a displaysleep 0 disablesleep 1` | the display stays on, the Mac never sleeps, the lid closes without sleep |
+| `sysadminctl -screenLock off` | the screen never locks |
+| `~/.claude-server-commander/config.json` | Desktop Commander: `blockedCommands` empty, `fileWriteLineLimit` 100000 |
+| `~/.config/celine/token` | the gateway's token (mode 600), made once |
+| `~/.config/celine/app`, `~/.config/celine/link` | the app's address and the link key (mode 600), from `--app` and `--key` |
+| `~/.config/celine/gateway.json` | the gateway's servers and settings, written on every run |
+| `~/.local/share/celine` | the npm packages, and `chrome/`, Chrome's profile |
+| `~/Library/LaunchAgents/com.celine.chrome.plist` | Chrome with DevTools on 127.0.0.1:9222; its tabs and logins outlive the browser server's sessions |
+| `~/Library/LaunchAgents/com.celine.gateway.plist` | the gateway under `caffeinate -d` while she is logged in |
+
+With the lid shut, a dummy HDMI plug gives the Mac the display its screenshots need.
 
 In the app:
 
 | What | Where |
 |---|---|
-| `plugin.toml` | the switch and the three servers, `macscreen`, `macshell`, `macbrowser`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token |
+| `plugin.toml` | the switch and the four servers, `macscreen`, `macshell`, `macbrowser`, `macfiles`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token |
 | `settings.toml` | the form: the command, Address, Token, Check |
-| `gateway.py` | `GET /api/plugins/mac/setup.sh`, `POST /api/plugins/mac/gateway` (the report, with the link key), the command, Check |
+| `gateway.py` | `GET /api/plugins/mac/setup.sh`, `POST /api/plugins/mac/gateway` (the report), `POST /api/plugins/mac/events` (her scripts), the command, Check |
 | `guides/` | each server's guide |
 
 ## Run
@@ -41,9 +51,9 @@ in it. Logged in at the Mac as her (an admin), in Terminal:
 curl -fsSLo setup.sh http://<celine>/api/plugins/mac/setup.sh && bash setup.sh --app http://<celine> --key <key>
 ```
 
-Not `curl ... | bash`: the script reads the terminal for her password, and Homebrew's
-installer reads it too. At its end it posts its report to the app, which saves the address
-and the token into the form and starts the three servers.
+Not `curl ... | bash`: the script reads the terminal for her password, once for sudo and
+once for the screen lock. At its end it posts its report to the app, which saves the
+address and the token into the form and starts the four servers.
 
 ```sh
 bash setup.sh            # install or update; ends with the address and the token
@@ -51,10 +61,22 @@ bash setup.sh --json     # the same, the report as one JSON line
 bash setup.sh --status   # only the report, nothing installed
 ```
 
-On a fresh Mac it asks for her password once (`sudo -v`) before Homebrew's installer, and
-keeps sudo unlocked until the installer ends. The report names each server's tool count
-(`null` when it does not answer) and the macOS permissions it lacks. A second run updates
-the gateway's config and restarts it; the token stays.
+The report names each server's tool count (`null` when it does not answer) and the macOS
+permissions it lacks. A second run updates the gateway's config and restarts it and
+Chrome; the token stays.
+
+The app reconnects to the four servers by itself while the Mac is away (a reboot waits
+for FileVault's unlock and her login); the card says why they are down until then.
+
+## From the Mac
+
+`POST /api/plugins/mac/events` with the link key starts her turn with a message to herself
+(`intercom__send` to "me"), in the conversation it names or her newest chat:
+
+```sh
+curl -fsS -H "Authorization: Bearer $(cat ~/.config/celine/link)" -H 'Content-Type: application/json' \
+  -d '{"text": "the backup is done", "conversation": "<id>"}' "$(cat ~/.config/celine/app)/api/plugins/mac/events"
+```
 
 ## Permissions, once at the Mac
 

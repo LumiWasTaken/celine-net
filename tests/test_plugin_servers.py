@@ -2,7 +2,7 @@
 form, an empty value keeps that server down with the reason; on, its server's tools are
 there with its plugin's guide; a form save starts it again with the new values; off, its
 tools go. The mac plugin: the setup script and the report the Mac posts back (with the
-link key), the command on its form, and Check's lines."""
+link key), her scripts' messages to her, the command on its form, and Check's lines."""
 from __future__ import annotations
 
 import functools
@@ -144,12 +144,56 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert view["secrets"]["token"]["state"] == "set"
         assert form.read_secret(cfg, "mac", "token") == "mac-token-1"
         assert "mac-token-1" not in str(view)
-        await until(lambda: set(services.mcp.skills) == {"macscreen", "macshell", "macbrowser"})
+        await until(lambda: set(services.mcp.skills) == {"macscreen", "macshell", "macbrowser",
+                                                         "macfiles"})
         assert services.mcp.skills["macshell"].cfg.url == "http://127.0.0.1:9/shell/mcp"
         assert services.mcp.skills["macshell"].cfg.headers == {
             "Authorization": "Bearer mac-token-1"}
         assert services.mcp.skills["macshell"].guide.description.startswith(
             "A shell on your own Mac")
+        tg.cancel_scope.cancel()
+
+
+async def test_her_script_on_the_mac_starts_her_turn_with_a_message_to_herself(
+        tmp_path, monkeypatch, store):
+    from celine.conversations import store as conversations
+    from celine.intercom import Intercom
+    scratch(tmp_path, monkeypatch)
+    cfg = boot.load()
+    app, services, routes = _app(cfg, store)
+    services.intercom = Intercom(store)
+    p = plugins.get("mac")
+    older, newest = await conversations.create(store), await conversations.create(store)
+    await store.write(lambda c: c.execute(
+        "UPDATE conversations SET updated_at='2099-01-01T00:00:00Z' WHERE id=?", (newest,)))
+    async with anyio.create_task_group() as tg, client(app) as c:
+        runners = services.runners = Runners()
+        runners["mac"] = Runner(tg, functools.partial(plugins_api.run, services, routes, p))
+        await c.put("/api/features", json={"features": {"mac": True}})
+        await until(lambda: p.data is not None)
+        assert plugins.is_open("POST", "/api/plugins/mac/events")
+        key = form.read_secret(cfg, "mac", "link")
+        auth = {"Authorization": f"Bearer {key}"}
+
+        wrong = await c.post("/api/plugins/mac/events", json={"text": "hi"},
+                             headers={"Authorization": "Bearer nope"})
+        assert wrong.status_code == 404
+        out = (await c.post("/api/plugins/mac/events", json={"text": "the build is done"},
+                            headers=auth)).json()
+        assert out["conversation"] == newest and out["turn_id"], "her newest chat, her turn"
+        named = (await c.post("/api/plugins/mac/events",
+                              json={"text": "backup done", "conversation": older},
+                              headers=auth)).json()
+        assert named["conversation"] == older and named["turn_id"]
+        rows = await store.read(lambda c: [tuple(r) for r in c.execute(
+            "SELECT from_addr, to_addr, text FROM intercom ORDER BY id")])
+        assert rows == [(f"agent:{newest}", f"agent:{newest}", "the build is done"),
+                        (f"agent:{older}", f"agent:{older}", "backup done")]
+        gone = await c.post("/api/plugins/mac/events",
+                            json={"text": "x", "conversation": "nope"}, headers=auth)
+        assert gone.status_code == 404
+        empty = await c.post("/api/plugins/mac/events", json={"text": " "}, headers=auth)
+        assert empty.status_code == 400
         tg.cancel_scope.cancel()
 
 
@@ -194,6 +238,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
         {"text": "Shell: The macshell server did not answer at mac:8765. Start it, or fix "
                  "the address.", "tone": "error"},
         {"text": "Browser: starting", "tone": "error"},
+        {"text": "Files: starting", "tone": "error"},
         {"text": "Accessibility (Required): Not Granted. Grant via: System Settings > "
                  "Privacy & Security > Accessibility", "tone": "error"},
         {"text": "Event Synthesizing (Action-specific): Not Granted", "tone": "warn"},

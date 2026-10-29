@@ -179,6 +179,7 @@ VERB = {
     "email__list_folders": "Listed the mail folders",
     "appearance__set_portrait": "Set a new portrait", "me__read": "Read the persona",
     "me__edit": "Changed the Example lines", "me__whoami": "Checked where it is",
+    "settings__read": "Read the settings", "settings__propose": "Changed the settings",
     "image_generator__generate": "Made an image", "image_generator__read": "Looked at an image",
     "image_generator__stop": "Stopped the images",
     "music_generator__generate": "Made music", "music_generator__read": "Listened to a track",
