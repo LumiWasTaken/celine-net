@@ -893,9 +893,17 @@ sub-agent, a conversation of kind `agent` on the tasks role, with `agent_of`,
 done sends the brief to it instead. At most `sub_agents.max_running` of a parent's sub-agents work at
 once; the rest are queued, and `release` starts them oldest brief first. With `cli`
 (`agent_cli`) its turns run on `sub_agents/cli.py`'s backend in its shellbox instead of a
-model, calling its models through the model proxy (`api/llm_proxy.py`). A sub-agent is
-done when its conversation is quiet (`report.quiet`); `sub_agents/report.py` then sends
-one intercom `report` to `agent:<parent>` and what it opened closes (`leftovers.py`).
+model, calling its models through the model proxy (`api/llm_proxy.py`). A sub-agent
+starts its own, down to `MAX_DEPTH` (3) levels below the top conversation
+(`conversations.store.depth` reads the `agent_of` chain); the deepest is not offered
+the skill. A `model` of a cloud provider kind (`her_models.cloud`: the kind has a
+`default_url`) waits for the user's approval (kind `model`) at every start. A sub-agent is
+done when its conversation is quiet and so are its own sub-agents (`report.quiet`);
+`sub_agents/report.py` then sends one intercom `report` to `agent:<parent>`, never
+further up: a head (name, state, models, tokens, seconds, notes changed) and its final
+answer cut to `REPORT_SHARE` of the parent's window. What it opened closes
+(`leftovers.py`). A sub-agent writes only to itself, its parent, its own sub-agents, the
+user and Bastet (`addresses._reach`).
 `read(name, wait)` looks at one, `stop(name)` stops its turn, jobs and scheduled
 messages. Read access gives it only read-only tools and the intercom (`prompt.tool_specs`,
 `turns/tools.py`). `GET /api/sub-agents` rows and `agent.state` events carry `access`.
@@ -1422,7 +1430,7 @@ delivered, read or cancelled, the `message_id` and `turn_id` it landed as) and
 `intercom_tokens`. Kinds: `message`, `brief`, `job`, `report`, `trigger`, `notice`.
 
 **Addresses** (`addresses.py`): stored `user`, `agent:<conversation id>`, `team:<conversation
-id>` (that conversation and its sub-agents), `all` (every conversation with a live turn or
+id>` (that conversation and its sub-agents; the word `team` is the sender's own), `all` (every conversation with a live turn or
 a running job, and every active mission), `system:guard` (Bastet) and `system:<name>` (a
 sender only: `system:app`, `system:<skill>`, a named token). The agent's words `me`, `parent`,
 `team`, `all`, `user`, `bastet`, a name, an id, `run:<id>` or `routine:<name>` are resolved
@@ -1612,6 +1620,7 @@ is in docs/DEPLOY.md.
 | `POST /missions` | `{name?, brief, report_to?, time_limit?, check_in?}` (`check_in`: `30 min` or `2 h`, the check-ins' cadence) (any other key is a 400; `missions/api.py`) |
 | `GET /missions?status=` | every mission, newest first, with its conversation's title (`missions/store.list`), and `counts` per state, archived and trashed (`missions/store.counts`) |
 | `GET /sub-agents?conversation=` | every sub-agent (of one conversation, or all), newest first: `id, parent, name, access, folder, model, cli, working` (not `report.quiet`), `step` (the tool at work), `report` (the latest) |
+| `GET /conversations/{cid}/sub-agents` | the tree under the conversation's top: `{top, agents}`, each agent `id, parent, depth, name, state, model, prompt_tokens, completion_tokens, seconds, link`, parents before their own |
 | `POST /conversations/{cid}/sub-agents` | `{brief, name, access?, folder?, model?, cli?}` (any other key is a 400): a sub-agent of the conversation, exactly as `sub_agents__start` makes one (`skill.begin`); `{conversation_id}` |
 | `POST /sub-agents/{id}/stop` | its turn, its jobs and what it scheduled, as `sub_agents__stop` (`skill.stop_agent`); `{stopped}` |
 | `PATCH /missions/{cid}` | `{name?, brief?, report_to?, time_limit?, check_in?, steps?}`, the given fields only (any other key is a 400); the time limit's notice cancelled and scheduled again or removed |

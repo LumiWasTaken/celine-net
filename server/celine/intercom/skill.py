@@ -1,7 +1,7 @@
 """The agent's intercom tools: write to {{username}}, itself, its parent, its team, everyone
 working, or a conversation, now or later; read its threads; cancel what it scheduled.
 A message to itself with a time is a reminder. The agent's instructions list what waits for
-it, the announcements standing now, what it scheduled, and its team."""
+it, the announcements standing now, what it scheduled, and its sub-agents."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -13,7 +13,7 @@ from ..core.ids import clock, iso, parse_when, when
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
 from . import store as rows
-from .addresses import GUARD, GUARD_NAMES, Refused, members
+from .addresses import GUARD, GUARD_NAMES, Refused
 from .render import header, who
 
 TEXT_MAX = 60       # characters of a scheduled message's text in its instructions
@@ -51,7 +51,7 @@ class IntercomSkill:
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
         """Each only when there is any: the announcements standing now, what it
-        scheduled from here, and its team. (What
+        scheduled from here, and its own sub-agents. (What
         waits for it is in the request itself already: the runner takes it at every
         step.)"""
         if ctx.store is None:
@@ -89,7 +89,7 @@ class IntercomSkill:
                      for t in team[:LISTED]]
             if len(team) > LISTED:
                 shown.append(f"and {len(team) - LISTED} more")
-            parts.append("Your team: " + ", ".join(shown) + ".")
+            parts.append("Your sub-agents: " + ", ".join(shown) + ".")
         return "\n".join(parts) or None
 
     def _here_line(self, here: dict) -> str:
@@ -360,21 +360,12 @@ def _here(c, cid: str, turn: str | None) -> dict | None:
 
 
 def _team_of(c, cid: str) -> list[dict]:
-    """The other sub-agents of this conversation's team (its own, or its siblings), newest
-    first, and whether each is working (not quiet: sub_agents/report.py, the one
-    definition)."""
-    r = c.execute("SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone()
-    if r is None:
-        return []
-    root = r["agent_of"] or cid
-    out = []
-    for sub in reversed(members(c, root)[1:]):
-        if sub == cid:
-            continue
-        from ..sub_agents.report import quiet
-        row = c.execute("SELECT agent_name FROM conversations WHERE id=?", (sub,)).fetchone()
-        out.append({"name": row["agent_name"], "working": not quiet(c, sub)})
-    return out
+    """This conversation's own sub-agents, newest first, and whether each is working
+    (not quiet: sub_agents/report.py, the one definition)."""
+    from ..sub_agents.report import quiet
+    return [{"name": r["agent_name"], "working": not quiet(c, r["id"])} for r in c.execute(
+        "SELECT id, agent_name FROM conversations WHERE agent_of=? "
+        "ORDER BY created_at DESC", (cid,)).fetchall()]
 
 
 def _sources(c, cid: str) -> set[str]:

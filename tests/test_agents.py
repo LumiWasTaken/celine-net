@@ -150,8 +150,11 @@ async def test_start_returns_at_once_and_the_report_comes_later(store, cfg):
     assert start["display"]["link"] == f"/chat/{sub['id']}", "its Open goes where it lives"
     [landed] = [m for m in snap["messages"] if (m["intercom"] or {}).get("kind") == "report"]
     assert landed["created_at"] > tool_msg["created_at"], "the call did not wait for it"
-    assert landed["content"].startswith("car scout done: ")
-    assert landed["content"].endswith("\nfind the red cars"), "its brief, under its header"
+    top, answer = landed["content"].split("\n\n", 1)
+    assert top.startswith("[car scout, done") and top.endswith("; changed agents/cars/found.md]"), \
+        "its head: name, state, work, the notes it changed"
+    assert answer.startswith("car scout done: ")
+    assert answer.endswith("\nfind the red cars"), "its brief, under its header"
     assert (cfg.her.notebook / "agents/cars/found.md").read_text().endswith("\nred, red, red")
 
 
@@ -378,25 +381,64 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
     assert "cannot run here" in out.content, "it went on to start"
 
 
-async def test_a_message_from_a_sibling_gets_no_report_to_the_parent(store):
+async def test_a_long_report_is_cut_from_the_parents_window_and_its_fragment_says_so(
+        store, cfg):
+    from celine.conversations import tree
+    app = Services(store=store, intercom=Intercom(store))
+    parent = await conversations.create(store)
+    sub = await conversations.create(store, "scout", agent_of=parent, agent_name="scout")
+    await store.write(lambda c: c.execute(
+        "INSERT INTO turns(id, conversation_id, state, created_at) VALUES('pt', ?, 'done', "
+        "'2026-10-30T10:00:00.000+00:00')", (parent,)))
+    await store.write(lambda c: c.execute(
+        "INSERT INTO requests(message_id, step, turn_id, provider, model, body, window, "
+        "created_at) VALUES('pm', 0, 'pt', 'gpu/big', 'big', x'', 10000, "
+        "'2026-10-30T10:00:01.000+00:00')"))
+    assert await store.read(lambda c: report.cap(c, parent)) == 300, "3 % of its window"
+    await app.intercom.send(f"agent:{parent}", f"agent:{sub}", "read it all", kind="brief")
+    await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
+    await store.write(lambda c: tree.append(c, store, sub, None, "assistant",
+                                            "line of the answer\n" * 400, "model"))
+    await report.on_end(app, sub)
+    text = await store.read(lambda c: c.execute(
+        "SELECT text FROM intercom WHERE kind='report'").fetchone()[0])
+    assert text.startswith("[scout, done]\n\nline of the answer\n")
+    assert text.endswith("\n\n" + report.CUT) and len(text) < 2000
+    frag = await SubAgents(cfg).prompt_fragment(ToolContext(sub, "t", "x", store, cfg, None))
+    assert "Your report reaches " + cfg.substitute("{{name}}") + " cut at about 300 tokens" \
+        in frag and "Long material goes in files, and your report names them." in frag
+
+
+async def test_a_report_goes_to_the_one_that_started_it_once_its_own_are_done(store):
+    from celine.intercom.addresses import REACH, Refused
     app = Services(store=store, intercom=Intercom(store))
     parent = await conversations.create(store)
     scout, other = [await conversations.create(store, title=n, agent_of=parent,
                                                agent_name=n, access="read")
                     for n in ("scout", "other")]
+    kid = await conversations.create(store, "kid", agent_of=scout, agent_name="kid")
 
-    async def worked(frm, text, kind="message"):
-        """`frm` writes to scout, scout's turn ends, the end rule runs."""
-        await app.intercom.send(f"agent:{frm}", f"agent:{scout}", text, kind=kind)
+    async def ended(cid):
         await store.write(lambda c: c.execute(
-            "UPDATE turns SET state='done' WHERE conversation_id=?", (scout,)))
-        await report.on_end(app, scout)
-        return await store.read(lambda c: [r[0] for r in c.execute(
-            "SELECT reply_to FROM intercom WHERE kind='report' ORDER BY id")])
+            "UPDATE turns SET state='done' WHERE conversation_id=?", (cid,)))
+        await report.on_end(app, cid)
+        return await store.read(lambda c: [tuple(r) for r in c.execute(
+            "SELECT from_addr, to_addr FROM intercom WHERE kind='report' ORDER BY id")])
 
-    assert len(await worked(parent, "look", kind="brief")) == 1, "the brief's report"
-    assert len(await worked(other, "psst")) == 1, "a sibling's message: no report"
-    assert len(await worked(parent, "and now?")) == 2, "the parent's follow-up"
+    up = [(f"agent:{kid}", f"agent:{scout}"), (f"agent:{scout}", f"agent:{parent}")]
+    await app.intercom.send(f"agent:{parent}", f"agent:{scout}", "look", kind="brief")
+    await app.intercom.send(f"agent:{scout}", "kid", "look deeper", kind="brief")
+    assert await ended(scout) == [], "its own sub-agent works: it is not done"
+    assert await ended(kid) == up[:1], "the kid reports to scout, not to the top"
+    assert await ended(scout) == up, "woken by it, scout reports to its parent"
+    await app.intercom.send(f"agent:{kid}", "parent", "psst")
+    assert await ended(scout) == up, "a message from its own sub-agent: no report"
+    for frm, to in ((other, f"agent:{scout}"), (kid, f"agent:{parent}"), (kid, "all")):
+        with pytest.raises(Refused, match=REACH[:20]):
+            await app.intercom.send(f"agent:{frm}", to, "hi")
+    await app.intercom.send(f"agent:{kid}", "user", "hi")       # the user: always
+    await app.intercom.send(f"agent:{parent}", f"agent:{scout}", "and now?")
+    assert len(await ended(scout)) == 3, "the parent's follow-up"
 
 
 async def test_a_sub_agent_is_addressed_by_its_exact_name(store):

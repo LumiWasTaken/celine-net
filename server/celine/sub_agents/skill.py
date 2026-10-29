@@ -370,13 +370,15 @@ class SubAgents:
             await conv.apply(store, sub, clean)
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        """Only in a sub-agent's own conversation: who it is, what it is for, and that
-        its last message is its report."""
+        """Only in a sub-agent's own conversation: who it is, who started it, what it is
+        for, that its last message is its report and how much of it goes up."""
         row = await ctx.store.read(lambda c: c.execute(
-            "SELECT agent_of, agent_name, notebook_folder, access FROM conversations "
-            "WHERE id=?", (ctx.conversation_id,)).fetchone())
+            "SELECT s.agent_of, s.agent_name, s.notebook_folder, s.access, "
+            "p.agent_name AS parent FROM conversations s LEFT JOIN conversations p "
+            "ON p.id = s.agent_of WHERE s.id=?", (ctx.conversation_id,)).fetchone())
         if row is None or not row["agent_of"]:
             return None
+        cap = await ctx.store.read(lambda c: report.cap(c, row["agent_of"]))
         folder = row["notebook_folder"]
         if row["access"] == "read":
             can = ("You were started to look things up: you have only tools that read, "
@@ -390,6 +392,7 @@ class SubAgents:
                      "Your notebook here is {{name}}'s whole notebook. Write what the "
                      "brief asks for and leave the rest as it is.")
         return prompts.fill(self.cfg, __file__, "fragment.md", agent_name=row["agent_name"],
+                            parent=row["parent"] or "{{name}}", cap=f"{cap:,}",
                             can=can, where=where)
 
 
@@ -416,6 +419,40 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
         f"s.created_at, s.updated_at FROM conversations s "
         f"{where} ORDER BY s.created_at DESC, s.id DESC", args).fetchall()
     return [{**dict(r), **_look(c, r["id"]), **homes.of(c, r["id"])} for r in rows]
+
+
+ENDED = {"aborted": "stopped", "failed": "failed", "interrupted": "failed",
+         "capped": "paused"}     # how a done one's last turn ended, in the tree's words
+
+
+def tree_of(c: sqlite3.Connection, cid: str) -> dict | None:
+    """Every sub-agent under the top of `cid`'s chain, each before its own and siblings
+    oldest first: id, parent, depth, name, state (queued, working, done, stopped, failed,
+    paused), step_words, model (the newest that answered, else its own), what all its
+    turns took (report.work) and link. None: no such conversation."""
+    top = homes.root(c, cid)
+    if top is None:
+        return None
+    out: list[dict] = []
+
+    def walk(parent: str, depth: int) -> None:
+        for r in c.execute("SELECT id, agent_name, model_id FROM conversations WHERE "
+                           "agent_of=? ORDER BY created_at, id", (parent,)).fetchall():
+            f, w = _look(c, r["id"]), report.work(c, r["id"], whole=True)
+            last = c.execute("SELECT state FROM turns WHERE conversation_id=? ORDER BY "
+                             "created_at DESC LIMIT 1", (r["id"],)).fetchone()
+            state = "queued" if f["queued"] else "working" if f["working"] else \
+                ENDED.get(last[0] if last else "", "done")
+            out.append({"id": r["id"], "parent": parent, "depth": depth,
+                        "name": r["agent_name"], "state": state,
+                        "step_words": f["step_words"] if f["working"] else None,
+                        "model": (w["models"] or [r["model_id"]])[-1],
+                        "prompt_tokens": w["prompt_tokens"],
+                        "completion_tokens": w["completion_tokens"],
+                        "seconds": w["seconds"], "link": homes.of(c, r["id"])["link"]})
+            walk(r["id"], depth + 1)
+    walk(top["id"], 1)
+    return {"top": top["id"], "agents": out}
 
 
 def queued_sql(conversation: str = "?") -> str:

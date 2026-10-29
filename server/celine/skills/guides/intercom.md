@@ -7,11 +7,12 @@ intercom__send(text, to) writes a message. `to` is one or more of, comma separat
 - "user": {{username}}.
 - "me": yourself.
 - "parent": in a sub-agent, the conversation that started it.
-- "team": a conversation and its sub-agents, without you.
+- "team": your own sub-agents.
 - "all": every conversation working right now (a turn or a job running) and every
   active mission, without you.
 - "bastet": Bastet, the guard of the house.
 - a sub-agent's or mission's name, or a conversation id.
+A sub-agent writes to "parent", its own sub-agents, "me", "user" and "bastet".
 
 Bastet guards the house: when she stops a step, your result says so in her words, with
 why. If you disagree, or want to talk, write to her; she answers in the thread.

@@ -18,7 +18,7 @@ from celine.settings.files import Invalid
 from celine.settings.registry import backend_config, validate_role
 from celine.skills import ToolContext
 from celine.skills.models import Models
-from celine.sub_agents.report import work, work_line
+from celine.sub_agents.report import head, work
 from celine.turns import tokens
 from settings_fixtures import scratch
 
@@ -200,6 +200,9 @@ async def test_a_report_carries_the_models_tokens_and_seconds(store):
     await store.write(rows)
     w = await store.read(lambda c: work(c, sub))
     assert w == {"models": ["gpu/b", "home/a"], "prompt_tokens": 3345,
-                 "completion_tokens": 700, "seconds": 42}
-    assert work_line(w) == "[On gpu/b, home/a: 3,345 tokens in, 700 out, 42 s]"
-    assert work_line({"models": []}) == ""
+                 "completion_tokens": 700, "seconds": 42, "files": []}
+    assert head("s", "done", w) == "[s, done, on gpu/b, home/a: 3,345 tokens in, 700 out, 42 s]"
+    assert head("s", "failed", {**w, "models": [], "files": ["a.md"]}) == \
+        "[s, failed; changed a.md]"
+    whole = await store.read(lambda c: work(c, sub, whole=True))
+    assert (whole["prompt_tokens"], whole["seconds"]) == (4344, 72), "ever, for the tree"

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..errors import CelineError, NotFound
-from .skill import agents_of
+from .skill import agents_of, tree_of
 
 router = APIRouter(prefix="/api")
 
@@ -36,6 +36,16 @@ async def list_agents(request: Request, conversation: str | None = None) -> dict
     work, the latest report, its last words."""
     store = request.app.state.services.store
     return {"agents": await store.read(lambda c: agents_of(c, conversation))}
+
+
+@router.get("/conversations/{cid}/sub-agents")
+async def agent_tree(request: Request, cid: str) -> dict:
+    """The sub-agents under the top of `cid`'s chain, as a tree (skill.tree_of): {top,
+    agents}, each with its depth, state, model, tokens, seconds and link."""
+    out = await request.app.state.services.store.read(lambda c: tree_of(c, cid))
+    if out is None:
+        raise NotFound("conversation")
+    return out
 
 
 @router.post("/conversations/{cid}/sub-agents")

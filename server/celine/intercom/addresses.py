@@ -5,10 +5,14 @@ working), `system:guard` (Bastet, the guard: she answers her, guard/talk.py),
 address or its token's name, reaches the user).
 
 `to` takes several, comma separated. The agent's words: `me` (the sender's own conversation),
-`parent` (the conversation that started a sub-agent), `team`, `all`, `user`, `bastet`,
+`parent` (the conversation that started a sub-agent), `team` (the sender's own
+sub-agents), `all`, `user`, `bastet`,
 a conversation id, the name of a sub-agent or mission, `run:<id>` (a Routine's run) or
 `routine:<name>` (its newest run with a conversation). `team` and `all` are expanded
-into recipients when the message is sent, the sender left out."""
+into recipients when the message is sent, the sender left out.
+
+A sub-agent writes up and down its own chain only: to itself, its parent, its own
+sub-agents, the user and Bastet (`_reach`)."""
 from __future__ import annotations
 
 import sqlite3
@@ -44,6 +48,20 @@ def _locked(c: sqlite3.Connection, cid: str, sender: str) -> None:
         return
     if why := locked(c, cid):
         raise Refused(why)
+
+
+REACH = ('A sub-agent writes to "parent", its own sub-agents (by name, or "team" for '
+         'all of them), "me", "user" and "bastet".')
+
+
+def _reach(c: sqlite3.Connection, cid: str, me: sqlite3.Row | None) -> None:
+    """Refused: sub-agent `me` writing to a conversation other than itself, its parent
+    and its own sub-agents."""
+    if me is None or not me["agent_of"] or cid in (me["id"], me["agent_of"]):
+        return
+    if c.execute("SELECT 1 FROM conversations WHERE id=? AND agent_of=?",
+                 (cid, me["id"])).fetchone() is None:
+        raise Refused(REACH)
 
 
 def _working(c: sqlite3.Connection) -> list[str]:
@@ -99,6 +117,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
     out: list[tuple[str, str | None]] = []
 
     def add(cid: str) -> None:
+        _reach(c, cid, me)
         _locked(c, cid, sender)
         if f"agent:{cid}" != sender and (f"agent:{cid}", cid) not in out:
             out.append((f"agent:{cid}", cid))
@@ -116,7 +135,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
                 raise ValueError("`parent` is for a sub-agent: this conversation has none")
             addr = f"agent:{me['agent_of']}"
         elif addr == "team":
-            addr = f"team:{me['agent_of'] or me['id']}"
+            addr = f"team:{me['id']}"
         elif addr in GUARD_NAMES and sender.startswith("agent:"):
             addr = GUARD                 # she talks to Bastet; anyone else's reply is the user's
         elif addr.startswith("system:") or c.execute(
@@ -126,6 +145,8 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
             if (addr, None) not in out:
                 out.append((addr, None))
         elif addr == "all":
+            if me is not None and me["agent_of"]:
+                raise Refused(REACH)
             for cid in _working(c):
                 add(cid)
         elif addr.startswith("team:"):
@@ -142,6 +163,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
                     if addr.startswith("agent:"):
                         raise KeyError(addr[6:])
                     raise ValueError(f"{addr!r} is not an address")
+            _reach(c, cid, me)
             _locked(c, cid, sender)
             addr = f"agent:{cid}"
             # to yourself is a reminder: the sender is not left out here

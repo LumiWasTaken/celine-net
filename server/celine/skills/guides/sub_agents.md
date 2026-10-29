@@ -50,10 +50,12 @@ need only when this conversation does.
 
 `sub_agents__start` returns at once ("trip finder started"); the sub-agent works on
 while you go on. A sub-agent is done when it has nothing left running: no turn, no
-background job, no message it scheduled for itself. Then its report comes back to you
-as a message ("Report from trip finder"), job results included, also after a restart.
-The report is its final answer, nothing it said on the way, and it is capped like a
-tool result. `sub_agents__read(name)` looks at one: working or done, the step it is on,
+background job, no message it scheduled for itself, no sub-agent of its own at work.
+Then its report comes back to you as a message ("Report from trip finder"), job results
+included, also after a restart. The report is a head (its name, how it ended, the
+models, tokens and seconds its work took, the notes it changed) and its final answer,
+nothing it said on the way, cut at about 3 % of your context window; the rest stays in
+its conversation. `sub_agents__read(name)` looks at one: working or done, the step it is on,
 and its latest report (before one, its last words). `sub_agents__read(name, wait=120)`
 first waits up to that many seconds (600 at most) for it to be done, and says whether it
 finished or the wait ran out. Or end your turn: its report starts your next one.
@@ -62,13 +64,19 @@ Longer results go into files (work access writes them): its notebook folder or t
 shellbox home. Ask it to write them there and to say in the report where they are.
 
 It reports for the work you (or {{username}}) gave it: the brief and every message from
-you after that. A message from a sibling alone gets no report to you.
+you after that. A message from one of its own sub-agents alone gets no report to you.
+
+A sub-agent starts sub-agents of its own, as you do, down to 3 levels below you; each
+reports only to the one that started it. A model of a cloud provider (OpenRouter,
+Anthropic) waits for {{username}}'s approval at every start; your local models start at
+once.
 
 Talking while they work, on the intercom: `intercom__send(to="trip finder", text=...)`
 writes to one by name (a follow-up after its report too: it keeps everything it read,
 and reports again). A sub-agent writes to you with to="parent" and you answer with
-reply_to in its thread; to="team" reaches you and its siblings. Your instructions list
-your team, each working or done.
+reply_to in its thread; to="team" reaches all of your own sub-agents. A sub-agent
+writes only to its parent, its own sub-agents, itself, {{username}} and Bastet. Your
+instructions list your sub-agents, each working or done.
 
 `sub_agents__stop(name)` stops one: its turn, its jobs and the messages it scheduled.
 Its report then says what it did until then.

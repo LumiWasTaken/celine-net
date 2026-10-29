@@ -70,9 +70,9 @@ async def test_a_trashed_chat_goes_for_good_with_its_sub_agent(tmp_path, monkeyp
     await run_turn(turn, store, cfg, OneCall(), EventBus(), Token(turn["id"]), reg)
     await user_says(store, sub, "look it up")
     await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
-    # a report from the sub-agent landed in another chat: that message stays
-    iid = await store.write(lambda c: intercom_insert(c, f"agent:{sub}", f"agent:{other}",
-                                                      "report", "done"))
+    # a message from the chat landed in another chat: that message stays
+    iid = await store.write(lambda c: intercom_insert(c, f"agent:{cid}", f"agent:{other}",
+                                                      "message", "done"))
     await store.write(lambda c: tree.append(c, store, other, None, "user", "done",
                                             "intercom", intercom_id=iid))
     await store.write(lambda c: c.execute("INSERT INTO kv(k, v) VALUES(?, '1')",
