@@ -124,3 +124,19 @@ async def test_a_cancelled_one_never_lands_and_stays_listed(store, clock):
     assert (await view.snapshot(store, cid))["messages"] == [], "it never lands"
     [row] = await store.read(lambda c: rows.listed(c, to=f"agent:{cid}", scheduled=True))
     assert (row["id"], row["state"], row["text"]) == (iid, "cancelled", "look at the build")
+
+
+async def test_one_to_the_user_gives_its_notice_at_its_time_once(store, clock):
+    async def notices() -> int:
+        return await store.read(lambda c: c.execute(
+            "SELECT count(*) FROM global_events WHERE type='notice'").fetchone()[0])
+    await store.write(lambda c: rows.insert(c, "agent:x", "user", "message", "stretch",
+                                            due_at=clock.iso(60), store=store))
+    assert await deliver.next_due(store) == clock.iso(60)
+    await deliver.deliver_due(store)
+    assert await notices() == 0, "not before its time"
+    clock.advance(60)
+    await deliver.deliver_due(store)
+    await deliver.deliver_due(store)
+    assert await notices() == 1
+    assert await deliver.next_due(store) is None

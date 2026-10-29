@@ -60,11 +60,15 @@ def insert(c: sqlite3.Connection, from_addr: str, to: str, kind: str, text: str,
     # lands later): a notice
     if store is not None and to_user and from_addr != "user" and kind != "job" and \
             not (due_at and due_at > now()):
-        from ..events import notice
-        thread = thread or iid
-        notice(store, c, "intercom", name_of(c, from_addr), subject or text,
-               f"/intercom/{thread}", f"intercom:{thread}")
+        notice_user(c, store, c.execute("SELECT * FROM intercom WHERE id=?", (iid,)).fetchone())
     return iid
+
+
+def notice_user(c: sqlite3.Connection, store, row: sqlite3.Row) -> None:
+    """Inside a write: message `row` waits for the user now, as a notice (events.notice)."""
+    from ..events import notice
+    notice(store, c, "intercom", name_of(c, row["from_addr"]), row["subject"] or row["text"],
+           f"/intercom/{row['thread']}", f"intercom:{row['thread']}")
 
 
 def answering(c: sqlite3.Connection, cid: str, turn: str) -> sqlite3.Row | None:
