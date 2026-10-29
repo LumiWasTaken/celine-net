@@ -144,6 +144,21 @@ async def test_parallel_calls_without_an_index_stay_apart(monkeypatch):
     assert calls == [(0, "f", '{"x":'), (0, None, " 1}"), (1, "g", "{}")]
 
 
+def test_arguments_that_are_not_an_object_fail_the_ollama_request_with_the_reason():
+    """Ollama takes a call's arguments as an object: what she wrote is never sent as
+    none instead."""
+    ollama = OllamaBackend(BackendConfig(id="o", kind="ollama", label="o",
+                                         base_url="http://o", model="m", raw={}))
+    call = {"role": "assistant", "content": "", "tool_calls": [{
+        "id": "c1", "type": "function",
+        "function": {"name": "web__search", "arguments": '["tea"]'}}]}
+    with pytest.raises(BackendError, match=r"web__search .* not a JSON object.*\[\"tea\"\]"):
+        ollama.request_body([{"role": "user", "content": "hi"}, call], [])
+    call["tool_calls"][0]["function"]["arguments"] = '{"query": "tea"}'
+    sent = ollama.request_body([{"role": "user", "content": "hi"}, call], [])
+    assert sent["messages"][-1]["tool_calls"][0]["function"]["arguments"] == {"query": "tea"}
+
+
 NATIVE_OVERFLOW = json.dumps({"error": json.dumps({"error": {
     "code": 400, "message": "request (13301 tokens) exceeds the available context size "
     "(4096 tokens), try increasing it", "type": "exceed_context_size_error",

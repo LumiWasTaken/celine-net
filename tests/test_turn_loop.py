@@ -186,7 +186,7 @@ async def test_continue_on_a_capped_turn_gets_a_fresh_step_budget(store, cfg):
     assert len(b.calls) == 4               # two more steps, not none
 
 
-async def test_her_voice_line_closes_the_newest_tool_result(store, cfg):
+async def test_tool_results_reach_her_as_the_tool_made_them(store, cfg):
     cfg.her.talk = "a chat.\n\n## how I sound\n\nshort and dry, a little formal\nmore\n"
     reg = _registry(cfg, Notebook())
     cid = await conversations.create(store)
@@ -195,12 +195,7 @@ async def test_her_voice_line_closes_the_newest_tool_result(store, cfg):
                  [TextDelta("done"), Done(reason="stop")]])
     await _run(store, cfg, reg, cid, b)
     tools = [m for m in b.calls[1] if m["role"] == "tool"]
-    assert tools[-1]["content"] == \
-        "wrote b.md\n\n[how you sound] short and dry, a little formal"
-    assert tools[0]["content"] == "wrote a.md"
-    stored = await store.read(lambda c: [r[0] for r in c.execute(
-        "SELECT content FROM messages WHERE role='tool'")])
-    assert "how you sound" not in "".join(stored), "the request only"
+    assert [t["content"] for t in tools] == ["wrote a.md", "wrote b.md"]
 
 
 async def test_a_stop_before_any_word_leaves_no_empty_reply(store, cfg):

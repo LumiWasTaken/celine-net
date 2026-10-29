@@ -99,8 +99,8 @@ async def for_trigger(store, trigger_key: str, title: str,
 async def update(store, cid: str, title: str | None = None,
                  pinned: bool | None = None, auto: bool = False,
                  notes_off: list[str] | None = None) -> bool:
-    """`auto`: the title is the app's (after the first reply), not the user's. A
-    changed `notes_off` (the notes left out here) is a `conversation.notes_off` event
+    """`auto`: the title is the model's (after the first reply, turns/title.py), stored as
+    it wrote it; the user's is stripped (its length is checked by the API). A changed `notes_off` (the notes left out here) is a `conversation.notes_off` event
     on the conversation's log."""
     def fn(c: sqlite3.Connection) -> bool:
         sets, args = [], []
@@ -113,7 +113,7 @@ async def update(store, cid: str, title: str | None = None,
                 store.event(c, cid, CONVERSATION_NOTES_OFF, {"notes_off": notes_off})
         if title is not None:
             sets.append("title=?, title_auto=?")
-            args += [title.strip()[:200], int(auto)]
+            args += [title if auto else title.strip(), int(auto)]
         if pinned is not None:
             sets.append("pinned=?")
             args.append(1 if pinned else 0)
@@ -124,7 +124,8 @@ async def update(store, cid: str, title: str | None = None,
         ok = c.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id=?",
                        args).rowcount == 1
         if ok and title is not None:
-            store.event(c, cid, CONVERSATION_TITLE, {"title": title.strip()[:200]})
+            store.event(c, cid, CONVERSATION_TITLE,
+                        {"title": title if auto else title.strip()})
         if ok and pinned is not None:
             store.global_event(c, CONVERSATION_PINNED, {"id": cid,
                                                          "pinned": bool(pinned)})

@@ -96,7 +96,7 @@ def ctx(store=None, time_left=None):
 
 
 async def test_a_run_is_sent_once_and_its_result_names_exit_duration_and_log(shell, box):
-    out = await shell.run(ctx(), command="ls")
+    out = await shell.run(ctx(), terminal="main", command="ls")
     assert box.sent[0][0] == "/run" and box.sent[0][2]["authorization"] == "Bearer " + "k" * 24
     assert box.bodies[0] == {"terminal": "main", "command": "ls", "timeout": 3000.0,
                              "chars": 8000}
@@ -105,32 +105,32 @@ async def test_a_run_is_sent_once_and_its_result_names_exit_duration_and_log(she
     assert rest == ["notes"]
     assert out.display["cmd"] == "k3x9ab" and out.display["exit"] == 0
     assert out.display["text"] == "ls" and out.display["head"] == 1
-    await shell.run(ctx(), command="make", timeout=5000)
+    await shell.run(ctx(), terminal="main", command="make", timeout=5000)
     assert box.bodies[-1]["timeout"] == shell_mod.RUN_MAX
-    await shell.run(ctx(time_left=40.5), command="make")
+    await shell.run(ctx(time_left=40.5), terminal="main", command="make")
     assert box.bodies[-1]["timeout"] == 37, "it answers before its turn's time is up"
-    await shell.run(ctx(time_left=40.5), command="make", background=True)
+    await shell.run(ctx(time_left=40.5), terminal="main", command="make", background=True)
     assert box.bodies[-1]["timeout"] == shell_mod.RUN_MAX, "a job waits for the end"
 
 
 async def test_a_run_the_box_flags_as_outside_is_labelled_with_its_source(shell, box):
     box.answers = [ran(outside=True, outside_from="https://www.evil.example/x.sh")]
-    out = await shell.run(ctx(), command="cat x.sh")
+    out = await shell.run(ctx(), terminal="main", command="cat x.sh")
     assert out.display["outside"] == {"source": "evil.example/x.sh", "by": None}
-    assert "outside" not in (await shell.run(ctx(), command="ls")).display
+    assert "outside" not in (await shell.run(ctx(), terminal="main", command="ls")).display
 
 
 async def test_the_box_verdict_that_a_run_reached_the_net_is_in_its_display(shell, box):
     box.answers = [ran(outside=True, outside_from="curl", net="curl"), ran()]
-    assert (await shell.run(ctx(), command="./sync")).display["net"] == "curl"
-    assert "net" not in (await shell.run(ctx(), command="ls")).display
+    assert (await shell.run(ctx(), terminal="main", command="./sync")).display["net"] == "curl"
+    assert "net" not in (await shell.run(ctx(), terminal="main", command="ls")).display
 
 
 async def test_a_timeout_says_the_command_keeps_running_and_where_to_read_on(shell, box):
     box.answers = [ran(state="running", exit=None, seconds=30.2, program="make", pid=812,
                        front=[{"pid": 812, "name": "make", "args": ["make"]}], size=48211,
                        output="cc -o x x.c")]
-    out = await shell.run(ctx(), command="make", timeout=30)
+    out = await shell.run(ctx(), terminal="main", command="make", timeout=30)
     lines = out.content.split("\n")
     assert lines[0].startswith("terminal main ~: still running after 30 s: make (pid 812).")
     assert lines[1] == ('It keeps running: shell__read(terminal="main", from=48211) shows what '
@@ -145,16 +145,16 @@ async def test_a_busy_terminal_refuses_with_what_runs_or_waits_and_how_out(shell
                    ran(state="busy", reason="running", cmd="k3x9ab", command="node build.mjs",
                        running_for=40, waiting=True, program="MainThread", pid=77,
                        front=[{"pid": 77, "name": "MainThread", "args": ["node", "build.mjs"]}])]
-    out = await shell.run(ctx(), command="ls")
+    out = await shell.run(ctx(), terminal="main", command="ls")
     assert out.is_error and out.content.startswith(
         'Not run: main still runs command k3x9ab (make -j4) for 3 min 2 s; '
         'shell__stop(terminal="main") stops it, or run in another terminal.')
-    out = await shell.run(ctx(), command="ls")
+    out = await shell.run(ctx(), terminal="main", command="ls")
     assert out.is_error and out.content == (
         'Not run: command k3x9ab (read x) waits for input in main, and the line would go to '
         'it. shell__type answers it, shell__stop(terminal="main") stops it, or run in '
         'another terminal.')
-    out = await shell.run(ctx(), command="ls")
+    out = await shell.run(ctx(), terminal="main", command="ls")
     assert out.content.startswith("Not run: node (pid 77) waits for input in main, from "
                                   "command k3x9ab (node build.mjs), and the line")
 
@@ -165,11 +165,11 @@ async def test_a_stop_names_what_outlived_ctrl_c_and_the_next_one_ends_it(shell,
                        survived=["python3"], killed=None, output=">>> KeyboardInterrupt"),
                    ran(state="done", exit=143, survived=[],
                        killed={"signal": "SIGTERM", "names": ["python3"]}, output="")]
-    lines = (await shell.stop(ctx())).content.split("\n")
+    lines = (await shell.stop(ctx(), terminal="main")).content.split("\n")
     assert lines[1] == ('Ctrl-C did not stop python3: it reads Ctrl-C as a key. '
                         'shell__stop(terminal="main") again ends it (SIGTERM, then SIGKILL).')
     assert 'text="exit()" leaves' in lines[2]
-    lines = (await shell.stop(ctx())).content.split("\n")
+    lines = (await shell.stop(ctx(), terminal="main")).content.split("\n")
     assert lines[0].startswith("terminal main ~: exit 143 after")
     assert lines[1] == "Ctrl-C had not stopped python3, so this stop ended it with SIGTERM."
 
@@ -177,7 +177,7 @@ async def test_a_stop_names_what_outlived_ctrl_c_and_the_next_one_ends_it(shell,
 async def test_a_long_output_is_cut_once_with_lines_and_a_from(shell, box):
     box.answers = [ran(output="1\n2", tail="9999\n10000",
                        cut={"first": 3, "last": 9998, "total": 10000, "from": 4})]
-    out = await shell.run(ctx(), command="seq 10000")
+    out = await shell.run(ctx(), terminal="main", command="seq 10000")
     assert out.content.split("\n")[1:] == [
         "1", "2",
         "[lines 3 to 9998 of 10000 are not shown. shell__read(terminal=\"main\", from=4) "
@@ -186,18 +186,18 @@ async def test_a_long_output_is_cut_once_with_lines_and_a_from(shell, box):
 
 
 async def test_type_stop_and_read_send_what_they_say(shell, box):
-    await shell.type(ctx(), text="python3")
+    await shell.type(ctx(), terminal="main", text="python3")
     assert box.sent[-1][:2] == ("/type", {"terminal": "main", "text": "python3", "keys": [],
                                           "enter": True})
     # a text that reads like a key name is typed as written
-    await shell.type(ctx(), text="Escape")
+    await shell.type(ctx(), terminal="main", text="Escape")
     assert box.sent[-1][:2] == ("/type", {"terminal": "main", "text": "Escape", "keys": [],
                                           "enter": True})
     # Enter follows only a text; keys alone never press it
     for args in ({"text": "q", "enter": "false"}, {"keys": "Up", "enter": True}, {}):
-        await shell.type(ctx(), **args)
+        await shell.type(ctx(), terminal="main", **args)
         assert box.bodies[-1]["enter"] is False, args
-    await shell.type(ctx(), keys=" ".join(list(KEY_ALIASES) + ["ctrl-d", "^D", "Alt+x"]))
+    await shell.type(ctx(), terminal="main", keys=" ".join(list(KEY_ALIASES) + ["ctrl-d", "^D", "Alt+x"]))
     assert box.bodies[-1]["keys"] == list(KEY_ALIASES.values()) + ["C-d", "C-d", "M-x"]
     out = await shell.stop(ctx(), terminal="build")
     assert box.sent[-1][:2] == ("/stop", {"terminal": "build", "chars": 8000})
@@ -215,20 +215,20 @@ async def test_a_screen_tells_once_that_her_last_run_ended(shell, box):
     ended = {"id": "k3x9ab", "command": "apt-get install x", "log": "/l", "exit": 0,
              "seconds": 12.0}
     box.answers = [screen(cmd=ended), screen(cmd=ended)]
-    first = await shell.type(ctx(), text="y")
+    first = await shell.type(ctx(), terminal="main", text="y")
     assert "Command k3x9ab (apt-get install x) ended: exit 0 after 12 s. Log: /l" in \
         first.content
-    assert "ended" not in (await shell.type(ctx(), text="y")).content
+    assert "ended" not in (await shell.type(ctx(), terminal="main", text="y")).content
 
 
 async def test_bad_input_sends_nothing(shell, box):
     for args in ({"text": "make", "keys": "Down Ctrl+Shift+x"},
                  {"text": "ls", "terminal": "Build"},
                  {"text": "ls", "enter": "maybe"}):
-        assert (await shell.type(ctx(), **args)).is_error, args
+        assert (await shell.type(ctx(), **{"terminal": "main", **args})).is_error, args
     for args in ({"command": ""}, {"command": "ls", "timeout": "soon"},
                  {"command": "ls", "terminal": "A B"}):
-        assert (await shell.run(ctx(), **args)).is_error, args
+        assert (await shell.run(ctx(), **{"terminal": "main", **args})).is_error, args
     assert (await shell.read(ctx(), terminal="main", from_=-1)).is_error
     assert box.sent == []
 
@@ -239,9 +239,9 @@ async def test_failures_are_error_results_and_never_take_the_skill_down(
                    httpx.ConnectError("refused"), [{"progress": "no result follows"}],
                    (400, {"error": "command is the command line to run."})]
     for _ in range(4):
-        assert (await shell.run(ctx(), command="ls")).is_error
+        assert (await shell.run(ctx(), terminal="main", command="ls")).is_error
     box.answers = [(401, {"error": "unauthorized"})]
-    assert (await shell.run(ctx(), command="ls")).is_error
+    assert (await shell.run(ctx(), terminal="main", command="ls")).is_error
     box.answers = [(404, {"error": "No terminal named x.", "terminals": ["main"]})]
     out = await shell.stop(ctx(), terminal="x")
     assert out.content == "No terminal named x. Your terminals: main."

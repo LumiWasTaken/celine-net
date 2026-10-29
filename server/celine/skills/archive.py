@@ -14,7 +14,6 @@ from typing import Annotated, Literal
 import anyio
 
 from ..kb.identity import REF
-from ..turns import ledger
 from . import ToolContext, ToolResult, guide, knob, tool, described
 
 # Settings, Advanced, read at use (cfg.r). No search or token limit per turn: open
@@ -72,18 +71,6 @@ def msg_line(kb: str, m: dict, me: str, mark: bool = False) -> str:
     return f"{'>' if mark else ' '} [{kb}:{m['id']}] {_when(m['ts'])} {_who(m, me)}: {text}"
 
 
-def _focus_refs(ids, written_by) -> set[str]:
-    """Every account of the people written_by names by reference."""
-    return {r for p in _as_list(written_by) if REF.match(p) for r in ids.expand(p)}
-
-
-def _same(prev) -> ToolResult:
-    """A repeat whose result it still sees: answered without running, not a call, no
-    progress line."""
-    return ToolResult(content=f"same as call {prev.n}. Nothing new.",
-                      display={"same_as": prev.n})
-
-
 def _chat_head(title: str, kid: str, chat_id: int, chat: dict) -> str:
     """One chat, the way episode headers name it: source, name, kind, reference."""
     return (f"{title or kid}; {_chat_name(chat)} ({chat.get('kind') or 'chat'}, chat "
@@ -134,7 +121,6 @@ def _their_chats(kbs, refs, limit: int = 8) -> list[str]:
 
 # ---- scope: where a search looks, decided on purpose ------------------------------------
 _ALL = {"all", "everything", "*"}
-_NAMED = re.compile(r"\b(?:person|chat) ([a-z0-9_-]+:\d+)")
 _chat_counts: dict[str, tuple[float, int]] = {}
 
 
@@ -375,18 +361,6 @@ class ChatArchive:
             "words only when the wording itself matters. The app checks your answer "
             "against the messages.")
 
-    # ---- the ledger ----------------------------------------------------------------
-    def _done(self, led, tool_name: str, spec: str, content: str, *, search: bool,
-              display: dict | None = None, call=None) -> ToolResult:
-        """Record the call in the turn's ledger and end the result with the progress line."""
-        if call is None:
-            led.record(tool_name, spec, content, search=search)
-        else:
-            led.finish(call, content)
-        footer = led.footer()
-        return ToolResult(content=f"{content}\n\n{footer}" if footer else content,
-                          display=display)
-
     async def _scope(self, ctx, *, kb, people, chats, when):
         from ..kb import identity
         from ..kb.retrieve.scope import resolve
@@ -451,40 +425,23 @@ class ChatArchive:
         for what was said, when, and every time. For numbers use chat_archive__count. For
         a name use chat_archive__look_up first. One call is one search: for an open
         question, make many calls. Returns: a `scope:` line, word counts, the match windows
-        with references, a progress line."""
+        with references."""
         from ..kb.retrieve import Ambiguous, Settings, retrieve
         from ..kb.retrieve import episodes as E
         from ..kb.retrieve.rerank import from_config
-        led = ledger.get(ctx.turn_id)
         scope_kind, plats, chats, bad = self._precheck(scope)
         if bad:
             return ToolResult(content=bad, is_error=True, display={"scope_error": True})
-        args = {"about": about, "words": words, "scope": scope_kind, "people": written_by,
-                "chats": chats, "when": when, "order": order, "mode": mode, "kb": plats}
-        spec = led.spec("search", args)
-        prev = led.same_as(spec)
-        if prev is not None:
-            return _same(prev)
-        broad = scope_kind in ("all", "platforms") and not _as_list(written_by)
-        if stop := led.blocked(broad):
-            led.refuse(spec, broad=broad)
-            return ToolResult(content=stop, is_error=True, display={"narrow": True})
-        call = led.begin("search", spec, search=True)
         try:
-            kbs, res_scope, ids = await self._scope(ctx, kb=plats or None, people=written_by,
-                                                    chats=chats or None, when=when)
-            led.focus |= _focus_refs(ids, written_by)
+            kbs, res_scope, _ = await self._scope(ctx, kb=plats or None, people=written_by,
+                                                  chats=chats or None, when=when)
             echo, echo_display = await anyio.to_thread.run_sync(
                 lambda: scope_echo(kbs, scope_kind, plats, res_scope))
             if missing := missing_chats(echo_display):
                 raise ValueError(missing)
         except Ambiguous as e:
-            led.refund(call)
-            return self._done(led, "search", spec, "\n".join(e.lines), search=False,
-                              display={"ambiguous": True}, call=call)
+            return ToolResult(content="\n".join(e.lines), display={"ambiguous": True})
         except ValueError as e:
-            led.refund(call)
-            led.finish(call, "")
             return ToolResult(content=str(e), is_error=True)
         scope = res_scope
 
@@ -504,8 +461,6 @@ class ChatArchive:
         try:
             res = await anyio.to_thread.run_sync(search)
         except ValueError as e:
-            led.refund(call)
-            led.finish(call, "")
             return ToolResult(content=str(e), is_error=True)
 
         head = [echo] + _labels(scope)
@@ -518,13 +473,8 @@ class ChatArchive:
         cap = int(r("chat_archive.search_max_tokens_all" if mode == "all"
                     else "chat_archive.search_max_tokens"))
         cap = self._cap(ctx, cap)
-        shown, seen_calls, seen_n, cut, used = [], set(), 0, 0, 0
+        shown, cut, used = [], 0, 0
         for e in res.episodes:
-            refs = e.refs
-            if refs and not led.unseen(refs):
-                seen_n += 1
-                seen_calls.update(led.seen_in(refs))
-                continue
             text = E.render(e, len(shown) + 1, kb_title=titles.get(e.kb, e.kb))
             t = E.tokens(text)
             if shown and used + t > cap:
@@ -539,16 +489,12 @@ class ChatArchive:
             body.append(f"{len(shown)} match window{'s' if len(shown) != 1 else ''} "
                         f"({what}). > marks the matching lines:")
             body += [t for _, t in shown]
-        elif not seen_n:
+        else:
             body.append("No match in scope. Try other words (the other language, a "
                         "synonym, a shorter form), a wider `when`, fewer filters, or "
                         "chat_archive__count with the same words to check whether they "
                         "occur at all.")
         tail = []
-        if seen_n:
-            calls = ", ".join(str(c) for c in sorted(seen_calls))
-            tail.append(f"{seen_n} more match window{'s' if seen_n != 1 else ''} already "
-                        f"shown in call{'s' if len(seen_calls) != 1 else ''} {calls}.")
         if cut or res.more:
             tail.append(f"{cut + res.more} more not shown. Narrow with when, scope or "
                         f"written_by, or use mode=\"all\".")
@@ -560,24 +506,10 @@ class ChatArchive:
                                  "refs": e.refs, "hits": sorted(f"{e.kb}:{h}" for h in e.hits
                                                                 if h in {m.id for m in e.lines})}
                                 for e, _ in shown],
-                   "already_shown": seen_n, "totals": res.totals, "scope": scope.labels,
+                   "totals": res.totals, "scope": scope.labels,
                    **echo_display,
                    "reranked": res.reranked, "took_ms": res.took_ms}
-        # narrowing: searches that keep bringing nothing get a note with the leads this
-        # turn already has, and after a few the next one is not run
-        content = content.strip()
-        led.finish(call, content)
-        weak = not shown or any(n.startswith("Nothing is clearly") for n in res.notes)
-        led.note_search(call, broad=broad, weak=weak, episodes=[{
-            "chat": f"{e.kb}:{e.chat_id}", "name": _chat_name(e.chat),
-            "kind": (e.chat or {}).get("kind"),
-            "hits": [f"{e.kb}:{m.id}" for m in e.lines if m.id in e.hits]} for e, _ in shown])
-        if call.dry and (note := led.narrow_note()):
-            content += "\n\n" + note
-            display["narrow"] = True
-        footer = led.footer()
-        return ToolResult(content=f"{content}\n\n{footer}" if footer else content,
-                          display=display)
+        return ToolResult(content=content.strip(), display=display)
 
     @tool()
     async def count(
@@ -614,7 +546,6 @@ class ChatArchive:
         `scope:` line, the total, one row per group with references."""
         from ..kb.retrieve import Ambiguous
         from ..kb.retrieve.count import count as do_count
-        led = ledger.get(ctx.turn_id)
         scope_kind, plats, chats, bad = self._precheck(scope)
         if bad:
             return ToolResult(content=bad, is_error=True, display={"scope_error": True})
@@ -622,17 +553,9 @@ class ChatArchive:
         hour_set, hour_label, bad = parse_hours(hours)
         if bad:
             return ToolResult(content=bad, is_error=True)
-        spec = led.spec("count", {"by": by, "scope": scope_kind, "words": words,
-                                  "people": written_by, "chats": chats, "when": when,
-                                  "hours": hours, "unit": unit, "kb": plats})
-        prev = led.same_as(spec)
-        if prev is not None:
-            return _same(prev)
-        call = led.begin("count", spec, search=False)
         try:
             kbs, scope, ids = await self._scope(ctx, kb=plats or None, people=written_by,
                                                 chats=chats or None, when=when)
-            led.focus |= _focus_refs(ids, written_by)
             if hour_set is not None:
                 scope.hours = hour_set
                 scope.labels.append(hour_label)
@@ -644,11 +567,8 @@ class ChatArchive:
                 kbs, scope, by=by, queries=words, unit=unit, me=self.me,
                 identities=ids))
         except Ambiguous as e:
-            return self._done(led, "count", spec, "\n".join(e.lines), search=False,
-                              display={"ambiguous": True}, call=call)
+            return ToolResult(content="\n".join(e.lines), display={"ambiguous": True})
         except ValueError as e:
-            led.refund(call)
-            led.finish(call, "")
             return ToolResult(content=str(e), is_error=True)
         what = f" matching {' or '.join(repr(q) for q in words)}" if words else ""
         lines = [echo] + _labels(scope)
@@ -663,10 +583,9 @@ class ChatArchive:
                 lines.append(f"  {r['label']}{refs}: {r['count']:,}")
             if not res.rows:
                 lines.append("  (none)")
-        return self._done(led, "count", spec, "\n".join(lines), search=False,
+        return ToolResult(content="\n".join(lines),
                           display={"total": res.total, "rows": len(res.rows), "unit": unit,
-                                   **echo_display},
-                          call=call)
+                                   **echo_display})
 
     @tool()
     async def look_up(
@@ -685,11 +604,6 @@ class ChatArchive:
         {{username}}."""
         from ..kb import identity
         from ..kb.retrieve.scope import person_card, chat_card, chat_candidates, person_candidates
-        led = ledger.get(ctx.turn_id)
-        spec = led.spec("look_up", {"name": name})
-        prev = led.same_as(spec)
-        if prev is not None:
-            return _same(prev)
         ids = await identity.snapshot(ctx.store)
         kbs = self._kbs()
         chat_kbs = kbs.chats()
@@ -750,8 +664,6 @@ class ChatArchive:
             first = (exact or [p for _, p in people])[0]["ref"]
             lines.append(f"  written_by=[\"{first}\"] searches what they wrote; a chat ref "
                          f"goes in scope, chat or read_period")
-            if len({frozenset(ids.expand(p["ref"])) for _, p in people}) == 1:
-                led.focus |= ids.expand(first)
         if chats:
             chats.sort(key=lambda x: (x[0], -x[2]["messages"]))
             lines.append(f"chats matching {name!r}:")
@@ -759,8 +671,7 @@ class ChatArchive:
         if not lines:
             lines.append(f"No person and no chat matches {name!r}. Try part of the name, "
                          f"a nickname, or digits of the number.")
-        led.named |= set(_NAMED.findall("\n".join(lines)))
-        return self._done(led, "look_up", spec, "\n".join(lines), search=False,
+        return ToolResult(content="\n".join(lines),
                           display={"people": len(people), "chats": len(chats)})
 
     @tool(read_only=False, destructive=False)
@@ -800,23 +711,9 @@ class ChatArchive:
         """Read the chat session that contains one message, in order. A chat session is
         the messages of one chat between two pauses of more than 90 minutes. Read it before
         you quote a line. Several references from one session return the same session.
-        Returns: the messages with references, the message marked > (or, when this turn
-        is about one person, that person's lines), then `earlier` and `later`
-        references."""
-        led = ledger.get(ctx.turn_id)
-        spec = led.spec("read_session", {"ref": ref, "max_tokens": max_tokens})
-        prev = led.same_as(spec)
-        if prev is not None:
-            return _same(prev)
-        call = led.begin("read_session", spec, search=False)
-        ref = str(ref or "").strip().strip("[]")
-        if ref in led.named and ref not in led.shown and \
-                (wrong := await self._wrong_ref(ctx, ref, "message")):
-            led.finish(call, "")
-            return ToolResult(content=wrong + "\nIf you meant the message, "
-                              "chat_archive__get_messages shows it first.", is_error=True)
-        out = await self._read_ref(ctx, ref, max_tokens)
-        return self._read_done(led, "read_session", spec, call, out)
+        Returns: the messages with references, the message marked >, then `earlier` and
+        `later` references."""
+        return await self._read_ref(ctx, ref, max_tokens)
 
     @tool()
     async def read_period(
@@ -832,28 +729,11 @@ class ChatArchive:
         of a period. A summary cites a few of the messages it is based on, such as
         [[whatsapp:48213]]. A period too long for `max_tokens` returns one line per chat
         session. Read a line further with chat_archive__read_session."""
-        led = ledger.get(ctx.turn_id)
-        spec = led.spec("read_period", {"chat": chat, "when": when,
-                                        "max_tokens": max_tokens})
-        prev = led.same_as(spec)
-        if prev is not None:
-            return _same(prev)
-        call = led.begin("read_period", spec, search=False)
         if not REF.match(str(chat).strip()):
-            led.finish(call, "")
             return ToolResult(content=f"chat takes a chat reference, not a name: {chat!r}. "
                                       f"Look it up with chat_archive__look_up(name=...) and "
                                       f"pass its `chat <ref>` reference.", is_error=True)
-        out = await self._read_slice(ctx, chat, when, max_tokens)
-        return self._read_done(led, "read_period", spec, call, out)
-
-    def _read_done(self, led, tool_name: str, spec: str, call, out: ToolResult) -> ToolResult:
-        """A read result, recorded in the ledger."""
-        if out.is_error:
-            led.finish(call, "")
-            return out
-        return self._done(led, tool_name, spec, out.content, search=False,
-                          display=out.display, call=call)
+        return await self._read_slice(ctx, chat, when, max_tokens)
 
     @tool()
     async def get_messages(
@@ -866,7 +746,6 @@ class ChatArchive:
         grouped by chat, then the references that match no message."""
         from ..kb.chat import ChatKB
         from ..kb.retrieve import episodes as E
-        led = ledger.get(ctx.turn_id)
         cap = int(self.cfg.r("chat_archive.get_max_refs"))
         items = [r.strip().strip("[]") for r in _as_list(refs)]
         items = list(dict.fromkeys(r for r in items if r))
@@ -920,9 +799,7 @@ class ChatArchive:
         head = f"{n} message{'s' if n != 1 else ''} in {len(chats)} chat" \
                f"{'s' if len(chats) != 1 else ''}:" if n else "No messages found."
         content = "\n\n".join([head] + blocks + (["\n".join(tail)] if tail else []))
-        spec = led.spec("get_messages", {"refs": items})
-        return self._done(led, "get_messages", spec, content, search=False,
-                          display={"messages": n, "missing": missing + bad,
+        return ToolResult(content=content, display={"messages": n, "missing": missing + bad,
                                    "scope_kind": "chats", "scope_chats": chats,
                                    "scope_kbs": sorted({c["platform"] for c in chats})})
 
@@ -932,15 +809,13 @@ class ChatArchive:
         ref: Annotated[str, "The message reference to scroll from."],
         direction: Annotated[Literal["before", "after", "both"], "before: older messages. "
                              "after: newer messages. both: each side."] = "both",
-        count: Annotated[int, "New messages per side, 1 to 20."] = 20,
+        count: Annotated[int, "Messages per side, 1 to 20."] = 20,
     ) -> ToolResult:
-        """Get up to 20 messages before or after one message in its chat. Messages you
-        already got in this conversation are left out. Call it again with the same
-        reference to scroll further. Returns: the new messages, oldest first, then the
-        range you now have."""
+        """Get up to 20 messages before or after one message in its chat. To scroll
+        further, call it from the first or last message it returned. Returns: the
+        messages, oldest first, then the range they cover."""
         from ..kb.chat import ChatKB
         from ..kb.retrieve import episodes as E
-        led = ledger.get(ctx.turn_id)
         most = int(self.cfg.r("chat_archive.scroll_max_messages"))
         per_side = max(1, min(int(count or most), most))
         budget = self._cap(ctx, int(self.cfg.r("chat_archive.scroll_max_tokens")))
@@ -953,8 +828,6 @@ class ChatArchive:
             return ToolResult(content="direction is before, after or both.", is_error=True)
         sides = ["before", "after"] if direction == "both" else [direction]
         side_budget = budget // len(sides)
-        seen = led.in_view
-        walk_cap = 400                     # messages skipped at most, per side
 
         def run(c):
             a = c.execute(f"{E.SELECT} WHERE m.id=?", (int(mid),)).fetchone()
@@ -964,84 +837,45 @@ class ChatArchive:
             out = {"anchor": anchor, "info": _chat_info(c, {anchor.chat_id})}
             for side in sides:
                 op, order = ("<", "DESC") if side == "before" else (">", "ASC")
-                key = (anchor.ts, anchor.id)
-                new, walked, used, end, skipped, full = [], [], 0, False, 0, False
-                while len(new) < per_side and skipped < walk_cap:
-                    rows = c.execute(
-                        f"{E.SELECT} WHERE m.chat_id=? AND (m.ts, m.id) {op} (?, ?) "
-                        f"ORDER BY m.ts {order}, m.id {order} LIMIT 50",
-                        (anchor.chat_id, *key)).fetchall()
-                    if not rows:
-                        end = True
+                rows = c.execute(
+                    f"{E.SELECT} WHERE m.chat_id=? AND (m.ts, m.id) {op} (?, ?) "
+                    f"ORDER BY m.ts {order}, m.id {order} LIMIT ?",
+                    (anchor.chat_id, anchor.ts, anchor.id, per_side + 1)).fetchall()
+                got, used = [], 0
+                for r in rows[:per_side]:
+                    x = E.to_msg(r, self.me)
+                    t = E.tokens(x.text) + 9
+                    if got and used + t > side_budget:
                         break
-                    for r in rows:
-                        x = E.to_msg(r, self.me)
-                        key = (x.ts, x.id)
-                        if seen(f"{kid}:{x.id}"):
-                            walked.append((x, False))
-                            skipped += 1
-                            if skipped >= walk_cap:
-                                break
-                            continue
-                        t = E.tokens(x.text) + 9
-                        if new and used + t > side_budget:
-                            full = True
-                            break
-                        used += t
-                        new.append(x)
-                        walked.append((x, True))
-                        if len(new) >= per_side:
-                            break
-                    if full:
-                        break
-                # the next message past the walk: is this the edge of the chat?
-                if not end and not full:
-                    end = c.execute(
-                        f"SELECT 1 FROM messages WHERE chat_id=? AND (ts, id) {op} (?, ?) "
-                        f"LIMIT 1", (anchor.chat_id, *key)).fetchone() is None
+                    used += t
+                    got.append(x)
+                # the edge of the chat: nothing past what it returns
+                end = len(got) == len(rows)
                 if side == "before":
-                    walked.reverse()
-                out[side] = (walked, end)
+                    got.reverse()
+                out[side] = (got, end)
             return out
         got = await anyio.to_thread.run_sync(lambda: kb.file.read_sync(run))
         if got is None:
             return ToolResult(content=f"There is no message {kid}:{mid}.", is_error=True)
         anchor, chat_id = got["anchor"], got["anchor"].chat_id
         ch = got["info"].get(chat_id) or {}
-        anchor_new = not seen(f"{kid}:{anchor.id}")
-        seq = list(got.get("before", ([], True))[0])
-        seq.append((anchor, anchor_new))
-        seq += got.get("after", ([], True))[0]
+        before = got.get("before", ([], True))[0]
+        after = got.get("after", ([], True))[0]
+        seq = [*before, anchor, *after]
 
-        # the new messages in order; a run of ones it already has is one line
-        body, run_old = [], []
-
-        def flush_old():
-            if run_old:
-                a_, b_ = run_old[0], run_old[-1]
-                span = f"{kid}:{a_.id}" if a_ is b_ else f"{kid}:{a_.id} to {kid}:{b_.id}"
-                body.append(f"  ({len(run_old)} message{'s' if len(run_old) != 1 else ''} "
-                            f"you already have: {span})")
-                run_old.clear()
+        body = []
         prev_day = None
-        for x, is_new in seq:
-            if not is_new:
-                run_old.append(x)
-                continue
-            flush_old()
+        for x in seq:
             t = E.clock(x.ts)
             stamp = f"{t:%H:%M}" if t.date() == prev_day else f"{t:%Y-%m-%d %H:%M}"
             prev_day = t.date()
             mark = ">" if x.id == anchor.id else " "
             body.append(f"{mark} [{kid}:{x.id}] {stamp} {x.sender}: {x.text}")
-        flush_old()
-        n_new = sum(1 for _, is_new in seq if is_new)
-        n_before = sum(1 for x, is_new in got.get("before", ([], True))[0] if is_new)
-        n_after = sum(1 for x, is_new in got.get("after", ([], True))[0] if is_new)
 
-        first, last = seq[0][0], seq[-1][0]
+        first, last = seq[0], seq[-1]
         a_t, b_t = E.clock(first.ts), E.clock(last.ts)
-        covered = (f"you now have {kid}:{first.id} ({a_t:%Y-%m-%d %H:%M}) to {kid}:{last.id} "
+        covered = (f"these are {kid}:{first.id} ({a_t:%Y-%m-%d %H:%M}) to {kid}:{last.id} "
                    f"({b_t:%Y-%m-%d %H:%M}) of this chat")
         nxt = []
         if "before" in got:
@@ -1052,23 +886,19 @@ class ChatArchive:
             nxt.append("after: newest message reached" if got["after"][1] else
                        f"newer: chat_archive__scroll(ref=\"{kid}:{last.id}\", "
                        f"direction=\"after\")")
+        parts = []
+        if "before" in got:
+            parts.append(f"{len(before)} before")
+        if "after" in got:
+            parts.append(f"{len(after)} after")
         head = [self._chat_line(kid, {**ch, "id": chat_id}),
-                _chat_head(kb.title, kid, chat_id, ch)]
-        if n_new:
-            parts = []
-            if "before" in got:
-                parts.append(f"{n_before} before")
-            if "after" in got:
-                parts.append(f"{n_after} after")
-            head.append(f"{n_new} new message{'s' if n_new != 1 else ''} around "
-                        f"{kid}:{anchor.id} ({', '.join(parts)}), oldest first:")
-        else:
-            head.append(f"nothing new around {kid}:{anchor.id}: you already have these "
-                        f"messages.")
+                _chat_head(kb.title, kid, chat_id, ch),
+                f"{len(before) + len(after)} messages around {kid}:{anchor.id} "
+                f"({', '.join(parts)}), oldest first:"]
         content = "\n".join(head + body + ["", covered + ".", "; ".join(nxt)])
-        spec = led.spec("scroll", {"ref": f"{kid}:{anchor.id}", "direction": direction})
-        return self._done(led, "scroll", spec, content, search=False, display={
-            "messages": n_new, "anchor": f"{kid}:{anchor.id}", "direction": direction,
+        return ToolResult(content=content, display={
+            "messages": len(before) + len(after), "anchor": f"{kid}:{anchor.id}",
+            "direction": direction,
             "first": f"{kid}:{first.id}", "last": f"{kid}:{last.id}",
             "scope_kind": "chats", "scope_chats": [{
                 "ref": f"{kid}:{chat_id}", "name": ch.get("name") or "?",
@@ -1125,19 +955,6 @@ class ChatArchive:
                          + "\n".join(f"  {c}" for c in chats))
         return "\n".join(parts) or None
 
-    @staticmethod
-    def _mark_focus(ctx, ep) -> str | None:
-        """Marks the lines of the person this turn is about (a look-up that found one
-        person, or written_by) as hits, and says so."""
-        focus = ledger.get(ctx.turn_id).focus
-        mine = {m.id for m in ep.lines if f"{ep.kb}:{m.sender_id}" in focus}
-        if not mine:
-            return None
-        ep.hits = mine
-        first = next(m for m in ep.lines if m.id in mine)
-        return (f"> marks the lines written by {ep.kb}:{first.sender_id} {first.sender} "
-                f"({len(mine)} of {len(ep.lines)} here)")
-
     def _chat_line(self, kid: str, chat: dict) -> str:
         return (f"scope: 1 chat: {kid}:{chat.get('id')} \"{chat.get('name', '?')}\" "
                 f"({chat.get('kind') or 'chat'})")
@@ -1174,8 +991,6 @@ class ChatArchive:
                         f"shown.")
         else:
             head.append(f"its whole chat session, {total:,} messages")
-        if mark := self._mark_focus(ctx, ep):
-            head.append(mark)
         body = "\n".join(head) + "\n" + E.render(ep, kb_title=kb.title) + "\n" + handles
         return ToolResult(content=body, display={"chat": chat.get("name"),
                                                  "messages": len(msgs), "scope_kind": "chats",
@@ -1324,8 +1139,6 @@ class ChatArchive:
             kb, cid, (msgs[0].ts, msgs[0].id), (msgs[-1].ts, msgs[-1].id)))
         head = (f"{label}, {span}: all {n:,} messages" if len(msgs) == n else
                 f"{label}, {span}: the newest {len(msgs):,} of {n:,} messages that fit")
-        if mark := self._mark_focus(ctx, ep):
-            head += "\n" + mark
         return ToolResult(content=scope_line + "\n" + head + "\n" +
                           E.render(ep, kb_title=kb.title) + "\n" + handles,
                           display={**disp, "messages": len(msgs), **hd})

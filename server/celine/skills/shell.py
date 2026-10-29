@@ -384,7 +384,6 @@ SHELL_DETACHED = ("running in the background as job {job}, watching terminal {te
 
 class Shell:
     name = "shell"
-    exact_args = True   # turns/tools.py: in a terminal "a" is not "A"
     app = None          # the running app (core/services.py), from skills.build
     guide = guide("shell")
     description = described()
@@ -405,6 +404,14 @@ class Shell:
         for a in ("boots", "apt_noted", "full_noted", "hinted", "told"):
             setattr(self, a, getattr(old, a))
 
+    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
+        """This conversation's own terminal (terminals/store.default_terminal)."""
+        if ctx.store is None:
+            return None
+        from ..terminals.store import default_terminal
+        name = await default_terminal(ctx.store, ctx.conversation_id)
+        return f"Your terminal in this conversation is `{name}`."
+
     @property
     def status(self) -> str:
         return "up" if shellbox.url(self.cfg) else "down"
@@ -418,18 +425,18 @@ class Shell:
     # ---- the tools ------------------------------------------------------------------------
 
     @tool(mode="detach", read_only=False, destructive=True, open_world=True,
-          background="background", timeout=SELF_END, terminal_arg="terminal",
+          background="background", timeout=SELF_END,
           detached=SHELL_DETACHED, detached_display={"head": 1})
     async def run(
         self,
         ctx: ToolContext,
         command: Annotated[str, "The command line, run by your shell as if typed at its "
                                 "prompt. Several lines are fine."],
+        terminal: Annotated[str, "Which terminal, by name. A new name opens a new "
+                                 "terminal."],
         timeout: Annotated[float | None, "Most seconds to wait, 1 to 3000. Without it, until "
                                          "the command ends or the time of your turn is up. "
                                          "The command keeps running after it."] = None,
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal; a new name opens a new terminal."] = None,
         background: Annotated[bool, "True hands the wait to a background job: the call "
                                     "answers within 5 seconds and the result reaches you as a "
                                     "message when the command ends."] = False,
@@ -440,7 +447,7 @@ class Shell:
         Returns: a status line (terminal, directory, exit status and duration, or still
         running), the output (its start and end when long) and the log's path."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
             command = "" if command is None else str(command)
             if not command.strip():
                 raise ToolRefused("command is the command line to run, like command=\"ls -la\".")
@@ -476,10 +483,11 @@ class Shell:
             return self._unreachable(name, e)
         return await self._result(ctx, res, "run", name, text=command)
 
-    @tool(read_only=False, destructive=True, open_world=True, terminal_arg="terminal")
+    @tool(read_only=False, destructive=True, open_world=True)
     async def type(
         self,
         ctx: ToolContext,
+        terminal: Annotated[str, "Which terminal, by name."],
         text: Annotated[str, "Typed exactly as written. Several lines arrive as one paste. "
                              "Use real line breaks: a written \\n arrives as a backslash and "
                              "an n."] = "",
@@ -487,8 +495,6 @@ class Shell:
                              "Enter, Tab, Up, Down, Left, Right, Home, End, PageUp, PageDown, "
                              "Backspace, Delete, Space, F1 to F12, C-d (Ctrl), or one single "
                              "character. Examples: \"Escape\", \"Down Down Enter\"."] = "",
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal."] = None,
         enter: Annotated[bool, "Press Enter after text. False types without Enter, for a "
                                "single letter in a full-screen program."] = True,
     ) -> ToolResult:
@@ -499,7 +505,7 @@ class Shell:
         Returns: a status line (terminal, what is in front and whether it waits for input),
         then the screen."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
             text = "" if text is None else str(text)
             key_list = parse_keys(keys)
             press = as_bool(enter, "enter")
@@ -521,12 +527,11 @@ class Shell:
         return await self._result(ctx, res, "type", name, text=text, keys=key_list,
                                   notes=notes)
 
-    @tool(read_only=False, destructive=True, open_world=True, terminal_arg="terminal")
+    @tool(read_only=False, destructive=True, open_world=True)
     async def stop(
         self,
         ctx: ToolContext,
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal."] = None,
+        terminal: Annotated[str, "Which terminal, by name."],
     ) -> ToolResult:
         """Press Ctrl-C in a terminal: the program in front stops, or the run waiting
         there ends (usually exit 130). A program that reads Ctrl-C as a key (python3, nano)
@@ -534,7 +539,7 @@ class Shell:
         this call.
         Returns: how the run ended, or the screen."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
         if (refused := await self._not_hers(ctx, name)) is not None:

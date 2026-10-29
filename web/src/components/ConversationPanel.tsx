@@ -237,7 +237,7 @@ export function ModelRow({ cid, enabled = true, live, head = false }: {
    change of the list and every `context.changed` of this conversation. Tokens only. ── */
 type Block = ContextView['blocks'][number]['name']
 const BLOCK: Record<Exclude<Block, 'persona' | 'talk'>, string> = {
-  about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Conversation', warning: 'Summary',
+  about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Conversation',
 }
 /** a block's name, the ones about it in its pronouns ("Who he is", "How they talk") */
 function blockWord(b: Block, subject: string): string {

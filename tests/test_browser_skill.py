@@ -181,8 +181,8 @@ async def test_a_blind_model_hears_it_at_once_and_a_down_screen_server_does_not_
     out = await b.look(ctx, what="screen", tab="g")
     assert out.is_error and out.content == (
         "You cannot see the screen: your model does not take images and no model is set "
-        "for screen reading. Tell Joe. browser__look(what=\"view\") and what=\"page\" "
-        "still work.")
+        "for screen reading. Tell Joe. browser__look(tab=\"g\", what=\"view\") and "
+        "what=\"page\" still work.")
 
     bound = []
 
@@ -211,7 +211,7 @@ async def test_a_blind_model_hears_it_at_once_and_a_down_screen_server_does_not_
     out = await b.look(ctx, what="locate", question="the Play button", tab="g")
     assert out.is_error and out.content == (
         "The question was not asked: gpu-box at 192.0.2.10:11434 refused the connection. Tell "
-        "Joe. browser__look(what=\"view\") and what=\"page\" still work.")
+        "Joe. browser__look(tab=\"g\", what=\"view\") and what=\"page\" still work.")
     assert bound[-1]["fallback"] is False and bound[-1]["role"] == "screen"
     with pytest.raises(vision.Unavailable):
         await vision.ask(None, b"png", "q", "text", conversation_id="", turn_id="")
@@ -360,7 +360,7 @@ async def test_locate_fails_with_the_models_words_or_without_a_screen_model(monk
     out = await b.act(ctx, steps=steps[1:], tab="a")
     assert out.is_error and out.content == (
         "The question was not asked: No model is set for Screen reading. Tell Joe. "
-        "browser__look(what=\"view\") and what=\"page\" still work.")
+        "browser__look(tab=\"a\", what=\"view\") and what=\"page\" still work.")
 
     b.app = SimpleNamespace(llm=screen_model(['{"bbox_2d": [450, 360, 540, 400]}']))
     out = await b.act(ctx, steps=steps, tab="a")

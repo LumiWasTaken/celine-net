@@ -28,8 +28,8 @@ metadata address (169.254.169.254).
 
 ## Tabs
 
-Tabs have names, like your terminals: without tab= you use your default tab, named as
-your default terminal is. A new name opens a new tab, {{max_tabs}} at most: one more
+Tabs have names, like your terminals: every call names its tab=. This conversation's
+own is named as its terminal, in your instructions. A new name opens a new tab, {{max_tabs}} at most: one more
 closes the tab you used longest ago, if nothing is typed on its page, and your result
 says where it was, and a new tab's result lists the tabs open. They stay open until you
 close one with browser__close, across browser restarts too, except that a mission's and
@@ -91,7 +91,7 @@ cookie wall's text, with what is still hidden in it.
 Only what is in view and not covered is listed: behind a cookie wall you see only the
 wall, so answer it first. Frames from other sites (an embedded sign-in, a consent
 wall) are part of the outline under "frame". More of the page: scroll, or find words on
-it. The whole page as text, comments and all: browser__look(what="page").
+it. The whole page as text, comments and all: browser__look(tab="jobs", what="page").
 
 show="main" on browser__open and browser__act leaves navigation, banners, footers and
 sidebars out of the outline; show="none" brings no outline, for steps you will look at
@@ -107,14 +107,14 @@ being left stays when you typed on it.
 
 ## Scrolling and closing
 
-browser__scroll(direction="down") scrolls one screen; "up", "top", "bottom";
+browser__scroll(tab="jobs", direction="down") scrolls one screen; "up", "top", "bottom";
 amount=300 scrolls by pixels; to="e12" brings that element into view, and with amount
 turns the wheel inside it (a scrollarea). browser__close(tab="jobs") closes a tab.
 Neither changes what the page holds, like browser__look.
 
 ## Acting
 
-browser__act(steps=[...]) runs steps in order and shows the page after the last one.
+browser__act(tab="jobs", steps=[...]) runs steps in order and shows the page after the last one.
 One step is a call too. A step is {"do": ..., "target": ..., "text": ...}:
 
 - click, hover: target, an id, or a point of the screen in px like "712,340", for
@@ -130,7 +130,7 @@ One step is a call too. A step is {"do": ..., "target": ..., "text": ...}:
 - find: text, words on the page; the next place they are comes into view. Its line
   says when they are not on the page.
 - wait: text, words that a page fills in after loading, like "Comments"; up to 10 s.
-  browser__open(url, wait="Comments") does the same for a new page.
+  browser__open(url, tab, wait="Comments") does the same for a new page.
 - back, forward, reload.
 - upload: target, a file button or field; text, file paths in your home, separated
   by spaces: "Downloads/cv.pdf".
@@ -161,7 +161,7 @@ clicked, and the refusal names what is on top.
 browser__look changes nothing. Which one:
 
 - words you know are on the page (a name, a price, "Comments"): find, as
-  browser__look(find="words") or a find step. It reads the page's text, takes no model
+  browser__look(tab="jobs", find="words") or a find step. It reads the page's text, takes no model
   and sees the whole page, not only the screen.
 - a thing with no words and no id (an icon, a picture, a spot on a canvas or a map):
   locate. A model looks at the screen, so it only finds what is on it, and it is slower.
@@ -196,7 +196,7 @@ browser__look changes nothing. Which one:
 
 Logged out, Reddit shows a login page: log in with the account in the vault.
 Search a sub with www.reddit.com/r/<sub>/search/?q=... and open a thread to read it
-all with browser__look(what="page").
+all with browser__look(tab="reddit", what="page").
 
 ## When something goes wrong
 

@@ -306,10 +306,12 @@ async def request_abort(store, cid: str) -> str | None:
 
 
 async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
-                        wait: bool = False) -> tuple[str, int]:
+                        wait: bool = False, prefill: bool = True) -> tuple[str, int]:
     """Put a finished-but-unfinished turn back in the queue, as the same turn.
     `wait`: Keep waiting, its queued reason `keep_waiting`: a busy provider is waited
-    for (backends/llm.py).
+    for (backends/llm.py). `prefill`: whether its model takes one; a turn whose tail is
+    a cut reply is refused before anything is written when it does not (the runner
+    ends such a turn with no_prefill for a caller that does not ask first).
     Read-only calls it left interrupted or cancelled run again with the same call
     id; a mutating one keeps its `interrupted` result, never re-run silently.
     Raises KeyError (no such turn), tree.Busy, or ValueError(reason)."""
@@ -329,6 +331,13 @@ async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
         # the tail reply's interrupted/cancelled read-only calls run again
         tail = tree.turn_tail(c, turn_id, turn["root_message_id"], tree.leaf(c, cid)) or []
         asst = next((m for m in tail if m["role"] == "assistant"), None)
+        # a cut reply continues in place (resume_point reopen): only with a prefill
+        last = tail[0] if tail else None
+        if not prefill and last is not None and last["role"] == "assistant" \
+                and last["content"] and last["finish_reason"] != "stop" \
+                and c.execute("SELECT 1 FROM tool_calls WHERE message_id=?",
+                              (last["id"],)).fetchone() is None:
+            raise ValueError(tree.NO_PREFILL)
         reran: list[str] = []
         if asst is not None:
             for r in c.execute(
@@ -547,17 +556,14 @@ async def record_tool_calls(store, cid: str, message_id: str, calls: list[dict])
     await store.write(fn)
 
 
-async def tool_started(store, cid: str, call_id: str, arguments: str | None = None) -> None:
+async def tool_started(store, cid: str, call_id: str) -> None:
     """The step runs now: in a sequential batch the second call waits for the
-    first, so its clock starts here, not when the batch was recorded. With
-    `arguments`, the row's arguments are replaced and the event carries the new
-    ones (a shell call with its default terminal resolved)."""
+    first, so its clock starts here, not when the batch was recorded."""
     def fn(c: sqlite3.Connection) -> None:
         ts = now()
-        row = c.execute("UPDATE tool_calls SET started_at=?, "
-                        "arguments=coalesce(?, arguments) WHERE id=? AND "
+        row = c.execute("UPDATE tool_calls SET started_at=? WHERE id=? AND "
                         "state='pending' RETURNING name, arguments, message_id",
-                        (ts, arguments, call_id)).fetchone()
+                        (ts, call_id)).fetchone()
         if row is not None:
             store.event(c, cid, TOOL_STARTED,
                         {"tool_call_id": call_id, "message_id": row["message_id"],

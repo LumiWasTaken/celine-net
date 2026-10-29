@@ -167,7 +167,7 @@ def wire_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
                 fn = c.get("function") or {}
                 blocks.append({"type": "tool_use", "id": _id(c.get("id")),
                                "name": fn.get("name") or "",
-                               "input": _arguments(fn.get("arguments"))})
+                               "input": _arguments(fn)})
         if not blocks:
             continue
         if out and out[-1]["role"] == role:

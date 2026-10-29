@@ -38,7 +38,6 @@ async def test_every_kind_gets_her_persona_talk_and_legend(store):
         assert text.startswith(f"You are {cfg.name}."), kind
         assert "You have your own taste." in text, kind
         assert "How the app marks what it adds" in text, kind
-        assert "[how you sound]" in text, kind
         assert ("talk", "how I talk.\n\n## how I sound\nloud, and emojis when it fits.") \
             in blocks, kind
 

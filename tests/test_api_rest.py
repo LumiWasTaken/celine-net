@@ -267,14 +267,15 @@ async def test_her_last_line_impersonate_and_a_refused_continue(c, store):
     assert rows[0]["last_line"] == "y" * 120
 
     r = await c.post(f"/api/conversations/{cid}/impersonate")
-    assert r.json() == {"text": "and then we went home"}, "the echoed label goes"
+    assert r.json() == {"text": f"{c.cfg.user}: and then we went home"}, "as it came"
     system, user = sent[0]
     assert system["content"].startswith(f"Write {c.cfg.user}'s next message")
     assert "first line here" in user["content"], "the talk: the user's lines and hers"
     assert user["content"].endswith(f"{c.cfg.name}: {'y' * 300}")
     # what the user typed is where the message starts
     r = await c.post(f"/api/conversations/{cid}/impersonate", json={"start": "*waves*"})
-    assert r.json() == {"text": "*waves* and then we went home"}
+    assert r.json() == {"text": f"{c.cfg.user}: and then we went home"}, \
+        "without a prefill the model writes the whole message"
     assert sent[1][0]["content"].endswith("*waves*"), "quoted when not prefilled"
 
     class Prefill(Writer):

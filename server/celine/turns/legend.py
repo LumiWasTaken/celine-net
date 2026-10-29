@@ -5,8 +5,8 @@ Everything the app inserts is marked one way, a line in square brackets: the sen
 (context.time_line), the intercom headers (intercom/render.py header), its mind block
 (skills/mind.py HEAD), its memory block (skills/recall.py HEAD), its notes (skills/notebook.py notes_block), the other chats working now
 (conversations/here.py busy), shortened and cut
-results (compact.STUB_HEAD, tools._capped), a screen (context, "[the screen from ...]")
-and her voice cue (prompt.voice_line, named only where it is added). Outside text is the one exception: while Bastet
+results (compact.STUB_HEAD, tools._capped) and a screen (context, "[the screen from ...]").
+Outside text is the one exception: while Bastet
 is on, it comes inside <outside> tags (guard/mark.py), and the legend says so only then.
 tests/test_self.py checks that every mark named here is the one the code writes.
 """
@@ -32,14 +32,10 @@ LINES = (
     "result. Call the tool again for the whole of it.",
     "- [the screen from ...]: a picture of a screen your tool took.",
 )
-VOICE = ("- [how you sound] after your tool results: a line from your own talk, how you "
-         "sound.")
 
 
-def legend(cfg, guarded: bool, voiced: bool) -> str:
-    """The legend, names filled in; the [how you sound] line only where the voice cue is
-    added (`voiced`: its talk has a line under a ## heading), the <outside>
-    line (guard/mark.py GUIDE) only while the guard is on."""
+def legend(cfg, guarded: bool) -> str:
+    """The legend, names filled in; the <outside> line (guard/mark.py GUIDE) only while
+    the guard is on."""
     from ..guard.mark import GUIDE
-    return cfg.substitute("\n".join(LINES + ((VOICE,) if voiced else ())
-                                     + ((f"- {GUIDE}",) if guarded else ())))
+    return cfg.substitute("\n".join(LINES + ((f"- {GUIDE}",) if guarded else ())))

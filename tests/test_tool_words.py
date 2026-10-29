@@ -37,9 +37,9 @@ def test_not_run_and_cut_off():
     gated = w("web__search", {"query": "tea"}, "gated", None,
               "Down: SearXNG does not answer. Start it.")
     assert gated["settled"] == 'Could not search the web for "tea": searXNG does not answer'
-    narrow = w("notebook__search", {"query": "tea"}, "error", {"narrow": True},
-               "Not run: Nothing found three times. Try other words.")
-    assert narrow["settled"] == "Not run: nothing found three times"
+    late = w("notebook__search", {"query": "tea"}, "error", {"time_up": True},
+             "Not run: the time for this turn is up.")
+    assert late["settled"] == "Not run: the time for this turn is up"
     # still at work: its words if the turn cuts it off
     assert w("notebook__list", {}, "running")["settled"] == "Listed the notebook"
 

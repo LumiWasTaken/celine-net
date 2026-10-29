@@ -129,10 +129,40 @@ async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch,
         backend = llm.bind(role="chat", priority=Priority.AGENT, conversation_id=cid,
                            fallback=fallback)
         _, parts = await request_text(store, cfg, None, backend, cid, {"id": "t"}, carried)
-        return [p.text for p in parts if p.text.startswith("Running on")]
-    assert await tail() == ["Running on lan/small for chat. main/big: llama-swap does not "
-                            "answer."]
+        return [p.text for p in parts if p.text.startswith("You are running in fallback")]
+    [line] = await tail()
+    assert line.startswith("You are running in fallback mode. Instead of main/big you are "
+                           "running on lan/small. ")
+    assert line.endswith(" main/big: llama-swap does not answer.")
     assert await tail(fallback=False) == [], "a turn on the first model alone fails instead"
     down.clear()
     llm.router._providers["main"].checked = 0.0          # the cached probe has run out
     assert await tail() == []
+
+
+async def test_the_fallback_line_says_what_the_app_knows_of_the_model():
+    """The fixed sentence, the facts of the model it runs on, the reasons; a fact the app
+    does not know is left out."""
+    from types import SimpleNamespace
+
+    from celine.backends.router import Ordered
+    from celine.turns.prompt import fallback_line
+
+    class Router:
+        async def order(self, role, conversation_id=None):
+            return Ordered(role, ["lan/small"], ["main/big", "lan/small"],
+                           [("main/big", "llama-swap does not answer.")])
+
+    def backend(model):
+        llm = SimpleNamespace(router=Router(), make=lambda ref: model)
+        return SimpleNamespace(llm=llm, fallback=True, role="chat")
+    known = SimpleNamespace(context_window=32_768, supports_images=False,
+                            supports_tools=True, cfg=None)
+    assert await fallback_line(backend(known), "c") == (
+        "You are running in fallback mode. Instead of main/big you are running on "
+        "lan/small. Its context window is 32,768 tokens. It does not see images. It calls "
+        "tools. main/big: llama-swap does not answer.")
+    unknown = SimpleNamespace(cfg=None)
+    assert await fallback_line(backend(unknown), "c") == (
+        "You are running in fallback mode. Instead of main/big you are running on "
+        "lan/small. main/big: llama-swap does not answer.")

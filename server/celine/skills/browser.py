@@ -339,7 +339,6 @@ def steps_of(steps) -> list[dict]:
 
 class Browser:
     name = "browser"
-    exact_args = True   # turns/tools.py: on a page Enter is not Space
     guide = guide("browser", max_tabs=MAX_TABS)
     description = described()
 
@@ -365,15 +364,23 @@ class Browser:
             return not_set_up("the browser")
         return None
 
+    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
+        """This conversation's own tab, named as its terminal (terminals/store.py)."""
+        if ctx.store is None:
+            return None
+        from ..terminals.store import default_terminal
+        name = await default_terminal(ctx.store, ctx.conversation_id)
+        return f"Your browser tab in this conversation is `{name}`."
+
     # ---- the tools ------------------------------------------------------------------------
 
-    @tool(read_only=False, destructive=False, open_world=True, terminal_arg="tab")
+    @tool(read_only=False, destructive=False, open_world=True)
     async def open(
         self,
         ctx: ToolContext,
         url: Annotated[str, "The address, like https://www.example.com/jobs."],
-        tab: Annotated[str | None, "Which tab, by name. Leave it out for your default tab; a "
-                                   f"new name opens a new tab ({MAX_TABS} at most)."] = None,
+        tab: Annotated[str, "Which tab, by name. A new name opens a new tab "
+                            f"({MAX_TABS} at most)."],
         profile: Annotated[Literal["main", "throwaway"] | None,
                            "For a new tab: main, your cookies and logins (the default), or "
                            "throwaway, a fresh profile that keeps nothing and is gone when "
@@ -409,14 +416,14 @@ class Browser:
         except (httpx.HTTPError, httpx.InvalidURL, BrowserRefused):
             return None
 
-    @tool(read_only=False, open_world=True, terminal_arg="tab")
+    @tool(read_only=False, open_world=True)
     async def act(
         self,
         ctx: ToolContext,
         steps: Annotated[list[Step], "The steps, run in order; the page comes back after "
                                      "the last one. One step is fine."],
-        tab: Annotated[str | None, "Which tab, by name. Leave it out for your default "
-                                   "tab."] = None,
+        tab: Annotated[str, "Which tab, by name. A new name opens a new tab "
+                            f"({MAX_TABS} at most)."],
         show: Annotated[SHOW, SHOW_HELP] = "all",
     ) -> ToolResult:
         """Act in a browser tab, like a person at the screen, one or more steps in one
@@ -532,17 +539,17 @@ class Browser:
             filled.append(step)
         return filled, said
 
-    @tool(read_only=True, open_world=True, terminal_arg="tab")       # the page changes nothing: reading may scroll
+    @tool(read_only=True, open_world=True)       # the page changes nothing: reading may scroll
     async def scroll(
         self,
         ctx: ToolContext,
+        tab: Annotated[str, "Which tab, by name. A new name opens a new tab "
+                            f"({MAX_TABS} at most)."],
         direction: Annotated[Literal["down", "up", "top", "bottom"],
                              "down or up, most of a screen; top or bottom of the page."] = "down",
         to: Annotated[str | None, "An id from the page: scroll it into view instead, or, "
                                   "with amount, turn the wheel inside it (a scrollarea)."] = None,
         amount: Annotated[int | None, "Pixels instead of a screen, like 300 or -1200."] = None,
-        tab: Annotated[str | None, "Which tab, by name. Leave it out for your default "
-                                   "tab."] = None,
         show: Annotated[SHOW, SHOW_HELP] = "all",
     ) -> ToolResult:
         """Scroll a browser tab: most of a screen down or up, to the top or bottom, by
@@ -562,12 +569,12 @@ class Browser:
             return self._error(str(e) or "amount is a number of pixels.", tab)
         return await self._steps(ctx, name, [step], show=show)
 
-    @tool(read_only=False, destructive=False, open_world=True, terminal_arg="tab")
+    @tool(read_only=False, destructive=False, open_world=True)
     async def close(
         self,
         ctx: ToolContext,
-        tab: Annotated[str | None, "Which tab, by name. Leave it out for your default "
-                                   "tab."] = None,
+        tab: Annotated[str, "Which tab, by name. A new name opens a new tab "
+                            f"({MAX_TABS} at most)."],
     ) -> ToolResult:
         """Close a browser tab. Returns: the tabs still open. Leave a tab open while you
         use it; closing frees room for another."""
@@ -577,10 +584,12 @@ class Browser:
             return self._error(str(e), tab)
         return await self._steps(ctx, name, [{"do": "close"}])
 
-    @tool(read_only=True, open_world=True, terminal_arg="tab")
+    @tool(read_only=True, open_world=True)
     async def look(
         self,
         ctx: ToolContext,
+        tab: Annotated[str, "Which tab, by name. A new name opens a new tab "
+                            f"({MAX_TABS} at most)."],
         what: Annotated[Literal["view", "page", "html", "source", "screen", "locate"],
                         "view: the outline of what is in view, as after a step. page: the "
                         "whole page as text, in parts. html: its HTML as it is now, in "
@@ -606,8 +615,6 @@ class Browser:
         answer_as: Annotated[Literal["text", "id"],
                              "screen, with a question: text, a few sentences; id, the id "
                              "of the element asked about."] = "text",
-        tab: Annotated[str | None, "Which tab, by name. Leave it out for your default "
-                                   "tab."] = None,
     ) -> ToolResult:
         """Read a browser tab without changing it: the view again, the whole page as
         clean text (a thread with its comments, an article, a README), its HTML, or the
@@ -757,11 +764,11 @@ class Browser:
             if not await self._screen_model():
                 return self._error(f"You cannot see the screen: your model does not take "
                                    f"images and no model is set for screen reading. Tell "
-                                   f"{self.cfg.user}. browser__look(what=\"view\") and "
-                                   f"what=\"page\" still work.", name)
-            return self._error("Your model does not take images, so ask a question about "
-                               "the screen: browser__look(what=\"screen\", question=\"...\").",
-                               name)
+                                   f"{self.cfg.user}. browser__look(tab=\"{name}\", "
+                                   f"what=\"view\") and what=\"page\" still work.", name)
+            return self._error(f"Your model does not take images, so ask a question about "
+                               f"the screen: browser__look(tab=\"{name}\", what=\"screen\", "
+                               f"question=\"...\").", name)
         kind = SHOTS[answer_as] if question or answer_as != "text" else "plain"
         try:
             async with self._locks[name]:
@@ -789,7 +796,7 @@ class Browser:
         try:
             got = await vision.ask(self.llm, png, question, answer_as, **turn)
         except vision.Unavailable as e:
-            return self._error(self._blind(e), name)
+            return self._error(self._blind(e, name), name)
         display.update(question=question, model=got.model)
         answer = got.value
         if answer_as == "id":
@@ -829,9 +836,10 @@ class Browser:
                                    "model": model, "point": point, "box": box,
                                    "answer": answer})
 
-    def _blind(self, why) -> str:
+    def _blind(self, why, tab: str) -> str:
         return (f"The question was not asked: {why} Tell {self.cfg.user}. "
-                f"browser__look(what=\"view\") and what=\"page\" still work.")
+                f"browser__look(tab=\"{tab}\", what=\"view\") and what=\"page\" still "
+                f"work.")
 
     async def _screen_model(self) -> bool:
         """Whether a model of the Screen reading role can answer now."""
@@ -1066,7 +1074,7 @@ class Browser:
             where = (f"Step {done + 1} ({self._step_words(step)}) was refused"
                      + (f"; steps 1 to {done} were done" if done else "") + ": ")
         if code == "no_screen":
-            return self._error(where + self._blind(f.get("why")), tab)
+            return self._error(where + self._blind(f.get("why"), tab), tab)
         if code == "not_located":
             said = f.get("said") or ""
             return self._error(where + f"The screen reading model found no \"{f.get('text')}\" "

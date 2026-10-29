@@ -55,7 +55,7 @@ FIELDS: list[dict[str, Any]] = [
         ("turn_wall_clock_seconds", "Turn time limit", "seconds", 1, 86_400, 1800,
          "The agent's work time in one turn, tools included."),
         ("last_step_seconds", "Last answer time", "seconds", 1, 3600, 180,
-         "After the turn time limit: one step without tools to answer with what is there."),
+         "After the turn time limit: the step under way may still finish."),
         ("tool_timeout_seconds", "Tool time limit", "seconds", 1, 86_400, 180, None),
         ("routine_max_minutes", "Routine time limit", "minutes", 0, 100_000, 180,
          "One routine run at most. 0: no cap."),

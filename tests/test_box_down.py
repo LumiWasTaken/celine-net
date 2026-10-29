@@ -45,18 +45,18 @@ def shell(box, monkeypatch, stack_key):
 async def test_shell_without_an_address_is_down_with_the_variable_named(monkeypatch):
     sh = Shell(load())
     assert (sh.status, sh.error) == ("down", NOT_SET_UP)
-    out = await sh.run(ctx(), command="ls")       # called anyway: no traceback, the reason
+    out = await sh.run(ctx(), terminal="main", command="ls")       # called anyway: no traceback, the reason
     assert out.is_error and out.content == NOT_SET_UP
 
 
 async def test_shell_refused_wrong_key_and_timeout_each_get_one_sentence(shell, box):
     box.answers = [httpx.ConnectError("refused")]
-    out = await shell.run(ctx(), command="ls")
+    out = await shell.run(ctx(), terminal="main", command="ls")
     assert out.is_error and out.content == REFUSED and out.display["unreachable"]
 
     for status in (401, 403):
         box.answers = [(status, {"error": "unauthorized"})]
-        out = await shell.run(ctx(), command="ls")
+        out = await shell.run(ctx(), terminal="main", command="ls")
         assert out.is_error and out.content == BAD_KEY, status
         assert shell.status == "up", "a key problem is said at the call, the tools stay"
 
@@ -65,7 +65,7 @@ async def test_shell_refused_wrong_key_and_timeout_each_get_one_sentence(shell, 
     assert out.is_error and out.content == REFUSED
 
     box.answers = [[{"progress": "x"}]]            # the stream ended without a result
-    out = await shell.run(ctx(), command="ls")
+    out = await shell.run(ctx(), terminal="main", command="ls")
     assert out.is_error and out.content.startswith(
         "The shellbox at shellbox:8770 dropped the connection or restarted.")
     assert "\n" not in out.content.split(". ")[0] and "Traceback" not in out.content

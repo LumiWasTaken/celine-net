@@ -107,7 +107,7 @@ applies at once:
 | `tool_timeout_seconds` | 180 | a blocking tool past this is cancelled |
 | `job_timeout_seconds` | 3600 | must exceed `tool_timeout_seconds` |
 | `turn_wall_clock_seconds` | 1800 | its work time in one turn, tools included |
-| `last_step_seconds` | 180 | after the work time: one step without tools, to answer |
+| `last_step_seconds` | 180 | after the work time: the step under way may still finish |
 | `events_keep` | 500 | log entries kept per conversation once it is idle |
 | `history_messages` | 200 | transcript sent to the model; 0 means no cap |
 | `backup_keep_days` | 7 | nights of backups kept |
@@ -281,8 +281,9 @@ message reaches it at its next step. It returns `{intercom_id, message_id, turn_
 the last three null when it did not land at once. New in the UI only clears
 the selection; the conversation row is created on the first send. The title comes
 after the first reply: the dispatcher puts a `title` work item (see The work queue)
-that asks the backend for a 2 to 4 word name (`turns/title.py`), falls back to the first
-four words of the first message, and appends `conversation.title`.
+that asks the small model for a 2 to 4 word name (`turns/title.py`), stores the first
+line it wrote as it came, and appends `conversation.title`. A failure leaves the title
+empty and logs why.
 `POST /conversations/{id}/regenerate` queues a fresh turn for the last user message when
 nothing with words answered it: the store walks up from the active leaf past tool
 messages and empty assistant messages, moves the leaf back to the user message and roots
@@ -292,16 +293,15 @@ Workers (`max_concurrent_turns` of them) lease conversations: `turns.claim` pick
 queued turn whose conversation has nothing in `preparing`, `streaming` or `tools`: the
 user's turns (`origin='user'`) first, then the oldest. A worker sleeps until `notify()`,
 which every write that queues a turn calls (no poll). When `turn_wall_clock_seconds` of
-work are over, no new tool call starts and a running one is stopped; it gets one last
-step without tools, and the turn ends `done` with `reason_code` `time_up` (a Stop ends it
-`aborted`). Time spent waiting for a model does not count. Past the work time plus
+work are over, no new tool call starts and a running one is stopped; no new step starts,
+and the turn ends `capped` with `reason_code` `wall_clock` (a Stop ends it `aborted`). Time spent waiting for a model does not count. Past the work time plus
 `last_step_seconds` the turn is `failed` with the reason and the conversation is free.
 
 States: `queued`, `preparing`, `streaming`, `tools`, then `done`, `aborted`, `failed`,
 `interrupted`, `capped`. Every transition is a write, and every write re-reads
 `abort_requested`. A terminal state carries `reason` (words) and `reason_code`
 (`stopped`, `restart`, `crash`, `wall_clock`, `max_tool_iterations`, `backend`,
-`backend_retryable`, `context_too_small`, `cut_length`, `time_up`); a `done` reply that
+`backend_retryable`, `context_too_small`, `cut_length`); a `done` reply that
 hit the output limit has `cut = 'length'`. **Every transition into a terminal state
 settles the calls the turn left open** in the same write: each `pending`/`running` call
 becomes `interrupted` with a `role=tool` row and a `tool.done {state: "interrupted"}`
@@ -355,9 +355,11 @@ re-run silently. It bumps `turns.continues` and appends `turn.state {queued, rea
 
 The runner then continues by what the tail holds: pending read-only calls run (same ids);
 a reply with text and no calls is **continued in the same message**: the request ends
-with that partial reply as the final assistant message (prefill) or, without prefill,
-with a note quoting its last 200 characters, and `message.reopened {message_id}` reopens
-it. An empty reply is streamed into as a new step.
+with that partial reply as the final assistant message (prefill), and
+`message.reopened {message_id}` reopens it. A model without a prefill cannot continue it:
+Continue is refused before anything is written, and a turn queued again by a mission or
+a routine fails with `reason_code = 'no_prefill'`, the reply as it was. An empty
+reply is streamed into as a new step.
 
 The snapshot's `turn` carries `continuable: {ok, label, reason}` (computed on the
 server), plus `reason_code`, `cut`, `continues`. Terminal `turn.state` events carry the
@@ -445,7 +447,7 @@ Every user-role message goes on the wire with its time first: the line `[Fri 2 O
 **One mark for what the app adds.** Everything the app puts into what it reads is a line
 in square brackets: the send time, the intercom headers, `[your mind]`, `[your memory]`,
 `[your notes]`, shortened and cut results (`[earlier result, shortened to save room]`,
-`[cut: ...]`), a screen and its voice cue (`[how you sound]`). The one exception is
+`[cut: ...]`) and a screen. The one exception is
 outside text inside `<outside>` tags while Bastet is on. The legend under her persona
 (`turns/legend.py`) names each mark; `tests/test_self.py` checks it names the marks the
 code writes. The stored row stays bare. The agent's clock is the newest message's line, and
@@ -469,7 +471,7 @@ same way, without a model call, and measures it in tokens with the same estimate
 state, why}], loaded: {notes: [{path, since}], skills: [{name, since}]}, tools}`.
 `loaded` is what it carries now, each with the turns since a turn touched it. The blocks,
 in order: `persona`, `talk`, `about`, `notes`, `tools` (the skill index, fragments and
-tool schemas), `history` and `warning` (`conversations/api.py BLOCKS`). `notes` are the
+tool schemas) and `history` (`conversations/api.py BLOCKS`). `notes` are the
 notes it carries or would: `included`, `left_out` (over the share) or `off`, each with why.
 
 Automatic summaries (not `/compact`, not emergency) are skipped when they would save
@@ -478,8 +480,7 @@ message is not on the active path. A compaction (`compactions` row: `through_mes
 `trigger`, `covers_messages`, `text`, token counts, `focus`, `model`) is valid while
 `through_message_id` is on the active path; the newest valid one is used. The summary is
 **rolling** and ends with the refs of the summarised results it does not mention
-(`compact.with_dropped_refs`), so nothing it found becomes unfindable. Past
-`Policy.warn_at` (60 %) the system prompt ends with one line that a summary comes soon.
+(`compact.with_dropped_refs`), so nothing it found becomes unfindable.
 The summary request goes to the conversation's chat model and no other, with no tools,
 in pieces of at most half the window (`compact.PROMPT`). Nothing is ever left out in its
 place: when the summary fails, a turn fails with the reason (`reason_code =
@@ -489,7 +490,7 @@ One decision per conversation at a time (`context.lock`).
 
 Every request message carries its `origin` (the app's key; no backend sends it): the
 conversation, the turn, the stored message or the tool call, or the `note` the app
-added for this request only (system, tail, opening, screen, not_run, time_up, continue).
+added for this request only (system, tail, opening, screen).
 Before a step goes out the runner holds it to `context.malformed`: a tool result right
 after the reply that made its call, each call answered once, no stored message twice,
 nothing from another conversation, its first reply after a user message. A request that
@@ -566,7 +567,11 @@ through the same Router (below) but do not queue here.
   handed on) or until the reader stops (`aclose`); never during tool execution.
 - **Your turn: one model.** A turn the user waits on (`fallback=False` on `LLM.bind`) runs
   on exactly the first model of its list. When that model fails, the turn fails with its
-  error; no other model is tried. Only background work walks its list.
+  error; no other model is tried. Only background work walks its list. A turn on a model
+  that is not its list's first gets one tail line (`prompt.fallback_line`): "You are
+  running in fallback mode. Instead of <first> you are running on <current>.", what the
+  app knows of <current> (its context window, whether it sees images and calls tools;
+  an unknown fact is left out), then why each model before it is left out.
 - **Failure.** A failure before the first token (a request every model would refuse, too long or with an image it cannot take, fails the call as it is) marks the model and moves to the next one;
   after the first token, never. When every model failed with an error, the call fails with
   the last one; when they were unreachable, the call waits and tries whatever the Router
@@ -635,19 +640,16 @@ the token per delta and closes the upstream request. Partial text is kept; the t
 ### The tool chokepoint
 
 `turns/tools._resolve` always returns a result. Its steps, in order: stopped, replayed,
-frozen, offered, valid, her default terminal, repeated, Bastet, the call. A call's
+frozen, offered, valid, Bastet, the call. A call's
 arguments are parsed once (`run_tool_calls`). Paths: frozen (state `gated`, in any mode
 of the guard), unknown tool, not in this request's list (`gated`), a skill that is down,
 off (`gating.off_sentence` by `gating.reason`), arguments not JSON, arguments the wrong
-shape (`tools.coerce` first turns a plain form of a value into its schema's type),
+shape (`tools.mistyped`: nothing is converted, the call fails with the reason),
 raised, timed out, cancelled, cancelled but finished, journal replay, detached, not run.
 `turns.finish_tool_call` writes the `role=tool` row for every one of them.
 
-Not run: the same call (same tool, same arguments) when its last 2 runs among the turn's
-latest 40 calls gave the same result (`display.repeated`), and any call after the turn's
-work time is up (`display.time_up`). When every call of a step was refused as a repeat or
-by the ledger's `STOPPED` (`turns/ledger.py`), the next step has no tools and a note tells
-it to answer with what it has.
+Every call she makes runs, a repeated one too. Not run: a call after the turn's work time
+is up (`display.time_up`).
 
 ### Bastet (the guard)
 
@@ -656,7 +658,7 @@ it to answer with what it has.
 are in `guard/__init__.py`; this section is the contract with the rest of the app.
 
 Bastet's character is the user's to edit on Settings, Guard (`guard/persona.py`: her persona, her replies on the Intercom and her notes to the user, kv `bastet:<field>` with History, the shipped `config/guard/bastet.md`, `talk.md`, `note.md` the defaults; `GET /api/guard/texts`, `PUT /api/guard/texts/{field}`); her Intercom address is `system:guard`. In `_resolve`, after
-the repeat check and before the time check (`guard/calls.at_call`), it answers its rule set on the call. The
+the argument check and before the time check (`guard/calls.at_call`), it answers its rule set on the call. The
 General switch `guard` is the one switch (`guard/switch.py`, asked through the port in
 `guard/__init__.py`): `off` (nothing runs, no gate, no patrol, no answer on the
 intercom), `watch` (the call runs at once, the rules are answered in the background and
@@ -917,9 +919,9 @@ leaving its home is refused). `box_files.py` is the app's side. Every file you u
 copied in the background to `~/uploads/<sha12>/<name>` while the shellbox is on
 (`<sha12>`: the start of its sha256; bytes already there are not sent again, so her edits
 to that copy stay); a chat attachment keeps where its copy
-landed (`attachments.box_path`) and its context names it. The agent's default terminal is the
-conversation's own (`terminals/store.default_terminal`, written into the call's arguments
-by `turns/tools.py` for a tool with a `terminal_arg`); your own terminals it reads always and runs, types or
+landed (`attachments.box_path`) and its context names it. Every shell and browser call
+names its terminal or tab; the conversation's own (`terminals/store.default_terminal`) is
+named in the skills' prompt fragments. Your own terminals it reads always and runs, types or
 stops in only while `may_type` is on. The skill upserts the terminal row from the result's
 `display`, with `opened_by` the conversation whose call opened it.
 
