@@ -47,6 +47,7 @@ forbidden_modules =
     celine.missions
     celine.ops
     celine.plans
+    celine.push
     celine.reload
     celine.saves
     celine.schedules

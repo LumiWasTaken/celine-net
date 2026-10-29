@@ -19,7 +19,7 @@ EXPECTED_TABLES = {
     "artifact_errors", "artifact_data", "shares", "intercom", "intercom_deliveries",
     "message_context", "media_batches", "context_loaded", "context_state", "runs", "moods",
     "guard_decisions", "her", "text_versions", "compactions", "freezes", "guard_passes", "work",
-    "tabs", "bugreports", "plans",
+    "tabs", "bugreports", "plans", "push_subscriptions",
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
