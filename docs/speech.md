@@ -38,9 +38,3 @@ Read aloud on a finished reply reads its answer, without thinking, tool output, 
 links, in pieces of up to 900 characters, the next one made while one plays. Speech
 options has the voice and Read new replies aloud (off). Voice, language and the two
 switches are this device's.
-
-## From the earlier speech settings
-
-An install that set speech up before it was a role (`var/settings/speech.toml`) moves it
-once at startup: each address becomes a provider (or the saved one at that address), its
-key that provider's key, its model the role's. Nothing to do by hand.

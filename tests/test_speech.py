@@ -1,9 +1,8 @@
 """Speech runs on the Dictation and Read aloud roles, person-only, bounded, and keeps provider
-secrets on the server; an older speech.toml moves onto providers and roles once."""
+secrets on the server."""
 from __future__ import annotations
 
 import json
-import tomllib
 
 import anyio
 import httpx
@@ -297,27 +296,3 @@ async def test_network_failure_does_not_expose_request_or_secret(api, monkeypatc
     upstream(monkeypatch, fail)
     r = await api.get("/api/speech/voices")
     assert r.status_code == 502 and KEY not in r.text
-
-
-def test_an_older_speech_toml_becomes_providers_and_roles_once(tmp_path):
-    from celine.settings import files, seed
-    root, keys = tmp_path / "settings", tmp_path / "secrets"
-    root.mkdir()
-    files.write(root, "providers", {"providers": {"lan": {
-        "kind": "openai", "label": "LAN", "base_url": "http://10.0.0.5:8000/v1",
-        "models": {"qwen": {"label": "qwen", "caps": ["chat"]}}}}})
-    (root / "speech.toml").write_text(
-        '[input]\nurl = "http://10.0.0.5:8000/v1/"\nmodel = "whisper-1"\n'
-        '[output]\nurl = "https://tts.example/v1"\nmodel = "kokoro"\n')
-    secrets.set_key(keys, "speech-output", KEY)
-    assert seed.speech_roles(root, keys) == ["transcription", "speech"]
-    providers = tomllib.loads((root / "providers.toml").read_text())["providers"]
-    roles = tomllib.loads((root / "roles.toml").read_text())
-    assert roles["transcription"]["chain"] == ["lan/whisper-1"], "the saved provider is reused"
-    assert providers["lan"]["models"]["whisper-1"]["caps"] == ["transcription"]
-    assert roles["speech"]["chain"] == ["read-aloud/kokoro"]
-    assert providers["read-aloud"]["base_url"] == "https://tts.example/v1"
-    assert secrets.read_key(keys, "read-aloud") == KEY, "its key moved with it"
-    assert secrets.read_key(keys, "speech-output") is None
-    assert not (root / "speech.toml").exists()
-    assert seed.speech_roles(root, keys) == [], "once"
