@@ -296,8 +296,6 @@ class IntercomSkill:
                               "a headline."],
         text: Annotated[str, "What {{username}} reads first: what happened and what it "
                              "needs from them, short and complete."],
-        different: Annotated[bool, "True when start_chat listed what came from here "
-                                   "in the last 24 h and yours is another matter."] = False,
     ) -> ToolResult:
         """Start a chat for {{username}} about something they need to act on or know now.
         Check intercom__read first: when they have it already (a thread, an open bug
@@ -314,13 +312,6 @@ class IntercomSkill:
         src = ctx.conversation_id
         since = iso(datetime.now(timezone.utc) - COVERS)
         has = await ctx.store.read(lambda c: covered(c, src, since, self.tz))
-        if has and not different:
-            return ToolResult(content=f"Not started yet. In the last 24 h {self.cfg.user} "
-                                      "got this from here:\n- " + "\n- ".join(has) +
-                                      "\nWhen one of them is this matter, add to it with "
-                                      "intercom__send(reply_to=<number>). When yours is "
-                                      "another matter, call start_chat again with "
-                                      "different=true.", is_error=True)
         new = await conversations.create(ctx.store, title=title)
 
         def first(c):
@@ -332,8 +323,10 @@ class IntercomSkill:
         # from the new chat, so the user's answer lands there
         out = await self.app.intercom.send(f"agent:{new}", "user", text, subject=title,
                                            data={"chat": new, "from": src})
+        listed = (f"\nIn the last 24 h {self.cfg.user} also got this from here:\n- "
+                  + "\n- ".join(has)) if has else ""
         return ToolResult(content=f"Started the chat \"{title}\" (/chat/{new}); it waits "
-                                  f"for {self.cfg.user} as #{out['intercom_id']}.",
+                                  f"for {self.cfg.user} as #{out['intercom_id']}.{listed}",
                           display={"chat": new, "id": out["intercom_id"]})
 
     @tool(read_only=False, destructive=True)

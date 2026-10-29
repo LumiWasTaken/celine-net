@@ -181,19 +181,10 @@ def check_scope(kbs, scope) -> tuple[str, list[str], list[str], str | None]:
     if not items:
         return "", [], [], f"scope is required: {example}."
     if any(x.casefold() in _ALL for x in items):
-        if len(items) > 1:
-            return "", [], [], ('scope ["all"] already means every chat. Pass it alone, '
-                                'or leave "all" out to search only the others.')
         return "all", [], [], None
     plats = [platforms[x.casefold()] for x in items
              if x.casefold() in platforms and not REF.match(x)]
     chats = [x for x in items if x.casefold() not in platforms or REF.match(x)]
-    names = [x for x in chats if not REF.match(x)]
-    if names:
-        return "", [], [], (f"scope takes [\"all\"], source ids ({', '.join(ids)}) or chat "
-                            f"references, not names: {', '.join(repr(n) for n in names)}. "
-                            f"Look the chat up with chat_archive__look_up(name=...) and pass "
-                            f"its `chat <ref>` references.")
     if plats and chats:
         return "", [], [], (f"scope mixes sources ({', '.join(plats)}) and chats "
                             f"({', '.join(chats)}). Pass one kind: the source ids, or the "
@@ -246,15 +237,6 @@ def scope_echo(kbs, kind: str, platform_ids: list[str], resolved) -> tuple[str, 
         "scope_kind": "all", "scope_chats": [], "scope_kbs": sorted(chat_kbs)}
 
 
-# ---- time of day: `when` takes dates ----------------------------------------------------
-_CLOCK = re.compile(r"\b\d{1,2}(?::\d{2}|\s*(?:uhr|h|am|pm)\b)", re.IGNORECASE)
-_DAYPART = re.compile(
-    r"\b(?:at night|nights?|nachts|in der nacht|nächtlich|midnight|mitternacht|"
-    r"mornings?|morgens|vormittags?|afternoons?|nachmittags?|evenings?|abends?|"
-    r"late at night|early morning|frühmorgens|tonight|heute nacht|overnight)\b",
-    re.IGNORECASE)
-
-
 _LAST_NIGHT = re.compile(r"^\s*(?:last night|letzte nacht|gestern (?:nacht|abend)|"
                          r"yesterday (?:night|evening))\s*$", re.IGNORECASE)
 
@@ -287,23 +269,6 @@ def dates_for(when: str | None) -> str | None:
     return when
 
 
-def time_of_day(when: str | None) -> str | None:
-    """A sentence refusing a time of day in `when`, or None for a date range. "last
-    night" / "letzte Nacht" are dates (yesterday) and pass."""
-    if not when:
-        return None
-    t = str(when).strip()
-    if re.search(r"\b(?:last|letzte[nr]?|gestern)\s+(?:night|nacht)\b", t, re.IGNORECASE):
-        return None
-    if _CLOCK.search(t) and not re.fullmatch(r"\d{4}.*", t) or _DAYPART.search(t):
-        return (f"when={t!r} is a time of day, and `when` only takes dates (2021, 2021-03, "
-                f"'last summer'). To count by time of day use chat_archive__count with "
-                f"hours=\"22-6\" (or by=\"hour\"). chat_archive__search cannot filter by "
-                f"the hour: search without it and tell {{{{username}}}} you could not limit "
-                f"it to those hours.")
-    return None
-
-
 def _labels(scope) -> list[str]:
     """The resolution lines after the scope line: when, person (chat lines are in it)."""
     out = []
@@ -333,33 +298,14 @@ class ChatArchive:
         self.cfg = cfg
         self.me = cfg.user
 
-    def _precheck(self, scope, when) -> tuple[str, list[str], list[str], str | None]:
-        """Arguments that cannot be right, refused before a search is spent.
+    def _precheck(self, scope) -> tuple[str, list[str], list[str], str | None]:
+        """A scope that cannot be searched, said before a search is spent.
         -> (kind, source ids, chats, None) or ("", [], [], what to pass instead)."""
         try:
             kbs = self._kbs()
         except RuntimeError as e:
             return "", [], [], str(e)
-        kind, plats, chats, bad = check_scope(kbs, scope)
-        if bad:
-            return "", [], [], bad
-        tod = time_of_day(when)
-        if tod:
-            return "", [], [], self.cfg.substitute(tod)
-        return kind, plats, chats, None
-
-    def _people_check(self, written_by) -> str | None:
-        """Accounts by reference or "me", never by name (two people can share one)."""
-        me = {"me", "ich", "mich", "myself", str(self.me).casefold()}
-        names = [p for p in _as_list(written_by)
-                 if not REF.match(p) and p.casefold() not in me
-                 and not re.fullmatch(r"\+?[\d ]{6,}", p)]
-        if names:
-            return (f"written_by takes account references, not names: "
-                    f"{', '.join(repr(n) for n in names)}. Look each up with "
-                    f"chat_archive__look_up(name=...) and pass its `person <ref>` "
-                    f"references, or \"me\".")
-        return None
+        return check_scope(kbs, scope)
 
     @staticmethod
     def _cap(ctx, n: int) -> int:
@@ -511,12 +457,9 @@ class ChatArchive:
         from ..kb.retrieve import episodes as E
         from ..kb.retrieve.rerank import from_config
         led = ledger.get(ctx.turn_id)
-        scope_kind, plats, chats, bad = self._precheck(scope, when)
+        scope_kind, plats, chats, bad = self._precheck(scope)
         if bad:
             return ToolResult(content=bad, is_error=True, display={"scope_error": True})
-        bad = self._people_check(written_by)
-        if bad:
-            return ToolResult(content=bad, is_error=True)
         args = {"about": about, "words": words, "scope": scope_kind, "people": written_by,
                 "chats": chats, "when": when, "order": order, "mode": mode, "kb": plats}
         spec = led.spec("search", args)
@@ -673,13 +616,10 @@ class ChatArchive:
         from ..kb.retrieve import Ambiguous
         from ..kb.retrieve.count import count as do_count
         led = ledger.get(ctx.turn_id)
-        scope_kind, plats, chats, bad = self._precheck(scope, when)
+        scope_kind, plats, chats, bad = self._precheck(scope)
         if bad:
             return ToolResult(content=bad, is_error=True, display={"scope_error": True})
         words = [q for q in _as_list(words) if q.strip()] or None
-        bad = self._people_check(written_by)
-        if bad:
-            return ToolResult(content=bad, is_error=True)
         hour_set, hour_label, bad = parse_hours(hours)
         if bad:
             return ToolResult(content=bad, is_error=True)
@@ -894,9 +834,6 @@ class ChatArchive:
         [[whatsapp:48213]]. A period too long for `max_tokens` returns one line per chat
         session. Read a line further with chat_archive__read_session."""
         led = ledger.get(ctx.turn_id)
-        tod = time_of_day(when)
-        if tod:
-            return ToolResult(content=self.cfg.substitute(tod), is_error=True)
         spec = led.spec("read_period", {"chat": chat, "when": when,
                                         "max_tokens": max_tokens})
         prev = led.same_as(spec)

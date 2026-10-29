@@ -32,8 +32,6 @@ import tomllib
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-import regex   # dateparser's dependency: grapheme clusters, emoji properties
-
 from .. import prompts
 from ..core.ids import clock, now
 from . import ToolContext, ToolResult, guide, tool, described
@@ -172,34 +170,9 @@ async def feel(store, emotion: str, strength: float, why: str, by: str,
          message_id)))
 
 
-MOOD_MAX = 24        # emojis next to its name, at most
-# one emoji grapheme cluster starts with a pictograph, a flag letter or a keycap
-_EMOJI = regex.compile(
-    r"(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[#*0-9]\uFE0F?\u20E3)", regex.V1)
-
-
-def mood_refusal(text: str) -> str | None:
-    """Why `text` cannot be its mood on screen, or None: it is 1 to MOOD_MAX emojis
-    (grapheme clusters), or a kaomoji (one line with a symbol in it and no Latin word of
-    four letters or more), of any length."""
-    t = text.strip()
-    if not t:
-        return "Your mood needs 1 to 24 emojis or a kaomoji."
-    clusters = [g for g in regex.findall(r"\X", t) if not g.isspace()]
-    if all(_EMOJI.match(g) for g in clusters):
-        if len(clusters) > MOOD_MAX:
-            return f"That is {len(clusters)} emojis; at most {MOOD_MAX}."
-        return None
-    if "\n" in t:
-        return "A kaomoji is one line."
-    if regex.search(r"\p{Latin}{4,}", t) or not regex.search(r"[\p{P}\p{S}]", t):
-        return "That is words, not emojis or a kaomoji."
-    return None
-
-
 async def store_mood(store, text: str) -> dict:
     """The agent's mood on screen, stored (kv `mood`) and sent as the global event `mood`."""
-    mood = {"text": text.strip(), "set_at": now()}
+    mood = {"text": text, "set_at": now()}
 
     def fn(c: sqlite3.Connection) -> None:
         c.execute("INSERT INTO kv(k, v) VALUES('mood', ?) "
@@ -378,12 +351,9 @@ class Mind:
 
     @tool(read_only=False, destructive=False)
     async def set_status(self, ctx: ToolContext,
-                     text: Annotated[str, "1 to 24 emojis, or a kaomoji."]) -> ToolResult:
+                     text: Annotated[str, "Emojis or a kaomoji."]) -> ToolResult:
         """Set the emojis or the kaomoji shown next to your name. Example:
         mind__set_status(text="\U0001f319\u2615\u2728")."""
-        why = mood_refusal(text)
-        if why:
-            return ToolResult(content=why, is_error=True)
         mood = await store_mood(ctx.store, text)
         return ToolResult(content=f"Shown: {mood['text']}", display={"text": mood["text"]})
 

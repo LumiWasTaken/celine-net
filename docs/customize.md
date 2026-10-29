@@ -65,7 +65,7 @@ and rename it. Or add one on the Routines page.
 | `prompt` | what it is asked (required) |
 | `after` | names of routines it follows on the same night |
 | `partner` | a `.md` prompt beside the file it talks with first; `""` for none |
-| `rounds` | the partner's lines at most, 1 to 30 (default 8) |
+| `rounds` | the partner's lines at most, from 1 (default 8) |
 | `note` | notebook path (`.md`) its answer is written to; `""` for none |
 | `role` | the model role the run uses (default `chat`) |
 | `on` | `false`: it never starts by itself |

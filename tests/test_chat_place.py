@@ -19,7 +19,6 @@ from celine.conversations import api as conversations_api, store as conversation
 from celine.core.bus import EventBus
 from celine.core.services import Services
 from celine.errors import install_error_handler
-from celine.skills.mind import mood_refusal
 from celine.turns import store as turns
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
@@ -180,17 +179,6 @@ async def test_export_is_the_path_as_markdown(c, store):
     assert (await c.get("/api/conversations/nope/export")).status_code == 404
 
 
-@pytest.mark.parametrize("text", ["\U0001f44d\U0001f3fd" * 24, "\U0001f468‍\U0001f469‍\U0001f467",
-                                  "^_^"])
-def test_a_mood_is_1_to_24_emojis_or_a_kaomoji(text):
-    assert mood_refusal(text) is None
-
-
-@pytest.mark.parametrize("text", ["\U0001f319" * 25, "(^_^)\n(^_^)"])
-def test_anything_else_is_refused(text):
-    assert mood_refusal(text)
-
-
 async def test_she_sets_her_mood_and_it_is_stored_sent_and_served(c, store):
     from types import SimpleNamespace
     from celine.skills import ToolContext
@@ -203,10 +191,10 @@ async def test_she_sets_her_mood_and_it_is_stored_sent_and_served(c, store):
     skill = mind.Mind(cfg)
     skill.app = SimpleNamespace(store=store, cfg=cfg, llm=None, registry=None)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
-    bad = await skill.set_status(ctx, "feeling great")
-    assert bad.is_error and bad.content == "That is words, not emojis or a kaomoji."
-    assert not (await skill.set_status(ctx, " \U0001f319✨ ")).is_error
+    assert not (await skill.set_status(ctx, "feeling great")).is_error, "her words stand"
+    feed.receive_nowait()
+    assert not (await skill.set_status(ctx, " \U0001f319✨ " * 30)).is_error
     got = (await c.get("/api/agent/mood")).json()["mood"]
-    assert got["text"] == "\U0001f319✨" and got["set_at"]
+    assert got["text"] == " \U0001f319✨ " * 30 and got["set_at"]
     ev = feed.receive_nowait()
     assert ev["type"] == "mood" and ev["mood"] == got

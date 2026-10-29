@@ -90,3 +90,15 @@ def test_look_up_lists_the_chats_a_person_writes_in(tmp_path, monkeypatch):
     assert "their chats, most messages first:" in out
     assert "chat whatsapp:2 Chess club (group), 3 by them" in out
     assert 'written_by=["whatsapp:3"]' in out
+
+
+def test_a_name_in_written_by_or_scope_is_looked_up_not_refused(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import anyio
+    skill = archive_skill(monkeypatch, build(tmp_path))
+    ctx = SimpleNamespace(turn_id=None, store=None, max_output_tokens=None, emit=None,
+                          conversation_id="c")
+    out = anyio.run(lambda: skill.count(ctx, by="person", scope=["Chess club"],
+                                        written_by=["Bea"]))
+    assert not out.is_error, out.content
+    assert "Bea" in out.content and "Chess club" in out.content
