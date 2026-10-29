@@ -35,6 +35,5 @@ async def test_impersonate_writes_as_the_user_from_their_last_three_messages(sto
     system = sent[0][0]["content"]
     assert "where are you right now" in system and "the tea is cold" in system
     assert "boats" not in system.split("their last messages:")[1], "the last three only"
-    assert "about 4 words long" in system and "never more than 6" in system
-    average = (2 + 23 + 31) // 3
-    assert len(text) <= average * 3 // 2 and text.endswith(".")
+    assert "words long" not in system, "no length instruction"
+    assert text == "I am on the way. " * 40, "the stream as it came, whole"
