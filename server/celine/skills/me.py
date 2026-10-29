@@ -125,6 +125,7 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
     from ..guard import switch
     from ..settings import features
     from ..turns import store as turns
+    from ..turns.prompt import model_facts
     store, cid, tid = ctx.store, ctx.conversation_id, ctx.turn_id
 
     def facts(c):
@@ -146,7 +147,7 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
                                       f"{running.get('instead_of')}: {running.get('why')}")
         else:
             line += "the first choice."
-        lines.append(line)
+        lines.append(" ".join([line, *model_facts(llm.make(ref))]))
     usage = await turns.last_usage(store, cid)
     if usage and usage.get("window"):
         used = usage.get("prompt_tokens") or usage.get("estimate") or 0
@@ -192,7 +193,8 @@ class Me:
     async def whoami(self, ctx: ToolContext) -> ToolResult:
         """Where you are right now, every line read as you call it: the model and
         provider answering this turn, for which role, the first choice or a fallback
-        and why; the context used of its window; the conversation you work in and
+        and why, its context window, whether it sees images and calls tools; the
+        context used of its window; the conversation you work in and
         who started this turn; which devices and servers answer, with the reason when
         one is down; the guard's mode; a freeze or pause when there is one. For when
         you are lost. Returns: one fact per line."""

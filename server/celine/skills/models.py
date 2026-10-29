@@ -15,6 +15,7 @@ from ..backends.base import BackendError
 from ..backends.queue import Priority
 from ..settings import her_models
 from ..turns.compact import complete
+from ..turns.prompt import model_facts
 from . import ToolContext, ToolResult, guide, tool, described
 
 
@@ -56,14 +57,28 @@ class Models:
     @tool(read_only=True)
     async def list(self, ctx: ToolContext) -> ToolResult:
         """The models you may use: in models__ask, as a sub-agent's model, and in your
-        shellbox's agent CLIs. Returns one line per model: its name to use, then what
-        it is."""
+        shellbox's agent CLIs. Returns one line per model: its name to use, what it is,
+        its context window, whether it sees images and calls tools, whether its server
+        answers and whether the model is loaded, each as its server last said."""
         s = self.cfg.settings
         refs = her_models.allowed(s)
         if not refs:
             return ToolResult(content="No models are open to you right now.")
-        return ToolResult(content="\n".join(f"{r}: {her_models.label(s, r)}" for r in refs),
-                          display={"models": refs})
+        llm = self.app.llm if self.app is not None else None
+        if llm is None:
+            return ToolResult(content="\n".join(f"{r}: {her_models.label(s, r)}."
+                                                for r in refs), display={"models": refs})
+        hosts = llm.router.hosts()
+        loaded = {m["ref"]: m["loaded"] for m in llm.router.loaded_view()["models"]}
+        up = {"up": "Its server answers.", "down": "Its server does not answer."}
+
+        def line(r: str) -> str:
+            facts = [f"{r}: {her_models.label(s, r)}.", *model_facts(llm.make(r)),
+                     up.get((hosts.get(s.split(r)[0]) or {}).get("state"), "")]
+            if r in loaded:
+                facts.append("It is loaded." if loaded[r] else "It is not loaded.")
+            return " ".join(f for f in facts if f)
+        return ToolResult(content="\n".join(line(r) for r in refs), display={"models": refs})
 
     @tool()
     async def ask(

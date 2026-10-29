@@ -4,14 +4,19 @@ loaded as its status says; she reads them in models__list, and a sub-agent's rep
 carries what its work took. Fake servers in the shapes the real ones answer."""
 from __future__ import annotations
 
+import types
+
 import httpx
 import pytest
 
 from celine import boot
+from celine.backends.llm import LLM
 from celine.backends.router import Router
 from celine.settings import her_models, kinds
 from celine.settings.files import Invalid
 from celine.settings.registry import backend_config, validate_role
+from celine.skills import ToolContext
+from celine.skills.models import Models
 from celine.turns import tokens
 from settings_fixtures import scratch
 
@@ -144,3 +149,20 @@ async def test_loaded_is_what_the_status_says_and_windows_are_the_running_ones(r
         "gpu/Gemma-4-31B": True}
     assert tokens.server_window("http://home:8080/v1", "qwen3.5-9b") == 32768
     assert tokens.server_window("http://gpu:11434/v1", "Gemma-4-31B") == 65536
+
+
+async def test_her_model_list_says_window_caps_host_and_loaded(router, tmp_path):
+    await router.ping_once()
+    cfg = router.cfg
+    llm = LLM(cfg, router=router)
+    skill = Models(cfg)
+    skill.app = types.SimpleNamespace(llm=llm)
+    ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=None,
+                      config=None, emit=None)  # type: ignore[arg-type]
+    lines = (await skill.list(ctx)).content.splitlines()
+    assert lines[0] == ("home/qwen3.5-9b: qwen3.5-9b on home. Its context window is 32,768 "
+                        "tokens. It does not see images. It calls tools. Its server "
+                        "answers. It is not loaded.")
+    assert lines[2] == ("gpu/Gemma-4-31B: Gemma-4-31B on gpu. Its context window is 65,536 "
+                        "tokens. It sees images. It calls tools. Its server answers. It is "
+                        "loaded.")
