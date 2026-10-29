@@ -153,8 +153,7 @@ def validate(data: Any) -> dict[str, Any]:
             raise Invalid(path, f"'{k}' is not a general setting.")
         if v is None:
             continue
-        check(path, f, v)
-        out[k] = v
+        out[k] = check(path, f, v)
     if value(out, "job_timeout_seconds") <= value(out, "tool_timeout_seconds"):
         raise Invalid("general.job_timeout_seconds", "The job time limit must be longer "
                                                       "than the tool time limit.")

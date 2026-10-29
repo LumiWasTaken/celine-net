@@ -8,19 +8,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .files import Invalid
+from . import form
 
 SECRET = "email"            # var/secrets/email.key
 
 FIELDS: list[dict[str, Any]] = [
     {"key": "host", "label": "IMAP server", "type": "text",
-     "help": "Such as imap.example.com.", "default": ""},
+     "help": "Such as imap.example.com.", "default": "", "word": True},
     {"key": "port", "label": "Port", "type": "number", "min": 1, "max": 65535,
      "help": "993 with TLS, 143 with STARTTLS.", "default": 993},
     {"key": "tls", "label": "Encryption", "type": "choice",
      "choices": [["implicit", "TLS"], ["starttls", "STARTTLS"]], "default": "implicit"},
     {"key": "user", "label": "User name", "type": "text",
-     "help": "Usually the email address.", "default": ""},
+     "help": "Usually the email address.", "default": "", "word": True},
 ]
 _BY_KEY = {f["key"]: f for f in FIELDS}
 
@@ -30,27 +30,7 @@ def value(email: dict[str, Any], key: str) -> Any:
 
 
 def validate(data: Any) -> dict[str, Any]:
-    if not isinstance(data, dict):
-        raise Invalid("email", "The email settings are an object.")
-    out: dict[str, Any] = {}
-    for k, v in data.items():
-        f = _BY_KEY.get(k)
-        path = f"email.{k}"
-        if f is None:
-            raise Invalid(path, f"'{k}' is not an email setting.")
-        if v is None or v == "":
-            continue
-        if f["type"] == "number":
-            if not isinstance(v, int) or isinstance(v, bool) or not f["min"] <= v <= f["max"]:
-                raise Invalid(path, f"This must be a whole number from {f['min']} to "
-                                    f"{f['max']}.")
-        elif f["type"] == "choice":
-            if v not in [c[0] for c in f["choices"]]:
-                raise Invalid(path, "This must be implicit or starttls.")
-        elif not isinstance(v, str) or any(c.isspace() for c in v.strip()):
-            raise Invalid(path, "This must be text without spaces.")
-        out[k] = v.strip() if isinstance(v, str) else v
-    return out
+    return form.validate("email", FIELDS, data)
 
 
 @dataclass(frozen=True)

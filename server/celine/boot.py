@@ -24,7 +24,8 @@ def load() -> Config:
     p = cfg.problems
     # every manifest before the settings, so the plugins' switches and forms are known
     reserved = frozenset(f.id for f in features.CORE) | frozenset(settings.files.SECTIONS)
-    p += [Problem("plugins", m) for m in plugins.scan(cfg.data_dir, reserved)]
+    p += [Problem("plugins", m) for m in plugins.scan(cfg.data_dir, reserved,
+                                                                 settings.form.check_fields)]
 
     def file(name: str) -> tuple[str, dict]:
         path = config.CONFIG_DIR / name
