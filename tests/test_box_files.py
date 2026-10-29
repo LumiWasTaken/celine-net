@@ -146,9 +146,35 @@ async def test_look_hands_the_image_to_a_model_that_sees(home, cfg, store, monke
         return True
     monkeypatch.setattr(attachments, "turn_sees_images", sees)
     out = await Shell(cfg).look(await _look_ctx(store), path="shot.png")
-    assert not out.is_error and out.images == [out.display["attachments"][0]["id"]]
+    assert not out.is_error and len(out.images) == 1
     row = await attachments.get(store, out.images[0])
     assert attachments.blob_path(cfg, row["sha256"]).read_bytes() == PNG
+
+
+async def test_a_file_kept_with_the_call_is_a_files_block(home, cfg, store, monkeypatch):
+    from celine.skills import ToolResult
+
+    async def sees(cfg, ctx):
+        return True
+    monkeypatch.setattr(attachments, "turn_sees_images", sees)
+    (home / "shot.png").write_bytes(PNG)
+    ctx = await _look_ctx(store)
+    out = await Shell(cfg).look(ctx, path="shot.png")
+    # a file the display names already (a browser shot) stays out of the block
+    named = await attachments.save_generated(cfg, store, b"x" * 8, "named.png", "image/png",
+                                             "c2", in_message=False)
+    mid = await store.read(lambda c: c.execute(
+        "SELECT message_id FROM tool_calls WHERE id='c2'").fetchone()[0])
+    await turns.finish_tool_call(store, ctx.conversation_id, mid, "c2", "shell__look",
+                                 ToolResult(content=out.content, images=out.images,
+                                            display={**out.display, "shot": named}),
+                                 "ok")
+    display = await store.read(lambda c: json.loads(c.execute(
+        "SELECT display FROM tool_calls WHERE id='c2'").fetchone()[0]))
+    [block] = display["blocks"]
+    assert block["type"] == "files" and block["where"] == "under"
+    assert [(f["id"], f["filename"], f["kind"]) for f in block["files"]] == \
+        [(out.images[0], "shot.png", "image")]
 
 
 async def test_look_describes_it_for_a_model_that_does_not(home, cfg, store, monkeypatch):

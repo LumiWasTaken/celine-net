@@ -10,6 +10,7 @@ import json
 import sqlite3
 import zlib
 
+from .. import attachments as files
 from ..conversations import tree, view
 from ..core.ids import new_id, now
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER, TERMINAL
@@ -605,6 +606,7 @@ async def finish_tool_call(store, cid: str, parent_message_id: str, call_id: str
         for aid in getattr(result, "images", None) or ():
             c.execute("UPDATE attachments SET message_id=? WHERE id=? AND tool_call_id=?",
                       (mid, aid, call_id))
+        display = files.with_files(c, call_id, display)
         ts = now()
         c.execute(
             "UPDATE tool_calls SET state=?, display=?, withheld_output=?, "

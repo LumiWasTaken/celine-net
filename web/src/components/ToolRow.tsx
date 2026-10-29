@@ -11,8 +11,8 @@
 import { useContext, useState, type ReactNode } from 'react'
 import { TextWithRefs } from './Markdown'
 import {
-  AlertTriangle, AppWindow, Bell, BookOpen, Bot, CircleSlash, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
-  Music, NotebookPen, PanelRight, ScreenShare, Search, Square, Terminal, UserRound, Wrench, type LucideIcon,
+  AlertTriangle, AppWindow, Bell, BookOpen, Bot, CircleSlash, Download, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
+  Music, NotebookPen, PanelRight, Paperclip, ScreenShare, Search, Square, Terminal, UserRound, Wrench, type LucideIcon,
 } from 'lucide-react'
 import { api, type ToolCall } from '../lib/api'
 import { AgentsContext, agentsApi } from '../lib/agents'
@@ -20,7 +20,8 @@ import { useServerEvents } from '../lib/bus'
 import { artifactOf, kindWord, ShowArtifact, type ArtifactCardData } from '../lib/artifacts'
 import { SHARE_DOT, shareEvent, shareOf, sharesApi, type ShareCardData } from '../lib/shares'
 import { useResource } from '../lib/useResource'
-import { duration, errorText, stamp } from '../lib/format'
+import { bytes, duration, errorText, stamp } from '../lib/format'
+import { titleOf } from '../lib/pictures'
 import { asBatch, fileUrl, type MediaFile } from '../lib/media'
 import { format, refHref } from '../lib/nav'
 import { intercomApi } from '../lib/intercom'
@@ -203,7 +204,7 @@ function useView(call: ToolCall): View {
     return {
       icon: Terminal, tone: exit ? 'error' : toneOf(call), words: rowWords(call),
       meta: exit ? `exit ${exit}` : seconds !== null ? duration(seconds * 1000) : took(call),
-      under: <BoxFiles call={call} />,
+      under: <Files call={call} />,
       detail: <>
         {log && <Part label="Log"><code className="tool__log">{log}</code></Part>}
         {id && <span><Button size="sm" icon={ExternalLink} href={format({ section: 'terminals', terminal: id })}
@@ -288,7 +289,7 @@ function useView(call: ToolCall): View {
     </>,
     under: <>
       {report && <div className="tool__report">{report}</div>}
-      <BoxFiles call={call} />
+      <Files call={call} />
       {stopError && <InlineError message={stopError} compact />}
     </>,
   }
@@ -370,15 +371,35 @@ function ToolLine({ call }: { call: ToolCall }) {
   )
 }
 
-/* the images shell__look showed (they are the call's alone); what shell__send sent is on
-   its message */
-function BoxFiles({ call }: { call: ToolCall }) {
-  if (call.name !== 'shell__look') return null
-  const files = (Array.isArray(call.display?.attachments) ? call.display.attachments : []) as MediaFile[]
+type CallFile = MediaFile & { kind: string }
+
+/* the files kept with a call alone, whatever the tool (the server's `files` block):
+   pictures as tiles that open in the Viewer, other files to download. What shell__send
+   sent is on its message. */
+function Files({ call }: { call: ToolCall }) {
+  const blocks = Array.isArray(call.display?.blocks) ? call.display.blocks as { type?: string; files?: CallFile[] }[] : []
+  const files = blocks.find(b => b.type === 'files')?.files ?? []
   if (!files.length) return null
   return (
     <div className="tool__files">
-      {files.map(f => <img key={f.id} className="tool__file-image" alt={f.filename} src={fileUrl(f)} />)}
+      {files.filter(f => f.kind === 'image').map(f => (
+        <Picture key={f.id} className="tool__picture" src={fileUrl(f)} name={titleOf(null)}
+                 ratio={f.width && f.height ? `${f.width} / ${f.height}` : '4 / 3'} />
+      ))}
+      {files.filter(f => f.kind !== 'image').map(f => <FileLine key={f.id} name={f.filename} a={f} />)}
+    </div>
+  )
+}
+
+/* a file to download: its name, size and Download on one line (only its name while
+   your message is on its way) */
+export function FileLine({ name, a }: { name: string; a?: { id: string; bytes: number } }) {
+  return (
+    <div className="msg__file">
+      <Paperclip size={ICON.sm} aria-hidden />
+      <span className="msg__file-name">{name}</span>
+      {a && <span className="msg__file-size">{bytes(a.bytes)}</span>}
+      {a && <IconButton icon={Download} label="Download" size="sm" href={fileUrl(a, true)} download />}
     </div>
   )
 }

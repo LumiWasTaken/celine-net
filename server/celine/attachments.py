@@ -420,6 +420,26 @@ def of_message(c: sqlite3.Connection, message_id: str) -> list[dict]:
         "ORDER BY a.created_at, a.id", (message_id,))]
 
 
+def with_files(c: sqlite3.Connection, call_id: str, display: dict | None) -> dict | None:
+    """The call's display with one `files` block (`where: under`): every file kept with
+    the call alone (an MCP image, a shell look, a document image), so its row shows it
+    whatever the tool. A file its display already names (a browser shot in its steps)
+    stays out; files on its message show there (shell__send)."""
+    named = json.dumps(display) if display else ""
+    files = [dict(r) for r in c.execute(
+        "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, b.width, "
+        "b.height FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 "
+        "WHERE a.tool_call_id=? ORDER BY a.created_at, a.id", (call_id,))
+        if f'"{r["id"]}"' not in named]
+    blocks = [b for b in (display or {}).get("blocks") or () if b.get("type") != "files"]
+    if files:
+        blocks.append({"type": "files", "where": "under", "files": files})
+    out = {k: v for k, v in (display or {}).items() if k != "blocks"}
+    if blocks:
+        out["blocks"] = blocks
+    return out or None
+
+
 async def add(store, sha: str, size: int, media_type: str, filename: str, kind: str, *,
               tool_call_id: str | None = None, in_message: bool = True,
               batch_id: str | None = None) -> dict:

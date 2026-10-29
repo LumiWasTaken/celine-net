@@ -681,7 +681,7 @@ class Shell:
             return ToolResult(content="Only a conversation can look at images.",
                               is_error=True)
         sees = await attachments.turn_sees_images(self.cfg, ctx)
-        lines, ids, shown = [], [], []
+        lines, ids = [], []
         for rel in paths:
             name = rel.rsplit("/", 1)[-1]
             media = LOOKS.get(name.rsplit(".", 1)[-1].lower())
@@ -702,8 +702,6 @@ class Shell:
             except httpx.HTTPError as e:
                 return self._unreachable(None, e)
             ids.append(row["id"])
-            shown.append({k: row[k] for k in ("id", "sha256", "filename", "media_type",
-                                              "bytes")})
             if sees:
                 lines.append(f"{name} ({attachments.size(row['bytes'])}):")
             else:
@@ -713,7 +711,7 @@ class Shell:
                                              question)
                 lines.append(f"{name}: {said}")
         return ToolResult(content="\n".join(lines), is_error=not ids,
-                          display={"paths": paths, "attachments": shown},
+                          display={"paths": paths},
                           images=ids if sees and ids else None)
 
     @tool(read_only=False, destructive=False, open_world=True)
