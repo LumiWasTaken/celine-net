@@ -281,3 +281,36 @@ def test_0005_makes_the_bridged_chats_plain_chats_and_drops_what_only_the_bridge
     assert json.loads(c.execute("SELECT items FROM media_batches").fetchone()[0]) == \
         [{"state": "done"}, {"state": "failed"}]
     c.close()
+
+
+def test_a_python_step_runs_up_with_no_transaction_open_once(tmp_path):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("CREATE TABLE old(a TEXT);\nINSERT INTO old VALUES ('x');\n")
+    (d / "0002_move.py").write_text(
+        "def up(conn, db_path):\n"
+        "    assert not conn.in_transaction\n"
+        "    other = db_path.with_name('other.db')\n"
+        "    conn.execute('ATTACH ? AS o', (str(other),))\n"
+        "    if conn.execute(\"SELECT 1 FROM main.sqlite_master WHERE name = 'old'\").fetchone():\n"
+        "        conn.execute('BEGIN')\n"
+        "        conn.execute('CREATE TABLE IF NOT EXISTS o.moved(a TEXT)')\n"
+        "        conn.execute('INSERT INTO o.moved SELECT a FROM main.old')\n"
+        "        conn.execute('DROP TABLE main.old')\n"
+        "        conn.execute('COMMIT')\n"
+        "    conn.execute('DETACH o')\n")
+    db = tmp_path / "x.db"
+    assert migrate(db, d) == 2 and _version(db) == 2
+    assert "old" not in _tables(db)
+    c = sqlite3.connect(tmp_path / "other.db")
+    assert c.execute("SELECT a FROM moved").fetchall() == [("x",)]
+    c.close()
+    # a crash between its commit and the bump runs it again: nothing moves twice
+    c = sqlite3.connect(db)
+    c.execute("PRAGMA user_version = 1")
+    c.commit()
+    c.close()
+    assert migrate(db, d) == 2 and _version(db) == 2
+    c = sqlite3.connect(tmp_path / "other.db")
+    assert c.execute("SELECT count(*) FROM moved").fetchone() == (1,)
+    c.close()
