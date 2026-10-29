@@ -69,10 +69,16 @@ async def test_agents_and_missions_are_managed_over_http_with_events(db_path):
             r = await c.post(f"/api/conversations/{parent}/sub-agents",
                              json={"brief": "again", "name": "car scout"})
             assert r.status_code == 409 and "still working" in r.json()["error"]["message"]
-            r = await c.post(f"/api/conversations/{sub}/sub-agents",
+            deep = parent
+            for n in ("one", "two", "three"):
+                deep = await conversations.create(store, n, agent_of=deep, agent_name=n)
+            r = await c.post(f"/api/conversations/{deep}/sub-agents",
                              json={"brief": "nested", "name": "inner scout"})
-            assert r.status_code == 409 and r.json()["error"]["message"] == \
-                "A sub-agent cannot start sub-agents.", "depth 1"
+            assert r.status_code == 409 and r.json()["error"]["message"] == cfg.substitute(
+                "Sub-agents go at most 3 levels below {{name}}, and this conversation is "
+                "3 below: it starts none."), "depth 3"
+            await store.write(lambda c: c.execute(
+                "DELETE FROM conversations WHERE agent_of IS NOT NULL AND id <> ?", (sub,)))
 
             got = (await c.get(f"/api/sub-agents?conversation={parent}")).json()["agents"]
             assert [(a["id"], a["name"], a["parent"], a["working"], a["access"])

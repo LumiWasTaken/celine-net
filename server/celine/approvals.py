@@ -1,6 +1,6 @@
 """Approvals: what the user answers before something runs, from a logged-in session
 (GET /api/approvals, POST /api/approvals/{id}/answer; Settings, Vault shows the vault's).
-One service, four kinds:
+One service, these kinds:
 
 - `vault`, the vault's taps. Only the high-risk actions ask: the password into its
   shellbox (vault__get with shell), where everything in the box and the internet can
@@ -19,6 +19,8 @@ One service, four kinds:
 - `settings`, a change of the settings (settings__propose, skills/settings.py): every
   one waits for the user, guard or no guard. Its chat row carries `changes`, each field's
   label, before and after (a secret's value never: its state), and her `why`.
+- `model`, a sub-agent on a cloud model (sub_agents__start, sub_agents/skill.py): every
+  start waits for the user; its line names the sub-agent, the model and the brief's start.
 
 Every request but a gate (Bastet's banner is its ask there) shows in the chat that asked,
 after the message that made the call, with Approve and Deny: the conversation event
@@ -56,9 +58,9 @@ from .guard.sources import OUTSIDE   # skills whose results others wrote: one li
 log = logging.getLogger("celine.approvals")
 
 ASK_FOR = 120       # seconds a request waits for the user
-KINDS = ("vault", "gate", "her", "share", "settings")
+KINDS = ("vault", "gate", "her", "share", "settings", "model")
 LABEL = {"vault": "Vault", "gate": "Bastet", "her": "Persona", "share": "Shares",
-         "settings": "Settings"}
+         "settings": "Settings", "model": "Cloud model"}
 LINE_MAX = 200      # characters of a request's facts on its line in the chat
 APPROVED_KEPT = 64  # tool calls approved on Bastet's ask, kept so the tool asks no more
 

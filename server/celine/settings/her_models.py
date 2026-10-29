@@ -7,7 +7,7 @@ whose provider has its key is its own, in the providers' order.
 """
 from __future__ import annotations
 
-from .kinds import caps_of
+from .kinds import KINDS, caps_of
 
 
 def allowed(s) -> list[str]:
@@ -23,3 +23,10 @@ def label(s, ref: str) -> str:
     m = s.model(ref) or {}
     p = s.providers.get(s.split(ref)[0]) or {}
     return f"{m.get('label') or s.split(ref)[1]} on {p.get('label') or s.split(ref)[0]}"
+
+
+def cloud(s, ref: str) -> bool:
+    """A model of a provider kind that lives at one hosted address (settings/kinds.py
+    `default_url`: OpenRouter, Anthropic): someone else's cloud runs it."""
+    p = s.providers.get(s.split(ref)[0]) or {}
+    return bool(KINDS.get(p.get("kind"), {}).get("default_url"))

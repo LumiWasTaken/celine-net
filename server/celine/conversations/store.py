@@ -442,6 +442,18 @@ def top_of(c: sqlite3.Connection, cid: str) -> str:
     return cid
 
 
+def depth(c: sqlite3.Connection, cid: str) -> int:
+    """How many levels `cid` is below the top of its agent_of chain: 0 for a
+    conversation that is not a sub-agent."""
+    n, seen = 0, {cid}
+    while (r := c.execute("SELECT agent_of FROM conversations WHERE id=?",
+                          (cid,)).fetchone()) and r["agent_of"] and r["agent_of"] not in seen:
+        cid = r["agent_of"]
+        seen.add(cid)
+        n += 1
+    return n
+
+
 def set_archived(c: sqlite3.Connection, store, cid: str, archived: bool) -> bool:
     """Inside a write: archive or unarchive the conversation `cid` belongs to (a
     sub-agent's is its top conversation) with all its sub-agents, and say so on the

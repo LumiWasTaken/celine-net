@@ -15,8 +15,13 @@ Its turns run at agent priority on their own dispatcher worker. It gets its pers
 not the parent conversation. When it is done, its report comes back as an intercom
 `report` (report.py). `start` returns at once; `read` looks at one, and waits for it
 when asked. `model` picks its model among its own (settings/her_models.py), kept as its
-conversation's model; `cli` hands its briefs to an agent CLI in its shellbox instead
-(`agent_cli`, cli.py).
+conversation's model; a cloud model (her_models.cloud) waits for the user's approval at
+every start. `cli` hands its briefs to an agent CLI in its shellbox instead (`agent_cli`,
+cli.py).
+
+A sub-agent starts sub-agents of its own, down to MAX_DEPTH levels below the top of
+the chain (conversations/store.depth reads the agent_of chain); each reports to the one
+that started it.
 """
 from __future__ import annotations
 
@@ -41,6 +46,9 @@ from ..core.event_types import AGENT_STATE
 MIN_NAME = 5
 MAX_NAME = 60
 MAX_WAIT = 600      # seconds `read` waits for a sub-agent at most
+MAX_DEPTH = 3       # levels of sub-agents below the top conversation
+BRIEF_FACT = 160    # characters of the brief on a cloud model's approval
+CLOUD_ASK = "start the sub-agent {name} on the cloud model {model}"
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
     knob("sub_agents.max_running", "Sub-agents at once", None, 1, 1000, 4,
@@ -90,8 +98,9 @@ class SubAgents:
         return self.app.dispatcher if self.app is not None else None
 
     async def offered_in(self, store, cid: str) -> bool:
-        """Not inside a sub-agent: it cannot start, read or stop any."""
-        return store is None or not await self._is_sub_agent(store, cid)
+        """Above MAX_DEPTH: the deepest starts, reads and stops none."""
+        return store is None or await store.read(
+            lambda c: conversations.depth(c, cid)) < MAX_DEPTH
 
     @tool(read_only=False, destructive=False)
     async def start(
@@ -122,6 +131,8 @@ class SubAgents:
         Only the paths, one per line.", name="trip finder")
         Returns at once. End your turn to wait, or sub_agents__read with wait."""
         store = ctx.store
+        if no := await self._cloud_approval(ctx, brief, name, model):
+            return _error(no)
         sub, refusal, resumed, brief_id = await self.begin(
             store, ctx.conversation_id, brief, name, access, folder, model, cli)
         if refusal:
@@ -200,10 +211,31 @@ class SubAgents:
                           display={"name": sub["name"], "conversation_id": sub["id"],
                                    "link": sub["link"]})
 
-    async def _is_sub_agent(self, store, cid: str) -> bool:
-        row = await store.read(lambda c: c.execute(
-            "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
-        return row is not None and bool(row["agent_of"])
+    async def _cloud_approval(self, ctx: ToolContext, brief: str, name: str,
+                              model: str | None) -> str | None:
+        """The user's approval when the sub-agent would run on a cloud model: the one
+        given, else a resumed one's own, else this conversation's. None when it may
+        start, else the sentence for its result."""
+        s = self.cfg.settings
+        if model is None:
+            name_ = " ".join(name.split())
+            mine = await ctx.store.read(lambda c: agents_of(c, ctx.conversation_id))
+            known = next((a for a in mine if _same(a["name"], name_)), None)
+            model = known["model"] if known else \
+                (await model_for_sub_agent(ctx.store, ctx.conversation_id))["model"]
+        if not model or model not in her_models.allowed(s) or not her_models.cloud(s, model):
+            return None
+        approvals = getattr(self.app, "approvals", None)
+        if approvals is None:
+            return "Nobody can approve a cloud model here: it did not start."
+        action = CLOUD_ASK.format(name=" ".join(name.split()),
+                                  model=her_models.label(s, model))
+        summary = " ".join(brief.split())
+        if len(summary) > BRIEF_FACT:
+            summary = summary[:BRIEF_FACT - 1].rstrip() + "\u2026"
+        return await approvals.ask(action, [f"brief: {summary}"], ctx.conversation_id,
+                                   short=action, kind="model",
+                                   call=ctx.tool_call_id or None)
 
 
     def _folder(self, folder: str, create: bool) -> tuple[str | None, str | None]:
@@ -254,6 +286,10 @@ class SubAgents:
             return None, f"{model} is not one of your models. Yours: {yours}.", False, None
         if cli is not None and cli not in CLIS:
             return None, f"cli is one of {', '.join(CLIS)}.", False, None
+        if (deep := await store.read(lambda c: conversations.depth(c, parent))) >= MAX_DEPTH:
+            return None, self.cfg.substitute(
+                f"Sub-agents go at most {MAX_DEPTH} levels below {{{{name}}}}, and this "
+                f"conversation is {deep} below: it starts none."), False, None
         if self.dispatcher is None:         # tests run turns without one
             return None, ("Sub-agents cannot run here: nothing is there to run their "
                           "turns."), False, None

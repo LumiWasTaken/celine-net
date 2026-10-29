@@ -41,15 +41,12 @@ async def list_agents(request: Request, conversation: str | None = None) -> dict
 @router.post("/conversations/{cid}/sub-agents")
 async def start_agent(request: Request, cid: str, body: AgentIn) -> dict:
     """Start a sub-agent of conversation `cid` with a brief, like its
-    sub_agents__start: the name of one that is done gives it the brief (resumed). A
-    sub-agent starts none (depth 1)."""
+    sub_agents__start: the name of one that is done gives it the brief (resumed). The
+    deepest sub-agent starts none (skill.MAX_DEPTH)."""
     store = request.app.state.services.store
-    row = await store.read(lambda c: c.execute(
-        "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
-    if row is None:
+    if await store.read(lambda c: c.execute(
+            "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
         raise NotFound("conversation")
-    if row["agent_of"]:
-        raise CelineError("refused", "A sub-agent cannot start sub-agents.", 409)
     sub, refusal, resumed, _ = await _skill(request).begin(
         store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli)
     if refusal:

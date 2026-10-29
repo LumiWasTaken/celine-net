@@ -310,8 +310,7 @@ async def test_deleting_a_parent_takes_its_sub_agents_and_waits_for_them(store):
         (parent, sub, grand)).fetchone()[0]) == 0
 
 
-async def test_a_folder_outside_the_notebook_and_a_sub_agent_of_a_sub_agent_are_refused(
-        store, cfg):
+async def test_a_folder_outside_the_notebook_is_refused(store, cfg):
     agents = _registry(cfg).skills["sub_agents"]
     agents.app = Services(dispatcher=object())     # a refusal never reaches it
     parent = await conversations.create(store)
@@ -321,10 +320,62 @@ async def test_a_folder_outside_the_notebook_and_a_sub_agent_of_a_sub_agent_are_
     ctx = ToolContext(parent, "t", "x", store, cfg, emit)
     for bad in ("../out", ".", "tools/x"):
         assert (await agents.start(ctx, brief="x", name="valid name", folder=bad)).is_error, bad
-    sub = await conversations.create(store, title="kid", agent_of=parent, agent_name="kiddo",
-                                          access="work")
-    assert not await agents.offered_in(store, sub), "a sub-agent is not offered the tools"
-    assert len(await _subs_of(store, parent)) == 1
+    assert await _subs_of(store, parent) == []
+
+
+async def test_sub_agents_start_their_own_down_to_three_levels(store, cfg):
+    agents = _registry(cfg).skills["sub_agents"]
+    agents.app = Services(dispatcher=object())     # a refusal never reaches it
+    chain = [await conversations.create(store)]
+    for n in ("agent", "sub-agent", "sub-sub-agent"):
+        chain.append(await conversations.create(store, n, agent_of=chain[-1], agent_name=n))
+    assert [await store.read(lambda c, x=x: conversations.depth(c, x)) for x in chain] == \
+        [0, 1, 2, 3]
+    assert [await agents.offered_in(store, x) for x in chain] == [True, True, True, False], \
+        "depth 3 is the deepest: it is not offered sub-agents"
+
+    async def emit(note, **data):
+        pass
+    out = await agents.start(ToolContext(chain[3], "t", "x", store, cfg, emit),
+                             brief="x", name="a fourth level")
+    assert out.is_error and out.content == cfg.substitute(
+        "Sub-agents go at most 3 levels below {{name}}, and this conversation is 3 below: "
+        "it starts none.")
+    assert await _subs_of(store, chain[3]) == []
+
+
+async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store, cfg,
+                                                                          monkeypatch):
+    s = cfg.settings
+    monkeypatch.setattr(s, "providers", {
+        "or": {"kind": "openrouter", "label": "OpenRouter",
+               "models": {"big": {"caps": ["chat", "tools"]}}},
+        "gpu": {"kind": "llama-server", "label": "gpu", "base_url": "http://gpu:8080/v1",
+                "models": {"small": {"caps": ["chat", "tools"]}}}})
+    monkeypatch.setattr(s, "key_missing", lambda pid: False)
+    asked = []
+
+    class Approvals:
+        async def ask(self, action, facts, conversation, why="", short="", kind="vault",
+                      **kw):
+            asked.append((kind, action, facts, conversation))
+            return "denied; nothing was done."
+    agents = _registry(cfg).skills["sub_agents"]
+    agents.app = Services(approvals=Approvals())     # no dispatcher: nothing runs
+    parent = await conversations.create(store)
+
+    async def emit(note, **data):
+        pass
+    ctx = ToolContext(parent, "t", "x", store, cfg, emit)
+    out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
+                             model="or/big")
+    assert out.is_error and out.content == "denied; nothing was done."
+    assert asked == [("model", "start the sub-agent site reader on the cloud model big on "
+                               "OpenRouter", ["brief: Read the whole site."], parent)]
+    out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
+                             model="gpu/small")
+    assert len(asked) == 1, "a local model starts without asking"
+    assert "cannot run here" in out.content, "it went on to start"
 
 
 async def test_a_message_from_a_sibling_gets_no_report_to_the_parent(store):
