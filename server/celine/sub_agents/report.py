@@ -7,8 +7,9 @@ included). That is checked at every end of its turns and jobs (the dispatcher's
 from its parent or the user since its last report. A sibling's message alone gets no
 report to the parent. The report is its final answer (not what it said between tool
 calls), capped like a tool result, without raw web citations, with how its last turn
-ended in `data.state`. A job's result therefore reaches the report, never a
-placeholder."""
+ended in `data.state`, and what its work since its last report took (`work`): the
+models that answered, the tokens in and out, the seconds its turns ran, from the turns'
+stored requests. A job's result therefore reaches the report, never a placeholder."""
 from __future__ import annotations
 
 import sqlite3
@@ -59,6 +60,34 @@ def last_answer(c: sqlite3.Connection, cid: str) -> str:
     return r["content"] if r else ""
 
 
+def work(c: sqlite3.Connection, cid: str) -> dict:
+    """What the turns of `cid` since its last report took: {models: the models that
+    answered, the newest last; prompt_tokens, completion_tokens: summed as the servers
+    counted them; seconds: the turns' run time, summed}."""
+    last = c.execute("SELECT coalesce(max(created_at), '') FROM intercom WHERE "
+                     "from_addr=? AND kind='report'", (f"agent:{cid}",)).fetchone()[0]
+    turns = "SELECT id FROM turns WHERE conversation_id=? AND created_at > ?"
+    rows = c.execute(
+        f"SELECT provider, coalesce(sum(prompt_tokens), 0) p, "
+        f"coalesce(sum(completion_tokens), 0) o, max(created_at) at FROM requests "
+        f"WHERE turn_id IN ({turns}) GROUP BY provider ORDER BY at", (cid, last)).fetchall()
+    secs = c.execute(
+        "SELECT coalesce(sum(julianday(finished_at) - julianday(created_at)), 0) * 86400 "
+        "FROM turns WHERE conversation_id=? AND created_at > ? AND finished_at IS NOT NULL",
+        (cid, last)).fetchone()[0]
+    return {"models": [r["provider"] for r in rows],
+            "prompt_tokens": sum(r["p"] for r in rows),
+            "completion_tokens": sum(r["o"] for r in rows), "seconds": round(secs)}
+
+
+def work_line(w: dict) -> str:
+    """"[On llama/qwen: 12,345 tokens in, 678 out, 42 s]"; empty when no model answered."""
+    if not w["models"]:
+        return ""
+    return (f"[On {', '.join(w['models'])}: {w['prompt_tokens']:,} tokens in, "
+            f"{w['completion_tokens']:,} out, {w['seconds']} s]")
+
+
 def _facts(c: sqlite3.Connection, cid: str) -> dict | None:
     sub = c.execute("SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone()
     if sub is None or not sub["agent_of"]:
@@ -76,7 +105,7 @@ def _facts(c: sqlite3.Connection, cid: str) -> dict | None:
     # after the turn had ended). Such a report never wakes the parent.
     stopped = state == "aborted" or bool(job and job["state"] == "cancelled")
     return {"parent": parent, "text": last_answer(c, cid), "state": state,
-            "stopped": stopped, "reply_to": reply_to,
+            "stopped": stopped, "reply_to": reply_to, "work": work(c, cid),
             "outside": agent_read_outside(c, cid), "name": name_of(c, f"agent:{cid}")}
 
 
@@ -111,11 +140,13 @@ async def _report(services, cid: str) -> None:
     head, shown, total = tokens.cut_to(text, tokens.result_cap(tokens.FALLBACK_WINDOW))
     if shown < total:
         text = f"{head}\n\n[cut: the whole report is in its conversation.]"
+    if line := work_line(f["work"]):
+        text = f"{text}\n\n{line}"
     # a sub-agent that was stopped reports without waking its parent: the parent
     # stopped it (its Stop cascades) or knows, and a Stop must stick
     await services.intercom.send(
         f"agent:{cid}", f"agent:{f['parent']}", text, kind="report",
-        reply_to=f["reply_to"], data={"state": f["state"], **({"outside": {
+        reply_to=f["reply_to"], data={"state": f["state"], "work": f["work"], **({"outside": {
             "source": f"sub-agent {f['name'] or ''}".strip(), "by": None}}
             if f["outside"] else {})}, wake=not f["stopped"],
         only_if=lambda c: quiet(c, cid) and asked(c, cid, f["parent"]) == f["reply_to"])

@@ -12,11 +12,13 @@ import pytest
 from celine import boot
 from celine.backends.llm import LLM
 from celine.backends.router import Router
+from celine.conversations import store as conversations
 from celine.settings import her_models, kinds
 from celine.settings.files import Invalid
 from celine.settings.registry import backend_config, validate_role
 from celine.skills import ToolContext
 from celine.skills.models import Models
+from celine.sub_agents.report import work, work_line
 from celine.turns import tokens
 from settings_fixtures import scratch
 
@@ -166,3 +168,35 @@ async def test_her_model_list_says_window_caps_host_and_loaded(router, tmp_path)
     assert lines[2] == ("gpu/Gemma-4-31B: Gemma-4-31B on gpu. Its context window is 65,536 "
                         "tokens. It sees images. It calls tools. Its server answers. It is "
                         "loaded.")
+
+
+async def test_a_report_carries_the_models_tokens_and_seconds(store):
+    parent = await conversations.create(store)
+    sub = await conversations.create(store, "s", agent_of=parent, agent_name="s")
+
+    def rows(c):
+        for tid, start, end in (("t0", "2026-10-29T10:00:00.000+00:00",
+                                 "2026-10-29T10:00:30.000+00:00"),
+                                ("t1", "2026-10-29T11:00:00.000+00:00",
+                                 "2026-10-29T11:00:40.000+00:00"),
+                                ("t2", "2026-10-29T11:01:00.000+00:00",
+                                 "2026-10-29T11:01:02.500+00:00")):
+            c.execute("INSERT INTO turns(id, conversation_id, state, created_at, finished_at) "
+                      "VALUES(?,?,'done',?,?)", (tid, sub, start, end))
+        for mid, tid, ref, p, o, at in (
+                ("m0", "t0", "home/a", 999, 9, "2026-10-29T10:00:10.000+00:00"),
+                ("m1", "t1", "gpu/b", 1000, 100, "2026-10-29T11:00:10.000+00:00"),
+                ("m2", "t2", "home/a", 2345, 600, "2026-10-29T11:01:01.000+00:00")):
+            c.execute("INSERT INTO requests(message_id, step, turn_id, provider, model, "
+                      "body, prompt_tokens, completion_tokens, created_at) "
+                      "VALUES(?,0,?,?,?,x'',?,?,?)", (mid, tid, ref, ref, p, o, at))
+        # its last report came between t0 and t1: t0 is in that one
+        c.execute("INSERT INTO intercom(created_at, from_addr, to_addr, kind) "
+                  "VALUES('2026-10-29T10:30:00.000+00:00', ?, ?, 'report')",
+                  (f"agent:{sub}", f"agent:{parent}"))
+    await store.write(rows)
+    w = await store.read(lambda c: work(c, sub))
+    assert w == {"models": ["gpu/b", "home/a"], "prompt_tokens": 3345,
+                 "completion_tokens": 700, "seconds": 42}
+    assert work_line(w) == "[On gpu/b, home/a: 3,345 tokens in, 700 out, 42 s]"
+    assert work_line({"models": []}) == ""
