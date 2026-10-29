@@ -279,8 +279,9 @@ function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (c
   const [text, setText] = useState('')
   const [name, setName] = useState('')
   const [model, setModel] = useState<string | null>(null)
+  const [minTime, setMinTime] = useState('')
   const start = useAction(async () => {
-    const r = await missionsApi.start(text.trim(), name.trim() || undefined, model)
+    const r = await missionsApi.start(text.trim(), name.trim() || undefined, model, minTime.trim() || undefined)
     onStarted(r.conversation_id)
   })
   return (
@@ -293,6 +294,7 @@ function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (c
         <Field label="Model" group>
           <ModelPick name={model ?? 'Default'} current={model} fallback={null} disabled={start.busy} onModel={setModel} />
         </Field>
+        <Field label="Minimum time"><Input value={minTime} placeholder="Optional" onChange={e => setMinTime(e.target.value)} /></Field>
       </div>
       {start.error && <InlineError compact message={start.error} />}
     </Dialog>
@@ -496,6 +498,7 @@ function Settings({ m, live, agents, onChange }: {
       <div className="missions-model"><ModelRow cid={m.conversation_id} live={live} /></div>
       <Facts grid items={[
         ...(m.until ? [{ label: 'Runs until', value: stamp(m.until) }] : []),
+        ...(m.min_until ? [{ label: 'Runs at least until', value: stamp(m.min_until) }] : []),
         { label: 'Started', value: stamp(m.created_at) },
         ...(agents ? [{ label: 'Sub-agents', value: agentsNoun(agents) }] : []),
       ]} />

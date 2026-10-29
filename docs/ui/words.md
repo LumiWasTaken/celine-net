@@ -194,6 +194,7 @@ block at the end of this file lists the words no UI string uses.
 | Unload after | how long an idle model stays loaded | plain; Ollama says `keep_alive`, Open WebUI "Keep Alive" |
 | Read-only, Can edit | sub-agent access | Google Docs "Can edit" |
 | Instructions | a mission's task text | ChatGPT and Claude Projects "Instructions" |
+| Minimum time, Runs at least until | how long a mission runs at least before it may close as done, in its form and on its page | plain |
 | Result, Results | what a mission or sub-agent sends back | Apple Shortcuts "Show Result", Google "Results" |
 | Trigger, Triggers | what starts a run (Watch, Event) | Zapier, GitHub Actions |
 | Schedule, Runs after, Reviewer, Turns | Routines | GitHub Actions "schedule" |
