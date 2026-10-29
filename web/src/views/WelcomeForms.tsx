@@ -24,9 +24,8 @@ import { routinesApi, type Schedule } from '../lib/routines'
 import { LINK, settingsApi, type Available, type Cap, type Feature, type ProviderView, type RoleView } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
-import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Switch, copied } from '../ui'
+import { Button, Choice, Dot, Field, Form, InlineError, Input, LoadingRow, Switch, copied } from '../ui'
 import { reach, slug } from './settings/Models'
-import { SchemaForm } from './settings/parts'
 import './Welcome.css'
 import { SPEECH_ROLE, type Direction } from '../lib/speechApi'
 import { EMPTY_PROVIDER, ProviderFields, host, ready, type ProviderDraft } from '../components/ProviderFields'
@@ -190,8 +189,8 @@ function EmailForm({ value, onChange, saveRef, reprobe }: FormProps<Mail>) {
   const set = res.data?.password.state === 'set'
   return (
     <>
-      <SchemaForm schema={res.data?.fields ?? []} values={d.email} disabled={!online} plain
-                  onChange={(k, v) => onChange({ ...d, email: { ...d.email, [k]: v }, checked: null })} />
+      <Form fields={res.data?.fields ?? []} values={d.email} disabled={!online} plain
+            onChange={(k, v) => onChange({ ...d, email: { ...d.email, [k]: v }, checked: null })} />
       <Field label="Password">
         <Input type="password" autoComplete="off" spellCheck={false} value={d.password} placeholder={set ? 'Saved' : undefined}
                onChange={e => onChange({ ...d, password: e.target.value, checked: null })} />
@@ -230,8 +229,8 @@ function VaultForm({ value, onChange, saveRef, reprobe }: FormProps<Vault>) {
   if (!d) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : <LoadingRow label="Loading" />
   return (
     <>
-      <SchemaForm schema={res.data?.fields ?? []} values={d.vault} disabled={!online} plain
-                  onChange={(k, v) => onChange({ ...d, vault: { ...d.vault, [k]: v } })} />
+      <Form fields={res.data?.fields ?? []} values={d.vault} disabled={!online} plain
+            onChange={(k, v) => onChange({ ...d, vault: { ...d.vault, [k]: v } })} />
       <Field label="Client secret">
         <Input type="password" autoComplete="off" spellCheck={false} value={d.secret}
                placeholder={res.data?.client_secret.state === 'set' ? 'Saved' : undefined}

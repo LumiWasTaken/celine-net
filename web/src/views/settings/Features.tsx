@@ -94,7 +94,7 @@ export function FeatureRows({ view, only, disabled = false, about = false, later
   reprobe?: (id: string) => Promise<void>
 }) {
   return (
-    <div className="schema-form">
+    <div className="form">
       {view.catalog.filter(f => !only || only.includes(f.id)).map(f => {
         // a feature with a page of its own links to it (Guard; Images & Music while on)
         const page = f.id === 'guard' ? 'guard' : MEDIA.has(f.id) && view.features[f.id] !== false ? 'media' : null

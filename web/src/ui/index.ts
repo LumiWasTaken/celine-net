@@ -2,7 +2,7 @@
 export { cx } from './cx'
 export { ICON } from './icons'
 export { Button, IconButton, SendButton } from './Button'
-export { Field, Input, TextArea, NumberField, SearchField, Choice, Picks, Checkbox, Switch, InlineEdit, FileButton, Slider, PinInput } from './Form'
+export { Field, Input, TextArea, NumberField, SearchField, Choice, Picks, Checkbox, Switch, InlineEdit, FileButton, Slider, PinInput, Form, type FormField, type SecretState } from './Form'
 export { Notice, InlineError, StatusLine, LoadingRow, EmptyState, Loaded, type NoticeAction } from './Notice'
 export { Dialog, ConfirmDialog, CloseButton, Sheet, useModal } from './Dialog'
 export { Menu, MenuButton, useContextMenu, type MenuItem } from './Menu'

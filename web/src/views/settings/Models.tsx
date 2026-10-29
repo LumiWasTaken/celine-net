@@ -16,7 +16,7 @@ import { clock, errorText } from '../../lib/format'
 import { format, useNav } from '../../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import {
-  SETTINGS_EVENTS, settingsApi, type Available, type Cap, type FieldSchema, type KindInfo, type ModelConfig,
+  SETTINGS_EVENTS, settingsApi, type Available, type Cap, type KindInfo, type ModelConfig,
   type OptionSchema, type ProviderKind, type ProviderModel, type ProviderView, type RoleView,
   LINK,
 } from '../../lib/settingsApi'
@@ -26,10 +26,9 @@ import { useResource, type Resource } from '../../lib/useResource'
 import { ModelChooser, contextWords, findModel, modelDetail, modelName } from '../../components/ModelChooser'
 import { EMPTY_PROVIDER, ProviderFields, host, kindInfo, ready, type ProviderDraft } from '../../components/ProviderFields'
 import {
-  Button, Checkbox, Choice, ConfirmDialog, Dialog, Dot, EmptyState, Field, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton,
-  Notice, NumberField, SearchField, Section, Step, SubHead, Switch, useContextMenu, VirtualList, type DotTone, type MenuItem,
+  Button, Checkbox, Choice, ConfirmDialog, Dialog, Dot, EmptyState, Field, Form, type FormField, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton, Notice, NumberField, SearchField, Section, Step, SubHead, Switch, useContextMenu, VirtualList, type DotTone, type MenuItem,
 } from '../../ui'
-import { Page, SchemaForm } from './parts'
+import { Page } from './parts'
 import { ROLE } from '../../lib/media'
 import './settings.css'
 
@@ -212,7 +211,7 @@ const OPTION: Record<string, { label: string; help?: string; unit?: string; choi
 const FILE_ONLY = new Set(['order', 'only', 'ignore', 'quantizations', 'backup_models', 'thinking_levels'])
 
 /** the options of one provider; `others`: the llama-swap and tabbyAPI providers it can share a GPU with */
-export function optionSchema(opts: OptionSchema[], others: ProviderView[]): FieldSchema[] {
+export function optionSchema(opts: OptionSchema[], others: ProviderView[]): FormField[] {
   return opts.filter(o => !FILE_ONLY.has(o.key)).map(o => {
     const m = OPTION[o.key]
     const label = m?.label ?? (o.key.charAt(0).toUpperCase() + o.key.slice(1)).replace(/_/g, ' ')
@@ -300,8 +299,8 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
 
       {schema.length > 0 && (
         <Section title="Options">
-          <SchemaForm schema={schema} values={{ ...cfg.options, ...opts.pending }} disabled={!online}
-                      onChange={(k, v) => opts.set(k, v)} />
+          <Form fields={schema} values={{ ...cfg.options, ...opts.pending }} disabled={!online}
+                onChange={(k, v) => opts.set(k, v)} />
           {opts.error && <InlineError compact message={opts.error} onRetry={opts.flush} />}
         </Section>
       )}

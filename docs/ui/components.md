@@ -328,6 +328,24 @@ One height for every field, a hairline edge, a halo on focus.
 
 Don't: use a dropdown `<select>` (a dropdown only for a list that can run to hundreds of entries, such as a provider's models); put a hint line under a field; build a field by hand.
 
+### Form
+
+A whole form drawn from the server's field schema (server/celine/settings/form.py): one column, each field its label above its control, a switch its label beside it. A field's `help` is its tooltip.
+
+| Field type | Drawn as | Changes |
+|---|---|---|
+| `bool` | `Switch` | at once |
+| `choice` | `Choice` | at once |
+| `number`, `duration` | `NumberField` with its unit (`plain`: a `Field` with an `Input`, as in the onboarding's cards) | on leaving the field or Enter |
+| `text` | `Input` (`mono`, `placeholder`); `long`: `TextArea` | on leaving the field or Enter |
+| `list` | `TextArea`, one entry per line | on leaving the field |
+| `secret` | a password `Input`; once stored "Saved" with Remove, never the secret | `onChange(key, text)`, Remove `onChange(key, null)` |
+| `copy` | a read-only mono `Input` with Copy | never |
+
+Props: `fields`, `values`, `secrets` (each secret's `{state, set_at}`), `onChange(key, value)`, `disabled`, `plain`. A field with `where: 'config'` is read-only. A form served by `/api/forms/{id}` goes through `useForm(id)` (web/src/lib/forms.ts), which keeps the version, the pending changes and the secrets apart.
+
+Don't: draw a form's fields by hand; show a stored secret or a part of one.
+
 ## Feedback and state
 
 | Part | When | Rule |

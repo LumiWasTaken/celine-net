@@ -21,10 +21,8 @@ import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import { BatchGallery, StopBatch, doneWords, madeImages, type Made } from '../../components/Batch'
 import {
-  Button, Card, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead,
-  Switch, TextArea,
+  Button, Card, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Form, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead, Switch, TextArea,
 } from '../../ui'
-import { SchemaForm } from './parts'
 import './settings.css'
 
 const TASK: Record<Preset['task'], string> = { generate: 'new images', edit: 'edits', music: 'music' }
@@ -113,7 +111,7 @@ function Editor({ preset: p, onChanged, onRemoved }: { preset: Preset; onChanged
   const error = edit.error ?? replace.error ?? reset.error
   return (
     <div className="preset-open__edit">
-      <SchemaForm schema={p.fields} values={p.values} disabled={!online || edit.busy} onChange={(k, v) => void edit.run(k, v)} />
+      <Form fields={p.fields} values={p.values} disabled={!online || edit.busy} onChange={(k, v) => void edit.run(k, v)} />
       {error && <InlineError compact message={error} />}
       <div className="preset-open__actions">
         <FileButton icon={FileUp} accept=".json,application/json" disabled={!online || replace.busy}

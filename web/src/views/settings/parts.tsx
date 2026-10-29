@@ -1,16 +1,15 @@
 /* Pieces every Settings page uses: the page frame, the status dot, a task as one
-   quiet line, and the generic settings form (rendered from a field schema, so a new
-   source brings its own settings without frontend code). */
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+   quiet line. The generic form is the kit's Form (ui/Form.tsx). */
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { CircleCheck, RefreshCw, Square, TriangleAlert, X } from 'lucide-react'
 import { kbApi, type Task } from '../../lib/kb'
 import { count, num } from '../../lib/format'
 import { format, useNav } from '../../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { useAction } from '../../lib/useAction'
-import type { FieldSchema, Level } from '../../lib/settingsApi'
+import type { Level } from '../../lib/settingsApi'
 import { LEVEL_WORD } from '../../lib/sources'
-import { Button, Dot, Field, ICON, IconButton, InlineError, Input, NumberField, PlaceHead, Progress, Choice, Switch, TextArea, cx, usePhone, type Crumb, type MenuItem } from '../../ui'
+import { Button, Dot, ICON, IconButton, InlineError, PlaceHead, Progress, cx, usePhone, type Crumb, type MenuItem } from '../../ui'
 import './settings.css'
 
 /* ── the page frame: the pane head and a scrolling body with the page's column in the
@@ -160,88 +159,3 @@ function resultText(t: Task): string {
   return text
 }
 
-/* ── the generic settings form ──────────────────────────────────────────────
-   One column: each field its label above its control, a switch its label beside it.
-   Switches and choices save at once; numbers and text save when you leave the field or
-   press Enter. `config` fields are read-only. A field's help is its tooltip. `plain`: a
-   number is laid out like every other field (the onboarding's cards), not as the one
-   NumberField with its label at the left. */
-export function SchemaForm({ schema, values, onChange, disabled = false, plain = false }: {
-  schema: FieldSchema[]
-  values: Record<string, unknown>
-  onChange: (key: string, value: unknown) => void
-  disabled?: boolean
-  plain?: boolean
-}) {
-  return (
-    <div className="schema-form">
-      {schema.map(f => <SchemaField key={f.key} f={f} value={values[f.key] ?? f.default} onChange={onChange} disabled={disabled} plain={plain} />)}
-    </div>
-  )
-}
-
-function SchemaField({ f, value, onChange, disabled, plain }: {
-  f: FieldSchema; value: unknown; onChange: (key: string, value: unknown) => void; disabled: boolean; plain: boolean
-}) {
-  const readOnly = f.where === 'config'
-  const help = f.help || undefined
-  if (f.type === 'bool') {
-    return <Switch label={f.label} title={help} checked={!!value} disabled={disabled || readOnly}
-                   onChange={v => onChange(f.key, v)} />
-  }
-  if (f.type === 'choice') {
-    return (
-      <Field label={f.label} group>
-        <Choice label={f.label} value={String(value ?? '')} disabled={disabled || readOnly} title={help}
-                options={(f.choices ?? []).map(([v, l]) => ({ value: v, label: l }))} onChange={v => onChange(f.key, v)} />
-      </Field>
-    )
-  }
-  return <TextField f={f} value={value} help={help} disabled={disabled || readOnly} plain={plain} onChange={onChange} />
-}
-
-function TextField({ f, value, help, disabled, plain, onChange }: {
-  f: FieldSchema; value: unknown; help?: string; disabled: boolean; plain: boolean; onChange: (key: string, value: unknown) => void
-}) {
-  const numeric = f.type === 'number' || f.type === 'duration'
-  const [draft, setDraft] = useState(value == null ? '' : String(value))
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => { setDraft(value == null ? '' : String(value)) }, [value])
-  const commit = () => {
-    if (draft === (value == null ? '' : String(value))) return
-    if (numeric) {
-      const n = Number(draft)
-      if (!draft.trim() || !Number.isFinite(n)) { setError('Enter a number.'); return }
-      if (f.min != null && n < f.min) { setError(`At least ${num(f.min)}${f.unit ? ` ${f.unit}` : ''}.`); return }
-      if (f.max != null && n > f.max) { setError(`At most ${num(f.max)}${f.unit ? ` ${f.unit}` : ''}.`); return }
-      setError(null); onChange(f.key, n)
-    } else { setError(null); onChange(f.key, draft) }
-  }
-  // a number: the one number field, its label on the left
-  if (numeric && !plain) {
-    return (
-      <div>
-        <NumberField label={f.label} value={draft} disabled={disabled} unit={f.unit ?? undefined} invalid={!!error}
-                     onChange={setDraft} onBlur={commit} />
-        {error && <InlineError compact message={error} />}
-      </div>
-    )
-  }
-  if (f.long && !numeric) {
-    return (
-      <Field label={f.label} error={error}>
-        <TextArea rows={3} value={draft} disabled={disabled} title={help} onChange={e => setDraft(e.target.value)} onBlur={commit} />
-      </Field>
-    )
-  }
-  return (
-    <Field label={f.label} error={error}>
-      <span className="schema-form__control">
-        <Input value={draft} disabled={disabled} title={help} invalid={!!error}
-               onChange={e => setDraft(e.target.value)} onBlur={commit}
-               onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setDraft(value == null ? '' : String(value)) }} />
-        {f.unit && <span className="schema-form__unit">{f.unit}</span>}
-      </span>
-    </Field>
-  )
-}

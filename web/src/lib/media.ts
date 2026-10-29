@@ -4,7 +4,7 @@
    and the global feed. The agent's calls carry the same batch as their display. */
 import { del, json, post, request } from './api'
 import type { ServerEvent } from './bus'
-import type { FieldSchema } from './settingsApi'
+import type { FormField } from '../ui'
 
 export type Kind = 'images' | 'music'
 
@@ -76,7 +76,7 @@ export type Preset = {
   /** shipped as it came, a shipped one the user edited, or the user's own upload */
   origin: 'shipped' | 'edited' | 'own'
   /** the editor: its fields and their values (comfyui/presets.py fields, values) */
-  fields: FieldSchema[]
+  fields: FormField[]
   values: Record<string, unknown>
 }
 

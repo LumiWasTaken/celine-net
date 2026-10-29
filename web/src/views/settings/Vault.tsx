@@ -13,8 +13,8 @@ import { LINK, settingsApi, type VaultAsk } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, Field, InlineError, Input, Section } from '../../ui'
-import { Page, SchemaForm } from './parts'
+import { Button, Field, Form, InlineError, Input, Section } from '../../ui'
+import { Page } from './parts'
 import './settings.css'
 
 export function Vault() {
@@ -51,8 +51,8 @@ export function Vault() {
       <Section>
         {res.data.status !== LINK.unset && <p className="src-line">{res.data.status}</p>}
         <div title={online ? undefined : OFFLINE_TITLE}>
-          <SchemaForm schema={res.data.fields} values={{ ...res.data.vault, ...auto.pending }} disabled={!online}
-                      onChange={(k, v) => auto.set(k, v)} />
+          <Form fields={res.data.fields} values={{ ...res.data.vault, ...auto.pending }} disabled={!online}
+                onChange={(k, v) => auto.set(k, v)} />
           {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
         </div>
         <form className="key-form" onSubmit={e => { e.preventDefault(); if (secret) void saveSecret.run() }}>

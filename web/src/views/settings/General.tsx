@@ -9,11 +9,11 @@ import { useEffect } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import type { ConfigStatus } from '../../lib/api'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
-import { settingsApi, type FieldSchema } from '../../lib/settingsApi'
+import { settingsApi } from '../../lib/settingsApi'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, Field, InlineError, Input, Section, TextArea } from '../../ui'
-import { Page, SchemaForm } from './parts'
+import { Button, Field, Form, type FormField, InlineError, Input, Section, TextArea } from '../../ui'
+import { Page } from './parts'
 import './settings.css'
 
 export function General({ status }: { status: ConfigStatus | null }) {
@@ -71,9 +71,9 @@ export function GeneralFields({ only, advanced = false }: { only?: string[]; adv
   const schema = res.data.fields.filter(f => only ? only.includes(f.key) : advanced && f.advanced)
   if (schema.length === 0) return null
   const values = { ...res.data.general, ...auto.pending }
-  const form = (fields: FieldSchema[], withError = false) => (
+  const form = (fields: FormField[], withError = false) => (
     <div title={online ? undefined : OFFLINE_TITLE}>
-      <SchemaForm schema={fields} values={values} disabled={!online} onChange={(k, v) => auto.set(k, v)} />
+      <Form fields={fields} values={values} disabled={!online} onChange={(k, v) => auto.set(k, v)} />
       {withError && auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
     </div>
   )
@@ -112,7 +112,7 @@ function YouCard() {
   const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') auto.flush() }
   return (
     <Section title="You">
-      <div className="schema-form" title={online ? undefined : OFFLINE_TITLE}>
+      <div className="form" title={online ? undefined : OFFLINE_TITLE}>
         <Field label="Your name"><Input {...field('user_name')} maxLength={40} onKeyDown={enter} /></Field>
         <Field label="Time zone"><Input {...field('timezone')} placeholder="America/New_York" spellCheck={false} onKeyDown={enter} /></Field>
         <Field label="About you"><TextArea {...field('user_bio')} rows={4} maxLength={2000} /></Field>
