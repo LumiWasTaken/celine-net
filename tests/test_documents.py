@@ -159,6 +159,14 @@ async def test_celines_tools_search_and_read_on(tmp_path, monkeypatch):
     assert (await sk.read(tc, document="does not exist")).is_error
     before = await sk.read(tc, document="reise", direction="before", max_tokens=600)
     assert "Tag 0:" in before.content and "None" not in before.content
+    from celine.kb import semantic
+
+    def broken(*_a, **_k):
+        raise semantic.SemanticError("the embedding server refused")
+    monkeypatch.setattr(type(kb), "semantic_hits", broken)
+    out = (await sk.search(tc, query="minsk blini")).content
+    assert ("Semantic topic search failed (the embedding server refused); these are the "
+            "word search hits.") in out and "[documents:" in out
 
 
 def test_the_largest_upload_is_an_advanced_setting(tmp_path):

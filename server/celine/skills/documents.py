@@ -198,11 +198,13 @@ class UserDocuments:
                 scope_line += f" (not found: {', '.join(map(str, missing))})"
         lit = await anyio.to_thread.run_sync(
             lambda: k.search_segments(query, item_ids=scope_ids, limit=want, any_word=True))
+        sem_failed = None
         try:
             sem = await anyio.to_thread.run_sync(lambda: k.semantic_hits(
                 query, scope_ids, k=20))
-        except Exception:                      # noqa: BLE001 - semantic search is optional
-            sem = []
+        except Exception as e:                 # noqa: BLE001 - said in the result
+            sem, sem_failed = [], (f"Semantic topic search failed ({e}); these are the "
+                                   f"word search hits.")
         # merge: word search groups first (by bm25), then documents found only by the
         # semantic topic search
         groups: dict[int, dict] = {}
@@ -233,6 +235,8 @@ class UserDocuments:
             scope_line += f" ({info['items']} documents)"
         elif f and not documents:
             scope_line += f" ({len(scope_ids)} documents)"
+        if sem_failed:
+            scope_line += f"\n{sem_failed}"
         if not order:
             return ToolResult(content=f"{scope_line}\nNo match for {query!r}.",
                               display={"items": 0})

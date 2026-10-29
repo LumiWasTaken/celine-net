@@ -779,16 +779,14 @@ class DocumentsKB:
 
     def semantic_hits(self, q: str, item_ids: list[int] | None = None,
                       k: int = 20) -> list[dict[str, Any]]:
-        """Passages by meaning; [] when there is no index or no embedding endpoint."""
+        """Passages by meaning; [] when there is no index or no embedding endpoint. A
+        failed query embedding raises SemanticError."""
         cfg = self.app_cfg
         from . import semantic
         if cfg is None or not semantic.embeddings_available(cfg) \
                 or not self.file.read_sync(P.has_index):
             return []
-        try:
-            qvec = semantic.query_vector(cfg, q)
-        except semantic.SemanticError:
-            return []                          # no embedding model answers now
+        qvec = semantic.query_vector(cfg, q)
 
         def run(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             scored = P.dense(conn, qvec, k, chat_ids=item_ids or None)
