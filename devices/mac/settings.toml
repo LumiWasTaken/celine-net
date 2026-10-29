@@ -1,0 +1,8 @@
+secret = "token"
+check = true
+
+[[fields]]
+key = "url"
+label = "Address"
+type = "text"
+default = ""
