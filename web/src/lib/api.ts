@@ -544,12 +544,12 @@ export type SentRequest = {
   body: { messages?: { role: string; content: unknown; name?: string; tool_name?: string }[]; tools?: { function?: { name?: string } }[] } & Record<string, unknown>
 }
 
-/** GET /conversations/{cid}/context: blocks in order persona, talk, about, notes, tools, history, warning */
+/** GET /conversations/{cid}/context: blocks in order persona, talk, about, notes, tools, history */
 export type ContextView = {
   window: number
   /** the most notes and tools may take, in tokens */
   shares: { notes: number; tools: number }
-  blocks: { name: 'persona' | 'talk' | 'about' | 'notes' | 'tools' | 'history' | 'warning'; tokens: number }[]
+  blocks: { name: 'persona' | 'talk' | 'about' | 'notes' | 'tools' | 'history'; tokens: number }[]
   notes: { path: string; tokens: number; state: 'included' | 'left_out' | 'off'; why: string | null }[]
   /** what it carries, each with the turns since a turn last touched it */
   loaded: {

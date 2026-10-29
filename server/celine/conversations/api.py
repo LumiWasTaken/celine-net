@@ -88,7 +88,7 @@ async def writable(request: Request, cid: str) -> None:
     await store.ensure_writable(store_of(request), cid)
 
 
-BLOCKS = ("persona", "talk", "about", "notes", "tools", "history", "warning")
+BLOCKS = ("persona", "talk", "about", "notes", "tools", "history")
 
 
 @router.get("/conversations/{cid}/context")
@@ -100,8 +100,8 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     about where it is and how it talks, about: what the user wrote about themselves,
     notes: the notes block, tools: the skill index, the skills' fragments and the tool
     schemas, history: the rest of the request estimate (the messages sent, the summary
-    and its tail), so the blocks add up to the estimate the compaction check uses,
-    warning: the line that a summary is coming), notes: [{path, tokens, state, why}] (the notes it
+    and its tail), so the blocks add up to the estimate the compaction check uses),
+    notes: [{path, tokens, state, why}] (the notes it
     carries or would: included, left_out or off), loaded: {notes: [{path, since}],
     skills: [{name, since, tokens, core}]} (what it carries, each with the turns since
     a turn touched it; a skill's tool schemas in tokens, `core` when it always loads,
@@ -135,7 +135,6 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     # the notes it carries by need ride in the tail: they count as notes, not history
     carried_notes = counter.estimate(notes_tail(cfg, carried) or "")
     out["notes"]["tokens"] += carried_notes
-    out["warning"]["tokens"] = int(p.get("warning") or 0)
     # history is the rest of the request estimate the compaction check uses, so the
     # blocks add up to exactly that number (the per-block estimates of the system text
     # and the request's count differ by the message overhead and rounding)

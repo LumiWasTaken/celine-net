@@ -468,7 +468,7 @@ same way, without a model call, and measures it in tokens with the same estimate
 state, why}], loaded: {notes: [{path, since}], skills: [{name, since}]}, tools}`.
 `loaded` is what it carries now, each with the turns since a turn touched it. The blocks,
 in order: `persona`, `talk`, `about`, `notes`, `tools` (the skill index, fragments and
-tool schemas), `history` and `warning` (`conversations/api.py BLOCKS`). `notes` are the
+tool schemas) and `history` (`conversations/api.py BLOCKS`). `notes` are the
 notes it carries or would: `included`, `left_out` (over the share) or `off`, each with why.
 
 Automatic summaries (not `/compact`, not emergency) are skipped when they would save
@@ -477,8 +477,7 @@ message is not on the active path. A compaction (`compactions` row: `through_mes
 `trigger`, `covers_messages`, `text`, token counts, `focus`, `model`) is valid while
 `through_message_id` is on the active path; the newest valid one is used. The summary is
 **rolling** and ends with the refs of the summarised results it does not mention
-(`compact.with_dropped_refs`), so nothing it found becomes unfindable. Past
-`Policy.warn_at` (60 %) the system prompt ends with one line that a summary comes soon.
+(`compact.with_dropped_refs`), so nothing it found becomes unfindable.
 The summary request goes to the conversation's chat model and no other, with no tools,
 in pieces of at most half the window (`compact.PROMPT`). Nothing is ever left out in its
 place: when the summary fails, a turn fails with the reason (`reason_code =
