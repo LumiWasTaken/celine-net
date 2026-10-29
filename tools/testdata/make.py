@@ -793,9 +793,9 @@ class Gen:
                 ("appraisal", "done", None, ids["hike"], 19),
                 ("documents.describe", "failed", "The Titles and descriptions model is not "
                  "reachable.", None, 500)):
-            self.x("INSERT INTO work(kind, state, payload, tries, error, conversation_id, "
-                   "created_at, started_at, finished_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                   (kind, state, "{}", 1, err, cid, self.at(mins), self.at(mins),
+            self.x("INSERT INTO work(kind, state, payload, error, conversation_id, "
+                   "created_at, started_at, finished_at) VALUES(?,?,?,?,?,?,?,?)",
+                   (kind, state, "{}", err, cid, self.at(mins), self.at(mins),
                     self.at(mins - 1)))
         # terminals: hers, the backup one, Glorpi's own with his commands
         box_term = ids["term_backup"]
