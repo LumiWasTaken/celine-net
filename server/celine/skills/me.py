@@ -162,9 +162,9 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
         if p and p["state"] != "none" and features.on(cfg, f.id):
             lines.append(f"{f.label}: {p['detail'] or p['state']}")
     mcp = getattr(app, "mcp", None)
-    owned = features.connector_owners()
+    owned = features.connector_owners()        # a probed feature's line says it already
     for s in (mcp.skills.values() if mcp is not None else ()):
-        if s.name not in owned:
+        if s.name not in owned or not features.get(owned[s.name]).probe:
             lines.append(f"{s.name} (MCP): {s.status}" + (f", {s.error}" if s.error else ""))
     lines.append(f"Guard: {switch.mode(cfg, cid)}")
     if held := await hold.her_hold(store, llm):

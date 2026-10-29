@@ -106,7 +106,8 @@ def values(fields: list[dict[str, Any]], saved: dict[str, Any]) -> dict[str, Any
 
 def check_toml(pid: str, doc: dict[str, Any]) -> None:
     """Plugin `pid`'s settings.toml as the loader reads it: [[fields]], an optional `note`,
-    [[actions]] {id, label, input?, run = "module:coroutine"}; raises ValueError."""
+    `copies = "module:coroutine"` (api/forms.py), [[actions]] {id, label, input?, run =
+    "module:coroutine"}; raises ValueError."""
     fields = doc.get("fields")
     if not isinstance(fields, list) or not fields:
         raise ValueError("settings.toml needs [[fields]]")
@@ -133,6 +134,8 @@ def check_toml(pid: str, doc: dict[str, Any]) -> None:
                 raise ValueError(f"the default of {f['key']!r}: {e}") from None
     if not isinstance(doc.get("note", ""), str):
         raise ValueError("the note is one text")
+    if not isinstance(doc.get("copies", ""), str):
+        raise ValueError('copies is one "module:function"')
     for a in doc.get("actions", []):
         if not isinstance(a, dict) or not all(isinstance(a.get(k), str)
                                               for k in ("id", "label", "run")):

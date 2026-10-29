@@ -173,6 +173,7 @@ def tools(services) -> dict[str, Any]:
     cfg = services.cfg
     s = cfg.settings
     reg = services.registry
+    mcp_skills = getattr(services.mcp, "skills", None) or {}
     skills = []
     if reg is not None:
         for name, skill in reg.skills.items():
@@ -190,7 +191,7 @@ def tools(services) -> dict[str, Any]:
             states = {x["default"] for x in rows}
             down = getattr(skill, "search_down", None)     # web: SearXNG does not answer
             skills.append({"name": name, **meta,
-                           "source": "mcp" if name in (cfg.mcp or {}) else "built-in",
+                           "source": "mcp" if name in mcp_skills else "built-in",
                            "status": "down" if down else status_of(services, name, skill),
                            "error": down or getattr(skill, "error", None),
                            "default": states.pop() if len(states) == 1 else "mixed",
@@ -214,7 +215,9 @@ async def features(services, probes: dict | None = None) -> dict[str, Any]:
         probes = await features_mod.probe_all(services.cfg, services)
     return {"features": features_mod.effective(s.features),
             "catalog": [{**features_mod.view(f), **probes[f.id],
-                         "card": features_mod.card_now(services.cfg, f, probes[f.id])}
+                         "card": features_mod.card_now(services.cfg, f, probes[f.id]),
+                         "group_label": services.cfg.substitute(
+                             features_mod.GROUPS.get(f.group, ""))}
                         for f in features_mod.catalog()],
             "saved": bool(s.saved.get("features")), "done": features_mod.done(s.features),
             "version": version(s.features)}

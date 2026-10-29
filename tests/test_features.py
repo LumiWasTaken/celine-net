@@ -45,7 +45,7 @@ async def test_defaults_then_put_then_get(api):
     # nothing that needs a service runs before Setup saved it: no connector starts at boot
     off = {i for i, on in r["features"].items() if not on}
     assert off == {"shellbox", "shares", "browser", "images", "music", "web", "discord",
-                   "whatsapp", "email", "vault", "guard", "speech_input", "speech_output"}
+                   "whatsapp", "email", "vault", "guard", "speech_input", "speech_output", "mac"}
     assert "shell" not in _skills(api) and "discord" not in _skills(api)
     assert not features.allows_connector(api.cfg, "discord")
     assert api.cfg.settings.features == features.seed()
@@ -85,7 +85,7 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
     keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "card", "kbs", "archive", "warn",
-            "state", "detail"}
+            "state", "detail", "group", "choice", "group_label"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
     assert by["documents"]["state"] == "none" and by["documents"]["detail"] == ""
@@ -96,7 +96,7 @@ async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api)
     assert {f.id for f in features.catalog() if f.card == "detect"} == \
         {"shellbox", "browser", "images", "music", "web", "messages"}
     assert {f["id"] for f in catalog if f["card"] == "always"} == \
-        {"shares", "discord", "whatsapp", "guard", "routines", "speech_input", "speech_output"}
+        {"shares", "discord", "whatsapp", "guard", "routines", "speech_input", "speech_output", "mac"}
     assert {f["id"] for f in catalog if f["warn"]} == {"shares"}
     assert by["email"]["card"] == "" and by["vault"]["card"] == ""
 

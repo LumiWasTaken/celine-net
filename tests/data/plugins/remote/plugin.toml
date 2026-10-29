@@ -1,0 +1,13 @@
+id = "remote"
+label = "Remote"
+about = "An MCP server filled from its form."
+
+[servers.remote_echo]
+enabled = true
+transport = "stdio"
+command = "${PYTHON}"
+args = ["${SCRIPT}"]
+sends = "house"
+
+[servers.remote_echo.env]
+ECHO_TOKEN = "${TOKEN}"

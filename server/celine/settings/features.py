@@ -53,7 +53,7 @@ class Feature:
     tools: tuple[str, ...] = ()      # tool wire names of a skill it does not own: off with it
     places: tuple[str, ...] = ()     # UI place ids (web/src/routes.tsx)
     pages: tuple[str, ...] = ()      # Settings page ids it owns
-    mcp: tuple[str, ...] = ()        # mcp.toml server ids
+    mcp: tuple[str, ...] = ()        # MCP server ids: mcp.toml's, a plugin's [servers]
     kbs: tuple[str, ...] = ()        # kb.toml source ids
     probe: str = ""                  # "celine.module:function", async (cfg, services) -> Probe
     setup: str = ""                  # the onboarding's setup form for it
@@ -69,6 +69,14 @@ class Feature:
     start_on: bool = True
     # the confirm a switch on shows first (Settings, Features and its onboarding card)
     warn: str = ""
+    # the onboarding card it shares with the other features of its group (GROUPS), and
+    # its switch's label there
+    group: str = ""
+    choice: str = ""
+
+
+# the onboarding's shared cards: id -> its title (cfg.substitute fills the pronoun)
+GROUPS = {"computer": "{{Her}} computer"}
 
 
 # The order is the UI's; the plugins come after.
@@ -77,7 +85,7 @@ CORE: tuple[Feature, ...] = (
             "An isolated Linux computer with a terminal, files and programs of its own, nothing on your machine.",
             "No shellbox container is running.",
             skills=("shell", "code"), places=("terminals",), probe="celine.skills.shell:probe",
-            setup="service", card="detect"),
+            setup="service", card="detect", group="computer", choice="Container"),
     Feature("shares", "Shares", "Turns on once the shellbox is on.",
             "Shows you a page, game, tool or file from the shellbox in a new tab.",
             "Nothing of the shellbox should open outside it.",
@@ -176,7 +184,9 @@ def of_plugin(p: plugins.Plugin) -> Feature:
                    pages=(p.id,) if p.form is not None else (),
                    form=p.id if p.form is not None else "",
                    card=m.get("card", ""), start_on=bool(m.get("start_on", False)),
-                   warn=m.get("warn", ""))
+                   warn=m.get("warn", ""), mcp=tuple(m.get("servers", ())),
+                   group=m.get("group", "") if m.get("group") in GROUPS else "",
+                   choice=m.get("choice", ""))
 
 
 def catalog() -> tuple[Feature, ...]:
@@ -222,7 +232,7 @@ def view(f: Feature) -> dict[str, Any]:
     return {"id": f.id, "label": f.label, "needs": f.needs, "about": f.about,
             "off_when": f.off_when, "places": list(f.places), "pages": list(f.pages),
             "setup": f.setup, "form": f.form, "card": f.card, "kbs": list(f.kbs), "archive": f.archive,
-            "warn": f.warn}
+            "warn": f.warn, "group": f.group, "choice": f.choice}
 
 
 # which saved thing means "the user gave this feature an address" (a card even when it

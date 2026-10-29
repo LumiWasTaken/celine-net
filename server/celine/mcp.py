@@ -15,6 +15,10 @@ Three things a server block can add:
   account reference for `user_id` and `from_user`. A connector only reads: a tool of
   its that is not read-only is not offered to Celine.
 - `guides/<server>.md` (skills/guides): the skill's description and guide.
+
+A plugin's `[servers.<id>]` blocks (plugin.toml, the same keys) run under its runner
+(api/plugins.py) while it is on: `plugin_servers` fills each `${KEY}` from its form, and
+its `guides/<server>.md` is that skill's guide.
 """
 from __future__ import annotations
 
@@ -26,6 +30,7 @@ import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
@@ -119,11 +124,71 @@ def read_servers(file: str, raw: dict[str, Any], problems: list[Problem],
     return out
 
 
+_FIELD_REF = re.compile(r"\$\{(\w+)\}")
+
+
+def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:
+    """Plugin `p`'s [servers.<id>] blocks, each `${KEY}` filled from its form: the field
+    whose key is `key` (a value as saved, a secret as stored). -> (the servers to start,
+    the sentence why each other one is not started: a value it needs is empty, its block
+    is wrong, or its id is taken)."""
+    from .settings import form
+    fields = (p.form or {}).get("fields", [])
+    by_name = {f["key"].upper(): f for f in fields}
+    saved = form.values(fields, (getattr(cfg.settings, "plugins", None) or {}).get(p.id, {}))
+    taken = {META, *(name for name, _, _ in BUILTIN), *cfg.mcp}
+    out: dict[str, McpServerConfig] = {}
+    why: dict[str, str] = {}
+    for sid, raw in (p.manifest.get("servers") or {}).items():
+        problems: list[Problem] = []
+        s = checked(f"plugins/{p.id}/plugin.toml", f"servers.{sid}", raw, KEYS, problems)
+        empty: list[str] = []
+
+        def one(m: re.Match) -> str:
+            f = by_name.get(m.group(1))
+            if f is None:
+                empty.append(f"{m.group(0)} names no field")
+                return ""
+            got = form.read_secret(cfg, p.id, f["key"]) if f["type"] == "secret" \
+                else saved.get(f["key"])
+            if got is None or str(got) == "":
+                empty.append(f"{f['label']} is empty")
+                return ""
+            return str(got)
+
+        if "class" in s:
+            s["cls"] = s.pop("class")
+        for k in ("command", "url"):
+            if k in s:
+                s[k] = _FIELD_REF.sub(one, s[k])
+        if "args" in s:
+            s["args"] = [_FIELD_REF.sub(one, str(a)) for a in s["args"]]
+        for k in ("env", "headers"):
+            if k in s:
+                s[k] = {str(n): _FIELD_REF.sub(one, str(v)) for n, v in s[k].items()}
+        if sid in taken:
+            why[sid] = f"{sid} is the name of another skill or server."
+        elif problems:
+            why[sid] = f"{problems[0].message}."
+        elif empty:
+            why[sid] = f"{'; '.join(dict.fromkeys(empty))}."
+        elif not s.get("enabled"):
+            why[sid] = f"[servers.{sid}] is not enabled."
+        else:
+            out[sid] = McpServerConfig(id=sid, **s)
+    return out, why
+
+
 class McpSkill:
-    def __init__(self, cfg: McpServerConfig):
+    def __init__(self, cfg: McpServerConfig, guides: Path | None = None):
+        """`guides`: its plugin's folder of guides; else the skills' guides/."""
         self.cfg = cfg
         self.name = cfg.id
-        self.guide = guide(cfg.id) if (GUIDES_DIR / f"{cfg.id}.md").is_file() else None
+        if guides is None:
+            self.guide = guide(cfg.id) if (GUIDES_DIR / f"{cfg.id}.md").is_file() else None
+        else:
+            self.guide = guide(cfg.id, file=str(guides / "_"), rel=f"{cfg.id}.md") \
+                if (guides / f"{cfg.id}.md").is_file() else None
         self.description = (self.guide.description if self.guide
                             else f"Tools of the MCP server {cfg.id}.")
         self.status = "starting"        # starting | up | down (retrying) | dead
@@ -170,27 +235,28 @@ class Supervisor:
         from .settings import features
         owned = features.connector_owners()
         for scfg in self.cfg.mcp.values():
-            if not scfg.enabled or scfg.id in owned:
+            if scfg.id in owned:
                 continue
-            skill = await self._open(scfg.id)
+            skill = await self._open(scfg)
             if skill is not None:
                 tg.start_soon(self._run, skill)
 
-    async def run_one(self, sid: str) -> None:
-        """One server, supervised until cancelled; its tools leave with it."""
-        skill = await self._open(sid)
+    async def run_one(self, scfg: McpServerConfig | None, guides: Path | None = None) -> None:
+        """One server, supervised until cancelled; its tools leave with it. `guides`: its
+        plugin's guides folder."""
+        skill = await self._open(scfg, guides)
         if skill is not None:
             await self._run(skill)
 
-    async def _open(self, sid: str) -> McpSkill | None:
-        """The skill registered with its cached tools, None when it runs already or
-        the config has no such enabled server."""
-        scfg = self.cfg.mcp.get(sid)
-        if scfg is None or not scfg.enabled or sid in self.skills:
+    async def _open(self, scfg: McpServerConfig | None,
+                    guides: Path | None = None) -> McpSkill | None:
+        """The skill registered with its cached tools; None when it runs already, or the
+        server is not there or not enabled."""
+        if scfg is None or not scfg.enabled or scfg.id in self.skills:
             return None
-        skill = McpSkill(scfg)
-        self.skills[sid] = skill
-        self._register(skill, await cached_tools(self.store, sid))
+        skill = McpSkill(scfg, guides)
+        self.skills[scfg.id] = skill
+        self._register(skill, await cached_tools(self.store, scfg.id))
         return skill
 
     async def _run(self, skill: McpSkill) -> None:
