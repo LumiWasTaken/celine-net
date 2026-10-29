@@ -100,17 +100,21 @@ def _tree(data: Path) -> set[str]:
     return out
 
 
+CORE = {"celine.db", "log.db", "notebook/.index.db", "notebook/.placeholders",
+        "notebook/identity.md", "notebook/opinions/README.md", "notebook/curious.md",
+        "settings/context.toml", "settings/features.toml", "keys/*", "logs/celine.log",
+        "blobs/"}
+
+
 def _off(data: Path) -> None:
     settings_files.write(data / "settings", "features", {f.id: False for f in features.CATALOG})
 
 
 @pytest.mark.anyio
-async def test_a_feature_off_makes_none_of_its_files(fresh):
+async def test_every_feature_off_makes_exactly_the_core_files(fresh):
     _off(fresh)
     services = await _start()
-    tree = _tree(fresh)
-    assert not {p for p in tree if p.startswith((
-        "kb/", "documents/", "notebook/appearance/", "settings/schedules/"))}
+    assert _tree(fresh) == CORE
     assert (services.batches, services.triggers, services.schedules) == (None, None, None)
 
 
