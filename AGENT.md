@@ -21,7 +21,7 @@ The map of the code and the rules it follows.
 
 | Module | What |
 |---|---|
-| `__main__.py`, `config.py`, `boot.py`, `reload.py` | preflight and lifespan; celine.toml into a Config and the readers' helpers; the whole load (every config file, var/settings, its row), which writes nothing; config reloaded in place |
+| `__main__.py`, `config.py`, `boot.py`, `reload.py`, `saves.py` | preflight and lifespan; celine.toml into a Config and the readers' helpers; the whole load (every config file, var/settings, its row), which writes nothing; config reloaded in place; the Settings saves, one function each, for the routes and her `settings` skill |
 | `core/` | the single writer and event append, EventBus, ids and times, Services |
 | `db/` | `migrations/0001_schema.sql` and the chains for `log/` and `notebook/`; `migrate.py` applies them |
 | `conversations/` | conversation rows, the message tree, snapshot and replay, routes |

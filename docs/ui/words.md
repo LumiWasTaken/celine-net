@@ -248,6 +248,7 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Bugs | the problems with the app it files for you | as in Events |
 | Portrait | its profile picture | as in "Use as portrait" |
 | Persona | its description of itself | as above |
+| Settings | it reads every setting and proposes changes you approve | the Settings place |
 | Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name, the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
 | Sub-agents | the helpers it gives instructions to | Claude Code "Sub-agents" |
 | Discord, WhatsApp | read live from your accounts | their own names |
