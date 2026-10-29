@@ -50,7 +50,7 @@ def _lookup(conn: sqlite3.Connection, shas: list[str]) -> dict[str, tuple[str, s
 def for_rows(conn: sqlite3.Connection, rows: Iterable[Mapping[str, Any]], *,
              short: bool = False) -> dict[int, str]:
     """{message id: caption text} for the rows (each has `id` and `media`) whose files
-    have a caption. `short`: the caption plus the start of the visible text, for a
+    have a caption. `short`: the caption plus the visible text on one line, for a
     passage line; else caption and all visible text, for the instant index."""
     want: dict[int, list[str]] = {}
     for r in rows:
@@ -72,7 +72,6 @@ def for_rows(conn: sqlite3.Connection, rows: Iterable[Mapping[str, Any]], *,
             cap, vis = caps[s]
             if short:
                 vis = " ".join(vis.split())
-                vis = vis if len(vis) <= 80 else vis[:79].rstrip() + "…"
                 parts.append(f'{cap} (text: "{vis}")' if vis else cap)
             else:
                 parts.append(f"{cap} {vis}".strip())

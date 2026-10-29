@@ -185,7 +185,7 @@ def install_error_handler(app) -> None:
         where = ".".join(str(x) for x in first.get("loc", ()) if x != "body") or "body"
         what = first.get("msg") or "not valid"
         return JSONResponse({"error": {"code": "bad_request",
-                                       "message": f"{where}: {what}."[:200],
+                                       "message": f"{where}: {what}.",
                                        "detail": {"field": where}}},
                             status_code=400)
 
@@ -203,7 +203,7 @@ def install_error_handler(app) -> None:
         log.error("unhandled error", exc_info=exc,
                   extra={"event": "http.unhandled", "path": request.url.path})
         return JSONResponse({"error": {"code": "internal", "message": redact(
-            f"The server failed: {type(exc).__name__}: {exc}"[:300])}}, status_code=500)
+            f"The server failed: {type(exc).__name__}: {exc}")}}, status_code=500)
 
     # JSON nested deeper than Python's recursion limit
     @app.exception_handler(RecursionError)

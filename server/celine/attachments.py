@@ -324,7 +324,7 @@ class Images:
                                                                 lane=self.lane)
         except (Waiting, CaptionError, OSError) as e:
             log.info("no photo description", extra={
-                "event": "attachment.not_described", "error": str(e)[:200]})
+                "event": "attachment.not_described", "error": str(e)})
             return (f"[Image {a['filename']}: {model} cannot see images, and no photo "
                     f"description is available.]")
         text = out["caption"]

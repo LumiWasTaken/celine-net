@@ -660,7 +660,7 @@ class Router:
 
     def note_failed(self, ref: str, kind: str, message: str,
                     loaded_then: frozenset[str] | None = None) -> None:
-        m = ModelState(kind=kind, message=message[:300], at=now_ms(),
+        m = ModelState(kind=kind, message=message, at=now_ms(),
                        loaded_then=loaded_then, sig=self._sig(ref))
         with self._lock:
             old = self._models.get(ref)

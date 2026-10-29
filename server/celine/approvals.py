@@ -62,7 +62,6 @@ SHELL = "put the password of {entry} into a file in the shellbox"
 ROTATE = "change the password of {entry}"
 SHELL_SHORT = "{entry} password into the shell"
 ROTATE_SHORT = "new password for {entry}"
-WHY_MAX = 300
 
 
 STOPPED = object()   # the turn the user waited on ended before they answered
@@ -184,8 +183,8 @@ class Approvals:
             return None
         now = time.time()
         user = self.cfg.user
-        why = " ".join((why or "").split())[:WHY_MAX]
-        if kind == "vault" and len(why) < 10:
+        why = why or ""
+        if kind == "vault" and len(why.strip()) < 10:
             return (f"Nothing was asked: say why you need it in `why`, one real sentence "
                     f"{user} can judge (what for, which site or script).")
         if any(a.conversation == conversation for a in self.waiting.values()):
