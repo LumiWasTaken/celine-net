@@ -115,6 +115,19 @@ class Skills:
             return ToolResult(content=self.cfg.substitute(
                 f"{key} is off {where}, so it cannot load. Ask {{{{username}}}} "
                 f"to turn it on, or work without it."), is_error=True)
+        carried = await loads.select(ctx.store, self.cfg, self.registry,
+                                     ctx.conversation_id, None)
+        if key not in carried.skills and key not in loads.CORE:
+            from ..turns import tokens
+            cost = loads.schema_cost(tokens.counter(), here[key])
+            have = {n: carried.costs.get(n, 0) for n in carried.skills}
+            budget = carried.budgets["tools"]
+            if sum(have.values()) + cost > budget:
+                listed = ", ".join(f"{n} ({t})" for n, t in have.items()) or "none"
+                return ToolResult(content=(
+                    f"{key} is not loaded: its tools take {cost} tokens, the tools budget "
+                    f"is {budget}, and the skills loaded now take {sum(have.values())}: "
+                    f"{listed}."), is_error=True, display={"skill": key, "no_room": True})
         await loads.touch(ctx.store, ctx.conversation_id, "skill", [key])
         return ToolResult(content=f"Loaded {key}. Its tools are in your list from your "
                                   f"next step.", display={"skill": key})

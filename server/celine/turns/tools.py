@@ -301,7 +301,12 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
             if real else f"There is no tool {name}."), is_error=True), None
     if name not in offered:
         here = ", ".join(sorted(t for t in offered if t.startswith(skill + "__")))
-        if skill not in loaded:
+        carried = turn.get("carried")
+        if carried is not None and carried.others.get(skill) == "no room":
+            need = sum(carried.costs.get(n, 0) for n in carried.skills) + carried.costs[skill]
+            text = (f"{skill} is not carried: over the tools budget ({need} of "
+                    f"{carried.budgets['tools']} tokens).")
+        elif skill not in loaded:
             text = (f"{skill} is not loaded. skills__load(name=\"{skill}\") loads it for "
                     f"your next step.")
         elif turn.get("read_only") and not read_mode_has(spec):

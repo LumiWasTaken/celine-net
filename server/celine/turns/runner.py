@@ -103,7 +103,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     tool_turn = {"id": tid, "conversation_id": cid, "origin": turn.get("origin") or "user",
                  "root_message_id": turn["root_message_id"],
                  "max_output_tokens": tokens.result_cap(win), "read_only": read_only,
-                 "time_left": time_left, "loaded": frozenset(carried.skills),
+                 "time_left": time_left, "loaded": frozenset(carried.skills), "carried": carried,
                  "offered": frozenset(specs), "notes": _carried_notes(carried)}
 
     # where this turn stands: a fresh turn starts at its user message; a resumed or
@@ -362,7 +362,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             carried = await loads.select(store, cfg, registry, cid, backend, when="step")
             specs, read_only = await prompt.tool_specs(registry, store, cid, carried)
             wire_tools = prompt.wire_tools(specs, registry, overrides, cfg) if tools_on else []
-            tool_turn.update(read_only=read_only, loaded=frozenset(carried.skills),
+            tool_turn.update(read_only=read_only, loaded=frozenset(carried.skills), carried=carried,
                              offered=frozenset(specs), notes=_carried_notes(carried))
             pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn,
                                               carried, wire_tools)
