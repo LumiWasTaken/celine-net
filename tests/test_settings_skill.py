@@ -1,6 +1,6 @@
 """She configures herself (skills/settings.py): settings__read shows the settings with no
 secret in them; settings__propose checks at once, asks the user (approvals, kind
-`settings`), and once approved saves through the Settings save (settings/saves.py) on
+`settings`), and once approved saves through the Settings save (celine/saves.py) on
 the version it was proposed against; a secret goes from a file in her box into
 var/secrets and nowhere else."""
 from __future__ import annotations
@@ -21,7 +21,8 @@ from celine.core import ids
 from celine.core.bus import EventBus
 from celine.core.services import Services
 from celine.guard.owner import _SEAL, Owner
-from celine.settings import saves, secrets as secrets_mod
+from celine import saves
+from celine.settings import secrets as secrets_mod
 from celine.settings.files import version
 from celine.skills import ToolContext, build
 from celine.skills.settings import Settings

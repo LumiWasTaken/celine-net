@@ -8,13 +8,13 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from .. import plugins, reload
-from ..errors import NotFound
-from . import features as features_mod, files, form, general as general_mod
-from . import mail as mail_mod, secrets as secrets_mod, seed
-from . import services as services_mod, vault as vault_mod, views, write
-from .files import Invalid
-from .registry import ROLES, validate_provider
+from . import plugins, reload
+from .errors import NotFound
+from .settings import features as features_mod, files, form, general as general_mod
+from .settings import mail as mail_mod, secrets as secrets_mod, seed
+from .settings import services as services_mod, vault as vault_mod, views, write
+from .settings.files import Invalid
+from .settings.registry import ROLES, validate_provider
 
 KEEP = object()     # a secret left out of a save: the saved one stays
 
@@ -153,7 +153,7 @@ async def provider(app, pid: str, body: Any, if_match: str | None = None) -> dic
         files.check_version("provider", s.providers.get(pid), if_match)
         if isinstance(body, dict) and body.get("kind") == "comfyui" and not body.get("models"):
             # the onboarding's address only: every shipped preset is a model of it
-            from ..comfyui import presets as presets_mod
+            from .comfyui import presets as presets_mod
             body = {**body, "models": {p.id: {"label": p.label, "caps": [p.role]}
                                        for kind in presets_mod.FOLDERS
                                        for p in presets_mod.of(kind).values()}}
@@ -211,7 +211,7 @@ def form_version(s, p: plugins.Plugin) -> dict[str, Any]:
 async def context(app, values: dict[str, Any], if_match: str | None = None) -> None:
     """The context shares (var/settings/context.toml, turns/loads.py): the whole set, a
     key left out its default."""
-    from ..turns import loads
+    from .turns import loads
     for k, v in values.items():
         if (why := loads.share_problem(k, v)) is not None:
             raise Invalid(f"context.{k}", why)

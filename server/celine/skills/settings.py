@@ -4,7 +4,7 @@ secret only as its state), and `settings__propose` changes one target. A proposa
 checked at once by the validators a Settings save runs (settings/write.check), waits for
 the user's approval (celine/approvals.py, kind `settings`: each field's before and after,
 and her why), and once approved is saved by the same function as the Settings screen
-(settings/saves.py) against the version it was proposed on: a target that changed
+(celine/saves.py) against the version it was proposed on: a target that changed
 meanwhile is not overwritten.
 
 A secret is write-only: she names a file in her shellbox that holds it, and the value
@@ -20,7 +20,8 @@ from typing import Annotated, Any
 
 from .. import plugins
 from ..settings import features as features_mod, form, general as general_mod
-from ..settings import kinds, mail as mail_mod, saves, secrets as secrets_mod
+from .. import saves
+from ..settings import kinds, mail as mail_mod, secrets as secrets_mod
 from ..settings import services as services_mod, vault as vault_mod, write
 from ..errors import CelineError
 from ..settings.files import Conflict, Invalid, version

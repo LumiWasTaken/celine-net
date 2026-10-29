@@ -13,7 +13,7 @@ var/secrets/<id>.<key>.key.
 - POST /api/forms/{id}/{action} {input?} -> {ok, sentence, lines?}; `lines` [{text,
   tone}] are one Dot each. An action never saves.
 
-A save (settings/saves.plugin_form, also a plugin's own route) of a plugin with
+A save (saves.plugin_form, also a plugin's own route) of a plugin with
 [servers] starts its runner again, so its servers run with what was saved. Errors are 400 with `field =
 "<id>.<key>"`; a stale If-Match is 412.
 """
@@ -23,10 +23,10 @@ from typing import Any
 
 from fastapi import APIRouter, Header, Request, Response
 
-from .. import plugins
 from ..errors import Busy, NotFound
 from ..plugins import Plugin
-from ..settings import form, saves
+from .. import plugins, saves
+from ..settings import form
 from ..settings.files import version
 from .deps import etag, json_body, services_of, settings_of
 

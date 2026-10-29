@@ -4,7 +4,7 @@ the command the form shows, and Check.
 - GET /api/plugins/mac/setup.sh: the script, so the Mac needs nothing but the app.
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
   report line {address, token, ...}; the address and the token are saved into the form
-  (settings/saves.py plugin_form), so the servers start again with them.
+  (celine/saves.py plugin_form), so the servers start again with them.
 Both are `open` in plugin.toml: the Mac has no session. The link key is made once
 (var/secrets/mac.link.key) and is part of the command."""
 from __future__ import annotations
@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 
 from celine import plugins
 from celine.api.deps import json_body, services_of
-from celine.settings.saves import plugin_form
+from celine.saves import plugin_form
 from celine.errors import NotFound
 from celine.mcp import plugin_servers
 from celine.settings import form, secrets
