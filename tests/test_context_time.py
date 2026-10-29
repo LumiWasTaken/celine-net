@@ -97,3 +97,42 @@ async def test_her_request_tells_her_now_and_the_zone_of_every_time(store, monke
     assert last["content"][0]["text"].endswith("\nwhen is 15:00?"), "the message first"
     system = backend.calls[0][0]["content"]
     assert "Now it is" not in system, "now stays out of the cached prefix"
+
+
+async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch, store):
+    """One tail line while the turn's role runs on a model that is not its chain's
+    first (a turn that walks the list); none on the first choice, none for a turn
+    that runs on the first model alone."""
+    from types import SimpleNamespace
+
+    import httpx
+    from settings_fixtures import scratch
+
+    from celine.backends.llm import LLM
+    from celine.backends.queue import Priority
+    from celine.backends.router import Router
+    from celine.turns.prompt import request_text
+
+    scratch(tmp_path, monkeypatch, roles={"chat": {"chain": ["main/big", "lan/small"]}})
+    cfg = load()
+    down = {"127.0.0.1"}                      # main refuses, lan answers
+
+    def reply(request):
+        if request.url.host in down:
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json={"running": [], "models": []})
+    llm = LLM(cfg, router=Router(cfg, None, transport=httpx.MockTransport(reply)))
+    cid = await conversations.create(store)
+    carried = SimpleNamespace(notes=[], skills=set(), loaded_notes=frozenset())
+
+    async def tail(fallback=True):
+        backend = llm.bind(role="chat", priority=Priority.AGENT, conversation_id=cid,
+                           fallback=fallback)
+        _, parts = await request_text(store, cfg, None, backend, cid, {"id": "t"}, carried)
+        return [p.text for p in parts if p.text.startswith("Running on")]
+    assert await tail() == ["Running on lan/small for chat. main/big: llama-swap does not "
+                            "answer."]
+    assert await tail(fallback=False) == [], "a turn on the first model alone fails instead"
+    down.clear()
+    llm.router._providers["main"].checked = 0.0          # the cached probe has run out
+    assert await tail() == []

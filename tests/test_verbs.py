@@ -24,7 +24,9 @@ VERBS = {"search", "read", "list", "get", "count", "look_up", "scroll", "write",
          # its coding agent's sessions
          "status", "result", "abort",
          # its shares (shares.py)
-         "share", "unshare"}
+         "share", "unshare",
+         # where it is (skills/me.py)
+         "whoami"}
 PAGING = {"part", "from", "count", "offset", "page", "from_line", "before", "after",
           "limit"}
 

@@ -4,9 +4,11 @@ talk and its slop list (banned words, phrases, patterns). They are in every chat
 every change waits for the user's approval first (celine/approvals.py, kind `her`),
 whatever the guard is. Every change goes through
 her.write_sync as written by it, so it is in the text's History (her:persona, her:talk,
-her:voice; Settings, It) and in Events (the `her` source, events.py)."""
+her:voice; Settings, It) and in Events (the `her` source, events.py).
+`me__whoami` says where it is, every line read when it is called (whoami_lines)."""
 from __future__ import annotations
 
+import json
 import re
 from typing import Annotated, Literal
 
@@ -112,6 +114,63 @@ def edited(cfg, what: str, old: str, new: str, add: list[str],
             f"Your {what}: {len(add)} added, {len(remove)} removed, {len(items)} now.")
 
 
+async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
+    """Where it is, one fact per line, from what the app reads for the UI: the turn's
+    running event (backends/llm.py) and the router for its model and the chain, the
+    newest usage event for the window, the conversation row (conversations/here.py),
+    the features' probes and the MCP supervisor for what answers, the guard switch and
+    the hold."""
+    from .. import hold
+    from ..conversations import here
+    from ..guard import switch
+    from ..settings import features
+    from ..turns import store as turns
+    store, cid, tid = ctx.store, ctx.conversation_id, ctx.turn_id
+
+    def facts(c):
+        turn = c.execute("SELECT origin FROM turns WHERE id=?", (tid,)).fetchone()
+        ev = c.execute(
+            "SELECT data FROM events WHERE conversation_id=? AND type='llm.queue' AND "
+            "json_extract(data, '$.turn_id')=? AND json_extract(data, '$.state')='running' "
+            "ORDER BY seq DESC LIMIT 1", (cid, tid)).fetchone()
+        return turn, json.loads(ev["data"]) if ev else None, here.where(c, cid)
+    turn, running, where = await store.read(facts)
+    llm = getattr(app, "llm", None)
+    lines = []
+    if running and llm is not None:
+        ref, role = running["backend"], running["role"]
+        line = f"Model: {ref} for {role}, "
+        if running.get("fallback"):
+            ordered = await llm.router.order(role, conversation_id=cid)
+            line += "a fallback. " + (ordered.passed_over(ref) or
+                                      f"{running.get('instead_of')}: {running.get('why')}")
+        else:
+            line += "the first choice."
+        lines.append(line)
+    usage = await turns.last_usage(store, cid)
+    if usage and usage.get("window"):
+        used = usage.get("prompt_tokens") or usage.get("estimate") or 0
+        lines.append(f"Context: {used:,} of {usage['window']:,} tokens.")
+    if where:
+        lines.append(where)
+    if turn:
+        lines.append("This turn: " + ("{{username}}'s message." if turn["origin"] == "user"
+                                      else "a message through the intercom."))
+    probes = await features.probe_all(cfg, app)
+    for f in features.CATALOG:
+        p = probes.get(f.id)
+        if p and p["state"] != "none" and features.on(cfg, f.id):
+            lines.append(f"{f.label}: {p['detail'] or p['state']}")
+    mcp = getattr(app, "mcp", None)
+    for s in (mcp.skills.values() if mcp is not None else ()):
+        if s.name not in features.CONNECTORS:
+            lines.append(f"{s.name} (MCP): {s.status}" + (f", {s.error}" if s.error else ""))
+    lines.append(f"Guard: {switch.mode(cfg, cid)}")
+    if held := await hold.her_hold(store, llm):
+        lines.append(f"House: {held}.")
+    return [cfg.substitute(x) for x in lines]
+
+
 class Me:
     name = "me"
     guide = guide("me")
@@ -127,6 +186,16 @@ class Me:
         talk (how you talk in every chat) and your slop list (banned words, phrases,
         patterns). Returns: the three, as they are now."""
         return ToolResult(content=self.cfg.substitute(read_text(self.cfg)))
+
+    @tool()
+    async def whoami(self, ctx: ToolContext) -> ToolResult:
+        """Where you are right now, every line read as you call it: the model and
+        provider answering this turn, for which role, the first choice or a fallback
+        and why; the context used of its window; the conversation you work in and
+        who started this turn; which devices and servers answer, with the reason when
+        one is down; the guard's mode; a freeze or pause when there is one. For when
+        you are lost. Returns: one fact per line."""
+        return ToolResult(content="\n".join(await whoami_lines(self.app, self.cfg, ctx)))
 
     @tool(read_only=False, destructive=False)
     async def edit(

@@ -272,6 +272,10 @@ TOOLS: dict[str, dict[str, str]] = {
     "me__edit": {"label": "Persona: edit",
                  "summary": "Changes {{her}} Example lines or Banned words, kept in their "
                             "History."},
+    "me__whoami": {"label": "Persona: whoami",
+                   "summary": "Says which model answers {{her}} turn and why, how full "
+                              "{{her}} context is, where {{she}} works, which devices "
+                              "and servers answer, and the guard's mode."},
     "appearance__set_portrait": {"label": "Portrait: set",
                                  "summary": "Makes one of {{her}} images, or an image in "
                                             "Documents, {{her}} portrait."},

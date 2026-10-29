@@ -195,15 +195,28 @@ async def request_text(store, cfg, registry, backend, cid: str, turn: dict, carr
     conversation's path when the turn read it already."""
     pieces = [t for _, t in await system_blocks(cfg, registry, store, cid, turn["id"],
                                                 carried)]
-    # what changes from turn to turn, in the tail: the time now, where else it works,
-    # its plan, its notes by need. The tail is built once at a turn's start (again only
+    # what changes from turn to turn, in the tail: the time now, the model it runs on
+    # when that is not the first, where else it works, its plan, its notes by need. The tail is built once at a turn's start (again only
     # when a skill load rebuilds the request), so the time of step 0 holds for the
     # whole turn: good enough, and the steps of one turn share their prefix
     from ..conversations import here
     plan = plan_flow.block(await plan_flow.current(store, cid))
     return pieces, [context.Part(t) for t in [
-        clock.now_line(cfg), await store.read(lambda c: here.busy(c, cid)),
+        clock.now_line(cfg), await fallback_line(backend, cid),
+        await store.read(lambda c: here.busy(c, cid)),
         cfg.substitute(plan) if plan else None, notes_tail(cfg, carried)] if t]
+
+
+async def fallback_line(backend, cid: str) -> str | None:
+    """One line while the turn's role runs on a model that is not its chain's first
+    (backends/llm.py walks the list): which, and why each one before it is left out.
+    None on the first choice, and for a turn that runs on the first model alone."""
+    llm = getattr(backend, "llm", None)
+    if llm is None or not getattr(backend, "fallback", False):
+        return None
+    ordered = await llm.router.order(backend.role, conversation_id=cid)
+    passed = ordered.passed_over(ordered.refs[0]) if ordered.refs else None
+    return f"Running on {ordered.refs[0]} for {backend.role}. {passed}" if passed else None
 
 
 def notes_tail(cfg, carried) -> str | None:

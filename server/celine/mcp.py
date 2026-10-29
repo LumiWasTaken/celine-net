@@ -18,8 +18,10 @@ Three things a server block can add:
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
 import os
 import re
 import sqlite3
@@ -33,6 +35,7 @@ from mcp.client.client import Client
 from mcp.client.stdio import StdioServerParameters, get_default_environment
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
+from . import attachments
 from .config import ROOT, Problem, checked
 from .core.ids import now
 from .kb.identity import REF
@@ -338,7 +341,7 @@ class Supervisor:
         name = t["name"]
 
         async def fn(ctx: ToolContext, **args) -> ToolResult:
-            return await self._call(skill, name, args)
+            return await self._call(ctx, skill, name, args)
 
         schema = dict(t.get("schema") or {"type": "object", "properties": {}})
         schema.setdefault("type", "object")
@@ -348,7 +351,8 @@ class Supervisor:
         return ToolSpec(skill=skill.name, name=name, description=t.get("description", ""),
                         schema=schema, fn=fn, annotations=_hints(t))
 
-    async def _call(self, skill: McpSkill, name: str, args: dict) -> ToolResult:
+    async def _call(self, ctx: ToolContext, skill: McpSkill, name: str,
+                    args: dict) -> ToolResult:
         client = skill.client
         if client is None or skill.status != "up":
             return ToolResult(content=f"{skill.name} is {skill.status} right now.",
@@ -371,6 +375,17 @@ class Supervisor:
                                       f"its address).",
                               is_error=True)
         text = _text(res)
+        # an image part is kept for the call, as a browser shot is (skills/browser.py
+        # _keep), and the model gets it with the result (turns/context.py)
+        images = []
+        for c in getattr(res, "content", None) or []:
+            if getattr(c, "type", "") == "image":
+                row = await attachments.save_generated(
+                    self.cfg, ctx.store, base64.b64decode(c.data),
+                    name + (mimetypes.guess_extension(c.mime_type) or ""), c.mime_type,
+                    ctx.tool_call_id or None, in_message=False)
+                images.append(row["id"])
+                text += f"\n{row['filename']} ({attachments.size(row['bytes'])})"
         structured = getattr(res, "structured_content", None)
         display: dict[str, Any] = {"server": skill.name, "tool": name}
         is_error = bool(getattr(res, "is_error", False))
@@ -384,7 +399,8 @@ class Supervisor:
                 render, kb, skill.name, structured, self.cfg.user)
         elif not text and structured is not None:
             text = json.dumps(structured)
-        return ToolResult(content=text or "[no content]", is_error=is_error, display=display)
+        return ToolResult(content=text.strip() or "[no content]", is_error=is_error,
+                          display=display, images=images or None)
 
     def _kb(self, skill: McpSkill):
         if not skill.cfg.kb or self.kbs is None:
@@ -396,7 +412,8 @@ def _text(res) -> str:
     parts = []
     for c in getattr(res, "content", None) or []:
         kind = getattr(c, "type", "")
-        parts.append(c.text if kind == "text" else f"[{kind}]")
+        if kind != "image":
+            parts.append(c.text if kind == "text" else f"[{kind}]")
     return "\n".join(parts)
 
 
