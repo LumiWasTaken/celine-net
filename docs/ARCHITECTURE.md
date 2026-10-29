@@ -354,9 +354,10 @@ re-run silently. It bumps `turns.continues` and appends `turn.state {queued, rea
 
 The runner then continues by what the tail holds: pending read-only calls run (same ids);
 a reply with text and no calls is **continued in the same message**: the request ends
-with that partial reply as the final assistant message (prefill) or, without prefill,
-with a note quoting its last 200 characters, and `message.reopened {message_id}` reopens
-it. An empty reply is streamed into as a new step.
+with that partial reply as the final assistant message (prefill), and
+`message.reopened {message_id}` reopens it. A model without a prefill cannot continue it:
+the turn fails with `reason_code = 'no_prefill'` and the reply stays as it was. An empty
+reply is streamed into as a new step.
 
 The snapshot's `turn` carries `continuable: {ok, label, reason}` (computed on the
 server), plus `reason_code`, `cut`, `continues`. Terminal `turn.state` events carry the
@@ -487,7 +488,7 @@ One decision per conversation at a time (`context.lock`).
 
 Every request message carries its `origin` (the app's key; no backend sends it): the
 conversation, the turn, the stored message or the tool call, or the `note` the app
-added for this request only (system, tail, opening, screen, continue).
+added for this request only (system, tail, opening, screen).
 Before a step goes out the runner holds it to `context.malformed`: a tool result right
 after the reply that made its call, each call answered once, no stored message twice,
 nothing from another conversation, its first reply after a user message. A request that

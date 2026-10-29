@@ -151,11 +151,17 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                 done_msg["reasoning"], messages, kbs, hidden)
         await turns.transition(store, tid, cid, "done", honor_abort=False)
         return
-    # a reply continued in place: the stored partial reply leaves the history, and what
-    # continues it (the prefill or the note) goes with its one step only
+    # a reply continued in place: the stored partial reply leaves the history, and the
+    # prefill that continues it goes with its one step only. A model without a prefill
+    # cannot continue it: the turn ends with that reason.
     reopen_tail: list[dict] = []
-    if reopen:
-        messages, reopen_tail = _reopen_request(messages, reopen, backend, cfg, cid, tid)
+    if reopen and reopen.get("text"):
+        if not prompt.supports_prefill(backend):
+            await _failed(store, tid, cid, "no_prefill",
+                          f"The reply was cut off, and {backend.model} cannot continue a "
+                          f"reply where it stopped.", False)
+            return
+        messages, reopen_tail = _reopen_request(messages, reopen, cid, tid)
 
     # the instructions and tools alone do not fit the model's context: no request can
     # succeed, and compacting cannot help
@@ -377,30 +383,16 @@ def _with_flags(call: dict, registry) -> dict:
     return {**call, "mutating": bool(spec.mutating), "mode": spec.mode}
 
 
-_NO_SPACE_BEFORE = ".,;:!?)]}'\"\u2019\u201d\u2026"
-
-
-def _reopen_request(messages: list[dict], reopen: dict, backend, cfg, cid: str,
+def _reopen_request(messages: list[dict], reopen: dict, cid: str,
                     tid: str) -> tuple[list[dict], list[dict]]:
     """The request that continues a cut-off reply in the same message: -> (the history
-    with the stored partial reply taken off, what ends the continuing step). With
-    prefill that is the partial reply itself; otherwise a note quoting its end. The end
-    goes with that one step: the reply, once whole, joins the history as stored."""
-    text = reopen.get("text") or ""
-    if not text:
-        return messages, []                   # died before the first token: a new step
+    with the stored partial reply taken off, the partial reply as the prefill that ends
+    the continuing step). The reply, once whole, joins the history as stored."""
     mid = reopen["message_id"]
     out = [m for m in messages if not (m.get("role") == "assistant" and not m.get(
         "tool_calls") and any(o.get("message") == mid for o in m.get(ORIGIN) or ()))]
-    if prompt.supports_prefill(backend):
-        return out, [{"role": "assistant", "content": text,
-                      ORIGIN: context.origin(cid, turn=tid, message=mid)}]
-    tail = text[-200:]
-    return out, [{"role": "user", "content": cfg.substitute(
-        f"(Automatic note, not written by {{{{username}}}}.) Your previous reply was cut "
-        f"off after: \"…{tail}\". Continue it from exactly there, without repeating "
-        f"anything and without a preface."), ORIGIN: context.origin(cid, turn=tid,
-                                                                   note="continue")}]
+    return out, [{"role": "assistant", "content": reopen["text"],
+                  ORIGIN: context.origin(cid, turn=tid, message=mid)}]
 
 
 async def _record_usage(store, cid, tid, iteration, backend, counter, estimate,
@@ -558,10 +550,6 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
     # stream until it is clear whether it repeats the prefix, and drop the repeat
     echo = prefix if (prefix and messages and messages[-1].get("role") == "assistant"
                       and messages[-1].get("content") == prefix) else ""
-    # without a prefill the continuation is a new answer to the note (_reopen_request):
-    # a space between it and the cut-off text, unless either side has one or it starts
-    # with punctuation
-    seam = bool(prefix) and not echo and not prefix[-1].isspace()
     held: list[str] = []
     # text deltas go out together, at most every DELTA_EVERY seconds: one write and one
     # event per flush, with the reply so far on the row
@@ -577,14 +565,9 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
             await tree.append_delta(store, cid, mid, text, "".join(parts), quiet)
 
     async def emit(text: str) -> None:
-        nonlocal seam
         # note: checked as tokens arrive, no timer; a pause in the stream holds
         # the last tokens until the next one or the end
         if text:
-            if seam:
-                seam = False
-                if not text[0].isspace() and text[0] not in _NO_SPACE_BEFORE:
-                    text = " " + text
             parts.append(text)
             pending.append(text)
             if time.monotonic() - flushed_at >= DELTA_EVERY:
