@@ -774,8 +774,8 @@ class DocumentsKB:
             raise
         except Exception as e:                 # noqa: BLE001
             log.warning("documents embedding failed", extra={
-                "event": "documents.embed_failed", "kb": self.id, "error": str(e)[:300]})
-            return {"embed_error": str(e)[:300]}
+                "event": "documents.embed_failed", "kb": self.id, "error": str(e)})
+            return {"embed_error": str(e)}
 
     def semantic_hits(self, q: str, item_ids: list[int] | None = None,
                       k: int = 20) -> list[dict[str, Any]]:

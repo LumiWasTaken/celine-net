@@ -116,7 +116,7 @@ async def ask(llm, image: bytes, question: str, answer_as: str, *, conversation_
         finally:
             await events.aclose()
     except BackendError as e:
-        raise Unavailable(str(e)[:300]) from None
+        raise Unavailable(str(e)) from None
     raw = "".join(parts)
     said = " ".join(raw.split())
     word = said.strip(" .*\"'`")
