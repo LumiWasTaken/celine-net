@@ -136,8 +136,8 @@ def _facts(c: sqlite3.Connection, cid: str) -> dict | None:
         return None
     parent = sub["agent_of"]
     reply_to = asked(c, cid, parent)
-    if reply_to is None:
-        return {"reply_to": None}
+    if reply_to is None or not quiet(c, cid):
+        return {"reply_to": None}           # nothing asked, or not done yet
     turn = c.execute("SELECT state FROM turns WHERE conversation_id=? "
                      "ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
     job = c.execute("SELECT state FROM jobs WHERE conversation_id=? "
@@ -183,7 +183,6 @@ async def _report(services, cid: str) -> None:
     await announce(services, cid)
     if f["reply_to"] is None:
         return
-    metrics.SUB_AGENTS_FINISHED.labels(f["state"]).inc()
     text = f["text"] or "(it wrote nothing)"
     shown_text, shown, total = tokens.cut_to(text, f["cap"])
     if shown < total:
@@ -191,9 +190,11 @@ async def _report(services, cid: str) -> None:
     text = f"{head(f['name'], f['state'], f['work'])}\n\n{text}"
     # a sub-agent that was stopped reports without waking its parent: the parent
     # stopped it (its Stop cascades) or knows, and a Stop must stick
-    await services.intercom.send(
+    sent = await services.intercom.send(
         f"agent:{cid}", f"agent:{f['parent']}", text, kind="report",
         reply_to=f["reply_to"], data={"state": f["state"], "work": f["work"], **({"outside": {
             "source": f"sub-agent {f['name'] or ''}".strip(), "by": None}}
             if f["outside"] else {})}, wake=not f["stopped"],
         only_if=lambda c: quiet(c, cid) and asked(c, cid, f["parent"]) == f["reply_to"])
+    if sent is not None:
+        metrics.SUB_AGENTS_FINISHED.labels(f["state"]).inc()

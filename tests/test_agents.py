@@ -441,9 +441,16 @@ async def test_a_report_goes_to_the_one_that_started_it_once_its_own_are_done(st
     up = [(f"agent:{kid}", f"agent:{scout}"), (f"agent:{scout}", f"agent:{parent}")]
     await app.intercom.send(f"agent:{parent}", f"agent:{scout}", "look", kind="brief")
     await app.intercom.send(f"agent:{scout}", "kid", "look deeper", kind="brief")
+    from celine import metrics
+    counted = metrics.SUB_AGENTS_FINISHED.labels("done")._value.get
+
+    start = counted()
     assert await ended(scout) == [], "its own sub-agent works: it is not done"
+    assert counted() == start, "nothing sent: nothing counted"
     assert await ended(kid) == up[:1], "the kid reports to scout, not to the top"
+    assert counted() == start + 1, "scout, woken, is checked and not counted"
     assert await ended(scout) == up, "woken by it, scout reports to its parent"
+    assert counted() == start + 2
     await app.intercom.send(f"agent:{kid}", "parent", "psst")
     assert await ended(scout) == up, "a message from its own sub-agent: no report"
     for frm, to in ((other, f"agent:{scout}"), (kid, f"agent:{parent}"), (kid, "all")):
