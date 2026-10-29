@@ -363,12 +363,14 @@ class SubAgents:
                 f"the most it may. Give one that is done a new brief under its name.")
 
     async def stop_agent(self, sub: str) -> None:
-        """Its turn, its jobs, the messages it scheduled that have not landed, and a
-        queued brief."""
-        await self.app.store.write(lambda c: c.execute(
-            "UPDATE intercom SET cancelled_at=? WHERE id IN (SELECT i.id FROM intercom i "
-            f"JOIN intercom_deliveries d ON d.intercom_id = i.id WHERE {queued_sql()})",
-            (now(), sub)))
+        """Its turn, its jobs, the messages it scheduled that have not landed, and the
+        queued briefs of it and every sub-agent under it, so no release starts one."""
+        def fn(c: sqlite3.Connection) -> None:
+            for one in conversations.family(c, sub):
+                c.execute("UPDATE intercom SET cancelled_at=? WHERE id IN (SELECT i.id FROM "
+                          "intercom i JOIN intercom_deliveries d ON d.intercom_id = i.id "
+                          f"WHERE {queued_sql()})", (now(), one))
+        await self.app.store.write(fn)
         await self.app.intercom.cancel_scheduled(sub)
         await self.dispatcher.abort_conversation(sub)
         await announce(self.app, sub)

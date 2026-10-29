@@ -394,6 +394,28 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
         "no model given: the one its role runs it on"
 
 
+async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
+    from types import SimpleNamespace
+    from celine.sub_agents.skill import release, waiting
+
+    async def abort(_cid):
+        pass
+    agents = _registry(cfg).skills["sub_agents"]
+    app = agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store),
+                                dispatcher=SimpleNamespace(notify=lambda: None,
+                                                           abort_conversation=abort))
+    parent = await conversations.create(store)
+    scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout")
+    kid = await conversations.create(store, "kid", agent_of=scout, agent_name="kid")
+    await app.intercom.send(f"agent:{scout}", f"agent:{kid}", "dig", kind="brief", wake=False)
+    assert await store.read(lambda c: waiting(c, kid)), "queued"
+    await agents.stop_agent(scout)
+    assert await store.read(lambda c: waiting(c, kid)) is None, "the kid's brief went too"
+    await release(app, scout)
+    assert not await store.read(lambda c: c.execute(
+        "SELECT 1 FROM turns WHERE conversation_id=?", (kid,)).fetchone()), "nothing starts"
+
+
 async def test_a_long_report_is_cut_from_the_parents_window_and_its_fragment_says_so(
         store, cfg):
     from celine.conversations import tree
