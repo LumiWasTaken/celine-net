@@ -217,6 +217,8 @@ async def test_a_file_kept_with_the_call_is_a_files_block(home, cfg, store, monk
     assert block["type"] == "files" and block["where"] == "under"
     assert [(f["id"], f["filename"], f["kind"]) for f in block["files"]] == \
         [(out.images[0], "shot.png", "image")]
+    # a display that has its block already (a job's, settled again) keeps it as it is
+    assert await store.read(lambda c: attachments.with_files(c, "c2", display)) == display
 
 
 async def test_look_describes_it_for_a_model_that_does_not(home, cfg, store, monkeypatch):

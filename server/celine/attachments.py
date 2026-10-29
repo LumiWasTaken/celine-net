@@ -503,7 +503,7 @@ def with_files(c: sqlite3.Connection, call_id: str, display: dict | None) -> dic
     the call alone (an MCP image, a shell look, a document image), so its row shows it
     whatever the tool. A file its display already names (a browser shot in its steps)
     stays out; files on its message show there (shell__send)."""
-    named = json.dumps(display) if display else ""
+    named = json.dumps({k: v for k, v in (display or {}).items() if k != "blocks"})
     files = [dict(r) for r in c.execute(
         "SELECT a.id, a.filename, a.kind, a.sha256, b.bytes, b.media_type, b.width, "
         "b.height FROM attachments a JOIN blobs b ON b.sha256 = a.sha256 "
