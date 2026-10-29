@@ -71,9 +71,8 @@ async def put_form(request: Request, response: Response, id: str,
         root = settings_of(request).secrets_root
         if secrets and root is None:
             raise Invalid(f"{id}.secrets", "This instance keeps no secrets.")
-        if secrets:
-            form.write_secrets(id, root, secrets)
-        out = await reload.commit(services_of(request), {id: clean})
+        with form.written(id, root, secrets):       # a failed save puts them back
+            out = await reload.commit(services_of(request), {id: clean})
         return {**_view(request, response, p), **out}
 
 

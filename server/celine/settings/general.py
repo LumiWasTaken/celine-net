@@ -17,7 +17,7 @@ import functools
 from typing import Any
 
 from .files import Invalid
-from .form import check
+from .form import clean
 
 FIELDS: list[dict[str, Any]] = [
     {"key": "user_name", "label": "Your name", "type": "text",
@@ -151,9 +151,9 @@ def validate(data: Any) -> dict[str, Any]:
             continue                # the knob of a skill that is gone: gone with it
         if f is None:
             raise Invalid(path, f"'{k}' is not a general setting.")
-        if v is None:
-            continue
-        out[k] = check(path, f, v)
+        v = clean(path, f, v)
+        if v is not None:
+            out[k] = v
     if value(out, "job_timeout_seconds") <= value(out, "tool_timeout_seconds"):
         raise Invalid("general.job_timeout_seconds", "The job time limit must be longer "
                                                       "than the tool time limit.")

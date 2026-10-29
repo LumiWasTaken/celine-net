@@ -5,7 +5,7 @@ module keeps only its extra checks after this pass. Forms are served by api/form
 
 A field is a dict: `key`, `label`, `type` (one of TYPES), `default`, and by type:
 - `text`: `required`, `max_len`, `zone` (an IANA time zone), `word` (stripped, no spaces
-  inside, "" goes back to the default), and for the UI `long`, `mono`, `placeholder`;
+  inside), and for the UI `long`, `mono`, `placeholder`;
 - `number`, `duration`: `min`, `max` (a float default takes any number, an int one whole
   numbers), and for the UI `step`, `unit`;
 - `choice`: `choices`, [value, label] pairs;
@@ -13,7 +13,11 @@ A field is a dict: `key`, `label`, `type` (one of TYPES), `default`, and by type
 - `secret`: write-only, stored in <data>/secrets/<form>.<key>.key; the view says only
   {state, set_at};
 - `copy`: a read-only string the form fills at view time, left out when it has none.
-Common: `help`, `advanced`, `group`, `where: "config"` (read-only)."""
+Common: `help`, `advanced`, `group`, `where: "config"` (read-only).
+
+A value is unset (back to its default) when it is None, or text that is only whitespace (an
+error for a `required` field). Anything else must be a value of its type: "" is no number,
+no choice and no switch."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -69,6 +73,15 @@ def check(path: str, f: dict[str, Any], v: Any) -> Any:
     return v
 
 
+def clean(path: str, f: dict[str, Any], v: Any) -> Any:
+    """One value as stored, or None when it is unset."""
+    if f["type"] == "text" and isinstance(v, str) and not v.strip():
+        if f.get("required"):
+            raise Invalid(path, "This cannot be empty.")
+        return None
+    return None if v is None else check(path, f, v)
+
+
 def validate(section: str, fields: list[dict[str, Any]], data: Any) -> dict[str, Any]:
     """Only known keys, each checked; a key left out (or None) is its default."""
     if not isinstance(data, dict):
@@ -79,10 +92,8 @@ def validate(section: str, fields: list[dict[str, Any]], data: Any) -> dict[str,
         f = by_key.get(k)
         if f is None or f["type"] in WRITE_ONLY:
             raise Invalid(f"{section}.{k}", f"'{k}' is not a setting here.")
-        if v is None:
-            continue
-        v = check(f"{section}.{k}", f, v)
-        if v != "" or not f.get("word"):
+        v = clean(f"{section}.{k}", f, v)
+        if v is not None:
             out[k] = v
     return out
 
@@ -93,8 +104,8 @@ def values(fields: list[dict[str, Any]], saved: dict[str, Any]) -> dict[str, Any
             for f in fields if f["type"] not in WRITE_ONLY}
 
 
-def check_toml(doc: dict[str, Any]) -> None:
-    """A plugin's settings.toml as the loader reads it: [[fields]], an optional `note`,
+def check_toml(pid: str, doc: dict[str, Any]) -> None:
+    """Plugin `pid`'s settings.toml as the loader reads it: [[fields]], an optional `note`,
     [[actions]] {id, label, input?, run = "module:coroutine"}; raises ValueError."""
     fields = doc.get("fields")
     if not isinstance(fields, list) or not fields:
@@ -110,6 +121,9 @@ def check_toml(doc: dict[str, Any]) -> None:
         if f.get("type") not in TYPES:
             raise ValueError(f"the field {f['key']!r} has no known type "
                              f"({', '.join(TYPES)})")
+        if f["type"] == "secret" and not secrets.valid_name(secret_name(pid, f["key"])):
+            raise ValueError(f"the secret {f['key']!r} cannot name its file "
+                             f"{secret_name(pid, f['key'])}.key: {secrets.NAME_RULE}")
         if f["type"] == "choice" and not f.get("choices"):
             raise ValueError(f"the choice {f['key']!r} needs choices")
         if f["type"] not in WRITE_ONLY and "default" in f:
@@ -163,6 +177,8 @@ def check_secrets(section: str, fields: list[dict[str, Any]], data: Any) -> dict
         path = f"{section}.{k}"
         if kinds.get(k) != "secret":
             raise Invalid(path, f"'{k}' is not a secret here.")
+        if not secrets.valid_name(secret_name(section, k)):
+            raise Invalid(path, f"This secret cannot name its file: {secrets.NAME_RULE}")
         if v is not None:
             if not isinstance(v, str) or not v.strip():
                 raise Invalid(path, "This must be text.")
@@ -173,12 +189,10 @@ def check_secrets(section: str, fields: list[dict[str, Any]], data: Any) -> dict
     return out
 
 
-def write_secrets(section: str, root: Path, clean: dict[str, Any]) -> None:
-    for k, v in clean.items():
-        if v is None:
-            secrets.delete_key(root, secret_name(section, k))
-        else:
-            secrets.set_key(root, secret_name(section, k), v)
+def written(section: str, root: Path, clean: dict[str, Any]):
+    """Write a form's checked secrets (check_secrets) for the save that follows:
+    `with written(...): commit`. A failed save puts every one back as it was."""
+    return secrets.written(root, {secret_name(section, k): v for k, v in clean.items()})
 
 
 def read_secret(cfg, section: str, key: str) -> str | None:

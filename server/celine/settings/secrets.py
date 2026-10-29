@@ -9,14 +9,22 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .files import Invalid
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+NAME_RULE = "a letter or digit first, then letters, digits, _ . -, at most 64 in all."
 MAX_KEY = 4096
+
+
+def valid_name(name: str) -> bool:
+    """Can `name` be a key's file, <name>.key?"""
+    return bool(_ID.match(name))
 
 
 def secrets_dir(data_dir) -> Path:
@@ -92,6 +100,39 @@ def state(root: Path, provider: str) -> dict:
         return {"state": "not set", "set_at": None}
     at = datetime.fromtimestamp(p.stat().st_mtime, timezone.utc)
     return {"state": "set", "set_at": at.isoformat(timespec="seconds").replace("+00:00", "Z")}
+
+
+@contextmanager
+def written(root: Path, changes: dict[str, str | None]):
+    """Set (a string) or delete (None) the keys `changes` names, for the save inside the
+    `with`: when it raises, each key file is put back as it was, its time included, and
+    the error goes on. Every name must be valid_name."""
+    if changes:
+        _ensure_dir(root)
+    done: list[tuple[Path, Path | None]] = []     # (the key, its copy before)
+    try:
+        for name, value in changes.items():
+            p = _path(root, name)
+            before = None
+            if p.is_file():
+                before = root / f".{name}.key.before"
+                shutil.copy2(p, before)
+            done.append((p, before))
+            if value is None:
+                delete_key(root, name)
+            else:
+                set_key(root, name, value)
+        yield
+    except BaseException:
+        for p, before in reversed(done):
+            if before is not None:
+                os.replace(before, p)
+            else:
+                p.unlink(missing_ok=True)
+        raise
+    for _, before in done:
+        if before is not None:
+            before.unlink(missing_ok=True)
 
 
 def all_keys(root: Path) -> list[str]:

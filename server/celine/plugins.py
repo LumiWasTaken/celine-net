@@ -89,7 +89,7 @@ _scanned: Path | None = None        # the data dir of the last scan
 
 
 def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
-         check_form: Callable[[Any], None] | None = None) -> list[str]:
+         check_form: Callable[[str, Any], None] | None = None) -> list[str]:
     """Read every manifest, base then user (same id replaces), into LOADED. `reserved`:
     the ids a plugin may not take (core features, settings sections); `check_form`
     raises ValueError on a settings.toml (settings/form.py check_toml). Again for the same
@@ -125,7 +125,7 @@ def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
 
 
 def _read(d: Path, user: bool, reserved: frozenset[str],
-          check_form: Callable[[Any], None] | None) -> Plugin:
+          check_form: Callable[[str, Any], None] | None) -> Plugin:
     with (d / "plugin.toml").open("rb") as f:
         manifest = tomllib.load(f)
     pid = manifest.get("id")
@@ -142,7 +142,7 @@ def _read(d: Path, user: bool, reserved: frozenset[str],
         if not isinstance(form.get("fields"), list):
             raise ValueError("settings.toml needs [[fields]]")
         if check_form is not None:
-            check_form(form)
+            check_form(pid, form)
     return Plugin(pid, d, user, manifest, form)
 
 
