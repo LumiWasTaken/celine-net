@@ -16,6 +16,12 @@ def echo(text: str) -> str:
 
 
 @server.tool()
+def env(name: str) -> str:
+    """One variable of its environment, "" when unset."""
+    return os.environ.get(name, "")
+
+
+@server.tool()
 def crash() -> str:
     """Exit the server process at once."""
     os._exit(1)

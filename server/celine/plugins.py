@@ -156,3 +156,17 @@ def get(pid: str) -> Plugin | None:
 
 def with_form() -> list[Plugin]:
     return [p for p in LOADED.values() if p.form is not None]
+
+
+ROUTES = "/api/plugins/"
+
+
+def is_open(method: str, path: str) -> bool:
+    """A route of a running plugin that its manifest's `open` ("POST /gateway") lets a
+    machine reach without a session (auth/gate.py); the route checks its own key."""
+    if not path.startswith(ROUTES):
+        return False
+    pid, _, rest = path[len(ROUTES):].partition("/")
+    p = LOADED.get(pid)
+    return p is not None and p.data is not None and f"{method} /{rest}" in p.manifest.get(
+        "open", ())

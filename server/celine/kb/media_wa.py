@@ -512,7 +512,7 @@ def _download(kb, link, m: dict[str, Any], direct_path: str | None = None
     if r.status_code == 413:
         return "failed", r.json().get("error") or "too large"
     if r.status_code != 200 or not r.content:
-        return "failed", f"{r.status_code} {r.text[:120]}"
+        return "failed", f"{r.status_code} {r.text}"
     data = r.content
     sha = hashlib.sha256(data).hexdigest()
     if m["file_hash"] and sha != m["file_hash"]:

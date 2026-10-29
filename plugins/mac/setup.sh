@@ -3,11 +3,12 @@
 # files) and Playwright MCP (browser) behind one Supergateway with a bearer token, kept
 # running by a LaunchAgent in her login session. Run it as her; safe to run again.
 #
-#   bash setup.sh [--app URL] [--json]    install or update, then report
-#   bash setup.sh --status                report only, install nothing
+#   bash setup.sh [--app URL --key KEY] [--json]    install or update, then report
+#   bash setup.sh --status                          report only, install nothing
 #
 # The report is one JSON line: the gateway address, the token, the tools that answer and
-# the macOS permissions each still lacks. --app posts that line to the app.
+# the macOS permissions each still lacks. --app posts that line to the app with the key
+# its "Her computer" card shows in the command.
 set -euo pipefail
 
 PORT=8765
@@ -16,13 +17,14 @@ LIB=$HOME/.local/share/celine
 TOKEN=$CONF/token
 LABEL=com.celine.gateway
 PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
-LOG=$HOME/Library/Logs/celine-gateway.log   # crashes only: info would log every message, screenshots too
+LOG=$HOME/Library/Logs/celine-gateway.log
 BREW=/opt/homebrew/bin/brew      # Apple silicon only; Intel brew lives in /usr/local
 
-APP='' JSON='' STATUS=''
+APP='' KEY='' JSON='' STATUS=''
 while [ $# -gt 0 ]; do
   case $1 in
     --app) APP=${2%/}; shift ;;
+    --key) KEY=$2; shift ;;
     --json) JSON=1 ;;
     --status) STATUS=1 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -104,7 +106,7 @@ if [ -n "$STATUS" ]; then
   exit
 fi
 
-echo "This installs Homebrew, the Xcode command line tools, Node, tmux, ripgrep, Peekaboo, Google Chrome and three MCP servers, and runs them as a background service."
+echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome and three MCP servers, and runs them as a background service."
 say homebrew   # its installer also installs the Xcode command line tools when missing
 if [ ! -x "$BREW" ]; then
   # The installer asks nothing and needs sudo unlocked; the command line tools download
@@ -116,25 +118,17 @@ if [ ! -x "$BREW" ]; then
   kill "$keep" 2>/dev/null || true
 fi
 eval "$("$BREW" shellenv)"
-export HOMEBREW_NO_AUTO_UPDATE=1
 
 say packages
-brew install --quiet node tmux ripgrep openclaw/tap/peekaboo
-# One browser for both: Playwright MCP drives Google Chrome, and Desktop Commander renders
-# PDFs with it instead of downloading a Chrome of its own.
-brew install --quiet --cask google-chrome
-brew pin node peekaboo    # macOS grants bind to these two binaries; an upgrade means granting again
-brew cleanup --prune=all --quiet          # the downloads, kept by default
+brew install node openclaw/tap/peekaboo
+brew install --cask google-chrome    # the browser Playwright MCP drives
 NODE=$(brew --prefix)/bin/node
 
 say servers
 mkdir -p "$LIB" "$(dirname "$LOG")" "$(dirname "$PLIST")"
 cd "$LIB"
 [ -f package.json ] || echo '{ "private": true }' > package.json
-# No install scripts: Desktop Commander's would report the install; ripgrep comes from brew.
-npm install --save-exact --ignore-scripts --no-audit --no-fund \
-  supergateway@4.2.1 @playwright/mcp@0.0.83 @wonderwhy-er/desktop-commander@0.3.1
-npm cache clean --force 2>/dev/null   # no second copy of what was just installed
+npm install supergateway @playwright/mcp @wonderwhy-er/desktop-commander
 
 say token
 mkdir -p "$CONF" && chmod 700 "$CONF"
@@ -154,8 +148,7 @@ cat > "$CONF/gateway.json" <<EOF
     "screen": { "command": "$(brew --prefix)/bin/peekaboo", "args": ["mcp"] },
     "shell": {
       "command": "$NODE",
-      "args": ["$LIB/node_modules/@wonderwhy-er/desktop-commander/dist/index.js"],
-      "env": { "DESKTOP_COMMANDER_DISABLE_TELEMETRY": "1" }
+      "args": ["$LIB/node_modules/@wonderwhy-er/desktop-commander/dist/index.js"]
     },
     "browser": {
       "command": "$NODE",
@@ -177,7 +170,6 @@ cat > "$PLIST" <<EOF
     <string>--config</string><string>$CONF/gateway.json</string>
     <string>--apiKeyFile</string><string>$TOKEN</string>
     <string>--healthEndpoint</string><string>/health</string>
-    <string>--logLevel</string><string>none</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
@@ -202,9 +194,9 @@ else
 fi
 
 line=$(report)
-if [ -n "$APP" ]; then   # the route comes with the app's "Her computer" card
-  curl -fsS -m 30 -X POST -H 'Content-Type: application/json' --data "$line" \
-    "$APP/api/plugins/mac/gateway" >/dev/null || echo "Could not reach $APP: paste the line below instead." >&2
+if [ -n "$APP" ]; then   # the app saves the address and the token into its "Her computer" card
+  curl -fsS -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $KEY" \
+    --data "$line" "$APP/api/plugins/mac/gateway" >/dev/null
 fi
 if [ -n "$JSON" ]; then
   echo "$line"

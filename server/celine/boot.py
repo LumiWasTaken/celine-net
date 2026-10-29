@@ -26,6 +26,9 @@ def load() -> Config:
     reserved = frozenset(f.id for f in features.CORE) | frozenset(settings.files.SECTIONS)
     p += [Problem("plugins", m) for m in plugins.scan(cfg.data_dir, reserved,
                                                                  settings.form.check_toml)]
+    p += [Problem("plugins", f"plugins/{x.id}: there is no group {x.manifest['group']!r}, "
+                             f"it gets a card of its own")
+          for x in plugins.all() if x.manifest.get("group", "") not in ("", *features.GROUPS)]
 
     def file(name: str) -> tuple[str, dict]:
         path = config.CONFIG_DIR / name

@@ -1,11 +1,15 @@
-# Her own computer, a Mac: the servers setup.sh runs behind its gateway. Copy this folder
-# to <data>/plugins/mac/. ${URL} is the Address field of settings.toml and ${SECRET} the
-# token; setup.sh prints both.
+# Her own computer, a Mac: the three servers setup.sh runs behind its gateway, filled from
+# the form (settings.toml): ${URL} is the Address, ${TOKEN} the Token.
 id = "mac"
 label = "Her Mac"
 about = "Her own Mac: its screen, a shell and its files, and a browser."
 off_when = "The Mac is off or nobody is logged in."
-card = "detect"
+card = "always"
+group = "computer"
+choice = "Own computer"
+routes = ["gateway:router"]
+run = "gateway:run"
+open = ["GET /setup.sh", "POST /gateway"]   # the Mac reaches these without a session
 
 [servers.macscreen]               # Peekaboo: see, click, type, menus, windows
 enabled   = true
@@ -14,7 +18,7 @@ url       = "${URL}/screen/mcp"
 sends     = "house"
 
 [servers.macscreen.headers]
-Authorization = "Bearer ${SECRET}"
+Authorization = "Bearer ${TOKEN}"
 
 [servers.macshell]                # Desktop Commander: commands, processes, files
 enabled   = true
@@ -23,7 +27,7 @@ url       = "${URL}/shell/mcp"
 sends     = "house"
 
 [servers.macshell.headers]
-Authorization = "Bearer ${SECRET}"
+Authorization = "Bearer ${TOKEN}"
 
 [servers.macbrowser]              # Playwright MCP: a browser with its own profile
 enabled   = true
@@ -32,4 +36,4 @@ url       = "${URL}/browser/mcp"
 sends     = "public"
 
 [servers.macbrowser.headers]
-Authorization = "Bearer ${SECRET}"
+Authorization = "Bearer ${TOKEN}"

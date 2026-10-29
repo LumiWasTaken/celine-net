@@ -593,6 +593,26 @@ def test_a_passkey_proves_in_the_session_that_asked(app):
     assert other.post("/api/auth/passkeys/start").status_code == 403
 
 
+def test_a_running_plugin_opens_only_the_routes_its_manifest_names(app, tmp_path):
+    """The Mac has no session: GET setup.sh and POST gateway pass the gate while the mac
+    plugin runs (the gateway checks its own key); nothing else of it does."""
+    from starlette.routing import Mount
+    from celine import plugins
+    p = plugins.get("mac")
+    app.state.plugin_routes.routes.append(Mount("/mac", app=p.attr("gateway:router")))
+    c = client(app)
+    assert c.get("/api/plugins/mac/setup.sh").status_code == 404, "off: the gate answers"
+    p.data = tmp_path                                       # what its runner sets
+    try:
+        r = c.get("/api/plugins/mac/setup.sh")
+        assert r.status_code == 200 and r.text.startswith("#!/bin/bash")
+        r = c.post("/api/plugins/mac/gateway", json={}, headers={"Authorization": "Bearer x"})
+        assert r.status_code == 404 and "set-cookie" not in r.headers
+        assert c.get("/api/plugins/mac/gateway").status_code == 404
+    finally:
+        p.data = None
+
+
 def test_with_the_login_off_there_is_nothing_to_prove():
     c = client(build_app(boot.load(), dev=False))
     assert c.post("/api/auth/reauth", json={"method": "pin", "secret": "x"}).status_code == 404

@@ -147,9 +147,11 @@ function SetupForm({ Form, feature, value, onChange, reprobe }: {
     the Dot says nothing more and there is no second line. A tooltip never repeats what
     the row shows: an off row has none. A feature with `warn` (shares) asks first when
     switched on (Turn on); off needs no confirm */
-export function FeatureSwitch({ feature: f, on, disabled = false, about = false, aboutShown = false, later = false, onChange }: {
+export function FeatureSwitch({ feature: f, on, disabled = false, about = false, aboutShown = false, later = false, label, onChange }: {
   feature: Feature
   on: boolean
+  /** its words in place of its label (a group card: its `choice`) */
+  label?: string
   disabled?: boolean
   about?: boolean
   aboutShown?: boolean
@@ -168,7 +170,7 @@ export function FeatureSwitch({ feature: f, on, disabled = false, about = false,
               onChange={v => (v && f.warn ? setAsking(true) : onChange(v))}
               label={<>
                 {tone && <Dot tone={tone} label={aboutShown || later ? undefined : f.detail || undefined} />}
-                {tone && ' '}{f.label}
+                {tone && ' '}{label ?? f.label}
                 {line && <span className="feature-about">{line}</span>}
               </>} />
       {asking && (

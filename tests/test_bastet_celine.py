@@ -215,9 +215,11 @@ async def test_her_unfrozen_line_names_the_what_never_the_rule_or_the_piece(stor
 async def test_bastet_has_an_address_she_can_be_written_to_by(store):
     from celine.intercom.addresses import resolve
     cid = await conversations.create(store)
-    for to in ("bastet", "Bastet", "system:guard"):
+    for to in ("bastet", "system:guard"):
         assert await store.read(lambda c: resolve(c, to, f"agent:{cid}")) == \
             ("system:guard", [("system:guard", None)])
+    with pytest.raises(ValueError, match="'Bastet' is not an address"):
+        await store.read(lambda c: resolve(c, "Bastet", f"agent:{cid}"))
     assert facts.sink({"name": "intercom__send", "args": {"to": "Bastet", "text": "hi"}})[0] \
         == "house"
     # the owner's reply to a note of its own goes to them

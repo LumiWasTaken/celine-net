@@ -2,7 +2,8 @@
 
 Without a valid session cookie every request gets `not_found(path)`, the same answer
 an unknown /api route gives, so nothing tells which routes exist. The only exceptions
-are the login screen (GET /), the login endpoints it calls (routes.open_router), and any /api route or /ws
+are the login screen (GET /), the login endpoints it calls (routes.open_router), a running
+plugin's routes its manifest names `open` (plugins.is_open: they check their own key), and any /api route or /ws
 socket with a named token (intercom/tokens.py, made in Settings) in `Authorization:
 Bearer`: the app is usable through the API alone (a host script, a CLI); while it is
 frozen such a token only reads (GET), any other method is 403 `frozen`. A WebSocket
@@ -31,6 +32,7 @@ import logging
 from starlette.requests import cookie_parser
 from starlette.responses import JSONResponse, Response
 
+from .. import plugins
 from ..api.deps import LLM_PROXY
 from ..shares import PREFIX as SHARE
 from ..intercom import tokens
@@ -93,7 +95,7 @@ class Gate:
             page = login_page(not store.has_credentials(), store.methods(),
                               self.auth.settings.origin)
             return await page(scope, receive, send)
-        if (method, path) in OPEN:
+        if (method, path) in OPEN or plugins.is_open(method, path):
             body = await _small_body(receive)
             if body is None:
                 return await JSONResponse(

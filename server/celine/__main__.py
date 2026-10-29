@@ -228,14 +228,14 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                     try:
                         async with anyio.create_task_group() as g:
                             for sid in f.mcp:
-                                g.start_soon(mcp.run_one, sid)
+                                g.start_soon(mcp.run_one, cfg.mcp.get(sid))
                     finally:
                         for sid in f.mcp:
                             connectors.close(sid)
                         for kid in f.kbs:
                             kbs.close(kid)
                 return Runner(tg, run)
-            for f in features.catalog():
+            for f in features.CORE:          # a plugin's servers run under its own runner
                 if f.mcp:
                     runners[f.id] = connector_runner(f)
                     if on[f.id]:

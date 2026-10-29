@@ -110,3 +110,14 @@ def test_a_source_name_in_scope_matches_exactly(tmp_path):
     assert check_scope(kbs, ["whatsapp"])[:2] == ("platforms", ["whatsapp"])
     assert check_scope(kbs, ["WHATSAPP"])[:3] == ("chats", [], ["WHATSAPP"])
     assert check_scope(kbs, ["ALL"])[0] == "chats"
+
+
+def test_me_is_an_exact_word_in_written_by(tmp_path):
+    from celine.kb.retrieve.scope import resolve
+    kbs = build(tmp_path)
+    assert resolve(kbs, people=["me"]).me
+    try:
+        got = resolve(kbs, people=["ME"])
+    except ValueError:
+        return
+    assert not got.me
