@@ -186,8 +186,9 @@ class Approvals:
         """Wait for the user's answer. -> None when approved, else one sentence for its
         tool result: denied, no answer in time (it starts with `{user} did not answer`),
         no reason given (vault), or another one waits. `call`: the tool call it is for;
-        one the user approved on Bastet's ask (a gate) is not asked again by its tool."""
-        if call and kind != "gate" and call in self.approved:
+        one the user approved on Bastet's ask (a gate) is not asked again by its tool,
+        but a change of settings is: its request shows each field before and after."""
+        if call and kind not in ("gate", "settings") and call in self.approved:
             del self.approved[call]
             return None
         now = time.time()
