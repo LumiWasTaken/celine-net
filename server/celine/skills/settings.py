@@ -216,11 +216,13 @@ def target_of(app, tid: str) -> Target | str:
             write.check(cfg, {"providers": {**s.providers, pid: new}})
 
         async def save_provider(a, new, sec, v):
+            out = None
             if new != p:
-                await saves.provider(a, pid, new, v)
+                out = await saves.provider(a, pid, new, v)
                 v = None        # the same approval: the key follows the new version
             if "key" in sec:
-                await saves.provider_key(a, pid, sec["key"], v)
+                out = await saves.provider_key(a, pid, sec["key"], v)
+            return out
         return Target(tid, f"Models, {p.get('label') or pid}", version(s.providers.get(pid)),
                       fields, merge_provider, check_provider, save_provider, {"key": pid})
     if kind == "forms" and (pl := plugins.get(rest)) is not None and pl.form is not None:
@@ -265,33 +267,38 @@ def _after(f: dict[str, Any], v: Any) -> Any:
     return v
 
 
-async def _secret_from(cfg, path: Any, where: str, transport=None) -> str:
-    """The text of the secret's file in its shellbox, one line. Invalid without its
-    value in the sentence."""
-    from .. import box_files
-    if not isinstance(path, dict) or set(path) != {"file"} or \
-            not isinstance(path["file"], str) or not path["file"].strip():
+def _secret_file(v: Any, where: str) -> str:
+    """The file a secret's change names: {"file": "~/path"}."""
+    if not isinstance(v, dict) or set(v) != {"file"} or \
+            not isinstance(v["file"], str) or not v["file"].strip():
         raise Invalid(where, 'A secret comes from a file in your shellbox: '
                              '{"file": "~/path"}; null removes it.')
+    return v["file"].strip()
+
+
+async def _secret_from(cfg, path: str, where: str, transport=None) -> str:
+    """The text of the secret's file in its shellbox, one line, read when it is saved.
+    Invalid without its value in the sentence."""
+    from .. import box_files
     data = b""
     try:
-        async for chunk in box_files.stream(cfg, path["file"].strip(), transport=transport):
+        async for chunk in box_files.stream(cfg, path, transport=transport):
             data += chunk
             if len(data) > SECRET_READ:
-                raise Invalid(where, f"{path['file']} is larger than a secret.")
+                raise Invalid(where, f"{path} is larger than a secret.")
     except Invalid:
         raise
     except (FileNotFoundError, RuntimeError) as e:
         raise Invalid(where, str(e)) from None
     except Exception as e:      # the box does not answer
-        raise Invalid(where, f"The shellbox did not give {path['file']}: "
+        raise Invalid(where, f"The shellbox did not give {path}: "
                              f"{type(e).__name__}.") from None
     try:
         text = data.decode().strip()
     except UnicodeDecodeError:
-        raise Invalid(where, f"{path['file']} is not text.") from None
+        raise Invalid(where, f"{path} is not text.") from None
     if not text or len(text) > secrets_mod.MAX_KEY or any(c in text for c in "\r\n\0"):
-        raise Invalid(where, f"{path['file']} does not hold one line of text.")
+        raise Invalid(where, f"{path} does not hold one line of text.")
     return text
 
 
@@ -358,14 +365,13 @@ class Settings:
                                       f"settings__read(target=\"{t.id}\") lists them.",
                               is_error=True)
         values = {k: v for k, v in changes.items() if by_key[k].get("type") != "secret"}
-        secrets: dict[str, str | None] = {}
+        files: dict[str, str | None] = {}      # secret -> its file, None: remove it
         rows = []
         try:
             for k, v in changes.items():
                 f = by_key[k]
                 if f.get("type") == "secret":
-                    secrets[k] = None if v is None else await _secret_from(
-                        self.cfg, v, f"{t.id}.{k}", self.transport)
+                    files[k] = None if v is None else _secret_file(v, f"{t.id}.{k}")
                     rows.append({"label": f["label"],
                                  "before": "Saved" if f["state"] == "set" else "Not set",
                                  "after": "Removed" if v is None else "New value"})
@@ -376,8 +382,6 @@ class Settings:
             new = t.merge(values)
             if values:
                 t.check(new)
-            if t.id.startswith("forms.") and secrets:
-                form.check_secrets(t.id[6:], plugins.get(t.id[6:]).form["fields"], secrets)
         except Invalid as e:
             return ToolResult(content=f"{e.field}: {e.message}", is_error=True)
         if not rows:
@@ -391,14 +395,26 @@ class Settings:
                                      kind="settings", call=ctx.tool_call_id or None,
                                      changes=rows):
             return ToolResult(content=no, is_error=True)
-        try:
-            await t.save(self.app, new, secrets, t.version)
+        try:        # a secret's value is read now, once approved, and only kept here
+            secrets = {k: None if p is None else await _secret_from(
+                self.cfg, p, f"{t.id}.{k}", self.transport) for k, p in files.items()}
+            if t.id.startswith("forms.") and secrets:
+                form.check_secrets(t.id[6:], plugins.get(t.id[6:]).form["fields"], secrets)
+            out = await t.save(self.app, new, secrets, t.version)
         except Conflict:
             return ToolResult(content=f"{t.label} changed since you proposed it; nothing "
                                       f"was done. Read it again.", is_error=True)
+        except Invalid as e:
+            return ToolResult(content=f"{e.field}: {e.message} Nothing was done.",
+                              is_error=True)
         except CelineError as e:
-            return ToolResult(content=e.message, is_error=True)
+            return ToolResult(content=f"{e.message} Nothing was done.", is_error=True)
         said = "; ".join(f"{r['label']}: {r['before']} → {r['after']}" for r in rows)
+        if isinstance(out, dict) and out.get("applied") is False:
+            why = "; ".join(p.message for p in self.cfg.problems if p.fatal)
+            return ToolResult(content=f"Saved {t.label} ({said}), but the app refused to "
+                                      f"load it and keeps its last good settings: {why}.",
+                              is_error=True, display={"target": t.id, "changes": rows})
         return ToolResult(content=f"Changed {t.label}. {said}.",
                           display={"target": t.id, "changes": rows})
 

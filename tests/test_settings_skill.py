@@ -38,8 +38,10 @@ class Box:
 
     def __init__(self, text: str):
         self.text = text
+        self.reads = 0
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        self.reads += 1
         if request.url.path == "/file" and request.url.params["path"] == "~/pw.txt":
             return httpx.Response(200, content=self.text.encode())
         return httpx.Response(404, json={"error": "No file there."})
@@ -189,21 +191,30 @@ async def test_an_approve_after_the_setting_changed_fails_and_keeps_the_change(a
 
 async def test_a_secret_goes_from_her_box_to_var_secrets_and_nowhere_else(app, caplog):
     caplog.set_level(logging.DEBUG)
-    sk = _skill(app, Box(PASSWORD + "\n"))
+    box = Box(PASSWORD + "\n")
+    sk = _skill(app, box)
     ctx = await _ctx(app)
     plain = await sk.propose(ctx, target="email", changes={"password": "typed"}, why="w")
     assert plain.is_error and '{"file": "~/path"}' in plain.content
-    gone = await sk.propose(ctx, target="email", changes={"password": {"file": "~/no"}},
-                            why="w")
-    assert gone.is_error and gone.content == "email.password: No file there."
-    big = await _skill(app, Box("x" * 70_000)).propose(
-        ctx, target="email", changes={"password": {"file": "~/pw.txt"}}, why="w")
-    assert big.content == "email.password: ~/pw.txt is larger than a secret."
+    gone, _ = await _answer(app, sk.propose(
+        ctx, target="email", changes={"host": "imap.example.com",
+                                      "password": {"file": "~/no"}}, why="w"), True)
+    assert gone.content == "email.password: No file there. Nothing was done."
+    assert "host" not in app.cfg.settings.email, "a secret not read saves nothing"
+    big, _ = await _answer(app, _skill(app, Box("x" * 70_000)).propose(
+        ctx, target="email", changes={"password": {"file": "~/pw.txt"}}, why="w"), True)
+    assert big.content == ("email.password: ~/pw.txt is larger than a secret. Nothing "
+                           "was done.")
+    box.reads = 0
+
+    async def unread():         # the file is read once approved, not before
+        assert box.reads == 0
     got, ask = await _answer(app, sk.propose(
         ctx, target="email", changes={"host": "imap.example.com",
                                       "password": {"file": "~/pw.txt"}},
-        why="The mail skill needs the account."), True)
+        why="The mail skill needs the account."), True, unread)
     assert not got.is_error, got.content
+    assert box.reads == 1
     assert ask.changes == [{"label": "IMAP server", "before": "Empty",
                             "after": "imap.example.com"},
                            {"label": "Password", "before": "Not set",
@@ -244,5 +255,36 @@ async def test_every_target_saves_through_its_settings_save(app):
     got = await sk.propose(ctx, target="context", changes={"idle_turns": 9}, why="w")
     assert not got.is_error, got.content
     assert app.cfg.context["idle_turns"] == 9
+    kept = tomllib.loads((app.var / "settings" / "context.toml").read_text())
+    assert kept == {"idle_turns": 9}, "only what differs from the defaults"
     again = await sk.propose(ctx, target="context", changes={"idle_turns": 9}, why="w")
     assert again.content == "Nothing changes: these are the values already."
+
+
+async def test_a_call_bastet_let_through_still_shows_its_settings_card(app):
+    sk = _skill(app)
+    ctx = await _ctx(app)
+    app.approvals.approved["k1"] = None         # approved on Bastet's ask
+    got, ask = await _answer(app, sk.propose(
+        ctx, target="general", changes={"turn_wall_clock_seconds": 3600}, why="w"), True)
+    assert ask.changes and not got.is_error
+
+
+async def test_a_refused_reload_is_reported(app, monkeypatch):
+    from celine import reload
+    from celine.config import Problem
+
+    def refused(services, **_):
+        services.cfg.problems = [Problem("config", "llm.toml does not parse", fatal=True)]
+        return False
+    monkeypatch.setattr(reload, "apply", refused)
+
+    class Yes:
+        async def ask(self, *a, **k):
+            return None
+    app.approvals = Yes()
+    got = await _skill(app).propose(await _ctx(app), target="context",
+                                    changes={"idle_turns": 9}, why="w")
+    assert got.is_error and got.content == (
+        "Saved Context (idle_turns: 6 \u2192 9), but the app refused to load it and keeps "
+        "its last good settings: llm.toml does not parse.")

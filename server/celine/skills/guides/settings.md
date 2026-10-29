@@ -26,15 +26,17 @@ or not set; its value is never shown to you.
 
 `settings__propose(target, changes, why)` changes fields of one target. `changes` is
 `{key: new value}`; null puts a field back to its default. A secret is
-`{"file": "~/path"}`, a file in your shellbox that holds it on one line; its value goes
-from that file into Settings, and the file stays as it is. Null removes a secret.
+`{"file": "~/path"}`, a file in your shellbox that holds it on one line. The file is
+read once {{username}} approves, and its value goes from there into Settings; the file
+stays as it is. Null removes a secret.
 Example: `settings__propose(target="general", changes={"turn_wall_clock_seconds": 3600},
 why="Long research turns stop at the 30 minute limit.")`.
 
 The change is checked at once, as Settings checks a save: a value Settings refuses comes
 back with its sentence, and nothing is asked. Then {{username}} sees each field before
 and after, and your why, with Approve and Deny, and the call waits for the answer.
-Approved, it is saved as Settings saves it, and the result names each change. Denied or
+Approved, it is saved as Settings saves it, and the result names each change; a secret
+whose file is gone or unreadable by then is not saved, and the result says why. Denied or
 no answer in time: nothing changes, and the result says so. When the target changed
 between your proposal and the approval, nothing is saved and the result says it changed
 since you proposed it.

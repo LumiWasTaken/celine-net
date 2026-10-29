@@ -166,9 +166,9 @@ async def provider(app, pid: str, body: Any, if_match: str | None = None) -> dic
         return await reload.commit(app, changes)
 
 
-async def provider_key(app, pid: str, key: str | None, if_match: str | None = None) -> None:
+async def provider_key(app, pid: str, key: str | None, if_match: str | None = None) -> dict:
     """A provider's key: a string sets it, None removes it. The backends pick it up and
-    the masking learns it."""
+    the masking learns it. -> {"applied"}, as a commit answers."""
     async with write.lock():
         s = app.cfg.settings
         if pid not in s.providers:
@@ -180,8 +180,9 @@ async def provider_key(app, pid: str, key: str | None, if_match: str | None = No
             if not isinstance(key, str):
                 raise Invalid("key", "The key must be text.")
             secrets_mod.set_key(_root(app), pid, key)
-        reload.apply(app)
+        applied = reload.apply(app)
     write.publish(app, ["secrets"])
+    return {"applied": applied}
 
 
 async def plugin_form(app, p: plugins.Plugin, values: Any, secrets: Any,
@@ -208,15 +209,19 @@ def form_version(s, p: plugins.Plugin) -> dict[str, Any]:
             "secrets": form.secret_states(p.id, p.form["fields"], s.secrets_root)}
 
 
-async def context(app, values: dict[str, Any], if_match: str | None = None) -> None:
+async def context(app, values: dict[str, Any], if_match: str | None = None) -> dict:
     """The context shares (var/settings/context.toml, turns/loads.py): the whole set, a
-    key left out its default."""
+    key left out its default. The file keeps only the keys that differ from the
+    defaults, so a later default reaches every key left at it. -> {"applied"}, as a
+    commit answers."""
     from .turns import loads
     for k, v in values.items():
         if (why := loads.share_problem(k, v)) is not None:
             raise Invalid(f"context.{k}", why)
     async with write.lock():
         files.check_version("context", app.cfg.context, if_match)
-        files.write_toml(seed.context_path(files.settings_dir(app.cfg)), values)
-        reload.apply(app)
+        files.write_toml(seed.context_path(files.settings_dir(app.cfg)),
+                         {k: v for k, v in values.items() if v != loads.DEFAULTS[k]})
+        applied = reload.apply(app)
     write.publish(app, ["context"])
+    return {"applied": applied}
