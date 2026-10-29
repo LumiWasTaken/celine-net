@@ -11,6 +11,13 @@ notes, your report and what you deliver hold what you found in your own words: n
 citation marks, no "according to", no list of sources or links, a link only when it is
 what {{username}} asked for. missions__list lists every mission, from anywhere.
 
+missions__start(brief) starts a mission of your own, from anywhere but a sub-agent: it
+takes what {{username}}'s form takes (name, model, time_limit, min_time, check_in,
+report_to) and runs in a conversation of its own, its brief from you.
+
+With a minimum time, missions__update(status="Done") before it is refused with the time
+left; force=true closes it all the same.
+
 A step may name a model it runs better on; your instructions list the models you can
 name. When that step becomes doing, the mission runs on it from your next turn, and
 sub-agents you start then run on it too. Example: steps=[{"title": "Read the papers",
