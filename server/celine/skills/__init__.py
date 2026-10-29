@@ -104,9 +104,6 @@ class ToolSpec:
     annotations: Annotations = Annotations()
     background: str | None = None   # a detach tool's bool parameter: hand off at once
     timeout: float | None = None    # seconds, instead of tool_timeout_seconds
-    # the parameter that names its terminal (or its browser tab, by the same name): left
-    # out, it is its default terminal, resolved once for the row, the event and the job
-    terminal_arg: str | None = None
     # what it reads while a job has the call: {job} and the call's arguments filled in,
     # with `detached_display` on its row
     detached: str | None = None
@@ -143,7 +140,7 @@ Mode = Literal["blocking", "detach"]
 
 def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
          destructive: bool | None = None, open_world: bool = False, background: str | None = None,
-         timeout: float | None = None, terminal_arg: str | None = None,
+         timeout: float | None = None,
          detached: str | None = None, detached_display: dict[str, Any] | None = None,
          needs_answer: bool = True):
     """Marks a coroutine as a tool. The docstring is the model-facing description:
@@ -154,7 +151,7 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
     replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec."""
     def deco(fn):
         fn.__celine_tool__ = {"mode": mode, "background": background, "timeout": timeout,
-                              "terminal_arg": terminal_arg, "detached": detached,
+                              "detached": detached,
                               "detached_display": detached_display,
                               "needs_answer": needs_answer,
                               "annotations": Annotations.of(

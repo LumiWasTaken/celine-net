@@ -176,7 +176,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     """-> (state, ToolResult, withheld_output), or None when the server is shutting
     down and the step has not started (it stays pending and runs on resume). Never
     raises. The steps, in order: stopped, replayed, frozen (the house refuses), offered,
-    valid, her default terminal, Bastet, then the call itself."""
+    valid, Bastet, then the call itself."""
     if token.cancelled:
         return None if token.shutdown else ("cancelled", ToolResult(content="cancelled"),
                                             None)
@@ -191,7 +191,6 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
         return "error", ToolResult(content=f"invalid arguments: {wrong}", is_error=True), \
             None
-    resolved = await _default_terminal(store, turn["conversation_id"], spec, args)
 
     async def progress(note: str) -> None:
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
@@ -204,7 +203,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return None
     if gate.refusal is not None:
         return (*gate.refusal, None)
-    out = await _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs)
+    out = await _run_call(turn, call, spec, args, store, cfg, token, jobs)
     if out is None:
         await guard_passes.retell(store, gate.told)   # shutdown: its next result tells them
         return out
@@ -264,9 +263,9 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
 
 
 def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
-    """What is wrong with the arguments for `spec`'s schema (coerced in place where a
-    model sent the other plain form of a value); None when they fit. `arguments`: as
-    it sent them, read again only to say why they are not an object."""
+    """What is wrong with the arguments for `spec`'s schema; None when they fit. Nothing
+    is changed: a value of the wrong type fails the call. `arguments`: as it sent them,
+    read again only to say why they are not an object."""
     if args is None:
         try:
             json.loads(arguments or "{}")
@@ -286,20 +285,7 @@ def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
         if unknown:
             parts.append(f"unexpected {', '.join(sorted(unknown))}")
         return "; ".join(parts)
-    return coerce(args, spec.schema)
-
-
-async def _default_terminal(store, cid: str, spec, args: dict) -> str | None:
-    """The agent's default terminal (or its browser tab by the same name) where the tool's
-    terminal_arg is left out, set in `args` once: the row's arguments, the event, the
-    jobs list and the placeholder all carry the name. -> the arguments as stored now,
-    None when nothing was filled in."""
-    where = spec.terminal_arg
-    if not where or args.get(where):
-        return None
-    from ..terminals import store as terminals
-    args[where] = await terminals.default_terminal(store, cid)
-    return json.dumps(args)
+    return mistyped(args, spec.schema)
 
 
 # lists and objects are left to the tools: several read a string as one (a comma list,
@@ -317,39 +303,20 @@ def _kind(prop: dict) -> str | None:
     return kinds[0] if len(kinds) == 1 else None
 
 
-def coerce(args: dict, schema: dict) -> str | None:
-    """Each argument in place as its schema's type, where a model sent the other plain
-    form of it: a number for a string (an int stays exact, a Discord id too), a digit
-    string for an integer, "true"/"false" for a boolean; nothing else. -> what still
-    does not fit ("find is a string", a value outside its enum), or None. A null for a
-    parameter that is not required stays null (its default)."""
+def mistyped(args: dict, schema: dict) -> str | None:
+    """The arguments whose value is not of their schema's plain type or not in its
+    enum ("find is a string", "what is one of view, locate"), or None. Nothing is
+    converted. A null for a parameter that is not required is its default."""
     props, required = schema.get("properties", {}), set(schema.get("required", ()))
     wrong = []
     for key, v in args.items():
         kind = _kind(props.get(key) or {})
         if kind not in _FITS or (v is None and key not in required):
             continue
-        if kind == "string" and isinstance(v, (int, float)) and not isinstance(v, bool):
-            v = str(v)
-        elif kind == "integer" and isinstance(v, str) and v.strip().lstrip("-").isdigit():
-            v = int(v)
-        elif kind == "boolean" and isinstance(v, str) and v.strip().lower() in ("true",
-                                                                               "false"):
-            v = v.strip().lower() == "true"
-        elif kind == "integer" and isinstance(v, float) and v.is_integer():
-            v = int(v)
-        elif kind == "number" and isinstance(v, str):
-            try:
-                v = float(v)
-            except ValueError:
-                pass
         if not isinstance(v, _FITS[kind]) or (isinstance(v, bool) and kind != "boolean"):
             wrong.append(f"{key} is {_WORD[kind]}")
-            continue
-        if (opts := (props.get(key) or {}).get("enum")) and v not in opts:
+        elif (opts := (props.get(key) or {}).get("enum")) and v not in opts:
             wrong.append(f"{key} is one of {', '.join(map(str, opts))}")
-            continue
-        args[key] = v
     return "; ".join(wrong) or None
 
 
@@ -358,7 +325,7 @@ def _takes_any(fn) -> bool:
                for p in inspect.signature(fn).parameters.values())
 
 
-async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
+async def _run_call(turn, call, spec, args, store, cfg, token, jobs):
     """The call itself, after every check: the turn's time, then the tool, in its turn
     or handed to a job."""
     cid, tid, name = turn["conversation_id"], turn["id"], call["name"]
@@ -389,7 +356,7 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
     if left is not None and left < timeout:
         timeout, expired = left, "Stopped: the time for this turn is up."
     handoff = spec.mode if jobs is not None else "blocking"
-    await turns.tool_started(store, cid, call["id"], arguments=resolved)
+    await turns.tool_started(store, cid, call["id"])
 
     if handoff == "blocking":
         with metrics.TOOL_SECONDS.labels(name).time():

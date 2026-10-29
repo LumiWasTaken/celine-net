@@ -37,11 +37,11 @@ Not for their chats (the Messages archive tools) or your own notes.
 
 ## The tools
 
-- **shell__run(command)** runs a command in your shell and waits for its end. The
+- **shell__run(command, terminal)** runs a command in your shell and waits for its end. The
   result says the exit status and how long it took, shows the output, and names its log,
   /var/lib/shellbox/cmd/<id>.log. The shell keeps its directory, variables and venv
   between runs.
-- **shell__type(text, keys)** types into the program in front, like at a keyboard: ssh,
+- **shell__type(terminal, text, keys)** types into the program in front, like at a keyboard: ssh,
   python3, vim, a question a command asks. It answers with the screen once the terminal
   printed nothing for a moment. It never waits for a program to end.
 - **shell__read(terminal, from)** reads without typing. With from: the log of the
@@ -57,9 +57,10 @@ Not for their chats (the Messages archive tools) or your own notes.
   it; a second shell__stop ends it, so two stops always free a terminal. Nothing is
   ever stopped for you without this call.
 
-A terminal is a real one, 120 columns by 40 rows, running your login shell. Your default
-terminal is this conversation's own; in a mission it has the mission's name, as a
-sub-agent your own name with a short part of your id. A new name in terminal= opens another one. Terminals stay open,
+A terminal is a real one, 120 columns by 40 rows, running your login shell. Every
+shell__run, shell__type and shell__stop names its terminal. This conversation's own is
+named in your instructions; in a mission it has the mission's name, as a sub-agent your
+own name with a short part of your id. A new name in terminal= opens another one. Terminals stay open,
 with whatever runs in them, until you close them (`exit`) or the box resets, with two
 exceptions: a mission's and a sub-agent's close when it is done, and one with nothing
 running that printed nothing for a day closes. When the box is full, a new one closes
@@ -99,7 +100,7 @@ for their answer; denied, nothing is shared and the result says so. A share runs
   the call answers within 5 seconds and the result arrives here as a message when the
   command ends. Do other things meanwhile, or end your turn; do not check on it.
 - A command that asks something (apt without -y, a password, `read`) comes back as
-  waiting for input. Answer with shell__type(text="y"), or stop it.
+  waiting for input. Answer with shell__type(terminal="build", text="y"), or stop it.
 - While something runs in a terminal, a new run there is refused, naming what runs and
   how to stop it. shell__type is never refused. Use another terminal for parallel work.
 - A wedge is a run that comes back waiting for input, a run refused because its
@@ -251,7 +252,7 @@ nushell) use shell__type. The reset puts bash back.
 ~/boot.sh runs on every start of the shellbox, after the reset and after a restart: as
 you, with sudo, without a terminal (use -y and noninteractive), for at most 15 minutes,
 output in ~/boot.log. Your first result after a start says how it went. Write every
-line so it is safe to run twice, and test it with shell__run(command="bash ~/boot.sh").
+line so it is safe to run twice, and test it with shell__run(command="bash ~/boot.sh", terminal="boot").
 
     #!/bin/bash
     # runs as celine on every start of my shellbox, output in ~/boot.log

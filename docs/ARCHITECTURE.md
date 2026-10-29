@@ -634,11 +634,11 @@ the token per delta and closes the upstream request. Partial text is kept; the t
 ### The tool chokepoint
 
 `turns/tools._resolve` always returns a result. Its steps, in order: stopped, replayed,
-frozen, offered, valid, her default terminal, Bastet, the call. A call's
+frozen, offered, valid, Bastet, the call. A call's
 arguments are parsed once (`run_tool_calls`). Paths: frozen (state `gated`, in any mode
 of the guard), unknown tool, not in this request's list (`gated`), a skill that is down,
 off (`gating.off_sentence` by `gating.reason`), arguments not JSON, arguments the wrong
-shape (`tools.coerce` first turns a plain form of a value into its schema's type),
+shape (`tools.mistyped`: nothing is converted, the call fails with the reason),
 raised, timed out, cancelled, cancelled but finished, journal replay, detached, not run.
 `turns.finish_tool_call` writes the `role=tool` row for every one of them.
 
@@ -916,9 +916,9 @@ leaving its home is refused). `box_files.py` is the app's side. Every file you u
 copied in the background to `~/uploads/<sha12>/<name>` while the shellbox is on
 (`<sha12>`: the start of its sha256; bytes already there are not sent again, so her edits
 to that copy stay); a chat attachment keeps where its copy
-landed (`attachments.box_path`) and its context names it. The agent's default terminal is the
-conversation's own (`terminals/store.default_terminal`, written into the call's arguments
-by `turns/tools.py` for a tool with a `terminal_arg`); your own terminals it reads always and runs, types or
+landed (`attachments.box_path`) and its context names it. Every shell and browser call
+names its terminal or tab; the conversation's own (`terminals/store.default_terminal`) is
+named in the skills' prompt fragments. Your own terminals it reads always and runs, types or
 stops in only while `may_type` is on. The skill upserts the terminal row from the result's
 `display`, with `opened_by` the conversation whose call opened it.
 

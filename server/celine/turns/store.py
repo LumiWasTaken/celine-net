@@ -547,17 +547,14 @@ async def record_tool_calls(store, cid: str, message_id: str, calls: list[dict])
     await store.write(fn)
 
 
-async def tool_started(store, cid: str, call_id: str, arguments: str | None = None) -> None:
+async def tool_started(store, cid: str, call_id: str) -> None:
     """The step runs now: in a sequential batch the second call waits for the
-    first, so its clock starts here, not when the batch was recorded. With
-    `arguments`, the row's arguments are replaced and the event carries the new
-    ones (a shell call with its default terminal resolved)."""
+    first, so its clock starts here, not when the batch was recorded."""
     def fn(c: sqlite3.Connection) -> None:
         ts = now()
-        row = c.execute("UPDATE tool_calls SET started_at=?, "
-                        "arguments=coalesce(?, arguments) WHERE id=? AND "
+        row = c.execute("UPDATE tool_calls SET started_at=? WHERE id=? AND "
                         "state='pending' RETURNING name, arguments, message_id",
-                        (ts, arguments, call_id)).fetchone()
+                        (ts, call_id)).fetchone()
         if row is not None:
             store.event(c, cid, TOOL_STARTED,
                         {"tool_call_id": call_id, "message_id": row["message_id"],

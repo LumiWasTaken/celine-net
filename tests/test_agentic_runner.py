@@ -171,6 +171,18 @@ async def test_the_same_call_with_the_same_result_runs_every_time(store, cfg):
     assert b.tools == [True] * 5 and final["content"] == "Nothing found."
 
 
+async def test_a_malformed_argument_fails_with_its_reason(store, cfg):
+    """A value of the wrong type is not converted: the call fails with the schema's
+    reason and the tool never runs."""
+    t = T()
+    b = Script([_call(0, "t__same", {"q": 5}), [TextDelta("k"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(t), b)
+    assert t.runs == 0
+    assert await _tool_results(store) == ["invalid arguments: q is a string"]
+    state = await store.read(lambda c: c.execute("SELECT state FROM tool_calls").fetchone()[0])
+    assert state == "error"
+
+
 async def test_identical_calls_of_one_step_each_run(store, cfg):
     t = T()
     calls = [ToolCallDelta(index=i, id=f"s{i}", name="t__same", arguments='{"q": "pizza"}')
