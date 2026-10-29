@@ -664,8 +664,7 @@ class Email:
         """Mark messages read or unread, or flag and unflag them. Reading a message
         already marks it read. Returns: what changed."""
         flag = {"read": ("+", "\\Seen"), "unread": ("-", "\\Seen"),
-                "flagged": ("+", "\\Flagged"), "unflagged": ("-", "\\Flagged")}.get(
-            state.strip().lower())
+                "flagged": ("+", "\\Flagged"), "unflagged": ("-", "\\Flagged")}.get(state)
         if flag is None:
             return ToolResult(content="state is read, unread, flagged or unflagged.",
                               is_error=True)
@@ -677,7 +676,7 @@ class Email:
             done, gone = await self._change(ids, each)
         except MailError as e:
             return ToolResult(content=str(e), is_error=True)
-        return self._said(f"marked {state.strip().lower()}", done, gone)
+        return self._said(f"marked {state}", done, gone)
 
     @tool(read_only=False, open_world=True)
     async def move(self, ctx: ToolContext,
@@ -764,8 +763,7 @@ class Email:
         except MailError as e:
             return ToolResult(content=str(e), is_error=True)
         files = _files(msg)
-        p = next((f for f in files if f.get_filename() == name), None) or \
-            next((f for f in files if f.get_filename().lower() == name.strip().lower()), None)
+        p = next((f for f in files if f.get_filename() == name), None)
         if p is None:
             have = ", ".join(f.get_filename() for f in files) or "none"
             return ToolResult(content=f"{folder}:{uid} has no attachment {name!r}. Its "

@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from . import META, SEP, ToolContext, ToolResult, guide_text, tool
+from . import META, ToolContext, ToolResult, guide_text, tool
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class Skills:
         it offers now (such as its presets), and your notes on it when you keep any.
         The skill does not have to be loaded."""
         from ..turns import loads
-        key = str(name or "").strip().lower().split(SEP)[0]
+        key = name
         if key == META:
             carried = await loads.select(ctx.store, self.cfg, self.registry,
                                          ctx.conversation_id, None)
@@ -116,7 +116,7 @@ class Skills:
         you use them. Load one when the work needs it."""
         from ..turns import loads
         from .gating import down_why, is_enabled, overrides_for, reason
-        key = str(name or "").strip().lower().split(SEP)[0]
+        key = name
         here = await self._here(ctx)
         if key not in here:
             return ToolResult(content=f"No skill called {name!r} here. The skills are: "

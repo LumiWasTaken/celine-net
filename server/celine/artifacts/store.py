@@ -104,11 +104,10 @@ async def version(store, id: str, n: int | None = None) -> dict | None:
 
 
 async def find(store, conversation_id: str, title: str) -> str | None:
-    """A visible artifact of this conversation whose newest title is this one (case and
-    surrounding space aside)."""
+    """A visible artifact of this conversation whose newest title is this one."""
     def fn(c: sqlite3.Connection) -> str | None:
         row = c.execute(_NEWEST + " WHERE a.conversation_id = ? AND a.trashed_at IS NULL "
-                        "AND lower(trim(v.title)) = lower(trim(?))",
+                        "AND v.title = ?",
                         (conversation_id, title)).fetchone()
         return row["id"] if row else None
 

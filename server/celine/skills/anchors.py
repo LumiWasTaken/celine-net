@@ -118,7 +118,7 @@ def plan(edits, lines: list[str], has_stamp: bool) -> list[tuple[int, int, list[
             new.pop()
         if op == "insert":
             after = e.get("after")
-            if str(after).strip().lower() in ("start", "0") or (has_stamp
+            if str(after) in ("start", "0") or (has_stamp
                                                                 and _number(after) == 1):
                 a = 1 if has_stamp else 0
             else:

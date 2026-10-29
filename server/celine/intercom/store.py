@@ -334,15 +334,14 @@ def threads(c: sqlite3.Connection, addr: str | None, unread: bool = False,
             names[a] = name_of(c, a) or "Everyone working"
         return names[a]
 
-    want = (with_ or "").strip().lower()
+    want = with_ or ""
     out = []
     for r in rows:
         others = list(dict.fromkeys(a for a in r["addrs"].split(", ") if a != reader))
         # Bastet's threads have their own tab (with_ GUARD), never Waiting for you
         if unread and GUARD in others:
             continue
-        if want and not any(want in (a.lower(), a.partition(":")[2].lower(),
-                                     named(a).lower()) for a in others):
+        if want and not any(want in (a, a.partition(":")[2], named(a)) for a in others):
             continue
         people = [a for a in others if not a.startswith("system:")] or others
         name = ", ".join(dict.fromkeys(named(a) for a in people)) or \

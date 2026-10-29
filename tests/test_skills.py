@@ -214,6 +214,10 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     assert "[notes]" in reg.index(cfg, carried).split("- web")[1].split("\n")[0]
     out = await meta.read_guide(ctx, name="skills")
     assert not out.is_error and out.content == reg.index(cfg, carried)
+    for near in ("Web", " web", "web__search"):
+        out = await meta.read_guide(ctx, name=near)
+        assert out.is_error and out.content.startswith(f"No skill called {near!r} here"), near
+        assert (await meta.load(ctx, name=near)).is_error, near
 
 
 async def test_read_guide_brings_the_live_presets_and_the_guide_names_none(store, cfg,
