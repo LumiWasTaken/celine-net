@@ -231,6 +231,8 @@ async def list_secrets(request: Request) -> dict:
 @router.put("/secrets/{pid}")
 async def put_secret(request: Request, pid: str) -> dict:
     """{"key": "..."}. Stores it; the answer only says it is set."""
+    if pid not in settings_of(request).providers:
+        raise NotFound("provider")
     body = await json_body(request, need=("key",), allow=("key",))
     await saves.provider_key(services_of(request), pid, body["key"])
     root = secrets_mod.secrets_dir(cfg_of(request).data_dir)
