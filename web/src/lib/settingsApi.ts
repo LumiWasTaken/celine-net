@@ -235,6 +235,8 @@ export type Feature = {
   off_when: string
   /** the onboarding's setup form for it, or "" */
   setup: string
+  /** its form at /api/forms/<id> (a plugin's settings.toml), or "": its Settings page and its card's body */
+  form: string
   /** the onboarding's card: "detect" when the service answered or has an address and did
       not, "always" (shares, the guard, routines, the connectors), "" never (email, vault: the Later
       card and Settings) */

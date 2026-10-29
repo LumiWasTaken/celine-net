@@ -47,7 +47,7 @@ import { Pairing } from './settings/WhatsAppSource'
 import { PRONOUNS } from './settings/Her'
 import { slug } from './settings/Models'
 import { EMPTY_PROVIDER, ProviderFields, host, kindInfo, ready, type ProviderDraft } from '../components/ProviderFields'
-import { FORMS, type SaveRef } from './WelcomeForms'
+import { formOf, type SaveRef } from './WelcomeForms'
 import './Welcome.css'
 
 const FIXED = ['her', 'you', 'model']
@@ -388,7 +388,7 @@ function FeatureStep({ feature: f, view, error, reload, update, back, next, form
   }
   // the catalog's states came before the model step: a blocked card asks its probe once it opens
   useEffect(() => { if (view && blocked(f)) void check.run() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  const Form = FORMS[f.setup]
+  const Form = formOf(f)
   const on = !!view && view.features[f.id] !== false
   const tone = stateTone(f, on)
   return (

@@ -92,7 +92,7 @@ def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
          check_form: Callable[[Any], None] | None = None) -> list[str]:
     """Read every manifest, base then user (same id replaces), into LOADED. `reserved`:
     the ids a plugin may not take (core features, settings sections); `check_form`
-    raises ValueError on a settings.toml's fields (settings/form.py check_fields). Again for the same
+    raises ValueError on a settings.toml (settings/form.py check_toml). Again for the same
     data dir (a reload) only the manifests and forms of the plugins already known are read
     again: the running ones keep their records. -> problems, one sentence each."""
     global _scanned
@@ -142,7 +142,7 @@ def _read(d: Path, user: bool, reserved: frozenset[str],
         if not isinstance(form.get("fields"), list):
             raise ValueError("settings.toml needs [[fields]]")
         if check_form is not None:
-            check_form(form["fields"])
+            check_form(form)
     return Plugin(pid, d, user, manifest, form)
 
 

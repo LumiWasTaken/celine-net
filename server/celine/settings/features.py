@@ -57,6 +57,7 @@ class Feature:
     kbs: tuple[str, ...] = ()        # kb.toml source ids
     probe: str = ""                  # "celine.module:function", async (cfg, services) -> Probe
     setup: str = ""                  # the onboarding's setup form for it
+    form: str = ""                   # its form at /api/forms/<id> (Settings, the onboarding)
     # the onboarding's card: "detect" when its service answered (ready) or has an address
     # and did not (missing); "always" (the guard, routines, and the connectors, whose card
     # says how to run them); "" never (email, vault: the Later card and Settings)
@@ -173,6 +174,7 @@ def of_plugin(p: plugins.Plugin) -> Feature:
                    m.get("off_when", ""), skills=tuple(p.skills),
                    places=tuple(m.get("places", ())),
                    pages=(p.id,) if p.form is not None else (),
+                   form=p.id if p.form is not None else "",
                    card=m.get("card", ""), start_on=bool(m.get("start_on", False)),
                    warn=m.get("warn", ""))
 
@@ -219,7 +221,7 @@ def view(f: Feature) -> dict[str, Any]:
     """The static shape the client gets (no probe)."""
     return {"id": f.id, "label": f.label, "needs": f.needs, "about": f.about,
             "off_when": f.off_when, "places": list(f.places), "pages": list(f.pages),
-            "setup": f.setup, "card": f.card, "kbs": list(f.kbs), "archive": f.archive,
+            "setup": f.setup, "form": f.form, "card": f.card, "kbs": list(f.kbs), "archive": f.archive,
             "warn": f.warn}
 
 

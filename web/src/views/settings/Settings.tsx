@@ -7,7 +7,7 @@
    is something to fix). */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bell, Bot, Gauge, Heart, Images, ListChecks, LockKeyhole, Mail, Palette, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, ToggleRight, Users, Wrench,
+  Bell, Bot, Gauge, Heart, Images, ListChecks, LockKeyhole, Mail, Palette, Puzzle, ShieldAlert, ShieldCheck, SlidersHorizontal, Sparkles, ToggleRight, Users, Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import { authApi, type AuthStatus, type ConfigStatus } from '../../lib/api'
@@ -32,6 +32,7 @@ import { BastetText, Guard } from './Guard'
 import { Email } from './Email'
 import { Vault } from './Vault'
 import { Security } from './Security'
+import { FormPage } from './FormPage'
 import './settings.css'
 import { nothingMatches } from '../../lib/format'
 
@@ -64,10 +65,13 @@ const offPages = (status: ConfigStatus | null) => {
   return new Set(catalog.flatMap(f => f.pages ?? []).filter(page => !on.has(page)))
 }
 const WITH_SUB = new Set<string>(['sources', 'models'])
+/** the pages of the features with a form (a plugin's settings.toml, /api/forms/<id>), named after them */
+const formPages = (status: ConfigStatus | null) =>
+  (status?.catalog ?? []).filter(f => f.form).map(f => ({ id: f.form, label: f.label }))
 const FIRST: PageId = 'general'
 
 type Item =
-  | { type: 'page'; id: PageId; label: string; icon: LucideIcon }
+  | { type: 'page'; id: PageId | string; label: string; icon: LucideIcon }
   /** the onboarding, run again (/welcome/her) */
   | { type: 'setup' }
   | { type: 'section'; label: string }
@@ -94,12 +98,14 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
 
   // a dead path (an unknown page, a sub-page where there are none, Security while the
   // login is off) goes to the Settings start, replacing the URL
+  const forms = useMemo(() => formPages(status), [status])
+  const known = (id: string) => KNOWN.has(id) || forms.some(f => f.id === id)
   useEffect(() => {
-    if (!active || !page) return
-    if (!KNOWN.has(page) || (route.sub && !WITH_SUB.has(page)) || (page === 'security' && auth && !auth.login)) {
+    if (!active || !page || !status) return
+    if (!known(page) || (route.sub && !WITH_SUB.has(page)) || (page === 'security' && auth && !auth.login)) {
       nav.go({ section: 'settings' }, { replace: true })
     }
-  }, [active, page, route.sub, auth, nav])
+  }, [active, page, route.sub, auth, nav, status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const off = useMemo(() => offPages(status), [status])
   const list = (sources.data?.sources ?? []).filter(s => !off.has(`source:${s.platform}`))
@@ -117,13 +123,14 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
     out.push({ type: 'section', label: 'App' })
     for (const p of PAGES.slice(3)) {
       if ((p.id === 'security' && !auth?.login) || off.has(p.id)) continue
+      if (p.id === 'advanced') for (const f of forms) if (!off.has(f.id)) out.push({ type: 'page', ...f, icon: Puzzle })
       out.push({ type: 'page', ...p })
     }
     return out
-  }, [list, filter, showFilter, auth, status, off])
+  }, [list, filter, showFilter, auth, status, off, forms])
 
   // the page on screen: none chosen means General on a wide screen, the list on a phone
-  const current = page && KNOWN.has(page) ? page : undefined
+  const current = page && known(page) ? page : undefined
   const openSource = route.sub ?? list[0]?.id
   const selected = (it: Item) =>
     it.type === 'page' ? (current ?? FIRST) === it.id
@@ -174,13 +181,13 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
 
       <main className="settings__page">
         <PageBody page={current ?? FIRST} sub={route.sub} edit={route.edit} history={!!route.history} status={status} sources={sources}
-                  auth={auth} active={active} />
+                  auth={auth} active={active} forms={forms} />
       </main>
     </div>
   )
 }
 
-function PageBody({ page, sub, edit, history, status, sources, auth, active }: {
+function PageBody({ page, sub, edit, history, status, sources, auth, active, forms }: {
   page: string
   sub?: string
   /** its page and Guard: one of the long texts open in the large editor, or its History */
@@ -190,7 +197,10 @@ function PageBody({ page, sub, edit, history, status, sources, auth, active }: {
   sources: ReturnType<typeof useSources>
   auth: AuthStatus | null
   active: boolean
+  forms: { id: string; label: string }[]
 }) {
+  const form = forms.find(f => f.id === page)
+  if (form) return <FormPage key={form.id} id={form.id} label={form.label} />
   switch (page) {
     case 'sources': {
       // /settings/sources alone shows the first source; the list on the left has them all

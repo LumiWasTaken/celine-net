@@ -28,6 +28,8 @@ import { Button, Choice, Dot, Field, Form, InlineError, Input, LoadingRow, Switc
 import { reach, slug } from './settings/Models'
 import './Welcome.css'
 import { SPEECH_ROLE, type Direction } from '../lib/speechApi'
+import { useForm } from '../lib/forms'
+import { FormActions } from './settings/FormPage'
 import { EMPTY_PROVIDER, ProviderFields, host, ready, type ProviderDraft } from '../components/ProviderFields'
 import { SpeechTest } from '../components/SpeechTest'
 
@@ -39,6 +41,31 @@ type FormProps<T> = {
   saveRef: SaveRef
   /** the card's probe, asked anew: its state line follows what the form just saved */
   reprobe: () => Promise<unknown>
+}
+
+/** a feature's form: its schema form (`form`, /api/forms), else the one of its `setup` id;
+    neither shows no form */
+export const formOf = (f: Feature): ((p: FormProps<any>) => ReactElement) | undefined =>
+  f.form ? SchemaCard : FORMS[f.setup]
+
+/* ── a form from /api/forms (a plugin's settings.toml): its note, its fields as a draft
+   (Next saves it, PUT with If-Match), its actions, each saving the draft first and then
+   asking the card's probe anew ── */
+function SchemaCard({ feature, value, onChange, saveRef, reprobe }: FormProps<Record<string, unknown>>) {
+  const online = useOnline()
+  const form = useForm(feature.form)
+  const draft = value ?? {}
+  const save = async () => { await form.save(draft); onChange({}) }
+  saveRef.current = save
+  const d = form.res.data
+  if (!d) return form.res.error ? <InlineError compact message={form.res.error} onRetry={form.res.reload} /> : <LoadingRow label="Loading" />
+  const shown = form.shown(draft)
+  return <>
+    {d.note && <p className="onb__about">{d.note}</p>}
+    <Form fields={d.fields} values={shown.values} secrets={shown.secrets} disabled={!online} plain
+          onChange={(k, v) => onChange({ ...draft, [k]: v })} />
+    <FormActions form={form} disabled={!online} before={save} after={reprobe} />
+  </>
 }
 
 /** the form of a `setup` id; an id not here shows no form */

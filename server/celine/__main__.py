@@ -22,7 +22,7 @@ from .api import kb as kb_api
 from .api import connectors as connectors_api
 from .api import identity as identity_api
 from .api import llm as llm_api
-from .api import settings as settings_api
+from .api import forms as forms_api, settings as settings_api
 from .api import her as her_api
 from .api import commands as commands_api
 from .api import attachments as attachments_api, ws
@@ -414,6 +414,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from .api import llm_proxy
     app.include_router(llm_proxy.router)
     app.include_router(settings_api.router)
+    app.include_router(forms_api.router)
     from .api import speech as speech_api
     app.include_router(speech_api.router)
     app.include_router(her_api.router)

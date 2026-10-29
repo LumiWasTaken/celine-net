@@ -63,7 +63,7 @@ def make_app(cfg, store):
     from fastapi import FastAPI
 
     from celine.errors import install_error_handler
-    from celine.api import settings as settings_api
+    from celine.api import forms as forms_api, settings as settings_api
     from celine.conversations import api as conversations_api
     from celine.core.bus import EventBus
     from celine.core.services import Services
@@ -72,6 +72,7 @@ def make_app(cfg, store):
     install_error_handler(app)
     app.include_router(conversations_api.router)
     app.include_router(settings_api.router)
+    app.include_router(forms_api.router)
     from celine.api import her as her_api
     from celine.guard import api as guard_api
     app.include_router(her_api.router)

@@ -93,8 +93,10 @@ def values(fields: list[dict[str, Any]], saved: dict[str, Any]) -> dict[str, Any
             for f in fields if f["type"] not in WRITE_ONLY}
 
 
-def check_fields(fields: Any) -> None:
-    """A settings.toml's [[fields]] as the loader reads it; raises ValueError."""
+def check_toml(doc: dict[str, Any]) -> None:
+    """A plugin's settings.toml as the loader reads it: [[fields]], an optional `note`,
+    [[actions]] {id, label, input?, run = "module:coroutine"}; raises ValueError."""
+    fields = doc.get("fields")
     if not isinstance(fields, list) or not fields:
         raise ValueError("settings.toml needs [[fields]]")
     seen = set()
@@ -111,7 +113,21 @@ def check_fields(fields: Any) -> None:
         if f["type"] == "choice" and not f.get("choices"):
             raise ValueError(f"the choice {f['key']!r} needs choices")
         if f["type"] not in WRITE_ONLY and "default" in f:
-            check(f["key"], f, f["default"])
+            try:
+                check(f["key"], f, f["default"])
+            except Invalid as e:
+                raise ValueError(f"the default of {f['key']!r}: {e}") from None
+    if not isinstance(doc.get("note", ""), str):
+        raise ValueError("the note is one text")
+    for a in doc.get("actions", []):
+        if not isinstance(a, dict) or not all(isinstance(a.get(k), str)
+                                              for k in ("id", "label", "run")):
+            raise ValueError("every action needs an id, a label and a run")
+
+
+def actions_view(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What a client sees of the actions: never the code they run."""
+    return [{k: a[k] for k in ("id", "label", "input") if k in a} for a in actions]
 
 
 def secret_name(section: str, key: str) -> str:
