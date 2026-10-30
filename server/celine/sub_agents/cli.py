@@ -19,7 +19,6 @@ from ..backends.base import BackendError, Done, TextDelta
 from ..settings import CONVERSATION_MODELS, her_models
 
 CLIS = ("opencode",)    # the one list; shellbox/agent.py and the guides match
-POLL = 5.0              # seconds between looks at a run that outlived one /run
 ANSWER_MAX = 256 * 1024     # bytes of answer.md read
 
 
@@ -106,9 +105,9 @@ class CliBackend:
                 from ..terminals import store as terminals
                 await terminals.upsert(self.services.store, str(res["id"]), term,
                                        "celine", now(), self.cid)
-            while res.get("state") == "running":
-                await anyio.sleep(POLL)
-                _, res = await shell._post("/read", {"terminal": term, "from": 0}, read=60)
+            while res.get("state") == "running":       # it outlived one /run's wait
+                res = await shell._stream("/wait", {"terminal": term, "timeout": RUN_MAX},
+                                          _ignore)
             ended = True
             return res
         except (ToolRefused, httpx.HTTPError) as e:
