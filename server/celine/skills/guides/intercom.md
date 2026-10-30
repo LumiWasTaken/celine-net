@@ -6,7 +6,9 @@ description: Messages to {{username}}, to yourself, to your sub-agents or parent
 intercom__send(text, to) writes a message. `to` is one or more of, comma separated:
 - "user": {{username}}.
 - "me": yourself.
-- "parent": in a sub-agent, the conversation that started it.
+- "parent": in a sub-agent, the conversation that started it, for a question or a note
+  while you work. Your result goes in your final answer: that is your report, and it
+  goes up by itself.
 - "team": your own sub-agents.
 - "all": every conversation working right now (a turn or a job running) and every
   active mission, without you.
