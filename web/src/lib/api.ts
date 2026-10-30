@@ -67,8 +67,11 @@ export type ConversationSummary = {
   mission_status?: string | null
   /** its sub-agents, oldest first (the list has no rows of their own for them) */
   agents: ConversationSummary[]
-  /** GET /conversations: the server's group label for the row ("Running", "Pinned", "Today", "9 Oct") */
+  /** GET /conversations: the server's group label for the row ("Running", "Pinned", "Today",
+      "Previous 7 days", "March", "2025") */
   group?: string
+  /** GET /conversations: its group is a date (not Running or Pinned) */
+  dated?: boolean
   /** GET /conversations: its turn in it, running with the server's step words ('' while it
       writes), waiting for you, or how the last turn ended when it failed or paused */
   state?: { tone: 'running' | 'error' | 'warn'; words: string } | null

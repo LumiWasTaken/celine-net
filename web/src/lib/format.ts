@@ -132,28 +132,6 @@ export function dueTime(t: number | string | null | undefined, now = Date.now())
   return stamp(ms, now)
 }
 
-/** a list in groups by when each changed: Pinned first, then Today, Yesterday, a weekday,
-    "9 Oct", "October 2025" */
-export function groupByDate<T extends { updated_at: string; pinned: number }>(items: T[]): { label: string; items: T[] }[] {
-  const out: { label: string; items: T[] }[] = []
-  const pinned = items.filter(i => i.pinned)
-  if (pinned.length) out.push({ label: 'Pinned', items: pinned })
-  const now = new Date()
-  for (const item of items.filter(i => !i.pinned)) {
-    const d = new Date(item.updated_at)
-    const days = Math.round((startOfDay(now.getTime()) - startOfDay(d.getTime())) / DAY)
-    const label = days <= 0 ? 'Today'
-      : days === 1 ? 'Yesterday'
-      : days < 7 ? d.toLocaleDateString(LOCALE, { weekday: 'long' })
-      : d.getFullYear() === now.getFullYear() ? shortDate(d.getTime())
-      : d.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' })
-    const last = out.at(-1)
-    if (last && last.label === label) last.items.push(item)
-    else out.push({ label, items: [item] })
-  }
-  return out
-}
-
 const TURN_STEP: Record<string, string> = {
   queued: 'Waiting for the model', preparing: 'Answering', streaming: 'Answering', tools: 'Using a tool',
 }

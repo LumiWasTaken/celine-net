@@ -5,7 +5,7 @@ import {
 } from 'react'
 import { measureElement, useVirtualizer } from '@tanstack/react-virtual'
 import { Check, type LucideIcon } from 'lucide-react'
-import { Dot, Progress, type DotTone } from './Bits'
+import { DisclosureArrow, Dot, Progress, type DotTone } from './Bits'
 import { cx } from './cx'
 import { ICON } from './icons'
 import { useMove } from './motion'
@@ -143,14 +143,26 @@ export function ListRow({
   )
 }
 
-/* ── ListSection ── */
-export function ListSection({ label, className }: {
+/* ── ListSection: with `onToggle` its label is a button that folds the group under it
+   (Celine's date groups); folded, it says how many are in it ── */
+export function ListSection({ label, open, onToggle, count, className }: {
   label: ReactNode
+  /** the group is shown; with `onToggle` */
+  open?: boolean
+  onToggle?: () => void
+  /** how many the group holds, shown while it is folded */
+  count?: number
   className?: string
 }) {
   return (
     <div className={cx('list-section', className)}>
-      <span>{label}</span>
+      {onToggle ? (
+        <button type="button" className="list-section__fold" aria-expanded={!!open} onClick={onToggle}>
+          <DisclosureArrow />
+          <span>{label}</span>
+          {!open && count != null && <span className="list-section__count">{count}</span>}
+        </button>
+      ) : <span>{label}</span>}
     </div>
   )
 }
