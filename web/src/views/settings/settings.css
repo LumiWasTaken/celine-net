@@ -211,10 +211,10 @@ a.batches__time:hover { text-decoration: underline; }
   padding: var(--s-2) 0; border-bottom: 1px solid var(--border); }
 .passkey-row__text { flex: 1; min-width: 0; display: grid; gap: var(--s-0); }
 .passkey-row__name { font-size: var(--t-md); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
-.passkey-row__meta { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.passkey-row__meta { font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-muted); }
 .recovery { display: grid; gap: var(--s-3); }
 .recovery__codes { margin: 0; padding: var(--s-3) var(--s-4) var(--s-3) var(--s-7); background: var(--surface-2);
-  border-radius: var(--r-md); font: var(--t-md) / 1.8 var(--font-mono); }
+  border-radius: var(--r-md); font: var(--t-md) / var(--lh-body) var(--font-mono); }
 
 /* Security: the named tokens */
 .token-make { align-items: flex-end; }
@@ -231,7 +231,7 @@ a.batches__time:hover { text-decoration: underline; }
    above and below is border, so no clipped line shows in it): a click opens it in the
    large editor */
 .her-text { display: grid; gap: var(--s-1); }
-.her-label { font-size: var(--t-xs); line-height: var(--lh-micro); font-weight: var(--fw-medium); color: var(--text-muted); }
+.her-label { font-size: var(--t-xs); line-height: var(--lh-ui); font-weight: var(--fw-medium); color: var(--text-muted); letter-spacing: var(--tracking-meta); }
 .her-preview {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 12; overflow: hidden; padding: 0 var(--s-4); border-block: var(--s-3) solid transparent; border-radius: var(--r-md);
   background: var(--surface-1); color: var(--text-primary); text-decoration: none; white-space: pre-wrap; overflow-wrap: anywhere;
@@ -248,7 +248,7 @@ a.batches__time:hover { text-decoration: underline; }
    the click lands on the row, which shows the sentence as a toast ── */
 .feature-tiers { display: grid; gap: var(--s-5); }
 .feature-tier { display: grid; gap: var(--s-3); }
-.feature-about { display: block; font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.feature-about { display: block; font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-muted); }
 .feature-line { display: flex; align-items: center; gap: var(--s-2); }
 .feature-line > .feature-row { flex: 1; min-width: 0; }
 .feature-row--off .switch-row { pointer-events: none; }

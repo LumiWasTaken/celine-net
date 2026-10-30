@@ -56,11 +56,11 @@ _PAGE = r"""<!doctype html>
   --font-sans:  'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono:  'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
   --text-scale: 1;
-  --t-xs:  calc(clamp(0.75rem, 0.731rem + 0.082vw, 0.8125rem) * var(--text-scale));
-  --t-md:  calc(clamp(0.9063rem, 0.887rem + 0.082vw, 0.9688rem) * var(--text-scale));
-  --t-xl:  calc(clamp(1.125rem, 1.086rem + 0.164vw, 1.25rem) * var(--text-scale));
+  --t-xs:  calc(clamp(0.78125rem, 0.7582rem + 0.0974vw, 0.875rem) * var(--text-scale));
+  --t-md:  calc(clamp(0.875rem, 0.8442rem + 0.1299vw, 1rem) * var(--text-scale));
+  --t-xl:  calc(clamp(1.25rem, 1.2115rem + 0.1623vw, 1.40625rem) * var(--text-scale));
   --lh-ui:    1.4;
-  --lh-body:  1.55;
+  --lh-body:  1.5;
   --fw-regular: 450;
   --fw-medium:  580;
   --fw-bold:    700;
@@ -105,7 +105,7 @@ input{display:block;width:100%;height:var(--h-md);margin:0 0 var(--s-4);padding:
 input:focus{outline:2px solid var(--accent);outline-offset:1px}
 #code{font-family:var(--font-mono);letter-spacing:.04em}
 button{display:inline-flex;align-items:center;justify-content:center;height:var(--h-lg);padding:0 var(--s-5);
-  border:0;border-radius:var(--r-md);font:var(--fw-medium) var(--t-md)/1 var(--font-sans);cursor:pointer}
+  border:0;border-radius:var(--r-md);font:var(--fw-medium) var(--t-md)/var(--lh-ui) var(--font-sans);cursor:pointer}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button:disabled{opacity:.6;cursor:progress}
 .primary{width:100%;background:var(--accent);color:var(--text-on-accent)}
@@ -132,7 +132,7 @@ form.method{width:100%;margin-top:var(--s-5)}
 .card small{font-size:var(--t-xs);font-weight:var(--fw-regular);color:var(--accent)}
 .pin{display:flex;gap:var(--s-2);margin:0 0 var(--s-4)}
 .pin input{flex:1;min-width:0;height:var(--h-lg);margin:0;padding:0;text-align:center;
-  font:var(--fw-medium) var(--t-xl)/1 var(--font-mono)}
+  font:var(--fw-medium) var(--t-xl)/var(--lh-ui) var(--font-mono)}
 ol{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4) var(--s-3) var(--s-7);background:var(--surface-2);
   border-radius:var(--r-md);font:var(--t-md)/var(--lh-body) var(--font-mono);color:var(--text-primary);
   white-space:nowrap}

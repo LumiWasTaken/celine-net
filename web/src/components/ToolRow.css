@@ -27,7 +27,7 @@
 .tool__shots { display: flex; gap: var(--s-3); overflow-x: auto; padding-bottom: var(--s-1); }
 .tool__step { flex: none; margin: 0; width: calc(10 * var(--s-5)); display: grid; gap: var(--s-1); align-content: start; }
 .tool__shot { position: relative; }
-.tool__step figcaption { display: grid; gap: var(--s-0); font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-secondary); }
+.tool__step figcaption { display: grid; gap: var(--s-0); font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-secondary); }
 .tool__step figcaption code { font-family: var(--font-mono); color: var(--text-primary); }
 .tool__step.is-idle figcaption { color: var(--text-muted); }
 .tool__step.is-idle .tool__shot { opacity: 0.7; }

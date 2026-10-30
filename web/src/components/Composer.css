@@ -22,10 +22,10 @@
 }
 .chat-mood {
   flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--t-lg); font-weight: var(--fw-regular); letter-spacing: 0.02em; cursor: default;
+  font-size: var(--t-lg); font-weight: var(--fw-regular); letter-spacing: normal; cursor: default;
 }
 .chat-head__title { flex: 0 100 auto; min-width: 4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--t-md); font-weight: var(--fw-regular); letter-spacing: 0; color: var(--text-muted); }
+  font-size: var(--t-md); font-weight: var(--fw-regular); letter-spacing: normal; color: var(--text-muted); }
 .chat-jobs { color: var(--text-secondary); }
 .chat-notice { flex: none; padding: 0 var(--s-4) var(--s-2); }
 
@@ -44,7 +44,7 @@
 /* a new conversation: its face, its name and its mood above the box */
 .chat-scroll--empty { display: flex; flex-direction: column; justify-content: flex-end; }
 .chat-greeting { display: grid; justify-items: center; gap: var(--s-2); padding: 0 var(--s-4) var(--s-5); text-align: center; }
-.chat-greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title); font-weight: var(--fw-medium); }
+.chat-greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title); font-weight: var(--fw-medium); letter-spacing: var(--tracking-display); }
 .chat-greeting .chat-mood { font-size: var(--t-xl); max-width: 100%; }
 
 /* ── the composer ── */

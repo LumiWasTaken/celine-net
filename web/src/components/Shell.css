@@ -51,7 +51,7 @@
   display: grid; justify-items: center; gap: var(--s-3); text-align: center; }
 .greeting__face { margin-bottom: var(--s-1); }
 .greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title);
-  font-weight: var(--fw-medium); color: var(--text-primary); }
+  font-weight: var(--fw-medium); letter-spacing: var(--tracking-display); color: var(--text-primary); }
 
 /* ── drawer ──────────────────────────────────────────────────────────────── */
 /* Floating, it is fixed to the window's right edge like the sidebar sheet: parked off

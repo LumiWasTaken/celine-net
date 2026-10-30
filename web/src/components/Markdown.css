@@ -31,7 +31,7 @@
 .refchip {
   position: relative; display: inline-flex; align-items: center; gap: var(--s-1); cursor: pointer;
   height: var(--hit-min); padding: 0 var(--s-2); border-radius: var(--r-full); white-space: nowrap;
-  font-size: var(--t-xs); line-height: 1; font-weight: var(--fw-medium); color: var(--accent);
+  font-size: var(--t-xs); line-height: var(--lh-ui); font-weight: var(--fw-medium); color: var(--accent);
   background: var(--accent-wash);
   transition: background var(--dur-fast) var(--ease);
 }

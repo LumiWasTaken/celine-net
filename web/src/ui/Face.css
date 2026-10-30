@@ -4,7 +4,7 @@
   position: relative; flex: none; display: inline-grid; place-items: center;
   width: var(--face-md); height: var(--face-md); border-radius: var(--r-full);
   background: var(--face-bg); color: var(--face-fg); user-select: none;
-  font-family: var(--font-sans); font-weight: var(--fw-medium); font-size: var(--t-lg); line-height: 1;
+  font-family: var(--font-sans); font-weight: var(--fw-medium); font-size: var(--t-lg); line-height: var(--lh-ui);
 }
 .face--sm { width: var(--face-sm); height: var(--face-sm); font-size: var(--t-md); }
 .face--lg { width: var(--face-lg); height: var(--face-lg); font-size: var(--t-2xl); }
@@ -31,5 +31,5 @@
 .face-card__face { border-radius: var(--r-full); cursor: zoom-in; }
 .face-card__face:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 .face-card__name { margin-top: var(--s-2); font-size: var(--t-lg); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
-.face-card__line { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.face-card__line { font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-muted); }
 .face-card__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin-top: var(--s-3); }

@@ -57,7 +57,7 @@
 /* the other place at work, failed or waiting for you */
 .rail__dot--running { background: var(--running); animation: pulse var(--dur-pulse) linear infinite; }
 .rail__dot--failed { background: var(--error); }
-.rail__label { font-size: var(--t-xs); line-height: var(--lh-micro); font-weight: var(--fw-medium); letter-spacing: 0; white-space: nowrap; }
+.rail__label { font-size: var(--t-xs); line-height: var(--lh-ui); font-weight: var(--fw-medium); white-space: nowrap; }
 .rail__spacer { flex: 1; min-height: var(--s-2); }
 .rail__count {
   position: absolute; top: var(--s-1); right: var(--s-3); min-width: var(--icon-lg); padding: 0 var(--s-1);
@@ -98,7 +98,7 @@
 .shortcuts dd { margin: 0; color: var(--text-secondary); }
 kbd { display: inline-block; min-width: 1.75em; padding: 0 0.4em; margin-right: var(--s-1); border-radius: var(--r-sm);
   background: var(--surface-3); box-shadow: inset 0 -1px 0 var(--border-strong); font-family: var(--font-sans); font-size: var(--t-xs);
-  line-height: 1.6; text-align: center; color: var(--text-primary); }
+  line-height: var(--lh-body); text-align: center; color: var(--text-primary); }
 .more { display: grid; margin: 0 calc(-1 * var(--s-2)); }
 /* in the More sheet a mark sits on its row, at its right end */
 .more :is(.rail__dot, .rail__count) { position: static; }
@@ -107,7 +107,7 @@ kbd { display: inline-block; min-width: 1.75em; padding: 0 0.4em; margin-right: 
 .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
 a { color: var(--accent); }
 /* inline code: one size everywhere, a step under the text around it */
-code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-sunk);
+code { font-family: var(--font-mono); font-size: var(--t-code); background: var(--surface-sunk);
   border-radius: var(--r-sm); padding: 0 var(--s-1); }
 
 input[type='file'] { font-size: var(--t-md); color: var(--text-secondary); }
@@ -145,7 +145,7 @@ input[type='file']::file-selector-button:hover { background: var(--surface-4); }
 .prose h1, .prose h2, .prose h3, .prose h4 { font-weight: var(--fw-medium);
   line-height: var(--lh-title); margin: var(--s-6) 0 var(--s-3); letter-spacing: var(--tracking-title);
 }
-.prose h1 { font-size: var(--t-2xl); font-weight: var(--fw-bold); }
+.prose h1 { font-size: var(--t-2xl); font-weight: var(--fw-bold); letter-spacing: var(--tracking-display); }
 .prose h2 { font-size: var(--t-xl); padding-bottom: var(--s-2); border-bottom: 1px solid var(--border); }
 .prose h3 { font-size: var(--t-lg); }
 .prose h4 { font-size: var(--t-md); color: var(--text-secondary); }

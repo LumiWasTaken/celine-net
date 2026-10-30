@@ -54,11 +54,11 @@
 .msg__prose h1, .msg__prose h2, .msg__prose h3, .msg__prose h4 {
   margin: var(--s-5) 0 var(--s-2); line-height: var(--lh-title); letter-spacing: var(--tracking-title); color: var(--text-primary);
 }
-.msg__prose h1 { font-size: var(--t-2xl); }
+.msg__prose h1 { font-size: var(--t-2xl); letter-spacing: var(--tracking-display); }
 .msg__prose h2 { font-size: var(--t-xl); }
 .msg__prose h3 { font-size: var(--t-lg); }
 .msg__prose h4 { font-size: var(--t-lg); font-weight: var(--fw-medium); color: var(--text-secondary); }
-.msg__prose strong { font-weight: var(--fw-strong); }
+.msg__prose strong { font-weight: var(--fw-bold); }
 .msg__prose a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim);
   text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .msg__prose a:hover { text-decoration-color: var(--accent); }
@@ -109,7 +109,7 @@
 
 /* "What it saw": each step's request and raw answer, each in its own box */
 .dialog.sheet.saw { width: min(45rem, 100%); }
-.saw__label { flex: none; font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); }
+.saw__label { flex: none; font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); letter-spacing: var(--tracking-meta); }
 .saw__step { display: grid; gap: var(--s-1); }
 .saw__head { display: flex; gap: var(--s-2); margin: var(--s-2) 0 0; font-size: var(--t-xs); color: var(--text-muted); }
 .saw__head b { font-weight: var(--fw-medium); color: var(--text-secondary); }

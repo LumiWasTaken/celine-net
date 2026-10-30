@@ -13,6 +13,6 @@
 .tool-row > .tool-row__switch { flex: 1; min-width: 0; }
 .tool-row__name, .tool-row__line { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-row__name { font-size: var(--t-md); font-weight: var(--fw-medium); }
-.tool-row__line { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
+.tool-row__line { font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-muted); }
 /* changes data: a quiet pen after the name, the words in its tip */
 .tool-row__writes { flex: none; display: inline-flex; color: var(--text-muted); }

@@ -79,9 +79,6 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
   background-clip: content-box; }
 * { scrollbar-color: var(--scroll-thumb) transparent; scrollbar-width: thin; }
 
-/* a touch screen never zooms into a field (iOS zooms below 16 px) */
-@media (pointer: coarse) { input, textarea, select { font-size: max(1rem, var(--t-md)); } }
-
 [disabled], [aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
 
 .sr-only {
