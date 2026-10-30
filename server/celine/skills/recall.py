@@ -41,6 +41,7 @@ SHOWN = "shown"
 BELOW = "below the floor"
 BEFORE = "shown before"
 NO_ROOM = "no room"
+SKILL_NOTE = re.compile(r"skills/[^/]+\.md")
 _HEADING = re.compile(r"^## +(.+?)\s*$", re.M)
 
 
@@ -121,7 +122,9 @@ async def block(cfg, store, cid: str, tid: str, message: dict
     found: list[dict] = []
     for r in await notebook_index.list(store, f["folder"]):
         rel = r["path"]
-        if rel in f["off"] or not notebook.inside(rel, f["folder"]):
+        # a skill's note (skills/<name>.md) comes with skills__load and read_guide
+        if rel in f["off"] or SKILL_NOTE.fullmatch(rel) or \
+                not notebook.inside(rel, f["folder"]):
             continue
         key = loads.key_in(talk, notebook.keys_of(root, rel))
         text = notebook.read_note(root, rel) if key else None
