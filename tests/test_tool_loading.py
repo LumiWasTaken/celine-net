@@ -230,8 +230,16 @@ async def test_a_loaded_or_read_skill_brings_nothing_with_its_call(store):
     meta = reg.skills["skills"]
     other = await conversations.create(store)
     assert await meta.with_call(_ctx(store, cfg, other), "mac") is not None
-    assert await meta.with_call(_ctx(store, cfg, other), "notebook") is None, \
+    reg.skills["mac"].guide = None
+    assert await meta.with_call(_ctx(store, cfg, other), "mac") is None, \
         "a skill without a guide brings nothing"
+    reg.skills["mac"].guide = Guide("mac", description="Her Mac.", body="Wake it.")
+    reg.skills["notebook"].guide = Guide("notebook", description="Her notes.",
+                                         body="Keep it tidy.")
+    assert await meta.with_call(_ctx(store, cfg, other), "notebook") is None, \
+        "a core skill's part is in the system prompt: its calls bring nothing"
+    loaded = (await meta.load(_ctx(store, cfg, other), names=["notebook"])).content
+    assert loaded.startswith("# notebook\n\nKeep it tidy."), "a load still gives its guide"
     b = Replies([_calls(("skills__read_guide", {"name": "mac"})),
                  _calls(("mac__version", {})),
                  [TextDelta("done"), Done(reason="stop")]])

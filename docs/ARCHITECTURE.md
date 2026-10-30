@@ -884,7 +884,7 @@ tools in a conversation that has not had its guide (no `skills__read_guide` or l
 it, no earlier such call; `meta.had`): that call's result brings the same load after it,
 under `[loaded with this call]`, outside any wrapper and the cap (display `guide`,
 `tools._with_guide`, `guard/mark.shown`). Once per skill per conversation; a sub-agent's
-conversation has its own.
+conversation has its own. A core skill's calls bring nothing.
 
 **Guides.** Each built-in skill has a guide, `server/celine/skills/guides/<skill>.md` (in the package, read once), SKILL.md style:
 frontmatter `name` and `description` (one line: what it is and when to use it), then the

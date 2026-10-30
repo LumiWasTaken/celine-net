@@ -12,7 +12,7 @@ request is rebuilt, so the start of the request stays as the model server cached
 result ages like any other. A skill loads when it calls skills__load, or with the first
 call of one of its tools in a conversation that has not had its guide: that call's
 result brings the same load after it (Skills.with_call, turns/tools.py), once per skill
-per conversation.
+per conversation; a core skill's calls bring nothing.
 """
 from __future__ import annotations
 
@@ -217,9 +217,10 @@ class Skills:
         """What a call of a tool of `skill` brings after its result when this
         conversation has not had the skill's guide (had): the load of the skill under
         CALL_HEAD, the same text skills__load gives, so from then on it counts as loaded.
-        None for this skill, a skill without a guide, one that does not load (down,
-        off), and once it has had it."""
-        if skill == META or self._guide(skill) is None or await ctx.store.read(
+        None for a core skill (its part is in the system prompt; skills__load and
+        read_guide still give its guide), a skill without a guide, one that does not
+        load (down, off), and once it has had it."""
+        if skill in CORE or self._guide(skill) is None or await ctx.store.read(
                 lambda c: had(c, ctx.conversation_id, skill)):
             return None
         text, skills, _, _ = await self.loaded(ctx, [skill])
