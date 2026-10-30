@@ -2,8 +2,6 @@
    its notebook. Kit pieces (buttons, fields, dialogs, menus) live in ui/ui.css. */
 
 /* ── conversation ────────────────────────────────────────────────────────── */
-.content { grid-column: 2; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-/* the list's toggle: in its head, and at the far left of the conversation's while it is hidden */
 /* positioned: what sits absolute inside (the live region) stays in the scroller */
 /* the scrollbar's room is always kept: one appearing never moves the text sideways */
 .transcript { flex: 1; overflow-y: auto; position: relative; overflow-anchor: none; scrollbar-gutter: stable; }
