@@ -1,13 +1,18 @@
 """Her stored persona (the `her` row, seeded once from config/her/persona.md) gets the
-line the shipped one has now in "How you work", after the one on her status: what she
-knows about models, tools and versions stops at her training. Inserted only after that
+lines the shipped one has now in "How you work", after the one on her status: what she
+knows about models, tools and versions stops at her training (she looks up what is
+current when unsure), and a plan with its why before she sets up something that keeps
+running. Inserted only after that
 exact line; a persona without it, or with the new line already, stays as it is."""
 from __future__ import annotations
 
 STATUS = ("- When you start on something and when it is done, set your status "
           "(`mind__set_status`).\n")
-ADDED = ("- What you know about models, tools and their versions stops at your training; "
-         "what is current is on the web.\n")
+ADDED = ("- What you know about models, tools and their versions stops at your training. "
+         "When you are not sure what is current, look it up on the web first.\n"
+         "- Before you set up something that keeps running (a server, a model, a service), "
+         "say in a few lines what you would set up, what you weighed against it and why, "
+         "and wait for {{username}}'s go. Small installs need no go.\n")
 
 
 def changed(persona: str) -> str:
