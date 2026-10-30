@@ -20,7 +20,8 @@ from . import patterns
 NEVER = ("image_generator__", "music_generator__", "vault__")
 # skills whose results hold text someone else wrote. Shell output counts only when
 # plain code finds a reason (network, a file from outside, text aimed at an AI);
-# every other MCP server counts too (its display names the server)
+# every other MCP server counts too (its display names the server), but one whose
+# mcp.toml block says `outside = "shell"` (her device's shell and files) counts as shell
 OUTSIDE = {"browser", "web", "email", "discord", "whatsapp", "chat_archive",
            "user_documents", "shell"}
 
@@ -31,7 +32,8 @@ NETWORK = re.compile(
     r"(?<![\w.-])(?:curl|wget|ssh|scp|sftp|rsync|nc|ncat|netcat|telnet|ftp|http|https|"
     r"xh|aria2c|lynx|w3m|yt-dlp)(?![\w.-])"
     r"|\bgit\s+(?:clone|pull|fetch)\b"
-    r"|\b(?:pip3?|pipx|uv\s+pip|npm|pnpm|yarn|cargo|gem|go)\s+(?:install|add|get|i)\b"
+    r"|\b(?:pip3?|pipx|uv\s+pip|npm|pnpm|yarn|cargo|gem|go|brew)\s+"
+    r"(?:install|add|get|i|upgrade|reinstall)\b"
     r"|\bpython3?\s+-m\s+(?:pip|urllib|requests|httpx)\b",
     re.I)
 
@@ -45,8 +47,10 @@ def is_outside(name: str) -> bool:
     return name.split("__")[0] in OUTSIDE
 
 
-def label(name: str, args: dict, result) -> dict | None:
-    """The outside label of `name`'s result, None when the text is its own."""
+def label(name: str, args: dict, result, mcp=None) -> dict | None:
+    """The outside label of `name`'s result, None when the text is its own. `mcp`: its
+    server's mcp.toml block (facts.mcp_of); one with `outside = "shell"` (her own
+    device's shell and files) is read as the box shell is."""
     d = result.display or {}
     if d.get("gated"):
         return None                          # not run: nobody's text
@@ -56,11 +60,13 @@ def label(name: str, args: dict, result) -> dict | None:
     if name.startswith(NEVER):
         return None
     skill = name.split("__")[0]
-    if skill == "shell":
+    if skill == "shell" or getattr(mcp, "outside", None) == "shell":
+        # the command line: shell__run's, a Desktop Commander start_process's `command`,
+        # a file server's path (a link reads as one)
         typed = " ".join(str(v) for v in args.values() if isinstance(v, str))
         if not (given or network(typed) or patterns.aimed(result.content or "")):
             return None
-        return {"source": "shell", "by": None}
+        return {"source": skill, "by": None}
     if skill in OUTSIDE or given or (d.get("server") and d.get("server") == skill):
         return {"source": _source(skill, args, d), "by": _by(d)}
     return None

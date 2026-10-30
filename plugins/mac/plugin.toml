@@ -35,6 +35,7 @@ enabled   = true
 transport = "http"
 url       = "${URL}/shell/mcp"
 sends     = "house"
+outside   = "shell"             # her own output: outside only as her box's shell's is
 
 [servers.macshell.headers]
 Authorization = "Bearer ${TOKEN}"
@@ -53,6 +54,7 @@ enabled   = true
 transport = "http"
 url       = "${URL}/files/mcp"
 sends     = "house"
+outside   = "shell"
 
 [servers.macfiles.headers]
 Authorization = "Bearer ${TOKEN}"

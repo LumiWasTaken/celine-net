@@ -51,10 +51,11 @@ log = logging.getLogger("celine.mcp")
 
 CLASSES = ("public", "informal", "nsfw", "sensitive")
 SENDS = ("public", "people", "house")
+OUTSIDE = ("always", "shell")
 KEYS = {                    # mcp.toml [servers.<id>]: McpServerConfig
     "enabled": "bool", "transport": "str", "command": "str", "args": "list", "env": "dict",
     "url": "str", "headers": "dict", "startup_timeout_seconds": "num", "max_restarts": "int",
-    "kb": "str", "class": CLASSES, "sends": SENDS,
+    "kb": "str", "class": CLASSES, "sends": SENDS, "outside": OUTSIDE,
 }
 
 
@@ -74,9 +75,12 @@ class McpServerConfig:
     # feed are written to (kb/feed.py)
     kb: str | None = None
     # Bastet (guard/facts.py): who may see its results (`class`: public, informal,
-    # nsfw, sensitive) and where its writing tools send (public, people, house)
+    # nsfw, sensitive) and where its writing tools send (public, people, house);
+    # guard/sources.py: when its results are outside text (`outside`: always, or
+    # "shell", only when plain code finds a reason, as the box shell's)
     cls: str = "sensitive"
     sends: str = "public"
+    outside: str = "always"
 
 
 _ENV_REF = re.compile(r"\$\{(\w+)(?:(:?)-([^}]*))?\}")
