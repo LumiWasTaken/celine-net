@@ -113,7 +113,7 @@ export function ComposerBox({ value, onChange, onSend, onStop, running = false, 
   const can = (ready ?? value.trim().length > 0) && !disabled
   // a chip rises in (ui.css); one that goes fades where it was and the rest close up
   const row = useRef<HTMLDivElement>(null)
-  useMove(row, undefined, { leave: true })
+  useMove(row, files, { leave: true })
   return (
     <div className={cx('composer-box', className)}>
       {files && <div ref={row} className="composer-box__files">{files}</div>}

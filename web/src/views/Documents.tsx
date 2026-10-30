@@ -373,7 +373,7 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
       {folders.length > 0 && (
         <div className="doc-folders">
           <GroupHead icon={FolderIcon} title="Folders" count={count(folders.length, 'folder')} />
-          <CardGrid className="doc-cards">
+          <CardGrid on={list.data?.folders} className="doc-cards">
             {folders.map(f => (
               <div key={f.path} className="doc-card" {...drag(`f:${f.path}`)} {...dropOn(f.path)}>
                 <Card media={<FolderIcon size={20} aria-hidden />} title={f.name} subtitle={`${docsNoun(f.items)}, ${bytes(f.size)}`}

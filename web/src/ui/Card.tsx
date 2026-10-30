@@ -80,9 +80,10 @@ export function Card({ media, cover, title, subtitle, meta, selected, onClick, h
 }
 
 /** cards in as many columns as fit; a card that arrives rises, one that goes fades where
-    it was, the rest glide to their places (a new sort, a card gone) */
-export function CardGrid({ className, children }: { className?: string; children?: ReactNode }) {
+    it was, the rest glide to their places (a new sort, a card gone), whenever `on` (the
+    list the cards are drawn from) changes */
+export function CardGrid({ on, className, children }: { on: unknown; className?: string; children?: ReactNode }) {
   const box = useRef<HTMLDivElement>(null)
-  useMove(box, undefined, { enter: true, leave: true })
+  useMove(box, on, { enter: true, leave: true })
   return <div ref={box} className={cx('card-grid', className)}>{children}</div>
 }
