@@ -133,22 +133,36 @@ class Missions:
         return {"list"} if sub and sub[0] else {"list", "start"}
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        """The brief and the models a step can run on, only in the mission's own
-        conversation (its plan is in every turn's tail, plans/flow.block)."""
+        """The brief, where it reports and the models a step can run on, only in the
+        mission's own conversation. Its state goes in the tail (tail_part)."""
         if ctx.store is None:
             return None
         row = await missions.get(ctx.store, ctx.conversation_id)
         if row is None:
             return None
         title = await report_title(ctx.store, row)
-        lines = [head(row), *brief_lines(row, title, self.tz),
-                 f"Status: {WORDS[row['status']]}."]
+        lines = [head(row), *brief_lines(row, title, self.tz, only={"brief"})]
+        if row.get("report_to"):
+            lines += brief_lines(row, title, self.tz, only={"report_to"})
+        lines += model_line(chat_models(getattr(self.cfg, "settings", None)))
+        lines.append(prompts.text(__file__, "steps.md"))
+        return self.cfg.substitute("\n".join(lines))
+
+    async def tail_part(self, ctx: ToolContext) -> str | None:
+        """The mission's state now, for the tail of a turn in its own conversation: its
+        time limit and minimum time, its status, whether it has a plan, what it
+        delivered (its plan is in the tail too, plans/flow.block)."""
+        if ctx.store is None:
+            return None
+        row = await missions.get(ctx.store, ctx.conversation_id)
+        if row is None:
+            return None
+        lines = [*brief_lines(row, None, self.tz)[1:], f"Status: {WORDS[row['status']]}."]
+        lines = [x for x in lines if not x.startswith("Report in:")]
         if not row["steps"]:
             lines.append("No plan yet.")
-        lines += model_line(chat_models(getattr(self.cfg, "settings", None)))
         if row["artifact"]:
             lines.append(f"Delivered: {row['artifact']}.")
-        lines.append(prompts.text(__file__, "steps.md"))
         return self.cfg.substitute("\n".join(lines))
 
     @tool()

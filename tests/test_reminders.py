@@ -114,10 +114,10 @@ async def test_a_cancelled_one_never_lands_and_stays_listed(store, clock):
     assert (await skill.send(ctx, to="me", text="x", in_="soon")).is_error
     out = await skill.send(ctx, to="me", text="look at the build", in_="30 min")
     iid = out.display["id"]
-    assert f"#{iid}" in await skill.prompt_fragment(ctx)
+    assert f"#{iid}" in await skill.tail_part(ctx)
     assert not (await skill.cancel(ctx, id=iid)).is_error
     assert (await skill.cancel(ctx, id=iid)).is_error, "once"
-    assert await skill.prompt_fragment(ctx) is None
+    assert await skill.tail_part(ctx) is None
     await store.write(lambda c: c.execute("UPDATE intercom SET due_at=? WHERE id=?",
                                           (clock.iso(-1), iid)))
     assert await deliver.deliver_due(store) == []

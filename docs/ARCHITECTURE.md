@@ -337,7 +337,7 @@ event. Calls record what the tool was (`tool_calls.mutating`, `mode`).
 2. Build the system prompt (`turns/prompt.py`): its persona, who it is talking to, where
    it is, how it talks (`talk`), the notes it always carries, the skill index and the
    core skills' fragments. The user message the turn answers gets the turn's tail once
-   (`prompt.tail_text`: the time, its plan, what is off or down, its notebook's index).
+   (`prompt.tail_text`: the time, its plan, what is off or down, the skills' live state).
    `/compact` and `/usage` build the same prompt (`prompt.request_parts`). Then the request, through the context
    builder (`turns/context.py`, below): old tool results may go as stubs and older turns
    as a summary.
@@ -847,12 +847,16 @@ it is** (`conversations/here.py` `where`, from ids: its kind and address, the pl
 device its tools run on, its model role, who started it, who it reports to and its depth
 in the chain of agents), its `talk`, the **notes block** (`skills/notebook.py`
 `notes_block`), the **skill index** (`Registry.index`: one line per skill offered here,
-the core ones marked `[core]`), then each core skill's fragment and the sub_agents
+the core ones marked `[core]`), then each core skill's fragment (`prompt_fragment`: what
+holds for the whole conversation, such as a mission's brief) and the sub_agents
 fragment.
 
 **The tail** of a turn (`prompt.tail_text`): the date and the time now, the fallback
 line, the other conversations working now (`here.busy`), its plan, the skills it
-cannot use now (`prompt.unusable`), its notebook's index. It is written once on the user
+cannot use now (`prompt.unusable`) and the ones it keeps notes on, and each core skill's
+live state (`tail_part`: the intercom's thread, announcements, scheduled messages and
+sub-agents, a mission's time limit, status and delivery, a sub-agent's report room, the
+notebook's index). It is written once on the user
 message the turn answers (`message_context.tail`, `message_context.put_tail`) and sent
 after that message's context block in every later request (`context._Item`), so it never
 moves; a later turn on the same message (a Continue, a restart) sends the same bytes.

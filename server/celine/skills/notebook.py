@@ -518,7 +518,7 @@ class Notebook:
             ) + identity.strip()
         return None
 
-    async def index(self, ctx: ToolContext) -> str | None:
+    async def tail_part(self, ctx: ToolContext) -> str | None:
         """Its notebook's index, for the tail of a turn (turns/prompt.py tail_text): it
         changes as it writes, so it stays out of the system prompt."""
         return await build_index_fragment(ctx.store, self.cfg, self.tag,

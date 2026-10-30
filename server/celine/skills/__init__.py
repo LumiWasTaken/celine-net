@@ -435,16 +435,12 @@ class Registry:
 
     def index(self, cfg, carried) -> str | None:
         """The skill index for the system prompt: one line per skill offered here, what
-        it is for, a core one marked. What is down or off now is said in the tail
-        (turns/prompt.py unusable), so a skill going down leaves the prompt as it was."""
-        from .meta import skill_note_path
-
+        it is for, a core one marked. What changes is said in the tail (turns/prompt.py
+        tail_text): what is down or off now, and which skills have its notes."""
         def line(name: str) -> str:
             desc = " ".join(cfg.substitute(str(getattr(self.skills[name], "description",
                                                        ""))).split())
-            mark = " [core]" if name in CORE else ""
-            mark += " [notes]" if skill_note_path(cfg, name).is_file() else ""
-            return f"- {name}{mark}: {desc}"
+            return f"- {name}{' [core]' if name in CORE else ''}: {desc}"
         names = [n for n in self.skills if n != META and
                  (n in carried.skills or n in carried.others)]
         if not names:
@@ -455,7 +451,7 @@ class Registry:
                     "other tool is there by name and one line. `skills__load` returns the "
                     "parameters of skills or tools and a skill's own instructions. "
                     "`skills__read_guide` shows a skill's guide, with examples, and your "
-                    "notes on a skill marked [notes] (skills/<name>.md).")
+                    "notes on it (skills/<name>.md).")
         else:       # its tools leave out the skills skill
             head = ("Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
                     "skills marked [core] are in your list with their parameters; every "
@@ -470,18 +466,27 @@ class Registry:
         return out
 
     async def prompt_fragments(self, ctx: ToolContext, names) -> list[str]:
-        """What the skills named in `names` add to the system prompt every turn."""
+        """What the skills named in `names` add to the system prompt: what holds for the
+        whole conversation (`prompt_fragment`), never live state."""
+        return await self._parts(ctx, names, "prompt_fragment")
+
+    async def tail_parts(self, ctx: ToolContext, names) -> list[str]:
+        """What the skills named in `names` add to the tail of a turn (turns/prompt.py
+        tail_text): their live state now (`tail_part`)."""
+        return await self._parts(ctx, names, "tail_part")
+
+    async def _parts(self, ctx: ToolContext, names, attr: str) -> list[str]:
         out = []
         for skill in self.skills.values():
-            frag = getattr(skill, "prompt_fragment", None) if skill.name in names else None
-            if frag is None:
+            part = getattr(skill, attr, None) if skill.name in names else None
+            if part is None:
                 continue
             try:
-                text = await frag(ctx)
+                text = await part(ctx)
             except Exception as e:
-                log.exception("prompt fragment failed",
+                log.exception("prompt part failed",
                               extra={"event": "skill.fragment_failed",
-                                     "skill": skill.name})
+                                     "skill": skill.name, "part": attr})
                 text = f"The {skill.name} skill's part of this prompt failed: {e}"
             if text:
                 out.append(text)

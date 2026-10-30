@@ -49,11 +49,11 @@ class IntercomSkill:
                                                      scheduled=True))
         return [r for r in out if r["state"] == "pending"]
 
-    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        """Each only when there is any: the announcements standing now, what it
-        scheduled from here, and its own sub-agents. (What
-        waits for it is in the request itself already: the runner takes it at every
-        step.)"""
+    async def tail_part(self, ctx: ToolContext) -> str | None:
+        """For the tail of a turn, each only when there is any: the thread the turn
+        answers, the announcements standing now, what it scheduled from here, and its
+        own sub-agents. (What waits for it is in the request itself already: the runner
+        takes it at every step.)"""
         if ctx.store is None:
             return None
         cid = ctx.conversation_id

@@ -137,13 +137,13 @@ async def test_the_users_reply_marks_the_thread_read(store):
     assert other["intercom_id"] not in changed
 
 
-async def test_an_announcement_shows_in_a_turn_that_starts_after_it(store, cfg):
+async def test_an_announcement_shows_in_the_tail_of_a_turn_that_starts_after_it(store, cfg):
     from datetime import datetime, timedelta, timezone
 
     from celine.core.ids import iso
     from celine.intercom import Intercom
     from celine.intercom.skill import IntercomSkill
-    from celine.turns.prompt import system_blocks
+    from celine.turns.prompt import system_blocks, tail_text
     working = await conversations.create(store)
     await user_says(store, working, "busy")          # a queued turn: working
     until = iso(datetime.now(timezone.utc) + timedelta(hours=1))
@@ -154,9 +154,11 @@ async def test_an_announcement_shows_in_a_turn_that_starts_after_it(store, cfg):
     reg.add(IntercomSkill(cfg))
     from celine.turns import loads
     carried = await loads.select(store, cfg, reg, later, None)
+    tail = await tail_text(store, cfg, reg, None, later, carried)
+    assert "Announcements to everyone working: #" in tail
+    assert "from updater, until" in tail and "the server restarts soon." in tail
     system = "\n\n".join(t for _, t in await system_blocks(cfg, reg, store, later, "", carried))
-    assert "Announcements to everyone working: #" in system
-    assert "from updater, until" in system and "the server restarts soon." in system
+    assert "the server restarts soon." not in system, "live state stays out of the prefix"
 
 
 async def test_the_stream_replays_from_after_and_then_follows_a_new_message(store):
@@ -334,7 +336,7 @@ async def test_her_threads_group_by_who_and_chat_and_job_results_are_no_threads(
     assert len((await skill.read(ctx, with_="scout one")).content.splitlines()) == 5
     jobs = (await skill.read(ctx, kind="job")).content
     assert jobs.count("made it") == 2 and "job results" not in jobs
-    assert "wait for you" not in (await skill.prompt_fragment(ctx) or "")
+    assert "wait for you" not in (await skill.tail_part(ctx) or "")
 
     app = FastAPI()
     app.state.services = Services()

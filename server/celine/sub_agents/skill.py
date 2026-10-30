@@ -393,14 +393,14 @@ class SubAgents:
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
         """Only in a sub-agent's own conversation: who it is, who started it, what it is
-        for, that its last message is its report and how much of it goes up."""
+        for, that its last message is its report. How much of it goes up depends on the
+        parent's window now: tail_part."""
         row = await ctx.store.read(lambda c: c.execute(
             "SELECT s.agent_of, s.agent_name, s.notebook_folder, s.access, "
             "p.agent_name AS parent FROM conversations s LEFT JOIN conversations p "
             "ON p.id = s.agent_of WHERE s.id=?", (ctx.conversation_id,)).fetchone())
         if row is None or not row["agent_of"]:
             return None
-        cap = await ctx.store.read(lambda c: report.cap(c, row["agent_of"]))
         folder = row["notebook_folder"]
         if row["access"] == "read":
             can = ("You were started to look things up: you have only tools that read, "
@@ -414,8 +414,21 @@ class SubAgents:
                      "Your notebook here is {{name}}'s whole notebook. Write what the "
                      "brief asks for and leave the rest as it is.")
         return prompts.fill(self.cfg, __file__, "fragment.md", agent_name=row["agent_name"],
-                            parent=row["parent"] or "{{name}}", cap=f"{cap:,}",
-                            can=can, where=where)
+                            parent=row["parent"] or "{{name}}", can=can, where=where)
+
+    async def tail_part(self, ctx: ToolContext) -> str | None:
+        """In a sub-agent's own conversation: how much of its report reaches its parent
+        (report.cap, from the parent's window now)."""
+        row = await ctx.store.read(lambda c: c.execute(
+            "SELECT s.agent_of, p.agent_name AS parent FROM conversations s LEFT JOIN "
+            "conversations p ON p.id = s.agent_of WHERE s.id=?",
+            (ctx.conversation_id,)).fetchone())
+        if row is None or not row["agent_of"]:
+            return None
+        cap = await ctx.store.read(lambda c: report.cap(c, row["agent_of"]))
+        return self.cfg.substitute(f"Your report reaches {row['parent'] or '{{name}}'} cut "
+                                   f"at about {cap:,} tokens; the rest stays in this "
+                                   f"conversation.")
 
 
 def max_running(cfg) -> int:

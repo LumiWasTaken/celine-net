@@ -146,7 +146,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         turn["root_message_id"] == answers
     if answers is not None and (stored is None or fresh):
         await message_context.put_tail(store, answers, await prompt.tail_text(
-            store, cfg, registry, backend, cid, carried), fresh)
+            store, cfg, registry, backend, cid, carried, tid), fresh)
     # the context builder (turns/context.py): old results as stubs and older turns as
     # a summary when the conversation nears the window; decisions are persisted
     built = await build("start", chain)

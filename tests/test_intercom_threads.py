@@ -89,7 +89,7 @@ async def test_a_message_she_sends_from_that_turn_answers_in_the_thread(store, c
     first, reply = await _replied(store, ic, cid)
     turn = reply["turn_id"]
     ctx = ToolContext(cid, turn, "x", store, cfg, None)  # type: ignore[arg-type]
-    said = await IntercomSkill(cfg).prompt_fragment(ctx)
+    said = await IntercomSkill(cfg).tail_part(ctx)
     assert f'You are in thread #{first} "videos": this turn answers #{reply["intercom_id"]}' \
         in said and 'intercom__send(to="user") answers there by itself' in said
     sent = await ic.send(f"agent:{cid}", "user", "relaunched it", turn=turn)

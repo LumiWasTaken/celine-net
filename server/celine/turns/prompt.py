@@ -166,24 +166,33 @@ async def _chat_line(store, cid: str) -> str | None:
     return "You are talking with {{username}} in the app right now."
 
 
-async def tail_text(store, cfg, registry, backend, cid: str, carried) -> str:
-    """The tail of a turn: what holds now and changes from turn to turn, stored once on
-    the user message the turn answers (turns/message_context.py put_tail) so it never
+async def tail_text(store, cfg, registry, backend, cid: str, carried,
+                    tid: str = "") -> str:
+    """The tail of turn `tid`: what holds now and changes from turn to turn, stored once
+    on the user message the turn answers (turns/message_context.py put_tail) so it never
     moves: the date and time now, the model it runs on when that is not the first,
-    where else it works, its plan, the skills it cannot use now, its notebook's index."""
+    where else it works, its plan, the skills it cannot use now and the ones it keeps
+    notes on, and the core skills' live state (`tail_part`: the intercom's thread and
+    announcements, a mission's status, a sub-agent's report room, the notebook's
+    index)."""
     from ..conversations import here
     parts = [clock.today(cfg), clock.now_line(cfg), await fallback_line(store, backend, cid),
              await store.read(lambda c: here.busy(c, cid))]
     plan = plan_flow.block(await plan_flow.current(store, cid))
     parts.append(cfg.substitute(plan) if plan else None)
     if registry:
+        from ..skills.meta import skill_note_path
         specs, _ = await tool_specs(registry, store, cid, carried)
         parts += unusable(specs, registry, await overrides_for(store, cid), cfg)
-        book = registry.skills.get("notebook")
-        if "notebook" in carried.skills and hasattr(book, "index"):
-            parts.append(await book.index(ToolContext(
-                conversation_id=cid, turn_id="", tool_call_id="", store=store, config=cfg,
-                emit=None, loaded_notes=carried.loaded_notes)))  # type: ignore[arg-type]
+        noted = [n for n in [*carried.skills, *carried.others]
+                 if skill_note_path(cfg, n).is_file()]
+        if noted:
+            parts.append(f"Your notes on skills (skills/<name>.md, with skills__read_guide "
+                         f"or skills__load): {', '.join(noted)}.")
+        ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="", store=store,
+                          config=cfg, emit=None,  # type: ignore[arg-type]
+                          loaded_notes=carried.loaded_notes)
+        parts += await registry.tail_parts(ctx, (set(carried.skills) & CORE) | {"sub_agents"})
     return "\n\n".join(p for p in parts if p)
 
 
@@ -257,7 +266,8 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
     notes, tools): its persona, who it is talking to, where it is (conversations/here.py
     where, from ids; `role` its model role), how it talks (its `talk`), what the user
     wrote about themselves, the notes it always carries (turns/loads.py), the skill
-    index, then what each core skill adds every turn and who a sub-agent is (the
+    index, then what each core skill adds for the whole conversation (its live state
+    goes in the tail: `tail_part`) and who a sub-agent is (the
     sub_agents fragment, told in every conversation). Nothing here changes from turn to
     turn: what does is in the tail (tail_text), so the start of the request stays the
     same for the model server's cache. Every kind gets all of it: a chat, a mission, a

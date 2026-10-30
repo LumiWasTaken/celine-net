@@ -417,7 +417,7 @@ async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
         "SELECT 1 FROM turns WHERE conversation_id=?", (kid,)).fetchone()), "nothing starts"
 
 
-async def test_a_long_report_is_cut_from_the_parents_window_and_its_fragment_says_so(
+async def test_a_long_report_is_cut_from_the_parents_window_and_its_tail_says_so(
         store, cfg):
     from celine.conversations import tree
     app = Services(store=store, intercom=Intercom(store))
@@ -440,9 +440,13 @@ async def test_a_long_report_is_cut_from_the_parents_window_and_its_fragment_say
         "SELECT text FROM intercom WHERE kind='report'").fetchone()[0])
     assert text.startswith("[scout, done]\n\nline of the answer\n")
     assert text.endswith("\n\n" + report.CUT) and len(text) < 2000
-    frag = await SubAgents(cfg).prompt_fragment(ToolContext(sub, "t", "x", store, cfg, None))
-    assert "Your report reaches " + cfg.substitute("{{name}}") + " cut at about 300 tokens" \
-        in frag and "Long material goes in files, and your report names them." in frag
+    ctx = ToolContext(sub, "t", "x", store, cfg, None)
+    frag = await SubAgents(cfg).prompt_fragment(ctx)
+    assert "Long material goes in files, and your report names them." in frag
+    assert "cut at about" not in frag, "the room depends on the window now: the tail"
+    assert await SubAgents(cfg).tail_part(ctx) == "Your report reaches " + \
+        cfg.substitute("{{name}}") + " cut at about 300 tokens; the rest stays in this " \
+        "conversation."
 
 
 async def test_a_report_goes_to_the_one_that_started_it_once_its_own_are_done(store):
