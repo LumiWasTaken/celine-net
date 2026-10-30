@@ -355,6 +355,30 @@ def test_a_count_whose_last_answer_is_gone_fails_instead_of_counting_twice():
     assert tally(msgs, None)["asked"] == ["msg_1"]
 
 
+async def test_two_drones_starting_on_one_device_write_its_config_once(app, store,
+                                                                      monkeypatch):
+    oc = drone.client()
+    subs = [await _drone(store), await _drone(store)]
+    seen = []
+    real = drone._run
+
+    async def slow(fn, *a, **kw):        # both would read the old config before a PATCH
+        out = await real(fn, *a, **kw)
+        seen.append(a[:2])
+        for _ in range(20):
+            await anyio.lowlevel.checkpoint()
+        return out
+    monkeypatch.setattr(drone, "_run", slow)
+    dev = drone.devices(app.cfg)["mac"]
+    server = oc.Server(dev.url, dev.password, "")
+    async with anyio.create_task_group() as tg:
+        for sub in subs:
+            tg.start_soon(drone.DroneBackend(app, sub, "opencode", "mac")._models,
+                          oc, server, dev)
+    assert [m for m, _, _ in Fake.seen].count("PATCH") == 1
+    assert seen.count(("GET", "/global/config")) == 2
+
+
 async def test_the_config_changes_only_while_no_drone_works_there(app, store):
     sub = await _drone(store)
     Fake.busy.add("ses_other")

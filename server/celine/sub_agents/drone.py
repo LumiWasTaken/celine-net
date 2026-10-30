@@ -52,6 +52,7 @@ POLL = 5.0          # seconds between looks for a waking message and at the sess
 READ = 120.0        # seconds of a quiet event stream before it is opened again
 RETRY = 5.0         # seconds before a lost event stream is opened again
 _client = None
+_config_lock: dict[str, anyio.Lock] = {}    # per device: its config's check and PATCH
 
 
 def client():
@@ -173,21 +174,22 @@ class DroneBackend:
         s = self.services.cfg.settings
         want = {ref: {"name": ref, "limit": limit} for ref, limit in oc._limits(
             listing(s, her_models.allowed(s)), log.info).items()}
-        have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
-                 .get("provider") or {}).get("celine") or {}).get("models") or {}
-        if all(have.get(k) == v for k, v in want.items()):
-            return
-        working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
-                                             server=server) or {}).items()
-                   if (v or {}).get("type") in ("busy", "retry")]
-        if not working:
-            await _run(oc._call, "PATCH", "/global/config",
-                       {"provider": {"celine": {"models": want}}}, server=server)
-        elif self.model not in have:
-            raise BackendError(
-                f"{self.model} is not in the opencode config on {dev.label} yet, and it "
-                f"changes only while no drone works there ({len(working)} working now); "
-                f"start this one when they are done.", retryable=False)
+        async with _config_lock.setdefault(self.device, anyio.Lock()):
+            have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
+                     .get("provider") or {}).get("celine") or {}).get("models") or {}
+            if all(have.get(k) == v for k, v in want.items()):
+                return
+            working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
+                                                 server=server) or {}).items()
+                       if (v or {}).get("type") in ("busy", "retry")]
+            if not working:
+                await _run(oc._call, "PATCH", "/global/config",
+                           {"provider": {"celine": {"models": want}}}, server=server)
+            elif self.model not in have:
+                raise BackendError(
+                    f"{self.model} is not in the opencode config on {dev.label} yet, and it "
+                    f"changes only while no drone works there ({len(working)} working now); "
+                    f"start this one when they are done.", retryable=False)
 
     async def stream(self, messages, tools, body=None):
         oc = client()
