@@ -504,10 +504,10 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .ui-drawer--inline > .ui-drawer__panel { position: absolute; inset: 0 auto 0 0; width: 100%; }
 .ui-drawer--inline > .ui-drawer__scrim { display: none !important; }
 @media (max-width: 767px) {
-  .ui-drawer:not(.ui-drawer--inline), .ui-drawer:not(.ui-drawer--inline)[data-open] { position: fixed; inset: auto 0 var(--rail-bottom, 0px) 0; width: auto;
+  .ui-drawer:not(.ui-drawer--left, .ui-drawer--inline), .ui-drawer:not(.ui-drawer--left, .ui-drawer--inline)[data-open] { position: fixed; inset: auto 0 var(--rail-bottom, 0px) 0; width: auto;
     height: calc(86dvh - var(--rail-bottom, 0px)); z-index: var(--z-sheet); overflow: visible; pointer-events: none; }
-  .ui-drawer:not(.ui-drawer--inline) .ui-drawer__panel { width: auto; inset: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--e-overlay); transform: translateY(100%); }
-  .ui-drawer:not(.ui-drawer--inline)[data-open] > .ui-drawer__panel { pointer-events: auto; }
+  .ui-drawer:not(.ui-drawer--left, .ui-drawer--inline) > .ui-drawer__panel { width: auto; inset: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--e-overlay); transform: translateY(100%); }
+  .ui-drawer:not(.ui-drawer--left, .ui-drawer--inline)[data-open] > .ui-drawer__panel { pointer-events: auto; transform: none; }
 }
 
 /* ── Toast: at the bottom, at most three ── */
