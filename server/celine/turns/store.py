@@ -138,26 +138,31 @@ def _reply_notice(c: sqlite3.Connection, store, cid: str, turn_id: str) -> None:
         notice(store, c, "reply", NAMES["her"], r[0], homes.of(c, cid)["link"], f"reply:{cid}")
 
 
-async def claim(store, worker_id: str) -> dict | None:
+async def claim(store, worker_id: str, models: set[str] | None = None) -> dict | None:
     """Take the next queued turn whose conversation is not already busy, in QUEUE_ORDER. A turn queued without a root answers the active leaf of now, so
     turns queued together answer one after the other on one path. A turn of
     a locked conversation (conversations/store.locked) ends aborted with the reason:
     nothing of its own starts or goes on there; a turn the user started still runs.
-    Nothing while it is frozen (guard/freeze.py): the house leases its no turn."""
+    Nothing while it is frozen (guard/freeze.py): the house leases its no turn.
+    `models` (while she is paused, hold.py): only a sub-agent's or a drone's turn whose
+    own model is one of them; every other turn waits in the queue."""
     def fn(c: sqlite3.Connection) -> dict | None:
         from ..conversations.store import locked
         from ..guard.store import open_freeze
         if open_freeze(c) is not None:
             return None
         queued = c.execute(
-            "SELECT t.id, t.conversation_id, t.origin FROM turns t WHERE t.state='queued' "
+            "SELECT t.id, t.conversation_id, t.origin, c.agent_of, c.model_id FROM turns t "
+            "JOIN conversations c ON c.id = t.conversation_id WHERE t.state='queued' "
             "  AND t.conversation_id NOT IN (SELECT conversation_id FROM turns "
             "    WHERE state IN ('preparing','streaming','tools')) "
             f"ORDER BY {QUEUE_ORDER}").fetchall()
         tid, busy = None, set()
         for r in queued:
             if r["conversation_id"] in busy:
-                busy.add(r["conversation_id"])     # its turns run in their order
+                continue                           # its turns run in their order
+            if models is not None and not (r["agent_of"] and r["model_id"] in models):
+                busy.add(r["conversation_id"])
                 continue
             if r["origin"] != "user" and (why := locked(c, r["conversation_id"])):
                 set_state(c, store, r["conversation_id"], r["id"], "aborted", why, "locked")

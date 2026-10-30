@@ -10,8 +10,8 @@ resumes the same session and a restart finds it again) with `prompt_async` and t
 system prompt (turns/prompt.py agent_blocks), on the one
 model its conversation was started and approved on (skill.py _model), which opencode
 reaches through the app's model proxy (queue, freeze and usage stay in the app). The
-models the proxy offers are put into the device's opencode config first when they
-differ (PATCH /global/config), and only while no session there works: a changed config
+models the proxy serves the device, and the drone's model as opencode's `small_model`,
+are put into the device's opencode config first when they differ (PATCH /global/config), and only while no session there works: a changed config
 disposes every opencode instance; one lock per device keeps two drones from writing it
 at once. The messages are marked sent before they go: a crash in between loses them
 rather than sending them twice (at most once); a refusal or no connection unmarks them,
@@ -44,7 +44,7 @@ from ..backends.base import BackendError, Done, ReasoningDelta, TextDelta, Usage
 from ..config import ROOT
 from ..devices import devices
 from ..core.ids import now
-from ..settings import CONVERSATION_MODELS, her_models
+from ..settings import CONVERSATION_MODELS
 
 log = logging.getLogger("celine.drones")
 
@@ -168,24 +168,31 @@ class DroneBackend:
         await announce(self.services, self.cid)
 
     async def _models(self, oc, server, dev) -> None:
-        """The proxy's models into the device's opencode config, when they differ and no
-        session there works (a changed config disposes every instance). While one
-        works, the config stays: refused when it lacks this drone's model."""
-        from ..api.llm_proxy import listing
+        """The models the proxy serves this device (llm_proxy.yours) into its opencode
+        config, with `small_model` (opencode's titles and summaries) this drone's model
+        so opencode never picks one the proxy refuses; when they differ and no session
+        there works (a changed config disposes every instance). While one works, the
+        config stays: refused when it lacks this drone's model."""
+        from ..api.llm_proxy import listing, yours
         s = self.services.cfg.settings
         want = {ref: {"name": ref, "limit": limit} for ref, limit in oc._limits(
-            listing(s, her_models.allowed(s)), log.info).items()}
+            listing(s, await yours(self.services, self.device)), log.info).items()}
+        small = f"celine/{self.model}"
         async with _config_lock.setdefault(self.device, anyio.Lock()):
-            have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
-                     .get("provider") or {}).get("celine") or {}).get("models") or {}
-            if all(have.get(k) == v for k, v in want.items()):
+            conf = await _run(oc._call, "GET", "/global/config", server=server) or {}
+            have = ((conf.get("provider") or {}).get("celine") or {}).get("models") or {}
+            # opencode deep-merges a PATCH: a model dropped from `want` stays in `have`, so
+            # only what is wanted is compared, or every start would patch again
+            if all(have.get(k) == v for k, v in want.items()) and \
+                    conf.get("small_model") == small:
                 return
             working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
                                                  server=server) or {}).items()
                        if (v or {}).get("type") in ("busy", "retry")]
             if not working:
                 await _run(oc._call, "PATCH", "/global/config",
-                           {"provider": {"celine": {"models": want}}}, server=server)
+                           {"provider": {"celine": {"models": want}}, "small_model": small},
+                           server=server)
             elif self.model not in have:
                 raise BackendError(
                     f"{self.model} is not in the opencode config on {dev.label} yet, and it "

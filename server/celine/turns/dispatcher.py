@@ -278,11 +278,14 @@ class Dispatcher:
         return CliBackend(app, cid, cli, clock)
 
     async def _held(self) -> None:
-        """While its turns are held (hold.py): until the gateway's state changes."""
-        if self.llm is None:
-            await anyio.sleep(HOLD_RECHECK)
-        else:
-            await self.llm.router.wait_change(HOLD_RECHECK)
+        """While she is paused (hold.py): until the gateway's state changes or a turn
+        is queued (one of an agent whose model answers runs)."""
+        async with anyio.create_task_group() as tg:
+            async def first(wait) -> None:
+                await wait()
+                tg.cancel_scope.cancel()
+            tg.start_soon(first, lambda: self.llm.router.wait_change(HOLD_RECHECK))
+            tg.start_soon(first, self._wait_for_work)
 
     async def _wait_for_work(self) -> None:
         """Until notify(). Every queued turn is announced: the startup sweep runs
@@ -322,15 +325,18 @@ class Dispatcher:
         if hold == "frozen":            # the unfreeze wakes them (notify)
             await self._wait_for_work()
             return True
-        if hold is not None:
-            await self._held()
-            return True
         if self._workers.index(worker_id) >= self._cap():
             await self._wait_for_work()
             return True
-        turn = await turns.claim(self.store, worker_id)
+        # paused: her own turns wait for a host of hers; a sub-agent or drone whose own
+        # model answers goes on
+        turn = await turns.claim(self.store, worker_id,
+                                 None if hold is None else self.llm.router.answering())
         if turn is None:
-            await self._wait_for_work()
+            if hold is None:
+                await self._wait_for_work()
+            else:
+                await self._held()
             return True
         # the token opens before the second look: a freeze after that look finds it
         # live and stops it (freeze._stop_all); the DB column seeds it, covering the

@@ -182,7 +182,8 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
     lines.append(f"Guard: {switch.mode(cfg, cid)}." + (
         f" {guard_probe['detail']}" if guard_probe.get("state") == "ready" else ""))
     if held := await hold.her_hold(store, llm):
-        lines.append(f"House: {held}.")
+        lines.append(f"House: {held}." + (" Your chat and tasks models do not answer; a "
+                     "sub-agent on a model that answers goes on." if held == "paused" else ""))
     return [cfg.substitute(x) for x in lines]
 
 

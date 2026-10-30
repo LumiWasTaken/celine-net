@@ -251,6 +251,7 @@ async def test_a_brief_goes_to_its_session_and_the_answer_comes_back_as_it_came(
     patch = next(body for m, p, body in Fake.seen if m == "PATCH")
     assert patch["provider"]["celine"]["models"]["main/small"] == {
         "name": "main/small", "limit": {"context": 32768, "output": 8192}}
+    assert patch["small_model"] == "celine/main/small", "its titles on its own model"
     row = await _row(store, sub)
     assert (row["agent_session"], row["agent_seen"], row["agent_step"]) == \
         ("ses_1", "msg_001", None)
@@ -391,6 +392,21 @@ async def test_the_config_changes_only_while_no_drone_works_there(app, store):
     evs = await _run(b, lambda ev: isinstance(ev, ReasoningDelta) and answer("ses_1", "ok"))
     assert [e.text for e in evs if isinstance(e, TextDelta)] == ["ok"]
     assert not any(m == "PATCH" for m, _, _ in Fake.seen), "its model is there: no change"
+
+
+async def test_the_config_lists_only_the_models_the_proxy_serves_the_device(
+        app, store, monkeypatch):
+    """A cloud model no drone there was approved for stays out of its config."""
+    s = app.cfg.settings
+    s.providers["or"] = {"kind": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+                         "models": {"x/glm": {"caps": ["chat"]}}}
+    monkeypatch.setattr(s, "key_missing", lambda pid: False)
+    sub = await _drone(store)
+    b = drone.DroneBackend(app, sub, "opencode", "mac")
+    await _run(b, lambda ev: isinstance(ev, ReasoningDelta) and answer("ses_1", "ok"))
+    models = next(body for m, _, body in Fake.seen if m == "PATCH")["provider"]["celine"][
+        "models"]
+    assert "main/small" in models and "or/x/glm" not in models
 
 
 async def test_a_broken_event_stream_says_so_in_the_turn(app, store, monkeypatch):

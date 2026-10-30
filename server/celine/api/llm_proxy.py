@@ -5,8 +5,8 @@ drones on its devices (sub_agents/drone.py).
                                     `default`: the first of them its chats run on
     POST /llm/v1/chat/completions   OpenAI's wire format
 
-A device gets its local models and the cloud model each drone at work there was
-approved on (`yours`); another cloud model is refused with a sentence.
+A device gets its local models and the cloud model each drone there was approved on
+(`yours`); another cloud model is refused with a sentence.
 
 Each model in /models carries what the app knows of its size, so a coding agent budgets
 with the real numbers (shellbox/agents/opencode.py writes them as opencode's
@@ -38,6 +38,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 import anyio
 import httpx
@@ -46,6 +47,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import keys, metrics
 from ..backends.queue import Priority, Ticket
+from ..core.ids import iso
 from ..settings import her_models
 from ..settings.kinds import headers as provider_headers, server_output
 from ..settings.registry import backend_config
@@ -183,19 +185,25 @@ def resolve(s, model: str, refs: list[str]) -> str | None:
     return model if model in refs else None
 
 
+APPROVAL_GRACE = 600    # s a drone's approved cloud model stays served after its turn
+
+
 async def yours(services, lane: str) -> list[str]:
     """The models a caller may use: the box every one of hers; a device its local ones
-    and the cloud model each drone at work there was approved on (sub_agents/skill.py
-    _model, its conversation's model)."""
+    and the cloud model each drone there was approved on (sub_agents/skill.py _model,
+    its conversation's model) while it works, and for APPROVAL_GRACE after it started or
+    its last turn ended (opencode's late title and summary calls)."""
     from ..core.states import LIVE_SQL
     s = services.cfg.settings
     refs = her_models.allowed(s)
     if lane == LANE:
         return refs
+    since = iso(datetime.now(timezone.utc) - timedelta(seconds=APPROVAL_GRACE))
     approved = await services.store.read(lambda c: {r[0] for r in c.execute(
-        f"SELECT DISTINCT c.model_id FROM conversations c JOIN turns t ON "
-        f"t.conversation_id = c.id WHERE c.agent_device=? AND t.state IN {LIVE_SQL}",
-        (lane,))})
+        "SELECT DISTINCT c.model_id FROM conversations c WHERE c.agent_device=? "
+        "AND c.trashed_at IS NULL AND (c.created_at >= ? OR EXISTS (SELECT 1 FROM turns t "
+        f"WHERE t.conversation_id = c.id AND (t.state IN {LIVE_SQL} OR t.finished_at >= ?)))",
+        (lane, since, since))})
     return [r for r in refs if r in approved or not her_models.cloud(s, r)]
 
 
@@ -222,7 +230,7 @@ async def _forward(request: Request, path: str):
     refs = await yours(services, caller[0])
     ref = resolve(s, asked, refs)
     if ref is None and resolve(s, asked, her_models.allowed(s)) is not None:
-        return _error(403, f"{asked} is a cloud model no drone working on {caller[1]} "
+        return _error(403, f"{asked} is a cloud model no drone on {caller[1]} "
                            f"was approved for.", "permission_error")
     if ref is None:
         names = ", ".join(refs) or "none"

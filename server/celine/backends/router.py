@@ -14,8 +14,9 @@ Everything here comes from the servers' own APIs, nothing from guesses or timers
   GET /api/status (`hosts`), in `models.state` and in the metrics
   (celine_host_up).
 - **Paused**: while the ping sees every model of the chat and tasks roles on a host
-  that is down, it is paused (`paused_since`, event `her.hold`, celine_paused): no
-  turn is claimed (hold.py) until a host is back.
+  that is down, it is paused (`paused_since`, event `her.hold`, celine_paused): none
+  of her turns is claimed (hold.py) until a host is back; a sub-agent's or a drone's
+  whose own model answers still is (`answering`).
 - **Model state**: ok, or failed with `kind` could_not_load (the server could not
   start it) or error (it answered with an error), a sentence, when, and `loaded_then`:
   what the server had loaded when the load was asked for.
@@ -503,6 +504,16 @@ class Router:
         pids = {s.split(r)[0] for role in roles for r in self.chain(role)}
         pids = {p for p in pids if not s.key_missing(p)}
         return bool(pids) and all(self._down(p) for p in pids)
+
+    def answering(self) -> set[str]:
+        """Every model (its ref) with its key whose provider is not seen down: what a
+        turn may still run on while she is paused (turns/dispatcher.py)."""
+        s = self.s
+        if s is None:
+            return set()
+        return {f"{pid}/{name}" for pid, p in s.providers.items()
+                if not s.key_missing(pid) and not self._down(pid)
+                for name in (p.get("models") or {})}
 
     async def ping_once(self) -> None:
         """Every provider probed once, side by side; then the pause looked at."""
