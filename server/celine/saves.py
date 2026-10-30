@@ -12,7 +12,8 @@ from . import plugins, reload
 from .errors import NotFound
 from .settings import features as features_mod, files, form, general as general_mod
 from .settings import mail as mail_mod, secrets as secrets_mod, seed
-from .settings import services as services_mod, vault as vault_mod, views, write
+from .settings import address as address_mod, services as services_mod, vault as vault_mod
+from .settings import views, write
 from .settings.files import Invalid
 from .settings.registry import ROLES, validate_provider
 
@@ -102,6 +103,18 @@ async def addresses(app, values: Any, if_match: str | None = None) -> dict:
         out = await reload.commit(app, {"services": clean})
         await views.apply_runners(app, changed)
     return out
+
+
+async def address(app, values: Any, if_match: str | None = None) -> dict:
+    """The app's own address (settings/address.py): Settings, Security, and the first
+    login or setup (auth/routes.py). Written and set in place, no reload: nothing else
+    is built from it, every reader asks for it when it runs."""
+    async with write.lock():
+        files.check_version("address", app.cfg.settings.address, if_match)
+        write.save(app.cfg, {"address": values})
+        app.cfg.settings.address = address_mod.validate(values)
+        write.publish(app, ["address"])
+    return {"applied": True}
 
 
 def _secret(path: str, v: Any, said: str = "This must be text.") -> None:

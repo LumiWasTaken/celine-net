@@ -286,6 +286,7 @@ export const STATE_TONE: Record<FeatureState, 'ok' | 'error' | 'muted' | null> =
 /* ── Bastet's rules and her services ── */
 type GuardRules = { chain: { provider: string; model: string } & Record<string, unknown> } & Record<string, unknown>
 type ServiceView = { url: string }
+type AddressView = { origin: string; version: string }
 /** `keys`: the sha256 of each box's key, what its key.hash file holds */
 type ServicesView = { services: Record<string, ServiceView>; keys: Record<string, { hash: string }>; version: string }
 
@@ -329,6 +330,11 @@ export const settingsApi = {
       the PUT merges the given tables into the saved rules */
   guardRules: () => request<GuardRules>('/guard/rules'),
   putGuardRules: (rules: Partial<GuardRules>) => request<GuardRules>('/guard/rules', json('PUT', rules)),
+
+  /** the app's own address: where the setup or the first login happened, "" while none */
+  address: () => request<AddressView>('/address'),
+  putAddress: (version: string, origin: string) =>
+    request<AddressView>('/address', { ...json('PUT', { origin }), headers: { 'If-Match': version } }),
 
   /** its services (the shellbox, its browser, SearXNG): their addresses and the boxes' key hashes */
   services: () => request<ServicesView>('/services'),

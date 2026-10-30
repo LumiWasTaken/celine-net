@@ -5,12 +5,18 @@
 # same token as its password) and share.js for her shares (the same token), kept running by LaunchAgents in her login session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
 # Run it as her; safe to run again.
 #
+#   curl -fsSL <app>/api/plugins/mac/setup/<token> | bash   the setup line of the app's
+#                                                   form: this script, app and key filled in
 #   bash setup.sh [--app URL --key KEY] [--json]    install or update, then report
 #   bash setup.sh --status                          report only, install nothing
 #
 # The report is one JSON line: the gateway address, the token, the drones' address, the
-# tools that answer, the macOS permissions each still lacks and opencode's version. --app posts that line to the app with the key
-# its "Her computer" form shows in the command.
+# tools that answer, the macOS permissions each still lacks and opencode's version. With
+# the app's address and its link key it posts that line to the app.
+#
+# One { } around everything: bash reads the whole script before it runs, so a command
+# that reads its input never eats the rest of a piped script.
+{
 set -euo pipefail
 
 PORT=8765
@@ -141,7 +147,7 @@ rm -f "$sudoers"
 
 say power   # the display stays on and the lid closes without sleep; the screen never locks
 sudo pmset -a displaysleep 0 disablesleep 1
-sysadminctl -screenLock status 2>&1 | grep -q 'is off' || sysadminctl -screenLock off -password -
+sysadminctl -screenLock status 2>&1 | grep -q 'is off' || sysadminctl -screenLock off -password - </dev/tty   # piped: the password from the terminal
 
 say homebrew   # its installer also installs the Xcode command line tools when missing
 [ -x "$BREW" ] || NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -431,6 +437,8 @@ for (const [name, s] of Object.entries(r.servers))
   console.log(`${name.padEnd(8)} ${s.tools === null ? "no answer: " + s.error : s.tools + " tools"}` +
               (s.missing.length ? `, needs ${s.missing.join(" and ")}` : ""));
 console.log(`opencode ${r.opencode.version ?? "no answer: " + r.opencode.error}`);'
+again="bash setup.sh --status"   # a piped run left no file: the app serves it
+[ -z "$APP" ] || again="curl -fsSL $APP/api/plugins/mac/setup.sh | bash -s -- --status"
 cat <<EOF
 
 Grant once in System Settings, Privacy & Security, under Screen & System Audio Recording
@@ -438,5 +446,6 @@ and under Accessibility (the + button, then Cmd+Shift+G for the path):
   $(realpath "$NODE")
   $(realpath "$(brew --prefix)/bin/peekaboo")
   $OC
-Then: bash setup.sh --status
+Then: $again
 EOF
+}

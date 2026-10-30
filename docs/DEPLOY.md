@@ -181,8 +181,7 @@ turn that starts before then sees it.
 | `celine` mounts the whole volume | At its start, as root, the app creates the folders the other services mount (Docker mounts only a folder that exists) and gives `shellbox/` to its uid, then runs as `celine` with no capabilities, its data in `app/`. It makes the stack's keys (see First start) before it reports healthy. |
 | `depends_on: celine: service_healthy` | Every other service that mounts a folder or a key file of the volume starts once the app is healthy, a few seconds after it starts. `docker compose ps -a` shows only running services. |
 | key files from a volume subpath | The boxes, the connectors and SearXNG mount one derived file each, read-only, from `app/keys/`. |
-| `CELINE_PUBLISH` | Where the app's port is published. Default `127.0.0.1:8766`, this machine only. `8766` or `<address>:8766` opens it to the network; then set `CELINE_PUBLIC_ORIGIN` too. |
-| `CELINE_PUBLIC_ORIGIN` | The URL the browser uses, default `http://localhost:8766`. Passkeys are bound to its host name. |
+| `CELINE_PUBLISH` | Where the app's port is published. Default `127.0.0.1:8766`, this machine only. `8766` or `<address>:8766` opens it to the network. |
 | `CELINE_TRUSTED_PROXIES` | The reverse proxy's addresses or networks, comma separated. Only these may forward the client's address. Default: none. |
 | `CELINE_LOGIN=on`, `CELINE_HEALTH_PORT=8765` (in the image) | The login is always on in the container. The health check asks port 8765 on the container's loopback, which nothing outside can reach. |
 | `CELINE_METRICS_PORT=8772` (in the image) | Prometheus numbers at `GET /metrics` on their own port, loopback only. See Monitoring. |
@@ -407,6 +406,17 @@ a method: add a passkey, set a password (at least 10 characters) or a PIN (exact
 digits). Then the screen shows ten recovery codes once: save them. Every restart without
 a login writes a new setup code, and the old one stops working.
 
+**The app's address.** The app keeps the address of the browser the setup code was
+entered in (`var/settings/address.toml`); Settings, Security changes it. Logins, share
+links, push and her Mac's setup line use it, and requests from any other address but
+localhost are refused. An install from before that has none learns it at the next login:
+until then only the login and the setup are accepted from elsewhere, and only from their
+own page.
+
+**On your network without a domain.** Put `CELINE_PUBLISH=8766` in `.env`, run
+`docker compose up -d` again, open `http://<the machine's LAN address>:8766` and enter the
+setup code there. Log in with a password or a PIN: passkeys need https or localhost.
+
 **Local development** runs with the login off. To try the login locally, set
 `CELINE_LOGIN=on` and open http://localhost:8766. Use `localhost`, not 127.0.0.1.
 
@@ -423,12 +433,11 @@ was last seen, and logs out one or every other.
 
 ## Behind a reverse proxy (https)
 
-Passkeys belong to the public address, so name it; it is never guessed from request
-headers:
+Open the app at `https://celine.example.net` and enter the setup code there: the app keeps
+that address (Settings, Security), and passkeys belong to it.
 
 ```sh
 # .env
-CELINE_PUBLIC_ORIGIN=https://celine.example.net
 CELINE_PUBLISH=192.168.1.5:8766         # where the proxy reaches the app
 CELINE_TRUSTED_PROXIES=192.168.1.2      # the proxy's address (or network, 192.168.1.0/24)
 ```

@@ -9,7 +9,8 @@ import logging
 from typing import Any
 
 from .. import plugins
-from . import features as features_mod, files, form, general as general_mod
+from . import address as address_mod, features as features_mod, files, form
+from . import general as general_mod
 from . import mail as mail_mod, section_to_file, services as services_mod
 from . import vault as vault_mod
 from .registry import validate_providers, validate_role, validate_tools, validate_triggers
@@ -33,6 +34,7 @@ def _current(s) -> dict[str, Any]:
             "vault": dict(s.vault), "triggers": copy.deepcopy(s.triggers),
             "features": dict(s.features),
             "guard": copy.deepcopy(s.guard), "services": copy.deepcopy(s.services),
+            "address": dict(s.address),
             **{p.id: dict(s.plugins.get(p.id, {})) for p in plugins.with_form()}}
 
 
@@ -50,6 +52,7 @@ def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
             "features": features_mod.validate(new["features"]),
             "guard": guard_rules.validate(new["guard"]),
             "services": services_mod.validate(new["services"]),
+            "address": address_mod.validate(new["address"]),
             **{p.id: form.validate(p.id, p.form["fields"], new[p.id])
                for p in plugins.with_form()}}
 

@@ -350,7 +350,9 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
                 "detail": f"{f.label} could not be checked ({type(e).__name__})."}
     if result is None:
         return {"state": "none", "detail": ""}
-    out = {"state": result["state"], "detail": result.get("detail", "")}
+    # the reason its Dot shows: what the probe said, else what turns it on
+    detail = result.get("detail") or (f.needs if result["state"] in ("missing", "unset") else "")
+    out = {"state": result["state"], "detail": detail}
     for key in ("url", "why"):          # why: what she reads (me__whoami), when it differs
         if result.get(key):
             out[key] = result[key]

@@ -1,4 +1,5 @@
-/* Security: the login's credentials in one list (a passkey, a password, a PIN: its kind as
+/* Security: the app's address (where the setup happened; logins, share links and her Mac's
+   setup line use it), saved when you leave the field. The login's credentials in one list (a passkey, a password, a PIN: its kind as
    the icon, its label, when it was created, "This session" on the one this browser logged in
    with), Add passkey (the browser's prompt), Add password and Add PIN (a dialog each, the
    server's sentence on the field), Delete on each row (never the last one; when the server
@@ -12,10 +13,11 @@ import { useState } from 'react'
 import { Copy, DoorOpen, Fingerprint, Hash, LockKeyhole, MonitorSmartphone, Plus, Trash2, type LucideIcon } from 'lucide-react'
 import { stamp } from '../../lib/format'
 import { securityApi, type Credential, type CredentialKind, type LoginSession, type NamedToken } from '../../lib/passkey'
+import { settingsApi } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import {
-  Button, ConfirmDialog, Dialog, Field, IconButton, InlineError, Input, ListRow, LoadingRow, PinInput, Section, copy,
+  Button, ConfirmDialog, Dialog, Field, Form, type FormField, IconButton, InlineError, Input, ListRow, LoadingRow, PinInput, Section, copy,
 } from '../../ui'
 import { Page } from './parts'
 import { useProof } from './Prove'
@@ -43,6 +45,8 @@ export function Security() {
   return (
     <Page title="Security">
       <div className="stack stack--loose">
+        <AddressField />
+
         <Section title="Login"
                  action={<Button icon={Plus} loading={add.busy} onClick={() => void add.run()}>Add passkey</Button>}
                  more={[
@@ -113,6 +117,21 @@ export function Security() {
 
       {proving}
     </Page>
+  )
+}
+
+const ADDRESS: FormField = { key: 'origin', label: 'Address', type: 'text', mono: true, placeholder: 'https://celine.example.net' }
+
+function AddressField() {
+  const res = useResource(() => settingsApi.address(), [], { events: ev => ev.type === 'settings.changed' })
+  const save = useAction(async (origin: string) => { res.set(await settingsApi.putAddress(res.data?.version ?? '', origin)) })
+  if (!res.data) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : null
+  return (
+    <Section>
+      <Form fields={[ADDRESS]} values={{ origin: res.data.origin }} disabled={save.busy}
+            onChange={(_, v) => void save.run(String(v ?? ''))} />
+      {save.error && <InlineError compact message={save.error} />}
+    </Section>
   )
 }
 

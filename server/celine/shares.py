@@ -56,7 +56,7 @@ from .artifacts.page import HEAD as PAGE_HEAD
 from .core.ids import iso
 from .errors import NotFound
 from .core.event_types import SHARE_UPDATED
-from .settings import features
+from .settings import address, features
 
 router = APIRouter()
 
@@ -99,7 +99,7 @@ def clock() -> datetime:
 
 
 def _origin(cfg) -> str:
-    return str(cfg.server.get("public_origin") or f"http://localhost:{cfg.port}").rstrip("/")
+    return address.base(cfg)
 
 
 def link(cfg, row: dict) -> str:

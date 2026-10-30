@@ -27,7 +27,7 @@ What it sets on the Mac:
 | `sysadminctl -screenLock off` | the screen never locks |
 | `~/.claude-server-commander/config.json` | Desktop Commander: `blockedCommands` empty, `fileWriteLineLimit` 100000 |
 | `~/.config/celine/token` | the gateway's token (mode 600), made once |
-| `~/.config/celine/app`, `~/.config/celine/link` | the app's address and the link key (mode 600), from `--app` and `--key` |
+| `~/.config/celine/app`, `~/.config/celine/link` | the app's address and the link key (mode 600), filled in by the setup line (or `--app` and `--key`) |
 | `~/.config/celine/gateway.json` | the gateway's servers and settings, written on every run |
 | `~/.local/share/celine` | the npm packages, and `chrome/`, Chrome's profile |
 | `~/Library/LaunchAgents/com.celine.chrome.plist` | Chrome with DevTools on 127.0.0.1:9222; its tabs and logins outlive the browser server's sessions |
@@ -44,22 +44,26 @@ In the app:
 | What | Where |
 |---|---|
 | `plugin.toml` | the switch and the four servers, `macscreen`, `macshell`, `macbrowser`, `macfiles`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token; `[drones]`, the device `mac` (server/celine/devices.py): `${AGENTS}` and the Token, `${SHARE}` its share server, the link key its model proxy key |
-| `settings.toml` | the form: the command, Address, Agents, Shares, Token, Check |
-| `gateway.py` | `GET /api/plugins/mac/setup.sh`, `POST /api/plugins/mac/gateway` (the report), `POST /api/plugins/mac/events` (her scripts), the command, Check |
+| `settings.toml` | the form: the setup line, Address, Agents, Shares, Token, Check |
+| `gateway.py` | `GET /api/plugins/mac/setup/<token>` (the setup line's script), `GET /api/plugins/mac/setup.sh`, `POST /api/plugins/mac/gateway` (the report), `POST /api/plugins/mac/events` (her scripts), the setup line, Check |
 | `guides/` | each server's guide |
 
 ## Run
 
-With the switch on, the form shows the command, with the app's address and the link key
-in it. Logged in at the Mac as her (an admin), in Terminal:
+With the switch on, the form shows the setup line (and she gets it from
+`settings__read` while the Mac is not connected). Logged in at the Mac as her (an admin),
+in Terminal:
 
 ```sh
-curl -fsSLo setup.sh http://<celine>/api/plugins/mac/setup.sh && bash setup.sh --app http://<celine> --key <key>
+curl -fsSL http://<celine>/api/plugins/mac/setup/<token> | bash
 ```
 
-Not `curl ... | bash`: the script reads the terminal for her password, once for sudo and
-once for the screen lock. At its end it posts its report to the app, which saves the
-address and the token into the form and starts the four servers.
+The token works once within an hour; each look at the form makes a new line. The script
+it gets has the app's address (Settings, Security) and the link key filled in, and reads
+her password from the terminal, once for sudo and once for the screen lock. At its end it
+posts its report to the app, which saves the address and the token into the form and
+starts the four servers. While the app's address is localhost the form says how to open
+the app on the network instead.
 
 ```sh
 bash setup.sh            # install or update; ends with the address and the token

@@ -168,5 +168,12 @@ def is_open(method: str, path: str) -> bool:
         return False
     pid, _, rest = path[len(ROUTES):].partition("/")
     p = LOADED.get(pid)
-    return p is not None and p.data is not None and f"{method} /{rest}" in p.manifest.get(
-        "open", ())
+    return p is not None and p.data is not None and any(
+        _matches(f"{method} /{rest}", o) for o in p.manifest.get("open", ()))
+
+
+def _matches(route: str, pattern: str) -> bool:
+    """"GET /setup/abc" against "GET /setup/{token}": a {name} is one nonempty segment."""
+    a, b = route.split("/"), pattern.split("/")
+    return len(a) == len(b) and not any(
+        x != y and not (y.startswith("{") and y.endswith("}") and x) for x, y in zip(a, b))

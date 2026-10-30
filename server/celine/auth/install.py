@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import Auth, mode, settings
+from ..settings import address
+from . import Auth, mode
 from .gate import Gate
 from .routes import open_router, router
 
@@ -23,8 +24,8 @@ def install(app, cfg, dev: bool) -> Auth | None:
     if mode(cfg.server) == "off":
         app.include_router(_off)
         return None
-    auth = Auth.open(cfg.data_dir, settings(cfg.server, cfg.port, dev, rp_name=cfg.name,
-                                            user_name=cfg.user))
+    auth = Auth.open(cfg.data_dir, lambda: address.get(cfg), port=cfg.port, dev=dev,
+                     rp_name=cfg.name, user_name=cfg.user)
     app.state.auth = auth
     app.include_router(open_router)
     app.include_router(router)
