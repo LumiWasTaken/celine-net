@@ -126,7 +126,7 @@ const shownDepth = new WeakMap<Element, number>()
 /** A phone's list to detail: when a head (`ref`, a PlaceHead) comes on screen, or its
     `depth` changes while it is there, and its place last showed a head of another depth,
     its page (the head's parent) pushes in: from the right when it is deeper, from the
-    left when it is back up (`push` in base.css, by --push). A place shown again from the
+    left when it is back up (a fade and a --push of travel). A place shown again from the
     rail shows the depth it had, so it never pushes. Only below 768 px; skipped with
     reduced motion. */
 export function usePush(ref: RefObject<HTMLElement | null>, depth: number) {
