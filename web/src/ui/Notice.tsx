@@ -1,11 +1,12 @@
 /* States: Notice (the one error/info widget), InlineError, StatusLine (fixed height),
    EmptyState, LoadingRow, and Loaded, which picks one of them for a loaded resource. Principle: an error sits where it happened, with the
    action that fixes it, never in a toast. */
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { CircleCheck, Info, LoaderCircle, RefreshCw, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { Button, IconButton } from './Button'
 import { cx } from './cx'
 import { ICON } from './icons'
+import { useReplaced } from './motion'
 
 type Tone = 'info' | 'warn' | 'error' | 'success'
 const TONE_ICON: Record<Tone, LucideIcon> = { info: Info, warn: TriangleAlert, error: TriangleAlert, success: CircleCheck }
@@ -84,8 +85,11 @@ export function StatusLine({ children, tone, spinner = false, className }: {
 /* Loading in place of content: skeleton rows in the surface colour, the height of what
    comes, so nothing jumps and no spinner turns mid-page. `inline`: one short bar. */
 export function LoadingRow({ label = 'Loading', inline = false, className }: { label?: string; inline?: boolean; className?: string }) {
+  // what comes in its place fades in: a view, a page, a list
+  const box = useRef<HTMLDivElement>(null)
+  useReplaced(box)
   return (
-    <div className={cx('skeleton', inline && 'skeleton--inline', className)} role="status" aria-label={label}>
+    <div ref={box} className={cx('skeleton', inline && 'skeleton--inline', className)} role="status" aria-label={label}>
       <i /> {!inline && <><i /><i /></>}
     </div>
   )

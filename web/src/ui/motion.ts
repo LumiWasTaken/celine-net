@@ -101,6 +101,24 @@ export function rise(el: Element) {
 /** `fade` (base.css) from JS: what replaces a skeleton */
 export const fadeIn = (el: Element) => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms('--dur'), easing: curve('--ease') })
 
+/** When the element of `ref` (a skeleton) goes, what took its place in its parent in the
+    same commit fades in (`fadeIn`), so loaded content never pops. */
+export function useReplaced(ref: RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    const parent = el?.parentElement
+    if (!el || !parent) return
+    const there = new Set(parent.children)
+    return () => {
+      if (reduced()) return
+      queueMicrotask(() => {
+        if (el.isConnected || !parent.isConnected) return
+        for (const c of parent.children) if (!there.has(c) && !c.classList.contains('ghost')) fadeIn(c)
+      })
+    }
+  }, [ref])
+}
+
 type Box = { x: number; y: number; w: number; h: number }
 const moving = new WeakMap<Element, Animation>()
 
