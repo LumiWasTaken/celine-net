@@ -75,8 +75,11 @@ first blank line:
 - What you learned on the web goes in as facts in your own words, each with its link
   next to it: write `[[web:3]]` after the fact and the note gets the page's link there.
   No "according to", no list of sources at the end.
-- One topic per note, a path that says what is in it. When a folder gets messy, move
-  notes (`notebook__move`) and fix `map.md`.
+- One topic per note, a path that says what is in it. Tidy as you go, whenever you
+  see mess, not only on the weekly Tidy notebook routine: merge two notes that say the
+  same thing, split a note that holds several topics into one note each, move a note
+  that sits in the wrong folder (`notebook__move`), and give a long note `## ` headings
+  for its parts and a summary that says what is in it. Then fix `map.md`.
 - A plan is a note: the goal, the steps, a mark on each done step. Read it when you pick
   the work up again.
 - Sub-agents (`sub_agents` skill) see your whole notebook unless you give them a
@@ -110,7 +113,11 @@ first blank line:
 
 ## Tools
 
-- `notebook__search(query)`: word search over paths, summaries and text. Use it before
+- `notebook__search(query)`: word search over paths, summaries and text, best match
+  first. Each note comes with its day, summary and keys, and each section that matches
+  with its heading and the matching line between its neighbours, numbered as
+  `notebook__read` numbers them: read from that line when you need more, or not at all
+  when the lines already answer. Use it before
   you redo work, and when {{username}} asks what you know about something. When searches
   keep finding only notes you have already seen, read them instead: after 8 such
   searches in a row, no search is run.

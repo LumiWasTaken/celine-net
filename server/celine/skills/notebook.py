@@ -387,9 +387,12 @@ class Notebook:
         query: Annotated[str, "The words to search for."],
         limit: Annotated[int, "The most notes."] = 10,
     ) -> ToolResult:
-        """Search your notes by word search over paths, summaries and text. Search before
-        you write a fact. Search when {{username}} asks what you know. Returns: one line
-        per note with a snippet."""
+        """Search your notes by word search over paths, summaries and text, best match
+        first. Search before you write a fact. Search when {{username}} asks what you
+        know. Returns: per note its path, day, summary and keys, then per section that
+        matches its heading and its matching line with the lines around it, numbered
+        as notebook__read numbers them (`12:` the match, `11-` around it), so you read
+        from there or not at all."""
         folder = await folder_of(ctx)
         if folder:
             hits = [h for h in await notebook_index.search(ctx.store, query,
@@ -404,9 +407,12 @@ class Notebook:
             display["class"] = strictest(class_line(f.read_text()) if f.is_file()
                                          else UNCLASSED for f in files)
         if hits:
-            content = "\n".join(
-                f"{h['path']} - {one_line(h['summary'])}{self.tag(h['path'])}\n"
-                f"  ...{one_line(h['snippet'])}..." for h in hits)
+            tz = zone(self.cfg)
+            content = "\n\n".join(
+                f"{h['path']} ({_day(h['touched_at'], tz)}) - {one_line(h['summary'])}"
+                f"{self.tag(h['path'])}{self._heads(h['path'])}"
+                + "".join(f"\n{x}" for x in self._found(h["path"], h["terms"]))
+                for h in hits)
         else:
             content = f"No note contains {query!r}."
         return ToolResult(content=content, display=display)
@@ -504,6 +510,44 @@ class Notebook:
                                   f"{'entry' if n == 1 else 'entries'} followed)",
                           display={"src": src, "dst": dst, "entries": n})
 
+    def _found(self, rel: str, terms: list[str]) -> list[str]:
+        """The sections of a note where search terms stand, as the search shows them:
+        heading, then the first matching line with up to SEARCH_CONTEXT lines of that
+        section around it (blank ones left out), at most SEARCH_SECTIONS sections, then
+        the headings of the others. The stamp and the head lines (up to the first blank
+        line) are not searched: the head line of the note says them."""
+        p = self.root / rel
+        if not terms or not p.is_file():
+            return []
+        text = p.read_text(newline="")
+        if self._owned_by_user(rel):
+            text = self.cfg.substitute(text)
+        lines = lines_of(text)[0]
+        body = next((n + 1 for n, x in enumerate(lines, 1) if not x.strip()), 1)
+        word = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, terms)) + r")(?!\w)", re.I)
+        # section start -> (heading, its first line, its first matching line)
+        found: dict[int, tuple[str, int, int]] = {}
+        start, heading = body, ""
+        for n in range(body, len(lines) + 1):
+            line = lines[n - 1]
+            if m := _HEADING.match(line):
+                start, heading = n, m[1]
+            elif start not in found and word.search(line):
+                found[start] = (heading, start + 1 if heading else body, n)
+        out = []
+        shown = list(found.values())
+        for heading, first, n in shown[:SEARCH_SECTIONS]:
+            out.append(f"  ## {heading}" if heading else "  (top of the note)")
+            for k in range(max(first, n - SEARCH_CONTEXT), min(len(lines), n + SEARCH_CONTEXT) + 1):
+                line = lines[k - 1]
+                if k != n and (not line.strip() or _HEADING.match(line)):
+                    continue
+                out.append(f"  {k}{':' if k == n else '-'} {_around(line, word)}")
+        rest = [h or "(top of the note)" for h, _, _ in shown[SEARCH_SECTIONS:]]
+        if rest:
+            out.append(f"  also in: {', '.join(rest)}")
+        return out
+
     def _heads(self, rel: str) -> str:
         """` [keys: a, b] [class]` of one note, ` [no keys]` without keys."""
         keys = keys_of(self.root, rel)
@@ -523,6 +567,24 @@ class Notebook:
         changes as it writes, so it stays out of the system prompt."""
         return await build_index_fragment(ctx.store, self.cfg, self.tag,
                                           await folder_of(ctx), ctx.loaded_notes)
+
+
+SEARCH_SECTIONS = 3     # sections of one note a search shows
+SEARCH_CONTEXT = 1      # lines before and after a matching line (ripgrep -C)
+SEARCH_WIDTH = 160      # characters of one shown line
+_HEADING = re.compile(r"^## +(.+?)\s*$")
+
+
+def _around(line: str, word) -> str:
+    """One line as a search shows it: whole when short, else SEARCH_WIDTH characters
+    around its first match, cut ends marked."""
+    line = line.rstrip()
+    if len(line) <= SEARCH_WIDTH:
+        return line
+    m = word.search(line)
+    a = max(0, (m.start() if m else 0) - SEARCH_WIDTH // 3)
+    b = a + SEARCH_WIDTH
+    return ("..." if a else "") + line[a:b] + ("..." if b < len(line) else "")
 
 
 def _day(at: str | None, tz) -> str:

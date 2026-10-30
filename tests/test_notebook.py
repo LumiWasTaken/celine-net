@@ -207,6 +207,39 @@ async def test_search_takes_plain_words_with_punctuation(store, cfg):
         assert "people/noor.md" in (await nb.search(ctx, q)).content, q
 
 
+async def test_a_search_shows_each_matching_section_with_its_lines_to_read_from(store, cfg):
+    nb = Notebook(cfg)
+    await nb.seed(store)
+    ctx = _ctx("c", store, cfg)
+    body = "\n".join([
+        "keys: noor, climbing", "", "Noor, a friend from the gym.",
+        "## Weekends", "Saturdays are long.", "Noor climbs every weekend at the hall.",
+        "She wants outdoor routes.",
+        "## Food", "Sushi on Fridays.",
+        "## Trips", "A climbing trip to Arco in May.", "", "Tents and ropes.",
+        "## Gear", "Her shoes are worn from climbing.",
+        "## Plans", "Climbing in Fontainebleau next spring."])
+    await nb.write(ctx, "people/noor.md", body, "Noor, a climbing friend")
+    out = (await nb.search(ctx, "climbing")).content
+    head, *found = out.splitlines()
+    assert re.fullmatch(r"people/noor\.md \(\d+ \w+\) - Noor, a climbing friend "
+                        r"\[keys: noor, climbing\]", head), head
+    assert found == [
+        "  ## Weekends",
+        "  6- Saturdays are long.",
+        "  7: Noor climbs every weekend at the hall.",
+        "  8- She wants outdoor routes.",
+        "  ## Trips",
+        "  12: A climbing trip to Arco in May.",
+        "  ## Gear",
+        "  16: Her shoes are worn from climbing.",
+        "  also in: Plans",
+    ], "per section its heading and its match between its neighbours, numbered as "\
+       "notebook__read numbers them; the stemmed word found too; the head lines not"
+    read = (await nb.read(ctx, "people/noor.md", from_line=7)).content
+    assert read.splitlines()[0].startswith("7:") and "Noor climbs" in read.splitlines()[0]
+
+
 async def test_the_stamp_has_no_anchor_and_text_as_a_list_is_joined(store, cfg):
     """The agent's real edits: 27 failed trying to edit line 1 (the stamp), and a text sent as a
     list of lines crashed. Line 1 shows plain, and a list joins instead of crashing."""
