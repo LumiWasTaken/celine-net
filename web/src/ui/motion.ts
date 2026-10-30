@@ -28,7 +28,8 @@ export const OUT = {
   shrink: [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.98)' }],
   zoom:   [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.96)' }],
   drop:   [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(2px)' }],
-  down:   [{ transform: 'none' }, { transform: 'translateY(100%)' }],
+  // one frame: it starts where the element is (a sheet let go mid-drag)
+  down:   [{ transform: 'translateY(100%)' }],
 } satisfies Record<string, Keyframe[]>
 
 /** one exit on one element of the copy, on --ease-exit */
