@@ -631,3 +631,6 @@ async def test_a_failed_sub_agent_reports_the_reason_its_turn_stored(store):
 
     assert await failed("quiet", "") == f"[quiet, failed]\n\n{why}"
     assert await failed("said", "half of it\n") == f"[said, failed]\n\nhalf of it\n\n{why}"
+    why = "error body " * 2000      # a provider's long error: cut, not carried whole
+    long = await failed("loud", "")
+    assert long.endswith(report.CUT) and len(long) < len(why) // 4

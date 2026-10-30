@@ -136,12 +136,15 @@ async def gateway(request: Request) -> dict[str, Any]:
     return await plugin_form(services, p, values, {"token": body["token"]})
 
 
+ABOUT_CHARS = 80   # the most of one fact of the Mac
+
+
 def about(mac: dict[str, Any]) -> str:
     """setup.sh's facts of the Mac in one line: "user celine, home /Users/celine, Apple
     M4, 16 GB memory, macOS 15.6, Wi-Fi (en0)"; a fact it did not send is left out."""
     def said(k: str) -> str:
-        v = mac.get(k)
-        return v.strip() if isinstance(v, str) else ""
+        v = mac.get(k)    # from the Mac, into her system prompt: one line, short
+        return " ".join(v.split())[:ABOUT_CHARS] if isinstance(v, str) else ""
     memory = mac.get("memory")
     parts = [f"user {said('user')}" if said("user") else "",
              f"home {said('home')}" if said("home") else "",

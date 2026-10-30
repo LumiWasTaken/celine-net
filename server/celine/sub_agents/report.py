@@ -28,6 +28,7 @@ from ..intercom.store import name_of
 from ..turns import tokens
 
 REPORT_SHARE = 0.03     # of the parent's window, about 2k tokens of a 65k one
+REASON_TOKENS = 300     # a failure's reason in a report: a provider's error body can be long
 CUT = "[cut: the rest is in its conversation]"
 CHANGES = ("notebook__write", "notebook__edit", "notebook__delete", "notebook__move")
 FILES_SHOWN = 10        # notes named in a report's head, the rest a count
@@ -194,14 +195,17 @@ async def _report(services, cid: str) -> None:
     await announce(services, cid)
     if f["reply_to"] is None:
         return
-    text = f["text"] or ("" if f["reason"] else "(it wrote nothing)")
+    text = f["text"] or ("" if f["reason"] and f["reason"] != f["state"] else "(it wrote nothing)")
     shown_text, shown, total = tokens.cut_to(text, f["cap"])
     if shown < total:
         text = f"{shown_text}\n\n{CUT}"
     # one blank line between the head and the answer, however many lines it starts with
     answer = text.lstrip("\n")
-    if f["reason"]:
-        answer = f"{answer.rstrip()}\n\n{f['reason']}" if answer.strip() else f["reason"]
+    reason = f["reason"] if f["reason"] != f["state"] else ""   # "stopped" says the head again
+    if reason:
+        reason, shown, total = tokens.cut_to(reason, REASON_TOKENS)
+        reason += f"\n\n{CUT}" if shown < total else ""
+        answer = f"{answer.rstrip()}\n\n{reason}" if answer.strip() else reason
     text = f"{head(f['name'], f['state'], f['work'])}\n\n{answer}"
     # a sub-agent that was stopped reports without waking its parent: the parent
     # stopped it (its Stop cascades) or knows, and a Stop must stick
