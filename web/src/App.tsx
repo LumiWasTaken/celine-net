@@ -77,11 +77,11 @@ function Shell() {
   useEffect(() => {
     if (firstSection.current) { firstSection.current = false; return }
     // a view that loads on its first visit draws its title a moment later
+    const view = document.querySelector<HTMLElement>(`.sections > .view[data-section="${section}"]`)
+    setAnnounced(view?.getAttribute('aria-label') ?? '')
     const place = () => {
-      const view = document.querySelector<HTMLElement>(`.sections > .view[data-section="${section}"]`)
       const title = view?.querySelector<HTMLElement>('h1')
       if (!view || !title) return false
-      setAnnounced(view.getAttribute('aria-label') ?? '')
       if (!coarse() && !isTyping(document.activeElement) && !view.contains(document.activeElement)
           && !document.querySelector('[aria-modal="true"]')) {
         title.tabIndex = -1
@@ -89,10 +89,9 @@ function Shell() {
       }
       return true
     }
-    const box = document.querySelector('.sections')
-    if (!box || place()) return
+    if (!view || place()) return
     const watch = new MutationObserver(() => { if (place()) watch.disconnect() })
-    watch.observe(box, { childList: true, subtree: true })
+    watch.observe(view, { childList: true, subtree: true })
     return () => watch.disconnect()
   }, [section])
 
