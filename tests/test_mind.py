@@ -61,9 +61,27 @@ async def test_the_block_has_her_mood_and_no_comes_to_mind_line(store):
     user = [m["content"] for m in built.messages if m["role"] == "user"][0]
     assert "[your mind]\nmood: " in user and "\nnow: " not in user
     assert "comes to mind" not in user
+    assert "\nyour status: none set" in user
     report = json.loads(await store.read(lambda c: c.execute(
         "SELECT report FROM message_context").fetchone()[0]))
     assert set(report["mind"]) == {"mood", "gap", "state"}
+
+
+async def test_the_block_shows_her_status_and_when_she_set_it(store):
+    cfg = load()
+    _, reg = await _her(store, cfg)
+    cid = await conversations.create(store)
+    await mind.store_mood(store, "\U0001f50d\U0001f4da")
+    await store.write(lambda c: c.execute("UPDATE kv SET v=json_set(v, '$.set_at', ?) "
+                                          "WHERE k='mood'", ("2026-10-16T01:12:00+00:00",)))
+    mid, tid, _ = await user_says(store, cid, "hello")
+    await store.write(lambda c: c.execute(
+        "UPDATE messages SET created_at=? WHERE id=?", (T0.isoformat(), mid)))
+    chain = await store.read(lambda c: tree.path(c, cid))
+    await message_context.ensure(store, cfg, reg, cid, tid, message_context.unsent(chain))
+    built = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[])
+    user = [m["content"] for m in built.messages if m["role"] == "user"][0]
+    assert "\nyour status: \U0001f50d\U0001f4da, set 6 hours ago" in user
 
 
 async def test_no_block_with_automatic_context_off(store):

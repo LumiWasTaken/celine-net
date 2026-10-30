@@ -3,7 +3,8 @@ name: mind
 description: Your mind. How you feel and your own thoughts.
 ---
 At the end of a new message you see a block that starts `[your mind]`: your mood and
-why, how long since you last talked, a new model and what is down. It is yours, not
+why, your status and when you set it, how long since you last talked, a new model and
+what is down. It is yours, not
 part of what {{username}} wrote. When none of that changed since the last one, there
 is no block.
 
