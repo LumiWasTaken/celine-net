@@ -736,8 +736,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .card {
   position: relative; display: flex; flex-direction: column; min-width: 0;
   border-radius: var(--r-lg); background: var(--surface-1); color: var(--text-primary); text-align: left; text-decoration: none;
-  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), opacity var(--dur) var(--ease),
-              box-shadow var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .card__press { display: flex; flex-direction: column; gap: var(--s-2); flex: 1; min-width: 0; padding: var(--s-4);
   border-radius: inherit; color: inherit; text-align: left; text-decoration: none; }
@@ -752,8 +751,6 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .card__sub { min-width: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card__more { position: absolute; top: var(--s-3); right: var(--s-3); }
-/* cards rise in when they arrive */
-@starting-style { .card { opacity: 0; transform: translateY(var(--rise)); } }
 
 /* ── Segmented: one of six or fewer, picked. A thumb at surface-4 slides to it. One row
    while it fits; with less room it wraps onto a second row, so every option stays whole ── */

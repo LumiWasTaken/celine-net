@@ -48,7 +48,7 @@ type Rect = { left: number; top: number; width: number; height: number }
     its box. `place()` once the copy is in the page and `el` is gone: a transformed parent
     (the centred toast host) places fixed children itself and moves once `el` is gone, so
     its offset is undone. */
-export function copyOf(el: HTMLElement, at: Rect | null, into: Node = el.parentNode!, before: Node | null = el.nextSibling) {
+function copyOf(el: HTMLElement, at: Rect | null, into: Node = el.parentNode!, before: Node | null = el.nextSibling) {
   const ghost = el.cloneNode(true) as HTMLElement
   ghost.classList.add('ghost')
   ghost.inert = true
@@ -67,7 +67,7 @@ export function copyOf(el: HTMLElement, at: Rect | null, into: Node = el.parentN
 }
 
 /** play `exit` on a copy, then drop the copy */
-export function play(ghost: HTMLElement, exit: Exit) {
+function play(ghost: HTMLElement, exit: Exit) {
   const all = [exit(ghost)].flat()
   Promise.all(all.map(a => a.finished)).catch(() => {}).finally(() => ghost.remove())
 }
@@ -120,49 +120,33 @@ export function useReplaced(ref: RefObject<HTMLElement | null>) {
   }, [ref])
 }
 
-/* the head that went in this commit, for the one that comes in its place */
-let gone: { depth: number; dir: number } | null = null
+/* the depth of the head last shown in each place (its .view) */
+const shownDepth = new WeakMap<Element, number>()
 
-/** A phone's list to detail: the page of a head (`ref`, a PlaceHead) one `depth` deeper
-    than the one it replaced pushes in from the right (`push`, base.css) while the page left
-    slides a --push to the left and fades; back reverses both. A head of the same depth, or
-    one that comes after its page loaded, only fades. The page is the place's main column,
-    or the head's parent. Only below 768 px; skipped with reduced motion. */
+/** A phone's list to detail: when a head (`ref`, a PlaceHead) comes on screen, or its
+    `depth` changes while it is there, and its place last showed a head of another depth,
+    its page (the head's parent) pushes in: from the right when it is deeper, from the
+    left when it is back up (`push` in base.css, by --push). A place shown again from the
+    rail shows the depth it had, so it never pushes. Only below 768 px; skipped with
+    reduced motion. */
 export function usePush(ref: RefObject<HTMLElement | null>, depth: number) {
-  const deep = useRef(depth)
-  deep.current = depth
+  const was = useRef<number | null>(null)
   useLayoutEffect(() => {
     const head = ref.current
     if (!head) return
-    const page = () => (head.closest('.place__main') ?? head.parentElement) as HTMLElement | null
+    const on = head.offsetParent !== null
+    const before = was.current
+    was.current = on ? depth : null
+    if (!on || before === depth) return
+    const place = head.closest('.view') ?? document.body
+    const last = shownDepth.get(place)
+    shownDepth.set(place, depth)
+    const page = head.parentElement
+    if (last === undefined || last === depth || !page || !isPhone() || reduced()) return
     const push = root().getPropertyValue('--push').trim()
-    const from = gone
-    if (from && !reduced()) {
-      from.dir = Math.sign(deep.current - from.depth)
-      const box = page()
-      if (from.dir && box) for (const c of box.children) {
-        if (c.classList.contains('ghost')) continue
-        c.animate([{ opacity: 0, transform: `translateX(calc(${from.dir} * ${push}))` }, { opacity: 1, transform: 'none' }],
-                  { duration: ms('--dur'), easing: curve('--ease') })
-      }
-    }
-    return () => {
-      const box = page()
-      if (!box || !box.isConnected || !isPhone() || reduced()) return
-      const { ghost, place } = copyOf(box, box.getBoundingClientRect(), box.parentNode!, box.nextSibling)
-      const me = { depth: deep.current, dir: 0 }
-      gone = me
-      queueMicrotask(() => {
-        if (gone === me) gone = null
-        // StrictMode's pretend unmount: the head is still there
-        if (head.isConnected) { ghost.remove(); return }
-        place()
-        play(ghost, g => me.dir
-          ? leave(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateX(calc(${-me.dir} * ${push}))` }], '--dur')
-          : leave(g, OUT.fade))
-      })
-    }
-  }, [ref])
+    page.animate([{ opacity: 0, transform: `translateX(calc(${Math.sign(depth - last)} * ${push}))` }, { opacity: 1, transform: 'none' }],
+                 { duration: ms('--dur'), easing: curve('--ease') })
+  })
 }
 
 type Box = { x: number; y: number; w: number; h: number; sx: number; sy: number }

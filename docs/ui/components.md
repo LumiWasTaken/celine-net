@@ -226,7 +226,8 @@ card's whole top, to its edges: a cover), `title`, `subtitle`, `meta`, `selected
 long press), `menuLabel`, `children` (a few lines under the head), `actions` (buttons at its
 foot, each its own press beside the card's: Open, New folder), `pick` (the grid's
 Select: a check on the card while selecting), `tooltip`. `CardGrid` lays cards out in as
-many columns as fit; a card that goes fades and the rest glide into its place.
+many columns as fit; a card that arrives rises, one that goes fades, the rest glide to
+their places.
 **Don't:** hand-build a card or a grid of them; put more than one primary in it.
 
 ### Tree
