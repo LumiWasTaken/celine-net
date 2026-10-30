@@ -738,6 +738,20 @@ def test_an_instance_without_an_address_learns_it_at_the_next_login(app):
     assert site.get("/api/auth/status").status_code == 200
 
 
+def test_an_allowed_host_with_a_session_from_before_still_logs_in_to_learn_it():
+    app = make_app(allowed_hosts=["celine.example.net"])
+    site = client(app, base=SITE)
+    assert setup_password(app, site).status_code == 200 and stored(app) == SITE
+    forget_address(app)
+    # the session from before is dropped there, so the login page shows and logs in
+    assert site.get("/api/auth/status").status_code == 404
+    assert 'const METHODS = ["password"]' in site.get("/").text
+    r = site.post("/api/auth/login", json={"method": "password", "secret": PASSWORD})
+    assert r.status_code == 200 and stored(app) == SITE
+    assert site.get("/api/auth/status").status_code == 200
+    assert site.post("/api/auth/logout").status_code == 200
+
+
 def test_a_foreign_origin_or_a_failed_login_never_stores_an_address(app):
     setup_password(app, client(app))
     forget_address(app)
