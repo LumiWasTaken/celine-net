@@ -12,13 +12,14 @@
    anew; the features of a group (`group`: the shellbox and the Mac, "Her computer") share
    one step, a SubHead and a form each (GroupStep). Next saves the forms, asks their probes
    anew and saves the features: what is blocked then is saved off unless it was saved on before (toSave). Then done (All set, what
-   is on and off, New conversation), which PUTs `done` when it is reached: Settings stays
+   is on, what was switched on but did not answer or is not set up, what is off, New conversation), which PUTs `done` when it is reached: Settings stays
    locked until then. A connector's step (Discord, WhatsApp) also links the account and
    offers its archive's switch and the first import (ConnectorSetup).
    The step count follows what is switched on. The page keeps the switches as flipped (a
    switch on whose service is missing stays on here, so its step stays), the server what
    could be saved. Until the setup is done every URL lands here and Settings is out of
-   reach; afterwards Settings, Setup runs it again (Back to Settings in the top row), every
+   reach; afterwards Settings, Setup runs it again (Back to Settings in the top row, only
+   when it was done before this run), every
    step prefilled from what is saved. The steps are derived from the catalog: no feature id
    lives here. Next saves the step, so a closed tab loses nothing before it; a 400 with a
    field shows on that field. */
@@ -95,7 +96,7 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
           <span className="onb__pct">{Math.round(((at + 1) / steps.length) * 100)}%</span>
         </div>
         <div className="onb__bar"><Progress value={at + 1} max={steps.length} label={`Step ${at + 1} of ${steps.length}`} /></div>
-        {status?.setup && <span className="onb__back"><Button variant="ghost" icon={ArrowLeft} href={format({ section: 'settings' })}>Back to Settings</Button></span>}
+        {res.data?.done && <span className="onb__back"><Button variant="ghost" icon={ArrowLeft} href={format({ section: 'settings' })}>Back to Settings</Button></span>}
       </div>
       <div className="page onb__page">
         <div className="page__col onb__col">
@@ -123,6 +124,9 @@ type StepNav = { back?: () => void; next: () => void }
 
 /** a feature is on: its switch, and nothing blocks it */
 const isOn = (view: FeaturesView, f: Feature) => view.features[f.id] !== false && !blocked(f)
+/** switched on in this run, or saved on, and blocked: its service did not answer or it
+    is not set up */
+const asked = (view: FeaturesView, f: Feature) => view.features[f.id] !== false && blocked(f)
 /** the labels of the features `pick` keeps, in the catalog's order; "None" for none */
 const labels = (view: FeaturesView, pick: (f: Feature) => boolean) =>
   view.catalog.filter(pick).map(f => f.label).join(', ') || 'None'
@@ -535,14 +539,17 @@ function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & {
   const ready = !!view
   useEffect(() => { if (ready && !view.done) void finish.run() }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Section title="Design your agent">
+    <Section title="All set">
       {!view ? <Pending error={error} reload={reload} /> : <>
-        <p className="onb__line">All set. {name} is ready.</p>
+        <p className="onb__line">{name} is ready.</p>
         <p className="onb__line">On: {labels(view, f => isOn(view, f))}</p>
-        {labels(view, f => !isOn(view, f) && f.state === 'missing') !== 'None' && (
-          <p className="onb__line">Off (did not answer): {labels(view, f => !isOn(view, f) && f.state === 'missing')}</p>
+        {labels(view, f => asked(view, f) && f.state === 'missing') !== 'None' && (
+          <p className="onb__line">Off (did not answer): {labels(view, f => asked(view, f) && f.state === 'missing')}</p>
         )}
-        <p className="onb__line">Off: {labels(view, f => !isOn(view, f) && f.state !== 'missing')}</p>
+        {view.catalog.filter(f => asked(view, f) && f.state === 'unset').map(f => (
+          <p key={f.id} className="onb__line">Not set up: {f.label}. {f.detail}</p>
+        ))}
+        <p className="onb__line">Off: {labels(view, f => !isOn(view, f) && !asked(view, f))}</p>
         <p className="onb__line">You can change all of this later in Settings.</p>
         {finish.error && <InlineError compact message={finish.error} onRetry={() => void finish.run()} />}
       </>}
