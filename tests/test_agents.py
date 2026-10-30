@@ -324,8 +324,10 @@ async def test_a_folder_outside_the_notebook_is_refused(store, cfg):
     async def emit(note, **data):
         pass
     ctx = ToolContext(parent, "t", "x", store, cfg, emit)
-    for bad in ("../out", ".", "tools/x"):
-        assert (await agents.start(ctx, brief="x", name="valid name", folder=bad)).is_error, bad
+    for bad in ("../out", "../x", ".", "tools/x", "/etc", "agents/../../x"):
+        for access in ("read", "work"):
+            assert (await agents.start(ctx, brief="x", name="valid name", folder=bad,
+                                       access=access)).is_error, (bad, access)
     assert await _subs_of(store, parent) == []
 
 
@@ -353,8 +355,10 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
     for more in ({"access": "work"}, {"cli": "opencode"}):
         out = await agents.start(ctx, brief="x", name="a helper", **more)
         assert out.is_error and out.content == READ_PARENT, more
-    out = await agents.start(ctx, brief="x", name="a helper", folder="agents/other")
-    assert out.is_error and "agents/scout" in out.content, "no folder above its own"
+    for wider in ("agents/other", "agents/scout/../other", "agents/scout/.."):
+        out = await agents.start(ctx, brief="x", name="a helper", folder=wider)
+        assert out.is_error and ("agents/scout" in out.content or "not a folder" in
+                                 out.content), (wider, "no folder above its own")
     assert await _subs_of(store, scout) == []
 
 

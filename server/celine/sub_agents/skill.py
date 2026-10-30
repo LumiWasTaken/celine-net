@@ -80,6 +80,15 @@ async def reads_only(store, cid: str) -> bool:
     return row is not None and bool(row["agent_of"]) and row["access"] == "read"
 
 
+def plain_folder(folder: str) -> str | None:
+    """A notebook folder as it is stored: relative, no `.` or `..` part, no slash at its
+    ends. None for one that is absolute or climbs with `..`."""
+    p = Path(folder.strip())
+    if p.is_absolute() or ".." in p.parts:
+        return None
+    return p.as_posix()
+
+
 def _same(a: str, b: str) -> bool:
     return a.casefold() == b.casefold()
 
@@ -257,7 +266,7 @@ class SubAgents:
         """A relative notebook folder; one that does not exist only for a sub-agent that
         writes (`create`), made by begin. (folder, refusal)."""
         root = self.cfg.her.notebook.resolve()
-        rel = str(Path(folder.strip().rstrip("/")))
+        rel = plain_folder(folder) or ""
         p = (root / rel).resolve()
         if rel in ("", ".") or not p.is_relative_to(root) or p == root:
             return None, (f"{folder!r} is not a folder inside your notebook. Leave "
@@ -313,6 +322,11 @@ class SubAgents:
         name = " ".join(name.split())
         if device is not None:          # a drone: opencode on the device
             cli = cli or "opencode"
+        if folder is not None:
+            if (plain := plain_folder(folder)) is None:
+                return None, (f"{folder!r} is not a folder inside your notebook. Leave "
+                              f"`folder` out for the whole notebook."), False, None
+            folder = plain
         # a parent limited to a notebook folder limits its children to it
         own = await store.read(lambda c: c.execute(
             "SELECT notebook_folder FROM conversations WHERE id=?", (parent,)).fetchone())
@@ -320,11 +334,10 @@ class SubAgents:
             mine = Path(own["notebook_folder"])
             if folder is None:
                 folder = str(mine)
-            elif not Path(folder.strip().rstrip("/")).is_relative_to(mine):
+            elif not Path(folder).is_relative_to(mine):
                 return None, (f"You see only {mine} of the notebook, so a sub-agent of "
                               f"yours works in it or a folder under it."), False, None
-        given = {"access": access,
-                 "folder": str(Path(folder.strip().rstrip("/"))) if folder else None,
+        given = {"access": access, "folder": folder,
                  "model": model, "cli": cli, "device": device}
         if len(name) < MIN_NAME:
             return None, (f"Give it a name of at least {MIN_NAME} characters, so you "
