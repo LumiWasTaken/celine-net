@@ -185,6 +185,10 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         chat = await conversations.create(store)
         agent = await conversations.create(store, agent_of=chat, agent_name="a", kind="agent")
         assert (await read_in(chat))["copy"]["Run on the Mac"].startswith("curl -fsSL ")
+        ctx = ToolContext(conversation_id=chat, turn_id="t", tool_call_id="k", store=store,
+                          config=cfg, emit=None)  # type: ignore[arg-type]
+        no = await sk.propose(ctx, target="forms.mac", changes={"url": "http://x:8765"}, why="t")
+        assert no.is_error and no.content.startswith("Not a setting of forms.mac: url.")
         assert "copy" not in await read_in(agent) and "note" not in await read_in(agent)
         assert devices(cfg)["mac"].why == "Her Mac: Run the setup line on the Mac."
         assert about(cfg) is None

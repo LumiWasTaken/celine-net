@@ -59,11 +59,12 @@ curl -fsSL http://<celine>/api/plugins/mac/setup/<token> | bash
 ```
 
 The token works once within an hour; each look at the form makes a new line. The script
-it gets has the app's address (Settings, Security) and the link key filled in, and reads
-her password from the terminal, once for sudo and once for the screen lock. At its end it
-posts its report to the app, which saves the address and the token into the form and
-starts the four servers. While the app's address is localhost the form says how to open
-the app on the network instead.
+it gets has the app's address (Settings, General, Network) and the link key filled in, and
+reads her password from the terminal, once for sudo and once for the screen lock. At its
+end it posts its report to the app, which fills the form (the Mac's addresses, its facts
+and the token) and starts the four servers; the form then shows Connected with the Mac's
+facts. While the app's address is localhost the form asks for its network address in
+place.
 
 ```sh
 bash setup.sh            # install or update; ends with the address and the token
