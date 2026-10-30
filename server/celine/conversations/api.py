@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import attachments as attachments_mod
+from .. import attachments as attachments_mod, homes
 from ..api.cursor import page_cursor, read_cursor
 from ..api.deps import cfg_of, json_body, settings_of, store_of
 from ..settings import conversations as conv
@@ -232,7 +232,7 @@ async def archive_conversation(request: Request, cid: str) -> dict:
     if dispatcher is not None and await store_of(request).read(store.lock_archived):
         # its work there stops
         await dispatcher.abort_conversation(
-            await store_of(request).read(lambda c: store.top_of(c, cid)))
+            await store_of(request).read(lambda c: homes.root(c, cid)["id"]))
     return out
 
 
@@ -262,7 +262,6 @@ async def search(request: Request, q: str = "", limit: int = 30, place: str | No
         return {"hits": [], "titles": titles}
     kinds = ("chat",) if place == "celine" else ("chat", "mission", "agent")
     hits = await store.search(store_of(request), q, None, limit, 24, kinds)
-    from .. import homes
 
     def links(c):
         for h in hits:

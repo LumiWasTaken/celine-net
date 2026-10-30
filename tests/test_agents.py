@@ -380,6 +380,25 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
     assert {s["id"] for s in await _subs_of(store, scout)} == {worker, cli}
 
 
+async def test_an_inherited_folder_leaves_the_default_access_read(store, cfg):
+    from types import SimpleNamespace
+    agents = _registry(cfg).skills["sub_agents"]
+    agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store),
+                          dispatcher=SimpleNamespace(notify=lambda: None))
+    parent = await conversations.create(store)
+    scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout",
+                                       access="work", notebook_folder="agents/scout")
+    (cfg.her.notebook / "agents/scout").mkdir(parents=True)
+    kid, refusal, _, _ = await agents.begin(store, scout, "look around", "a looker")
+    assert refusal is None
+    [row] = await store.read(lambda c: agents_of(c, agent=kid))
+    assert (row["access"], row["folder"]) == ("read", "agents/scout")
+    kid, refusal, _, _ = await agents.begin(store, scout, "write it", "a writer",
+                                            folder="agents/scout/out")
+    [row] = await store.read(lambda c: agents_of(c, agent=kid))
+    assert (row["access"], row["folder"]) == ("work", "agents/scout/out"), "a folder given"
+
+
 async def test_sub_agents_start_their_own_down_to_three_levels(store, cfg):
     agents = _registry(cfg).skills["sub_agents"]
     agents.app = Services(dispatcher=object())     # a refusal never reaches it
@@ -456,18 +475,20 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
         "page counter 2 did not start: big on OpenRouter does not answer. OpenRouter "
         "refused the connection."), out.content
     assert len(asked) == 2, "a model known down is not offered to the owner"
+    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small", "or/big"]}})
+    out = await agents.start(ctx, brief="Count the pages.", name="page counter 3")
+    assert out.display["model"] == "gpu/small", "the one model it runs on, kept as its own"
 
 
 async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
-    from types import SimpleNamespace
     from celine.sub_agents.skill import release, waiting
 
-    async def abort(_cid):
-        pass
-    agents = _registry(cfg).skills["sub_agents"]
+    reg = _registry(cfg)
+    agents = reg.skills["sub_agents"]
+    dispatcher = Dispatcher(store, cfg, EventBus(), lambda: None, reg)
+    dispatcher.notify = lambda: None
     app = agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store),
-                                dispatcher=SimpleNamespace(notify=lambda: None,
-                                                           abort_conversation=abort))
+                                dispatcher=dispatcher)
     parent = await conversations.create(store)
     scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout")
     kid = await conversations.create(store, "kid", agent_of=scout, agent_name="kid")
@@ -478,6 +499,15 @@ async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
     await release(app, scout)
     assert not await store.read(lambda c: c.execute(
         "SELECT 1 FROM turns WHERE conversation_id=?", (kid,)).fetchone()), "nothing starts"
+    sibling = await conversations.create(store, "sib", agent_of=parent, agent_name="sib")
+    await app.intercom.send(f"agent:{parent}", f"agent:{sibling}", "go", kind="brief",
+                            wake=False)
+    await dispatcher.abort_conversation(parent)
+    assert await store.read(lambda c: waiting(c, sibling)) is None, \
+        "a Stop on the parent drops its children's queued briefs"
+    await release(app, parent)
+    assert not await store.read(lambda c: c.execute(
+        "SELECT 1 FROM turns WHERE conversation_id=?", (sibling,)).fetchone())
 
 
 async def test_a_long_report_is_cut_from_the_parents_window_and_its_tail_says_so(
@@ -543,10 +573,11 @@ async def test_a_report_goes_to_the_one_that_started_it_once_its_own_are_done(st
     assert counted() == start + 2
     await app.intercom.send(f"agent:{kid}", "parent", "psst")
     assert await ended(scout) == up, "a message from its own sub-agent: no report"
-    for frm, to in ((other, f"agent:{scout}"), (kid, f"agent:{parent}"), (kid, "all")):
+    for frm, to in ((other, f"agent:{scout}"), (kid, f"agent:{parent}"), (kid, "all"),
+                    (kid, "user"), (kid, "bastet"), (kid, "system:guard")):
         with pytest.raises(Refused, match=REACH[:20]):
             await app.intercom.send(f"agent:{frm}", to, "hi")
-    await app.intercom.send(f"agent:{kid}", "user", "hi")       # the user: always
+    await app.intercom.send(f"agent:{parent}", "user", "hi")    # the top: as before
     await app.intercom.send(f"agent:{parent}", f"agent:{scout}", "and now?")
     assert len(await ended(scout)) == 3, "the parent's follow-up"
 
@@ -563,3 +594,13 @@ async def test_a_sub_agent_is_addressed_by_its_exact_name(store):
         pass
     else:
         raise AssertionError("a name in another case reaches nobody")
+
+
+async def test_a_name_is_looked_up_among_the_senders_own_sub_agents_only(store):
+    from celine.intercom import addresses
+    parent = await conversations.create(store, "p")
+    scout = await conversations.create(store, "s", agent_of=parent, agent_name="scout")
+    kid = await conversations.create(store, "k", agent_of=scout, agent_name="digger")
+    await conversations.create(store, "d", agent_of=parent, agent_name="digger")
+    found = await store.read(lambda c: addresses.resolve(c, "digger", f"agent:{scout}"))
+    assert found[1] == [(f"agent:{kid}", kid)], "a newer sibling never shadows its own"

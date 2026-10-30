@@ -227,19 +227,24 @@ class SubAgents:
                           display={"name": sub["name"], "conversation_id": sub["id"],
                                    "link": sub["link"]})
 
-    async def _cloud_approval(self, ctx: ToolContext, brief: str, name: str,
-                              model: str | None, known: dict | None) -> str | None:
-        """The user's approval when the sub-agent would run on a cloud model: a resumed
-        one's own, else the one given, else this conversation's (_settings), else the
-        first of its role's chain (settings/roles.py: tasks, an empty one chat's). None
-        when it may start, else the sentence for its result."""
+    async def _model(self, store, parent: str, model: str | None,
+                     known: dict | None) -> str | None:
+        """The one model it runs on, kept as its conversation's model: a resumed one's
+        own, else the one given, else the parent conversation's (model_for_sub_agent),
+        else the first of its role's chain (settings/roles.py: tasks, an empty one
+        chat's). None: there is no model at all."""
         from ..settings.roles import role_of
         s = self.cfg.settings
-        if known is not None:
-            model = known["model"]
-        elif model is None:
-            model = (await model_for_sub_agent(ctx.store, ctx.conversation_id))["model"]
-        model = model or next(iter(s.chain(role_of("agent")) or s.chain("chat")), None)
+        if known is not None and known["model"]:
+            return known["model"]
+        model = model or (await model_for_sub_agent(store, parent))["model"]
+        return model or next(iter(s.chain(role_of("agent")) or s.chain("chat")), None)
+
+    async def _cloud_approval(self, ctx: ToolContext, brief: str, name: str,
+                              model: str | None) -> str | None:
+        """The user's approval when the sub-agent runs on a cloud model (`model`, from
+        _model). None when it may start, else the sentence for its result."""
+        s = self.cfg.settings
         if not model or not her_models.cloud(s, model):
             return None
         llm = getattr(self.app, "llm", None)
@@ -327,6 +332,7 @@ class SubAgents:
                 return None, (f"{folder!r} is not a folder inside your notebook. Leave "
                               f"`folder` out for the whole notebook."), False, None
             folder = plain
+        asked_folder = folder          # the default access follows the folder given
         # a parent limited to a notebook folder limits its children to it
         own = await store.read(lambda c: c.execute(
             "SELECT notebook_folder FROM conversations WHERE id=?", (parent,)).fetchone())
@@ -348,7 +354,7 @@ class SubAgents:
             return None, "The brief is empty. Say what it must do.", False, None
         # capabilities pass down: a read parent starts read children only
         reading = await reads_only(store, parent)
-        access = access or ("work" if folder is not None and not reading else "read")
+        access = access or ("work" if asked_folder is not None and not reading else "read")
         if access not in ("read", "work"):
             return None, "access is read or work.", False, None
         if reading and (access == "work" or cli is not None or device is not None):
@@ -379,8 +385,9 @@ class SubAgents:
                                               or known["device"]):
             return None, READ_PARENT, False, None     # a resume gives no more either
         # the user's answer may take minutes: asked outside the lock, checked again in it
+        model = await self._model(store, parent, model, known)
         if asker is not None and (no := await self._cloud_approval(
-                asker, brief, name, model, known)):
+                asker, brief, name, model)):
             return None, no, False, None
         async with self._queueing:
             mine, known, folder, refusal = await self._check(
@@ -389,6 +396,9 @@ class SubAgents:
                 return None, refusal, False, None
             if known is not None:
                 sub = known["id"]
+                if not known["model"] and model:
+                    from ..settings import conversations as conv
+                    await conv.apply(store, sub, {"model": model})
             else:
                 if folder is not None and access == "work":
                     (self.cfg.her.notebook.resolve() / folder).mkdir(parents=True,
@@ -422,27 +432,21 @@ class SubAgents:
 
     async def stop_agent(self, sub: str) -> None:
         """Its turn, its jobs, the messages it scheduled that have not landed, and the
-        queued briefs of it and every sub-agent under it, so no release starts one."""
-        def fn(c: sqlite3.Connection) -> None:
-            for one in conversations.family(c, sub):
-                c.execute("UPDATE intercom SET cancelled_at=? WHERE id IN (SELECT i.id FROM "
-                          "intercom i JOIN intercom_deliveries d ON d.intercom_id = i.id "
-                          f"WHERE {queued_sql()})", (now(), one))
-        await self.app.store.write(fn)
+        queued briefs of it and every sub-agent under it (the dispatcher's
+        abort_conversation, drop_queued)."""
         await self.app.intercom.cancel_scheduled(sub)
         await self.dispatcher.abort_conversation(sub)
         await announce(self.app, sub)
 
     async def _settings(self, store, parent: str, sub: str, model: str | None = None) -> None:
-        """Its model (the one it picked, else the parent's, model_for_sub_agent), the
+        """Its model (begin's one, _model), the
         parent's automatic context switch (api/context.py) and the parent's tool
         switches, so a tool that is off in the parent conversation is off for its
         sub-agents too."""
         from ..settings import conversations as conv
         from ..conversations.store import inherit_auto_context
         await store.write(lambda c: inherit_auto_context(c, parent, sub))
-        picked = {"model": model} if model else await model_for_sub_agent(store, parent)
-        clean = {k: v for k, v in picked.items() if v is not None}
+        clean = {"model": model} if model else {}
         tools = await overrides_for(store, parent)
         if tools:
             clean["tools"] = tools
@@ -563,6 +567,15 @@ def queued_sql(conversation: str = "?") -> str:
     return (f"d.conversation_id = {conversation} AND i.kind='brief' AND i.wake=0 AND "
             "i.cancelled_at IS NULL AND d.state <> 'cancelled' AND d.turn_id IS NULL AND "
             "d.message_id IS NOT NULL")
+
+
+def drop_queued(c: sqlite3.Connection, cid: str) -> None:
+    """Cancel the queued briefs of `cid` and every sub-agent under it, so no release
+    starts one."""
+    for one in conversations.family(c, cid):
+        c.execute("UPDATE intercom SET cancelled_at=? WHERE id IN (SELECT i.id FROM "
+                  "intercom i JOIN intercom_deliveries d ON d.intercom_id = i.id "
+                  f"WHERE {queued_sql()})", (now(), one))
 
 
 def waiting(c: sqlite3.Connection, sub: str) -> tuple[int, str] | None:

@@ -40,7 +40,9 @@ class Usage:
 
 @dataclass(frozen=True, slots=True)
 class Done:
-    reason: Literal["stop", "length", "tool_calls", "content_filter"]
+    # steer: a drone stops its step for a message that came while it works
+    # (sub_agents/drone.py); the runner lands it and the next step hands it over
+    reason: Literal["stop", "length", "tool_calls", "content_filter", "steer"]
     usage: Usage | None = None
     # the reply as the server reported it (backends/openai.py raw_reply), for the
     # transcript's raw response view

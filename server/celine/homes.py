@@ -14,8 +14,8 @@ _ROW = "SELECT id, kind, agent_of, trigger_key, created_at FROM conversations WH
 
 
 def root(c: sqlite3.Connection, cid: str) -> sqlite3.Row | None:
-    """The top of `cid`'s agent_of chain (itself when it has no parent); None: no such
-    conversation."""
+    """The top of `cid`'s agent_of chain (itself when it has no parent), a loop in the
+    chain stopping the walk: the one walk up the chain. None: no such conversation."""
     r = c.execute(_ROW, (cid,)).fetchone()
     seen = {cid}
     while r is not None and r["agent_of"] and r["agent_of"] not in seen:

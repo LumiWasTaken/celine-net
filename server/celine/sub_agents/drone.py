@@ -6,22 +6,27 @@ opencode client is the box's, shellbox/agents/opencode.py, loaded from here.
 
 A drone's turn: the messages it got since the last one sent (`agent_sent`) go to its
 opencode session (`agent_session`, made at its first turn and kept, so the same name
-resumes the same session and a restart finds it again) with `prompt_async`, on the
-model its conversation runs on, which opencode reaches through the app's model proxy
-(queue, freeze and usage stay in the app). The models the proxy offers are put into
-the device's opencode config first when they differ (PATCH /global/config), and only
-while no session there works: a changed config disposes every opencode instance.
-The messages are marked sent before they go: a crash in between loses them rather than
-sending them twice (at most once). Its progress comes from opencode's event stream (GET
-/event): one line of the reply's thinking per tool it starts, and the tool in
-`agent_step` (the "Now:" of read and the overview); a stream that breaks says so in a
-line of its own and is opened again. The turn ends when the session is idle: the reply is opencode's last answer
-as it came; the tokens of its answers since the last one counted (`agent_seen`) are the
-turn's usage, the files the messages of the turn changed (opencode's diff) go into the
-reply's raw response, where the report finds them (report.work). A waking message that
-arrives while it works ends the turn without stopping opencode: the next turn hands it
-to the session as it works (opencode takes a prompt into the work it is on). A turn
-that finds no new message follows the session while it works, else takes what it
+resumes the same session and a restart finds it again) with `prompt_async`, on the one
+model its conversation was started and approved on (skill.py _model), which opencode
+reaches through the app's model proxy (queue, freeze and usage stay in the app). The
+models the proxy offers are put into the device's opencode config first when they
+differ (PATCH /global/config), and only while no session there works: a changed config
+disposes every opencode instance; one lock per device keeps two drones from writing it
+at once. The messages are marked sent before they go: a crash in between loses them
+rather than sending them twice (at most once); a refusal or no connection unmarks them,
+a send that got no answer (a timeout after it went out) keeps them marked. Its progress
+comes from opencode's event stream (GET /event): one line of the reply's thinking per
+tool it starts, and the tool in `agent_step` (the "Now:" of read and the overview); a
+stream that breaks says so in a line of its own and is opened again. The step ends when
+the session is idle: the reply is opencode's last answer as it came; the tokens of its
+answers since the last one counted (`agent_seen`) are its usage, the files the messages
+of the turn changed (opencode's diff) go into the reply's raw response, where the report
+finds them (report.work). A waking message that arrives while it works ends the step
+with Done reason "steer" without stopping opencode: the runner lands the message
+(intercom/deliver.py take) and the next step of the same turn hands it to the session
+at once, which takes it into the work it is on (opencode's prompt saves the message and
+joins the run in progress, whose loop goes on while a user message is unanswered). A
+step that finds no new message follows the session while it works, else takes what it
 answered since the last count. A Stop or the end of the turn's time aborts the session.
 """
 from __future__ import annotations
@@ -47,6 +52,7 @@ POLL = 5.0          # seconds between looks for a waking message and at the sess
 READ = 120.0        # seconds of a quiet event stream before it is opened again
 RETRY = 5.0         # seconds before a lost event stream is opened again
 _client = None
+_config_lock: dict[str, anyio.Lock] = {}    # per device: its config's check and PATCH
 
 
 def client():
@@ -145,9 +151,8 @@ class DroneBackend:
     def __init__(self, services, cid: str, cli: str, device: str, clock=None):
         self.services, self.cid, self.cli, self.device = services, cid, cli, device
         self.clock = clock
-        s = services.cfg.settings
-        own = CONVERSATION_MODELS.get(cid)
-        self.model = own if own in her_models.allowed(s) else "default"
+        # the one model it was started and approved on (skill.py _model)
+        self.model = CONVERSATION_MODELS.get(cid)
         self.name = f"{cli}:{device}"
         self.request_sent: dict | None = None
 
@@ -166,23 +171,25 @@ class DroneBackend:
         session there works (a changed config disposes every instance). While one
         works, the config stays: refused when it lacks this drone's model."""
         from ..api.llm_proxy import listing
+        s = self.services.cfg.settings
         want = {ref: {"name": ref, "limit": limit} for ref, limit in oc._limits(
-            listing(self.services.cfg.settings), log.info).items()}
-        have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
-                 .get("provider") or {}).get("celine") or {}).get("models") or {}
-        if all(have.get(k) == v for k, v in want.items()):
-            return
-        working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
-                                             server=server) or {}).items()
-                   if (v or {}).get("type") in ("busy", "retry")]
-        if not working:
-            await _run(oc._call, "PATCH", "/global/config",
-                       {"provider": {"celine": {"models": want}}}, server=server)
-        elif self.model not in have:
-            raise BackendError(
-                f"{self.model} is not in the opencode config on {dev.label} yet, and it "
-                f"changes only while no drone works there ({len(working)} working now); "
-                f"start this one when they are done.", retryable=False)
+            listing(s, her_models.allowed(s)), log.info).items()}
+        async with _config_lock.setdefault(self.device, anyio.Lock()):
+            have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
+                     .get("provider") or {}).get("celine") or {}).get("models") or {}
+            if all(have.get(k) == v for k, v in want.items()):
+                return
+            working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
+                                                 server=server) or {}).items()
+                       if (v or {}).get("type") in ("busy", "retry")]
+            if not working:
+                await _run(oc._call, "PATCH", "/global/config",
+                           {"provider": {"celine": {"models": want}}}, server=server)
+            elif self.model not in have:
+                raise BackendError(
+                    f"{self.model} is not in the opencode config on {dev.label} yet, and it "
+                    f"changes only while no drone works there ({len(working)} working now); "
+                    f"start this one when they are done.", retryable=False)
 
     async def stream(self, messages, tools, body=None):
         oc = client()
@@ -191,6 +198,8 @@ class DroneBackend:
             raise BackendError(f"The device {self.device} is not on.", retryable=False)
         if dev.why:
             raise BackendError(dev.why, retryable=False)
+        if self.model is None:
+            raise BackendError("This drone has no model to run on.", retryable=False)
         server = oc.Server(dev.url, dev.password, f"{dev.log} on {dev.label}")
         store = self.services.store
         row = await store.read(lambda c: _row(c, self.cid))
@@ -220,7 +229,8 @@ class DroneBackend:
                     try:
                         await _run(oc.prompt, session, self.model, brief, "", server)
                     except oc.Problem as e:
-                        await self._set(agent_sent=row["agent_sent"])   # not sent: again next turn
+                        if e.case != "unknown":     # surely not taken: again next turn
+                            await self._set(agent_sent=row["agent_sent"])
                         raise BackendError(f"{dev.label}: {e}", retryable=False) from None
                     busy = True
                 yield ReasoningDelta(f"{self.cli} on {dev.label}, session {session}\n")
@@ -300,7 +310,8 @@ class DroneBackend:
         raw = {"device": self.device, "session": session, "files": sorted(files),
                "messages": [m["info"] for m in msgs if m["info"].get("id") in
                             {*t["asked"], t["seen"]}]}
-        return t["text"], Done(reason="stop", usage=t["usage"], raw=raw)
+        return t["text"], Done(reason="steer" if cut else "stop", usage=t["usage"],
+                               raw=raw)
 
 
 async def _run(fn, *args, **kw):

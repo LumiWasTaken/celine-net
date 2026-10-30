@@ -33,7 +33,19 @@ def devices(cfg) -> dict[str, Device]:
         url = form.fill(cfg, p.id, fields, str(d.get("url", "")), empty)
         password = form.fill(cfg, p.id, fields, str(d.get("password", "")), empty)
         key = (form.read_secret(cfg, p.id, d["key"]) or "") if d.get("key") else ""
-        label = str(d.get("label") or p.manifest["label"])
+        label = _label(p)
         out[p.id] = Device(p.id, label, url, password, key, str(d.get("log", "")),
                            f"{label}: {'; '.join(dict.fromkeys(empty))}." if empty else None)
     return out
+
+
+def label(device: str) -> str:
+    """A device's label, on or not; its name when no plugin has it."""
+    from . import plugins
+    p = plugins.get(device)
+    return _label(p) if p is not None and isinstance(p.manifest.get("drones"), dict) \
+        else device
+
+
+def _label(p) -> str:
+    return str(p.manifest["drones"].get("label") or p.manifest["label"])

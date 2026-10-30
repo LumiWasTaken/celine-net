@@ -130,6 +130,7 @@ class Missions:
             return True
         sub = await store.read(lambda c: c.execute(
             "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
+        # sub-agents start no missions, only she does
         return {"list"} if sub and sub[0] else {"list", "start"}
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:

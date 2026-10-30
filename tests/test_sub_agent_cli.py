@@ -166,4 +166,5 @@ async def test_start_takes_one_of_her_models_and_a_cli(cfg, store, box):
         (ok.display["conversation_id"],)).fetchone())
     assert tuple(row) == ("main/small", "opencode")
     plain = await agents.start(ctx, brief="go", name="plain one")
-    assert plain.display["model"] is None and plain.display["cli"] is None, "as today"
+    assert plain.display["model"] == "main/big" and plain.display["cli"] is None, \
+        "no model given: the one it runs on, kept"

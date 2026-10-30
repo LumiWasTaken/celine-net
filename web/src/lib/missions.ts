@@ -38,7 +38,9 @@ export type Mission = {
   updated_at: string
 }
 
-export type MissionStep = PlanStep
+/** a step as the server sends it: `model_label` its model's name, the server's (null:
+    the mission's own model) */
+export type MissionStep = PlanStep & { model_label: string | null }
 
 /** GET /missions: the page's numbers, the server's (each status of the list, all of it,
     the Archive and the Trash) */
@@ -59,7 +61,9 @@ export const missionsApi = {
     request<{ ok: boolean }>(`/missions/${cid}`, json('PATCH', body)),
   stop: (cid: string) => post<{ ok: boolean }>(`/missions/${cid}/stop`),
   setSteps: (cid: string, steps: MissionStep[]) =>
-    request<Mission>(`/missions/${cid}`, json('PATCH', { steps })),
+    request<Mission>(`/missions/${cid}`, json('PATCH', {
+      steps: steps.map(s => ({ title: s.title, state: s.state, checkpoint: s.checkpoint, model: s.model })),
+    })),
   /** into the Trash with its sub-agents, every message kept */
   trash: (cid: string) => del<{ ok: boolean }>(`/conversations/${cid}`),
   restore: (cid: string) => post<{ ok: boolean }>(`/conversations/${cid}/restore`),

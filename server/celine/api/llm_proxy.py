@@ -5,6 +5,9 @@ drones on its devices (sub_agents/drone.py).
                                     `default`: the first of them its chats run on
     POST /llm/v1/chat/completions   OpenAI's wire format
 
+A device gets its local models and the cloud model each drone at work there was
+approved on (`yours`); another cloud model is refused with a sentence.
+
 Each model in /models carries what the app knows of its size, so a coding agent budgets
 with the real numbers (shellbox/agents/opencode.py writes them as opencode's
 `limit.context` and `limit.output`), and leaves out what it does not know:
@@ -172,12 +175,28 @@ async def _send_error(send, r: JSONResponse) -> None:
     await send({"type": "http.response.body", "body": r.body})
 
 
-def resolve(s, model: str) -> str | None:
-    """`default` (the chat model) or a model it may use -> its ref; None when it is
-    not one of its own."""
+def resolve(s, model: str, refs: list[str]) -> str | None:
+    """`default` (the chat model) or one of `refs` -> its ref; None when it is not one
+    of them."""
     if model == "default":
         model = next(iter(s.chat_chain(None)), "")
-    return model if model in her_models.allowed(s) else None
+    return model if model in refs else None
+
+
+async def yours(services, lane: str) -> list[str]:
+    """The models a caller may use: the box every one of hers; a device its local ones
+    and the cloud model each drone at work there was approved on (sub_agents/skill.py
+    _model, its conversation's model)."""
+    from ..core.states import LIVE_SQL
+    s = services.cfg.settings
+    refs = her_models.allowed(s)
+    if lane == LANE:
+        return refs
+    approved = await services.store.read(lambda c: {r[0] for r in c.execute(
+        f"SELECT DISTINCT c.model_id FROM conversations c JOIN turns t ON "
+        f"t.conversation_id = c.id WHERE c.agent_device=? AND t.state IN {LIVE_SQL}",
+        (lane,))})
+    return [r for r in refs if r in approved or not her_models.cloud(s, r)]
 
 
 async def _forward(request: Request, path: str):
@@ -200,9 +219,13 @@ async def _forward(request: Request, path: str):
     if not isinstance(body, dict):
         return _error(400, "The body is a JSON object.", "invalid_request_error")
     asked = str(body.get("model") or "default")
-    ref = resolve(s, asked)
+    refs = await yours(services, caller[0])
+    ref = resolve(s, asked, refs)
+    if ref is None and resolve(s, asked, her_models.allowed(s)) is not None:
+        return _error(403, f"{asked} is a cloud model no drone working on {caller[1]} "
+                           f"was approved for.", "permission_error")
     if ref is None:
-        names = ", ".join(her_models.allowed(s)) or "none"
+        names = ", ".join(refs) or "none"
         return _error(404, f"{asked} is not one of your models. Yours: {names}.",
                       "model_not_found")
     bc = backend_config(s, ref)
@@ -216,20 +239,21 @@ async def _forward(request: Request, path: str):
 
 @router.get("/models")
 async def models(request: Request):
-    _, refused = _caller(request)
+    caller, refused = _caller(request)
     if refused is not None:
         return refused
-    s = getattr(request.app.state.services.cfg, "settings", None)
-    return {"object": "list", "data": listing(s) if s is not None else []}
+    services = request.app.state.services
+    s = getattr(services.cfg, "settings", None)
+    return {"object": "list", "data": listing(s, await yours(services, caller[0]))
+            if s is not None else []}
 
 
-def listing(s) -> list[dict]:
-    """/models' data: every model it may use with its sizes, and `default`."""
-    refs = her_models.allowed(s)
+def listing(s, refs: list[str]) -> list[dict]:
+    """/models' data: the models `refs` with their sizes, and `default` when it is
+    one of them."""
     data = [{"id": r, "object": "model", "created": 0, "owned_by": "celine",
              "name": her_models.label(s, r), **_sizes(s, r)} for r in refs]
-    if refs:
-        d = resolve(s, "default")
+    if (d := resolve(s, "default", refs)) is not None:
         data.append({"id": "default", "object": "model", "created": 0, "owned_by": "celine",
                      "name": f"default: {her_models.label(s, d)}", **_sizes(s, d)})
     return data

@@ -898,14 +898,14 @@ once; the rest are queued, and `release` starts them oldest brief first. With `c
 model, calling its models through the model proxy (`api/llm_proxy.py`). A sub-agent
 starts its own, down to `MAX_DEPTH` (3) levels below the top conversation
 (`conversations.store.depth` reads the `agent_of` chain); the deepest is not offered
-the skill. A `model` of a cloud provider kind (`her_models.cloud`: the kind has a
-`default_url`) waits for the user's approval (kind `model`) at every start. A sub-agent is
+the skill. A `model` on a cloud provider (`her_models.cloud`: its address is not on this network:
+not loopback, private, link-local, a single label or .local, .lan, .home.arpa, .internal) waits for the user's approval (kind `model`) at every start. A sub-agent is
 done when its conversation is quiet and so are its own sub-agents (`report.quiet`);
 `sub_agents/report.py` then sends one intercom `report` to `agent:<parent>`, never
 further up: a head (name, state, models, tokens, seconds, notes changed) and its final
 answer cut to `REPORT_SHARE` of the parent's window. What it opened closes
-(`leftovers.py`). A sub-agent writes only to itself, its parent, its own sub-agents, the
-user and Bastet (`addresses._reach`).
+(`leftovers.py`). A sub-agent writes only to itself, its parent and its own sub-agents
+(`addresses._reach`).
 `read(name, wait)` looks at one, `stop(name)` stops its turn, jobs and scheduled
 messages. Read access gives it only read-only tools and the intercom (`prompt.tool_specs`,
 `turns/tools.py`). `GET /api/sub-agents` rows and `agent.state` events carry `access`.

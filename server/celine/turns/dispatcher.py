@@ -180,7 +180,10 @@ class Dispatcher:
     async def abort_conversation(self, cid: str) -> str | None:
         """The user's Stop for a whole conversation: its live turn, every job it
         runs, and its sub-agents' conversations the same way. Returns the stopped
-        turn's id, or None when no turn was live."""
+        turn's id, or None when no turn was live. The queued briefs of the whole family
+        go first, so a sub-agent that ends here starts none of its siblings."""
+        from ..sub_agents.skill import drop_queued
+        await self.store.write(lambda c: drop_queued(c, cid))
         tid = await turns.request_abort(self.store, cid)
         if tid:
             self.tokens.cancel(tid)

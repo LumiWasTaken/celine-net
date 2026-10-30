@@ -3,7 +3,7 @@ device, here a fake one. Its brief goes to its own session with the model it run
 the proxy's models into the device's config first; its tools come back as thinking lines
 and its "Now:"; the reply is opencode's answer as it came, its tokens the turn's usage,
 the files its messages changed in the report. The same name carries on in the same
-session; a waking message ends the turn without stopping the drone; a Stop aborts it."""
+session; a waking message ends the step without stopping the drone; a Stop aborts it."""
 from __future__ import annotations
 
 import base64
@@ -268,7 +268,7 @@ async def test_a_brief_goes_to_its_session_and_the_answer_comes_back_as_it_came(
     assert Fake.messages["ses_1"][2]["parts"][0]["text"] == "now add the ghosts"
 
 
-async def test_a_waking_message_ends_the_turn_and_the_next_hands_it_over(app, store):
+async def test_a_waking_message_ends_the_step_and_the_next_hands_it_over(app, store):
     sub = await _drone(store)
     b = drone.DroneBackend(app, sub, "opencode", "mac")
     parent = await store.read(lambda c: c.execute(
@@ -290,6 +290,7 @@ async def test_a_waking_message_ends_the_turn_and_the_next_hands_it_over(app, st
         await until(lambda: Fake.busy)
         await steer()
     assert not [e for e in evs if isinstance(e, TextDelta)], "it still works"
+    assert evs[-1].reason == "steer", "the runner lands the message, the next step hands it over"
     assert "ses_1" in Fake.busy, "not aborted"
     assert not any(p.endswith("/abort") for _, p, _ in Fake.seen)
 
@@ -354,6 +355,30 @@ def test_a_count_whose_last_answer_is_gone_fails_instead_of_counting_twice():
     assert tally(msgs, None)["asked"] == ["msg_1"]
 
 
+async def test_two_drones_starting_on_one_device_write_its_config_once(app, store,
+                                                                      monkeypatch):
+    oc = drone.client()
+    subs = [await _drone(store), await _drone(store)]
+    seen = []
+    real = drone._run
+
+    async def slow(fn, *a, **kw):        # both would read the old config before a PATCH
+        out = await real(fn, *a, **kw)
+        seen.append(a[:2])
+        for _ in range(20):
+            await anyio.lowlevel.checkpoint()
+        return out
+    monkeypatch.setattr(drone, "_run", slow)
+    dev = drone.devices(app.cfg)["mac"]
+    server = oc.Server(dev.url, dev.password, "")
+    async with anyio.create_task_group() as tg:
+        for sub in subs:
+            tg.start_soon(drone.DroneBackend(app, sub, "opencode", "mac")._models,
+                          oc, server, dev)
+    assert [m for m, _, _ in Fake.seen].count("PATCH") == 1
+    assert seen.count(("GET", "/global/config")) == 2
+
+
 async def test_the_config_changes_only_while_no_drone_works_there(app, store):
     sub = await _drone(store)
     Fake.busy.add("ses_other")
@@ -383,3 +408,32 @@ async def test_a_broken_event_stream_says_so_in_the_turn(app, store, monkeypatch
     evs = await _run(b, during)
     assert seen == ["The event stream from Her Mac broke (it ended); it is opened again.\n"]
     assert [e.text for e in evs if isinstance(e, TextDelta)] == ["done anyway"]
+
+
+async def test_a_send_with_no_answer_stays_sent_and_a_refused_one_goes_again(
+        app, store, monkeypatch, fake):
+    oc = drone.client()
+    sub = await _drone(store)
+    b = drone.DroneBackend(app, sub, "opencode", "mac")
+    for case, sent in (("unknown", True), ("unreachable", False), ("refused", False)):
+        def prompt(*a, **kw):
+            raise oc.Problem("no", 503, case)
+        monkeypatch.setattr(oc, "prompt", prompt)
+        with pytest.raises(drone.BackendError):
+            await _run(b)
+        assert ((await _row(store, sub))["agent_sent"] is not None) is sent, case
+        await store.write(lambda c: c.execute(
+            "UPDATE conversations SET agent_sent=NULL WHERE id=?", (sub,)))
+
+
+def test_a_problem_says_whether_the_request_went_out(fake):
+    oc = drone.client()
+    with pytest.raises(oc.Problem) as e:
+        oc._call("GET", "/x", server=oc.Server("http://127.0.0.1:9", PW, ""))
+    assert e.value.case == "unreachable"
+    with pytest.raises(oc.Problem) as e:
+        oc._call("GET", "/session/ses_1/nothing", server=oc.Server(fake, "wrong", ""))
+    assert e.value.case == "refused"
+    with pytest.raises(oc.Problem) as e:      # the stream never ends: no answer in time
+        oc._call("GET", "/event", timeout=0.2, server=oc.Server(fake, PW, ""))
+    assert e.value.case == "unknown"
