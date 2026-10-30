@@ -3,7 +3,7 @@ device, here a fake one. Its brief goes to its own session with the model it run
 the proxy's models into the device's config first; its tools come back as thinking lines
 and its "Now:"; the reply is opencode's answer as it came, its tokens the turn's usage,
 the files its messages changed in the report. The same name carries on in the same
-session; a waking message ends the turn without stopping the drone; a Stop aborts it."""
+session; a waking message ends the step without stopping the drone; a Stop aborts it."""
 from __future__ import annotations
 
 import base64
@@ -268,7 +268,7 @@ async def test_a_brief_goes_to_its_session_and_the_answer_comes_back_as_it_came(
     assert Fake.messages["ses_1"][2]["parts"][0]["text"] == "now add the ghosts"
 
 
-async def test_a_waking_message_ends_the_turn_and_the_next_hands_it_over(app, store):
+async def test_a_waking_message_ends_the_step_and_the_next_hands_it_over(app, store):
     sub = await _drone(store)
     b = drone.DroneBackend(app, sub, "opencode", "mac")
     parent = await store.read(lambda c: c.execute(
@@ -290,6 +290,7 @@ async def test_a_waking_message_ends_the_turn_and_the_next_hands_it_over(app, st
         await until(lambda: Fake.busy)
         await steer()
     assert not [e for e in evs if isinstance(e, TextDelta)], "it still works"
+    assert evs[-1].reason == "steer", "the runner lands the message, the next step hands it over"
     assert "ses_1" in Fake.busy, "not aborted"
     assert not any(p.endswith("/abort") for _, p, _ in Fake.seen)
 

@@ -271,6 +271,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         if token.cancelled:
             await _stopped(store, tid, cid, token)
             return
+        if not calls and done is not None and done.reason == "steer":
+            iteration += 1                  # the next step's take lands the message
+            continue
         if not calls:
             cut = "length" if done is not None and done.reason == "length" else None
             await _verify_citations(store, cfg, cid, mid, text, thinking, messages, kbs,

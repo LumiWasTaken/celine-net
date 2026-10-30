@@ -13,7 +13,7 @@ import pytest
 from celine import boot
 from celine.conversations import store as conversations, view
 from celine.core.services import Services
-from celine.backends.base import Done, TextDelta, ToolCallDelta
+from celine.backends.base import Done, ReasoningDelta, TextDelta, ToolCallDelta
 from fake_backend import FakeBackend
 from celine.core.bus import EventBus
 from celine.intercom import Intercom
@@ -83,6 +83,37 @@ async def test_a_message_during_a_turn_joins_it_at_the_next_step(store, cfg):
     assert await store.read(lambda c: c.execute(
         "SELECT state, turn_id FROM intercom_deliveries ORDER BY intercom_id DESC LIMIT 1"
     ).fetchone()[:]) == ("delivered", turn["id"])
+
+
+class Steered(FakeBackend):
+    """A drone (sub_agents/drone.py): a message comes while it works, it ends its step
+    with "steer", and the next step of the same turn sees the message."""
+
+    async def stream(self, messages, tools):
+        self.calls.append(messages)
+        if len(self.calls) == 1:
+            yield ReasoningDelta("working\n")
+            await user_says(self.store, self.cid, "use canvas")
+            yield Done(reason="steer")
+        else:
+            yield TextDelta("done, on canvas")
+            yield Done(reason="stop")
+
+
+async def test_a_steer_step_lands_the_message_and_the_turn_goes_on(store, cfg):
+    cid = await conversations.create(store)
+    await user_says(store, cid, "make pac-man")
+    turn = await turns.claim(store, "w")
+    backend = Steered()
+    backend.store, backend.cid = store, cid
+    await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), Registry())
+    msgs = (await view.snapshot(store, cid))["messages"]
+    assert [(m["role"], m["content"]) for m in msgs] == [
+        ("user", "make pac-man"), ("assistant", ""), ("user", "use canvas"),
+        ("assistant", "done, on canvas")]
+    assert msgs[2]["turn_id"] == turn["id"]
+    assert backend.calls[1][-1]["content"].endswith("use canvas")
+    assert await _turns(store, cid) == [("user", "done")], "one turn"
 
 
 async def _family(store):
