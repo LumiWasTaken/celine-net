@@ -11,7 +11,9 @@ last turn ended, what its work since its last report took: the models that answe
 the tokens in and out, the seconds its turns ran, the notes it changed, the files a
 drone changed) and its final
 answer (not what it said between tool calls), cut to REPORT_SHARE of the parent's
-window; the rest stays in its conversation. How its last turn ended is in
+window; the rest stays in its conversation. A last turn that did not end done (failed,
+stopped, cut) adds the reason it stored after the answer, or is the body when it wrote
+nothing (a drone's failure is its turn's too). How its last turn ended is in
 `data.state`, the work in `data.work`. A job's result therefore reaches the report,
 never a placeholder."""
 from __future__ import annotations
@@ -146,7 +148,7 @@ def _facts(c: sqlite3.Connection, cid: str) -> dict | None:
     reply_to = asked(c, cid, parent)
     if reply_to is None or not quiet(c, cid):
         return {"reply_to": None}           # nothing asked, or not done yet
-    turn = c.execute("SELECT state FROM turns WHERE conversation_id=? "
+    turn = c.execute("SELECT state, reason FROM turns WHERE conversation_id=? "
                      "ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
     job = c.execute("SELECT state FROM jobs WHERE conversation_id=? "
                     "ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
@@ -154,7 +156,8 @@ def _facts(c: sqlite3.Connection, cid: str) -> dict | None:
     # stopped: its last turn was aborted, or its last job cancelled (a Stop that came
     # after the turn had ended). Such a report never wakes the parent.
     stopped = state == "aborted" or bool(job and job["state"] == "cancelled")
-    return {"parent": parent, "text": last_answer(c, cid), "state": state,
+    reason = (turn["reason"] or "") if turn and state != "done" else ""
+    return {"parent": parent, "text": last_answer(c, cid), "state": state, "reason": reason,
             "stopped": stopped, "reply_to": reply_to, "work": work(c, cid),
             "outside": agent_read_outside(c, cid), "name": name_of(c, f"agent:{cid}"),
             "cap": cap(c, parent)}
@@ -191,12 +194,14 @@ async def _report(services, cid: str) -> None:
     await announce(services, cid)
     if f["reply_to"] is None:
         return
-    text = f["text"] or "(it wrote nothing)"
+    text = f["text"] or ("" if f["reason"] else "(it wrote nothing)")
     shown_text, shown, total = tokens.cut_to(text, f["cap"])
     if shown < total:
         text = f"{shown_text}\n\n{CUT}"
     # one blank line between the head and the answer, however many lines it starts with
     answer = text.lstrip("\n")
+    if f["reason"]:
+        answer = f"{answer.rstrip()}\n\n{f['reason']}" if answer.strip() else f["reason"]
     text = f"{head(f['name'], f['state'], f['work'])}\n\n{answer}"
     # a sub-agent that was stopped reports without waking its parent: the parent
     # stopped it (its Stop cascades) or knows, and a Stop must stick

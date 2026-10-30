@@ -102,7 +102,7 @@ export type Frame =
   | ({ type: 'message.delta' | 'message.reasoning'; message_id: string; text: string } & Of)
   | ({ type: 'message.done' | 'message.rewritten'; message_id: string; text: string } & Of)
   | ({ type: 'conversation.notes_off'; notes_off?: string[] } & Of)
-  | ({ type: 'tool.forming'; message_id: string; index: number; name: string; chars: number; preview: string; words: string } & Of)
+  | ({ type: 'tool.forming'; message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string } & Of)
   | ({ type: 'tool.started'; message_id: string; tool_call_id: string; name: string; arguments: string; words: ToolWords; started_at?: string | null } & Of)
   | ({ type: 'tool.done' | 'tool.gated'; tool_call_id: string; state?: ToolCall['state']; ok?: boolean; display?: ToolCall['display']; words?: ToolWords
        result?: string | null; job_id?: string | null; finished_at?: string | null } & Of)

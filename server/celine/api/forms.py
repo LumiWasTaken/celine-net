@@ -6,7 +6,7 @@ var/secrets/<id>.<key>.key.
 - GET /api/forms/{id} -> {fields, actions, note?, values, secrets, version, saved,
   running}. `running`: its actions can run now (a plugin's code runs only while it is on;
   `features.changed` says when that changes). While it runs, its `copies =
-  "module:function"` (services, plugin, her=False) -> {key: text} fills its `copy` fields; a
+  "module:function"` (services, plugin) -> {key: text} fills its `copy` fields; a
   `note` among them is the form's note.
 - PUT /api/forms/{id} {values, secrets?} with If-Match -> the same view. `values` is the
   whole object (a key left out goes back to its default). A secret is set by a string,

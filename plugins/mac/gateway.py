@@ -1,16 +1,18 @@
 """Her Mac: setup.sh served to the Mac, the report it posts back saved into the form,
 her scripts' messages to her, the setup line the form shows, and Check.
 
-- The setup line, `curl -fsSL <app>/api/plugins/mac/setup/<token> | bash`: the form (and
-  her settings__read while the Mac is not connected) asks for it, and each ask makes a
+- The setup line, `curl -fsSL <app>/api/plugins/mac/setup/<token> | bash`: the form and
+  her settings__read ask for it while the Mac has reported no Address, and each ask makes a
   new token that works once within SETUP_SECONDS. The app's address is its stored one
   (settings/address.py); while that is localhost the form says how to open the app on
   the network instead.
 - GET /api/plugins/mac/setup/<token>: setup.sh with the app's address and the link key
   filled in. GET /api/plugins/mac/setup.sh: the script as it is (`--status`).
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
-  report line {address, token, agents, share, ...}; the address, the token, the drones'
-  and the share server's addresses are saved into the form (celine/saves.py plugin_form), so the servers start
+  report line {address, token, agents, share, mac, ...}; the address, the token, the
+  drones' and the share server's addresses and the Mac's facts (`mac`: its user, home,
+  chip, memory, macOS, network; About This Mac, in her system prompt through
+  devices.about) are saved into the form (celine/saves.py plugin_form), so the servers start
   again with them.
 - POST /api/plugins/mac/events with the link key: {text, conversation?}, a message from
   her to herself (intercom__send to "me") in that conversation, else her newest chat: it
@@ -64,11 +66,11 @@ async def run(services, p) -> None:
         secrets.set_key(root, form.secret_name(p.id, LINK), random.token_hex(32))
 
 
-async def copies(services, p, her: bool = False) -> dict[str, str]:
+async def copies(services, p) -> dict[str, str]:
     """{"command": the setup line} with a new token, or {"note": LOCAL} while the app's
-    address is localhost. `her` (settings__read): only while the Mac is not connected."""
+    address is localhost; nothing once the Mac reported its Address."""
     cfg = services.cfg
-    if _link(cfg) is None or (her and (cfg.settings.plugins.get(p.id) or {}).get("url")):
+    if _link(cfg) is None or (cfg.settings.plugins.get(p.id) or {}).get("url"):
         return {}
     app = address.base(cfg)
     if address.is_loopback(app):
@@ -129,7 +131,27 @@ async def gateway(request: Request) -> dict[str, Any]:
     for key in ("agents", "share"):
         if isinstance(body.get(key), str):
             values[key] = body[key]
+    if isinstance(body.get("mac"), dict) and (said := about(body["mac"])):
+        values["about"] = said
     return await plugin_form(services, p, values, {"token": body["token"]})
+
+
+def about(mac: dict[str, Any]) -> str:
+    """setup.sh's facts of the Mac in one line: "user celine, home /Users/celine, Apple
+    M4, 16 GB memory, macOS 15.6, Wi-Fi (en0)"; a fact it did not send is left out."""
+    def said(k: str) -> str:
+        v = mac.get(k)
+        return v.strip() if isinstance(v, str) else ""
+    memory = mac.get("memory")
+    parts = [f"user {said('user')}" if said("user") else "",
+             f"home {said('home')}" if said("home") else "",
+             said("chip"),
+             f"{round(memory / 2**30)} GB memory"
+             if isinstance(memory, int) and not isinstance(memory, bool) and memory > 0
+             else "",
+             f"macOS {said('macos')}" if said("macos") else "",
+             said("network") + (f" ({said('interface')})" if said("interface") else "")]
+    return ", ".join(x.strip() for x in parts if x.strip())
 
 
 _NEWEST = ("SELECT id FROM conversations WHERE kind='chat' AND agent_of IS NULL AND "

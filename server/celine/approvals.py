@@ -18,7 +18,8 @@ One service, these kinds:
   it, so it waits for the user, guard or no guard, as an edit of herself does.
 - `settings`, a change of the settings (settings__propose, skills/settings.py): every
   one waits for the user, guard or no guard. Its chat row carries `changes`, each field's
-  label, before and after (a secret's value never: its state), and her `why`.
+  label, before (none when it had no value) and after (a secret's value never: its
+  state), and her `why`.
 - `model`, a sub-agent on a cloud model (sub_agents__start, sub_agents/skill.py): every
   start waits for the user; its line names the sub-agent, the model and the brief's start.
 

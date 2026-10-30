@@ -33,6 +33,12 @@ mono = true
 placeholder = "http://192.168.1.30:8767"
 
 [[fields]]
+key = "about"
+label = "About This Mac"
+type = "text"
+default = ""
+
+[[fields]]
 key = "token"
 label = "Token"
 type = "secret"

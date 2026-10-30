@@ -8,7 +8,7 @@ import json
 
 import anyio
 
-from .. import clock, guard
+from .. import clock, devices, guard
 from ..plans import flow as plan_flow
 from ..skills import CORE, ToolContext
 from ..skills.gating import OFF, down_sentence, is_enabled, overrides_for
@@ -291,6 +291,7 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
     where = await store.read(lambda c: here.where(c, cid, role))
     if where:
         parts.append(("talk", cfg.substitute(where)))
+    parts.append(("talk", devices.about(cfg) or ""))
     if her is not None:
         parts.append(("talk", cfg.substitute(her.talk_text)))
     parts.append(("about", about_user(cfg)))
@@ -322,6 +323,7 @@ async def agent_blocks(cfg, registry, store, ctx, carried, role, cli: bool
             ctx, {"sub_agents"}))
     where = await store.read(lambda c: here.where(c, cid, role))
     parts.append(("talk", cfg.substitute(where) if where else ""))
+    parts.append(("talk", devices.about(cfg) or ""))
     if not cli:
         parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
         if registry:

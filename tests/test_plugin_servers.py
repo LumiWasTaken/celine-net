@@ -20,7 +20,7 @@ import pytest
 from celine import boot, plugins, saves
 from celine.api import plugins as plugins_api
 from celine.core.runners import Runner, Runners
-from celine.devices import devices
+from celine.devices import about, devices
 from celine.mcp import Supervisor, plugin_servers
 from celine.settings import features, form
 from celine.conversations import store as conversations
@@ -120,7 +120,10 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
     p = plugins.get("mac")
     report = {"address": "http://127.0.0.1:9", "token": "mac-token-1", "token_file": "/x",
               "agents": "http://127.0.0.1:4096",
-              "servers": {"screen": {"tools": 26, "missing": []}}}
+              "servers": {"screen": {"tools": 26, "missing": []}},
+              "mac": {"user": "celine", "home": "/Users/celine", "chip": "Apple M4",
+                      "memory": 17179869184, "macos": "15.6", "network": "Wi-Fi",
+                      "interface": "en0"}}
     async with anyio.create_task_group() as tg, client(app) as c:
         assert not plugins.is_open("POST", "/api/plugins/mac/gateway"), "off: nothing is open"
         runners = services.runners = Runners()
@@ -183,6 +186,14 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert "copy" not in await read_in(agent) and "note" not in await read_in(agent)
         assert view["values"]["url"] == "" and view["secrets"]["token"]["state"] == "not set"
         assert devices(cfg)["mac"].why == "Her Mac: Agents is empty; Token is empty."
+        assert about(cfg) is None
+        before = next(f for f in (await c.get("/api/features")).json()["catalog"]
+                      if f["id"] == "mac")
+        assert before["state"] == "unset"
+        from celine.settings import write
+        seen, publish = [], write.publish
+        monkeypatch.setattr(write, "publish", lambda s, what: (
+            seen.append((what, s.feature_probes)), publish(s, what)))
 
         wrong = await c.post("/api/plugins/mac/gateway", json=report,
                              headers={"Authorization": "Bearer nope"})
@@ -197,7 +208,15 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert "mac-token-1" not in str(view)
         assert view["values"]["agents"] == "http://127.0.0.1:4096"
         assert await _copies(services, p) == {}, "connected: she gets no line"
-        assert any(f["key"] == "command" for f in view["fields"]), "the form keeps it"
+        assert not any(f["key"] == "command" for f in view["fields"]), "connected: no line"
+        after = next(f for f in (await c.get("/api/features")).json()["catalog"]
+                     if f["id"] == "mac")
+        assert after["state"] != "unset", "the save asks the probes anew"
+        assert seen == [(["mac"], None)], "a page that reloads on the event reads new states"
+        facts = ("user celine, home /Users/celine, Apple M4, 16 GB memory, macOS 15.6, "
+                 "Wi-Fi (en0)")
+        assert view["values"]["about"] == facts
+        assert about(cfg) == f"Her Mac: {facts}."
         mac = devices(cfg)["mac"]      # the drones' device: its password the token, its key the link
         assert (mac.url, mac.password, mac.key, mac.why) == (
             "http://127.0.0.1:4096", "mac-token-1", key, None)

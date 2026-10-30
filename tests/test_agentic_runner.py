@@ -255,3 +255,17 @@ async def test_a_skill_switched_on_mid_turn_is_callable_at_the_next_step(store, 
                 [TextDelta("done"), Done(reason="stop")]])
     await _turn(store, cfg, reg, b)
     assert await _tool_results(store) == ["on", "u ran"]
+
+
+async def test_a_call_she_is_still_writing_shows_its_name_and_growing_size(store, cfg):
+    """tool.forming goes out as the arguments stream: the name, the characters and the
+    lines so far (escaped newlines, an escaped backslash before an n is no newline), and
+    once more with the last state when the reply ends."""
+    calls = [ToolCallDelta(index=0, id="f0", name="t__same", arguments='{"q": "one\\n'),
+             ToolCallDelta(index=0, arguments='two\\\\n\\nthree"}'),
+             Done(reason="tool_calls")]
+    _, events, _ = await _turn(store, cfg, _reg(T()),
+                               Script([calls, [TextDelta("k"), Done(reason="stop")]]))
+    shown = [e["data"] for e in events if e["type"] == "tool.forming"]
+    assert [(f["name"], f["lines"]) for f in shown] == [("t__same", 2), ("t__same", 3)]
+    assert shown[0]["chars"] < shown[1]["chars"] == len('{"q": "one\\ntwo\\\\n\\nthree"}')

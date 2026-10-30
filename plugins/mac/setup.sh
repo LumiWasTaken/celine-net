@@ -11,7 +11,8 @@
 #   bash setup.sh --status                          report only, install nothing
 #
 # The report is one JSON line: the gateway address, the token, the drones' address, the
-# tools that answer, the macOS permissions each still lacks and opencode's version. With
+# tools that answer, the macOS permissions each still lacks, opencode's version and the
+# Mac's facts (user, home, chip, memory in bytes, macOS version, network port). With
 # the app's address and its link key it posts that line to the app.
 #
 # One { } around everything: bash reads the whole script before it runs, so a command
@@ -54,14 +55,26 @@ say() { [ -n "$JSON$STATUS" ] || printf '== %s\n' "$*"; }
 # One JSON line: gateway address, token, each server's tool count (null: no answer) and
 # the permissions it lacks, asked through the gateway so the grants are the gateway's own.
 report() {
-  local ip
-  ip=$(ipconfig getifaddr "$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')" 2>/dev/null || true)
+  local iface ip port
+  iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}' || true)
+  ip=$(ipconfig getifaddr "$iface" 2>/dev/null || true)
+  # the hardware port of the default route's interface: Wi-Fi, Ethernet, Thunderbolt Bridge
+  port=$(networksetup -listallhardwareports 2>/dev/null |
+    awk -v d="Device: $iface" '/^Hardware Port:/{p=substr($0,16)} $0==d{print p}' || true)
   # shellcheck disable=SC2016  # JavaScript, not shell
   ADDRESS="http://${ip:-127.0.0.1}:$PORT" TOKEN_FILE="$TOKEN" GATEWAY_PORT="$PORT" \
     AGENTS="http://${ip:-127.0.0.1}:$AGENTS_PORT" AGENTS_PORT="$AGENTS_PORT" \
     SHARE="http://${ip:-127.0.0.1}:$SHARE_PORT" \
+    MAC_USER="$(id -un)" MAC_HOME="$HOME" MAC_IFACE="$iface" MAC_NET="$port" \
+    MAC_CHIP="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)" \
+    MAC_MEMORY="$(sysctl -n hw.memsize 2>/dev/null || true)" \
+    MAC_OS="$(sw_vers -productVersion 2>/dev/null || true)" \
     "$(brew --prefix)/bin/node" --input-type=module -e '
 const { ADDRESS, TOKEN_FILE, GATEWAY_PORT, AGENTS, AGENTS_PORT, SHARE } = process.env;
+const env = process.env;
+const mac = { user: env.MAC_USER, home: env.MAC_HOME, chip: env.MAC_CHIP,
+              memory: Number(env.MAC_MEMORY) || null, macos: env.MAC_OS,
+              network: env.MAC_NET, interface: env.MAC_IFACE };
 const fs = await import("node:fs");
 const token = fs.existsSync(TOKEN_FILE) ? fs.readFileSync(TOKEN_FILE, "utf8").trim() : null;
 const base = `http://127.0.0.1:${GATEWAY_PORT}`;
@@ -122,7 +135,7 @@ try {
   opencode = { version: null, error: String(e.message ?? e) };
 }
 console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, agents: AGENTS,
-                             share: SHARE, servers, opencode }));
+                             share: SHARE, servers, opencode, mac }));
 '
 }
 

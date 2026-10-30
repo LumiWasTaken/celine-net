@@ -19,6 +19,15 @@ becomes one of yours once its server is a provider: settings__propose with targe
 on the Mac's localhost) and its models; {{username}} approves the card. A template's
 `model:` then names it, and its sub-agents start at once.
 
+Waiting for a process: start_process waits up to its `timeout_ms` for the process to end
+or ask for input, then answers with its pid while it runs on. read_process_output(pid,
+timeout_ms) waits until the process writes new output or ends, at most `timeout_ms` and
+never past 50 seconds; a process that prints progress (a download's percent) answers it
+at once. A command that writes nothing until it ends (`curl -sS -o file URL`, or its
+output sent to a file) makes each read wait the full time. For a wait longer than a few
+reads, end the command with the message to you below (`long-command; curl ... events`)
+and end your turn: its end starts your next one.
+
 Long work on your Mac, many steps of building, testing or clicking through an app, goes
 to a drone: `sub_agents__start(device="mac", ...)` works on it there and reports back,
 and you keep your chat for {{username}}. Done yourself, such work took 55 to 70 of your

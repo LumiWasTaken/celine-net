@@ -604,3 +604,30 @@ async def test_a_name_is_looked_up_among_the_senders_own_sub_agents_only(store):
     await conversations.create(store, "d", agent_of=parent, agent_name="digger")
     found = await store.read(lambda c: addresses.resolve(c, "digger", f"agent:{scout}"))
     assert found[1] == [(f"agent:{kid}", kid)], "a newer sibling never shadows its own"
+
+
+async def test_a_failed_sub_agent_reports_the_reason_its_turn_stored(store):
+    """A turn that failed before a model answered: its reason is the report's body; one
+    that failed after some words: the reason after them."""
+    from celine.conversations import tree
+    app = Services(store=store, intercom=Intercom(store))
+    parent = await conversations.create(store)
+    why = ("qwen3:4b has room for 4,096 tokens, and Celine's instructions and tools alone "
+           "take about 8,228.")
+
+    async def failed(name, words):
+        sub = await conversations.create(store, name, agent_of=parent, agent_name=name)
+        await app.intercom.send(f"agent:{parent}", f"agent:{sub}", "go", kind="brief")
+        await store.write(lambda c: c.execute(
+            "UPDATE turns SET state='failed', reason=?, reason_code='context_too_small' "
+            "WHERE conversation_id=?", (why, sub)))
+        if words:
+            await store.write(lambda c: tree.append(c, store, sub, None, "assistant",
+                                                    words, "model"))
+        await report.on_end(app, sub)
+        return await store.read(lambda c: c.execute(
+            "SELECT text FROM intercom WHERE kind='report' AND from_addr=?",
+            (f"agent:{sub}",)).fetchone()[0])
+
+    assert await failed("quiet", "") == f"[quiet, failed]\n\n{why}"
+    assert await failed("said", "half of it\n") == f"[said, failed]\n\nhalf of it\n\n{why}"

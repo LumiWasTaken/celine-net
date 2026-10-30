@@ -438,6 +438,15 @@ def _forming_preview(arguments: str) -> str:
     return tail.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "  ")[-300:]
 
 
+def _lines(arguments: str) -> int:
+    """The lines of the half-written JSON arguments: its escaped newlines, plus one."""
+    n, i = 1, arguments.find("\\")
+    while i != -1:
+        n += arguments[i + 1:i + 2] == "n"
+        i = arguments.find("\\", i + 2)
+    return n
+
+
 def _fits(need: float, win: int) -> bool:
     """A request of `need` tokens leaves the margin free in a window of `win`."""
     return need + win * tokens.MARGIN <= win
@@ -537,7 +546,8 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
         shown[i] = (time.monotonic(), len(slot["arguments"]))
         await store.append_event(cid, TOOL_FORMING, {
             "message_id": mid, "index": i, "name": slot["name"],
-            "chars": len(slot["arguments"]), "preview": _forming_preview(slot["arguments"]),
+            "chars": len(slot["arguments"]), "lines": _lines(slot["arguments"]),
+            "preview": _forming_preview(slot["arguments"]),
             "words": words.forming(slot["name"], slot["arguments"])})
 
     async def show_last(i: int) -> None:

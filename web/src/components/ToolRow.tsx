@@ -20,7 +20,7 @@ import { useServerEvents } from '../lib/bus'
 import { artifactOf, kindWord, ShowArtifact, type ArtifactCardData } from '../lib/artifacts'
 import { SHARE_DOT, shareEvent, shareOf, sharesApi, type ShareCardData } from '../lib/shares'
 import { useResource } from '../lib/useResource'
-import { bytes, duration, errorText, stamp } from '../lib/format'
+import { bytes, count, duration, errorText, stamp } from '../lib/format'
 import { titleOf } from '../lib/pictures'
 import { TILE, asBatch, fileUrl, tileUrl, type MediaFile } from '../lib/media'
 import { format, refHref } from '../lib/nav'
@@ -511,16 +511,17 @@ export function BrowserShots({ display }: { display: Record<string, unknown> | n
 }
 
 /* A call it is still writing, under its message: what it is about to do, in the present
-   ("Reading the note ml/muon.md", "Writing Dana Holm"), as one shimmering line; the text so
-   far behind it once it is long enough to be worth watching (never for a draft, whose text
-   becomes a card). */
+   ("Reading the note ml/muon.md", "Writing Dana Holm"), as one shimmering line; once it is
+   long enough to be worth watching, how much it has written (its lines, or its size while it
+   is one line) and the text so far behind it (never for a draft, whose text becomes a card). */
 const PREVIEW_FROM = 200
 
-export function FormingRow({ name, chars, preview, words }: { name: string; chars: number; preview: string; words: string }) {
+export function FormingRow({ name, chars, lines, preview, words }: { name: string; chars: number; lines: number; preview: string; words: string }) {
   const Icon = ICONS[name.split('__')[0] ?? ''] ?? Wrench
+  const long = chars >= PREVIEW_FROM
   return (
-    <EventLine quiet running icon={Icon}
-               detail={chars >= PREVIEW_FROM && preview ? <pre className="tool__forming">{preview}</pre> : undefined}>
+    <EventLine quiet running icon={Icon} meta={long ? (lines > 1 ? count(lines, 'line') : bytes(chars)) : undefined}
+               detail={long && preview ? <pre className="tool__forming">{preview}</pre> : undefined}>
       {words}
     </EventLine>
   )

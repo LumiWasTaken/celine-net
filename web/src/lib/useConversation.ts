@@ -79,7 +79,7 @@ type State = {
   plan: Plan | null
 }
 
-export interface Forming { message_id: string; index: number; name: string; chars: number; preview: string; words: string }
+export interface Forming { message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string }
 
 const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
 
@@ -245,7 +245,7 @@ function apply(s: State, ev: Frame): State {
     case 'conversation.notes_off':
       return s.conversation ? { ...s, conversation: { ...s.conversation, notes_off: ev.notes_off ?? [] } } : s
     case 'tool.forming': {
-      const f: Forming = { message_id: ev.message_id, index: ev.index, name: ev.name, chars: ev.chars, preview: ev.preview, words: ev.words }
+      const f: Forming = { message_id: ev.message_id, index: ev.index, name: ev.name, chars: ev.chars, lines: ev.lines, preview: ev.preview, words: ev.words }
       return { ...s, forming: [...s.forming.filter(x => !(x.message_id === f.message_id && x.index === f.index)), f] }
     }
     case 'tool.started': {
