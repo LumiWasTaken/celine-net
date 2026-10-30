@@ -8,6 +8,7 @@
    be cancelled while it waits. A page it wrote is a card under its reply (ArtifactCards),
    one per page whatever the number of versions it wrote in that reply; so is a share of
    its box (ShareCards), with the server's dot. */
+import { Appear } from './Appear'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { TextWithRefs } from './Markdown'
 import {
@@ -452,7 +453,7 @@ export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline
   return <>
     {lines.map(c => <ToolLine key={c.id} call={c} />)}
     {rows.length > 0 && (
-      <div className="tool-list"><Rows calls={rows} /></div>
+      <Appear className="tool-list"><Rows calls={rows} /></Appear>
     )}
   </>
 }
@@ -467,10 +468,12 @@ function ToolLine({ call }: { call: ToolCall }) {
   if (PLUMBING.has(call.name) && !reminder) return null
   return (
     <>
-      <EventLine quiet running={!reminder} icon={v.icon}
-                 meta={<span className="tool__meta">{v.meta}{v.actions}</span>}>
-        <TextWithRefs text={v.words} />
-      </EventLine>
+      <Appear>
+        <EventLine quiet running={!reminder} icon={v.icon}
+                   meta={<span className="tool__meta">{v.meta}{v.actions}</span>}>
+          <TextWithRefs text={v.words} />
+        </EventLine>
+      </Appear>
       {v.under}
     </>
   )
@@ -627,10 +630,12 @@ export function FormingRow({ name, chars, lines, preview, words }: { name: strin
   const Icon = ICONS[name.split('__')[0] ?? ''] ?? Wrench
   const long = chars >= PREVIEW_FROM
   return (
-    <EventLine quiet running icon={Icon} meta={long ? (lines > 1 ? count(lines, 'line') : bytes(chars)) : undefined}
-               detail={long && preview ? <pre className="tool__forming">{preview}</pre> : undefined}>
-      {words}
-    </EventLine>
+    <Appear>
+      <EventLine quiet running icon={Icon} meta={long ? (lines > 1 ? count(lines, 'line') : bytes(chars)) : undefined}
+                 detail={long && preview ? <pre className="tool__forming">{preview}</pre> : undefined}>
+        {words}
+      </EventLine>
+    </Appear>
   )
 }
 
