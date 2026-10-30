@@ -136,9 +136,10 @@ def read_servers(file: str, raw: dict[str, Any], problems: list[Problem],
     return out
 
 
-def row_words(cfg, plugins) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
-    """Every server's `words` and `groups` (mcp.toml's and the plugins', on or off), by
-    server: skills/words.py's MCP_WORDS and MCP_GROUPS."""
+def row_words(cfg, plugins) -> dict[str, dict[str, dict[str, str]]]:
+    """Every server's `words` and `groups` (mcp.toml's and the plugins', on or off), their
+    texts only: {server: {"words": {tool: text}, "groups": {tool: text}}}, Config.tool_words
+    (skills/words.py)."""
     raw = {sid: {"words": s.words, "groups": s.groups} for sid, s in cfg.mcp.items()}
     for p in plugins:
         servers = p.manifest.get("servers")
@@ -147,8 +148,8 @@ def row_words(cfg, plugins) -> tuple[dict[str, dict[str, str]], dict[str, dict[s
 
     def texts(v) -> dict[str, str]:
         return {k: t for k, t in v.items() if isinstance(t, str)} if isinstance(v, dict) else {}
-    return ({sid: texts(s.get("words")) for sid, s in raw.items()},
-            {sid: texts(s.get("groups")) for sid, s in raw.items()})
+    return {sid: {"words": texts(s.get("words")), "groups": texts(s.get("groups"))}
+            for sid, s in raw.items()}
 
 
 def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:

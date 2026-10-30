@@ -167,6 +167,8 @@ class Config:
     kb: dict[str, dict[str, Any]] = field(default_factory=dict)
     embeddings: dict[str, Any] = field(default_factory=dict)
     mcp: dict[str, Any] = field(default_factory=dict)    # id -> mcp.McpServerConfig
+    # every MCP server's rows, mcp.toml's and the plugins' (mcp.row_words, skills/words.py)
+    tool_words: dict[str, Any] = field(default_factory=dict)
     llm: dict[str, Any] = field(default_factory=dict)   # config/llm.toml: [queue]
     media: dict[str, Any] = field(default_factory=dict)  # kb.toml [media]: kb/media.py
     # config/image_presets and music_presets, as read (comfyui/presets.py `load`): kept

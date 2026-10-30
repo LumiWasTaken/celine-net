@@ -37,7 +37,7 @@ from .triggers import Triggers
 from .db.migrate import migrate_all
 from .core.store import Store
 from .core.bus import EventBus
-from .skills import build as build_registry
+from .skills import build as build_registry, words
 from .turns import store as turns
 from .turns.dispatcher import Dispatcher
 from .errors import install_error_handler, set_secrets
@@ -394,6 +394,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     app = FastAPI(title="Celine", lifespan=lifespan, docs_url=None, redoc_url=None)
     # everything the app runs, filled by the lifespan as each part starts (core/services.py)
     app.state.services = Services(cfg=cfg)
+    words.use(cfg)                     # its tools' rows read the MCP servers' own words
     install_error_handler(app)
     from . import auth as auth_mod
     from .auth.gate import not_found

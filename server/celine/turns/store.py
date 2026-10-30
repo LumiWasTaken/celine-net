@@ -86,7 +86,8 @@ def settle_open_calls(c: sqlite3.Connection, store, cid: str, turn_id: str,
                     {"tool_call_id": r["id"], "name": r["name"], "ok": False,
                      "state": "interrupted", "reason": why, "result": text,
                      "display": None, "withheld": False,
-                     "words": words.of_call(c, r["id"], "interrupted", None, text)})
+                     "words": words.of_call(c, r["id"], "interrupted", None, text),
+                     "runs": words.runs_of_call(c, r["id"])})
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": r["message_id"], "role": "tool",
                      "content": text, "tool_call_id": r["id"], "meta": meta})
@@ -565,7 +566,8 @@ async def record_tool_calls(store, cid: str, message_id: str, calls: list[dict])
                         {"tool_call_id": call["id"], "message_id": message_id,
                          "name": call["name"], "arguments": call["arguments"],
                          "started_at": started,
-                         "words": words.words(call["name"], call["arguments"], "running")})
+                         "words": words.words(call["name"], call["arguments"], "running"),
+                         "runs": words.runs_of_call(c, call["id"])})
 
     await store.write(fn)
 
@@ -583,7 +585,8 @@ async def tool_started(store, cid: str, call_id: str) -> None:
                         {"tool_call_id": call_id, "message_id": row["message_id"],
                          "name": row["name"], "arguments": row["arguments"],
                          "started_at": ts,
-                         "words": words.words(row["name"], row["arguments"], "running")})
+                         "words": words.words(row["name"], row["arguments"], "running"),
+                         "runs": words.runs_of_call(c, call_id)})
 
     await store.write(fn)
 
@@ -638,7 +641,8 @@ async def finish_tool_call(store, cid: str, parent_message_id: str, call_id: str
             {"tool_call_id": call_id, "name": name, "ok": verdict == "ok",
              "state": verdict, "result": content_, "display": display,
              "withheld": bool(withheld), "finished_at": ts,
-             "words": words.of_call(c, call_id, verdict, display, content_)})
+             "words": words.of_call(c, call_id, verdict, display, content_),
+             "runs": words.runs_of_call(c, call_id)})
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": parent_message_id, "role": "tool",
                      "content": content_, "tool_call_id": call_id, "meta": meta})

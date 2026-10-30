@@ -61,6 +61,7 @@ async def snapshot(store, cid: str) -> dict:
             f"SELECT {cols} ORDER BY t.created_at DESC, t.rowid DESC LIMIT 1",
             (cid,)).fetchone()
         calls: dict[str, list[dict]] = {}
+        runs: dict[str, list[dict]] = {}       # by turn: its runs (skills/words.py)
         for m in messages:
             if m["role"] == "assistant":         # "Love this" (conversations/samples.py)
                 m["sample"] = c.execute("SELECT 1 FROM kv WHERE k=?",
@@ -73,6 +74,8 @@ async def snapshot(store, cid: str) -> dict:
                 "WHERE tc.message_id=? ORDER BY tc.rowid", (m["id"],)).fetchall()
             if rows:
                 calls[m["id"]] = [_call(r) for r in rows]
+                if m.get("turn_id") and m["turn_id"] not in runs:
+                    runs[m["turn_id"]] = words.runs_of_turn(c, m["turn_id"])
         # a call still at work (here or as a job) shows its latest progress line
         working = {tc["id"]: tc for tcs in calls.values() for tc in tcs
                    if tc["state"] in ("pending", "running", "detached")}
@@ -120,7 +123,7 @@ async def snapshot(store, cid: str) -> dict:
                                  "link": (source_of(c, f"agent:{cid}") or {}).get("link"),
                                  "started_by": _started_by(c, conv["agent_of"])},
                 "messages": messages,
-                "tool_calls": calls, "compactions": compactions,
+                "tool_calls": calls, "runs": runs, "compactions": compactions,
                 "turn": tdict, "unanswered": tree.unanswered(c, cid), "switched": switched, "image_notices": image_notices,
                 "guard": guard, "plan": plans.get_sync(c, cid),
                 "approvals": [a for a in approvals.open_in(c, cid)
