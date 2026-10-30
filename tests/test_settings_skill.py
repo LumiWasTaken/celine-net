@@ -23,6 +23,7 @@ from celine.core.services import Services
 from celine.guard.owner import _SEAL, Owner
 from celine import saves
 from celine.settings import secrets as secrets_mod
+from celine.settings import her_models
 from celine.settings.files import version
 from celine.skills import ToolContext, build
 from celine.skills.settings import Settings
@@ -288,3 +289,22 @@ async def test_a_refused_reload_is_reported(app, monkeypatch):
     assert got.is_error and got.content == (
         "Saved Context (memory_sections: 3 \u2192 9), but the app refused to load it and keeps "
         "its last good settings: llm.toml does not parse.")
+
+
+async def test_a_new_lan_provider_is_added_and_its_model_is_hers_and_local(app):
+    sk = _skill(app)
+    ctx = await _ctx(app)
+    assert "mac" not in app.cfg.settings.providers
+    got, ask = await _answer(app, sk.propose(
+        ctx, target="providers.mac",
+        changes={"kind": "openai", "label": "My Mac", "base_url": "192.168.1.50:1234",
+                 "models": {"small": {"caps": ["chat", "tools"]}}},
+        why="A model server on my Mac for my agents."), True)
+    assert not got.is_error, got.content
+    assert ap.chat(ask, None)["line"] == "Celine asks to add the model provider mac."
+    assert {"label": "Address", "before": "Default", "after": "192.168.1.50:1234"} \
+        in ask.changes
+    s = app.cfg.settings
+    assert s.providers["mac"]["base_url"] == "http://192.168.1.50:1234/v1"
+    assert "mac/small" in her_models.allowed(s), "a template's model: takes it"
+    assert not her_models.cloud(s, "mac/small"), "its sub-agents start without an ask"
