@@ -1,9 +1,10 @@
 """Her devices: each plugin that is on with a [drones] block in its plugin.toml, named
 by the plugin's id. The block: `url` and `password` of its `opencode serve` (filled from
 its form, settings/form.fill), `key` (its secret that is its key to the app's model
-proxy, api/llm_proxy.py), `label`, `log` (where its server logs) and `share` (its share
-server, optional: shares.py, the password its bearer). Drones run there
-(sub_agents/drone.py)."""
+proxy, api/llm_proxy.py), `label`, `log` (where its server logs), `share` (its share
+server, optional: shares.py, the password its bearer) and `about` (what the device
+reported of itself, optional: its user, home, chip, memory, system, network; in her
+system prompt, `about`). Drones run there (sub_agents/drone.py)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ class Device:
     why: str | None        # why no drone starts on it now, None when one does
     # its hosts: those of its drones, shares and plugin servers (the gateway) addresses
     hosts: frozenset[str] = frozenset()
+    about: str = ""        # what it reported of itself, "" before it did
 
 
 def devices(cfg) -> dict[str, Device]:
@@ -44,8 +46,15 @@ def devices(cfg) -> dict[str, Device]:
                    for s in (p.manifest.get("servers") or {}).values() if isinstance(s, dict)]
         out[p.id] = Device(p.id, label, url, password, key, str(d.get("log", "")), share,
                            f"{label}: {'; '.join(dict.fromkeys(empty))}." if empty else None,
-                           _hosts([url, share, *servers]))
+                           _hosts([url, share, *servers]),
+                           form.fill(cfg, p.id, fields, str(d.get("about", "")), []))
     return out
+
+
+def about(cfg) -> str | None:
+    """What each device that is on reported of itself, one line each; None without any."""
+    lines = [f"{d.label}: {d.about}." for d in devices(cfg).values() if d.about]
+    return "\n".join(lines) or None
 
 
 def hosts(cfg) -> frozenset[str]:

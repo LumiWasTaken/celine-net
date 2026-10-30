@@ -19,6 +19,7 @@ password = "${TOKEN}"
 share    = "${SHARE}"           # share.js (setup.sh): her shares of its ports and files, shares.py
 key      = "link"
 label    = "Her Mac"
+about    = "${ABOUT}"           # what setup.sh reported of the Mac (gateway.py about)
 
 [servers.macscreen]               # Peekaboo: see, click, type, menus, windows
 enabled   = true

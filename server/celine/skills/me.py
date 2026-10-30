@@ -165,6 +165,9 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
         lines.append(f"Context: {used:,} of {usage['window']:,} tokens.")
     if where:
         lines.append(where)
+    from .. import devices
+    if mine := devices.about(cfg):
+        lines.append(mine)
     if turn:
         lines.append("This turn: " + ("{{username}}'s message." if turn["origin"] == "user"
                                       else "a message through the intercom."))

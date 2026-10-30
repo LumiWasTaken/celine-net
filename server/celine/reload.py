@@ -117,9 +117,12 @@ def apply(app, *, only_if_changed: bool = False) -> bool:
 
 async def commit(services, changes: dict) -> dict:
     """Apply `changes` (section -> whole new value) on top of the current settings:
-    validated, written, reloaded in place, published. Hold settings.write.lock()."""
+    validated, written, reloaded in place, published. Hold settings.write.lock(). The
+    features' probes are asked anew after it: a page that reloads on the event reads the
+    states the new settings give."""
     from .settings import write
     written = write.save(services.cfg, changes)
     applied = apply(services)
+    services.feature_probes = None
     write.publish(services, sorted(set(changes) | set(written)))
     return {"applied": applied}

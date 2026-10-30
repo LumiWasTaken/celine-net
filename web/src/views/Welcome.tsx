@@ -38,6 +38,7 @@ import {
 } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
+import { useServerEvents, type ServerEvent } from '../lib/bus'
 import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, SubHead, TextArea } from '../ui'
 import { FeatureSwitch, FeatureTiers, reprobe, stateTone } from './settings/Features'
 import { blocked, firstTime, landing, stepping, stepsOf, toSave } from '../lib/featureSteps'
@@ -357,6 +358,11 @@ type Shared = StepNav & {
 }
 type Save = (v: FeaturesView, done?: boolean) => Promise<void>
 
+/** settings of feature `id` were saved, here or elsewhere (the Mac's setup posting its
+    Address): its state line asks the probe anew */
+const savedFor = (ev: ServerEvent, id: string) =>
+  ev.type === 'settings.changed' && Array.isArray(ev.what) && ev.what.includes(id)
+
 /** the Loading or error of the features view while it is not here */
 function Pending({ error, reload }: { error: string | null; reload: () => void }) {
   return error ? <InlineError compact message={error} onRetry={reload} /> : <LoadingRow label="Loading" />
@@ -390,6 +396,7 @@ function FeatureStep({ feature: f, view, error, reload, update, save, back, next
   }
   // the catalog's states came before the model step: a blocked step asks its probe once it opens
   useEffect(() => { if (view && blocked(f)) void check.run() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useServerEvents(ev => { if (savedFor(ev, f.id)) void check.run() })
   const Form = formOf(f)
   const tone = stateTone(f, true)
   return (
@@ -451,6 +458,7 @@ function GroupPart({ feature: f, view, update, form, setForm, saveRef }: {
     const p = await settingsApi.probeFeature(f.id)
     update({ ...view, catalog: view.catalog.map(x => x.id === f.id ? { ...x, ...p } : x) })
   })
+  useServerEvents(ev => { if (savedFor(ev, f.id)) void check.run() })
   const Form = formOf(f)
   const tone = stateTone(f, true)
   return <>

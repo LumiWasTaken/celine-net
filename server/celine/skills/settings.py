@@ -101,7 +101,7 @@ async def _copies(app, pl) -> dict[str, Any]:
     ref = pl.form.get("copies") if pl.data is not None else None
     if not ref:
         return {}
-    got = dict(await pl.attr(ref)(app, pl, her=True))
+    got = dict(await pl.attr(ref)(app, pl))
     out: dict[str, Any] = {"note": got.pop("note")} if "note" in got else {}
     labels = {f["key"]: f["label"] for f in pl.form["fields"]}
     if got:
