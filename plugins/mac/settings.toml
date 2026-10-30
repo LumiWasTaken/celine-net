@@ -1,4 +1,5 @@
 copies = "gateway:copies"
+# every field but the line is filled by the Mac's report (gateway.py), never typed
 
 [[fields]]
 key = "command"
@@ -7,39 +8,38 @@ type = "copy"
 
 [[fields]]
 key = "url"
+filled = "Run the setup line on the Mac"
 label = "Address"
 type = "text"
 default = ""
 word = true
-mono = true
-placeholder = "http://192.168.1.30:8765"
 
 [[fields]]
 key = "agents"
+filled = "Run the setup line on the Mac"
 label = "Agents"
 type = "text"
 default = ""
 word = true
-mono = true
-placeholder = "http://192.168.1.30:4096"
 
 [[fields]]
 key = "share"
+filled = "Run the setup line on the Mac"
 label = "Shares"
 type = "text"
 default = ""
 word = true
-mono = true
-placeholder = "http://192.168.1.30:8767"
 
 [[fields]]
 key = "about"
+filled = "Run the setup line on the Mac"
 label = "About This Mac"
 type = "text"
 default = ""
 
 [[fields]]
 key = "token"
+filled = "Run the setup line on the Mac"
 label = "Token"
 type = "secret"
 
@@ -47,3 +47,8 @@ type = "secret"
 id = "check"
 label = "Check"
 run = "gateway:check"
+
+[[actions]]
+id = "again"
+label = "Set up again"
+run = "gateway:again"

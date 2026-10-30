@@ -19,6 +19,8 @@ export type FormView = {
   fields: FormField[]
   actions: FormAction[]
   note?: string
+  /** the app's own address belongs on this form now (her Mac's while it is localhost) */
+  address?: boolean
   values: Record<string, unknown>
   secrets: Record<string, SecretState>
   version: string

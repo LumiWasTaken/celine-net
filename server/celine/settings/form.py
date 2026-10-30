@@ -13,7 +13,10 @@ A field is a dict: `key`, `label`, `type` (one of TYPES), `default`, and by type
 - `secret`: write-only, stored in <data>/secrets/<form>.<key>.key; the view says only
   {state, set_at};
 - `copy`: a read-only string the form fills at view time, left out when it has none.
-Common: `help`, `advanced`, `group`, `where: "config"` (read-only).
+Common: `help`, `advanced`, `group`, `where: "config"` (read-only), and in a plugin's form
+`filled`: the plugin's own code fills it (a device's report), never the user. Its text is
+what to do while it is empty (`fill`); it is left out of the view, and a client's save
+(`kept`) may not name it and keeps it as saved.
 
 A value is unset (back to its default) when it is None, or text that is only whitespace (an
 error for a `required` field). Anything else must be a value of its type: "" is no number,
@@ -128,6 +131,8 @@ def check_toml(pid: str, doc: dict[str, Any]) -> None:
                              f"{secret_name(pid, f['key'])}.key: {secrets.NAME_RULE}")
         if f["type"] == "choice" and not f.get("choices"):
             raise ValueError(f"the choice {f['key']!r} needs choices")
+        if "filled" in f and (not isinstance(f["filled"], str) or not f["filled"]):
+            raise ValueError(f"filled of {f['key']!r} is the sentence what fills it")
         if f["type"] not in WRITE_ONLY and "default" in f:
             try:
                 check(f["key"], f, f["default"])
@@ -162,13 +167,28 @@ def secret_states(section: str, fields: list[dict[str, Any]],
 
 def view(section: str, fields: list[dict[str, Any]], saved: dict[str, Any],
          root: Path | None, copies: dict[str, str] | None = None) -> dict[str, Any]:
-    """What a client gets: the fields (a `copy` without a value left out), the values,
-    each secret's state, never a secret."""
+    """What a client gets: the fields (a `copy` without a value and a `filled` one left
+    out), the values, each secret's state, never a secret."""
     copies = copies or {}
+    typed = [f for f in fields if "filled" not in f]
     shown = [({**f, "value": copies[f["key"]]} if f["type"] == "copy" else f)
-             for f in fields if f["type"] != "copy" or copies.get(f["key"])]
-    return {"fields": shown, "values": values(fields, saved),
-            "secrets": secret_states(section, fields, root)}
+             for f in typed if f["type"] != "copy" or copies.get(f["key"])]
+    return {"fields": shown, "values": values(typed, saved),
+            "secrets": secret_states(section, typed, root)}
+
+
+def kept(section: str, fields: list[dict[str, Any]], data: Any, secrets_: Any,
+         saved: dict[str, Any]) -> Any:
+    """A client's whole `values` with each `filled` value as saved; a `filled` key in
+    `data` or `secrets_` is refused."""
+    filled = {f["key"] for f in fields if "filled" in f}
+    for k in [*(data if isinstance(data, dict) else ()),
+              *(secrets_ if isinstance(secrets_, dict) else ())]:
+        if k in filled:
+            raise Invalid(f"{section}.{k}", f"'{k}' is not a setting here.")
+    if not isinstance(data, dict):
+        return data
+    return {**data, **{k: saved[k] for k in filled if k in saved}}
 
 
 def check_secrets(section: str, fields: list[dict[str, Any]], data: Any) -> dict[str, Any]:
@@ -211,7 +231,8 @@ _REF = re.compile(r"\$\{(\w+)\}")
 def fill(cfg, section: str, fields: list[dict[str, Any]], text: str,
          empty: list[str]) -> str:
     """`text` with each `${KEY}` the value of the field whose key is `key` (a value as
-    saved, a secret as stored); each one empty or unknown adds its sentence to `empty`."""
+    saved, a secret as stored); each one empty or unknown adds its sentence to `empty` (a `filled` one its `filled`
+    text)."""
     by_name = {f["key"].upper(): f for f in fields}
     saved = values(fields, (getattr(cfg.settings, "plugins", None) or {}).get(section, {}))
 
@@ -223,7 +244,7 @@ def fill(cfg, section: str, fields: list[dict[str, Any]], text: str,
         got = read_secret(cfg, section, f["key"]) if f["type"] == "secret" \
             else saved.get(f["key"])
         if got is None or str(got) == "":
-            empty.append(f"{f['label']} is empty")
+            empty.append(f.get("filled") or f"{f['label']} is empty")
             return ""
         return str(got)
     return _REF.sub(one, text)

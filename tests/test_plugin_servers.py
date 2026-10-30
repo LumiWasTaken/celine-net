@@ -139,18 +139,20 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
 
         gateway = sys.modules[p.attr("gateway:copies").__module__]
         key = form.read_secret(cfg, "mac", "link")
-        # the app only on localhost: no line, what to do first
+        # the app only on localhost: no line, what to do first and the app's address field
         view = (await c.get("/api/forms/mac")).json()
-        assert view["note"] == gateway.LOCAL
-        assert not any(f["key"] == "command" for f in view["fields"])
-        assert await _copies(services, p) == {"note": gateway.LOCAL}
+        assert view["note"] == gateway.LOCAL and view["address"] is True
+        assert [f["key"] for f in view["fields"]] == [], "the Mac fills every other field"
+        assert view["values"] == {} and view["secrets"] == {}
+        assert await _copies(services, p) == {"note": gateway.LOCAL}, "no field for her"
         # on the network: one line, a token that works once, the key never in the line
         await saves.address(services, {"origin": "http://192.168.1.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
         command = next(f for f in view["fields"] if f["key"] == "command")["value"]
         m = re.fullmatch(r"curl -fsSL http://192\.168\.1\.20:8766/api/plugins/mac/setup/"
                          r"([\w-]{40,}) \| bash", command)
-        assert m and key not in command and "note" not in view
+        assert m and key not in command and "address" not in view
+        assert view["note"] == gateway.WAITING
         assert plugins.is_open("GET", f"/api/plugins/mac/setup/{m[1]}")
         assert not plugins.is_open("GET", "/api/plugins/mac/setup/")
         served = await c.get(f"/api/plugins/mac/setup/{m[1]}")
@@ -184,8 +186,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         agent = await conversations.create(store, agent_of=chat, agent_name="a", kind="agent")
         assert (await read_in(chat))["copy"]["Run on the Mac"].startswith("curl -fsSL ")
         assert "copy" not in await read_in(agent) and "note" not in await read_in(agent)
-        assert view["values"]["url"] == "" and view["secrets"]["token"]["state"] == "not set"
-        assert devices(cfg)["mac"].why == "Her Mac: Agents is empty; Token is empty."
+        assert devices(cfg)["mac"].why == "Her Mac: Run the setup line on the Mac."
         assert about(cfg) is None
         before = next(f for f in (await c.get("/api/features")).json()["catalog"]
                       if f["id"] == "mac")
@@ -202,20 +203,39 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
                           headers={"Authorization": f"Bearer {key}"})
         assert ok.status_code == 200
         view = (await c.get("/api/forms/mac")).json()
-        assert view["values"]["url"] == "http://127.0.0.1:9"
-        assert view["secrets"]["token"]["state"] == "set"
+        saved = cfg.settings.plugins["mac"]
+        assert saved["url"] == "http://127.0.0.1:9"
         assert form.read_secret(cfg, "mac", "token") == "mac-token-1"
-        assert "mac-token-1" not in str(view)
-        assert view["values"]["agents"] == "http://127.0.0.1:4096"
-        assert await _copies(services, p) == {}, "connected: she gets no line"
-        assert not any(f["key"] == "command" for f in view["fields"]), "connected: no line"
+        assert "mac-token-1" not in str(view) and "127.0.0.1:9" not in str(view)
+        assert saved["agents"] == "http://127.0.0.1:4096"
+        facts = ("user celine, home /Users/celine, Apple M4, 16 GB memory, macOS 15.6, "
+                 "Wi-Fi (en0)")
+        assert await _copies(services, p) == {"note": f"Connected: {facts}."}, "no line"
+        assert view["note"] == f"Connected: {facts}." and view["fields"] == []
+        # a client's save keeps what the Mac filled and may not name it
+        bad = await c.put("/api/forms/mac", headers={"If-Match": view["version"]},
+                          json={"values": {"url": "http://x:1"}})
+        assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == "mac.url"
+        bad = await c.put("/api/forms/mac", headers={"If-Match": view["version"]},
+                          json={"values": {}, "secrets": {"token": "x"}})
+        assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == "mac.token"
+        ok = await c.put("/api/forms/mac", headers={"If-Match": view["version"]},
+                         json={"values": {}})
+        assert ok.status_code == 200 and cfg.settings.plugins["mac"]["url"] == saved["url"]
+        # Set up again: the line until the Mac reports anew
+        assert (await c.post("/api/forms/mac/again")).json()["ok"] is True
+        view = (await c.get("/api/forms/mac")).json()
+        assert view["note"] == gateway.WAITING
+        assert any(f["key"] == "command" for f in view["fields"])
+        assert (await c.post("/api/plugins/mac/gateway", json=report,
+                             headers={"Authorization": f"Bearer {key}"})).status_code == 200
+        assert (await c.get("/api/forms/mac")).json()["note"] == f"Connected: {facts}."
         after = next(f for f in (await c.get("/api/features")).json()["catalog"]
                      if f["id"] == "mac")
         assert after["state"] != "unset", "the save asks the probes anew"
-        assert seen == [(["mac"], None)], "a page that reloads on the event reads new states"
-        facts = ("user celine, home /Users/celine, Apple M4, 16 GB memory, macOS 15.6, "
-                 "Wi-Fi (en0)")
-        assert view["values"]["about"] == facts
+        assert seen and all(x == (["mac"], None) for x in seen), \
+            "a page that reloads on the event reads new states"
+        assert cfg.settings.plugins["mac"]["about"] == facts
         assert about(cfg) == f"Her Mac: {facts}."
         mac = devices(cfg)["mac"]      # the drones' device: its password the token, its key the link
         assert (mac.url, mac.password, mac.key, mac.why) == (
@@ -322,7 +342,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
 
     cfg.settings.plugins["mac"] = {}
     out = await p.attr("gateway:check")(services, p, None)
-    assert out["lines"][1] == {"text": "Shell: Address is empty.", "tone": "error"}
+    assert out["lines"][1] == {"text": "Shell: Run the setup line on the Mac.", "tone": "error"}
 
 
 async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
@@ -351,5 +371,5 @@ async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
         mac = next(f for f in got["catalog"] if f["id"] == "mac")
         assert got["features"]["mac"] is True
         assert (mac["state"], mac["blocks"]) == ("unset", False)
-        assert "is empty" in mac["detail"]
+        assert mac["detail"] == "Run the setup line on the Mac."
         tg.cancel_scope.cancel()

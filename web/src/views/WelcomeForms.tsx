@@ -30,6 +30,7 @@ import './Welcome.css'
 import { SPEECH_ROLE, type Direction } from '../lib/speechApi'
 import { useForm } from '../lib/forms'
 import { FormActions } from './settings/FormPage'
+import { AddressField } from './settings/General'
 import { EMPTY_PROVIDER, ProviderFields, host, ready, type ProviderDraft } from '../components/ProviderFields'
 import { SpeechTest } from '../components/SpeechTest'
 
@@ -48,7 +49,8 @@ type FormProps<T> = {
 export const formOf = (f: Feature): ((p: FormProps<any>) => ReactElement) | undefined =>
   f.form ? SchemaCard : FORMS[f.setup]
 
-/* ── a form from /api/forms (a plugin's settings.toml): its note, its fields as a draft
+/* ── a form from /api/forms (a plugin's settings.toml): its note, the app's address when
+   the view asks for it (saved at once, not part of the draft), its fields as a draft
    (Next saves it, PUT with If-Match), its actions, each saving the draft first and then
    asking the card's probe anew ── */
 function SchemaCard({ feature, value, onChange, saveRef, reprobe }: FormProps<Record<string, unknown>>) {
@@ -62,6 +64,7 @@ function SchemaCard({ feature, value, onChange, saveRef, reprobe }: FormProps<Re
   const shown = form.shown(draft)
   return <>
     {d.note && <p className="onb__about">{d.note}</p>}
+    {d.address && <AddressField />}
     <Form fields={d.fields} values={shown.values} secrets={shown.secrets} disabled={!online} plain
           onChange={(k, v) => onChange({ ...draft, [k]: v })} />
     <FormActions form={form} disabled={!online} before={save} after={reprobe} />

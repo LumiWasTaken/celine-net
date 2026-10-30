@@ -77,7 +77,7 @@ def _check(cfg, section: str) -> Callable[[Any], None]:
 def _form_fields(fields: list[dict], values: dict, states: dict) -> list[dict]:
     out = []
     for f in fields:
-        if f["type"] == "copy":
+        if f["type"] == "copy" or "filled" in f:
             continue
         if f["type"] == "secret":
             out.append({**f, "state": states.get(f["key"], {}).get("state", "not set")})
@@ -102,6 +102,7 @@ async def _copies(app, pl) -> dict[str, Any]:
     if not ref:
         return {}
     got = dict(await pl.attr(ref)(app, pl))
+    got.pop("address", None)        # the app's address field: the page's, not hers
     out: dict[str, Any] = {"note": got.pop("note")} if "note" in got else {}
     labels = {f["key"]: f["label"] for f in pl.form["fields"]}
     if got:

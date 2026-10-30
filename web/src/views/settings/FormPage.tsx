@@ -1,5 +1,6 @@
-/* A form served by /api/forms/{id} (lib/forms.ts) as a Settings page: its note, its fields
-   saving themselves, its actions. A plugin with a settings.toml gets this page, named
+/* A form served by /api/forms/{id} (lib/forms.ts) as a Settings page: its note, the app's
+   address when the view asks for it, its fields saving themselves, its actions (the view
+   is read again after one). A plugin with a settings.toml gets this page, named
    after it. FormActions is shared with the onboarding's card (WelcomeForms.tsx). */
 import { useState } from 'react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
@@ -7,6 +8,7 @@ import { useForm, type ActionResult, type FormAction, type UseForm } from '../..
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { Button, Dot, Field, Form, InlineError, Input, Section } from '../../ui'
+import { AddressField } from './General'
 import { Page } from './parts'
 import './settings.css'
 
@@ -22,6 +24,7 @@ export function FormPage({ id, label }: { id: string; label: string }) {
     <Page title={label}>
       <Section>
         {d.note && <p className="src-line">{d.note}</p>}
+        {d.address && <AddressField />}
         <div title={online ? undefined : OFFLINE_TITLE}>
           <Form fields={d.fields} values={shown.values} secrets={shown.secrets} disabled={!online}
                 onChange={(k, v) => auto.set(k, v)} />
@@ -57,6 +60,7 @@ function ActionRow({ a, form, disabled, before, after }: {
     await before?.()
     setResult(await form.run(a.id, a.input ? input : undefined))
     setInput('')
+    form.res.reload()
     await after?.()
   })
   return <>

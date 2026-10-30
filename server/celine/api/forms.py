@@ -7,7 +7,9 @@ var/secrets/<id>.<key>.key.
   running}. `running`: its actions can run now (a plugin's code runs only while it is on;
   `features.changed` says when that changes). While it runs, its `copies =
   "module:function"` (services, plugin) -> {key: text} fills its `copy` fields; a
-  `note` among them is the form's note.
+  `note` among them is the form's note, an `address` puts `address: true` in the view:
+  the app's own address (settings/address.py, GET/PUT /api/address) belongs on it now.
+  A `filled` field (settings/form.py) is not in the view and not in a PUT.
 - PUT /api/forms/{id} {values, secrets?} with If-Match -> the same view. `values` is the
   whole object (a key left out goes back to its default). A secret is set by a string,
   deleted by null, kept when absent, and never echoed: `secrets` says {state, set_at}.
@@ -48,6 +50,7 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
     if p.data is not None and (ref := p.form.get("copies")):
         copies = await p.attr(ref)(services_of(request), p)
     note = copies.pop("note", None) or p.form.get("note")
+    ask = copies.pop("address", None)
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root, copies),
            "actions": form.actions_view(p.form.get("actions", [])),
            "version": etag(response, version(saves.form_version(s, p))),
@@ -55,6 +58,8 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
            "running": p.data is not None}
     if note:
         out["note"] = note
+    if ask:
+        out["address"] = True
     return out
 
 
@@ -68,7 +73,9 @@ async def put_form(request: Request, response: Response, id: str,
                    if_match: str | None = Header(default=None)) -> dict:
     p = _plugin(id)
     body = await json_body(request, need=("values",), allow=("values", "secrets"))
-    out = await saves.plugin_form(services_of(request), p, body["values"],
+    values = form.kept(p.id, p.form["fields"], body["values"], body.get("secrets", {}),
+                       settings_of(request).plugins.get(p.id, {}))
+    out = await saves.plugin_form(services_of(request), p, values,
                                   body.get("secrets", {}), if_match)
     return {**await _view(request, response, p), **out}
 

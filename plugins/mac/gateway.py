@@ -2,10 +2,11 @@
 her scripts' messages to her, the setup line the form shows, and Check.
 
 - The setup line, `curl -fsSL <app>/api/plugins/mac/setup/<token> | bash`: the form and
-  her settings__read ask for it while the Mac has reported no Address, and each ask makes a
-  new token that works once within SETUP_SECONDS. The app's address is its stored one
-  (settings/address.py); while that is localhost the form says how to open the app on
-  the network instead.
+  her settings__read ask for it while the Mac has reported no Address, or after Set up
+  again until it reports, and each ask makes a new token that works once within
+  SETUP_SECONDS. The app's address is its stored one (settings/address.py); while that is
+  localhost the form says how to publish the app on the network and asks for its address
+  instead. Once the Mac reported, the form says Connected with what it said of itself.
 - GET /api/plugins/mac/setup/<token>: setup.sh with the app's address and the link key
   filled in. GET /api/plugins/mac/setup.sh: the script as it is (`--status`).
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
@@ -46,9 +47,10 @@ SCRIPT = Path(__file__).with_name("setup.sh")
 PRESET = "APP='' KEY='' JSON='' STATUS=''"      # setup.sh's line a served copy fills in
 SETUP_SECONDS = 3600
 LOCAL = ("Her Mac cannot reach localhost. Publish the app on your network "
-         "(CELINE_PUBLISH=8766 in .env, then docker compose up -d), set its network "
-         "address in Settings, Security and open it there.")
+         "(CELINE_PUBLISH=8766 in .env, then docker compose up -d) and enter its network address.")
+WAITING = "Waiting for the Mac."
 _tokens: dict[str, float] = {}      # a setup line's token -> when it stops working
+_again: set[str] = set()            # plugins whose line Set up again shows until a report
 NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser",
          "macfiles": "Files"}
 
@@ -67,21 +69,31 @@ async def run(services, p) -> None:
 
 
 async def copies(services, p) -> dict[str, str]:
-    """{"command": the setup line} with a new token, or {"note": LOCAL} while the app's
-    address is localhost; nothing once the Mac reported its Address."""
+    """{"command": the setup line with a new token, "note": WAITING}; {"note": LOCAL,
+    "address": "ask"} while the app's address is localhost; once the Mac reported its
+    Address (and no Set up again since), {"note": "Connected: <about>."}."""
     cfg = services.cfg
-    if _link(cfg) is None or (cfg.settings.plugins.get(p.id) or {}).get("url"):
+    if _link(cfg) is None:
         return {}
+    saved = cfg.settings.plugins.get(p.id) or {}
+    if saved.get("url") and p.id not in _again:
+        return {"note": f"Connected: {saved['about']}." if saved.get("about") else "Connected."}
     app = address.base(cfg)
     if address.is_loopback(app):
-        return {"note": LOCAL}
+        return {"note": LOCAL, "address": "ask"}
     now = time.monotonic()
     for t in [t for t, end in _tokens.items() if end < now]:
         del _tokens[t]
     token = random.token_urlsafe(32)
     _tokens[token] = now + SETUP_SECONDS
     return {"command": f"curl -fsSL {shlex.quote(f'{app}/api/plugins/{p.id}/setup/{token}')}"
-                       f" | bash"}
+                       f" | bash", "note": WAITING}
+
+
+async def again(services, p, _input) -> dict[str, Any]:
+    """Set up again: the form shows the setup line until the Mac reports anew."""
+    _again.add(p.id)
+    return {"ok": True, "sentence": ""}
 
 
 @router.get("/setup.sh")
@@ -133,7 +145,9 @@ async def gateway(request: Request) -> dict[str, Any]:
             values[key] = body[key]
     if isinstance(body.get("mac"), dict) and (said := about(body["mac"])):
         values["about"] = said
-    return await plugin_form(services, p, values, {"token": body["token"]})
+    out = await plugin_form(services, p, values, {"token": body["token"]})
+    _again.discard(p.id)
+    return out
 
 
 ABOUT_CHARS = 80   # the most of one fact of the Mac
