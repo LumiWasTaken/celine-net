@@ -80,9 +80,11 @@
 .sections { min-width: 0; min-height: 0; position: relative; }
 .view { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--grain) var(--bg-canvas); }
 .view[hidden] { display: none !important; }
-/* switching place: the place fades in; a chat, file or settings page: a quick fade, nothing slides */
-.view:not([hidden]) { animation: fade var(--dur) var(--ease); }
-.thread, .settings__content { animation: fade var(--dur-fast) var(--ease); }
+/* switching place: the place fades in over the one left, which stays painted under it
+   (App.tsx) until the fade is done */
+.view:not([hidden]) { animation: fade var(--dur) var(--ease); z-index: 1; }
+.view--under:not([hidden]) { animation: none; z-index: 0; }
+.settings__content { animation: fade var(--dur-fast) var(--ease); }
 
 /* ── shared bits ──────────────────────────────────────────────────────────── */
 /* the switcher (Ctrl+K), the shortcuts (?) and More */

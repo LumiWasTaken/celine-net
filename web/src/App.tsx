@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DoorOpen, Ellipsis, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
 import './components/Shell.css'
 import './components/App.css'
@@ -28,7 +28,7 @@ import { Portrait } from './components/Portrait'
 import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
 import { isTyping } from './lib/keys'
-import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx } from './ui'
+import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
 import { settingsApi, type Home } from './lib/settingsApi'
 import { usePageName } from './lib/title'
@@ -174,6 +174,19 @@ function Shell() {
   const rail = useRef<HTMLElement>(null)
   useSlide(rail, '.rail__item[aria-current="page"]', section)
 
+  // switching place: the place left stays painted under the one fading in until the fade
+  // is done, so the canvas never shows between them
+  const [under, setUnder] = useState<Section | null>(null)
+  const lastSection = useRef(section)
+  useLayoutEffect(() => {
+    const from = lastSection.current
+    lastSection.current = section
+    if (from === section || reduced()) return
+    setUnder(from)
+    const t = window.setTimeout(() => setUnder(null), ms('--dur'))
+    return () => window.clearTimeout(t)
+  }, [section])
+
   // the brand mark says which build this is (hover, and the accessible name)
   const built = status?.build
   const build = built ? `${name}\n${built.commit}${built.built ? `, built ${fullDate(built.built)}` : ''}` : name
@@ -259,7 +272,8 @@ function Shell() {
           {VIEWS.map(v => {
             const el = visited.has(v.id) && v.view({ ...shown, active: section === v.id })
             return el && (
-              <section key={v.id} className="view" data-section={v.id} hidden={section !== v.id} aria-label={labelOf(v.id)}>
+              <section key={v.id} className={cx('view', under === v.id && section !== v.id && 'view--under')} data-section={v.id}
+                       hidden={section !== v.id && under !== v.id} inert={section !== v.id || undefined} aria-label={labelOf(v.id)}>
                 <SectionBoundary><Suspense fallback={<LoadingRow />}>{el}</Suspense></SectionBoundary>
               </section>
             )
