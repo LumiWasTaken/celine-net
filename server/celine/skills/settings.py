@@ -86,6 +86,15 @@ def _form_fields(fields: list[dict], values: dict, states: dict) -> list[dict]:
     return out
 
 
+async def _hers(ctx: ToolContext) -> bool:
+    """Her own conversation (a chat, a mission, a routine's), not a sub-agent's or a
+    drone's: only there does a read carry a form's lines to copy."""
+    row = await ctx.store.read(lambda c: c.execute(
+        "SELECT kind, agent_of FROM conversations WHERE id=?",
+        (ctx.conversation_id,)).fetchone())
+    return row is not None and row[0] != "agent" and row[1] is None
+
+
 async def _copies(app, pl) -> dict[str, Any]:
     """What a running plugin's form shows to copy, as she may pass it on (the Mac's setup
     line while it is not connected): {"copy": {label: text}, "note": text}."""
@@ -361,7 +370,7 @@ class Settings:
             return ToolResult(content=t, is_error=True)
         view = t.view()
         kind, _, pid = t.id.partition(".")
-        if kind == "forms":
+        if kind == "forms" and await _hers(ctx):
             view.update(await _copies(self.app, plugins.get(pid)))
         return ToolResult(content=self.cfg.substitute(
             json.dumps(view, ensure_ascii=False, default=str)), display={"target": t.id})

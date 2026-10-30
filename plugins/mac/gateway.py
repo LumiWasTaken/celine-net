@@ -95,10 +95,17 @@ async def setup_line(request: Request, token: str) -> Response:
     key = _link(services.cfg)
     if end is None or end < time.monotonic() or key is None:
         raise NotFound(request.url.path)
+    return Response(filled(address.base(services.cfg), key),
+                    media_type="text/x-shellscript", headers={"cache-control": "no-store"})
+
+
+def filled(app: str, key: str) -> str:
+    """setup.sh with `app` and `key` in its PRESET line; never a copy without them."""
     text = SCRIPT.read_text()
-    filled = f"APP={shlex.quote(address.base(services.cfg))} KEY={shlex.quote(key)} JSON='' STATUS=''"
-    return Response(text.replace(PRESET, filled, 1), media_type="text/x-shellscript",
-                    headers={"cache-control": "no-store"})
+    if text.count(PRESET) != 1 or not app or not key:
+        raise RuntimeError("setup.sh has no PRESET line to fill")
+    return text.replace(PRESET, f"APP={shlex.quote(app)} KEY={shlex.quote(key)} "
+                                f"JSON='' STATUS=''")
 
 
 def _linked(request: Request):

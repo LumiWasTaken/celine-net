@@ -7,6 +7,7 @@ settings__read, and Check's lines."""
 from __future__ import annotations
 
 import functools
+import json
 import re
 import shutil
 import sys
@@ -22,7 +23,9 @@ from celine.core.runners import Runner, Runners
 from celine.devices import devices
 from celine.mcp import Supervisor, plugin_servers
 from celine.settings import features, form
-from celine.skills.settings import _copies
+from celine.conversations import store as conversations
+from celine.skills import ToolContext
+from celine.skills.settings import Settings as SettingsSkill, _copies
 from chat_fixtures import until
 from settings_fixtures import client, make_app, scratch
 
@@ -156,6 +159,28 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         late = (await _copies(services, p))["copy"]["Run on the Mac"].split("/")[-1].split()[0]
         gateway._tokens[late] -= gateway.SETUP_SECONDS + 1
         assert (await c.get(f"/api/plugins/mac/setup/{late}")).status_code == 404
+        # a served copy always has the app and the key in it
+        with pytest.raises(RuntimeError):
+            gateway.filled("http://192.168.1.20:8766", "")
+        script, gateway.SCRIPT = gateway.SCRIPT, tmp_path / "no-preset.sh"
+        gateway.SCRIPT.write_text("#!/bin/bash\nAPP='' KEY=''\n")
+        try:
+            with pytest.raises(RuntimeError):
+                gateway.filled("http://192.168.1.20:8766", key)
+        finally:
+            gateway.SCRIPT = script
+        # her settings__read: the line in her own chat, not in a sub-agent's
+        sk = SettingsSkill(cfg)
+        sk.app = services
+
+        async def read_in(cid):
+            ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="k", store=store,
+                              config=cfg, emit=None)  # type: ignore[arg-type]
+            return json.loads((await sk.read(ctx, target="forms.mac")).content)
+        chat = await conversations.create(store)
+        agent = await conversations.create(store, agent_of=chat, agent_name="a", kind="agent")
+        assert (await read_in(chat))["copy"]["Run on the Mac"].startswith("curl -fsSL ")
+        assert "copy" not in await read_in(agent) and "note" not in await read_in(agent)
         assert view["values"]["url"] == "" and view["secrets"]["token"]["state"] == "not set"
         assert devices(cfg)["mac"].why == "Her Mac: Agents is empty; Token is empty."
 
@@ -188,7 +213,6 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
 
 async def test_her_script_on_the_mac_starts_her_turn_with_a_message_to_herself(
         tmp_path, monkeypatch, store):
-    from celine.conversations import store as conversations
     from celine.intercom import Intercom
     scratch(tmp_path, monkeypatch)
     cfg = boot.load()
