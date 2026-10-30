@@ -546,9 +546,9 @@ _STEP = {"queued": "", "preparing": "Thinking", "streaming": ""}
 
 
 def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
-    """The list's group label of a row: Running, Pinned, then the day it was last
-    active in the app's time zone (Today, Yesterday, the weekday, "9 Oct", "October
-    2025")."""
+    """The list's group label of a row: Running, Pinned, then when it was last active in
+    the app's time zone: Today, Yesterday, Previous 7 days, Previous 30 days, the month
+    ("September") this year, the year ("2025") before."""
     if rank == 2:
         return "Running"
     if rank == 1:
@@ -560,9 +560,11 @@ def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
         return "Today"
     if days == 1:
         return "Yesterday"
-    if days < 7:
-        return d.strftime("%A")
-    return f"{d.day} {d:%b}" if d.year == today.year else d.strftime("%B %Y")
+    if days <= 7:
+        return "Previous 7 days"
+    if days <= 30:
+        return "Previous 30 days"
+    return d.strftime("%B") if d.year == today.year else str(d.year)
 
 
 def state_of(c: sqlite3.Connection, row: dict, asked: frozenset[str] = frozenset()
@@ -606,7 +608,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
     `trashed`: only the deleted ones (archived or not). `place` "celine": only its
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
-    (last_line above), `group` (group_of), `state` (state_of; `asked`: the conversations a
+    (last_line above), `group` (group_of) and `dated` (its group is a date), `state` (state_of; `asked`: the conversations a
     request waits in), `home` and `link`
     (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
@@ -630,12 +632,13 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
             r["agents"] = [{**dict(s), "agents": []} for s in c.execute(
                 _SUMMARY + "WHERE c.agent_of = ? ORDER BY c.created_at, c.id", (r["id"],))]
             r["group"] = group_of(r["rank"], r["updated_at"], tz, now_)
+            r["dated"] = r["rank"] == 0
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
                 one["state"] = state_of(c, one, asked)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
-                a["group"] = r["group"]
+                a["group"], a["dated"] = r["group"], r["dated"]
         return rows
 
     return await store.read(fn)
