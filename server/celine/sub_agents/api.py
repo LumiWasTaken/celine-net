@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..attachments import label
 from ..errors import CelineError, NotFound
 from .skill import agents_of, tree_of
 
@@ -42,10 +43,14 @@ async def list_agents(request: Request, conversation: str | None = None) -> dict
 @router.get("/conversations/{cid}/sub-agents")
 async def agent_tree(request: Request, cid: str) -> dict:
     """The sub-agents under the top of `cid`'s chain, as a tree (skill.tree_of): {top,
-    agents}, each with its depth, state, model, tokens, seconds and link."""
-    out = await request.app.state.services.store.read(lambda c: tree_of(c, cid))
+    agents}, each with its depth, state, model (its label), tokens, seconds and link."""
+    services = request.app.state.services
+    out = await services.store.read(lambda c: tree_of(c, cid))
     if out is None:
         raise NotFound("conversation")
+    s = getattr(services.cfg, "settings", None)
+    for a in out["agents"]:
+        a["model"] = label(s, a["model"]) or None
     return out
 
 

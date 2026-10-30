@@ -25,7 +25,7 @@ from celine.turns.dispatcher import Dispatcher
 pytestmark = pytest.mark.anyio
 
 
-async def test_agents_and_missions_are_managed_over_http_with_events(db_path):
+async def test_agents_and_missions_are_managed_over_http_with_events(db_path, monkeypatch):
     async with anyio.create_task_group() as tg:
         bus = EventBus()
         store = Store(db_path, bus=bus)
@@ -88,6 +88,12 @@ async def test_agents_and_missions_are_managed_over_http_with_events(db_path):
                 ("two", 2, chain[1], "done", f"/chat/{chain[2]}"),
                 ("three", 3, chain[2], "done", f"/chat/{chain[3]}")]
             assert {(a["prompt_tokens"], a["seconds"]) for a in tree["agents"][1:]} == {(0, 0)}
+            monkeypatch.setattr(cfg.settings, "providers", {"nix": {
+                "kind": "llama-server", "models": {"Qwen-125B": {"label": "Flash-Next"}}}})
+            await store.write(lambda c: c.execute(
+                "UPDATE conversations SET model_id='nix/Qwen-125B' WHERE id=?", (chain[1],)))
+            tree = (await c.get(f"/api/conversations/{deep}/sub-agents")).json()
+            assert tree["agents"][1]["model"] == "Flash-Next", "its label, not its id"
             assert (await c.get("/api/conversations/nope/sub-agents")).status_code == 404
             await store.write(lambda c: c.execute(
                 "DELETE FROM conversations WHERE agent_of IS NOT NULL AND id <> ?", (sub,)))
