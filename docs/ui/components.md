@@ -254,7 +254,11 @@ such as "Also delete its sub-agents", off by default), `onConfirm(option)`
 **Props:** Dialog props.
 **Do:** rise from the bottom edge, `--r-xl` top corners, a 36 x 5 px grabber; dragging the
 grabber down, the back gesture (the sheet is one step of history), Escape, the scrim and
-the X close it. On a desktop it renders as a Dialog near the top.
+the X close it. On a desktop it renders as a Dialog near the top. A list's Sheet shows
+one thing at a time: a tool call's row opens the call, a run of calls alike ("Ran 8
+commands in terminal main") opens its rows, and a row there opens its call in the same
+Sheet with Back to the run.
+**Don't:** open a Sheet from a Sheet; unfold a run in place.
 
 ### Drawer
 **When:** a side panel beside the content (Celine's conversation panel, a Routine run).

@@ -7,7 +7,7 @@ import { asBatch } from './media'
 import { follow, isDown, snapshotAgain, useConnection, type Frame } from './socket'
 import type { ChatApproval, ConversationSettings } from './settingsApi'
 import type { GuardBanner } from './guard'
-import type { Plan, Unanswered } from './api'
+import type { Plan, ToolRun, Unanswered } from './api'
 
 /** a hidden tab runs no frames: the gathered text is applied this often there */
 const HIDDEN_FLUSH_MS = 250
@@ -49,6 +49,8 @@ type State = {
   /** the active path */
   messages: Message[]
   toolCalls: Record<string, ToolCall[]>
+  /** the runs of each turn, by turn id, as the server last sent them */
+  runs: Record<string, ToolRun[]>
   /** the one running or next; while turns wait behind it, never the one that just ended */
   turn: Turn | null
   /** what Regenerate answers (the snapshot's, then turn.state) */
@@ -81,7 +83,7 @@ type State = {
 
 export interface Forming { message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string }
 
-const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
+const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, runs: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
 
 export function useConversation(conversationId: string | null) {
   const [state, setState] = useState<State>(EMPTY)
@@ -172,12 +174,16 @@ function joinText(evs: TextFrame[]): TextFrame[] {
 }
 
 function fromSnapshot(s: State, snap: Snapshot): State {
-  return { ...s, conversation: snap.conversation, forming: [], messages: snap.messages, toolCalls: snap.tool_calls, compactions: snap.compactions,
+  return { ...s, conversation: snap.conversation, forming: [], messages: snap.messages, toolCalls: snap.tool_calls, runs: snap.runs, compactions: snap.compactions,
            turn: snap.turn, unanswered: snap.unanswered, queue: snap.queue, live: snap.turn?.live ?? null, switched: snap.switched,
            imageNotices: snap.image_notices, banners: snap.guard, approvals: snap.approvals, plan: snap.plan }
 }
 
 function apply(s: State, ev: Frame): State {
+  // a tool event carries its turn's runs, all of them
+  if ((ev.type === 'tool.started' || ev.type === 'tool.done' || ev.type === 'tool.gated' || ev.type === 'tool.detached') && ev.runs) {
+    s = { ...s, runs: { ...s.runs, [ev.runs.turn]: ev.runs.list } }
+  }
   switch (ev.type) {
     case 'snapshot':
       return { ...fromSnapshot(s, ev), error: null }

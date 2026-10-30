@@ -8,13 +8,13 @@
    be cancelled while it waits. A page it wrote is a card under its reply (ArtifactCards),
    one per page whatever the number of versions it wrote in that reply; so is a share of
    its box (ShareCards), with the server's dot. */
-import { useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { TextWithRefs } from './Markdown'
 import {
-  AlertTriangle, AppWindow, Bell, BookOpen, Bot, CircleSlash, Download, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
+  AlertTriangle, AppWindow, ArrowLeft, Bell, BookOpen, Bot, CircleSlash, Download, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
   Music, NotebookPen, PanelRight, Paperclip, ScreenShare, Search, Square, Terminal, UserRound, Wrench, type LucideIcon,
 } from 'lucide-react'
-import { api, type ToolCall } from '../lib/api'
+import { api, type ToolCall, type ToolRun } from '../lib/api'
 import { AgentsContext, agentsApi } from '../lib/agents'
 import { useServerEvents } from '../lib/bus'
 import { artifactOf, kindWord, ShowArtifact, type ArtifactCardData } from '../lib/artifacts'
@@ -120,7 +120,8 @@ export function Elapsed({ since, until }: { since: string; until?: string | null
    duration or count; a call at work has the running dot, a failed one says "Could not", one
    not run or off is muted. A click opens everything about it in a Sheet: the call by its
    name, the arguments, where it looked and the complete result, nothing cut. Its own
-   buttons (Stop, Open, Cancel) sit at its end. Only a run of the same calls (RunRow) opens to its rows. ── */
+   buttons (Stop, Open, Cancel) sit at its end. Nothing folds: a run of calls alike
+   (RunRow) opens its rows in its Sheet. ── */
 type Tone = 'running' | 'error' | 'muted' | null
 
 const busy = (call: ToolCall) => call.state === 'pending' || call.state === 'running' || call.state === 'detached'
@@ -294,29 +295,19 @@ function useView(call: ToolCall): View {
   }
 }
 
-/* one call in a list: a click opens it whole; `depth` 1 under its run's row */
-function CallRow({ call, depth }: { call: ToolCall; depth?: number }) {
+/* one call in a list: a click opens it whole (the list's Sheet, onOpen) */
+function CallRow({ call, onOpen }: { call: ToolCall; onOpen: () => void }) {
   const v = useView(call)
-  const [open, setOpen] = useState(false)
-  const words = plainWords(v.words)
   return (
     <div className="tool">
       {/* a failed row keeps its icon (its sentence says "Could not"), so every row's text
           starts at one edge; only a call at work trades it for the running dot */}
-      <ListRow density="sm" depth={depth} icon={v.tone === 'running' ? undefined : v.icon}
+      <ListRow density="sm" icon={v.tone === 'running' ? undefined : v.icon}
                dot={v.tone === 'running' ? 'running' : undefined}
-               title={<TextWithRefs text={v.words} />} tooltip={words}
-               meta={v.meta} muted={v.tone === 'muted'} onClick={() => setOpen(true)}
+               title={<TextWithRefs text={v.words} />} tooltip={plainWords(v.words)}
+               meta={v.meta} muted={v.tone === 'muted'} onClick={onOpen}
                trailing={v.actions} trailingAlways={!!v.actions} />
       {v.under}
-      {open && (
-        <Sheet title={words} size="md" onClose={() => setOpen(false)}>
-          <div className="tool__body">
-            <ToolDetail call={call} />
-            {v.detail}
-          </div>
-        </Sheet>
-      )}
     </div>
   )
 }
@@ -330,42 +321,91 @@ export function ToolGroup({ calls }: { calls: ToolCall[] }) {
   return <div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div>
 }
 
-/* RUN or more calls in a row with the same words for a run (the server's `words.group`)
-   are one row, "Ran 8 commands in terminal main"; a call at work joins its run as it
-   starts. A click shows its rows under it. */
-const RUN = 3
+/* The runs the server made of each turn's calls (skills/words.py runs): calls alike in a
+   row, one row with the server's words and failed count. The Transcript gives them, with
+   every call of the conversation, since a run can span the steps of a reply; elsewhere
+   each call is its own row. */
+type RunsValue = { runOf: (id: string) => ToolRun | undefined; callOf: (id: string) => ToolCall | undefined }
+export const ToolRuns = createContext<RunsValue>({ runOf: () => undefined, callOf: () => undefined })
 
-function Rows({ calls }: { calls: ToolCall[] }) {
-  const runs: ToolCall[][] = []
-  for (const c of calls) {
-    const last = runs[runs.length - 1]
-    if (last && c.words.group && last[0]!.words.group === c.words.group) last.push(c)
-    else runs.push([c])
-  }
-  return <>{runs.flatMap(r => (r.length < RUN ? r.map(c => <CallRow key={c.id} call={c} />)
-    : [<RunRow key={r[0]!.id} calls={r} />]))}</>
+export function useToolRuns(toolCalls: Record<string, ToolCall[]>, runs: Record<string, ToolRun[]>): RunsValue {
+  return useMemo(() => {
+    const run = new Map<string, ToolRun>()
+    for (const list of Object.values(runs)) for (const r of list) for (const id of r.ids) run.set(id, r)
+    const call = new Map<string, ToolCall>()
+    for (const list of Object.values(toolCalls)) for (const c of list) call.set(c.id, c)
+    return { runOf: id => run.get(id), callOf: id => call.get(id) }
+  }, [toolCalls, runs])
 }
 
-/* a run as one row: at work while one of its calls is, its failed calls counted */
-function RunRow({ calls }: { calls: ToolCall[] }) {
+/* what the list's Sheet shows: a call, a run (by its first call), or a call of a run */
+type Opened = { call?: string; run?: string }
+
+/* The rows of a list: a run where its first call is, its other calls left out. What is open
+   lives here, by id, so a row that turns into its run (or back) keeps its Sheet open. */
+function Rows({ calls }: { calls: ToolCall[] }) {
+  const { runOf, callOf } = useContext(ToolRuns)
+  const [opened, setOpened] = useState<Opened | null>(null)
+  const find = (id: string) => calls.find(c => c.id === id) ?? callOf(id)
+  const rows = calls.flatMap(c => {
+    const r = runOf(c.id)
+    if (!r) return [<CallRow key={c.id} call={c} onOpen={() => setOpened({ call: c.id })} />]
+    if (r.ids[0] !== c.id) return []
+    const members = r.ids.map(find).filter((x): x is ToolCall => !!x)
+    return [<RunRow key={c.id} run={r} calls={members} onOpen={() => setOpened({ run: c.id })} />]
+  })
+  const run = opened?.run ? runOf(opened.run) : undefined
+  const members = run ? run.ids.map(find).filter((x): x is ToolCall => !!x) : []
+  const call = opened?.call ? find(opened.call) : undefined
+  const shown = call ?? members[0]
+  return <>
+    {rows}
+    {opened && shown && (
+      <CallsSheet call={call} run={run} members={members} shown={shown}
+                  onPick={id => setOpened({ run: opened.run, call: id })}
+                  onBack={run && call ? () => setOpened({ run: opened.run }) : undefined}
+                  onClose={() => setOpened(null)} />
+    )}
+  </>
+}
+
+/* a run as one row: the server's words, its failed calls counted (a call at work is never
+   in a run), the time from its first call to its last */
+function RunRow({ run, calls, onOpen }: { run: ToolRun; calls: ToolCall[]; onOpen: () => void }) {
   const first = calls[0]!
   const last = calls[calls.length - 1]!
   const v = useView(first)
-  const [open, setOpen] = useState(false)
-  const running = calls.some(busy)
-  const failed = calls.filter(c => c.state === 'error').length
-  const words = first.words.group!.replace('{n}', String(calls.length))
   return (
-    <>
-      <div className="tool">
-        <ListRow density="sm" icon={running ? undefined : failed ? AlertTriangle : v.icon}
-                 dot={running ? 'running' : undefined} title={words} tooltip={words}
-                 meta={failed ? `${failed} failed` : first.started_at &&
-                   <Elapsed since={first.started_at} until={running ? null : last.finished_at ?? last.started_at} />}
-                 onClick={() => setOpen(o => !o)} />
+    <div className="tool">
+      <ListRow density="sm" icon={run.failed ? AlertTriangle : v.icon} title={run.words} tooltip={run.words}
+               meta={run.failed ? `${run.failed} failed` : first.started_at &&
+                 <Elapsed since={first.started_at} until={last.finished_at ?? last.started_at} />}
+               onClick={onOpen} />
+    </div>
+  )
+}
+
+/* One Sheet for a list: a call whole, or a run's rows, each opening in the same Sheet with
+   Back to the run. Never a Sheet on a Sheet. */
+function CallsSheet({ call, run, members, shown, onPick, onBack, onClose }: {
+  call: ToolCall | undefined; run: ToolRun | undefined; members: ToolCall[]; shown: ToolCall
+  onPick: (id: string) => void; onBack?: () => void; onClose: () => void
+}) {
+  const v = useView(shown)
+  return (
+    <Sheet title={call ? plainWords(v.words) : run?.words ?? ''} size="md" onClose={onClose}>
+      <div className="tool__body">
+        {onBack && <span><Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Back</Button></span>}
+        {call ? <>
+          <ToolDetail call={call} />
+          {v.detail}
+        </> : (
+          <div className="tool-list" role="list">
+            {members.map(c => <CallRow key={c.id} call={c} onOpen={() => onPick(c.id)} />)}
+          </div>
+        )}
       </div>
-      {open && calls.map(c => <CallRow key={c.id} call={c} depth={1} />)}
-    </>
+    </Sheet>
   )
 }
 
@@ -380,8 +420,11 @@ const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
 export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline?: boolean }) {
   // a settled batch or page has its block under its words already (the gallery, the card):
   // no row for it too. read and stop name a batch again to show it: they get their row.
+  // A run shows where its first call is, in its step: its other calls leave theirs.
+  const { runOf } = useContext(ToolRuns)
   const rows = calls.filter(c => !busy(c) && !PLUMBING.has(c.name)
-    && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display)))
+    && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display))
+    && (runOf(c.id)?.ids[0] ?? c.id) === c.id)
   return <>
     {calls.map(c => <ToolLine key={c.id} call={c} />)}
     {inline && rows.length > 0 && (

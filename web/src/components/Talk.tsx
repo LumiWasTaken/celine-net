@@ -119,7 +119,7 @@ export function Talk({ cid, convo, active, name, user, send, placeholder, noTool
   return (
     <>
       <div className="chat-scroll" ref={transcript} onScroll={onScroll}>
-        <Transcript conversationId={cid} messages={convo.messages} toolCalls={convo.toolCalls} turn={convo.turn}
+        <Transcript conversationId={cid} messages={convo.messages} toolCalls={convo.toolCalls} runs={convo.runs} turn={convo.turn}
                     unanswered={convo.unanswered} running={convo.running} error={convo.error} pending={pending} compactions={convo.compactions}
                     onRetry={() => conversationApi.regenerate(cid).then(() => undefined)}
                     live={convo.live} switched={convo.switched} imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}

@@ -484,9 +484,14 @@ export type ToolCall = {
 
 /** a call in words: `running` while it is at work ("Reading the note x"), `settled` once
  *  it ended ("Read the note x", "Could not read the note x", "Not run: ..."), `step` the
- *  tool alone at work ("Reading the note"), `where` the places a search was kept to,
- *  `group` the words of a run of calls like it in a row ("Ran {n} commands"), {n} their count */
-export type ToolWords = { running: string; settled: string; step: string; where: string | null; group: string | null }
+ *  tool alone at work ("Reading the note"), `where` the places a search was kept to */
+export type ToolWords = { running: string; settled: string; step: string; where: string | null }
+
+/** calls alike in a row, shown as one row (skills/words.py runs): its calls, its words
+ *  ("Ran 8 commands in terminal main"), how many of them failed */
+export type ToolRun = { ids: string[]; words: string; failed: number }
+/** a turn's runs as a tool event carries them, all of them each time */
+export type TurnRuns = { turn: string; list: ToolRun[] }
 
 /** what a running tool says it is doing */
 type ToolProgress = {
@@ -519,6 +524,8 @@ export type Snapshot = {
   }
   messages: Message[]
   tool_calls: Record<string, ToolCall[]>
+  /** the runs of each turn, by turn id */
+  runs: Record<string, ToolRun[]>
   compactions: Compaction[]
   turn: Turn | null
   /** what Regenerate answers, null when nothing waits for it */

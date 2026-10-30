@@ -466,7 +466,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                 <ConversationReminders.Provider value={conversationReminders}>
                   <Transcript conversationId={selected}
                               messages={convo.messages}
-                              toolCalls={convo.toolCalls} turn={convo.turn} unanswered={convo.unanswered}
+                              toolCalls={convo.toolCalls} runs={convo.runs} turn={convo.turn} unanswered={convo.unanswered}
                               running={convo.running} error={convo.error}
                               pending={shownPending} compactions={convo.compactions} onRetry={regenerate}
                               live={convo.live} switched={convo.switched}

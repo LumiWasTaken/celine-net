@@ -107,7 +107,7 @@ const SAMPLE_CALL: ToolCall = {
   arguments: '{"document":"house-inventory.md"}',
   state: 'ok',
   display: { title: 'house-inventory.md' },
-  words: { running: 'Reading "house-inventory.md"', settled: 'Read "house-inventory.md"', step: 'Reading a document', where: null, group: null },
+  words: { running: 'Reading "house-inventory.md"', settled: 'Read "house-inventory.md"', step: 'Reading a document', where: null },
   started_at: '2026-01-19T10:00:00Z',
   finished_at: '2026-01-19T10:00:01Z',
 }

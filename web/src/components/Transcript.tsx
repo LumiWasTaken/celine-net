@@ -17,7 +17,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   conversationApi, type Attachment, type Compaction, type ImageNotice, type Live, type Message, type Queued, type Switched,
-  type ToolCall, type Turn, type Unanswered,
+  type ToolCall, type ToolRun, type Turn, type Unanswered,
 } from '../lib/api'
 import { bytes, errorText, fullDate, stamp } from '../lib/format'
 import { TILE, fileUrl, tileUrl } from '../lib/media'
@@ -34,7 +34,7 @@ import { useHer } from '../lib/her'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
-import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, artifactsOf, sharesOf } from './ToolRow'
+import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, ToolRuns, artifactsOf, sharesOf, useToolRuns } from './ToolRow'
 import { GuardBanner } from './GuardBanner'
 import { ApprovalAsk } from './ApprovalAsk'
 import { useFrozen, type GuardBanner as Banner } from '../lib/guard'
@@ -104,6 +104,8 @@ type Props = {
   conversationId: string | null
   messages: Message[]
   toolCalls: Record<string, ToolCall[]>
+  /** each turn's runs of calls alike, by turn id (the server's) */
+  runs: Record<string, ToolRun[]>
   turn: Turn | null
   /** your message that has no answer, and why (the server's) */
   unanswered: Unanswered | null
@@ -148,11 +150,12 @@ type T = {
 }
 
 export function Transcript(
-  { conversationId, messages, toolCalls, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
+  { conversationId, messages, toolCalls, runs, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
     approvals = [], forming = [], note, assistant, user, onRetry, closed = false }: Props,
 ) {
   const streaming = running && turn?.state === 'streaming'
   const frozen = useFrozen()
+  const toolRuns = useToolRuns(toolCalls, runs)
   // a background job's result shows in the call that started the job, not again here
   const visible = messages.filter(m => m.role !== 'tool' && m.intercom?.kind !== 'job')
   const last = visible.at(-1)
@@ -342,6 +345,7 @@ export function Transcript(
   const liveWords = held ? 'Queued' : pending || running ? (waiting ?? `${assistant} is writing.`) : endWords(turn, error, closed ? null : unanswered) ?? ''
 
   return (
+    <ToolRuns.Provider value={toolRuns}>
     <div className="transcript__inner is-transcript">
       {segments.map(seg => {
         const ids = seg.kind === 'msg' ? [seg.m.id] : seg.msgs.map(m => m.id)
@@ -367,6 +371,7 @@ export function Transcript(
       )}
       {note}
     </div>
+    </ToolRuns.Provider>
   )
 }
 
