@@ -30,6 +30,7 @@ class Template:
     device: str | None = None
     tools: list[str] = field(default_factory=list)
     body: str = ""
+    file: str = ""          # its note, templates/<file>.md
 
 
 FENCE = re.compile(r"^---[ \t]*\r?$", re.M)     # a line of just ---
@@ -94,6 +95,7 @@ def scan(cfg) -> tuple[dict[str, Template], list[str]]:
         except ValueError as e:
             problems.append(f"{rel} is no template: {e}.")
             continue
+        t.file = rel
         found.setdefault(t.name.casefold(), []).append((rel, t))
     out: dict[str, Template] = {}
     for key, got in found.items():
@@ -109,8 +111,19 @@ def all_templates(cfg) -> dict[str, Template]:
     return scan(cfg)[0]
 
 
+def pick(got: dict[str, Template], name: str) -> Template | None:
+    """The template called `name`, or whose note `name` is (templates/x.md, templates/x,
+    x.md)."""
+    key = " ".join(name.split()).casefold()
+    if key in got:
+        return got[key]
+    path = key.removeprefix(f"{FOLDER}/").removesuffix(".md")
+    return next((t for t in got.values()
+                 if t.file.casefold() == f"{FOLDER}/{path}.md"), None)
+
+
 def find(cfg, name: str) -> Template | None:
-    return all_templates(cfg).get(" ".join(name.split()).casefold())
+    return pick(all_templates(cfg), name)
 
 
 def listing(cfg) -> str | None:

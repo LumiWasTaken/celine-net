@@ -334,7 +334,7 @@ class SubAgents:
         name = " ".join(name.split())
         if template is not None:
             got, problems = templates.scan(self.cfg)
-            t = got.get(" ".join(template.split()).casefold())
+            t = templates.pick(got, template)
             if t is None:
                 have = ", ".join(x.name for x in got.values())
                 return None, "\n".join([f"There is no agent template {template!r} in "

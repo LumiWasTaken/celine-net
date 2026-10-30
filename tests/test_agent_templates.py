@@ -119,6 +119,22 @@ async def test_files_that_are_no_template_and_shared_names_are_said(store):
     assert "templates/bad.md is no template" in refusal
 
 
+async def test_a_note_without_frontmatter_is_named_and_a_path_finds_its_template(store):
+    cfg = load()
+    await write_notes(store, cfg, {"templates/digger.md": "# digger\n\nDig.",
+                                   "templates/scout.md": SCOUT})
+    chat = await conversations.create(store, "chat")
+    _, refusal, _, _ = await SubAgents(cfg).begin(store, chat, "x", "a name",
+                                                  template="digger")
+    assert ("templates/digger.md is no template: it does not start with a --- "
+            "frontmatter.") in refusal.splitlines()
+    got = templates.all_templates(cfg)
+    assert (templates.read_note(cfg.her.notebook, "templates/scout.md") or "").startswith(
+        "Last changed:"), "the stamp above the frontmatter is read past"
+    for given in ("templates/scout.md", "templates/scout", "scout.md", "web SCOUT"):
+        assert templates.pick(got, given).name == "Web scout", given
+
+
 async def test_tools_that_are_no_skills_are_refused(store):
     cfg = load()
     await write_notes(store, cfg, {"templates/t.md": "---\nname: Typo one\n"
