@@ -12,6 +12,8 @@ export type MissionStatus = 'active' | 'needs_you' | 'done' | 'stopped'
 export type Mission = {
   conversation_id: string
   name: string
+  /** in the list: an approval waits in it or in a sub-agent of it */
+  asked?: boolean
   /** its default terminal's name in this conversation */
   terminal: string
   brief: string
@@ -77,7 +79,7 @@ export const isMissionEvent = (ev: { type: string }) =>
   || ev.type === 'conversation.title' || ev.type === 'conversation.deleted'
   || ev.type === 'conversation.restored' || ev.type === 'conversation.purged'
   || ev.type === 'conversation.archived' || ev.type === 'conversation.unarchived'
-  || ev.type === 'conversation.auto_context'
+  || ev.type === 'conversation.auto_context' || ev.type === 'approvals.changed'
 
 /** how many missions wait for you (the server's count), for the rail's dot */
 export function useMissionsWaiting(): number {

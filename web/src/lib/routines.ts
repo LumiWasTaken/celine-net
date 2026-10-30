@@ -69,6 +69,8 @@ export type Run = {
   id: string
   schedule: string
   label: string
+  /** in the list: an approval waits in it or in a sub-agent of it */
+  asked?: boolean
   /** the planned time (UTC) */
   slot: string
   /** the slot's time of day in the app's zone */
@@ -122,7 +124,10 @@ export const routinesApi = {
 }
 
 /** a server event that changes a run */
-export const isRunEvent = (ev: { type: string }) => ev.type === 'run.state'
+export const isRunEvent = (ev: { type: string }) => ev.type === 'run.state' || ev.type === 'approvals.changed'
+
+/** a row an approval waits in */
+export const ASKED_WORD = 'Waiting for you'
 
 /** the one word for a run's state */
 export const STATE_WORD: Record<RunState | 'planned', string> = {
@@ -158,4 +163,6 @@ export type EventTask = {
   working: boolean
   last_line: string
   updated_at: string
+  /** an approval waits in it or in a sub-agent of it */
+  asked: boolean
 }

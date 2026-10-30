@@ -178,11 +178,10 @@ export type VaultAsk = {
 
 export type Home = 'her' | 'missions' | 'routines'
 
-/** GET /approvals: what waits, how many, and by the place its conversation lives */
+/** GET /approvals: what waits, and how many wait in a conversation that is there */
 export type Asks = {
   approvals: VaultAsk[]
   count: number
-  homes: Partial<Record<Home, { count: number; link: string }>>
 }
 
 /** a request as its chat shows it, after the message that made the call (the snapshot's

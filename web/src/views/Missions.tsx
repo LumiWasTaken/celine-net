@@ -218,11 +218,11 @@ function MissionsList({ shelf, setShelf, lists, agents, onNew, onChange }: {
                                        onTrash={() => setTrashing(r.m)}
                                        onDelete={() => act.run(() => missionsApi.remove(r.m.conversation_id))} />
                            ) : (
-                             <ListRow density="lg" dot={stateTone(r.m.status)} title={r.m.name} tooltip={r.m.name}
+                             <ListRow density="lg" dot={r.m.asked ? 'warn' : stateTone(r.m.status)} title={r.m.name} tooltip={r.m.name}
                                       subtitle={r.m.note || firstLine(r.m.brief)} muted={r.m.status === 'done' || r.m.status === 'stopped'}
                                       column={<span className="missions-column">{kids.get(r.m.conversation_id) ? agentsNoun(kids.get(r.m.conversation_id)!) : ''}
                                         {r.m.artifact && <FileText size={ICON.sm} aria-label="Result" />}</span>}
-                                      cell={STATE_WORD[r.m.status]} meta={<time dateTime={r.m.updated_at}>{listTime(r.m.updated_at)}</time>}
+                                      cell={r.m.asked ? STATE_WORD.needs_you : STATE_WORD[r.m.status]} meta={<time dateTime={r.m.updated_at}>{listTime(r.m.updated_at)}</time>}
                                       href={format({ section: 'missions', conversation: r.m.conversation_id })} onClick={click(() => open(r.m))}
                                       pick={picker.row(r.m.conversation_id)} onContextMenu={e => ctx.open(e, menu(r.m), r.m.name)}
                                       trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={menu(r.m)} size="sm" />} />

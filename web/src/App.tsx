@@ -13,7 +13,7 @@ import { HerContext } from './lib/her'
 import { NameContext, PronounsContext } from './lib/name'
 import { AppearanceContext, useAppearanceSettings } from './lib/appearance'
 import { SpeechProvider } from './components/Speech'
-import { NavProvider, useNav, type Section } from './lib/nav'
+import { NavProvider, format, useNav, type Section } from './lib/nav'
 import { ConnectionProvider, changesApi } from './lib/socket'
 import { useLostLogins } from './lib/sources'
 import { useRoutinesAttention } from './lib/routines'
@@ -101,11 +101,12 @@ function Shell() {
   useServerEvents(ev => { if (ev.type === 'changes') waiting.set(ev.unread as number) })
   const unread = waiting.data ?? 0
   // the approvals that wait, the server's: a dot on the place each one's conversation lives
-  // in, which opens it, and in the window's title
+  // in (unless it is the page on screen), which opens it, and the count in the window's title
   const asks = useResource(() => settingsApi.approvals(), [], { events: ev => ev.type === 'approvals.changed' })
   const asked = asks.data?.count ?? 0
+  const onScreen = format(nav.route)
   const askedIn = (id: Section) =>
-    Object.entries(asks.data?.homes ?? {}).find(([h]) => HOME_SECTION[h as Home] === id)?.[1]
+    asks.data?.approvals.find(a => a.home && a.link && HOME_SECTION[a.home] === id && a.link !== onScreen)
 
   // the window's title, on every page: the waiting count first (not in Setup, which has no
   // rail), then the page's own name (a terminal, an artifact: lib/title; Celine's place: its
@@ -153,13 +154,13 @@ function Shell() {
   const go = (id: Section) => (e: React.MouseEvent) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
     e.preventDefault()
-    const at = id !== section && askedIn(id)
-    if (at) nav.goPath(at.link)
+    const at = askedIn(id)?.link
+    if (at) nav.goPath(at)
     else nav.goSection(id)
   }
   const badge = (id: Section) => {
     if (id === 'intercom' && unread > 0) return <span className="rail__count" aria-hidden>{unread > 99 ? '99+' : unread}</span>
-    if (id !== section && askedIn(id)) return <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
+    if (askedIn(id)) return <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
     if (id === 'settings' && lost.length > 0) return <span className="rail__dot" aria-label={`${lost.length} to fix`} />
     if (id === 'routines' && routines && id !== section) return <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} />
     const w = id === section ? undefined : id === 'celine' ? work.celine : id === 'missions' && missionsWaiting ? 'needs_you' : undefined
@@ -220,7 +221,7 @@ function Shell() {
                   aria-haspopup="dialog" onClick={() => setSheet('more')}>
             <Ellipsis size={ICON.lg} aria-hidden />
             <span className="rail__label">More</span>
-            {places.some(p => !bar.includes(p.id) && p.id !== section && askedIn(p.id))
+            {places.some(p => !bar.includes(p.id) && askedIn(p.id))
               ? <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
               : lost.length > 0 ? <span className="rail__dot" aria-label={`${lost.length} to fix`} />
               : routines && section !== 'routines' ? <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} /> : null}
