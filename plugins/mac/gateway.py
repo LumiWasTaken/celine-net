@@ -3,13 +3,15 @@ her scripts' messages to her, the command the form shows, and Check.
 
 - GET /api/plugins/mac/setup.sh: the script, so the Mac needs nothing but the app.
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
-  report line {address, token, ...}; the address and the token are saved into the form
-  (celine/saves.py plugin_form), so the servers start again with them.
+  report line {address, token, agents, ...}; the address, the token and the drones'
+  address are saved into the form (celine/saves.py plugin_form), so the servers start
+  again with them.
 - POST /api/plugins/mac/events with the link key: {text, conversation?}, a message from
   her to herself (intercom__send to "me") in that conversation, else her newest chat: it
   starts her turn there, or reaches the one running.
 All three are `open` in plugin.toml: the Mac has no session. The link key is made once
-(var/secrets/mac.link.key) and is part of the command."""
+(var/secrets/mac.link.key) and is part of the command; it is also the Mac's key to the
+app's model proxy (plugin.toml [drones])."""
 from __future__ import annotations
 
 import hmac
@@ -84,6 +86,8 @@ async def gateway(request: Request) -> dict[str, Any]:
         raise Invalid("body", "The address and the token are text.")
     p = plugins.get("mac")
     values = {**services.cfg.settings.plugins.get(p.id, {}), "url": body["address"]}
+    if isinstance(body.get("agents"), str):
+        values["agents"] = body["agents"]
     return await plugin_form(services, p, values, {"token": body["token"]})
 
 

@@ -15,6 +15,15 @@ mono = true
 placeholder = "http://192.168.1.30:8765"
 
 [[fields]]
+key = "agents"
+label = "Agents"
+type = "text"
+default = ""
+word = true
+mono = true
+placeholder = "http://192.168.1.30:4096"
+
+[[fields]]
 key = "token"
 label = "Token"
 type = "secret"

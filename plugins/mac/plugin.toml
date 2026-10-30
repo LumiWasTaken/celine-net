@@ -1,5 +1,5 @@
 # Her own computer, a Mac: the four servers setup.sh runs behind its gateway, filled from
-# the form (settings.toml): ${URL} is the Address, ${TOKEN} the Token.
+# the form (settings.toml): ${URL} is the Address, ${TOKEN} the Token; and its drones.
 id = "mac"
 label = "Her Mac"
 about = "Her own Mac: its screen, a shell and its files, and a browser."
@@ -10,6 +10,15 @@ choice = "Own computer"
 routes = ["gateway:router"]
 run = "gateway:run"
 open = ["GET /setup.sh", "POST /gateway", "POST /events"]   # the Mac reaches these without a session
+
+# The device "mac" for drones (server/celine/sub_agents/drone.py): opencode serve at the
+# Agents address, its password the Token; its model calls come to the app's model proxy
+# with `key`, the secret var/secrets/mac.link.key (gateway.py makes it).
+[drones]
+url      = "${AGENTS}"
+password = "${TOKEN}"
+key      = "link"
+label    = "Her Mac"
 
 [servers.macscreen]               # Peekaboo: see, click, type, menus, windows
 enabled   = true

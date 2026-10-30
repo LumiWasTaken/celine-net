@@ -1,19 +1,22 @@
 #!/bin/bash
 # Her own computer, macOS on Apple silicon: Peekaboo (screen), Desktop Commander (shell),
 # Playwright MCP (browser, on a Chrome of its own) and the MCP filesystem server (files)
-# behind one Supergateway with a bearer token, kept running by LaunchAgents in her login
-# session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
+# behind one Supergateway with a bearer token, and `opencode serve` for her drones (the
+# same token as its password), kept running by LaunchAgents in her login session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
 # Run it as her; safe to run again.
 #
 #   bash setup.sh [--app URL --key KEY] [--json]    install or update, then report
 #   bash setup.sh --status                          report only, install nothing
 #
-# The report is one JSON line: the gateway address, the token, the tools that answer and
-# the macOS permissions each still lacks. --app posts that line to the app with the key
+# The report is one JSON line: the gateway address, the token, the drones' address, the
+# tools that answer, the macOS permissions each still lacks and opencode's version. --app posts that line to the app with the key
 # its "Her computer" card shows in the command.
 set -euo pipefail
 
 PORT=8765
+AGENTS_PORT=4096                 # opencode serve, for her drones
+OPENCODE_VERSION=1.19.4          # the box's (shellbox/Dockerfile), pinned by its sha256
+OPENCODE_SHA256=c400a2f8c8ab7e99478a7f4dd1a466b57bf33888e520d85c55780a5464c4b689
 CDP=9222                         # Chrome's DevTools port, on 127.0.0.1 only
 CONF=$HOME/.config/celine
 LIB=$HOME/.local/share/celine
@@ -21,6 +24,9 @@ TOKEN=$CONF/token
 AGENTS=$HOME/Library/LaunchAgents
 LABEL=com.celine.gateway
 CHROME=com.celine.chrome
+OPENCODE=com.celine.opencode
+OC=$LIB/opencode/opencode
+OC_LOG=$HOME/Library/Logs/celine-opencode.log
 BREW=/opt/homebrew/bin/brew      # Apple silicon only; Intel brew lives in /usr/local
 
 APP='' KEY='' JSON='' STATUS=''
@@ -44,8 +50,9 @@ report() {
   ip=$(ipconfig getifaddr "$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')" 2>/dev/null || true)
   # shellcheck disable=SC2016  # JavaScript, not shell
   ADDRESS="http://${ip:-127.0.0.1}:$PORT" TOKEN_FILE="$TOKEN" GATEWAY_PORT="$PORT" \
+    AGENTS="http://${ip:-127.0.0.1}:$AGENTS_PORT" AGENTS_PORT="$AGENTS_PORT" \
     "$(brew --prefix)/bin/node" --input-type=module -e '
-const { ADDRESS, TOKEN_FILE, GATEWAY_PORT } = process.env;
+const { ADDRESS, TOKEN_FILE, GATEWAY_PORT, AGENTS, AGENTS_PORT } = process.env;
 const fs = await import("node:fs");
 const token = fs.existsSync(TOKEN_FILE) ? fs.readFileSync(TOKEN_FILE, "utf8").trim() : null;
 const base = `http://127.0.0.1:${GATEWAY_PORT}`;
@@ -96,7 +103,17 @@ const servers = {
   browser: await server("browser"),
   files: await server("files"),
 };
-console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, servers }));
+// opencode serve: its version, or why it does not answer
+let opencode;
+try {
+  const r = await fetch(`http://127.0.0.1:${AGENTS_PORT}/global/health`, { signal: AbortSignal.timeout(10000),
+    headers: { Authorization: "Basic " + Buffer.from(`opencode:${token}`).toString("base64") } });
+  opencode = r.ok ? { version: (await r.json()).version } : { version: null, error: `HTTP ${r.status}` };
+} catch (e) {
+  opencode = { version: null, error: String(e.message ?? e) };
+}
+console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, agents: AGENTS,
+                             servers, opencode }));
 '
 }
 
@@ -110,7 +127,7 @@ if [ -n "$STATUS" ]; then
   exit
 fi
 
-echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome and four MCP servers and runs them as background services, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
+echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome, four MCP servers and opencode and runs them as background services, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
 say sudo
 sudo -v
 sudoers=$(mktemp)
@@ -147,6 +164,14 @@ const c = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
 fs.mkdirSync(require("path").dirname(file), { recursive: true });
 fs.writeFileSync(file, JSON.stringify({ ...c, blockedCommands: [], fileWriteLineLimit: 100000 }, null, 2));
 ' "$HOME/.claude-server-commander/config.json"
+
+say opencode   # the release binary, as the box has it
+if [ "$("$OC" --version 2>/dev/null)" != "$OPENCODE_VERSION" ]; then
+  zip=$LIB/opencode.zip
+  curl -fsSLo "$zip" "https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION/opencode-darwin-arm64.zip"
+  echo "$OPENCODE_SHA256  $zip" | shasum -a 256 -c - >/dev/null
+  unzip -oq "$zip" opencode -d "$LIB/opencode"
+fi
 
 say token
 mkdir -p "$CONF" && chmod 700 "$CONF"
@@ -235,18 +260,66 @@ cat > "$AGENTS/$LABEL.plist" <<EOF
 </dict>
 </plist>
 EOF
+say drones   # opencode serve on the app's model proxy (the link key), with Peekaboo and Playwright MCP
+mkdir -p "$HOME/.config/opencode" "$(dirname "$OC_LOG")"
+# this file is this script's; the app keeps the models in opencode.jsonc (PATCH /global/config)
+OC_APP="$APP" OC_NODE="$NODE" OC_LIB="$LIB" OC_CDP="$CDP" OC_PEEKABOO="$(brew --prefix)/bin/peekaboo" \
+"$NODE" -e '
+const e = process.env, fs = require("fs"), file = process.argv[1];
+const conf = {
+  $schema: "https://opencode.ai/config.json",
+  permission: "allow",
+  autoupdate: false,
+  mcp: {
+    screen: { type: "local", enabled: true, command: [e.OC_PEEKABOO, "mcp", "--allow-foreground"] },
+    browser: { type: "local", enabled: true, command: [e.OC_NODE,
+      `${e.OC_LIB}/node_modules/@playwright/mcp/cli.js`, "--cdp-endpoint", `http://127.0.0.1:${e.OC_CDP}`] },
+  },
+};
+if (e.OC_APP) conf.provider = { celine: { npm: "@ai-sdk/openai-compatible", name: "Celine",
+  options: { baseURL: `${e.OC_APP}/llm/v1`, apiKey: "{file:~/.config/celine/link}" } } };
+fs.writeFileSync(file, JSON.stringify(conf, null, 1) + "\n");
+' "$HOME/.config/opencode/opencode.json"
+cat > "$AGENTS/$OPENCODE.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$OPENCODE</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>OPENCODE_SERVER_PASSWORD=\$(cat "$TOKEN") exec "$OC" serve --hostname 0.0.0.0 --port $AGENTS_PORT</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>WorkingDirectory</key><string>$HOME</string>
+  <key>StandardOutPath</key><string>$OC_LOG</string>
+  <key>StandardErrorPath</key><string>$OC_LOG</string>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+EOF
+
 uid=$(id -u)
 if ! launchctl print "gui/$uid" >/dev/null 2>&1; then
   echo "No desktop session for $(id -un): log in at the Mac, then run this again." >&2
   exit 1
 fi
-for label in "$CHROME" "$LABEL"; do   # each restarts with this run's config
+for label in "$CHROME" "$LABEL" "$OPENCODE"; do   # each restarts with this run's config
   launchctl bootout "gui/$uid/$label" 2>/dev/null || true
   while launchctl print "gui/$uid/$label" >/dev/null 2>&1; do sleep 1; done
   launchctl bootstrap "gui/$uid" "$AGENTS/$label.plist"
 done
 for _ in $(seq 30); do curl -sf "http://127.0.0.1:$CDP/json/version" >/dev/null && break; sleep 1; done
 for _ in $(seq 30); do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 1; done
+for _ in $(seq 30); do   # 401 without the password: it answers
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$AGENTS_PORT/global/health")" = 401 ] && break
+  sleep 1
+done
 
 line=$(report)
 if [ -n "$APP" ]; then   # the app saves the address and the token into its "Her computer" card
@@ -260,15 +333,17 @@ fi
 # shellcheck disable=SC2016  # JavaScript, not shell
 echo "$line" | "$NODE" -e '
 const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
-console.log(`\nAddress: ${r.address}\nToken:   ${r.token}\n`);
+console.log(`\nAddress: ${r.address}\nToken:   ${r.token}\nAgents:  ${r.agents}\n`);
 for (const [name, s] of Object.entries(r.servers))
   console.log(`${name.padEnd(8)} ${s.tools === null ? "no answer: " + s.error : s.tools + " tools"}` +
-              (s.missing.length ? `, needs ${s.missing.join(" and ")}` : ""));'
+              (s.missing.length ? `, needs ${s.missing.join(" and ")}` : ""));
+console.log(`opencode ${r.opencode.version ?? "no answer: " + r.opencode.error}`);'
 cat <<EOF
 
 Grant once in System Settings, Privacy & Security, under Screen & System Audio Recording
 and under Accessibility (the + button, then Cmd+Shift+G for the path):
   $(realpath "$NODE")
   $(realpath "$(brew --prefix)/bin/peekaboo")
+  $OC
 Then: bash setup.sh --status
 EOF

@@ -17,6 +17,7 @@ import pytest
 from celine import boot, plugins
 from celine.api import plugins as plugins_api
 from celine.core.runners import Runner, Runners
+from celine.devices import devices
 from celine.mcp import Supervisor, plugin_servers
 from celine.settings import features, form
 from chat_fixtures import until
@@ -112,6 +113,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
     app, services, routes = _app(cfg, store)
     p = plugins.get("mac")
     report = {"address": "http://127.0.0.1:9", "token": "mac-token-1", "token_file": "/x",
+              "agents": "http://127.0.0.1:4096",
               "servers": {"screen": {"tools": 26, "missing": []}}}
     async with anyio.create_task_group() as tg, client(app) as c:
         assert not plugins.is_open("POST", "/api/plugins/mac/gateway"), "off: nothing is open"
@@ -132,6 +134,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert command == ("curl -fsSLo setup.sh http://t/api/plugins/mac/setup.sh && "
                            f"bash setup.sh --app http://t --key {key}")
         assert view["values"]["url"] == "" and view["secrets"]["token"]["state"] == "not set"
+        assert devices(cfg)["mac"].why == "Her Mac: Agents is empty; Token is empty."
 
         wrong = await c.post("/api/plugins/mac/gateway", json=report,
                              headers={"Authorization": "Bearer nope"})
@@ -144,6 +147,10 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert view["secrets"]["token"]["state"] == "set"
         assert form.read_secret(cfg, "mac", "token") == "mac-token-1"
         assert "mac-token-1" not in str(view)
+        assert view["values"]["agents"] == "http://127.0.0.1:4096"
+        mac = devices(cfg)["mac"]      # the drones' device: its password the token, its key the link
+        assert (mac.url, mac.password, mac.key, mac.why) == (
+            "http://127.0.0.1:4096", "mac-token-1", key, None)
         await until(lambda: set(services.mcp.skills) == {"macscreen", "macshell", "macbrowser",
                                                          "macfiles"})
         assert services.mcp.skills["macshell"].cfg.url == "http://127.0.0.1:9/shell/mcp"
