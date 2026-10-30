@@ -157,6 +157,27 @@ async def test_a_skill_loads_with_its_part_and_note_and_a_big_one_by_name(store,
     assert '"name": "mac__tool00"' not in out.content
 
 
+async def test_a_load_counts_everything_it_holds_against_one_result(store, tmp_path):
+    from celine.turns import tokens
+    cfg = notes_cfg(tmp_path)
+    reg = _registry(cfg)
+    cid = await conversations.create(store)
+    meta = reg.skills["skills"]
+    one = tokens.estimate((await meta.load(_ctx(store, cfg, cid), names="mac__tool01"))
+                          .content, "tool")
+    room = one * 2 + 200          # two tools, and a line for each name after them
+    out = await meta.load(_ctx(store, cfg, cid, room=room),
+                          names=["mac__tool01", "mac__tool02", "mac__tool03", "mac"])
+    assert out.display == {"skills": ["mac"], "tools": ["mac__tool01", "mac__tool02"]}
+    assert "\n\nmac__tool03 did not fit in this result (about " in out.content
+    assert f"left of {room:,}): load it on its own.\n\n# mac\n\n" in out.content
+    assert out.content.endswith("more than one result holds "
+                                f"({room:,}): load the tools you need by name, such as "
+                                "mac__tool00."), "its part of the prompt, then by name"
+    assert tokens.estimate(out.content, "tool") <= room
+    assert "file" not in out.content
+
+
 async def test_a_message_that_asks_for_a_skill_gets_its_load_once(store, tmp_path):
     from chat_fixtures import user_says
     from celine.conversations import tree

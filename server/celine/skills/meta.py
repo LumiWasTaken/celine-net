@@ -51,6 +51,7 @@ def read_skill_note(cfg, skill_name: str) -> str | None:
 
 _URL = re.compile(r"https?://", re.I)
 HEAD = "[loaded for this message]"
+LINE = 60          # tokens kept in a load for each name after the one it answers
 BROUGHT = "$.skills.brought"      # the report path of a message's loads (message_context)
 
 
@@ -140,16 +141,29 @@ class Skills:
     async def loaded(self, ctx: ToolContext, names: list[str]
                      ) -> tuple[str, list[str], list[str], bool]:
         """(the load of `names` as it reads it, the skills and the tools loaded, whether
-        anything loaded). A skill whose parameters are over what one result holds
-        (`ctx.max_output_tokens`) gives its part of the prompt and says so: its tools
-        then load by name."""
+        anything loaded). What it holds is counted as it goes, fragments, notes and
+        parameters alike, against what one result holds (`ctx.max_output_tokens`, the
+        estimate turns/tools._capped cuts by, so a load is never cut): a skill or a tool
+        past that room says so instead, and loads on its own; a skill over the room even
+        alone gives its part of the prompt and names a tool to load by name."""
         from ..turns import tokens
         from .gating import down_why, is_enabled, overrides_for, reason
         here = await self._here(ctx)
         overrides = await overrides_for(ctx.store, ctx.conversation_id)
-        counter = tokens.counter()
-        room = ctx.max_output_tokens
+        room = ctx.max_output_tokens or 0
+
+        def cost(text: str) -> int:
+            return tokens.estimate(text, "tool")
         out, skills, tools = [], [], []
+        used = 0
+        later = len(names)                  # names still to answer, each keeps LINE room
+
+        def fits(text: str) -> bool:
+            return not room or used + cost(text) + LINE * (later - 1) <= room
+
+        def full(what: str, size: int) -> str:
+            return (f"{what} did not fit in this result (about {size:,} tokens, "
+                    f"{max(0, room - used):,} left of {room:,}): load it on its own.")
         for name in names:
             skill = name.split(SEP)[0]
             specs = here.get(skill)
@@ -157,38 +171,47 @@ class Skills:
             on = [s for s in ([spec] if spec else specs or ())
                   if is_enabled(s, overrides, self.cfg)]
             if specs is None:
-                out.append(f"No skill called {skill!r} here. The skills are: "
-                           f"{', '.join(here)}.")
+                line = (f"No skill called {skill!r} here. The skills are: "
+                        f"{', '.join(here)}.")
             elif SEP in name and spec is None:
-                out.append(f"There is no tool {name}. The {skill} skill has "
-                           f"{', '.join(s.wire_name for s in specs)}.")
+                line = (f"There is no tool {name}. The {skill} skill has "
+                        f"{', '.join(s.wire_name for s in specs)}.")
             elif why := self.registry.down(skill):
-                out.append(self.cfg.substitute(
-                    f"{skill} is down: {down_why(why)} Its tools stay out."))
+                line = self.cfg.substitute(f"{skill} is down: {down_why(why)} Its tools "
+                                           f"stay out.")
             elif not on:
                 off = [spec] if spec else specs
                 where = ("in this conversation" if any(reason(s, overrides, self.cfg) ==
                                                        "here" for s in off)
                          else "in Settings, Tools")
-                out.append(self.cfg.substitute(
+                line = self.cfg.substitute(
                     f"{name} is off {where}, so it cannot load. Ask {{{{username}}}} to "
-                    f"turn it on, or work without it."))
+                    f"turn it on, or work without it.")
             elif spec is not None:
-                tools.append(name)
-                out.append(f"{name}, with its parameters:\n{_schemas([spec])}")
-            else:
-                skills.append(skill)
-                part = await self._part(ctx, skill)
-                schemas = _schemas(on)
-                size = counter.estimate(schemas, "schema")
-                if room and size > room:
-                    out.append(f"# {skill}\n\n{part}The parameters of its tools take about "
-                               f"{size:,} tokens, more than one result holds ({room:,}): "
-                               f"load the tools you need by name, such as "
-                               f"{on[0].wire_name}.".strip())
+                block = f"{name}, with its parameters:\n{_schemas([spec])}"
+                if fits(block):
+                    tools.append(name)
+                    line = block
                 else:
-                    out.append(f"# {skill}\n\n{part}Its tools, with their parameters:\n"
-                               f"{schemas}")
+                    line = full(name, cost(block))
+            else:
+                part = await self._part(ctx, skill)
+                block = f"# {skill}\n\n{part}Its tools, with their parameters:\n{_schemas(on)}"
+                head = f"# {skill}\n\n{part}"
+                if fits(block):
+                    skills.append(skill)
+                    line = block
+                elif cost(block) <= room or not fits(head):
+                    line = full(skill, cost(block))
+                else:
+                    skills.append(skill)
+                    line = (f"{head}The parameters of its tools take about "
+                            f"{cost(_schemas(on)):,} tokens, more than one result holds "
+                            f"({room:,}): load the tools you need by name, such as "
+                            f"{on[0].wire_name}.")
+            out.append(line)
+            used += cost(line) + 1
+            later -= 1
         return "\n\n".join(out), skills, tools, bool(skills or tools)
 
     async def _part(self, ctx: ToolContext, skill: str) -> str:
