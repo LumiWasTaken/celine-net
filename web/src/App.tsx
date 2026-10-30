@@ -29,6 +29,7 @@ import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
 import { Button, ConfirmDialog, ICON, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
+import { settingsApi, type Home } from './lib/settingsApi'
 import { usePageName } from './lib/title'
 import { BAR, TITLE, VIEWS, Welcome, sectionHref, shownPlaces, type RailEntry } from './routes'
 
@@ -44,6 +45,8 @@ export function App() {
 }
 
 const WORK_WORD: Record<RowState, string> = { running: 'Running', failed: 'Failed', needs_you: 'Waiting for you' }
+/** the rail entry of each place a conversation lives in (server/celine/homes.py) */
+const HOME_SECTION: Record<Home, Section> = { her: 'celine', missions: 'missions', routines: 'routines' }
 
 function Shell() {
   const nav = useNav()
@@ -97,13 +100,19 @@ function Shell() {
   const waiting = useResource(() => changesApi.get(null).then(c => c.unread), [], { events: isIntercomEvent })
   useServerEvents(ev => { if (ev.type === 'changes') waiting.set(ev.unread as number) })
   const unread = waiting.data ?? 0
+  // the approvals that wait, the server's: a dot on the place each one's conversation lives
+  // in, which opens it, and in the window's title
+  const asks = useResource(() => settingsApi.approvals(), [], { events: ev => ev.type === 'approvals.changed' })
+  const asked = asks.data?.count ?? 0
+  const askedIn = (id: Section) =>
+    Object.entries(asks.data?.homes ?? {}).find(([h]) => HOME_SECTION[h as Home] === id)?.[1]
 
   // the window's title, on every page: the waiting count first (not in Setup, which has no
   // rail), then the page's own name (a terminal, an artifact: lib/title; Celine's place: its
   // name, views/Celine) or the section's
   const pageName = usePageName()
   const own = terminal || artifact || section === 'celine' ? pageName : ''
-  useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread)
+  useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread + asked)
 
   // a source that lost its login: a dot on Settings
   const lost = useLostLogins()
@@ -143,10 +152,14 @@ function Shell() {
   const labelOf = (id: Section) => (id === 'celine' ? name : TITLE[id])
   const go = (id: Section) => (e: React.MouseEvent) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
-    e.preventDefault(); nav.goSection(id)
+    e.preventDefault()
+    const at = id !== section && askedIn(id)
+    if (at) nav.goPath(at.link)
+    else nav.goSection(id)
   }
   const badge = (id: Section) => {
     if (id === 'intercom' && unread > 0) return <span className="rail__count" aria-hidden>{unread > 99 ? '99+' : unread}</span>
+    if (id !== section && askedIn(id)) return <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
     if (id === 'settings' && lost.length > 0) return <span className="rail__dot" aria-label={`${lost.length} to fix`} />
     if (id === 'routines' && routines && id !== section) return <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} />
     const w = id === section ? undefined : id === 'celine' ? work.celine : id === 'missions' && missionsWaiting ? 'needs_you' : undefined
@@ -207,7 +220,9 @@ function Shell() {
                   aria-haspopup="dialog" onClick={() => setSheet('more')}>
             <Ellipsis size={ICON.lg} aria-hidden />
             <span className="rail__label">More</span>
-            {lost.length > 0 ? <span className="rail__dot" aria-label={`${lost.length} to fix`} />
+            {places.some(p => !bar.includes(p.id) && p.id !== section && askedIn(p.id))
+              ? <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
+              : lost.length > 0 ? <span className="rail__dot" aria-label={`${lost.length} to fix`} />
               : routines && section !== 'routines' ? <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} /> : null}
           </Button>
         </nav>

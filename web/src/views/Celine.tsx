@@ -48,7 +48,7 @@ import { bulkActions, useArchiveOlder } from '../components/Bulk'
 /** the events that move a conversation in or out of a shelf, or change its row */
 const LIST_EVENTS = new Set(['conversation.title', 'conversation.created', 'conversation.deleted',
   'conversation.restored', 'conversation.purged', 'conversation.pinned', 'conversation.archived', 'conversation.unarchived',
-  'version.changed', 'message.purged', 'mission.state', 'frozen.changed'])
+  'version.changed', 'message.purged', 'mission.state', 'frozen.changed', 'approvals.changed'])
 
 const place = 'celine' as const
 const chatsNoun = (n: number) => count(n, 'conversation')

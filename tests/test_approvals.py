@@ -58,7 +58,7 @@ async def test_silence_times_out_and_the_view_has_the_fixed_fields(monkeypatch):
     await _waits(a)
     [view] = a.view()
     assert set(view) == {"id", "kind", "action", "facts", "why", "conversation", "read",
-                         "expires_in"} and view["kind"] == "vault"
+                         "expires_in", "home", "link"} and view["kind"] == "vault"
     assert view["why"] == WHY
     assert view["action"] == "change the password of x" and view["read"] is None
     a.forget()

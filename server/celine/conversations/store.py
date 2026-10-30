@@ -565,11 +565,14 @@ def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
     return f"{d.day} {d:%b}" if d.year == today.year else d.strftime("%B %Y")
 
 
-def state_of(c: sqlite3.Connection, row: dict) -> dict | None:
-    """How its turn in it stands, in the server's words: running with its step (not
-    while frozen), waiting for you (a mission), or how the last turn ended when it
-    failed or paused."""
+def state_of(c: sqlite3.Connection, row: dict, asked: frozenset[str] = frozenset()
+             ) -> dict | None:
+    """How its turn in it stands, in the server's words: waiting for you (a request in
+    it, `asked`: approvals.py; a mission), running with its step (not while frozen), or
+    how the last turn ended when it failed or paused."""
     from ..settings.tools_meta import TOOLS, humanize
+    if row["id"] in asked:
+        return {"tone": "warn", "words": "Waiting for you"}
     held = row["active_state"] == "queued" and c.execute(f"SELECT {_HELD}").fetchone()[0]
     if row["active_state"] and not held:
         words = _STEP.get(row["active_state"])
@@ -595,14 +598,16 @@ def state_of(c: sqlite3.Connection, row: dict) -> dict | None:
 async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                after: tuple[int, str, str] | None = None,
                archived: bool = False, trashed: bool = False, *, place: str | None = None,
-               tz=timezone.utc, now_: datetime | None = None) -> list[dict]:
+               tz=timezone.utc, now_: datetime | None = None,
+               asked: frozenset[str] = frozenset()) -> list[dict]:
     """Running first (a live turn in it or a sub-agent of it), then pinned, then the most
     recently updated. `after`: the (rank, updated_at, id) of the last row of the
     previous page. `archived`: only the archived ones, else only the others;
     `trashed`: only the deleted ones (archived or not). `place` "celine": only its
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
-    (last_line above), `group` (group_of), `state` (state_of), `home` and `link`
+    (last_line above), `group` (group_of), `state` (state_of; `asked`: the conversations a
+    request waits in), `home` and `link`
     (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
     1 pinned, 0)."""
@@ -627,7 +632,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
             r["group"] = group_of(r["rank"], r["updated_at"], tz, now_)
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
-                one["state"] = state_of(c, one)
+                one["state"] = state_of(c, one, asked)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
                 a["group"] = r["group"]

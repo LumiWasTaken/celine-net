@@ -14,10 +14,13 @@ router = APIRouter(prefix="/api")
 
 @router.get("/approvals")
 async def list_approvals(request: Request) -> dict:
-    """{"approvals": every request that waits, vault and gate}."""
+    """{"approvals": every request that waits, vault and gate; "count": how many;
+    "homes": {home: {count, link}}, by the place its conversation lives}."""
     person_only(request)
     a = request.app.state.services.approvals
-    return {"approvals": a.view() if a is not None else []}
+    if a is None:
+        return {"approvals": [], "count": 0, "homes": {}}
+    return {"approvals": a.view(), "count": len(a.waiting), "homes": a.homes()}
 
 
 @router.post("/approvals/{aid}/answer")

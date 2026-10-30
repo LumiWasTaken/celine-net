@@ -171,6 +171,18 @@ export type VaultAsk = {
   read: string | null
   /** null: it waits for you (your own turn), until you answer or Stop */
   expires_in: number | null
+  /** where its conversation lives (server/celine/homes.py), and the link that opens it */
+  home: Home | null
+  link: string | null
+}
+
+export type Home = 'her' | 'missions' | 'routines'
+
+/** GET /approvals: what waits, how many, and by the place its conversation lives */
+export type Asks = {
+  approvals: VaultAsk[]
+  count: number
+  homes: Partial<Record<Home, { count: number; link: string }>>
 }
 
 /** a request as its chat shows it, after the message that made the call (the snapshot's
@@ -375,6 +387,7 @@ export const settingsApi = {
   unlockVault: (master_password: string) =>
     request<VaultView>('/vault/unlock', json('POST', { master_password })),
   lockVault: () => post<VaultView>('/vault/lock'),
+  approvals: () => request<Asks>('/approvals'),
   /** POST /approvals/{id}/answer: the answer to one request, from Settings or its chat */
   answerApproval: (id: string, ok: boolean) =>
     request<{ approvals: VaultAsk[] }>(`/approvals/${enc(id)}/answer`, json('POST', { ok })),

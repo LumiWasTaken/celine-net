@@ -38,7 +38,9 @@ In the user's own turn (turns/waiting.py) the tool call waits for their answer o
 Stop, and the turn's wall clock and the tool's time do not run meanwhile; in any other
 turn (a routine, a mission, a sub-agent) it waits ASK_FOR seconds. The user answers from
 a logged-in session (a named token is refused). One request waits at a time in a
-conversation. A request is in memory: a restart forgets it,
+conversation. Each carries where its conversation lives (`home`, `link`; homes.py), so
+the rail marks that place, the window's title counts them and the conversation's row
+says it waits. A request is in memory: a restart forgets it,
 and the vault is locked after a restart anyway. Every change is the global event
 `approvals.changed`, and a new request a `notice` (events.py) too.
 """
@@ -95,11 +97,14 @@ class Ask:
     call: str | None = None  # the tool call it is for
     changes: list[dict] | None = None   # settings: [{label, before, after}]
     who: str = ""           # her name: the one who asks
+    home: str | None = None  # where its conversation lives (homes.of), and the link
+    link: str | None = None
 
     def view(self) -> dict:
         return {"id": self.id, "kind": self.kind, "action": self.action,
                 "facts": self.facts, "why": self.why,
                 "conversation": self.conversation, "read": self.read,
+                "home": self.home, "link": self.link,
                 "expires_in": None if self.expires is None else
                 max(0, round(self.expires - time.time()))}
 
@@ -205,7 +210,10 @@ class Approvals:
                     f"{user} can judge (what for, which site or script).")
         if any(a.conversation == conversation for a in self.waiting.values()):
             return f"Another request waits for {user}; ask again once it is answered."
+        from . import homes
         from .turns.waiting import TURN
+        where = await self.store.read(lambda c: homes.of(c, conversation)) \
+            if self.store is not None else {}
         turn = TURN.get()
         turn = turn if turn is not None and turn.interactive else None
         ask = Ask(id=secrets.token_urlsafe(16), kind=kind, action=action, facts=facts,
@@ -213,7 +221,8 @@ class Approvals:
                   read=self.read.get(conversation),
                   expires=None if turn is not None else now + ASK_FOR,
                   answer=asyncio.get_running_loop().create_future(), ref=ref, call=call,
-                  changes=changes, who=getattr(self.cfg, "name", "") or "")
+                  changes=changes, who=getattr(self.cfg, "name", "") or "",
+                  home=where.get("home"), link=where.get("link"))
         self.waiting[ask.id] = ask
         log.info("approval asked", extra={"event": "approvals.asked", "kind": kind,
                                           "action": action.split(" ")[0]})
@@ -281,6 +290,19 @@ class Approvals:
 
     def view(self, kind: str | None = None) -> list[dict]:
         return [a.view() for a in self.waiting.values() if kind in (None, a.kind)]
+
+    def homes(self) -> dict[str, dict]:
+        """{home: {count, link}}: how many wait in each place (homes.HOMES), and the link
+        of the oldest, where its rail entry opens."""
+        out: dict[str, dict] = {}
+        for a in self.waiting.values():
+            if a.home is not None:
+                out.setdefault(a.home, {"count": 0, "link": a.link})["count"] += 1
+        return out
+
+    def conversations(self) -> frozenset[str]:
+        """The conversations a request waits in: their rows say they wait for the user."""
+        return frozenset(a.conversation for a in self.waiting.values())
 
     def _changed(self) -> None:
         if self.emit is not None:

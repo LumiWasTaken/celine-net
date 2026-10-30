@@ -255,3 +255,19 @@ def test_she_knows_shares_are_private_and_a_public_one_waits_for_the_user():
     doc = S.share.__doc__ + str(S.share.__annotations__["public"])
     for text in (guide, doc):
         assert "private" in text and "approv" in text, text
+
+
+async def test_an_ask_marks_its_place_and_its_row_until_answered(store, monkeypatch):
+    a = _approvals(store, monkeypatch)
+    cid, _ = await _chat(store)
+    task = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her", call="k1"))
+    await until(lambda: a.waiting)
+    assert a.homes() == {"her": {"count": 1, "link": f"/chat/{cid}"}}
+    [row] = await conversations.list(store, asked=a.conversations())
+    assert row["state"] == {"tone": "warn", "words": "Waiting for you"}
+    [aid] = a.waiting
+    assert a.decide(aid, True, OWNER)
+    await task
+    assert a.homes() == {} and a.conversations() == frozenset()
+    [row] = await conversations.list(store, asked=a.conversations())
+    assert row["state"] != {"tone": "warn", "words": "Waiting for you"}

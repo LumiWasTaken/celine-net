@@ -31,8 +31,10 @@ async def list_conversations(request: Request, limit: int = 200,
     cursor of the following page, null on the last one."""
     from ..clock import zone
     limit = max(1, min(limit, 500))
+    a = request.app.state.services.approvals
     rows = await store.list(store_of(request), limit + 1, read_cursor(cursor), archived,
-                            trashed, place=place, tz=zone(cfg_of(request)))
+                            trashed, place=place, tz=zone(cfg_of(request)),
+                            asked=a.conversations() if a is not None else frozenset())
     more = len(rows) > limit
     rows = rows[:limit]
     last = rows[-1] if rows else None
