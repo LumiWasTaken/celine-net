@@ -25,7 +25,7 @@ How:
 1. Search with a few specific words, like a search engine, not a sentence. Use
    `time_range` for news, `site:docs.python.org` in the query for one site's docs,
    `language` for results in another language.
-   Example: web__search(query="llama.cpp speculative decoding", time_range="month")
+   Example: web__search(query="sqlite json functions", time_range="month")
 2. Snippets are short and may be old. Read the one to three best results before you
    state details: web__read_page(url="web:2") for the text. A long page comes in parts.
    The result ends with `later: web__read_page(url="web:2", part=2)`. Open the page in

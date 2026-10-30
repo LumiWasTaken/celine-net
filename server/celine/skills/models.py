@@ -91,7 +91,7 @@ class Models:
         temperature: Annotated[float | None, "0 to 2. Without it, the model's own."] = None,
     ) -> ToolResult:
         """Ask one of your models directly: your messages go in, its answer comes back as
-        text. Example: models__ask(model="llama/my-model", messages=[{"role": "user",
+        text. Example: models__ask(model="local/my-model", messages=[{"role": "user",
         "content": "Three names for a grey cat."}])
         Returns: the answer alone."""
         s = self.cfg.settings

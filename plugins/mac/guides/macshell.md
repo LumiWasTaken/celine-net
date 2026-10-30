@@ -30,8 +30,7 @@ and end your turn: its end starts your next one.
 
 Long work on your Mac, many steps of building, testing or clicking through an app, goes
 to a drone: `sub_agents__start(device="mac", ...)` works on it there and reports back,
-and you keep your chat for {{username}}. Done yourself, such work took 55 to 70 of your
-steps; through a drone, 4 to 8.
+and you keep your chat for {{username}}.
 
 A script on your Mac starts your turn with a message to you, as intercom__send to "me"
 does, in the conversation it names or your newest chat:
