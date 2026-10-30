@@ -5,7 +5,8 @@ Everything the app inserts is marked one way, a line in square brackets: the sen
 (context.time_line), the intercom headers (intercom/render.py header), its mind block
 (skills/mind.py HEAD), its memory block (skills/recall.py HEAD), its notes (skills/notebook.py notes_block), the other chats working now
 (conversations/here.py busy), shortened and cut
-results (compact.STUB_HEAD, tools._capped) and a screen (context, "[the screen from ...]").
+results (compact.STUB_HEAD, tools._capped), a screen (context, "[the screen from ...]") and a load that came with a call
+(skills/meta.py CALL_HEAD).
 Outside text is the one exception: while Bastet
 is on, it comes inside <outside> tags (guard/mark.py), and the legend says so only then.
 tests/test_self.py checks that every mark named here is the one the code writes.
@@ -34,6 +35,8 @@ LINES = (
     "- [N lines, about T tokens, shortened; the call is kept: ...] in an older call's "
     "argument: the app sent its first line only. The call ran with the whole of it.",
     "- [the screen from ...]: a picture of a screen your tool took.",
+    "- [loaded with this call] after a tool result: the skill of that tool, loaded as "
+    "skills__load loads it, the first time you call one of its tools here.",
 )
 
 

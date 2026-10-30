@@ -350,7 +350,7 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
     ctx = ToolContext(scout, "t", "x", store, cfg, emit)
     from celine.skills.meta import Skills
     loaded, *_ = await Skills(reg, cfg).loaded(ctx, ["notebook"])
-    assert "notebook__read" in loaded and "notebook__write" not in loaded, \
+    assert '"name": "notebook__read"' in loaded and '"name": "notebook__write"' not in loaded, \
         "a load hands it only what it may call"
     for more in ({"access": "work"}, {"cli": "opencode"}):
         out = await agents.start(ctx, brief="x", name="a helper", **more)

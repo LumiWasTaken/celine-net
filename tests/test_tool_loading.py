@@ -18,7 +18,7 @@ from celine.backends.openai import build
 from celine.boot import load
 from celine.config import BackendConfig
 from celine.conversations import store as conversations
-from celine.skills import Registry, ToolContext, ToolResult, tool
+from celine.skills import Guide, Registry, ToolContext, ToolResult, tool
 from celine.skills.meta import Skills
 from celine.turns import loads, prompt
 
@@ -176,6 +176,67 @@ async def test_a_load_counts_everything_it_holds_against_one_result(store, tmp_p
                                 "mac__tool00."), "its part of the prompt, then by name"
     assert tokens.estimate(out.content, "tool") <= room
     assert "file" not in out.content
+
+
+def _guided(cfg) -> Registry:
+    reg = _registry(cfg)
+    reg.skills["mac"].guide = Guide("mac", description="Her Mac.",
+                                    body="Wake the Mac before you type.")
+    return reg
+
+
+def _told(request: list[dict]) -> list[str]:
+    return [m["content"] for m in request if m.get("role") == "tool"]
+
+
+async def test_the_first_call_by_name_brings_the_skill_once(store):
+    cfg = load()
+    reg = _guided(cfg)
+    cid = await conversations.create(store)
+    b = Replies([_calls(("mac__version", {})), _calls(("mac__version", {})),
+                 [TextDelta("done"), Done(reason="stop")]])
+    await _run(store, cfg, reg, cid, b)
+    first, second = _told(b.calls[2])
+    assert first.startswith("26.7\n\n[loaded with this call]\n# mac\n\n"
+                            "Wake the Mac before you type.\n\nThe Mac is in the living "
+                            "room.\n\nThe parameters of its tools take about ")
+    assert second == "26.7", "once per skill in a conversation"
+    assert [r[2] for r in await _results(store)] == ["26.7", "26.7"], \
+        "the stored result is the tool's; the load is the call's display"
+    systems = {json.dumps(c[0]) for c in b.calls}
+    assert len(systems) == 1, "nothing goes into the system prompt"
+
+    meta = reg.skills["skills"]
+    assert await meta.with_call(_ctx(store, cfg, cid), "mac") is None
+    sub = await conversations.create(store, "scout", agent_of=cid, agent_name="scout")
+    got = await meta.with_call(_ctx(store, cfg, sub), "mac")
+    assert got is not None and got.startswith("[loaded with this call]\n# mac\n\n"), \
+        "a sub-agent's conversation has its own"
+
+
+async def test_a_loaded_or_read_skill_brings_nothing_with_its_call(store):
+    cfg = load()
+    reg = _guided(cfg)
+    cid = await conversations.create(store)
+    b = Replies([_calls(("skills__load", {"names": ["mac"]})),
+                 _calls(("mac__version", {})),
+                 [TextDelta("done"), Done(reason="stop")]])
+    await _run(store, cfg, reg, cid, b)
+    loaded, called = _told(b.calls[2])
+    assert loaded.startswith("# mac\n\nWake the Mac before you type.\n\n"), \
+        "a load brings the guide"
+    assert called == "26.7"
+
+    meta = reg.skills["skills"]
+    other = await conversations.create(store)
+    assert await meta.with_call(_ctx(store, cfg, other), "mac") is not None
+    assert await meta.with_call(_ctx(store, cfg, other), "notebook") is None, \
+        "a skill without a guide brings nothing"
+    b = Replies([_calls(("skills__read_guide", {"name": "mac"})),
+                 _calls(("mac__version", {})),
+                 [TextDelta("done"), Done(reason="stop")]])
+    await _run(store, cfg, reg, other, b)
+    assert _told(b.calls[2])[1] == "26.7", "a guide it read counts"
 
 
 def test_the_name_form_goes_through_every_backend():

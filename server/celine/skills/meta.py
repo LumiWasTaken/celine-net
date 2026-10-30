@@ -6,10 +6,13 @@ offered here: a core skill's with its parameters, another's by name and one line
 (turns/prompt.py wire_tools). The guide of a skill says how its tools go together, with
 examples; `skills__read_guide(name)` returns it. If it has a note at `skills/<name>.md`
 in its notebook, it is appended to the result. `skills__load(names)` answers with the
-parameters of the tools named, or of every tool of a skill named, with that skill's own
-part of the prompt and its note: the result is the load. Nothing in the request is
-rebuilt, so the start of the request stays as the model server cached it; the result
-ages like any other. A skill loads only when it calls skills__load.
+parameters of the tools named, or of every tool of a skill named, with that skill's
+guide, its own part of the prompt and its note: the result is the load. Nothing in the
+request is rebuilt, so the start of the request stays as the model server cached it; the
+result ages like any other. A skill loads when it calls skills__load, or with the first
+call of one of its tools in a conversation that has not had its guide: that call's
+result brings the same load after it (Skills.with_call, turns/tools.py), once per skill
+per conversation.
 """
 from __future__ import annotations
 
@@ -44,6 +47,20 @@ def read_skill_note(cfg, skill_name: str) -> str | None:
 
 
 LINE = 60          # tokens kept in a load for each name after the one it answers
+CALL_HEAD = "[loaded with this call]"   # over a load that came with a call (with_call)
+
+
+def had(c, cid: str, skill: str) -> bool:
+    """Whether conversation `cid` has had `skill`'s guide: a skills__read_guide or a
+    skills__load of the skill, or a call that brought it (display "guide")."""
+    return c.execute(
+        "SELECT 1 FROM tool_calls t JOIN messages m ON m.id = t.message_id "
+        "WHERE m.conversation_id = ? AND ("
+        "(t.name = 'skills__read_guide' AND json_extract(t.display, '$.skill') = ?) OR "
+        "(t.name = 'skills__load' AND EXISTS (SELECT 1 FROM "
+        "json_each(t.display, '$.skills') WHERE value = ?)) OR "
+        "json_extract(t.display, '$.guide.skill') = ?) LIMIT 1",
+        (cid, skill, skill, skill)).fetchone() is not None
 
 
 class Skills:
@@ -80,12 +97,8 @@ class Skills:
             return ToolResult(content=f"No skill called {name!r} here. The skills are: "
                                       f"{', '.join(names)}.", is_error=True)
         skill = self.registry.skills[key]
-        g = getattr(skill, "guide", None)
-        body = self.cfg.substitute(guide_text(self.cfg, g.body) if g is not None
-                                   else str(getattr(skill, "description", "")))
-        # what the guide says comes after it: the skill's live docs (a role's presets)
-        for text in (getattr(skill, "docs", None) or {}).values():
-            body += f"\n\n{self.cfg.substitute(text.strip())}"
+        body = self._guide(key) or self.cfg.substitute(str(getattr(skill, "description",
+                                                                   "")))
         if why := self.registry.down(key):
             from .gating import down_sentence
             body = f"{self.cfg.substitute(down_sentence(key, why))}\n\n{body}"
@@ -189,10 +202,34 @@ class Skills:
             later -= 1
         return "\n\n".join(out), skills, tools, bool(skills or tools)
 
+    def _guide(self, skill: str) -> str | None:
+        """A skill's guide as it reads it, then its live docs (a role's presets); None
+        for a skill without a guide."""
+        s = self.registry.skills[skill]
+        if (g := getattr(s, "guide", None)) is None:
+            return None
+        body = self.cfg.substitute(guide_text(self.cfg, g.body))
+        for text in (getattr(s, "docs", None) or {}).values():
+            body += f"\n\n{self.cfg.substitute(text.strip())}"
+        return body
+
+    async def with_call(self, ctx: ToolContext, skill: str) -> str | None:
+        """What a call of a tool of `skill` brings after its result when this
+        conversation has not had the skill's guide (had): the load of the skill under
+        CALL_HEAD, the same text skills__load gives, so from then on it counts as loaded.
+        None for this skill, a skill without a guide, one that does not load (down,
+        off), and once it has had it."""
+        if skill == META or self._guide(skill) is None or await ctx.store.read(
+                lambda c: had(c, ctx.conversation_id, skill)):
+            return None
+        text, skills, _, _ = await self.loaded(ctx, [skill])
+        return f"{CALL_HEAD}\n{text}" if skills else None
+
     async def _part(self, ctx: ToolContext, skill: str) -> str:
-        """A skill's own part of the prompt (a core skill's is in the system prompt
-        already) and its note, each followed by a blank line; empty without either."""
-        out = []
+        """A skill's guide, its own part of the prompt (a core skill's is in the system
+        prompt already) and its note, each followed by a blank line; empty without
+        any."""
+        out = [g] if (g := self._guide(skill)) else []
         if skill not in CORE:
             out += await self.registry.prompt_fragments(ctx, {skill})
         if note := read_skill_note(self.cfg, skill):

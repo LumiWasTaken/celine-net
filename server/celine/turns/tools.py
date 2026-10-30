@@ -13,7 +13,7 @@ from .. import guard, metrics
 from ..errors import mask, mask_all
 from ..guard import calls as bastet_calls, facts as guard_facts, mark
 from ..guard import page as guard_page, passes as guard_passes, sources
-from ..skills import CORE, ToolContext, ToolResult
+from ..skills import CORE, META, ToolContext, ToolResult
 from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
                              read_mode_has)
 from .cancel import until_stop
@@ -40,6 +40,8 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         state, result, withheld = out
         result = await checked(received(result, turn, call, guarded, registry), turn,
                                call, store, cfg, getattr(registry, "app", None))
+        if state not in ("gated", "detached", "cancelled"):
+            result = await _with_guide(result, turn, call, store, cfg, registry)
         withheld = mask(withheld or "") or None
         await turns.finish_tool_call(store, cid, call["message_id"], call["id"],
                                      call["name"], result, state, withheld)
@@ -85,6 +87,29 @@ def _seen(registry, cid: str, name: str) -> None:
     approvals = getattr(getattr(registry, "app", None), "approvals", None)
     if approvals is not None:
         approvals.seen(cid, name)
+
+
+async def _with_guide(result: ToolResult, turn, call: dict, store, cfg,
+                      registry) -> ToolResult:
+    """A call that reached its tool, of a skill whose guide this conversation has not
+    had: the skill's load comes with it (skills/meta.py Skills.with_call), in display
+    "guide", after the result as it reads it (mark.shown), never inside a wrapper or
+    the cap."""
+    meta = registry.skills.get(META) if registry is not None else None
+    spec = registry.get(call["name"]) if meta is not None else None
+    if spec is None:
+        return result
+
+    async def quiet(note: str, **data) -> None:
+        pass
+    ctx = ToolContext(conversation_id=turn["conversation_id"], turn_id=turn["id"],
+                      tool_call_id=call["id"], store=store, config=cfg, emit=quiet,
+                      max_output_tokens=turn.get("max_output_tokens"))
+    text = await meta.with_call(ctx, spec.skill)
+    if text is None:
+        return result
+    return replace(result, display={**(result.display or {}),
+                                    "guide": {"skill": spec.skill, "text": text}})
 
 
 def received(result: ToolResult, turn, call: dict, guarded: bool,

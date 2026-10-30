@@ -875,12 +875,16 @@ description and parameters.
 
 **Loads append.** `skills__load(names)` (skill `skills`, `skills/meta.py`) answers with
 the parameters of the tools named, or of every tool of a skill named, with that skill's
-fragment (a core skill's is in the system prompt already) and its note
+guide, its fragment (a core skill's is in the system prompt already) and its note
 (`skills/<name>.md`), as its result: the system prompt and the tools stay the same bytes,
 so the model server's prompt cache holds, and the result ages like any other. A skill
 whose parameters take more than one result holds says so and names a tool to load by
-name. A skill loads only when it calls `skills__load` or calls one of its tools by
-name.
+name. A skill loads when it calls `skills__load`, or with the first call of one of its
+tools in a conversation that has not had its guide (no `skills__read_guide` or load of
+it, no earlier such call; `meta.had`): that call's result brings the same load after it,
+under `[loaded with this call]`, outside any wrapper and the cap (display `guide`,
+`tools._with_guide`, `guard/mark.shown`). Once per skill per conversation; a sub-agent's
+conversation has its own.
 
 **Guides.** Each built-in skill has a guide, `server/celine/skills/guides/<skill>.md` (in the package, read once), SKILL.md style:
 frontmatter `name` and `description` (one line: what it is and when to use it), then the

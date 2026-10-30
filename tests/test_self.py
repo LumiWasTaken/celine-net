@@ -246,7 +246,8 @@ async def test_the_legend_names_the_marks_the_code_writes(cfg):
     stamp = time_line({"created_at": T0}, ZoneInfo("UTC")).strip()
     assert stamp == "[Thu 22 Oct 18:00]"
     iv = {"kind": "report", "from": "agent:x", "from_name": "scout", "id": 4, "data": {}}
-    for mark in (mind.HEAD, recall.HEAD, NOTES_HEAD, compact.STUB_HEAD, "[cut: ", "[the screen from ",
+    from celine.skills.meta import CALL_HEAD
+    for mark in (mind.HEAD, recall.HEAD, NOTES_HEAD, compact.STUB_HEAD, "[cut: ", "[the screen from ", CALL_HEAD,
                  "[Report from "):
         assert mark.rstrip() in text, mark
     assert header(iv, "Joe", None) == "[Report from scout (#4)]\n"

@@ -42,7 +42,8 @@ def wrap(text: str, label: dict) -> str:
 
 def shown(text: str, display: dict | None, guarded: bool) -> str:
     """A tool result as it reads it: wrapped when the guard is on and someone else wrote
-    it, then Bastet's lines for her (display "bastet": advice, a pass) after the
+    it, then Bastet's lines for her (display "bastet": advice, a pass) and the load
+    that came with the call (display "guide", turns/tools.py _with_guide) after the
     wrapper, so they are never outside text."""
     d = display or {}
     label = d.get("outside")
@@ -50,6 +51,8 @@ def shown(text: str, display: dict | None, guarded: bool) -> str:
         text = wrap(text, label)
     if d.get("bastet"):
         text = f"{text}\n\n" + "\n".join(d["bastet"])
+    if isinstance(d.get("guide"), dict):
+        text = f"{text}\n\n{d['guide']['text']}"
     return text
 
 
