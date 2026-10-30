@@ -7,7 +7,7 @@ opencode client is the box's, shellbox/agents/opencode.py, loaded from here.
 A drone's turn: the messages it got since the last one sent (`agent_sent`) go to its
 opencode session (`agent_session`, made at its first turn and kept, so the same name
 resumes the same session and a restart finds it again) with `prompt_async`, on the
-model its conversation runs on, which opencode reaches through the app's model proxy
+one model its conversation was started and approved on (skill.py _model), which opencode reaches through the app's model proxy
 (queue, freeze and usage stay in the app). The models the proxy offers are put into
 the device's opencode config first when they differ (PATCH /global/config), and only
 while no session there works: a changed config disposes every opencode instance.
@@ -145,9 +145,8 @@ class DroneBackend:
     def __init__(self, services, cid: str, cli: str, device: str, clock=None):
         self.services, self.cid, self.cli, self.device = services, cid, cli, device
         self.clock = clock
-        s = services.cfg.settings
-        own = CONVERSATION_MODELS.get(cid)
-        self.model = own if own in her_models.allowed(s) else "default"
+        # the one model it was started and approved on (skill.py _model)
+        self.model = CONVERSATION_MODELS.get(cid)
         self.name = f"{cli}:{device}"
         self.request_sent: dict | None = None
 
@@ -166,8 +165,9 @@ class DroneBackend:
         session there works (a changed config disposes every instance). While one
         works, the config stays: refused when it lacks this drone's model."""
         from ..api.llm_proxy import listing
+        s = self.services.cfg.settings
         want = {ref: {"name": ref, "limit": limit} for ref, limit in oc._limits(
-            listing(self.services.cfg.settings), log.info).items()}
+            listing(s, her_models.allowed(s)), log.info).items()}
         have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
                  .get("provider") or {}).get("celine") or {}).get("models") or {}
         if all(have.get(k) == v for k, v in want.items()):
@@ -191,6 +191,8 @@ class DroneBackend:
             raise BackendError(f"The device {self.device} is not on.", retryable=False)
         if dev.why:
             raise BackendError(dev.why, retryable=False)
+        if self.model is None:
+            raise BackendError("This drone has no model to run on.", retryable=False)
         server = oc.Server(dev.url, dev.password, f"{dev.log} on {dev.label}")
         store = self.services.store
         row = await store.read(lambda c: _row(c, self.cid))

@@ -177,3 +177,36 @@ async def test_calls_take_the_shellbox_lane_with_no_lock_of_their_own(proxy):
         assert t.endpoint == "http://main:8080/v1" and t.model == "big"
         proxy.up.go.set()
     assert done == [200, 200] and len(proxy.up.seen) == 2 and not sched.running
+
+
+async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_was_approved_for(
+        proxy, store, monkeypatch):
+    from celine import devices
+    from celine.conversations import store as conversations, tree
+    from celine.devices import Device
+    from celine.settings import conversations as conv
+    monkeypatch.setattr(devices, "devices", lambda cfg: {"mac": Device(
+        "mac", "Her Mac", "http://mac:4096", "pw", "dev-key", "", None)})
+    monkeypatch.setattr(proxy.cfg.settings, "key_missing", lambda pid: False)
+
+    async def ids(key):
+        r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {key}"})
+        return [m["id"] for m in r.json()["data"]]
+    assert await ids(KEY) == ["main/big", "main/small", "or/x/glm", "default"]
+    assert await ids("dev-key") == ["main/big", "main/small", "default"]
+    refused = await ask(proxy, model="or/x/glm", key="dev-key")
+    assert refused.status_code == 403 and refused.json()["error"]["message"] == \
+        "or/x/glm is a cloud model no drone working on Her Mac was approved for."
+    parent = await conversations.create(store)
+    sub = await conversations.create(store, title="arcade", agent_of=parent,
+                                     agent_name="arcade", access="work",
+                                     agent_cli="opencode", agent_device="mac")
+    await conv.apply(store, sub, {"model": "or/x/glm"})
+    assert await ids("dev-key") == ["main/big", "main/small", "default"], "no turn at work"
+
+    def fn(c):
+        m = tree.append(c, store, sub, None, "user", "go", "intercom")
+        tree.queue_turn(c, store, sub, m["id"], origin="intercom")
+    await store.write(fn)
+    assert await ids("dev-key") == ["main/big", "main/small", "or/x/glm", "default"]
+    assert (await ask(proxy, model="or/x/glm", key="dev-key")).status_code == 200

@@ -456,6 +456,9 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
         "page counter 2 did not start: big on OpenRouter does not answer. OpenRouter "
         "refused the connection."), out.content
     assert len(asked) == 2, "a model known down is not offered to the owner"
+    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small", "or/big"]}})
+    out = await agents.start(ctx, brief="Count the pages.", name="page counter 3")
+    assert out.display["model"] == "gpu/small", "the one model it runs on, kept as its own"
 
 
 async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
