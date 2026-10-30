@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 14
+LATEST = 15
 
 
 def _version(db) -> int:
@@ -362,3 +362,30 @@ def test_0006_gives_each_call_with_its_own_files_a_files_block(tmp_path, monkeyp
                 "media_type": "image/png", "width": 4, "height": 3}]}]}
         assert shown["shot"] == shot
         assert shown["send"] == {"attachments": [{"id": "a3"}]}
+
+
+def test_0015_takes_keep_thinking_out_of_the_saved_models_once(tmp_path):
+    import importlib.util
+    import tomllib
+    spec = importlib.util.spec_from_file_location(
+        "m0015", MIGRATIONS_DIR / "0015_no_keep_thinking.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    db = tmp_path / "celine.db"
+    step.up(None, db)                                  # no settings: nothing to do
+    assert not (tmp_path / "settings").exists()
+    path = tmp_path / "settings" / "providers.toml"
+    path.parent.mkdir()
+    path.write_text('[providers.gpu]\nkind = "llama-server"\n\n'
+                    '[providers.gpu.models.big]\ncontext = 32768\nkeep_thinking = 1\n\n'
+                    '[providers.gpu.models.small]\ncontext = 8192\n')
+    step.up(None, db)
+    got = tomllib.loads(path.read_text())
+    assert got["providers"]["gpu"]["models"] == {"big": {"context": 32768},
+                                                 "small": {"context": 8192}}
+    before = path.read_bytes()
+    step.up(None, db)
+    assert path.read_bytes() == before, "run again, it writes nothing"
+    assert not list(path.parent.glob("*.tmp")), "written atomically, no temp file left"
+    migrate_all(db)
+    assert path.read_bytes() == before, "the runner applies it to a fresh database too"
