@@ -14,7 +14,7 @@ intercom__send(text, to) writes a message. `to` is one or more of, comma separat
   active mission, without you.
 - "bastet": Bastet, the guard of the house.
 - a sub-agent's or mission's name, or a conversation id.
-A sub-agent writes to "parent", its own sub-agents, "me", "user" and "bastet".
+A sub-agent writes to "parent", its own sub-agents and "me".
 
 Bastet guards the house: when she stops a step, your result says so in her words, with
 why. If you disagree, or want to talk, write to her; she answers in the thread.

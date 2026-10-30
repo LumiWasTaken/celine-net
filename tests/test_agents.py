@@ -573,10 +573,11 @@ async def test_a_report_goes_to_the_one_that_started_it_once_its_own_are_done(st
     assert counted() == start + 2
     await app.intercom.send(f"agent:{kid}", "parent", "psst")
     assert await ended(scout) == up, "a message from its own sub-agent: no report"
-    for frm, to in ((other, f"agent:{scout}"), (kid, f"agent:{parent}"), (kid, "all")):
+    for frm, to in ((other, f"agent:{scout}"), (kid, f"agent:{parent}"), (kid, "all"),
+                    (kid, "user"), (kid, "bastet"), (kid, "system:guard")):
         with pytest.raises(Refused, match=REACH[:20]):
             await app.intercom.send(f"agent:{frm}", to, "hi")
-    await app.intercom.send(f"agent:{kid}", "user", "hi")       # the user: always
+    await app.intercom.send(f"agent:{parent}", "user", "hi")    # the top: as before
     await app.intercom.send(f"agent:{parent}", f"agent:{scout}", "and now?")
     assert len(await ended(scout)) == 3, "the parent's follow-up"
 

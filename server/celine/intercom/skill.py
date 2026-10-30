@@ -102,6 +102,8 @@ class IntercomSkill:
                 f"#{here['id']} from {sender}.")
         if here["from"] == "user" and not here["sub_agent"]:     # intercom/answer.py
             line += f" Your answer goes into that thread for {self.cfg.user}."
+        if here["sub_agent"] and not here["from"].startswith("agent:"):
+            return line         # it writes up its chain only (addresses._reach)
         to = "user" if here["from"] == "user" else here["from"]
         return line + (f' intercom__send(to="{to}") answers there by itself; '
                        "new_thread=true starts a new thread.")

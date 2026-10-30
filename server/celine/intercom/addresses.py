@@ -11,8 +11,8 @@ a conversation id, the name of a sub-agent or mission, `run:<id>` (a Routine's r
 `routine:<name>` (its newest run with a conversation). `team` and `all` are expanded
 into recipients when the message is sent, the sender left out.
 
-A sub-agent writes up and down its own chain only: to itself, its parent, its own
-sub-agents, the user and Bastet (`_reach`)."""
+A sub-agent writes up and down its own chain only: to itself, its parent and its own
+sub-agents (`_reach`); the user and Bastet hear from it through its parent."""
 from __future__ import annotations
 
 import sqlite3
@@ -51,7 +51,7 @@ def _locked(c: sqlite3.Connection, cid: str, sender: str) -> None:
 
 
 REACH = ('A sub-agent writes to "parent", its own sub-agents (by name, or "team" for '
-         'all of them), "me", "user" and "bastet".')
+         'all of them) and "me".')
 
 
 def _reach(c: sqlite3.Connection, cid: str, me: sqlite3.Row | None) -> None:
@@ -138,6 +138,8 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
                 "SELECT 1 FROM intercom_tokens WHERE name=?", (addr,)).fetchone():
             addr = "user"
         if addr in ("user", GUARD):
+            if me is not None and me["agent_of"]:
+                raise Refused(REACH)
             if (addr, None) not in out:
                 out.append((addr, None))
         elif addr == "all":

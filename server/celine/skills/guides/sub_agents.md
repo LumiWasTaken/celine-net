@@ -87,7 +87,7 @@ Talking while they work, on the intercom: `intercom__send(to="trip finder", text
 writes to one by name (a follow-up after its report too: it keeps everything it read,
 and reports again). A sub-agent asks you a question or sends a note while it works with
 to="parent", and you answer with reply_to in its thread; its result comes in its report; to="team" reaches all of your own sub-agents. A sub-agent
-writes only to its parent, its own sub-agents, itself, {{username}} and Bastet. Your
+writes only to its parent, its own sub-agents and itself. Your
 instructions list your sub-agents, each working or done.
 
 `sub_agents__stop(name)` stops one: its turn, its jobs and the messages it scheduled.

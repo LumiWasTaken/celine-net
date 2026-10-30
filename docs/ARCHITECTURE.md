@@ -904,8 +904,8 @@ done when its conversation is quiet and so are its own sub-agents (`report.quiet
 `sub_agents/report.py` then sends one intercom `report` to `agent:<parent>`, never
 further up: a head (name, state, models, tokens, seconds, notes changed) and its final
 answer cut to `REPORT_SHARE` of the parent's window. What it opened closes
-(`leftovers.py`). A sub-agent writes only to itself, its parent, its own sub-agents, the
-user and Bastet (`addresses._reach`).
+(`leftovers.py`). A sub-agent writes only to itself, its parent and its own sub-agents
+(`addresses._reach`).
 `read(name, wait)` looks at one, `stop(name)` stops its turn, jobs and scheduled
 messages. Read access gives it only read-only tools and the intercom (`prompt.tool_specs`,
 `turns/tools.py`). `GET /api/sub-agents` rows and `agent.state` events carry `access`.
