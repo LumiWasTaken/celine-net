@@ -28,8 +28,8 @@ export const KeepPlace = createContext<(id: string) => void>(() => {})
     text; a click that opens a fold pauses following until your next scroll. A scroll down
     to within REPIN px pins it again. Unpinned, `unseen` says a new message came and the view
     is more than FAR px above it. `fresh`: what makes a message new (their count, the live
-    one). `reset`: another conversation, pinned at once. `observe`: when the content element
-    may have changed. `jump()` glides to the bottom (your jump); `jump({ smooth: false })`
+    one). `reset`: another conversation, pinned at once. `observe`: when the scroller or its content
+    element may have changed. `jump()` glides to the bottom (your jump); `jump({ smooth: false })`
     goes at once. `keep(id)` holds the message with data-id `id` where it is on screen. The
     scroller says `data-unpinned` while it is not pinned (native anchoring keeps your
     reading place then). */
@@ -145,7 +145,7 @@ export function useStickToBottom(ref: RefObject<HTMLElement | null>, fresh: unkn
       document.removeEventListener('selectionchange', onSelection)
       stop()
     }
-  }, [ref, release])
+  }, [ref, release, ...observe]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // a new message while you read above: "New messages"
   const first = useRef(true)

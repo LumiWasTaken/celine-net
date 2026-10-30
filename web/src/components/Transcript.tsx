@@ -348,7 +348,7 @@ export function Transcript(
   // Where the next reply lands before it exists (your message sent, a turn queued or
   // getting ready): its face and the dots.
   const shownLive = live && visible.some(m => m.id === live.message_id && !m.meta.quiet)
-  const ghost = !!pending || (running && !shownLive)
+  const ghost = (!!pending || running) && !shownLive
   // the server copy of your message is in: it stands in its place in the same frame. Its
   // id comes with the send's answer, which the socket often beats: until then, a message of
   // yours that was not here when you sent is it
