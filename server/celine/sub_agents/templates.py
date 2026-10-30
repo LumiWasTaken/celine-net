@@ -10,7 +10,10 @@ turn reads the note again: its body is the start of the sub-agent's system promp
 offered)."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+
+import yaml
 
 from ..skills.notebook import read_note, unstamped
 
@@ -29,56 +32,81 @@ class Template:
     body: str = ""
 
 
-def parse(text: str) -> Template | None:
-    """A template note's text -> its Template; None without a frontmatter `name`."""
+FENCE = re.compile(r"^---[ \t]*\r?$", re.M)     # a line of just ---
+
+
+def parse(text: str) -> Template:
+    """A template note's text -> its Template. Its `---` frontmatter is YAML, as in
+    Claude Code's agent files. Raises ValueError with the reason it is no template."""
     text = unstamped(text.strip()).strip()
-    if not text.startswith("---"):
-        return None
-    head, sep, body = text[3:].lstrip("\r\n").partition("\n---")
-    if not sep:
-        return None
-    meta: dict[str, object] = {}
-    key = None
-    for line in head.splitlines():
-        if line.strip().startswith("- ") and key:          # a YAML list item
-            meta.setdefault(key, [])
-            if isinstance(meta[key], list):
-                meta[key].append(line.strip()[2:].strip())
-        elif ":" in line and not line[:1].isspace():
-            key, _, value = line.partition(":")
-            key, value = key.strip().lower(), value.strip()
-            meta[key] = value if value else []
-        elif line[:1].isspace() and key and isinstance(meta.get(key), str):
-            meta[key] = f"{meta[key]} {line.strip()}"      # a folded line
-    name = str(meta.get("name") or "").strip()
-    if not name:
-        return None
+    fences = list(FENCE.finditer(text))
+    if not fences or fences[0].start() != 0:
+        raise ValueError("it does not start with a --- frontmatter")
+    if len(fences) < 2:
+        raise ValueError("its frontmatter has no closing --- line")
+    head, body = text[fences[0].end() + 1:fences[1].start()], text[fences[1].end():]
+    try:
+        meta = yaml.safe_load(head)
+    except yaml.YAMLError as e:
+        mark = getattr(e, "problem_mark", None)
+        where = f" on line {mark.line + 1} of the frontmatter" if mark else ""
+        raise ValueError(f"its frontmatter is not YAML{where}: "
+                         f"{getattr(e, 'problem', None) or e}") from None
+    if not isinstance(meta, dict):
+        raise ValueError("its frontmatter is not a list of key: value lines")
+    meta = {str(k).lower(): v for k, v in meta.items()}
 
     def one(k: str) -> str | None:
         v = meta.get(k)
-        return v.strip() or None if isinstance(v, str) else None
+        if isinstance(v, (list, dict)):
+            raise ValueError(f"its {k} takes one value, not a list")
+        return str(v).strip() or None if v is not None else None
 
+    name = " ".join((one("name") or "").split())
+    if not name:
+        raise ValueError("its frontmatter has no name")
     tools = meta.get("tools") or []
     if isinstance(tools, str):
         tools = tools.strip("[]").split(",")
+    if not isinstance(tools, list):
+        raise ValueError("its tools are not a list of skill names")
     return Template(name=name, description=one("description") or "",
                     model=one("model"), access=one("access"), device=one("device"),
-                    tools=[t.strip().strip("'\"") for t in tools if t.strip()],
-                    body=body.partition("\n")[2].strip())
+                    tools=[str(t).strip().strip("'\"") for t in tools if str(t).strip()],
+                    body=body.strip())
+
+
+def scan(cfg) -> tuple[dict[str, Template], list[str]]:
+    """Her templates by casefolded name, from FOLDER, and one line for each file that
+    is no template and each name two files share (neither of them starts)."""
+    root = cfg.her.notebook
+    base = root / FOLDER
+    found: dict[str, list[tuple[str, Template]]] = {}
+    problems: list[str] = []
+    if not base.is_dir():
+        return {}, problems
+    for p in sorted(base.glob("*.md")):
+        rel = p.relative_to(root).as_posix()
+        if not (text := read_note(root, rel)):
+            continue
+        try:
+            t = parse(text)
+        except ValueError as e:
+            problems.append(f"{rel} is no template: {e}.")
+            continue
+        found.setdefault(t.name.casefold(), []).append((rel, t))
+    out: dict[str, Template] = {}
+    for key, got in found.items():
+        if len(got) == 1:
+            out[key] = got[0][1]
+        else:
+            problems.append(f"{' and '.join(r for r, _ in got)} share the name "
+                            f"{got[0][1].name!r}, so it does not start.")
+    return out, problems
 
 
 def all_templates(cfg) -> dict[str, Template]:
-    """Her templates by casefolded name, from FOLDER; the first file wins a name."""
-    root = cfg.her.notebook
-    base = root / FOLDER
-    out: dict[str, Template] = {}
-    if not base.is_dir():
-        return out
-    for p in sorted(base.glob("*.md")):
-        if (text := read_note(root, p.relative_to(root).as_posix())) and \
-                (t := parse(text)) is not None:
-            out.setdefault(t.name.casefold(), t)
-    return out
+    return scan(cfg)[0]
 
 
 def find(cfg, name: str) -> Template | None:
@@ -86,14 +114,15 @@ def find(cfg, name: str) -> Template | None:
 
 
 def listing(cfg) -> str | None:
-    """The templates she has, one line each, for the tail of her turns."""
-    got = all_templates(cfg).values()
-    if not got:
+    """The templates she has, one line each, and the files that are none, for the tail
+    of her turns."""
+    got, problems = scan(cfg)
+    if not got and not problems:
         return None
     lines = [f"- {t.name}: {t.description}" if t.description else f"- {t.name}"
-             for t in got]
+             for t in got.values()]
     return (f"Your agent templates ({FOLDER}/ in your notebook; "
-            f"sub_agents__start(template=...)):\n" + "\n".join(lines))
+            f"sub_agents__start(template=...)):\n" + "\n".join(lines + problems))
 
 
 def of(c, cid: str, cfg) -> Template | None:

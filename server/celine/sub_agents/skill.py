@@ -333,13 +333,23 @@ class SubAgents:
         None, resumed, its brief's number) or (None, the refusal, False, None)."""
         name = " ".join(name.split())
         if template is not None:
-            t = templates.find(self.cfg, template)
+            got, problems = templates.scan(self.cfg)
+            t = got.get(" ".join(template.split()).casefold())
             if t is None:
-                have = ", ".join(x.name for x in templates.all_templates(self.cfg).values())
-                return None, (f"There is no agent template {template!r} in "
-                              f"{templates.FOLDER}/. Yours: {have or 'none'}."), False, None
+                have = ", ".join(x.name for x in got.values())
+                return None, "\n".join([f"There is no agent template {template!r} in "
+                                        f"{templates.FOLDER}/. Yours: {have or 'none'}.",
+                                        *problems]), False, None
+            if unknown := [x for x in t.tools if x not in self._skill_names()]:
+                return None, (f"{t.name}'s tools name {', '.join(unknown)}, which "
+                              f"{'is no skill' if len(unknown) == 1 else 'are no skills'}. "
+                              f"Skills: {', '.join(sorted(self._skill_names()))}."), False, None
             template = t.name
-            access, model, device = access or t.access, model or t.model, device or t.device
+            # the template's settings make a new agent; a resumed one keeps its own
+            mine = await store.read(lambda c: agents_of(c, parent))
+            if not any(_same(a["name"], name) for a in mine):
+                access, model, device = (access or t.access, model or t.model,
+                                         device or t.device)
         if device is not None:          # a drone: opencode on the device
             cli = cli or "opencode"
         if folder is not None:
@@ -433,6 +443,14 @@ class SubAgents:
             "cli" if (cli or (known or {}).get("cli")) else "model"
         metrics.SUB_AGENTS_STARTED.labels(kind).inc()
         return sub, None, known is not None, int(sent["intercom_id"]) if sent else None
+
+    def _skill_names(self) -> set[str]:
+        """Every skill a template's `tools` may name: the built-in and plugin ones, those
+        the running app has (its MCP servers) and `skills`."""
+        from .. import skills
+        reg = getattr(self.app, "registry", None)
+        have = set(reg.skills) if reg is not None else set()
+        return {*skills.names(), skills.META, *have}
 
     async def _over_cap(self, store, parent: str, started: int) -> str | None:
         """The refusal when `parent` is a mission that started its Sub-agents per mission
