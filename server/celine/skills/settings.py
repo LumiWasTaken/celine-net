@@ -263,8 +263,34 @@ def target_of(app, tid: str) -> Target | str:
 
 # ---- the request's words: each field's before and after -------------------------------
 
+def row(label: str, before: str | None, after: str) -> dict[str, str]:
+    """One change on the request: {label, before, after}; no `before` for a field that
+    had no value (a new provider's, a secret not set, an empty role)."""
+    return {"label": label, "after": after} if before is None else \
+        {"label": label, "before": before, "after": after}
+
+
+def said(r: dict[str, str]) -> str:
+    return f"{r['label']}: {r['before']} \u2192 {r['after']}" if "before" in r else \
+        f"{r['label']}: {r['after']}"
+
+
+def _model_line(name: str, spec: Any) -> str:
+    """"qwen3:14b, Qwen3 14B (Mac), chat and tools, 40,960 tokens": a provider's model in
+    words, what its entry says."""
+    spec = spec if isinstance(spec, dict) else {}
+    caps = [str(c).replace("_", " ") for c in spec.get("caps") or [] if c]
+    bits = [name, str(spec.get("label") or "").strip(),
+            ", ".join(caps[:-1]) + " and " + caps[-1] if len(caps) > 1 else "".join(caps),
+            f"{spec['context']:,} tokens" if isinstance(spec.get("context"), int)
+            and not isinstance(spec.get("context"), bool) else ""]
+    return ", ".join(b for b in bits if b)
+
+
 def shown(f: dict[str, Any], v: Any) -> str:
-    """A value as the request shows it."""
+    """A value as the request shows it; a provider's models one per line, uncut."""
+    if f.get("key") == "models" and isinstance(v, dict) and v:
+        return "\n".join(_model_line(str(m), spec) for m, spec in v.items())
     if isinstance(v, bool):
         text = "On" if v else "Off"
     elif v is None:
@@ -297,8 +323,8 @@ def _filled_roles(s, pid: str, new: dict) -> list[dict]:
     for r, spec in ROLES.items():
         was = (s.roles.get(r) or {}).get("chain") or []
         if r in filled and filled[r].get("chain") != was:
-            rows.append({"label": spec["label"], "before": ", ".join(was) or "Not set",
-                         "after": ", ".join(filled[r]["chain"])})
+            rows.append(row(spec["label"], ", ".join(was) or None,
+                            ", ".join(filled[r]["chain"])))
     return rows
 
 
@@ -411,13 +437,13 @@ class Settings:
                 f = by_key[k]
                 if f.get("type") == "secret":
                     files[k] = None if v is None else _secret_file(v, f"{t.id}.{k}")
-                    rows.append({"label": f["label"],
-                                 "before": "Saved" if f["state"] == "set" else "Not set",
-                                 "after": "Removed" if v is None else "New value"})
+                    rows.append(row(f["label"], "Saved" if f["state"] == "set" else None,
+                                    "Removed" if v is None else "New value"))
                     continue
-                before, after = shown(f, f.get("value")), shown(f, _after(f, v))
+                before = None if f.get("value") is None else shown(f, f["value"])
+                after = shown(f, _after(f, v))
                 if before != after:
-                    rows.append({"label": f["label"], "before": before, "after": after})
+                    rows.append(row(f["label"], before, after))
             new = t.merge(values)
             if values:
                 t.check(new)
@@ -452,10 +478,10 @@ class Settings:
                               is_error=True)
         except CelineError as e:
             return ToolResult(content=f"{e.message} Nothing was done.", is_error=True)
-        said = "; ".join(f"{r['label']}: {r['before']} → {r['after']}" for r in rows)
+        text = "; ".join(said(r) for r in rows)
         if isinstance(out, dict) and out.get("applied") is False:
             why = "; ".join(p.message for p in self.cfg.problems if p.fatal)
-            return ToolResult(content=f"Saved {t.label} ({said}), but the app refused to "
+            return ToolResult(content=f"Saved {t.label} ({text}), but the app refused to "
                                       f"load it and keeps its last good settings: {why}.",
                               is_error=True, display={"target": t.id, "changes": rows})
         now = ""
@@ -465,6 +491,6 @@ class Settings:
                 state = "on" if p["state"] == "none" else p["state"]
                 now += f" {by_key[k]['label']}: {state}." + \
                     (f" {p.get('why') or p['detail']}" if p["detail"] else "")
-        return ToolResult(content=f"Changed {t.label}. {said}.{now}",
+        return ToolResult(content=f"Changed {t.label}. {text}.{now}",
                           display={"target": t.id, "changes": rows})
 

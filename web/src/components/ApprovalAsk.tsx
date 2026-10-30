@@ -27,7 +27,7 @@ export function ApprovalAsk({ ask }: { ask: ChatApproval }) {
       {ask.changes && (
         <div className="guard-banner__thread">
           {ask.changes.map(c => (
-            <p key={c.label} className="guard-banner__said"><b>{c.label}</b> {c.before} {'→'} {c.after}</p>
+            <p key={c.label} className="guard-banner__said"><b>{c.label}</b> {c.before !== undefined && <>{c.before} {'→'} </>}{c.after}</p>
           ))}
           {ask.why && <p className="guard-banner__said">{ask.why}</p>}
         </div>

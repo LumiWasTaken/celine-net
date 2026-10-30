@@ -185,7 +185,7 @@ export type ChatApproval = {
   tool_call_id: string | null
   message_id: string | null
   /** settings: each field's label, before and after (a secret: its state) */
-  changes?: { label: string; before: string; after: string }[]
+  changes?: { label: string; before?: string; after: string }[]
   /** settings: her reason, in her words */
   why?: string
 }

@@ -232,8 +232,7 @@ async def test_a_secret_goes_from_her_box_to_var_secrets_and_nowhere_else(app, c
     assert box.reads == 1
     assert ask.changes == [{"label": "IMAP server", "before": "Empty",
                             "after": "imap.example.com"},
-                           {"label": "Password", "before": "Not set",
-                            "after": "New value"}]
+                           {"label": "Password", "after": "New value"}]
     root = secrets_mod.secrets_dir(app.cfg.data_dir)
     assert secrets_mod.read_key(root, "email") == PASSWORD
     assert app.cfg.settings.email["host"] == "imap.example.com"
@@ -312,12 +311,16 @@ async def test_a_new_lan_provider_is_added_and_its_model_is_hers_and_local(app):
     got, ask = await _answer(app, sk.propose(
         ctx, target="providers.mac",
         changes={"kind": "openai", "label": "My Mac", "base_url": "192.168.1.50:1234",
-                 "models": {"small": {"caps": ["chat", "tools"]}}},
+                 "models": {"small": {"caps": ["chat", "tools"]},
+                            "qwen3:14b": {"label": "Qwen3 14B (Mac)", "caps": ["chat", "tools"],
+                                          "context": 40960}}},
         why="A model server on my Mac for my agents."), True)
     assert not got.is_error, got.content
     assert ap.chat(ask, None)["line"] == "Celine asks to add the model provider mac."
-    assert {"label": "Address", "before": "Default", "after": "192.168.1.50:1234"} \
-        in ask.changes
+    assert {"label": "Address", "after": "192.168.1.50:1234"} in ask.changes
+    assert all("before" not in c for c in ask.changes), "a new provider had no values"
+    assert {"label": "Models", "after": "small, chat and tools\n"
+            "qwen3:14b, Qwen3 14B (Mac), chat and tools, 40,960 tokens"} in ask.changes
     s = app.cfg.settings
     assert s.providers["mac"]["base_url"] == "http://192.168.1.50:1234/v1"
     assert "mac/small" in her_models.allowed(s), "a template's model: takes it"
@@ -339,7 +342,6 @@ async def test_a_new_providers_card_lists_the_roles_it_fills(app):
     filled = [r for r in empty if s.chain(r) == ["mac/ears"]]
     assert filled == ["transcription"]
     for r in filled:
-        assert {"label": ROLES[r]["label"], "before": "Not set", "after": "mac/ears"} \
-            in ask.changes
-        assert f"{ROLES[r]['label']}: Not set → mac/ears" in got.content
+        assert {"label": ROLES[r]["label"], "after": "mac/ears"} in ask.changes
+        assert f"{ROLES[r]['label']}: mac/ears." in got.content
     assert len([c for c in ask.changes if c["after"] == "mac/ears"]) == len(filled)
