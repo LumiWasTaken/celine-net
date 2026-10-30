@@ -21,7 +21,7 @@ import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import { BatchGallery, StopBatch, doneWords, madeImages, type Made } from '../../components/Batch'
 import {
-  Button, Card, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Form, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead, Switch, TextArea,
+  Button, Card, CardGrid, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Form, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead, Switch, TextArea,
 } from '../../ui'
 import './settings.css'
 
@@ -59,7 +59,7 @@ export function Presets({ kind, providers, roles, onChanged }: {
       {probe.data && probe.data.state !== 'none' && <Dot tone={STATE_TONE[probe.data.state] ?? 'off'} text={probe.data.detail} />}
       {list.error && !list.data ? <InlineError message={list.error} onRetry={list.reload} />
         : !list.data ? <LoadingRow label="Loading presets" /> : (
-        <div className="card-grid presets">
+        <CardGrid className="presets">
           {presets.map(p => {
             const at = p.ref ? chain.indexOf(p.ref) : -1
             const facts = [p.family, TASK[p.task], p.size && `${p.size.width}x${p.size.height}`].filter(Boolean).join(', ')
@@ -82,7 +82,7 @@ export function Presets({ kind, providers, roles, onChanged }: {
               </Card>
             )
           })}
-        </div>
+        </CardGrid>
       )}
       {shownPreset && (
         <div className="preset-open">
@@ -208,7 +208,7 @@ function Recent({ kind, batches, error, reload }: { kind: Kind; batches?: Batch[
   return (
     <div className="batches">
       <SubHead>Recent</SubHead>
-      <div className="card-grid batches__grid">
+      <CardGrid className="batches__grid">
       {batches.slice(0, limit).map(b => {
         const first = b.items[0]
         const what = first?.prompt ?? first?.style ?? ''
@@ -226,7 +226,7 @@ function Recent({ kind, batches, error, reload }: { kind: Kind; batches?: Batch[
           </div>
         )
       })}
-      </div>
+      </CardGrid>
       {more(batches.length)}
     </div>
   )

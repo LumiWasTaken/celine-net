@@ -8,6 +8,7 @@ import { Check, type LucideIcon } from 'lucide-react'
 import { Dot, Progress, type DotTone } from './Bits'
 import { cx } from './cx'
 import { ICON } from './icons'
+import { useMove } from './motion'
 import type { PickProps } from './Select'
 import type { useContextMenu } from './Menu'
 
@@ -190,6 +191,10 @@ export function VirtualList<T>({
   page?: boolean
 }) {
   const scroller = useRef<HTMLDivElement>(null)
+  // rows glide when the items change (a conversation to the top), rise when they arrive and
+  // fade where they were when they go; a scroll changes no items and a new filter is another list, so neither moves anything
+  const spacer = useRef<HTMLDivElement>(null)
+  useMove(spacer, items, { enter: true, leave: true, quiet: resetOn })
   const firstReset = useRef(true)
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [margin, setMargin] = useState(0)
@@ -240,7 +245,7 @@ export function VirtualList<T>({
   return (
     <div ref={scroller} className={cx('vlist', page && 'vlist--page', className)} style={style} role={label ? 'list' : undefined} aria-label={label}>
       {before}
-      <div className="vlist__spacer" style={{ height: virt.getTotalSize() }}>
+      <div ref={spacer} className="vlist__spacer" style={{ height: virt.getTotalSize() }}>
         {rows.map(v => (
           <div key={v.key} data-index={v.index} ref={virt.measureElement}
                className="vlist__row" role={label ? 'listitem' : undefined}

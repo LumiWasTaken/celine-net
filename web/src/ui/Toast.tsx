@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Progress } from './Bits'
 import { Button, IconButton } from './Button'
-import { leave, OUT, useLeave } from './motion'
+import { leave, OUT, useLeave, useMove } from './motion'
 
 /** how long a toast stays: 5 s, 10 s with an action */
 const TOAST_MS = 5000
@@ -55,8 +55,11 @@ const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f
 /** the one host, in App.tsx; it stays when empty, so the last toast has a place to leave from */
 export function ToastHost() {
   const list = useSyncExternalStore(subscribe, read)
+  // the stack glides when one comes or goes; each toast rises and drops by itself
+  const box = useRef<HTMLDivElement>(null)
+  useMove(box, list, { bottom: true })
   return createPortal(
-    <div className="toasts" role="status" aria-live="polite">
+    <div ref={box} className="toasts" role="status" aria-live="polite">
       {list.map(t => <Toast key={t.id} {...t} onClose={() => close(t.id)} />)}
     </div>,
     document.body,

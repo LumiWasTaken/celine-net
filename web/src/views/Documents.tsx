@@ -21,7 +21,7 @@ import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { usePref } from '../lib/prefs'
 import {
-  Button, Card, Choice, ConfirmDialog, cx, Dialog, EmptyState, Facts, Field, GroupHead, IconButton, InlineError, Input, ListRow,
+  Button, Card, CardGrid, Choice, ConfirmDialog, cx, Dialog, EmptyState, Facts, Field, GroupHead, IconButton, InlineError, Input, ListRow,
   ListSection, Loaded, MenuButton, Notice, PageIndex, Place, PlaceHead, Section, Segmented, SelectBar, ShelfRow, StatusLine, TextArea,
   Toolbar, Tree, useContextMenu, usePicker, VirtualList, type BulkAction, type BulkResult, type MenuItem, type Shelf, type TreeNode,
 } from '../ui'
@@ -373,7 +373,7 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
       {folders.length > 0 && (
         <div className="doc-folders">
           <GroupHead icon={FolderIcon} title="Folders" count={count(folders.length, 'folder')} />
-          <div className="card-grid doc-cards">
+          <CardGrid className="doc-cards">
             {folders.map(f => (
               <div key={f.path} className="doc-card" {...drag(`f:${f.path}`)} {...dropOn(f.path)}>
                 <Card media={<FolderIcon size={20} aria-hidden />} title={f.name} subtitle={`${docsNoun(f.items)}, ${bytes(f.size)}`}
@@ -381,7 +381,7 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
                       pick={picker.row(`f:${f.path}`)} tooltip={f.path} />
               </div>
             ))}
-          </div>
+          </CardGrid>
         </div>
       )}
       {items.length > 0 && !flat && <GroupHead icon={FileText} title="Documents" count={docsNoun(all ? total ?? items.length : items.length)} />}

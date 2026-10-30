@@ -1,12 +1,13 @@
 /* Card: one thing in a grid of things with a picture or a face (people, folders,
    documents, presets), or one pick of a few (a preset, a picture).
    Its "..." and a right-click (or a long press) open the same menu. */
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { Check, MoreHorizontal } from 'lucide-react'
 import { cx } from './cx'
 import { ICON } from './icons'
 import type { PickProps } from './Select'
 import { MenuButton, useContextMenu, type MenuItem } from './Menu'
+import { useMove } from './motion'
 
 export function Card({ media, cover, title, subtitle, meta, selected, onClick, href, menu, menuLabel, children, actions, pick, className, tooltip }: {
   /** a face or a glyph before the title */
@@ -76,4 +77,12 @@ export function Card({ media, cover, title, subtitle, meta, selected, onClick, h
       {ctx.menu}
     </div>
   )
+}
+
+/** cards in as many columns as fit; a card that goes fades where it was and the rest glide
+    into its place (a new card rises by itself, .card in ui.css) */
+export function CardGrid({ className, children }: { className?: string; children?: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null)
+  useMove(box, undefined, { leave: true })
+  return <div ref={box} className={cx('card-grid', className)}>{children}</div>
 }
