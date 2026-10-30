@@ -71,7 +71,7 @@ async def reply_context(request: Request, cid: str, mid: str) -> dict:
             " UNION ALL SELECT m.id, m.parent_id, m.role FROM messages m"
             " JOIN up ON m.id = up.parent_id WHERE up.role != 'user')"
             " SELECT x.text, x.report FROM up JOIN message_context x ON x.message_id = up.id"
-            " WHERE up.role = 'user'", (mid, cid)).fetchone()
+            " WHERE up.role = 'user' AND x.text IS NOT NULL", (mid, cid)).fetchone()
     r = await services_of(request).store.read(fn)
     if r is None:
         raise NotFound("context")

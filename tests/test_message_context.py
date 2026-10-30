@@ -70,3 +70,17 @@ async def test_a_message_nothing_is_added_to_stays_bare(store):
     built = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[])
     user = [m["content"] for m in built.messages if m["role"] == "user"]
     assert user[0].endswith("hello") and skill.asked == 1
+
+
+async def test_a_tail_written_first_never_stands_for_the_block(store):
+    cfg = load()
+    skill, reg = Scene(), Registry()
+    reg.add_specs(skill, [])
+    cid = await conversations.create(store)
+    mid, tid, _ = await user_says(store, cid, "hello")
+    await message_context.put_tail(store, mid, "now")
+    chain = await store.read(lambda c: tree.path(c, cid))
+    await message_context.ensure(store, cfg, reg, cid, tid, message_context.unsent(chain))
+    built = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[])
+    user = [m["content"] for m in built.messages if m["role"] == "user"]
+    assert user[0].endswith("hello\n\nthe ford at dusk\n\nnow") and skill.asked == 1
