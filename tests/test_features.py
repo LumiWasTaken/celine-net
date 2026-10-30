@@ -96,16 +96,15 @@ async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api)
         "whatsapp", "email", "vault", "guard", "messages", "routines", "mac"}
 
 
-async def test_the_tiers_come_in_order_with_the_core_and_a_group_together(api):
-    from celine.skills import BUILTIN, CORE as CORE_SKILLS
+async def test_the_tiers_come_in_order_with_the_core_and_a_group_together(api, _test_skills_core):
     r = (await api.get("/api/features")).json()
     assert [t["id"] for t in r["tiers"]] == ["core", "base"], "no user module: no user tier"
     assert [t["label"] for t in r["tiers"]] == ["Core", "Base modules"]
     assert {f["tier"] for f in r["catalog"]} == {"base"}
     # the core is the chat and every core skill no feature owns; no switch, no feature id
     owned = set(features.skill_owners())
-    built_in = {b[0] for b in BUILTIN}       # the test skills the conftest adds aside
-    assert {c["id"] for c in r["core"]} == {"chat"} | (CORE_SKILLS & built_in) - owned
+    assert {c["id"] for c in r["core"]} == {"chat"} | (_test_skills_core - owned)   # skills.CORE as shipped
+    assert "skills" in {c["id"] for c in r["core"]}, "META, the guides' skill"
     assert not {c["id"] for c in r["core"]} & set(r["features"])
     assert all(c["label"] and c["about"] and "{{" not in c["about"] for c in r["core"])
     # her computer's choices sit together, the Mac right after the shellbox

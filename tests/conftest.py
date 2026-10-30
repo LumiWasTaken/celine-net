@@ -97,10 +97,12 @@ TEST_SKILLS = {"arch", "painter", "slow", "t", "door", "echo", "chatlink", "slow
 
 @pytest.fixture(autouse=True)
 def _test_skills_core():
+    """-> skills.CORE as shipped, before the test skills are added"""
     from celine.skills import CORE
     added = TEST_SKILLS - CORE
+    shipped = frozenset(CORE)
     CORE.update(added)
-    yield
+    yield shipped
     CORE.difference_update(added)
 
 

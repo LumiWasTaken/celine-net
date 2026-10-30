@@ -93,6 +93,7 @@ CORE: tuple[tuple[str, str, str], ...] = (
     ("intercom", "Intercom", "Messages between you, {{name}}, missions and sub-agents, and reminders."),
     ("past_conversations", "Past conversations", "Your earlier conversations, searched by word."),
     ("bugreport", "Bug reports", "Problems {{she}} finds in the app, sent to you on the intercom."),
+    ("skills", "Skills", "The guide to each tool, read before {{she}} uses it."),
 )
 
 
