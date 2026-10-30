@@ -15,6 +15,7 @@ FILLS = {
     "skills/mind_appraisal.md": {"emotions": "pleasure, arousal"},
     "sub_agents/fragment.md": {"agent_name": "a", "parent": "b", "cap": "1,966",
                                 "can": "read", "where": "here"},
+    "sub_agents/drone.md": {"agent_name": "a", "parent": "b", "device": "Mac"},
     "schedules/final.md": {"note": ""},
     "schedules/note.md": {"path": "diary/today.md"},
 }

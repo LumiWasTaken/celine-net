@@ -183,7 +183,8 @@ async def offered(registry, store, cid: str, turn_id: str | None = None
     skills/places.PLACES puts it (an MCP connector: chat, mission, background), and only
     what its offered_in allows (no sub_agents at sub_agents.skill.MAX_DEPTH, the intercom's
     start_chat away from the user), and to a sub-agent with read access only its
-    read-only tools (skills/gating.read_mode_has); skills offering none left out. The
+    read-only tools (skills/gating.read_mode_has), to one started from an agent template
+    with `tools` only those skills (sub_agents/templates.py); skills offering none left out. The
     skill index, a load, a guide and the request's tools all read it, so what it is
     offered by name is what it may call."""
     from ..skills.gating import read_mode_has
@@ -204,6 +205,12 @@ async def offered(registry, store, cid: str, turn_id: str | None = None
             out[name] = []
     if store is not None and await reads_only(store, cid):
         out = {n: [s for s in specs if read_mode_has(s)] for n, specs in out.items()}
+    if store is not None and registry.cfg is not None:
+        from ..sub_agents import templates
+        mine = templates.skills_of(await store.read(
+            lambda c: templates.of(c, cid, registry.cfg)))
+        if mine is not None:
+            out = {n: specs for n, specs in out.items() if n in mine}
     return {n: specs for n, specs in out.items() if specs}
 
 

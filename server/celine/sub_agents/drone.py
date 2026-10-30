@@ -6,7 +6,8 @@ opencode client is the box's, shellbox/agents/opencode.py, loaded from here.
 
 A drone's turn: the messages it got since the last one sent (`agent_sent`) go to its
 opencode session (`agent_session`, made at its first turn and kept, so the same name
-resumes the same session and a restart finds it again) with `prompt_async`, on the
+resumes the same session and a restart finds it again) with `prompt_async` and the turn's
+system prompt (its template, where it is, how it reports: turns/prompt.py agent_blocks), on the
 model its conversation runs on, which opencode reaches through the app's model proxy
 (queue, freeze and usage stay in the app). The models the proxy offers are put into
 the device's opencode config first when they differ (PATCH /global/config), and only
@@ -218,7 +219,8 @@ class DroneBackend:
                     # marked first: a crash before the send loses it, never sends it twice
                     await self._set(agent_sent=last)
                     try:
-                        await _run(oc.prompt, session, self.model, brief, "", server)
+                        await _run(oc.prompt, session, self.model, brief, "", server,
+                                   system=system_of(messages))
                     except oc.Problem as e:
                         await self._set(agent_sent=row["agent_sent"])   # not sent: again next turn
                         raise BackendError(f"{dev.label}: {e}", retryable=False) from None
@@ -301,6 +303,14 @@ class DroneBackend:
                "messages": [m["info"] for m in msgs if m["info"].get("id") in
                             {*t["asked"], t["seen"]}]}
         return t["text"], Done(reason="stop", usage=t["usage"], raw=raw)
+
+
+def system_of(messages: list[dict]) -> str | None:
+    """The drone's system prompt as the turn built it (turns/prompt.py agent_blocks):
+    its template, where it is and how it reports, for opencode's `system`."""
+    head = messages[0] if messages else {}
+    return head.get("content") if head.get("role") == "system" and \
+        isinstance(head.get("content"), str) else None
 
 
 async def _run(fn, *args, **kw):

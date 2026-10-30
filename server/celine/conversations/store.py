@@ -35,12 +35,14 @@ async def create(store, title: str = "", trigger_key: str | None = None,
                  agent_of: str | None = None, agent_name: str | None = None,
                  notebook_folder: str | None = None, access: str | None = None,
                  auto: bool = False, kind: str = "chat",
-                 agent_cli: str | None = None, agent_device: str | None = None) -> str:
+                 agent_cli: str | None = None, agent_device: str | None = None,
+                 agent_template: str | None = None) -> str:
     """`kind` is what it is (chat, mission, background; a sub-agent's is always
     `agent`), fixed from here on. A sub-agent's conversation (sub_agents/skill.py)
     carries the conversation that started it, its name, the notebook folder it is
     limited to, its access (read or work), and the agent CLI that runs its briefs, when
-    one does (sub_agents/cli.py), with the device it runs on (sub_agents/drone.py)."""
+    one does (sub_agents/cli.py), with the device it runs on (sub_agents/drone.py), and the
+    agent template it was started from (sub_agents/templates.py)."""
     cid = new_id()
     kind = "agent" if agent_of else kind
 
@@ -48,10 +50,10 @@ async def create(store, title: str = "", trigger_key: str | None = None,
         ts = now()
         c.execute(
             "INSERT INTO conversations(id, title, trigger_key, agent_of, agent_name, "
-            "notebook_folder, access, agent_cli, agent_device, title_auto, kind, "
-            "created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "notebook_folder, access, agent_cli, agent_device, agent_template, title_auto, "
+            "kind, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (cid, title, trigger_key, agent_of, agent_name, notebook_folder,
-             access, agent_cli, agent_device, int(auto), kind, ts, ts),
+             access, agent_cli, agent_device, agent_template, int(auto), kind, ts, ts),
         )
         announce(store, c, cid)
         return cid
