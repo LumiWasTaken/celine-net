@@ -103,6 +103,7 @@ input{display:block;width:100%;height:var(--h-md);margin:0 0 var(--s-4);padding:
   border:1px solid var(--border-strong);border-radius:var(--r-md);background:var(--surface-2);
   color:var(--text-primary);font:inherit}
 input:focus{outline:2px solid var(--accent);outline-offset:1px}
+@media (pointer:coarse){input{font-size:max(1rem,var(--t-md))}}
 #code{font-family:var(--font-mono);letter-spacing:.04em}
 button{display:inline-flex;align-items:center;justify-content:center;height:var(--h-lg);padding:0 var(--s-5);
   border:0;border-radius:var(--r-md);font:var(--fw-medium) var(--t-md)/var(--lh-ui) var(--font-sans);cursor:pointer}

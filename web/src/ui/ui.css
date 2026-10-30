@@ -384,6 +384,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .list-row--muted :is(.face) { opacity: 0.7; }
 /* a deleted one (ShelfRow in the Trash), with Restore */
 .list-row--gone .list-row__title { color: var(--text-secondary); }
+.list-row--unread .list-row__title { font-weight: var(--fw-bold); }
 /* the open one: a step up; a picked one while selecting: the accent wash */
 .list-row[aria-current='true'], .list-row[aria-current='page'] { background: var(--surface-2); }
 .list-row[aria-selected='true'] { background: var(--selected); }

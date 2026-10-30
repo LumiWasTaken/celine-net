@@ -35,8 +35,9 @@ outside `tokens.css` writes a font size, line height, weight or letter spacing a
 | `--t-xl` | 20 to 22.5 px | place, section and dialog titles, prose h2 | `--lh-title` | `--tracking-title` |
 | `--t-2xl` | 28 to 32 px | display: the greeting name, prose h1 | `--lh-title` | `--tracking-display` |
 
-- On a touch screen `--t-md` is `--t-lg`: the phone UI has one text size, 16 px, so a field
-  never zooms on iOS and its label matches it.
+- On a touch screen `--t-md` is `--t-lg`: the phone UI has one text size, 16 px at 100 %, and
+  a field's label matches it. A field never goes below 16 px there, at any text size, so iOS
+  never zooms into it (base.css).
 - Inline code in a sentence is `--t-code` (0.9em); a code block is `--t-md`.
 - Weights: `--fw-regular` for text, `--fw-medium` for names, labels, buttons, rows and
   titles, `--fw-bold` for `strong` and a prose h1. Nothing else.
