@@ -39,7 +39,8 @@ def test_a_template_reads_like_an_agent_file():
     assert t.body == "You look things up on the web. Cite every fact with its link."
     assert templates.parse("---\nname: x\ntools: web, shell\n---\nbody").tools == \
         ["web", "shell"]
-    assert templates.parse("no frontmatter") is None
+    with pytest.raises(ValueError, match="does not start with a --- frontmatter"):
+        templates.parse("no frontmatter")
 
 
 async def _prompt(cfg, reg, store, cid) -> str:
@@ -85,3 +86,86 @@ async def test_her_prompt_is_stable_and_a_note_write_changes_only_its_end(store)
     at = first.index("[your notes]")
     assert second[:at] == first[:at], "everything before the notes stays"
     assert "Long sentences." in second[at:]
+
+
+def test_the_frontmatter_is_yaml():
+    t = templates.parse("---\nname: x\ndescription: |\n  one\n  --- two\ntools: [web, shell]\n"
+                        "---\nbody")
+    assert (t.description, t.tools, t.body) == ("one\n--- two", ["web", "shell"], "body")
+    with pytest.raises(ValueError, match="no closing ---"):
+        templates.parse("---\nname: x\n")
+    with pytest.raises(ValueError, match="not YAML on line 2"):
+        templates.parse("---\nname: x\ndescription: a: b\n---\nbody")
+    with pytest.raises(ValueError, match="no name"):
+        templates.parse("---\ndescription: d\n---\nbody")
+
+
+async def test_files_that_are_no_template_and_shared_names_are_said(store):
+    cfg = load()
+    await write_notes(store, cfg, {"templates/scout.md": SCOUT,
+                                   "templates/scout2.md": SCOUT,
+                                   "templates/bad.md": "---\nname: x\n",
+                                   "templates/ok.md": "---\nname: Ok one\n---\nbody"})
+    text = templates.listing(cfg)
+    assert "- Ok one" in text
+    assert "templates/bad.md is no template: its frontmatter has no closing --- line." in text
+    assert ("templates/scout.md and templates/scout2.md share the name 'Web scout', so it "
+            "does not start.") in text
+    chat = await conversations.create(store, "chat")
+    _, refusal, _, _ = await SubAgents(cfg).begin(store, chat, "x", "a name",
+                                                  template="Web scout")
+    assert refusal.splitlines()[0] == ("There is no agent template 'Web scout' in "
+                                       "templates/. Yours: Ok one.")
+    assert "templates/bad.md is no template" in refusal
+
+
+async def test_a_note_without_frontmatter_is_named_and_a_path_finds_its_template(store):
+    cfg = load()
+    await write_notes(store, cfg, {"templates/digger.md": "# digger\n\nDig.",
+                                   "templates/scout.md": SCOUT})
+    chat = await conversations.create(store, "chat")
+    _, refusal, _, _ = await SubAgents(cfg).begin(store, chat, "x", "a name",
+                                                  template="digger")
+    assert ("templates/digger.md is no template: it does not start with a --- "
+            "frontmatter.") in refusal.splitlines()
+    got = templates.all_templates(cfg)
+    assert (templates.read_note(cfg.her.notebook, "templates/scout.md") or "").startswith(
+        "Last changed:"), "the stamp above the frontmatter is read past"
+    for given in ("templates/scout.md", "templates/scout", "scout.md", "web SCOUT"):
+        assert templates.pick(got, given).name == "Web scout", given
+
+
+async def test_tools_that_are_no_skills_are_refused(store):
+    cfg = load()
+    await write_notes(store, cfg, {"templates/t.md": "---\nname: Typo one\n"
+                                                     "tools: web, notbook\n---\nbody"})
+    chat = await conversations.create(store, "chat")
+    _, refusal, _, _ = await SubAgents(cfg).begin(store, chat, "x", "a name",
+                                                  template="Typo one")
+    assert refusal.startswith("Typo one's tools name notbook, which is no skill. Skills: ")
+
+
+async def test_a_resume_keeps_its_model_when_the_template_changed(store):
+    from celine.core.bus import EventBus
+    from celine.core.services import Services
+    from celine.intercom import Intercom
+    from celine.skills import Registry
+    from celine.sub_agents import report
+    from celine.turns.dispatcher import Dispatcher
+    cfg = load()
+    await write_notes(store, cfg, {"templates/t.md": "---\nname: Plain one\n---\nbody"})
+    chat = await conversations.create(store, "chat")
+    d = Dispatcher(store, cfg, EventBus(), lambda: None, Registry())
+    skill = SubAgents(cfg)
+    skill.app = Services(cfg=cfg, store=store, dispatcher=d,
+                         intercom=Intercom(store, d.notify))
+    first, refusal, _, _ = await skill.begin(store, chat, "x", "the helper",
+                                             template="Plain one")
+    assert refusal is None
+    await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
+    await report.on_end(skill.app, first)
+    await write_notes(store, cfg, {"templates/t.md": "---\nname: Plain one\n"
+                                                     "model: gone/model\n---\nbody"})
+    again, refusal, resumed, _ = await skill.begin(store, chat, "y", "the helper",
+                                                   template="Plain one")
+    assert (again, refusal, resumed) == (first, None, True)

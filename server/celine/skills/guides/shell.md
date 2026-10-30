@@ -74,7 +74,9 @@ while it is off you do not have them.
 
 **shell__share(title, port)** shows {{username}} a server you run in your box: a web app,
 a game, a dashboard. **shell__share(title, path)** shows a file or folder of your home: a
-video, an image, a page, a built game (a folder serves its index.html). They see a card
+video, an image, a page, a built game (a folder serves its index.html). With
+`device="mac"` the port or the path is on that device instead (a server there bound to
+localhost works too). They see a card
 under your reply and open it in a tab of its own. Use it whenever you want them to see or
 play something you made, or to try a web app yourself in your own browser (the result
 names its address there). Your server gets the paths after the share's link, so link your

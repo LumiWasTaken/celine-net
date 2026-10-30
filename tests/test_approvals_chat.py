@@ -195,7 +195,7 @@ def shared(monkeypatch):
     made: list[dict] = []
 
     async def create(cfg, store, title, *, port=None, path=None, conversation_id=None,
-                     public=False, hours=None):
+                     public=False, hours=None, device=None):
         row = {"token": "tok", "title": title, "port": port, "path": path,
                "public": public, "ends_at": "2026-10-24T15:00:00.000+00:00"}
         made.append(row)

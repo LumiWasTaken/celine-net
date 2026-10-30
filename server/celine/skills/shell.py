@@ -31,7 +31,7 @@ from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
 from ..errors import (CelineError, ToolRefused, TooLarge, bad_key, her_bad_key,
                       her_not_set_up, her_unreachable, not_set_up, unreachable_words)
-from .. import shares, shellbox, vision
+from .. import devices, shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
 
@@ -166,6 +166,13 @@ def program_of(res: dict) -> tuple[str | None, int | None]:
     real = [p for p in front if p["name"] not in WRAPPERS and not VAR.match(p["name"])]
     chosen = (real or front)[0]
     return chosen["name"], chosen.get("pid")
+
+
+def _shown(port: int | None, path: str | None, device: str | None) -> str:
+    """What a share shows, in her words: a port or a path, in her box or on a device."""
+    what = f"port {port}" if port is not None else \
+        path if device is not None else shellbox.home_short(path)
+    return what if device is None else f"{what} on {devices.label(device)}"
 
 
 def shown_name(p: dict) -> str:
@@ -713,12 +720,15 @@ class Shell:
                                        f"hours, at most {shares.PRIVATE_MAX}; a public one "
                                        f"{shares.PUBLIC_HOURS} hours, at most "
                                        f"{shares.PUBLIC_MAX}."] = None,
+        device: Annotated[str | None, "A device of yours, such as mac: the port or the path "
+                                      "is on it (a path there from its home, or from /)."
+                                      ] = None,
     ) -> ToolResult:
-        """Show {{username}} something in your shellbox: a server you run on a port (a web
-        app, a game, a dashboard) or a file or folder in your home (a video, an image, a
-        page, a built game). They see it as a card under your reply and open it in a tab of
-        its own. A share is private; a public one waits for their approval. Returns: its
-        id, its link and when it ends."""
+        """Show {{username}} something in your shellbox or on a device of yours: a server you
+        run on a port (a web app, a game, a dashboard) or a file or folder in your home (a
+        video, an image, a page, a built game). They see it as a card under your reply and
+        open it in a tab of its own. A share is private; a public one waits for their
+        approval. Returns: its id, its link and when it ends."""
         title = (title or "").strip()
         if (port is None) == (path is None or not str(path).strip()):
             return ToolResult(content="Give a port or a path, one of them.", is_error=True)
@@ -733,13 +743,23 @@ class Shell:
                                       f"{'public' if public else 'private'} share.",
                               is_error=True)
         rel = str(path).strip().rstrip("/") if port is None else None
-        what = f"port {port}" if port is not None else shellbox.home_short(rel)
+        if device is not None:
+            mine = devices.devices(self.cfg)
+            if device not in mine:
+                return ToolResult(content=f"{device} is not one of your devices that is on. "
+                                          f"Yours: {', '.join(mine) or 'none'}.",
+                                  is_error=True)
+            if not mine[device].share:
+                return ToolResult(content=f"{mine[device].label} has no share server: its "
+                                          f"Shares address in Settings is empty.",
+                                  is_error=True)
+        what = _shown(port, rel, device)
         if public and (no := await self._public(ctx, title, what, hours)):
             return ToolResult(content=no, is_error=True)
         try:
             row = await shares.create(self.cfg, ctx.store, title, port=port, path=rel,
                                       conversation_id=ctx.conversation_id, public=public,
-                                      hours=hours)
+                                      hours=hours, device=device)
             st = await shares.state(self.cfg, ctx.store, row)
         except RuntimeError as e:
             return ToolResult(content=str(e), is_error=True)
@@ -750,9 +770,9 @@ class Shell:
         lines = [f"Shared \"{title}\" ({what}) as share {row['token']}. {self.cfg.user} sees it "
                  f"as a card under your reply. {who}: {shares.link(self.cfg, row)}",
                  f"Your own browser opens it at {shares.INSIDE}{shares.page_path(row)}",
-                 f"It ends {when(row['ends_at'], zone(self.cfg))}, at shell__unshare "
-                 f"or at the next reset of your box."]
-        if st == "down":
+                 f"It ends {when(row['ends_at'], zone(self.cfg))}, at shell__unshare"
+                 + (" or at the next reset of your box." if device is None else ".")]
+        if st == "down" and port is not None:
             lines.append(f"Nothing is running on port {port} yet: it shows once your "
                          f"server answers there.")
         return ToolResult(content="\n".join(lines),
@@ -793,8 +813,7 @@ class Shell:
         states = [await shares.state(self.cfg, ctx.store, r) for r in rows]
         tz = zone(self.cfg)
         lines = [f"- {r['token']}: \"{r['title']}\", "
-                 + (f"port {r['port']}" if r["port"] is not None
-                    else shellbox.home_short(r["path"]))
+                 + _shown(r["port"], r["path"], r["device"])
                  + (", public" if r["public"] else "")
                  + (f", ended {when(shares.end_of(r), tz)}" if st == "ended" else
                     (", answers" if st == "live" else ", nothing answers")

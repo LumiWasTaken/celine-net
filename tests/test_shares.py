@@ -402,3 +402,76 @@ def test_only_plain_headers_come_back_from_a_share(app, web, monkeypatch):
     from celine.shares import KEEP_OUT
     assert b"clear-site-data" not in KEEP_OUT and b"set-cookie" not in KEEP_OUT
     assert b"content-type" in KEEP_OUT
+
+
+@pytest.fixture
+def mac(tmp_path, monkeypatch):
+    """Her Mac's share server: share.js from setup.sh under node, its home a temp folder,
+    as the device mac."""
+    import re
+    import shutil
+    import subprocess
+    from celine import devices
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    script = re.search(r"cat > \"\$LIB/share.js\" <<'EOF'\n(.*?)\nEOF\n",
+                       (ROOT / "plugins/mac/setup.sh").read_text(), re.S)[1]
+    home = tmp_path / "machome"
+    home.mkdir()
+    (tmp_path / "share.js").write_text(script)
+    (tmp_path / "token").write_text("mac-token\n")
+    port = free_port()
+    proc = subprocess.Popen([node, str(tmp_path / "share.js"), str(port),
+                             str(tmp_path / "token")], env={"HOME": str(home)})
+    url = f"http://127.0.0.1:{port}"
+    while True:                # until it answers
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+            break
+        except OSError:
+            assert proc.poll() is None, "share.js ended"
+    mine = {"mac": devices.Device("mac", "Her Mac", "", "mac-token", "", "", url, None)}
+    monkeypatch.setattr(devices, "devices", lambda cfg: mine)
+    yield SimpleNamespace(home=home, devices=mine)
+    proc.kill()
+    proc.wait()
+
+
+def test_a_share_on_her_mac_goes_through_its_share_server(app, mac, web, clock):
+    data = bytes(range(256)) * 4
+    (mac.home / "clip.mp4").write_bytes(data)
+    (mac.home / "site").mkdir()
+    (mac.home / "site" / "index.html").write_text("<h1>Mac</h1>")
+    c = TestClient(app)
+
+    t = make(app, port=web, public=True, device="mac")["token"]
+    r = c.get(f"/share/{t}/a.js?x=1")
+    assert r.status_code == 200, r.text
+    sandboxed(r)
+    assert r.json()["path"] == "/a.js?x=1" and r.json()["host"] == f"localhost:{web}"
+    t = make(app, path="~/clip.mp4", public=True, device="mac")["token"]
+    r = c.get(f"/share/{t}/clip.mp4", headers={"range": "bytes=100-199"})
+    assert r.status_code == 206 and r.content == data[100:200]
+    assert c.get(f"/share/{t}/clip.mp4").content == data
+    t = make(app, path="site", public=True, device="mac")["token"]
+    assert c.get(f"/share/{t}/").text == "<h1>Mac</h1>"
+    port = free_port()
+    t = make(app, port=port, public=True, device="mac")["token"]
+    assert f"Nothing is running on port {port} on Her Mac right now." in \
+        c.get(f"/share/{t}/").text
+    with pytest.raises(RuntimeError, match="No file"):
+        make(app, path="nothing.mp4", device="mac")
+
+    s = app.state.services
+    shell = Shell(s.cfg)
+    ctx = ToolContext("c1", "t", "call-1", s.store, s.cfg, None)  # type: ignore[arg-type]
+    out = anyio.run(lambda: shell.share(ctx, title="Mac panel", port=web, device="mac"))
+    assert not out.is_error, out.content
+    assert out.content.endswith("at shell__unshare.")
+    assert f"\"Mac panel\", port {web} on Her Mac, answers" in \
+        anyio.run(lambda: shell.list_shares(ctx)).content
+    out = anyio.run(lambda: shell.share(ctx, title="x", port=web, device="pc"))
+    assert out.is_error and out.content == "pc is not one of your devices that is on. Yours: mac."
+    mac.devices.clear()
+    assert c.get(f"/share/{t}/").status_code == 404, "the device is off"
