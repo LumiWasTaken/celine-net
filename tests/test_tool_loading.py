@@ -19,8 +19,9 @@ from celine.boot import load
 from celine.config import BackendConfig
 from celine.conversations import store as conversations
 from celine.skills import Guide, Registry, ToolContext, ToolResult, tool
-from celine.skills.meta import Skills
-from celine.turns import loads, prompt
+from celine.conversations import view
+from celine.skills.meta import Skills, had
+from celine.turns import compactions, loads, prompt, tools
 
 pytestmark = pytest.mark.anyio
 
@@ -189,29 +190,90 @@ def _told(request: list[dict]) -> list[str]:
     return [m["content"] for m in request if m.get("role") == "tool"]
 
 
+async def _had(store, cid) -> set[str]:
+    return await store.read(lambda c: had(c, cid))
+
+
+BROUGHT = ("26.7\n\n[loaded with this call]\n# mac\n\nWake the Mac before you type.\n\n"
+           "The Mac is in the living room.\n\nThe parameters of its tools take about ")
+
+
 async def test_the_first_call_by_name_brings_the_skill_once(store):
     cfg = load()
     reg = _guided(cfg)
     cid = await conversations.create(store)
-    b = Replies([_calls(("mac__version", {})), _calls(("mac__version", {})),
+    b = Replies([_calls(("mac__version", {}), ("mac__version", {})),
+                 _calls(("mac__version", {})),
                  [TextDelta("done"), Done(reason="stop")]])
     await _run(store, cfg, reg, cid, b)
-    first, second = _told(b.calls[2])
-    assert first.startswith("26.7\n\n[loaded with this call]\n# mac\n\n"
-                            "Wake the Mac before you type.\n\nThe Mac is in the living "
-                            "room.\n\nThe parameters of its tools take about ")
-    assert second == "26.7", "once per skill in a conversation"
-    assert [r[2] for r in await _results(store)] == ["26.7", "26.7"], \
+    first, together, later = _told(b.calls[2])
+    assert first.startswith(BROUGHT)
+    assert together == "26.7", "two calls of one batch: one load"
+    assert later == "26.7", "once per skill in a conversation"
+    assert [r[2] for r in await _results(store)] == ["26.7"] * 3, \
         "the stored result is the tool's; the load is the call's display"
     systems = {json.dumps(c[0]) for c in b.calls}
     assert len(systems) == 1, "nothing goes into the system prompt"
+    assert await _had(store, cid) == {"mac"}
 
-    meta = reg.skills["skills"]
-    assert await meta.with_call(_ctx(store, cfg, cid), "mac") is None
+    done = await store.read(lambda c: [json.loads(r[0]) for r in c.execute(
+        "SELECT data FROM events WHERE conversation_id=? AND type='tool.done' "
+        "ORDER BY seq", (cid,))])
+    assert done and all("guide" not in (d["display"] or {}) for d in done), \
+        "the load stays off the client's event"
+    snap = await view.snapshot(store, cid)
+    assert not any("guide" in (c["display"] or {})
+                   for calls in snap["tool_calls"].values() for c in calls)
+
+    call = await store.read(lambda c: dict(c.execute(
+        "SELECT id, name, message_id FROM tool_calls ORDER BY rowid").fetchone()))
+    state, again, _ = await tools._replayed(store, {"id": "t"}, call)
+    assert tools.marked(again, False).startswith(BROUGHT), "a replay keeps the load"
+
     sub = await conversations.create(store, "scout", agent_of=cid, agent_name="scout")
-    got = await meta.with_call(_ctx(store, cfg, sub), "mac")
-    assert got is not None and got.startswith("[loaded with this call]\n# mac\n\n"), \
-        "a sub-agent's conversation has its own"
+    assert await _had(store, sub) == set(), "a sub-agent's conversation has its own"
+
+
+async def test_a_guide_aged_or_summarised_away_comes_again(store):
+    cfg = load()
+    reg = _guided(cfg)
+    cid = await conversations.create(store)
+    b = Replies([_calls(("mac__version", {})), [TextDelta("done"), Done(reason="stop")]])
+    await _run(store, cfg, reg, cid, b)
+    called = await store.read(lambda c: c.execute(
+        "SELECT message_id FROM tool_calls ORDER BY rowid").fetchone()[0])
+    assert await _had(store, cid) == {"mac"}
+    await compactions.set_aged_through(store, cid, called, {})
+    assert await _had(store, cid) == set(), "an aged result goes as a stub"
+
+    b = Replies([_calls(("mac__version", {})), [TextDelta("done"), Done(reason="stop")]])
+    await _run(store, cfg, reg, cid, b)
+    assert _told(b.calls[1])[-1].startswith(BROUGHT), "it comes again"
+    assert await _had(store, cid) == {"mac"}
+    last = await store.read(lambda c: c.execute(
+        "SELECT active_leaf_id FROM conversations WHERE id=?", (cid,)).fetchone()[0])
+    await compactions.save(store, cid, {"through_message_id": last, "trigger": "manual",
+                                        "covers_messages": 6, "text": "summary"})
+    assert await _had(store, cid) == set(), "a summary covers it"
+
+
+async def test_the_load_fits_in_the_room_the_result_left(store):
+    from celine.turns import tokens
+    cfg = load()
+    reg = _guided(cfg)
+    cid = await conversations.create(store)
+    cap = 1000
+    turn = {"id": "t", "conversation_id": cid, "max_output_tokens": cap, "guides": {}}
+    call = {"id": "x", "name": "mac__version"}
+    big = "y " * 3000
+    while tokens.estimate(big, "tool") > cap - 20:
+        big = big[:-200]
+    out = await tools._with_guide(ToolResult(big), turn, call, store, cfg, reg, big)
+    assert out.display is None and "mac" not in turn["guides"]["had"], \
+        "no room left: it comes with a later call"
+    out = await tools._with_guide(ToolResult("26.7"), turn, call, store, cfg, reg, "26.7")
+    told = tools.marked(out, False)
+    assert told.startswith(BROUGHT) and tokens.estimate(told, "tool") <= cap
 
 
 async def test_a_loaded_or_read_skill_brings_nothing_with_its_call(store):
@@ -229,14 +291,13 @@ async def test_a_loaded_or_read_skill_brings_nothing_with_its_call(store):
 
     meta = reg.skills["skills"]
     other = await conversations.create(store)
-    assert await meta.with_call(_ctx(store, cfg, other), "mac") is not None
+    assert meta.comes_with_calls("mac")
     reg.skills["mac"].guide = None
-    assert await meta.with_call(_ctx(store, cfg, other), "mac") is None, \
-        "a skill without a guide brings nothing"
+    assert not meta.comes_with_calls("mac"), "a skill without a guide brings nothing"
     reg.skills["mac"].guide = Guide("mac", description="Her Mac.", body="Wake it.")
     reg.skills["notebook"].guide = Guide("notebook", description="Her notes.",
                                          body="Keep it tidy.")
-    assert await meta.with_call(_ctx(store, cfg, other), "notebook") is None, \
+    assert not meta.comes_with_calls("notebook"), \
         "a core skill's part is in the system prompt: its calls bring nothing"
     loaded = (await meta.load(_ctx(store, cfg, other), names=["notebook"])).content
     assert loaded.startswith("# notebook\n\nKeep it tidy."), "a load still gives its guide"

@@ -90,7 +90,8 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                  "root_message_id": turn["root_message_id"],
                  "max_output_tokens": tokens.result_cap(win, cfg), "read_only": read_only,
                  "time_left": time_left, "carried": carried,
-                 "offered": frozenset(specs), "notes": _carried_notes(carried)}
+                 "offered": frozenset(specs), "notes": _carried_notes(carried),
+                 "guides": {}}     # the skills whose guide it reads, tools._with_guide
 
     # where this turn stands: a fresh turn starts at its user message; a resumed or
     # continued one carries on from its own tail with the next free iteration number

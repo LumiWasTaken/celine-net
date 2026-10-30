@@ -50,17 +50,35 @@ LINE = 60          # tokens kept in a load for each name after the one it answer
 CALL_HEAD = "[loaded with this call]"   # over a load that came with a call (with_call)
 
 
-def had(c, cid: str, skill: str) -> bool:
-    """Whether conversation `cid` has had `skill`'s guide: a skills__read_guide or a
-    skills__load of the skill, or a call that brought it (display "guide")."""
-    return c.execute(
-        "SELECT 1 FROM tool_calls t JOIN messages m ON m.id = t.message_id "
-        "WHERE m.conversation_id = ? AND ("
-        "(t.name = 'skills__read_guide' AND json_extract(t.display, '$.skill') = ?) OR "
-        "(t.name = 'skills__load' AND EXISTS (SELECT 1 FROM "
-        "json_each(t.display, '$.skills') WHERE value = ?)) OR "
-        "json_extract(t.display, '$.guide.skill') = ?) LIMIT 1",
-        (cid, skill, skill, skill)).fetchone() is not None
+def had(c, cid: str) -> set[str]:
+    """The skills whose guide is in what conversation `cid`'s model reads now: a
+    skills__read_guide or a skills__load of the skill, or a call that brought it
+    (display "guide"), on its active path after its newest summary and its aging mark
+    (turns/context.py: what a summary covers is gone, an aged result goes as a stub)."""
+    from ..conversations import tree
+    from ..turns import compactions
+    chain = tree.path(c, cid)
+    pos = {m["id"]: i for i, m in enumerate(chain)}
+    start = max([pos[r["through_message_id"]] + 1 for r in compactions.rows(c, cid)
+                 if r["through_message_id"] in pos], default=0)
+    st = c.execute("SELECT aged_through FROM context_state WHERE conversation_id=?",
+                   (cid,)).fetchone()
+    if st and st[0] in pos:
+        start = max(start, pos[st[0]] + 1)
+    ids = [m["id"] for m in chain[start:] if m["role"] == "assistant"]
+    out: set[str] = set()
+    if not ids:
+        return out
+    for r in c.execute(f"SELECT name, display FROM tool_calls WHERE message_id IN "
+                       f"({','.join('?' * len(ids))}) AND display IS NOT NULL", ids):
+        d = json.loads(r["display"])
+        if r["name"] == "skills__read_guide" and isinstance(d.get("skill"), str):
+            out.add(d["skill"])
+        elif r["name"] == "skills__load":
+            out.update(d.get("skills") or ())
+        elif isinstance(d.get("guide"), dict):
+            out.add(d["guide"]["skill"])
+    return out
 
 
 class Skills:
@@ -186,17 +204,18 @@ class Skills:
                 part = await self._part(ctx, skill)
                 block = f"# {skill}\n\n{part}Its tools, with their parameters:\n{_schemas(on)}"
                 head = f"# {skill}\n\n{part}"
+                short = (f"{head}The parameters of its tools take about "
+                         f"{cost(_schemas(on)):,} tokens, more than one result holds "
+                         f"({room:,}): load the tools you need by name, such as "
+                         f"{on[0].wire_name}.")
                 if fits(block):
                     skills.append(skill)
                     line = block
-                elif cost(block) <= room or not fits(head):
+                elif cost(block) <= room or not fits(short):
                     line = full(skill, cost(block))
                 else:
                     skills.append(skill)
-                    line = (f"{head}The parameters of its tools take about "
-                            f"{cost(_schemas(on)):,} tokens, more than one result holds "
-                            f"({room:,}): load the tools you need by name, such as "
-                            f"{on[0].wire_name}.")
+                    line = short
             out.append(line)
             used += cost(line) + 1
             later -= 1
@@ -213,18 +232,31 @@ class Skills:
             body += f"\n\n{self.cfg.substitute(text.strip())}"
         return body
 
+    def comes_with_calls(self, skill: str) -> bool:
+        """Whether a call of `skill`'s tools brings its load (with_call): not a core
+        skill (its part is in the system prompt; skills__load and read_guide still give
+        its guide), and not one without a guide."""
+        return skill not in CORE and skill != META and self._guide(skill) is not None
+
     async def with_call(self, ctx: ToolContext, skill: str) -> str | None:
-        """What a call of a tool of `skill` brings after its result when this
-        conversation has not had the skill's guide (had): the load of the skill under
+        """What a call of a tool of `skill` brings after its result when what it reads
+        has not got the skill's guide (had; the caller asks): the load of the skill under
         CALL_HEAD, the same text skills__load gives, so from then on it counts as loaded.
-        None for a core skill (its part is in the system prompt; skills__load and
-        read_guide still give its guide), a skill without a guide, one that does not
-        load (down, off), and once it has had it."""
-        if skill in CORE or self._guide(skill) is None or await ctx.store.read(
-                lambda c: had(c, ctx.conversation_id, skill)):
+        It takes at most `ctx.max_output_tokens`, the room the result left. None when
+        comes_with_calls says no, or the skill does not load (down, off, no room)."""
+        from dataclasses import replace
+
+        from ..turns import tokens
+        if not self.comes_with_calls(skill):
             return None
+        head = f"{CALL_HEAD}\n"
+        if ctx.max_output_tokens is not None:
+            room = ctx.max_output_tokens - tokens.estimate(head, "tool")
+            if room <= 0:
+                return None
+            ctx = replace(ctx, max_output_tokens=room)
         text, skills, _, _ = await self.loaded(ctx, [skill])
-        return f"{CALL_HEAD}\n{text}" if skills else None
+        return head + text if skills else None
 
     async def _part(self, ctx: ToolContext, skill: str) -> str:
         """A skill's guide, its own part of the prompt (a core skill's is in the system

@@ -879,11 +879,13 @@ guide, its fragment (a core skill's is in the system prompt already) and its not
 (`skills/<name>.md`), as its result: the system prompt and the tools stay the same bytes,
 so the model server's prompt cache holds, and the result ages like any other. A skill
 whose parameters take more than one result holds says so and names a tool to load by
-name. A skill loads when it calls `skills__load`, or with the first call of one of its
-tools in a conversation that has not had its guide (no `skills__read_guide` or load of
-it, no earlier such call; `meta.had`): that call's result brings the same load after it,
-under `[loaded with this call]`, outside any wrapper and the cap (display `guide`,
-`tools._with_guide`, `guard/mark.shown`). Once per skill per conversation; a sub-agent's
+name. A skill loads when it calls `skills__load`, or with a call of one of its tools
+while its guide is not in what it reads (`meta.had`: no `skills__read_guide`, load or
+such call on the active path after the newest summary and the aging mark, read once per
+turn): that call's result brings the same load after it, under `[loaded with this
+call]`, outside any wrapper, in the room the result left of the cap (display `guide`,
+`tools._with_guide`, `guard/mark.shown`; a replay keeps it; the client never gets its
+text, `mark.for_client`). A guide aged or summarised away comes again; a sub-agent's
 conversation has its own. A core skill's calls bring nothing.
 
 **Guides.** Each built-in skill has a guide, `server/celine/skills/guides/<skill>.md` (in the package, read once), SKILL.md style:

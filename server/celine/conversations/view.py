@@ -7,7 +7,7 @@ import sqlite3
 
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER
 from .. import approvals
-from ..guard import store as guard_rows
+from ..guard import mark, store as guard_rows
 from ..plans import store as plans
 from ..skills import words
 from ..turns import compactions as comps
@@ -247,6 +247,6 @@ def continuable(c: sqlite3.Connection, cid: str, turn) -> dict:
 def _call(r: sqlite3.Row, own: dict) -> dict:
     """One tool call as the transcript shows it, its row in words (skills/words.py)."""
     display = json.loads(r["display"]) if r["display"] else None
-    return {**dict(r), "display": display,
+    return {**dict(r), "display": mark.for_client(display),
             "words": words.words(r["name"], r["arguments"], r["state"], display, r["result"], own)}
 

@@ -41,7 +41,8 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         result = await checked(received(result, turn, call, guarded, registry), turn,
                                call, store, cfg, getattr(registry, "app", None))
         if state not in ("gated", "detached", "cancelled"):
-            result = await _with_guide(result, turn, call, store, cfg, registry)
+            result = await _with_guide(result, turn, call, store, cfg, registry,
+                                       marked(result, guarded))
         withheld = mask(withheld or "") or None
         await turns.finish_tool_call(store, cid, call["message_id"], call["id"],
                                      call["name"], result, state, withheld)
@@ -89,25 +90,36 @@ def _seen(registry, cid: str, name: str) -> None:
         approvals.seen(cid, name)
 
 
-async def _with_guide(result: ToolResult, turn, call: dict, store, cfg,
-                      registry) -> ToolResult:
-    """A call that reached its tool, of a skill whose guide this conversation has not
-    had: the skill's load comes with it (skills/meta.py Skills.with_call), in display
-    "guide", after the result as it reads it (mark.shown), never inside a wrapper or
-    the cap."""
+async def _with_guide(result: ToolResult, turn, call: dict, store, cfg, registry,
+                      shown: str) -> ToolResult:
+    """A call that reached its tool, of a skill whose guide is not in what it reads
+    (skills/meta.py had): the skill's load comes with it (Skills.with_call), in display
+    "guide", after the result as it reads it (mark.shown, outside any wrapper), in the
+    room the result (`shown`) left of the cap, so one tool message stays inside it.
+    `turn["guides"]` holds what it has for the whole turn ({"had": skills}), read once."""
+    from . import tokens
+    from ..skills.meta import had
     meta = registry.skills.get(META) if registry is not None else None
     spec = registry.get(call["name"]) if meta is not None else None
-    if spec is None:
+    if spec is None or not meta.comes_with_calls(spec.skill):
         return result
+    cid = turn["conversation_id"]
+    cache = turn["guides"]
+    if "had" not in cache:
+        cache["had"] = await store.read(lambda c: had(c, cid))
+    if spec.skill in cache["had"]:
+        return result
+    cap = turn.get("max_output_tokens")
+    room = int(cap) - tokens.estimate(shown + "\n\n", "tool") if cap else None
 
     async def quiet(note: str, **data) -> None:
         pass
-    ctx = ToolContext(conversation_id=turn["conversation_id"], turn_id=turn["id"],
-                      tool_call_id=call["id"], store=store, config=cfg, emit=quiet,
-                      max_output_tokens=turn.get("max_output_tokens"))
+    ctx = ToolContext(conversation_id=cid, turn_id=turn["id"], tool_call_id=call["id"],
+                      store=store, config=cfg, emit=quiet, max_output_tokens=room)
     text = await meta.with_call(ctx, spec.skill)
     if text is None:
         return result
+    cache["had"].add(spec.skill)
     return replace(result, display={**(result.display or {}),
                                     "guide": {"skill": spec.skill, "text": text}})
 
@@ -252,7 +264,8 @@ async def _replayed(store, turn, call):
         return None
     log.info("replayed from journal", extra={"event": "tool.replayed",
                                              "turn": turn["id"], "tool": call["name"]})
-    return done["state"], ToolResult(content=done["content"]), None
+    # its display too: what came after its result (mark.shown) comes again
+    return done["state"], ToolResult(content=done["content"], display=done["display"]), None
 
 
 async def _offered(turn, spec, registry, store) -> frozenset[str]:

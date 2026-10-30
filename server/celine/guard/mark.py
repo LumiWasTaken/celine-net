@@ -56,6 +56,14 @@ def shown(text: str, display: dict | None, guarded: bool) -> str:
     return text
 
 
+def for_client(display: dict | None) -> dict | None:
+    """A call's display as the client gets it: without the load that came with the call
+    (display "guide"), which only she reads."""
+    if not display or "guide" not in display:
+        return display
+    return {k: v for k, v in display.items() if k != "guide"} or None
+
+
 def wrap_parts(text: str, label: dict) -> str:
     """An intercom line with outside parts (a mail's sender and subject): each part
     wrapped where it stands; without parts the whole text."""

@@ -15,6 +15,7 @@ from ..conversations import tree, view
 from ..core.ids import new_id, now
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER, TERMINAL
 from ..errors import mask_all
+from ..guard import mark
 from ..skills import words
 from .. import homes
 from ..intercom.store import NAMES, insert as intercom_insert
@@ -651,7 +652,7 @@ async def finish_tool_call(store, cid: str, parent_message_id: str, call_id: str
         store.event(
             c, cid, TOOL_GATED if verdict == "gated" else TOOL_DONE,
             {"tool_call_id": call_id, "name": name, "ok": verdict == "ok",
-             "state": verdict, "result": content_, "display": display,
+             "state": verdict, "result": content_, "display": mark.for_client(display),
              "withheld": bool(withheld), "finished_at": ts,
              "words": words.of_call(c, call_id, verdict, display, content_, store.tool_words),
              **runs_field(c, store, [call_id])})
@@ -676,12 +677,13 @@ async def existing_tool_result(store, call_id: str) -> dict | None:
     """A settled journal entry for this exact step, if there is one."""
     def fn(c: sqlite3.Connection) -> dict | None:
         row = c.execute(
-            "SELECT tc.state, m.content FROM tool_calls tc "
+            "SELECT tc.state, tc.display, m.content FROM tool_calls tc "
             "LEFT JOIN messages m ON m.id = tc.result_message_id "
             "WHERE tc.id = ? AND tc.state NOT IN ('pending','running')",
             (call_id,)).fetchone()
         if row is None or row["content"] is None:
             return None
-        return {"state": row["state"], "content": row["content"]}
+        return {"state": row["state"], "content": row["content"],
+                "display": json.loads(row["display"]) if row["display"] else None}
 
     return await store.read(fn)
