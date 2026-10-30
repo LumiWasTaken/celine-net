@@ -29,6 +29,7 @@ import { ConversationReminders } from '../lib/reminders'
 import { useAction } from '../lib/useAction'
 import { usePronouns } from '../lib/name'
 import { useNow } from '../lib/useNow'
+import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
 import { Button, Dot, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
 import { BatchGallery, GalleryContext, StopBatch, doneWords, type Made } from './Batch'
 import './ToolRow.css'
@@ -124,7 +125,6 @@ export function Elapsed({ since, until }: { since: string; until?: string | null
    (RunRow) opens its rows in its Sheet. ── */
 type Tone = 'running' | 'error' | 'muted' | null
 
-const busy = (call: ToolCall) => call.state === 'pending' || call.state === 'running' || call.state === 'detached'
 
 function toneOf(call: ToolCall): Tone {
   if (busy(call)) return 'running'
@@ -430,16 +430,12 @@ function CallsSheet({ call, run, members, shown, onPick, onBack, onClose }: {
   )
 }
 
-/* loading, unloading, reading a guide: plumbing, named only when it is all there is */
-const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
-
 /** In the stream, under its words: a call at work as one shimmering line (with its Stop or
     Open), a message it set for later while it waits (with Cancel), and the pictures and
     music it makes, each one block from start to end.
     `inline` (the chat): the calls that settled stay under its words as
     their rows, the same rows the Activity list has, each opening its result.
-    One call is in one place at a time: a call the list holds has no line, even while what
-    it started still works (a sub-agent, a message that waits); its row shows that. */
+    One call is in one place at a time (lib/toolPlaces.ts placeCalls). */
 export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline?: boolean }) {
   // a settled batch or page has its block under its words already (the gallery, the card):
   // no row for it too. read and stop name a batch again to show it: they get their row.
@@ -447,14 +443,14 @@ export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline
   // leave theirs, and a step left with none draws no list.
   const { runOf } = useContext(ToolRuns)
   const sheets = useContext(SheetsContext)
-  const listed = (c: ToolCall) => inline && !busy(c) && !PLUMBING.has(c.name)
-    && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display))
-  const rows = calls.filter(c => {
-    const r = runOf(c.id)
-    return listed(c) && (!r || (sheets?.here(r) ?? r.ids[0]) === c.id)
-  })
+  const { lines, rows } = placeCalls(calls, inline,
+    c => !/__(read|stop)$/.test(c.name) && !!(asBatch(c.display) || artifactOf(c.display)),
+    c => {
+      const r = runOf(c.id)
+      return r ? (sheets?.here(r) ?? r.ids[0]) === c.id : null
+    })
   return <>
-    {calls.filter(c => !listed(c)).map(c => <ToolLine key={c.id} call={c} />)}
+    {lines.map(c => <ToolLine key={c.id} call={c} />)}
     {rows.length > 0 && (
       <div className="tool-list"><Rows calls={rows} /></div>
     )}
