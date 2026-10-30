@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 
 import importlib
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -196,7 +197,9 @@ def of_plugin(p: plugins.Plugin) -> Feature:
     """A plugin's switch, from its plugin.toml; off until saved on unless it says
     `start_on = true`."""
     m = p.manifest
-    return Feature(p.id, m["label"], m.get("needs", ""), m.get("about", ""),
+    needs = m.get("needs") or ("Turns on once its settings are filled in."
+                               if m.get("servers") else "")
+    return Feature(p.id, m["label"], needs, m.get("about", ""),
                    m.get("off_when", ""), skills=tuple(p.skills),
                    places=tuple(m.get("places", ())),
                    pages=(p.id,) if p.form is not None else (),
@@ -334,7 +337,7 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
     f = get(feature)
     fn = probe_fn(f)
     if fn is None:
-        return {"state": "none", "detail": ""}
+        return _plugin_state(cfg, feature)
     if DEMO:
         return {"state": "ready", "detail": "Demo"}
     try:
@@ -357,6 +360,22 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
         if result.get(key):
             out[key] = result[key]
     return out
+
+
+def _plugin_state(cfg, feature: str) -> dict[str, str]:
+    """A feature without a probe: "unset" for a plugin while a value its servers need
+    (a `${KEY}` of its form in its [servers] blocks, form.fill) is empty, with what is
+    empty; else "none"."""
+    from . import form
+    p = plugins.get(feature)
+    if p is None or not p.manifest.get("servers"):
+        return {"state": "none", "detail": ""}
+    empty: list[str] = []
+    form.fill(cfg, p.id, (p.form or {}).get("fields", []),
+              json.dumps(p.manifest["servers"]), empty)
+    if not empty:
+        return {"state": "none", "detail": ""}
+    return {"state": "unset", "detail": "; ".join(dict.fromkeys(empty)) + "."}
 
 
 async def probe_all(cfg, services, *, cache: bool = True) -> dict[str, dict[str, str]]:

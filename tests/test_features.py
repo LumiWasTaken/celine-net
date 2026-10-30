@@ -89,6 +89,9 @@ async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api)
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
     assert by["documents"]["state"] == "none" and by["documents"]["detail"] == ""
+    # a plugin whose servers wait for its empty form is not set up, with what is empty
+    assert (by["mac"]["state"], by["mac"]["detail"]) == (
+        "unset", "Address is empty; Token is empty.")
     assert {f["id"] for f in catalog if f["warn"]} == {"shares"}
     # the onboarding's setup steps: a form, or a connection
     assert {f["id"] for f in catalog if f["step"]} == {
