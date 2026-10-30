@@ -22,7 +22,7 @@ from .. import plugins
 from ..settings import features as features_mod, form, general as general_mod
 from .. import saves
 from ..settings import kinds, mail as mail_mod, secrets as secrets_mod
-from ..settings import services as services_mod, vault as vault_mod, write
+from ..settings import services as services_mod, vault as vault_mod, views, write
 from ..errors import CelineError
 from ..settings.files import Conflict, Invalid, version
 from ..settings.registry import ROLES
@@ -267,6 +267,18 @@ def _after(f: dict[str, Any], v: Any) -> Any:
     return v
 
 
+def _filled_roles(s, pid: str, new: dict) -> list[dict]:
+    """A row per empty role saving provider `pid` as `new` fills (saves.provider)."""
+    filled = views.fill_roles(s, pid, saves.provider_clean(pid, new)) or {}
+    rows = []
+    for r, spec in ROLES.items():
+        was = (s.roles.get(r) or {}).get("chain") or []
+        if r in filled and filled[r].get("chain") != was:
+            rows.append({"label": spec["label"], "before": ", ".join(was) or "Not set",
+                         "after": ", ".join(filled[r]["chain"])})
+    return rows
+
+
 def _secret_file(v: Any, where: str) -> str:
     """The file a secret's change names: {"file": "~/path"}."""
     if not isinstance(v, dict) or set(v) != {"file"} or \
@@ -382,6 +394,8 @@ class Settings:
             new = t.merge(values)
             if values:
                 t.check(new)
+            if values and t.id.startswith("providers."):
+                rows += _filled_roles(self.cfg.settings, t.id.removeprefix("providers."), new)
         except Invalid as e:
             return ToolResult(content=f"{e.field}: {e.message}", is_error=True)
         if not rows:

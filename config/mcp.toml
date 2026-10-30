@@ -13,9 +13,11 @@
 # CONNECTOR_CLIENTS_FILE its keys/connector-clients ("name:key:owner" or "name:key:reader",
 # one per line or comma separated); an environment variable of the same name wins.
 #
-# Bastet (server/celine/guard/facts.py) reads two keys per server: `class`, who may see
-# its results (public, informal, nsfw, sensitive; default sensitive), and `sends`, where
-# its writing tools send (public, people, house; default public).
+# Bastet (server/celine/guard/facts.py) reads three keys per server: `class`, who may see
+# its results (public, informal, nsfw, sensitive; default sensitive), `sends`, where
+# its writing tools send (public, people, house; default public), and `outside`, when
+# its results are outside text (always, the default, or "shell": only when the command
+# reaches the network or the text is aimed at an AI, as her box's shell).
 
 [servers.discord]
 enabled   = true

@@ -7,6 +7,7 @@ server, optional: shares.py, the password its bearer). Drones run there
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 @dataclass
@@ -19,6 +20,8 @@ class Device:
     log: str
     share: str             # its share server's address, "" without one
     why: str | None        # why no drone starts on it now, None when one does
+    # its hosts: those of its drones, shares and plugin servers (the gateway) addresses
+    hosts: frozenset[str] = frozenset()
 
 
 def devices(cfg) -> dict[str, Device]:
@@ -37,9 +40,29 @@ def devices(cfg) -> dict[str, Device]:
         share = form.fill(cfg, p.id, fields, str(d.get("share", "")), [])
         key = (form.read_secret(cfg, p.id, d["key"]) or "") if d.get("key") else ""
         label = _label(p)
+        servers = [form.fill(cfg, p.id, fields, str(s.get("url", "")), [])
+                   for s in (p.manifest.get("servers") or {}).values() if isinstance(s, dict)]
         out[p.id] = Device(p.id, label, url, password, key, str(d.get("log", "")), share,
-                           f"{label}: {'; '.join(dict.fromkeys(empty))}." if empty else None)
+                           f"{label}: {'; '.join(dict.fromkeys(empty))}." if empty else None,
+                           _hosts([url, share, *servers]))
     return out
+
+
+def hosts(cfg) -> frozenset[str]:
+    """The hosts of every device that is on: hers, never a way out of her box."""
+    return frozenset().union(*(d.hosts for d in devices(cfg).values()))
+
+
+def _hosts(urls) -> frozenset[str]:
+    out = set()
+    for u in urls:
+        try:
+            h = urlsplit(u if "//" in u else "//" + u).hostname
+        except ValueError:
+            continue
+        if h:
+            out.add(h.casefold())
+    return frozenset(out)
 
 
 def label(device: str) -> str:

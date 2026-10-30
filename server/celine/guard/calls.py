@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 import anyio
 
+from ..devices import hosts as device_hosts
 from ..skills import ToolResult
 from . import bastet, facts, freeze as freezes, passes, rules
 from . import store as rows
@@ -67,7 +68,7 @@ async def at_call(turn: dict, call: dict, spec, args: dict, *, store, cfg, regis
     mcp = facts.mcp_of(registry, call["name"])
     gcall = {**call, "args": args, "description": spec.description,
              "read_only": spec.annotations.read_only,
-             "sends": mcp.sends if mcp is not None else None}
+             "sends": mcp.sends if mcp is not None else None, "own": device_hosts(cfg)}
     request = turn.get("request") or []
     if (shut := await closed(turn, gcall, request, mode=gm, store=store,
                              cfg=cfg)) is not None:

@@ -37,6 +37,7 @@ import anyio
 
 from ..clock import zone
 from ..core.ids import now
+from ..devices import hosts as device_hosts
 from . import bastet, chain, facts, freeze as freeze_mod, questions, rules as rule_set
 from . import store as decisions
 from .intent import finished
@@ -100,7 +101,9 @@ async def once(app, *, rng: random.Random | None = None, at: str | None = None,
             continue
         state, last, title, calls = seen
         read += 1
-        code = {r: f for r, f in found_in(calls).items() if r in names}
+        own = device_hosts(cfg)
+        code = {r: f for r, f in found_in([{**c, "own": own} for c in calls]).items()
+                if r in names}
         ask = judge or questions.judge_for(cfg, getattr(app, "llm", None), turn,
                                            background=True)
         hits = {}

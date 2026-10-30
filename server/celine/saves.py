@@ -145,19 +145,25 @@ async def vault(app, values: Any, secret: Any = KEEP, if_match: str | None = Non
     return out
 
 
+def provider_clean(pid: str, body: Any) -> dict:
+    """The provider as `provider` saves it: validated, a ComfyUI address alone given
+    every shipped preset as a model."""
+    if isinstance(body, dict) and body.get("kind") == "comfyui" and not body.get("models"):
+        # the onboarding's address only: every shipped preset is a model of it
+        from .comfyui import presets as presets_mod
+        body = {**body, "models": {p.id: {"label": p.label, "caps": [p.role]}
+                                   for kind in presets_mod.FOLDERS
+                                   for p in presets_mod.of(kind).values()}}
+    return validate_provider(pid, body, "provider")
+
+
 async def provider(app, pid: str, body: Any, if_match: str | None = None) -> dict:
     """Create or replace one provider, models included; a role left empty that one of
     its models fits gets it (views.fill_roles)."""
     async with write.lock():
         s = app.cfg.settings
         files.check_version("provider", s.providers.get(pid), if_match)
-        if isinstance(body, dict) and body.get("kind") == "comfyui" and not body.get("models"):
-            # the onboarding's address only: every shipped preset is a model of it
-            from .comfyui import presets as presets_mod
-            body = {**body, "models": {p.id: {"label": p.label, "caps": [p.role]}
-                                       for kind in presets_mod.FOLDERS
-                                       for p in presets_mod.of(kind).values()}}
-        clean = validate_provider(pid, body, "provider")
+        clean = provider_clean(pid, body)
         providers = copy.deepcopy(s.providers)
         providers[pid] = clean
         changes: dict[str, Any] = {"providers": providers}

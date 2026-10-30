@@ -308,3 +308,24 @@ async def test_a_new_lan_provider_is_added_and_its_model_is_hers_and_local(app):
     assert s.providers["mac"]["base_url"] == "http://192.168.1.50:1234/v1"
     assert "mac/small" in her_models.allowed(s), "a template's model: takes it"
     assert not her_models.cloud(s, "mac/small"), "its sub-agents start without an ask"
+
+
+async def test_a_new_providers_card_lists_the_roles_it_fills(app):
+    from celine.settings.registry import ROLES
+    sk = _skill(app)
+    ctx = await _ctx(app)
+    empty = [r for r in ROLES if not app.cfg.settings.chain(r)]
+    got, ask = await _answer(app, sk.propose(
+        ctx, target="providers.mac",
+        changes={"kind": "openai", "label": "My Mac", "base_url": "192.168.1.50:1234",
+                 "models": {"ears": {"caps": ["transcription"]}}},
+        why="A model server on my Mac."), True)
+    assert not got.is_error, got.content
+    s = app.cfg.settings
+    filled = [r for r in empty if s.chain(r) == ["mac/ears"]]
+    assert filled == ["transcription"]
+    for r in filled:
+        assert {"label": ROLES[r]["label"], "before": "Not set", "after": "mac/ears"} \
+            in ask.changes
+        assert f"{ROLES[r]['label']}: Not set → mac/ears" in got.content
+    assert len([c for c in ask.changes if c["after"] == "mac/ears"]) == len(filled)

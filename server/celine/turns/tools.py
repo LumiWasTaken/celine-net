@@ -107,7 +107,8 @@ def received(result: ToolResult, turn, call: dict, guarded: bool,
         return result
     if (result.display or {}).get("raised"):
         return result
-    label = sources.label(call["name"], call.get("args") or {}, result)
+    label = sources.label(call["name"], call.get("args") or {}, result,
+                          guard_facts.mcp_of(registry, call["name"]))
     if label is None:
         return result
     return replace(result, display={**(result.display or {}), "outside": label})
