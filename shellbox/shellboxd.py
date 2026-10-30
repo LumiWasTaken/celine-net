@@ -8,10 +8,14 @@ what it writes in its home, it writes as it. It types into its terminals, reads 
 facts; the app (server/celine/skills/shell.py) words them.
 
     POST /run   {"terminal", "command", "timeout"?, "chars"?, "owner"?}
-                -> lines of JSON: {"progress": line} when the command's last output line
+                -> lines of JSON: {"started": cmd id} once the command is typed,
+                   {"progress": line} when the command's last output line
                    changed (at most once a second), then exactly one result; a run's
                    result (also from /stop and /read) carries "outside" and
                    "outside_from", see outside()
+    POST /wait  {"terminal", "timeout"?, "chars"?} -> as /run, for the run already going
+                   in that terminal: watched until it ends or the timeout; its result
+                   at once when it ended already
     POST /type  {"terminal", "text"?, "keys"?, "enter"?, "owner"?} -> the screen
     POST /stop  {"terminal", "chars"?}           -> Ctrl-C; the run it ended, or the screen;
                    "survived": the programs still in front after it; the next /stop
@@ -1393,11 +1397,31 @@ def run_call(body: dict, progress, conn) -> dict:
         t.cmd = {"id": cid, "command": command}
         start_echo(t, name, cid, p["pid"])
         deliver(name, [], f" __shellbox_run {cid} {shlex.quote(command)}", True, False)
+    progress({"started": cid})
     state = watch_run(t, name, p["pid"], cid, timeout, progress, conn)
     res = run_answer(t, name, cid, state, notes, opened, chars)
     if state == "closed":
         remove_terminal(name)
     return res
+
+
+def wait_call(body: dict, progress, conn) -> dict:
+    """The latest run in a terminal, watched as /run watches its own."""
+    name = check_name(body.get("terminal"))
+    timeout = body.get("timeout", RUN_MAX)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise Problem("timeout is a number of seconds.")
+    timeout, chars = min(float(timeout), RUN_MAX), check_chars(body.get("chars"))
+    notes: list[str] = []
+    t = existing(name, notes)
+    p = pane(name)
+    refresh(t, name, p, notes)
+    if not t.cmd:
+        return {**screen_answer(t, name, notes), "no_run": True}
+    cid = t.cmd["id"]
+    state = "done" if ended(cid) else "closed" if p["dead"] else \
+        watch_run(t, name, p["pid"], cid, timeout, progress, conn)
+    return run_answer(t, name, cid, state, notes, chars=chars)
 
 
 def watch_run(t: Terminal, name: str, shell_pid: int, cid: str, timeout: float,
@@ -1436,7 +1460,7 @@ def watch_run(t: Terminal, name: str, shell_pid: int, cid: str, timeout: float,
             line = last_output_line(cid)
             if line and line != last_line:
                 last_line = line
-                progress(line)
+                progress({"progress": line})
 
 
 def back(t: Terminal, tty: str, shell_pid: int) -> None:
@@ -2114,7 +2138,10 @@ class Handler(BaseHTTPRequestHandler):
                  "/control": control_call, "/keys": keys_call}
         try:
             if self.path == "/run":
-                return self.run(body)
+                return self.run(body, run_call)
+            if self.path == "/wait":
+                existing(check_name(body.get("terminal")), [])     # a 404 before the stream
+                return self.run(body, wait_call)
             if self.path.startswith("/code/"):
                 return self.code(self.path, body)
             if self.path not in calls:
@@ -2240,15 +2267,15 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             splice(self.connection, up)
 
-    def run(self, body: dict) -> None:
+    def run(self, body: dict, fn) -> None:
+        """/run and /wait: progress lines, then the result."""
         name = check_name(body.get("terminal") or "main")   # a 400 here, nothing typed
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Connection", "close")
         self.end_headers()
         try:
-            res = run_call(body, lambda line: self.send_line({"progress": line}),
-                           self.connection)
+            res = fn(body, self.send_line, self.connection)
         except (HungUp, BrokenPipeError, ConnectionResetError):
             raise
         except Exception as e:            # the stream has started: say it in the stream
