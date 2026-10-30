@@ -99,3 +99,15 @@ async def test_an_artifact_id_and_title_match_exactly(store):
     out = await Artifacts(load()).read(ctx, id=aid.upper())
     assert out.is_error and out.content.startswith(f"There is no artifact {aid.upper()}")
     assert not (await _write(store, cid, title="plan", content="<p>other</p>")).is_error
+
+
+async def test_a_new_version_keeps_its_title_and_a_new_artifact_needs_one(store):
+    from celine.skills import Registry
+    reg = Registry()
+    reg.add(Artifacts(load()))
+    assert reg.get("artifacts__write").schema["required"] == ["content"]
+    cid = await conversations.create(store)
+    assert (await _write(store, cid, content="<p>1</p>")).is_error
+    aid = (await _write(store, cid, title="Game", content="<p>1</p>")).display["artifact"]["id"]
+    again = await _write(store, cid, id=aid, content="<p>2</p>")
+    assert not again.is_error and again.display["artifact"]["title"] == "Game"

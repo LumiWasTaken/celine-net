@@ -28,10 +28,10 @@ class Artifacts:
     async def write(
         self,
         ctx: ToolContext,
-        title: Annotated[str, "What it is called, like Budget 2026. A new artifact needs one; "
-                              "with an id, empty keeps the title."],
         content: Annotated[str, "The whole page: HTML with its style and script inline. For "
                                 "markdown, the whole document."],
+        title: Annotated[str, "What it is called, like Budget 2026. A new artifact needs one; "
+                              "with an id, empty keeps the title."] = "",
         id: Annotated[str, "Empty: a new artifact. An artifact's id, like 7f3a9c: a new "
                            "version of it with this whole content."] = "",
         note: Annotated[str, "What changed, in a few words, for the version list."] = "",
