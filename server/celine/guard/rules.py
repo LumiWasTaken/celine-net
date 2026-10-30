@@ -166,10 +166,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "hijack": {"on": True, "does": "stop"},
     "leak": {"on": True, "does": "stop"},
     "damage": {"on": True, "does": "stop"},
-    # what reaches out or changes her, until the owner's own list replaces it: a public
-    # share, the coding agent and a CLI sub-agent (a shell with the net), her persona
-    "confirm": {"on": True, "tools": ["shell__share:public", "code__start",
-                                      "sub_agents__start:cli", "me__edit"]},
+    # what reaches out of her machines or changes her, until the owner's own list
+    # replaces it: a public share, her persona. What runs on her own box or Mac (the
+    # coding agent, a CLI sub-agent, a drone) is hers and not on it
+    "confirm": {"on": True, "tools": ["shell__share:public", "me__edit"]},
     "sites": {"on": True, "does": "watch"},
     "stops": {"on": True, "does": "freeze", "count": 3},
     # after a stop, the same thing again another way: `first` the first
