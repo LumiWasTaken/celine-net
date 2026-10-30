@@ -305,7 +305,7 @@ function pick(k) {
 
 function codeView(recovery) {
   $('code-hint').textContent = recovery ? 'Enter a recovery code. Then add a new way to log in.'
-                                        : 'Enter the setup code from the server log or <data>/setup-code.txt. Then pick how you log in.'
+                                        : 'Enter the setup code from setup-code.txt in the data folder. Then pick how you log in.'
   $('code-label').textContent = recovery ? 'Recovery code' : 'Setup code'
   $('back').hidden = !recovery
   pick('passkey')

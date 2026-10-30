@@ -54,7 +54,7 @@ OpenAI-compatible server, and with OpenRouter or Anthropic if you have a key.
 
 ```sh
 docker compose up -d
-docker compose exec celine cat /data/app/setup-code.txt
+docker compose exec -u celine celine cat /data/app/setup-code.txt
 ```
 
 Open http://localhost:8766, enter the setup code and pick a login (passkey, password or

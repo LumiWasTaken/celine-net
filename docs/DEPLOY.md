@@ -63,7 +63,7 @@ kept; delete one and the next start makes a new one and its derived file. Withou
 profile you start fewer services, never fewer keys.
 
 Add your passkey (see Login): open http://localhost:8766 (not 127.0.0.1, which passkeys
-do not accept), enter the setup code (`docker compose exec celine cat /data/app/setup-code.txt`) and add the
+do not accept), enter the setup code (`docker compose exec -u celine celine cat /data/app/setup-code.txt`) and add the
 passkey. A new install has no models, no accounts and an empty archive. Set it up in
 the app, in this order:
 
@@ -401,7 +401,7 @@ route: the API, the WebSockets, the app's pages and files. The only exceptions a
 login screen at `/` and the six login calls it makes.
 
 **First start.** With no way to log in yet, the app writes a one-time setup code to
-`<data>/setup-code.txt` (mode 600; in the stack `docker compose exec celine cat
+`<data>/setup-code.txt` (mode 600; in the stack `docker compose exec -u celine celine cat
 /data/app/setup-code.txt`). The log only says that the code is there, never the code. Open the app, enter the code and pick
 a method: add a passkey, set a password (at least 10 characters) or a PIN (exactly 8
 digits). Then the screen shows ten recovery codes once: save them. Every restart without
