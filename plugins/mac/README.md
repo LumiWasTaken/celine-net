@@ -105,8 +105,9 @@ process under it uses that one's grants. setup.sh builds `~/Applications/Celine.
 (bundle id `com.celine.mac`, ad-hoc signed, rebuilt only when its source changes) and
 runs the gateway, opencode and share.js under it, Peekaboo with `--no-remote` so it asks
 in its own process. One app gets both grants, and upgrades of node, peekaboo or opencode
-keep them. Under the gateway Celine asks for both once, which puts it into both lists;
-at its end setup.sh opens the two panes one after the other and shows Celine in Finder to
+keep them. Each LaunchAgent names it in `AssociatedBundleIdentifiers`. While a grant is
+off, setup.sh at its end opens Celine once with `--ask` (it asks for both, which puts it
+into both lists), then the two panes one after the other, and shows Celine in Finder to
 drag in should it be missing.
 
 Check on the form, its note, and her `settings__read(target="forms.mac")` name each

@@ -64,7 +64,8 @@ report() {
   # the hardware port of the default route's interface: Wi-Fi, Ethernet, Thunderbolt Bridge
   port=$(networksetup -listallhardwareports 2>/dev/null |
     awk -v d="Device: $iface" '/^Hardware Port:/{p=substr($0,16)} $0==d{print p}' || true)
-  # shellcheck disable=SC2016  # JavaScript, not shell
+  # JavaScript, not shell; AGENTS_PORT is the script's own, passed on unchanged
+  # shellcheck disable=SC2016,SC2097,SC2098
   ADDRESS="http://${ip:-127.0.0.1}:$PORT" TOKEN_FILE="$TOKEN" GATEWAY_PORT="$PORT" \
     AGENTS="http://${ip:-127.0.0.1}:$AGENTS_PORT" AGENTS_PORT="$AGENTS_PORT" \
     SHARE="http://${ip:-127.0.0.1}:$SHARE_PORT" \
@@ -259,12 +260,18 @@ cat > "$src/Info.plist" <<'EOF'
 </plist>
 EOF
 if ! diff -rq "$src" "$LIB/app" >/dev/null 2>&1 || ! codesign -v "$CELINE_APP" 2>/dev/null; then
+  if ! xcode-select -p >/dev/null 2>&1; then
+    echo "Install the Xcode command line tools: xcode-select --install" >&2
+    exit 1
+  fi
+  new=$(mktemp -d)/Celine.app   # built beside, so a failed build leaves the working app
+  mkdir -p "$new/Contents/MacOS" "$(dirname "$CELINE_APP")"
+  cp "$src/Info.plist" "$new/Contents/"
+  clang -O2 -Wall -framework ApplicationServices -o "$new/Contents/MacOS/Celine" "$src/launcher.c"
+  codesign --force --sign - "$new"
   rm -rf "$CELINE_APP"
-  mkdir -p "$CELINE_APP/Contents/MacOS"
-  cp "$src/Info.plist" "$CELINE_APP/Contents/"
-  clang -O2 -Wall -framework ApplicationServices -o "$RUN" "$src/launcher.c"
-  codesign --force --sign - "$CELINE_APP"
-  rm -rf "$LIB/app"
+  mv "$new" "$CELINE_APP"
+  rm -rf "$(dirname "$new")" "$LIB/app"
   cp -R "$src" "$LIB/app"
 fi
 rm -rf "$src"
@@ -337,10 +344,10 @@ cat > "$AGENTS/$LABEL.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$LABEL</string>
+  <key>AssociatedBundleIdentifiers</key><array><string>com.celine.mac</string></array>
   <key>ProgramArguments</key>
   <array>
     <string>$RUN</string>
-    <string>--ask</string>
     <string>/usr/bin/caffeinate</string>
     <string>-d</string>
     <string>$NODE</string>
@@ -432,6 +439,7 @@ cat > "$AGENTS/$SHARE.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$SHARE</string>
+  <key>AssociatedBundleIdentifiers</key><array><string>com.celine.mac</string></array>
   <key>ProgramArguments</key>
   <array>
     <string>$RUN</string>
@@ -475,6 +483,7 @@ cat > "$AGENTS/$OPENCODE.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$OPENCODE</string>
+  <key>AssociatedBundleIdentifiers</key><array><string>com.celine.mac</string></array>
   <key>ProgramArguments</key>
   <array>
     <string>$RUN</string>
@@ -533,6 +542,9 @@ again="bash setup.sh --status"   # a piped run left no file: the app serves it
 [ -z "$APP" ] || again="curl -fsSL $APP/api/plugins/mac/setup.sh | bash -s -- --status"
 case $line in *'"missing":["'*)   # the screen server lacks a grant: the panes, one by one
   pane=x-apple.systempreferences:com.apple.preference.security
+  # Celine asks for both once, which lists it in both panes. Through LaunchServices, so it
+  # asks as itself: started from here, it would ask as this Terminal.
+  open -g "$CELINE_APP" --args --ask /usr/bin/true
   open -R "$CELINE_APP"
   open "$pane?Privacy_ScreenCapture"
   cat <<EOF
