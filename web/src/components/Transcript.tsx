@@ -198,7 +198,7 @@ export function Transcript(
 
   // the calls it is still writing under a message
   const formingOf = (id: string) => forming.filter(f => f.message_id === id)
-    .map(f => <FormingRow key={f.index} name={f.name} chars={f.chars} preview={f.preview} words={f.words} />)
+    .map(f => <FormingRow key={f.index} name={f.name} chars={f.chars} lines={f.lines} preview={f.preview} words={f.words} />)
 
   // its face on a reply; the time on hover
   const faceOf = (speaking: boolean, at?: string) => (
