@@ -8,6 +8,16 @@ html { height: var(--vh, 100dvh); }
 html, body, #root { overflow: clip; }
 body, #root { height: 100%; }
 
+/* a native app's touch: the kit paints its own press (no grey flash), a tap never waits
+   for a double-tap zoom, a pull at a list's top never reloads the page, a pane's bounce
+   stays in the pane, and a long press on the app's chrome is its menu (no magnifier, no
+   callout). Message text and fields stay selectable. */
+html { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+:is(button, a, label, summary, input, textarea, select, [role='button'], [role='tab'], [role='menuitem'], [role='option']) { touch-action: manipulation; }
+:is(.chat-scroll, .transcript, .dialog, .menu, .ui-drawer__body, .vlist, .page, .place-side__body, .screen__body, .switcher, .rail) { overscroll-behavior: contain; }
+:is(.rail, .place-head, .ui-drawer__head, .dialog__head, .ui-msg__head, .ui-msg__acts, .list-row, .menu__item, .btn) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+:is(.rail, .place-head, .ui-drawer__head, .dialog__head, .list-row) :is(input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; }
+
 body {
   margin: 0;
   background: var(--grain) var(--bg-canvas);
