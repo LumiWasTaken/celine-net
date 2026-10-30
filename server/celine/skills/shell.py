@@ -1,8 +1,11 @@
 """The agent's terminals: real ones, in its shellbox (shellbox/shellboxd.py).
 
-Nine tools. shell__run runs a command in a terminal's shell and waits for its end (the
-shellbox's run function writes its exit status, duration and log); asked into the
-background, the wait becomes a job whose result comes back as a message. shell__type
+Ten tools. shell__run runs a command in a terminal's shell and waits for its end (the
+shellbox's run function writes its exit status, duration and log), at most WAIT_MAX
+seconds; asked into the background, the wait becomes a job whose result comes back as a
+message. shell__wait waits the same way for the run already going in a terminal. A
+message from the user ends a wait in the turn at once; the command keeps running.
+shell__type
 types into a program like at a keyboard and shows the screen. shell__stop presses
 Ctrl-C. shell__read pages a run's log, shows the screen, or lists the terminals.
 shell__look shows its images of its home. shell__send attaches files of its home to the conversation (box_files.py streams it).
@@ -34,9 +37,13 @@ from ..errors import (CelineError, ToolRefused, TooLarge, bad_key, her_bad_key,
 from .. import devices, shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
+from ..turns.cancel import until_set
 
 # ---- numbers --------------------------------------------------------------------------
 RUN_MAX = 3000         # seconds one shell__run waits at most (the shellbox's RUN_MAX)
+WAIT_DEFAULT = 120     # seconds a run or a wait in the turn waits without a timeout
+WAIT_MAX = 600         # seconds a run or a wait in the turn waits at most; in the
+                       # background one waits up to RUN_MAX
 SELF_END = 3500        # the app ends a run the shellbox has not answered by then
 TURN_MARGIN = 3        # seconds a run's wait ends before its turn's time: the answer
                        # comes back as "still running", not as the turn's "time is up"
@@ -388,6 +395,11 @@ def path_list(value: Any) -> list[str] | str:
 # all of it its own, the commands log shows none of it)
 SHELL_DETACHED = ("running in the background as job {job}, watching terminal {terminal}. "
                   "You'll get the result as a message when the watch ends.")
+STARTED = object()     # _stream: the command is in its terminal
+TIMEOUT_HELP = (f"Most seconds to wait, 1 to {WAIT_MAX}, or with background to {RUN_MAX}. "
+                f"Without it {WAIT_DEFAULT}, or with background until the command ends.")
+BACKGROUND_HELP = ("True hands the wait to a background job: the call answers within 5 "
+                   "seconds and the result reaches you as a message when the command ends.")
 
 
 class Shell:
@@ -442,16 +454,15 @@ class Shell:
                                 "prompt. Several lines are fine."],
         terminal: Annotated[str, "Which terminal, by name. A new name opens a new "
                                  "terminal."],
-        timeout: Annotated[float | None, "Most seconds to wait, 1 to 3000. Without it, until "
-                                         "the command ends or the time of your turn is up. "
-                                         "The command keeps running after it."] = None,
-        background: Annotated[bool, "True hands the wait to a background job: the call "
-                                    "answers within 5 seconds and the result reaches you as a "
-                                    "message when the command ends."] = False,
+        timeout: Annotated[float | None, TIMEOUT_HELP + " The command keeps running "
+                                                        "after it."] = None,
+        background: Annotated[bool, BACKGROUND_HELP] = False,
     ) -> ToolResult:
         """Run a command in your shell, in a terminal of your shellbox, and wait for its
-        end. The shell keeps its directory and variables between runs. For programs that
-        wait for keys (ssh, python3, vim, a server's console) use shell__type.
+        end, at most the timeout. The shell keeps its directory and variables between
+        runs. For programs that wait for keys (ssh, python3, vim, a server's console) use
+        shell__type. A message from {{username}} ends the wait at once; the command keeps
+        running.
         Returns: a status line (terminal, directory, exit status and duration, or still
         running), the output (its start and end when long) and the log's path."""
         try:
@@ -459,17 +470,53 @@ class Shell:
             command = "" if command is None else str(command)
             if not command.strip():
                 raise ToolRefused("command is the command line to run, like command=\"ls -la\".")
-            given = as_number(timeout, "timeout", "timeout=60")
-            seconds = float(RUN_MAX) if given is None else min(max(given, 1), RUN_MAX)
-            if ctx.time_left is not None and not as_bool(background, "background"):
-                seconds = max(1, min(seconds, int(ctx.time_left - TURN_MARGIN)))
+            seconds = self._seconds(ctx, timeout, as_bool(background, "background"))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         body = {"terminal": name, "command": command, "timeout": seconds,
                 "chars": self._chars(ctx, HEAD + TAIL)}
+        return await self._watch(ctx, "/run", body, name, command)
 
+    @tool(mode="detach", read_only=True, open_world=True,
+          background="background", timeout=SELF_END,
+          detached=SHELL_DETACHED, detached_display={"head": 1})
+    async def wait(
+        self,
+        ctx: ToolContext,
+        terminal: Annotated[str, "Which terminal, by name."],
+        timeout: Annotated[float | None, TIMEOUT_HELP] = None,
+        background: Annotated[bool, BACKGROUND_HELP] = False,
+    ) -> ToolResult:
+        """Wait for the end of the latest shell__run in a terminal, as shell__run waits
+        for its own: for a command still running after its run's wait. When it ended
+        already, its result at once. A message from {{username}} ends the wait at once.
+        Returns: as shell__run."""
+        try:
+            name = check_name(str(terminal))
+            seconds = self._seconds(ctx, timeout, as_bool(background, "background"))
+        except ToolRefused as e:
+            return self._refused(str(e), terminal)
+        body = {"terminal": name, "timeout": seconds, "chars": self._chars(ctx, HEAD + TAIL)}
+        return await self._watch(ctx, "/wait", body, name)
+
+    @staticmethod
+    def _seconds(ctx: ToolContext, timeout: Any, background: bool) -> float:
+        """How long a run or a wait waits: in the turn WAIT_DEFAULT, at most WAIT_MAX and
+        never past the turn's time; in the background until the end, at most RUN_MAX."""
+        given = as_number(timeout, "timeout", "timeout=60")
+        if background:
+            return float(RUN_MAX) if given is None else min(max(given, 1), RUN_MAX)
+        seconds = float(WAIT_DEFAULT) if given is None else min(max(given, 1), WAIT_MAX)
+        if ctx.time_left is not None:
+            seconds = max(1, min(seconds, int(ctx.time_left - TURN_MARGIN)))
+        return seconds
+
+    async def _watch(self, ctx: ToolContext, path: str, body: dict, name: str,
+                     command: str = "") -> ToolResult:
+        """POST /run or /wait, and its result. A message from the user
+        (ctx.user_wrote) ends the wait with what the run printed so far."""
         async def progress(line: str) -> None:
             if ctx.emit is not None:
                 try:
@@ -479,7 +526,11 @@ class Shell:
 
         try:
             with anyio.move_on_after(SELF_END) as limit:
-                res = await self._run_request(body, progress)
+                res = await self._stream(path, body, progress, ctx.user_wrote)
+                cut = res is None
+                if cut:                 # the user wrote: what it has now
+                    res = await self._stream("/wait", {"terminal": name, "timeout": 0.1,
+                                                       "chars": body["chars"]}, progress)
             if limit.cancelled_caught:
                 return ToolResult(content=f"The shellbox did not answer in {dur(SELF_END)}; "
                                           f"the command may still run. "
@@ -489,7 +540,14 @@ class Shell:
             return self._refused(str(e), name)
         except httpx.HTTPError as e:
             return self._unreachable(name, e)
-        return await self._result(ctx, res, "run", name, text=command)
+        if res.get("no_run"):
+            return ToolResult(content=f"No run of yours in terminal {name} to wait for. "
+                                      f"{call('shell__read', name)} shows its screen.",
+                              is_error=True, display={"terminal": name})
+        notes = [f"The wait ended: {self.cfg.user} wrote."] \
+            if cut and res.get("state") == "running" else None
+        return await self._result(ctx, res, "run", name,
+                                  text=command or str(res.get("command") or ""), notes=notes)
 
     @tool(read_only=False, destructive=True, open_world=True)
     async def type(
@@ -824,28 +882,44 @@ class Shell:
 
     # ---- the shellbox over HTTP ------------------------------------------------------------
 
-    async def _run_request(self, body: dict, progress) -> dict:
-        """POST /run: progress lines go to `progress`, the final object comes back. A
-        stream that ends without one is a dropped connection."""
+    async def _stream(self, path: str, body: dict, progress, wrote=None) -> dict | None:
+        """POST /run or /wait: progress lines go to `progress`, the final object comes
+        back. A stream that ends without one is a dropped connection. `wrote` (an
+        anyio.Event) set ends the wait once the command is in its terminal (a run's
+        "started" line; a /wait's at once): None, and the box stops watching when the
+        connection closes."""
         if not shellbox.url(self.cfg):
             raise ToolRefused(her_not_set_up("the shellbox"))
         async with shellbox.client(self.cfg, None, self.transport) as client, \
-                client.stream("POST", shellbox.url(self.cfg) + "/run", json=body) as r:
+                client.stream("POST", shellbox.url(self.cfg) + path, json=body) as r:
             if r.status_code != 200:
                 await r.aread()
                 raise shellbox.refusal(self.cfg, r, self.cfg.user)
-            async for line in r.aiter_lines():
-                if not line.strip():
-                    continue
-                try:
-                    msg = json.loads(line)
-                except ValueError:
-                    raise httpx.ReadError("not a line of JSON") from None
-                if "progress" in msg and "state" not in msg:
-                    await progress(str(msg["progress"]))
-                    continue
-                return msg
-        raise httpx.ReadError("the stream ended without a result")
+            lines = r.aiter_lines()
+
+            async def upto(started: bool):
+                """The next result, or with `started` STARTED at the "started" line."""
+                async for line in lines:
+                    if not line.strip():
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except ValueError:
+                        raise httpx.ReadError("not a line of JSON") from None
+                    if "state" not in msg and "started" in msg:
+                        if started:
+                            return STARTED
+                    elif "state" not in msg and "progress" in msg:
+                        await progress(str(msg["progress"]))
+                    else:
+                        return msg
+                raise httpx.ReadError("the stream ended without a result")
+
+            if wrote is not None and path == "/run" and \
+                    (out := await upto(True)) is not STARTED:
+                return out
+            ended, out = await until_set(lambda: upto(False), wrote)
+            return None if ended else out
 
     async def _post(self, path: str, body: dict, read: float) -> tuple[int, dict]:
         return await shellbox.call(self.cfg, "POST", path, body, read=read, transport=self.transport,
@@ -1097,8 +1171,10 @@ class Shell:
                        f"key. {call('shell__stop', name)} again ends it (SIGTERM, then "
                        f"SIGKILL).")
         elif is_run and state in ("running", "waiting"):
-            out.append(f"It keeps running: {call('shell__read', name, **{'from': size})} "
-                       f"shows what it prints from here, {call('shell__stop', name)} stops it."
+            out.append(f"It keeps running: {call('shell__wait', name)} waits for its end "
+                       f"(with background=true its result comes as a message), "
+                       f"{call('shell__read', name, **{'from': size})} shows what it prints "
+                       f"from here, {call('shell__stop', name)} stops it."
                        if state == "running" else
                        f"Answer with {call('shell__type', name, text='...')}, or "
                        f"{call('shell__stop', name)} stops it.")

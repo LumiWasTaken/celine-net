@@ -50,7 +50,8 @@ SHELL_CALLS = "tc.name LIKE 'shell\\_\\_%' ESCAPE '\\'"
 # name. A shell__read without a terminal lists the terminals: terminal {null, ""}.
 _HERS = f"""
 SELECT tc.id AS id,
-       CASE WHEN tc.name = 'shell__read' THEN 'read' ELSE 'command' END AS kind,
+       CASE WHEN tc.name IN ('shell__read', 'shell__wait') THEN 'read'
+            ELSE 'command' END AS kind,
        coalesce(tc.started_at, a.created_at) AS at,
        coalesce(CASE WHEN json_valid(tc.display)
                      THEN json_extract(tc.display, '$.terminal_id') END,

@@ -153,6 +153,9 @@ TOOLS: dict[str, dict[str, str]] = {
                                "{{her}} terminals and shows the screen."},
     "shell__stop": {"label": "Terminals: stop a program",
                     "summary": "Presses Ctrl-C in one of {{her}} terminals."},
+    "shell__wait": {"label": "Terminals: wait for a command",
+                    "summary": "Waits for the end of a command still running in one of "
+                               "{{her}} terminals."},
     "shell__read": {"label": "Terminals: read a terminal",
                     "summary": "Pages the log of a terminal's latest run, shows its "
                                "screen, or lists {{her}} terminals."},

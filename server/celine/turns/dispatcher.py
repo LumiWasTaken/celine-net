@@ -63,6 +63,13 @@ class Dispatcher:
         """Called after anything is enqueued. Never awaits."""
         self._wake.set()
 
+    def user_wrote(self, cid: str) -> None:
+        """A message from the user waits for the live turn of `cid` (it lands at its next
+        step): a call of that turn that only waits ends its wait now."""
+        for tid, c in self._active.items():
+            if c == cid and (token := self.tokens.get(tid)) is not None:
+                token.user_wrote.set()
+
     def on_end(self, fn) -> None:
         """`await fn(cid, turn_id)` after turn `turn_id` of conversation `cid` ended, and
         with `turn_id` None after one of its jobs ended (a sub-agent's report,

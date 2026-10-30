@@ -364,6 +364,8 @@ async def _run_call(turn, call, spec, args, store, cfg, token, jobs):
                       max_output_tokens=turn.get("max_output_tokens"), time_left=left)
 
     asked = bool(spec.background and args.get(spec.background) is True)
+    if not asked:
+        ctx = replace(ctx, user_wrote=getattr(token, "user_wrote", None))
     timeout = float(spec.timeout or cfg.r("tool_timeout_seconds"))
     expired = f"timed out after {timeout:.0f}s"
     if left is not None and left < timeout:

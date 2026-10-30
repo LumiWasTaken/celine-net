@@ -196,8 +196,9 @@ function useView(call: ToolCall): View {
   if (call.name.startsWith('shell__')) {
     const name = str(d?.terminal) ?? str(a?.terminal)
     const id = str(d?.terminal_id)
-    const exit = call.name === 'shell__run' && call.state === 'ok' ? num(d?.exit) : null
-    const seconds = call.name === 'shell__run' && call.state === 'ok' ? num(d?.seconds) : null
+    const ran = (call.name === 'shell__run' || call.name === 'shell__wait') && call.state === 'ok'
+    const exit = ran ? num(d?.exit) : null
+    const seconds = ran ? num(d?.seconds) : null
     const log = str(d?.log)
     return {
       icon: Terminal, tone: exit ? 'error' : toneOf(call), words: rowWords(call),

@@ -301,7 +301,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             push = services.push = Push(cfg, store, bus, app.state.auth)
             tg.start_soon(push.run)
             from .intercom import Intercom      # messages between everyone, and their timer
-            intercom = services.intercom = Intercom(store, dispatcher.notify)
+            intercom = services.intercom = Intercom(store, dispatcher.notify, dispatcher.user_wrote)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules
             # every on_end before the workers start: a turn resumed at start that ends
             # while the awaits below run still reports and answers its pair

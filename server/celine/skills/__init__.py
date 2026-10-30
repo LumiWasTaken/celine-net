@@ -63,6 +63,10 @@ class ToolContext:
     # the notes loaded in full in this request (turns/loads.py): a prompt fragment
     # leaves them out of the notebook index
     loaded_notes: frozenset[str] = frozenset()
+    # an anyio.Event, set when a message from the user waits for the turn's next step
+    # (turns/cancel.Token.user_wrote); a call that only waits ends its wait then
+    # (turns/cancel.until_set). None in a job and a call asked into the background.
+    user_wrote: Any = None
 
 
 @dataclass(frozen=True)

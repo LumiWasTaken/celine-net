@@ -198,6 +198,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         # what reached this conversation since the last step joins the request here
         # (intercom/deliver.py); a reply continued in place takes it next step
         if not reopen:
+            token.user_wrote = anyio.Event()      # what the user wrote is in this step
             taken = await deliver.take(store, cid, tid, parent)
             if taken:
                 await message_context.ensure(store, cfg, registry, cid, tid, taken,

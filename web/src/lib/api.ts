@@ -458,8 +458,8 @@ export type ToolCall = {
   name: string
   arguments: string
   state: 'pending' | 'running' | 'ok' | 'error' | 'gated' | 'cancelled' | 'detached' | 'interrupted'
-  /** the result's payload for the row, per tool. A shell call (shell__run, shell__type,
-   *  shell__stop, shell__read): `terminal` (its name), `terminal_id` (the six characters
+  /** the result's payload for the row, per tool. A shell call (shell__run, shell__wait,
+   *  shell__type, shell__stop, shell__read): `terminal` (its name), `terminal_id` (the six characters
    *  of its address, the link), `owner`, `state` (a run: done, running, waiting, closed,
    *  not_started; a screen: prompt, running, waiting, fullscreen, closed; error),
    *  `program`, `pid`, `exit` (a run's, null until it ended), `seconds` (a run's real

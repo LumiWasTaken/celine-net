@@ -372,6 +372,7 @@ SHELL: dict[str, Sentence] = {
         if _terminal(a, d) else "Stopped a program",
     "read": lambda a, d, r: f"Read terminal {_terminal(a, d)}"
         if _terminal(a, d) else "Listed the terminals",
+    "wait": lambda a, d, r: f"Waited for terminal {_terminal(a, d)}",
     "share": _share_words,
     "send": lambda a, d, r: f"Sent you {_files(a)}",
     "look": lambda a, d, r: f"Looked at {_files(a)}",
@@ -680,6 +681,9 @@ def _shell_command(name: str, a: Args, d: dict) -> str:
         return f"read the log from byte {_js(start)}" if start is not None else "read the screen"
     if name == "shell__stop":
         return "Ctrl-C"
+    if name == "shell__wait":
+        waited = _first_line(_str(d.get("text")) or "", 400)
+        return f"wait for {waited}" if waited else "wait"
     text = _first_line(_str(d.get("text")) or _str(a.get("command")) or _str(a.get("text")) or "",
                        400)
     keys = _str(d.get("keys")) or " ".join(_list(a.get("keys")))
@@ -687,7 +691,7 @@ def _shell_command(name: str, a: Args, d: dict) -> str:
     return said or "watch"
 
 
-TERMINAL_TOOLS = ("shell__run", "shell__type", "shell__stop", "shell__read")
+TERMINAL_TOOLS = ("shell__run", "shell__type", "shell__stop", "shell__read", "shell__wait")
 MEDIA = ("image_generator", "music_generator")
 
 

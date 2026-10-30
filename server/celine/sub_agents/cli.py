@@ -96,8 +96,8 @@ class CliBackend:
         import httpx
         ended = False
         try:
-            res = await shell._run_request({"terminal": term, "command": command,
-                                            "timeout": RUN_MAX}, _ignore)
+            res = await shell._stream("/run", {"terminal": term, "command": command,
+                                       "timeout": RUN_MAX}, _ignore)
             if res.get("state") == "busy":
                 raise BackendError(f"Its terminal {term} is busy with another program.",
                                    retryable=False)

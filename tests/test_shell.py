@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import anyio
 import httpx
 import pytest
 
@@ -63,7 +64,7 @@ class FakeBox:
             raise answer
         if isinstance(answer, tuple):
             return httpx.Response(answer[0], json=answer[1])
-        if path == "/run":
+        if path in ("/run", "/wait"):
             lines = answer if isinstance(answer, list) else [answer]
             return httpx.Response(200, content="".join(json.dumps(x) + "\n" for x in lines))
         return httpx.Response(200, json=answer)
@@ -98,14 +99,16 @@ def ctx(store=None, time_left=None):
 async def test_a_run_is_sent_once_and_its_result_names_exit_duration_and_log(shell, box):
     out = await shell.run(ctx(), terminal="main", command="ls")
     assert box.sent[0][0] == "/run" and box.sent[0][2]["authorization"] == "Bearer " + "k" * 24
-    assert box.bodies[0] == {"terminal": "main", "command": "ls", "timeout": 3000.0,
-                             "chars": 8000}
+    assert box.bodies[0] == {"terminal": "main", "command": "ls",
+                             "timeout": float(shell_mod.WAIT_DEFAULT), "chars": 8000}
     first, *rest = out.content.split("\n")
     assert first == "terminal main ~: exit 0 after 0.4 s. Log: /var/lib/shellbox/cmd/k3x9ab.log"
     assert rest == ["notes"]
     assert out.display["cmd"] == "k3x9ab" and out.display["exit"] == 0
     assert out.display["text"] == "ls" and out.display["head"] == 1
     await shell.run(ctx(), terminal="main", command="make", timeout=5000)
+    assert box.bodies[-1]["timeout"] == shell_mod.WAIT_MAX, "a wait in the turn is short"
+    await shell.run(ctx(), terminal="main", command="make", timeout=5000, background=True)
     assert box.bodies[-1]["timeout"] == shell_mod.RUN_MAX
     await shell.run(ctx(time_left=40.5), terminal="main", command="make")
     assert box.bodies[-1]["timeout"] == 37, "it answers before its turn's time is up"
@@ -133,8 +136,64 @@ async def test_a_timeout_says_the_command_keeps_running_and_where_to_read_on(she
     out = await shell.run(ctx(), terminal="main", command="make", timeout=30)
     lines = out.content.split("\n")
     assert lines[0].startswith("terminal main ~: still running after 30 s: make (pid 812).")
-    assert lines[1] == ('It keeps running: shell__read(terminal="main", from=48211) shows what '
-                        'it prints from here, shell__stop(terminal="main") stops it.')
+    assert lines[1] == ('It keeps running: shell__wait(terminal="main") waits for its end (with '
+                        'background=true its result comes as a message), '
+                        'shell__read(terminal="main", from=48211) shows what it prints from '
+                        'here, shell__stop(terminal="main") stops it.')
+
+
+async def test_wait_watches_the_run_already_going(shell, box):
+    box.answers = [[{"progress": "47%"}, ran(command="make", exit=0, seconds=301.5)]]
+    out = await shell.wait(ctx(), terminal="main")
+    assert box.sent[-1][0] == "/wait"
+    assert box.bodies[-1] == {"terminal": "main", "timeout": float(shell_mod.WAIT_DEFAULT),
+                              "chars": 8000}
+    assert out.content.startswith("terminal main ~: exit 0 after 5 min 2 s")
+    assert out.display["text"] == "make"
+    box.answers = [[screen(no_run=True)]]
+    out = await shell.wait(ctx(), terminal="main")
+    assert out.is_error and out.content.startswith("No run of yours in terminal main")
+
+
+async def test_the_users_message_ends_the_wait_and_the_command_keeps_running(shell, box):
+    """The run is typed (its started line), then she waits; the user writes: the wait
+    ends at once with what it printed so far, read by a short /wait."""
+    wrote = anyio.Event()
+    opened = anyio.Event()
+
+    async def stream():
+        yield json.dumps({"started": "k3x9ab"}).encode() + b"\n"
+        opened.set()
+        await anyio.sleep_forever()             # the box watches until the app hangs up
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        box.sent.append((path, json.loads(request.content), {}))
+        if path == "/run":
+            return httpx.Response(200, content=stream())
+        return httpx.Response(200, content=json.dumps(
+            ran(state="running", exit=None, seconds=63, size=9, output="47%")) + "\n")
+
+    shell.transport = httpx.MockTransport(handle)
+    c = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=None,
+                    config=None, emit=None, user_wrote=wrote)
+    async with anyio.create_task_group() as tg:
+        async def write() -> None:
+            await opened.wait()
+            wrote.set()
+        tg.start_soon(write)
+        with anyio.fail_after(5):
+            out = await shell.run(c, terminal="main", command="curl -O big.gguf")
+    assert [p for p, _, _ in box.sent] == ["/run", "/wait"]
+    assert box.bodies[-1]["timeout"] == 0.1
+    lines = out.content.split("\n")
+    assert lines[0].startswith("terminal main ~: still running after 1 min 3 s")
+    assert lines[1] == "The wait ended: Joe wrote."
+    assert "47%" in out.content
+    box.sent.clear()
+    with anyio.fail_after(5):        # it wrote before the call: the command still goes
+        out = await shell.run(c, terminal="main", command="ls")
+    assert [p for p, _, _ in box.sent] == ["/run", "/wait"]
 
 
 async def test_a_busy_terminal_refuses_with_what_runs_or_waits_and_how_out(shell, box):
