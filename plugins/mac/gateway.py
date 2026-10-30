@@ -24,13 +24,13 @@ also the Mac's key to the app's model proxy (plugin.toml [drones])."""
 from __future__ import annotations
 
 import hmac
-import re
 import secrets as random
 import shlex
 import time
 from pathlib import Path
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, Response
 
@@ -71,13 +71,20 @@ async def run(services, p) -> None:
 async def copies(services, p) -> dict[str, str]:
     """{"command": the setup line with a new token, "note": WAITING}; {"note": LOCAL,
     "address": "ask"} while the app's address is localhost; once the Mac reported its
-    Address (and no Set up again since), {"note": "Connected: <about>."}."""
+    Address (and no Set up again since), {"note": "Connected: <about>."} followed by each
+    grant the screen server says is off (the form's note and her settings__read)."""
     cfg = services.cfg
     if _link(cfg) is None:
         return {}
     saved = cfg.settings.plugins.get(p.id) or {}
     if saved.get("url") and p.id not in _again:
-        return {"note": f"Connected: {saved['about']}." if saved.get("about") else "Connected."}
+        note = f"Connected: {saved['about']}." if saved.get("about") else "Connected."
+        try:
+            with anyio.fail_after(GRANTS_SECONDS):
+                off = await _off(services)
+        except Exception:                   # Check says why the screen does not answer
+            off = []
+        return {"note": " ".join([note, *(x["text"] for x in off)])}
     app = address.base(cfg)
     if address.is_loopback(app):
         return {"note": LOCAL, "address": "ask"}
@@ -214,32 +221,38 @@ async def check(services, p, _input) -> dict[str, Any]:
         else:
             n = sum(1 for t in services.registry.tools.values() if t.skill == sid)
             lines.append({"text": f"{name}: {n} tools", "tone": "ok"})
-    screen = services.mcp.skills.get("macscreen")
-    if screen is not None and screen.client is not None:
-        try:
-            lines += _grants(await screen.client.call_tool("permissions", {}))
-        except Exception as e:
-            lines.append({"text": f"{NAMES['macscreen']}: {e}", "tone": "error"})
+    try:
+        lines += await _off(services)
+    except Exception as e:
+        lines.append({"text": f"{NAMES['macscreen']}: {e}", "tone": "error"})
     ok = all(x["tone"] == "ok" for x in lines)
     return {"ok": ok, "sentence": "", "lines": lines}
 
 
+APP = "Celine"         # setup.sh's ~/Applications/Celine.app: every server on the Mac runs under it
+GRANTS_SECONDS = 5     # the form's note waits this long for the screen server
+# Peekaboo's `_meta` key: the grant, what she cannot do without it, its pane, its tone
+GRANTS = {
+    "screen_recording": ("Screen Recording", "she cannot see the screen",
+                         "Screen & System Audio Recording", "error"),
+    "accessibility": ("Accessibility", "she cannot click or type", "Accessibility", "error"),
+    "event_synthesizing": ("Event Synthesizing", "she cannot type into apps in the background",
+                           "Accessibility", "warn"),
+}
+
+
+async def _off(services) -> list[dict[str, str]]:
+    """Each grant the screen server says is off; [] while it does not run."""
+    screen = services.mcp.skills.get("macscreen")
+    if screen is None or screen.client is None:
+        return []
+    return _grants(await screen.client.call_tool("permissions", {}))
+
+
 def _grants(res) -> list[dict[str, str]]:
-    """Peekaboo's permissions answer: per grant it lacks (`_meta`, false), its status line
-    and the "Grant via" line under it, as it says them."""
+    """Each grant Peekaboo's permissions answer says is off (`_meta`, false): what she
+    cannot do without it and where the user turns it on for APP."""
     meta = getattr(res, "meta", None) or {}
-    text = _TAG.sub("", "\n".join(getattr(c, "text", "") for c in res.content or []))
-    out = []
-    for key, value in meta.items():
-        title = key.replace("_", " ").title()             # screen_recording: Screen Recording
-        status = next((ln for ln in text.splitlines() if ln.startswith(title + " (")), None)
-        if value is not False or status is None:
-            continue
-        part = next((b for b in text.split("\n\n") if title in b and "Grant via:" in b), "")
-        via = next((ln for ln in part.splitlines() if ln.startswith("Grant via:")), "")
-        out.append({"text": f"{status}. {via}" if via else status,
-                    "tone": "error" if "(Required)" in status else "warn"})
-    return out
-
-
-_TAG = re.compile(r"\[(?:err|warn|ok)\] ")
+    return [{"text": f"{name} is off: {without}. Turn on {APP} in System Settings, "
+                     f"Privacy & Security, {pane}.", "tone": tone}
+            for key, (name, without, pane, tone) in GRANTS.items() if meta.get(key) is False]

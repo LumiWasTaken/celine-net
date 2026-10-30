@@ -296,17 +296,8 @@ async def test_her_script_on_the_mac_starts_her_turn_with_a_message_to_herself(
         tg.cancel_scope.cancel()
 
 
-# Peekaboo's permissions answer on a Mac without the grants, as it came (2026-10-29)
-PERMISSIONS = (
-    "macOS Permissions Status:\n\nScreen Recording (Required): [err] Not Granted\n"
-    "Accessibility (Required): [err] Not Granted\nEvent Synthesizing (Action-specific): "
-    "[warn] Not Granted\n\n[warn] Screen Recording permission is REQUIRED for capturing "
-    "screenshots.\nGrant via: System Settings > Privacy & Security > Screen & System Audio "
-    "Recording\n\n[warn] Accessibility permission is REQUIRED for UI automation.\nGrant via: "
-    "System Settings > Privacy & Security > Accessibility\n\nEvent Synthesizing is not "
-    "globally required, but these actions are unavailable: background keyboard input, "
-    "foreground synthetic pointer input.\nBackground Accessibility actions remain available.")
-META = {"accessibility": False, "event_synthesizing": False,
+# Peekaboo's permissions answer's _meta on a Mac without the grants, as it came (2026-10-29)
+META ={"accessibility": False, "event_synthesizing": False,
         "event_synthesizing_limits": ["background keyboard input"],
         "permission_snapshot_available": True, "required_permissions_granted": False,
         "screen_recording": False}
@@ -320,9 +311,11 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     form.secrets.set_key(cfg.settings.secrets_root, "mac.token", "tok")
 
     class Client:
+        meta = META
+
         async def call_tool(self, name, args):
             assert name == "permissions"
-            return SimpleNamespace(meta=META, content=[SimpleNamespace(text=PERMISSIONS)])
+            return SimpleNamespace(meta=self.meta, content=[])
 
     skills = {"macscreen": SimpleNamespace(status="up", error=None, client=Client()),
               "macshell": SimpleNamespace(status="down", client=None,
@@ -338,11 +331,32 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
                  "the address.", "tone": "error"},
         {"text": "Browser: starting", "tone": "error"},
         {"text": "Files: starting", "tone": "error"},
-        {"text": "Accessibility (Required): Not Granted. Grant via: System Settings > "
-                 "Privacy & Security > Accessibility", "tone": "error"},
-        {"text": "Event Synthesizing (Action-specific): Not Granted", "tone": "warn"},
-        {"text": "Screen Recording (Required): Not Granted. Grant via: System Settings > "
-                 "Privacy & Security > Screen & System Audio Recording", "tone": "error"}]}
+        {"text": "Screen Recording is off: she cannot see the screen. Turn on Celine in "
+                 "System Settings, Privacy & Security, Screen & System Audio Recording.",
+         "tone": "error"},
+        {"text": "Accessibility is off: she cannot click or type. Turn on Celine in System "
+                 "Settings, Privacy & Security, Accessibility.", "tone": "error"},
+        {"text": "Event Synthesizing is off: she cannot type into apps in the background. "
+                 "Turn on Celine in System Settings, Privacy & Security, Accessibility.",
+         "tone": "warn"}]}
+    # the form's note and her settings__read say the same while the Mac is connected
+    form.secrets.set_key(cfg.settings.secrets_root, "mac.link", "key")
+    copies = p.attr("gateway:copies")
+    assert (await copies(services, p))["note"] == " ".join(
+        ["Connected.", *(x["text"] for x in out["lines"][4:])])
+    Client.meta = {**META, "screen_recording": True, "accessibility": True,
+                   "event_synthesizing": True}
+    assert await copies(services, p) == {"note": "Connected."}, "all on: no grant"
+
+    # a screen server that does not answer holds the note for GRANTS_SECONDS at most
+    class Silent:
+        async def call_tool(self, name, args):
+            await anyio.sleep_forever()
+    gateway = sys.modules[copies.__module__]
+    monkeypatch.setattr(gateway, "GRANTS_SECONDS", 0.01)
+    skills["macscreen"] = SimpleNamespace(status="up", error=None, client=Silent())
+    assert await copies(services, p) == {"note": "Connected."}
+    skills["macscreen"].client = Client()
 
     cfg.settings.plugins["mac"] = {}
     out = await p.attr("gateway:check")(services, p, None)
