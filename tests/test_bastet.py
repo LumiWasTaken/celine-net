@@ -257,6 +257,23 @@ async def test_escape_needs_a_hard_fact(store):
     assert not ask.seen
 
 
+def test_her_devices_are_no_escape_the_rest_of_the_lan_is():
+    from celine import devices
+    from celine.guard import facts
+    own = devices._hosts(["http://192.168.1.30:4096", "", "mac.local:8765"])
+    assert own == {"192.168.1.30", "mac.local"}
+
+    def esc(cmd):
+        return facts.escape({**_shell(cmd), "own": own})
+    for cmd in ("ssh 192.168.1.30 ls", "ssh -p 22 me@mac.local uptime",
+                "scp a.txt me@192.168.1.30:/tmp/", "curl http://192.168.1.30:4096/x"):
+        assert esc(cmd) is None, cmd
+    assert esc("ssh 10.20.30.40") == "the command has ssh 1"
+    assert esc("ssh -J 192.168.1.30 10.20.30.40 ls") is not None
+    assert esc("curl http://10.20.30.40/") == "the command has 10.20.30.40"
+    assert facts.escape(_shell("ssh 192.168.1.30")) is not None, "no devices: as before"
+
+
 async def test_escape_freezes_and_damage_stops_on_a_held_yes(store):
     cfg = _cfg(escape={"does": "freeze"})
     v = await guard.check(TURN, _shell("sudo docker run --privileged x"), [], mode="on",

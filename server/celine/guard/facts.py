@@ -264,14 +264,50 @@ def _command(call: dict) -> tuple[str, str]:
 
 
 def escape(call: dict) -> str | None:
-    """What makes a call look like a way out of its box or around a limit."""
+    """What makes a call look like a way out of its box or around a limit. An address
+    of one of her devices (call "own": devices.hosts) and an ssh, scp or sftp to it are
+    hers, not a way out; the rest of the LAN is."""
+    own = call.get("own") or frozenset()
     if call["name"] in ("browser__open", "web__read_page"):
         host = urlsplit(str((call.get("args") or {}).get("url") or "")).hostname or ""
-        return f"opens {host}" if ESCAPE.fullmatch(host) else None
+        return f"opens {host}" if ESCAPE.fullmatch(host) and host not in own else None
     has, cmd = _command(call)
-    if m := ESCAPE.search(cmd):
-        return f"{has}{m.group(0).strip()}"
+    for m in ESCAPE.finditer(cmd):
+        if not _to_own(m, cmd, own):
+            return f"{has}{m.group(0).strip()}"
     return None
+
+
+# ssh, scp and sftp options that take a value; -J's value is a host it goes through
+_VALUED = set("BbcDEeFiJLlmOoPpQRSWw")
+
+
+def _to_own(m: re.Match, cmd: str, own) -> bool:
+    """Whether ESCAPE's match `m` in `cmd` only reaches her own devices: their address,
+    or an ssh, scp or sftp whose every host is one of them."""
+    hit = m.group(0).strip().casefold()
+    if hit in own:
+        return True
+    if not own or not re.match(r"(?:ssh|scp|sftp)\s", hit):
+        return False
+    words = re.split(r"[|;&\n]", cmd[m.start():], maxsplit=1)[0].split()[1:]
+    tool, hosts, plain, after = hit.split()[0], [], [], None
+    for w in words:
+        if after is not None:
+            if after == "J":
+                hosts += w.split(",")
+            after = None
+        elif w.startswith("-"):
+            after = w[1] if len(w) == 2 and w[1] in _VALUED else None
+        else:
+            plain.append(w)
+    if tool == "scp":
+        hosts += [w for w in plain if ":" in w] or plain[:1]
+    else:
+        hosts += plain[:1]
+    names = [re.sub(r"^\w+://", "", h).rpartition("@")[2].split(":")[0].strip("[]")
+             .casefold() for h in hosts]
+    return bool(names) and all(n in own for n in names)
 
 
 def removes(cmd: str) -> str | None:
