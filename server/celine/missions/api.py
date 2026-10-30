@@ -172,13 +172,23 @@ async def start(services, body: MissionIn, by: str | None = None) -> str:
 async def list_missions(request: Request, status: str | None = None,
                         trashed: bool = False, archived: bool = False) -> dict:
     """Every mission, newest first, with its conversation's title, its plan (`plan` the
-    text, `steps`, `step` the number of the one doing) and its automatic context switch; with `trashed` only the ones in the
+    text, `steps`, each with its `model_label`, `step` the number of the one doing) and its automatic context switch; with `trashed` only the ones in the
     trash, with `archived` only the archived ones (a mission is archived and deleted as
     its conversation is: POST /conversations/{cid}/archive, DELETE /conversations/{cid}).
     `counts`: the page's numbers (store.counts), whatever the filters."""
     store = request.app.state.services.store
-    return {"missions": await missions.list(store, status, trashed, archived),
+    settings = getattr(request.app.state.services.cfg, "settings", None)
+    return {"missions": [_labelled(settings, r) for r in
+                         await missions.list(store, status, trashed, archived)],
             "counts": await missions.counts(store)}
+
+
+def _labelled(settings, row: dict) -> dict:
+    """A mission as a client gets it: each step's `model_label` (attachments.label),
+    None for a step on the mission's own model."""
+    from ..attachments import label
+    return {**row, "steps": [{**s, "model_label": label(settings, s.get("model")) or None}
+                             for s in row["steps"]]}
 
 
 def _announce(store, row: dict | None) -> None:

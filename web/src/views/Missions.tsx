@@ -34,7 +34,7 @@ import { ArtifactChip, Markdown } from '../components/Markdown'
 import { Talk } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
 import { ModelPick, ModelRow } from '../components/ConversationPanel'
-import { ModelChooser, findModel, modelName } from '../components/ModelChooser'
+import { ModelChooser } from '../components/ModelChooser'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
   Button, ComposerBox, ConfirmDialog, Dialog, Dot, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input, ListRow,
@@ -423,11 +423,7 @@ function Steps({ m }: { m: Mission }) {
   const own = useResource(() => settingsApi.conversationSettings(m.conversation_id), [m.conversation_id], { events: SETTINGS_EVENTS })
   const save = useAction((steps: MissionStep[]) => missionsApi.setSteps(m.conversation_id, steps))
   const mine = own.data?.effective.label ?? own.data?.effective.model ?? null
-  const nameOf = (ref: string | null) => {
-    if (!ref) return mine ? `Default, ${mine}` : 'Default'
-    const f = findModel(ref, providers.data ?? [])
-    return f ? modelName(f.model) : ref
-  }
+  const nameOf = (s: MissionStep) => s.model_label ?? (mine ? `Default, ${mine}` : 'Default')
   const pick = (i: number, model: string | null) => {
     setChoosing(null)
     if (m.steps[i]!.model !== model) void save.run(m.steps.map((s, k) => (k === i ? { ...s, model } : s)))
@@ -438,7 +434,7 @@ function Steps({ m }: { m: Mission }) {
       <div className="missions-rows">
         {m.steps.map((s, i) => (
           <ListRow key={i} density="lg" dot={tone(i)} title={s.title} tooltip={s.title} muted={tone(i) === 'ok'}
-                   subtitle={nameOf(s.model)} aside={tone(i) === 'ok' ? STATE_WORD.done : tone(i) === 'running' ? STATE_WORD.active : undefined}
+                   subtitle={nameOf(s)} aside={tone(i) === 'ok' ? STATE_WORD.done : tone(i) === 'running' ? STATE_WORD.active : undefined}
                    trailing={<IconButton icon={ArrowLeftRight} size="sm" label="Change model" disabled={!online || save.busy || !!m.trashed_at}
                                          onClick={() => setChoosing(i)} />} />
         ))}

@@ -198,6 +198,8 @@ async def test_the_user_edits_the_steps_and_moves_the_step(tmp_path, monkeypatch
         assert (await c.patch(f"/api/missions/{cid}", json=two)).status_code == 400
         listed = (await c.get("/api/missions")).json()["missions"]
         assert (listed[0]["step"], listed[0]["steps"][0]["done_at"]) == (2, T0)
+        assert [s["model_label"] for s in listed[0]["steps"]] == [None, "Big"], \
+            "each step's model by its name, the server's"
         assert (await c.get("/api/missions?trashed=1")).json()["missions"] == []
         await conversations.delete(store, cid)
         assert (await c.get("/api/missions")).json()["missions"] == []
