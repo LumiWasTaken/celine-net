@@ -29,7 +29,9 @@ class Artifacts:
         self,
         ctx: ToolContext,
         content: Annotated[str, "The whole page: HTML with its style and script inline. For "
-                                "markdown, the whole document."],
+                                "markdown, the whole document. The page runs sandboxed: "
+                                "localStorage, sessionStorage, indexedDB and document.cookie "
+                                "throw a SecurityError when touched."],
         title: Annotated[str, "What it is called, like Budget 2026. A new artifact needs one; "
                               "with an id, empty keeps the title."] = "",
         id: Annotated[str, "Empty: a new artifact. An artifact's id, like 7f3a9c: a new "
