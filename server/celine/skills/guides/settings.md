@@ -12,6 +12,19 @@ thing Settings saves at once:
 - `roles`: each role's model list, first choice first, with the models that fit it.
 - `providers.<id>`: one provider: its type, name, address, options and models, and its
   key. `providers.<new id>` is a new provider.
+
+  A model server you run on one of your devices is local. What such a server needs:
+
+  - Tool calls through an OpenAI-compatible endpoint the app reaches on the network, not
+    on the device's localhost.
+  - A context that holds an agent's prompt and tools plus its work; the app refuses a
+    smaller one and says the numbers.
+  - A model that fits the device's memory with room left.
+  - Decode speed is bounded by memory bandwidth: on the same memory, a model with fewer
+    active parameters answers faster.
+  - It comes back by itself after a reboot.
+  - It becomes a provider with settings__propose (target `providers.<new id>`), and a
+    template's `model` names its model.
 - `tools`: each skill and tool, on or off.
 - `services`: the addresses of the shellbox, the browser and web search.
 - `email`, `vault`: their accounts.

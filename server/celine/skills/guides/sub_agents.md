@@ -81,20 +81,9 @@ you after that. A message from one of its own sub-agents alone gets no report to
 A sub-agent starts sub-agents of its own, as you do, down to 3 levels below you; each
 reports only to the one that started it. A model of a cloud provider (OpenRouter,
 Anthropic) waits for {{username}}'s approval at every start; your local models start at
-once. A model server you run on one of your devices is local: once it is a provider,
-agents on its models keep working while your main model is busy or down. What such a
-server needs:
-
-- Tool calls through an OpenAI-compatible endpoint the app reaches on the network, not
-  on the device's localhost.
-- A context that holds an agent's prompt and tools plus its work; the app refuses a
-  smaller one and says the numbers.
-- A model that fits the device's memory with room left.
-- Decode speed is bounded by memory bandwidth: on the same memory, a model with fewer
-  active parameters answers faster.
-- It comes back by itself after a reboot.
-- It becomes a provider with settings__propose (target `providers.<new id>`), and a
-  template's `model` names its model.
+once. A model server you run on one of your devices is local: once it is a provider
+(settings guide), agents on its models keep working while your main model is busy or
+down.
 
 Talking while they work, on the intercom: `intercom__send(to="trip finder", text=...)`
 writes to one by name (a follow-up after its report too: it keeps everything it read,
