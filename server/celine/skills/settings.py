@@ -270,10 +270,13 @@ def _after(f: dict[str, Any], v: Any) -> Any:
 def _filled_roles(s, pid: str, new: dict) -> list[dict]:
     """A row per empty role saving provider `pid` as `new` fills (saves.provider)."""
     filled = views.fill_roles(s, pid, saves.provider_clean(pid, new)) or {}
-    return [{"label": spec["label"], "before": "Not set",
-             "after": ", ".join(filled[r]["chain"])}
-            for r, spec in ROLES.items()
-            if r in filled and filled[r].get("chain") != (s.roles.get(r) or {}).get("chain")]
+    rows = []
+    for r, spec in ROLES.items():
+        was = (s.roles.get(r) or {}).get("chain") or []
+        if r in filled and filled[r].get("chain") != was:
+            rows.append({"label": spec["label"], "before": ", ".join(was) or "Not set",
+                         "after": ", ".join(filled[r]["chain"])})
+    return rows
 
 
 def _secret_file(v: Any, where: str) -> str:
