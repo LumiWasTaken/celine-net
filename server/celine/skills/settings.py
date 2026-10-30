@@ -86,6 +86,20 @@ def _form_fields(fields: list[dict], values: dict, states: dict) -> list[dict]:
     return out
 
 
+async def _copies(app, pl) -> dict[str, Any]:
+    """What a running plugin's form shows to copy, as she may pass it on (the Mac's setup
+    line while it is not connected): {"copy": {label: text}, "note": text}."""
+    ref = pl.form.get("copies") if pl.data is not None else None
+    if not ref:
+        return {}
+    got = dict(await pl.attr(ref)(app, pl, her=True))
+    out: dict[str, Any] = {"note": got.pop("note")} if "note" in got else {}
+    labels = {f["key"]: f["label"] for f in pl.form["fields"]}
+    if got:
+        out["copy"] = {labels.get(k, k): v for k, v in got.items()}
+    return out
+
+
 def targets(app) -> list[str]:
     s = app.cfg.settings
     return ["features", "general", "roles", "tools", "services", "email", "vault",
@@ -345,8 +359,12 @@ class Settings:
         t = target_of(self.app, target.strip())
         if isinstance(t, str):
             return ToolResult(content=t, is_error=True)
+        view = t.view()
+        kind, _, pid = t.id.partition(".")
+        if kind == "forms":
+            view.update(await _copies(self.app, plugins.get(pid)))
         return ToolResult(content=self.cfg.substitute(
-            json.dumps(t.view(), ensure_ascii=False, default=str)), display={"target": t.id})
+            json.dumps(view, ensure_ascii=False, default=str)), display={"target": t.id})
 
     @tool(read_only=False, destructive=False)
     async def propose(

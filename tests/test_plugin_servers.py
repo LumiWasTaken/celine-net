@@ -2,10 +2,12 @@
 form, an empty value keeps that server down with the reason; on, its server's tools are
 there with its plugin's guide; a form save starts it again with the new values; off, its
 tools go. The mac plugin: the setup script and the report the Mac posts back (with the
-link key), her scripts' messages to her, the command on its form, and Check's lines."""
+link key), her scripts' messages to her, the setup line on its form and in her
+settings__read, and Check's lines."""
 from __future__ import annotations
 
 import functools
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -14,12 +16,13 @@ from types import SimpleNamespace
 import anyio
 import pytest
 
-from celine import boot, plugins
+from celine import boot, plugins, saves
 from celine.api import plugins as plugins_api
 from celine.core.runners import Runner, Runners
 from celine.devices import devices
 from celine.mcp import Supervisor, plugin_servers
 from celine.settings import features, form
+from celine.skills.settings import _copies
 from chat_fixtures import until
 from settings_fixtures import client, make_app, scratch
 
@@ -128,11 +131,31 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         script = await c.get("/api/plugins/mac/setup.sh")
         assert script.status_code == 200 and script.text.startswith("#!/bin/bash")
 
-        view = (await c.get("/api/forms/mac")).json()
+        gateway = sys.modules[p.attr("gateway:copies").__module__]
         key = form.read_secret(cfg, "mac", "link")
+        # the app only on localhost: no line, what to do first
+        view = (await c.get("/api/forms/mac")).json()
+        assert view["note"] == gateway.LOCAL
+        assert not any(f["key"] == "command" for f in view["fields"])
+        assert await _copies(services, p) == {"note": gateway.LOCAL}
+        # on the network: one line, a token that works once, the key never in the line
+        await saves.address(services, {"origin": "http://192.168.1.20:8766"})
+        view = (await c.get("/api/forms/mac")).json()
         command = next(f for f in view["fields"] if f["key"] == "command")["value"]
-        assert command == ("curl -fsSLo setup.sh http://t/api/plugins/mac/setup.sh && "
-                           f"bash setup.sh --app http://t --key {key}")
+        m = re.fullmatch(r"curl -fsSL http://192\.168\.1\.20:8766/api/plugins/mac/setup/"
+                         r"([\w-]{40,}) \| bash", command)
+        assert m and key not in command and "note" not in view
+        assert plugins.is_open("GET", f"/api/plugins/mac/setup/{m[1]}")
+        assert not plugins.is_open("GET", "/api/plugins/mac/setup/")
+        served = await c.get(f"/api/plugins/mac/setup/{m[1]}")
+        assert served.status_code == 200
+        assert f"APP=http://192.168.1.20:8766 KEY={key} JSON=''" in served.text
+        assert gateway.PRESET not in served.text and served.text.startswith("#!/bin/bash")
+        assert (await c.get(f"/api/plugins/mac/setup/{m[1]}")).status_code == 404, "once"
+        # an hour later it is gone
+        late = (await _copies(services, p))["copy"]["Run on the Mac"].split("/")[-1].split()[0]
+        gateway._tokens[late] -= gateway.SETUP_SECONDS + 1
+        assert (await c.get(f"/api/plugins/mac/setup/{late}")).status_code == 404
         assert view["values"]["url"] == "" and view["secrets"]["token"]["state"] == "not set"
         assert devices(cfg)["mac"].why == "Her Mac: Agents is empty; Token is empty."
 
@@ -148,6 +171,8 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert form.read_secret(cfg, "mac", "token") == "mac-token-1"
         assert "mac-token-1" not in str(view)
         assert view["values"]["agents"] == "http://127.0.0.1:4096"
+        assert await _copies(services, p) == {}, "connected: she gets no line"
+        assert any(f["key"] == "command" for f in view["fields"]), "the form keeps it"
         mac = devices(cfg)["mac"]      # the drones' device: its password the token, its key the link
         assert (mac.url, mac.password, mac.key, mac.why) == (
             "http://127.0.0.1:4096", "mac-token-1", key, None)

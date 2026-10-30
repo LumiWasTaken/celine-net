@@ -1,7 +1,13 @@
 """Her Mac: setup.sh served to the Mac, the report it posts back saved into the form,
-her scripts' messages to her, the command the form shows, and Check.
+her scripts' messages to her, the setup line the form shows, and Check.
 
-- GET /api/plugins/mac/setup.sh: the script, so the Mac needs nothing but the app.
+- The setup line, `curl -fsSL <app>/api/plugins/mac/setup/<token> | bash`: the form (and
+  her settings__read while the Mac is not connected) asks for it, and each ask makes a
+  new token that works once within SETUP_SECONDS. The app's address is its stored one
+  (settings/address.py); while that is localhost the form says how to open the app on
+  the network instead.
+- GET /api/plugins/mac/setup/<token>: setup.sh with the app's address and the link key
+  filled in. GET /api/plugins/mac/setup.sh: the script as it is (`--status`).
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
   report line {address, token, agents, share, ...}; the address, the token, the drones'
   and the share server's addresses are saved into the form (celine/saves.py plugin_form), so the servers start
@@ -9,31 +15,38 @@ her scripts' messages to her, the command the form shows, and Check.
 - POST /api/plugins/mac/events with the link key: {text, conversation?}, a message from
   her to herself (intercom__send to "me") in that conversation, else her newest chat: it
   starts her turn there, or reaches the one running.
-All three are `open` in plugin.toml: the Mac has no session. The link key is made once
-(var/secrets/mac.link.key) and is part of the command; it is also the Mac's key to the
-app's model proxy (plugin.toml [drones])."""
+These are `open` in plugin.toml: the Mac has no session. The link key is made once
+(var/secrets/mac.link.key) and goes to the Mac only inside the script a token gets; it is
+also the Mac's key to the app's model proxy (plugin.toml [drones])."""
 from __future__ import annotations
 
 import hmac
 import re
 import secrets as random
 import shlex
+import time
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from celine import plugins
 from celine.api.deps import json_body, services_of
 from celine.saves import plugin_form
 from celine.errors import NotFound
 from celine.mcp import plugin_servers
-from celine.settings import form, secrets
+from celine.settings import address, form, secrets
 from celine.settings.files import Invalid
 
 LINK = "link"                       # its secret: var/secrets/mac.link.key
 SCRIPT = Path(__file__).with_name("setup.sh")
+PRESET = "APP='' KEY='' JSON='' STATUS=''"      # setup.sh's line a served copy fills in
+SETUP_SECONDS = 3600
+LOCAL = ("Her Mac cannot reach localhost. Publish the app on your network "
+         "(CELINE_PUBLISH=8766 in .env, then docker compose up -d), set its network "
+         "address in Settings, Security and open it there.")
+_tokens: dict[str, float] = {}      # a setup line's token -> when it stops working
 NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser",
          "macfiles": "Files"}
 
@@ -51,21 +64,41 @@ async def run(services, p) -> None:
         secrets.set_key(root, form.secret_name(p.id, LINK), random.token_hex(32))
 
 
-async def copies(services, p, request: Request) -> dict[str, str]:
-    """The command: download setup.sh from this app, run it with this app's address and
-    the link key."""
-    key = _link(services.cfg)
-    if key is None:
+async def copies(services, p, her: bool = False) -> dict[str, str]:
+    """{"command": the setup line} with a new token, or {"note": LOCAL} while the app's
+    address is localhost. `her` (settings__read): only while the Mac is not connected."""
+    cfg = services.cfg
+    if _link(cfg) is None or (her and (cfg.settings.plugins.get(p.id) or {}).get("url")):
         return {}
-    app = str(request.base_url).rstrip("/")
-    url = shlex.quote(f"{app}/api/plugins/{p.id}/setup.sh")
-    return {"command": f"curl -fsSLo setup.sh {url} && bash setup.sh --app "
-                       f"{shlex.quote(app)} --key {key}"}
+    app = address.base(cfg)
+    if address.is_loopback(app):
+        return {"note": LOCAL}
+    now = time.monotonic()
+    for t in [t for t, end in _tokens.items() if end < now]:
+        del _tokens[t]
+    token = random.token_urlsafe(32)
+    _tokens[token] = now + SETUP_SECONDS
+    return {"command": f"curl -fsSL {shlex.quote(f'{app}/api/plugins/{p.id}/setup/{token}')}"
+                       f" | bash"}
 
 
 @router.get("/setup.sh")
 async def setup_sh() -> FileResponse:
     return FileResponse(SCRIPT, media_type="text/x-shellscript", filename="setup.sh")
+
+
+@router.get("/setup/{token}")
+async def setup_line(request: Request, token: str) -> Response:
+    """setup.sh with the app's address and the link key, once per token."""
+    services = services_of(request)
+    end = _tokens.pop(token, None)
+    key = _link(services.cfg)
+    if end is None or end < time.monotonic() or key is None:
+        raise NotFound(request.url.path)
+    text = SCRIPT.read_text()
+    filled = f"APP={shlex.quote(address.base(services.cfg))} KEY={shlex.quote(key)} JSON='' STATUS=''"
+    return Response(text.replace(PRESET, filled, 1), media_type="text/x-shellscript",
+                    headers={"cache-control": "no-store"})
 
 
 def _linked(request: Request):

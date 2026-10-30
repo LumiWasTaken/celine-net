@@ -8,7 +8,7 @@ group = "computer"
 choice = "Own computer"
 routes = ["gateway:router"]
 run = "gateway:run"
-open = ["GET /setup.sh", "POST /gateway", "POST /events"]   # the Mac reaches these without a session
+open = ["GET /setup.sh", "GET /setup/{token}", "POST /gateway", "POST /events"]   # the Mac reaches these without a session
 
 # The device "mac" for drones (server/celine/sub_agents/drone.py): opencode serve at the
 # Agents address, its password the Token; its model calls come to the app's model proxy

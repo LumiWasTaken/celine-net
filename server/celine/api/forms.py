@@ -6,7 +6,8 @@ var/secrets/<id>.<key>.key.
 - GET /api/forms/{id} -> {fields, actions, note?, values, secrets, version, saved,
   running}. `running`: its actions can run now (a plugin's code runs only while it is on;
   `features.changed` says when that changes). While it runs, its `copies =
-  "module:function"` (services, plugin, request) -> {key: text} fills its `copy` fields.
+  "module:function"` (services, plugin, her=False) -> {key: text} fills its `copy` fields; a
+  `note` among them is the form's note.
 - PUT /api/forms/{id} {values, secrets?} with If-Match -> the same view. `values` is the
   whole object (a key left out goes back to its default). A secret is set by a string,
   deleted by null, kept when absent, and never echoed: `secrets` says {state, set_at}.
@@ -45,14 +46,15 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
     saved = s.plugins.get(p.id, {})
     copies = {}
     if p.data is not None and (ref := p.form.get("copies")):
-        copies = await p.attr(ref)(services_of(request), p, request)
+        copies = await p.attr(ref)(services_of(request), p)
+    note = copies.pop("note", None) or p.form.get("note")
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root, copies),
            "actions": form.actions_view(p.form.get("actions", [])),
            "version": etag(response, version(saves.form_version(s, p))),
            "saved": bool(s.saved.get(p.id)),
            "running": p.data is not None}
-    if p.form.get("note"):
-        out["note"] = p.form["note"]
+    if note:
+        out["note"] = note
     return out
 
 
