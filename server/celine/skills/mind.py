@@ -16,7 +16,9 @@
   finished chat turn the `small` role appraises the exchange; `mind__feel` in that turn
   wins over it.
 - The agent's mood on screen: `mind__set_status(text)` sets the 1 to 24 emojis or the kaomoji next
-  to its name in the chat head (kv `mood`, GET /api/agent/mood, global event `mood`).
+  to its name in the chat head (kv `mood`, GET /api/agent/mood, global event `mood`). One
+  set outside a chat goes when that conversation's turn ends, one in a routine's run when
+  the run ends (clear_after, run_ended).
 - The agent's thoughts: `mind__think(text)` appends "- HH:MM text" to thoughts/<date>.md in its
   notebook.
 """
@@ -170,9 +172,10 @@ async def feel(store, emotion: str, strength: float, why: str, by: str,
          message_id)))
 
 
-async def store_mood(store, text: str) -> dict:
-    """The agent's mood on screen, stored (kv `mood`) and sent as the global event `mood`."""
-    mood = {"text": text, "set_at": now()}
+async def store_mood(store, text: str, conversation: str | None = None) -> dict:
+    """The agent's mood on screen, stored (kv `mood`) and sent as the global event `mood`;
+    `conversation`: the one it was set in (clear_after, run_ended)."""
+    mood = {"text": text, "set_at": now(), "conversation": conversation}
 
     def fn(c: sqlite3.Connection) -> None:
         c.execute("INSERT INTO kv(k, v) VALUES('mood', ?) "
@@ -181,6 +184,43 @@ async def store_mood(store, text: str) -> dict:
 
     await store.write(fn)
     return mood
+
+
+def _drop(c: sqlite3.Connection, store, goes) -> bool:
+    """Inside a write: the mood on screen goes when `goes(the conversation it was set
+    in)` holds. -> whether it went."""
+    raw = c.execute("SELECT v FROM kv WHERE k='mood'").fetchone()
+    at = json.loads(raw[0]).get("conversation") if raw else None
+    if not at or not goes(at):
+        return False
+    c.execute("DELETE FROM kv WHERE k='mood'")
+    store.global_event(c, MOOD, {"mood": None})
+    return True
+
+
+async def clear_after(store, cid: str) -> bool:
+    """A turn of `cid` ended: a mood on screen set in it goes when `cid` is not a chat
+    (a trigger's work, a mission), so background work leaves no status behind. One set
+    in a routine's run (or a sub-agent of it) stays while that run is waiting or running:
+    it goes when the run ends (run_ended). A mood set since elsewhere stays."""
+    from .. import homes
+    from .places import place_of
+
+    def goes(c: sqlite3.Connection, at: str) -> bool:
+        if at != cid or place_of(c, at) == "chat":
+            return False
+        key = (homes.root(c, at) or {"trigger_key": None})["trigger_key"] or ""
+        return not (key.startswith("run:") and c.execute(
+            "SELECT 1 FROM runs WHERE id=? AND state IN ('waiting', 'running')",
+            (key[4:],)).fetchone())
+    return await store.write(lambda c: _drop(c, store, lambda at: goes(c, at)))
+
+
+def run_ended(c: sqlite3.Connection, store, cid: str) -> bool:
+    """Inside a write: the run in conversation `cid` ended; a mood on screen set in it or
+    in a sub-agent of it goes."""
+    from .. import homes
+    return _drop(c, store, lambda at: (homes.root(c, at) or {"id": None})["id"] == cid)
 
 
 async def get_mood(store) -> dict | None:
@@ -193,6 +233,7 @@ def start(app) -> None:
     (work.py, `appraisal`)."""
     if "mind" in app.registry.skills:
         app.dispatcher.on_end(lambda cid, turn_id: _ended(app, cid, turn_id))
+        app.dispatcher.on_end(lambda cid, _turn: clear_after(app.store, cid))
         app.dispatcher.work.handle("appraisal", ("small",), lambda p: _appraise_item(app, p))
 
 
@@ -364,7 +405,7 @@ class Mind:
         """Set the emojis or the kaomoji shown next to your name, whenever your mood or
         what you are doing changes, during a reply too. Example:
         mind__set_status(text="\U0001f319\u2615\u2728")."""
-        mood = await store_mood(ctx.store, text)
+        mood = await store_mood(ctx.store, text, ctx.conversation_id)
         return ToolResult(content=f"Shown: {mood['text']}", display={"text": mood["text"]})
 
     @tool(read_only=False, destructive=False, needs_answer=False)

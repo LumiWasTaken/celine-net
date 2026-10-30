@@ -182,6 +182,9 @@ def _set(c: sqlite3.Connection, store, cfg, rid: str, **fields) -> dict:
     if fields.get("state") in ("done", "failed", "skipped", "stopped"):
         from ..events import added
         added(store, c, "run", out["conversation_id"])
+        if out["conversation_id"]:
+            from ..skills.mind import run_ended
+            run_ended(c, store, out["conversation_id"])
         metrics.ROUTINE_RUNS.labels(out["schedule"], out["state"]).inc()
         if out["started_at"] and out["finished_at"]:
             metrics.ROUTINE_SECONDS.labels(out["schedule"]).observe(max(0.0, (

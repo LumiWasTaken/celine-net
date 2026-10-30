@@ -229,3 +229,36 @@ async def test_a_build_batch_takes_a_background_ticket(monkeypatch):
     with anyio.fail_after(5):           # the releases come through the loop
         while len(sched.freed) < 2:
             await anyio.sleep(0)
+
+
+async def test_a_status_set_in_a_run_goes_when_its_turn_ends_and_a_chats_stays(store):
+    chat = await conversations.create(store)
+    run = await conversations.for_trigger(store, "run:r1", "Radar")
+    await mind.store_mood(store, "\U0001f440", run)
+    assert not await mind.clear_after(store, chat)          # another conversation ended
+    assert await mind.clear_after(store, run)
+    assert await mind.get_mood(store) is None
+    await mind.store_mood(store, "\U0001f440", run)
+    await mind.store_mood(store, "☕", chat)             # newer, in the chat
+    assert not await mind.clear_after(store, run)
+    assert not await mind.clear_after(store, chat)          # a chat's stays
+    assert (await mind.get_mood(store))["text"] == "☕"
+
+
+async def test_a_status_set_in_a_running_run_stays_through_its_turns_until_it_ends(store):
+    from celine.schedules import runs
+    cfg = load()
+    cid = await conversations.for_trigger(store, "run:r2", "Radar")
+    agent = await conversations.create(store, agent_of=cid, kind="agent")
+    at = T0.isoformat()
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
+        "created_at, started_at) VALUES('r2', 'radar', 'Radar', ?, ?, 'running', ?, ?, ?)",
+        (at, at[:10], cid, at, at)))
+    await mind.store_mood(store, "\U0001f440", cid)
+    assert not await mind.clear_after(store, cid)            # her turn, the partner's next
+    await mind.store_mood(store, "\U0001f50d", agent)
+    assert not await mind.clear_after(store, agent)          # a sub-agent of the run
+    await store.write(lambda c: runs._set(c, store, cfg, "r2", state="stopped",
+                                          finished_at=at))
+    assert await mind.get_mood(store) is None
