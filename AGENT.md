@@ -41,7 +41,7 @@ The map of the code and the rules it follows.
 | `homes.py` | where a conversation lives and the link that opens it, and the one walk up the agent chain (`root`); the client never works it out |
 | `push.py` | web push: the VAPID key, the devices that take pushes, every notice to them while no page is focused |
 | `jobs/` | steps that outlive their turn |
-| `work.py`, `hold.py`, `leftovers.py` | the queue of background model jobs; why no turn may start now; what a done mission leaves open |
+| `work.py`, `hold.py`, `leftovers.py` | the queue of background model jobs; why her turns may not start now; what a done mission leaves open |
 | `events.py`, `texts.py`, `approvals.py`, `metrics.py` | the events list; every long text's history; approvals before something runs; Prometheus numbers |
 | `attachments.py`, `box_files.py` | files on a message; files between the app and the box |
 | `comfyui/`, `image_catalog.py`, `vision.py` | images and music; the model catalog; one question about one image |

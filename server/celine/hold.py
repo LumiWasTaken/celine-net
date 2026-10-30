@@ -3,7 +3,8 @@ claims a turn (turns/dispatcher.py). "frozen": the user or Bastet froze her
 (guard/freeze.py); the unfreeze wakes the workers. "paused": the gateway sees no host of
 the chat and tasks models answer (backends/router.py); it resumes by itself when one
 is back. Frozen wins over paused. Routines and messages still queue their turns; they
-wait here."""
+wait here. Paused holds her own turns only: a sub-agent's or a drone's turn whose own
+model answers is still claimed (turns/store.py claim, Router.answering)."""
 from __future__ import annotations
 
 from .guard.freeze import frozen

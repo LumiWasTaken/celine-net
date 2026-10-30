@@ -1,5 +1,6 @@
 """The work queue (work.py) and its pause (hold.py): leases, one try, deferral until a
-host is back, and no turn claimed while no chat host answers. Fixed clocks, fake
+host is back, and none of her turns claimed while no chat host answers (an agent's
+whose own model answers is). Fixed clocks, fake
 servers."""
 from __future__ import annotations
 
@@ -171,6 +172,47 @@ async def test_with_no_chat_host_she_pauses_and_resumes_by_herself(
         assert await her_hold(store, llm) is None
         assert [e["hold"] for e in events if e["type"] == "her.hold"][-1] is None
         await until(lambda: _done(store, cid))
+        await d.stop()
+        tg.cancel_scope.cancel()
+
+
+async def test_while_she_is_paused_an_agent_whose_model_answers_runs_and_her_turn_waits(
+        store, tmp_path, monkeypatch):
+    """Her roles' host is down, an agent's own model's host is up: the agent's turn
+    runs, its report to her waits in the queue and lands when her host is back. An
+    agent on her down host waits with her."""
+    from celine.intercom import send
+    from celine.settings import conversations as conv
+    cfg, llm, up, ping = _gateway(tmp_path, monkeypatch, {
+        "chat": {"chain": ["gpu/big"]}, "tasks": {"chain": ["gpu/big"]}}, [])
+    up["lan"] = True
+    await ping()
+    assert await her_hold(store, llm) == "paused"
+    assert llm.router.answering() == {"lan/small"}
+    monkeypatch.setattr(dispatcher_mod, "HOLD_RECHECK", 0.02)
+    d = dispatcher_mod.Dispatcher(store, cfg, EventBus(), FakeBackend, None, llm=llm)
+    her = await conversations.create(store)
+    agent = await conversations.create(store, title="a", agent_of=her, agent_name="a")
+    await conv.apply(store, agent, {"model": "lan/small"})
+    stuck = await conversations.create(store, title="b", agent_of=her, agent_name="b")
+    await conv.apply(store, stuck, {"model": "gpu/big"})
+
+    async def state(cid):
+        return await store.read(lambda c: c.execute(
+            "SELECT state FROM turns WHERE conversation_id=?", (cid,)).fetchone()[0])
+    async with anyio.create_task_group() as tg:
+        await d.start(tg)
+        await user_says(store, agent, "build it")
+        await user_says(store, stuck, "build that")
+        d.notify()
+        await until(lambda: _done(store, agent))
+        assert (await send(store, f"agent:{agent}", f"agent:{her}", "[a, done]"))["turn_id"]
+        d.notify()
+        assert await state(her) == "queued" and await state(stuck) == "queued"
+        up["gpu"] = True
+        await ping()
+        await until(lambda: _done(store, her))
+        await until(lambda: _done(store, stuck))
         await d.stop()
         tg.cancel_scope.cancel()
 
