@@ -174,6 +174,20 @@ async def test_approve_saves_through_settings_and_bumps_the_version(app):
     assert {"type": "settings.changed", "what": ["general"]} in app.seen
 
 
+async def test_a_feature_switched_on_says_what_its_probe_finds(app, monkeypatch):
+    from celine.skills import web
+
+    async def down(cfg, services):
+        return {"state": "missing", "detail": "page words", "why": "SearXNG is not running."}
+    monkeypatch.setattr(web, "probe", down)
+    await saves.features(app, {"web": False})
+    sk = _skill(app)
+    got, _ = await _answer(app, sk.propose(
+        await _ctx(app), target="features", changes={"web": True}, why="w"), True)
+    assert got.content == ("Changed Features. Web search: Off → On. "
+                           "Web search: missing. SearXNG is not running."), got.content
+
+
 async def test_an_approve_after_the_setting_changed_fails_and_keeps_the_change(app):
     sk = _skill(app)
     ctx = await _ctx(app)

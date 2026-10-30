@@ -219,3 +219,39 @@ async def test_when_her_time_is_up_the_turn_ends_capped(store, cfg):
     assert anyio.current_time() - t0 < 2 and t.runs == 0
     assert len(b.calls) == 1, "no step after the time is up"
     assert (snap["turn"]["state"], snap["turn"]["reason_code"]) == ("capped", "wall_clock")
+
+
+class U:
+    """A skill whose feature is switched on mid-turn."""
+    name = "u"
+    description = "test"
+
+    @tool()
+    async def go(self, ctx) -> ToolResult:
+        """go"""
+        return ToolResult(content="u ran")
+
+
+class Switch:
+    """`on` switches U's feature on: the reload adds its skill to the registry."""
+    name = "t"
+    description = "test"
+
+    def __init__(self, reg):
+        self.reg = reg
+
+    @tool()
+    async def on(self, ctx) -> ToolResult:
+        """on"""
+        self.reg.add(U())
+        return ToolResult(content="on")
+
+
+async def test_a_skill_switched_on_mid_turn_is_callable_at_the_next_step(store, cfg):
+    cfg.skills = {**cfg.skills, "u": {"enabled": True}}
+    reg = Registry()
+    reg.add(Switch(reg))
+    b = Script([_call(1, "t__on", {}), _call(2, "u__go", {}),
+                [TextDelta("done"), Done(reason="stop")]])
+    await _turn(store, cfg, reg, b)
+    assert await _tool_results(store) == ["on", "u ran"]

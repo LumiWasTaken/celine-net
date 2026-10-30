@@ -47,6 +47,10 @@ version, so nothing is ever lost.
 - It runs on its own, sandboxed: no network, no cookies, no `localStorage`, no
   `alert`, `confirm` or `prompt`, no popups, no new tabs, no downloads. `fetch` reaches
   nothing: put the data into the page. Build dialogs, menus and messages in the page.
+- `localStorage`, `sessionStorage`, `indexedDB` and `document.cookie` throw a
+  `SecurityError` when touched, and an uncaught one stops the script; state lives in
+  variables and is gone on reload. `requestFullscreen`, `requestPointerLock`, the
+  clipboard, the camera and the microphone are refused.
 - Libraries load only from https://cdnjs.cloudflare.com/, https://cdn.jsdelivr.net/npm/,
   https://unpkg.com/, https://cdn.tailwindcss.com/ and https://code.jquery.com/; fonts
   from Google Fonts. Pin the version in the address, as below. Images: inline SVG, a

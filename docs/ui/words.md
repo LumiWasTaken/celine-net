@@ -56,7 +56,7 @@ block at the end of this file lists the words no UI string uses.
 | Delete | a message, a note version (menus) | everyone |
 | Open | open the item | everyone |
 | Open Settings, Open Setup, Open conversation, Open terminal | a link that leaves names where it goes (Open Setup: the feature's own Setup step while it is on) | VS Code "Open Settings", "Open in Terminal" |
-| Back to Settings | the way out of Setup once it was finished before | Gmail "Back to Inbox" |
+| Back to Settings | the way out of Setup run again from Settings, never on the first run | Gmail "Back to Inbox" |
 | Undo | take back a reversible action from its toast (Archive one item); never a delete or a move to Trash, those ask first | Gmail "Undo", everyone |
 | Unsaved, Unsaved changes | an edit not saved yet, in an editor with Save (a note, a document); Settings save themselves | Google Docs, VS Code "Unsaved changes" |
 | Rename, Edit, Duplicate, Copy | | ChatGPT, Claude, Finder |
@@ -164,7 +164,7 @@ block at the end of this file lists the words no UI string uses.
 | Her Mac, Run on the Mac, Address, Agents, Token, Check | the Own computer form (the Her computer Setup step, its Settings page): the command with Copy, the gateway's address, the address of opencode serve for her drones and the token (the script posts them back), and Check | plain |
 | Screen: 26 tools, Shell: Address is empty., Accessibility (Required): Not Granted. Grant via: System Settings > Privacy & Security > Accessibility | Check's lines on the Mac's form, one Dot each: each server's tool count or what kept it down, and each macOS permission the screen server lacks, as Peekaboo says it | plain; Peekaboo's own words |
 | Anything worth knowing about you | the placeholder of About you | plain |
-| All set. {name} is ready., On:, Off:, Off (did not answer), You can change all of this later in Settings. | the last Setup step: done, then the features on, the ones whose service did not answer, and the rest off, as muted lines, then that Settings changes all of it | Apple setup "All set", Google "All set"; plain |
+| All set, {name} is ready., On:, Off:, Off (did not answer), Not set up: {feature}. {why}, You can change all of this later in Settings. | the last Setup step: its title, then the features on, the ones switched on whose service did not answer, one line per one switched on that is not set up with what is missing, and the rest off, as muted lines, then that Settings changes all of it | Apple setup "All set", Google "All set"; plain |
 | Guard mode, Watch, On | Settings, Guard: how Bastet acts while her feature is on (off is the feature switch) | Watch and On as in Events |
 | Watch: every step runs at once, and Bastet writes down in Events what she would have done. On: Bastet checks a risky step before it runs, and stops it, freezes {her name} or asks you first, as her rules say. Off, the switch above: Bastet does not run at all. No checks, no notes, no looking back. | Settings, Guard, under Guard mode: one line per mode (guard/switch.py, calls.py) | plain |
 | Decides quickly whether a risky step needs a check (it is also the Titles and descriptions model). Without one, Watch lets every step run, and On holds a risky step until one answers. | under the Decision model (Settings, Guard and the Guard Setup step): what it does and what Bastet does without it (guard/flow.py `_until`) | plain |

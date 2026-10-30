@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 
 import importlib
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -325,7 +326,13 @@ def probe_fn(f: Feature):
     return getattr(importlib.import_module(module), name)
 
 
-async def probe(cfg, services, feature: str) -> dict[str, str]:
+def shown(p: dict[str, Any]) -> dict[str, Any]:
+    """A probe as the client gets it, with "blocks": whether its switch cannot be on
+    (missing or unset, but a plugin waiting for its own form: _plugin_state)."""
+    return {**p, "blocks": p.get("blocks", p["state"] in ("missing", "unset"))}
+
+
+async def probe(cfg, services, feature: str) -> dict[str, Any]:
     """One feature's state now: {"state", "detail"}, with "url" when the probe found the
     service at its default address while none is saved (the setup form prefills it), and
     "why" when what she reads differs from the page's words (errors.her_*).
@@ -334,7 +341,7 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
     f = get(feature)
     fn = probe_fn(f)
     if fn is None:
-        return {"state": "none", "detail": ""}
+        return _plugin_state(cfg, feature)
     if DEMO:
         return {"state": "ready", "detail": "Demo"}
     try:
@@ -357,6 +364,24 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
         if result.get(key):
             out[key] = result[key]
     return out
+
+
+def _plugin_state(cfg, feature: str) -> dict[str, Any]:
+    """A feature without a probe: "unset" for a plugin while a value its servers need
+    (a `${KEY}` of its form in its [servers] blocks, form.fill) is empty, with what is
+    empty; else "none". It never blocks the switch: its form is filled from what runs
+    only while it is on (its setup line, its routes)."""
+    from . import form
+    p = plugins.get(feature)
+    if p is None or not p.manifest.get("servers"):
+        return {"state": "none", "detail": ""}
+    empty: list[str] = []
+    form.fill(cfg, p.id, (p.form or {}).get("fields", []),
+              json.dumps(p.manifest["servers"]), empty)
+    if not empty:
+        return {"state": "none", "detail": ""}
+    return {"state": "unset", "detail": "; ".join(dict.fromkeys(empty)) + ".",
+            "blocks": False}
 
 
 async def probe_all(cfg, services, *, cache: bool = True) -> dict[str, dict[str, str]]:

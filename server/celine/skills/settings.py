@@ -458,6 +458,13 @@ class Settings:
             return ToolResult(content=f"Saved {t.label} ({said}), but the app refused to "
                                       f"load it and keeps its last good settings: {why}.",
                               is_error=True, display={"target": t.id, "changes": rows})
-        return ToolResult(content=f"Changed {t.label}. {said}.",
+        now = ""
+        if t.id == "features":      # what a feature switched on finds: its probe, fresh
+            for k in (k for k, v in values.items() if v is True and not by_key[k]["value"]):
+                p = await features_mod.probe(self.cfg, self.app, k)
+                state = "on" if p["state"] == "none" else p["state"]
+                now += f" {by_key[k]['label']}: {state}." + \
+                    (f" {p.get('why') or p['detail']}" if p["detail"] else "")
+        return ToolResult(content=f"Changed {t.label}. {said}.{now}",
                           display={"target": t.id, "changes": rows})
 

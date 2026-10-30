@@ -184,7 +184,9 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if (shut := await bastet_calls.frozen(store, cfg, call["name"])) is not None:
         return (*shut, None)
     spec = registry.get(call["name"])
-    if (no := _not_offered(turn, call["name"], spec, registry, overrides, cfg)) is not None:
+    offered = await _offered(turn, spec, registry, store)
+    if (no := _not_offered(offered, turn, call["name"], spec, registry, overrides,
+                           cfg)) is not None:
         return no
     args = call["args"]
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
@@ -228,11 +230,23 @@ async def _replayed(store, turn, call):
     return done["state"], ToolResult(content=done["content"]), None
 
 
-def _not_offered(turn, name: str, spec, registry, overrides, cfg):
-    """The refusal of a call to a tool this step does not have: made up, not offered
-    here, outside a read-only sub-agent's tools, of a skill that is down or off. None
-    when it has it."""
-    offered = turn["offered"]
+async def _offered(turn, spec, registry, store) -> frozenset[str]:
+    """The tools this step has: the turn's, and those of `spec`'s skill when it is
+    offered here now but was not at the turn's start (a feature switched on by an
+    approval mid-turn): called by name at once, its parameters from skills__load. The
+    tools array stays as the turn started (turns/prompt.py wire_tools)."""
+    have = turn["offered"]
+    if spec is None or spec.wire_name in have:
+        return have
+    from .loads import offered
+    now = await offered(registry, store, turn["conversation_id"], turn["id"])
+    return have | {s.wire_name for s in now.get(spec.skill, ())}
+
+
+def _not_offered(offered, turn, name: str, spec, registry, overrides, cfg):
+    """The refusal of a call to a tool this step does not have (`offered`, _offered):
+    made up, not offered here, outside a read-only sub-agent's tools, of a skill that is
+    down or off. None when it has it."""
     skill = name.split("__")[0]
     if spec is None:
         # a made-up tool of a real skill: name the ones it has
