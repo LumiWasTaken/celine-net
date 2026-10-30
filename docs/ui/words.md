@@ -140,8 +140,10 @@ block at the end of this file lists the words no UI string uses.
 | Confirm access, Use passkey, Confirm | the dialog adding a way to log in, Reset codes or Create token opens first unless you proved it in the last 5 minutes: your passkey, password or PIN | GitHub sudo mode "Confirm access", "Use passkey", "Confirm" |
 | Source code | General: the link to the code this build runs, its commit on the link | GitHub "Source code"; the AGPL's offer of the source |
 | Features | the Settings page of what it has, one switch each; also the onboarding's step | Windows "Optional features", Discord "Features" |
+| Core, Base modules, User modules | the three headings of Features (Settings and Setup): what it is made of (on, no switch), what ships with it, the plugins you add | Drupal "Core", "Modules"; plain |
+| Chat, Notebook, Mind, Plan, Intercom, Past conversations, Bug reports | the Core rows of Features, each with its one line | plain; as their places and skills |
 | Next, Back, Skip | the onboarding's steps: on, back one, leave this one as it is | Apple setup, Android setup "Next", "Back", "Skip" |
-| Step 4 of 16 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
+| Step 4 of 7 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
 | Decision model, Second look model | Bastet's two models on the guard's onboarding card: the small one that decides (the Titles and descriptions role), the one that looks again | First look and Second look in Events |
 | Address, Check | a service's address and the button that saves and tests it (the Vault card too) | plain; Check as in Check provider |
 | Connect a model | the Setup step that saves the first provider and picks its chat model | ChatGPT desktop "Connect", LM Studio "Connect to server" |
@@ -154,12 +156,11 @@ block at the end of this file lists the words no UI string uses.
 | Turn on Shares?, Turn on | the confirm a feature with a warning (Shares) asks before its switch goes on (Settings, Features and its Setup card); off needs no confirm | macOS, Windows "Turn on" |
 | The link of a share is its key. A page opens only for you while you are logged in, but anyone who gets a link can reach what it shares with a script until it ends (24 hours, or what you set) or you stop it. A public share opens for anyone. | the body of Turn on Shares? (the server's `warn`): the warning, the exception to "no explainer text" (AGENT.md rule 7) | plain |
 | Shares | the feature of what it shares from its shellbox (Settings, Features, Setup) | Google Drive "Shared"; plain |
-| Later, Turn on later in Settings | the Setup card of the features that got no card, and the line under each of its greyed switches | Apple Reminders "Later"; plain |
 | Import, Importing, Done. 1,234 messages in the archive. | a Discord or WhatsApp Setup card once the account is linked: the first import, its line while it runs (the archive's message count, from the server) and its end; beside it the Messages switch | Google Photos, Apple Photos "Import" |
 | Logging in with a user account may break Discord's terms; use it at your own risk. | under Log in with QR code (Settings, Discord and its Setup card) | plain |
 | An embedding model lets Search find messages by topic, not only by their words, and a reranker model puts the best matches first. Any OpenAI-compatible server can run them, for example Ollama: run ollama pull nomic-embed-text on the server from Connect a model and it shows up here. You can also pick them later in Settings, Models, under Topic search and Reranking. | the Messages setup form (the Setup card, Settings, Features, Edit) above its Topic search and Reranking pickers: the one paragraph, the exception to "no explainer text" (AGENT.md rule 7) | plain |
 | Same ComfyUI as Images | the Music card once Images has a ComfyUI address: no second address field | plain |
-| Her computer, Container, Own computer | the Setup card of where she works, her possessive pronoun in its title, and its two switches: the shellbox, and her own machine (the mac plugin); both may be on. Container and Own computer also head each one's fields while it is on | plain |
+| Her computer, Container, Own computer | the Setup step of where she works, her possessive pronoun in its title, once Shellbox or Her Mac is on in Features; Container and Own computer head each one's fields | plain |
 | Her Mac, Run on the Mac, Address, Agents, Token, Check | the Own computer form (its Setup card, its Settings page): the command with Copy, the gateway's address, the address of opencode serve for her drones and the token (the script posts them back), and Check | plain |
 | Screen: 26 tools, Shell: Address is empty., Accessibility (Required): Not Granted. Grant via: System Settings > Privacy & Security > Accessibility | Check's lines on the Mac's form, one Dot each: each server's tool count or what kept it down, and each macOS permission the screen server lacks, as Peekaboo says it | plain; Peekaboo's own words |
 | Anything worth knowing about you | the placeholder of About you | plain |

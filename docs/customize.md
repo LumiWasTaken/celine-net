@@ -60,7 +60,7 @@ and rename it. Or add one on the Routines page.
 | Key | What |
 |---|---|
 | `label` | the name shown, 1 to 60 characters (required) |
-| `summary` | one sentence under its name in the onboarding's Routines card, at most 120 characters |
+| `summary` | one sentence under its name in the onboarding's Routines step, at most 120 characters |
 | `cron` | minute hour day month weekday, in your time zone (required) |
 | `prompt` | what it is asked (required) |
 | `after` | names of routines it follows on the same night |
@@ -98,9 +98,12 @@ in `docker-compose.yml` under the `celine` service's `volumes`:
 
 Settings, Features (or `var/settings/features.toml`, `shellbox = false`). A feature not
 named is on, but Shares and Guard, which are on only once saved on (`shares = true`,
-`guard = true`); switching Shares on asks first, with what a share's link gives whoever holds it. The onboarding shows a card
-for every feature whose service answers, and always for Shares, Discord, WhatsApp (their
-card says how to run the connector), Guard and Routines (switch each routine on or off and set its time). Off means its skills are not built, and for the connectors and services
+`guard = true`); switching Shares on asks first, with what a share's link gives whoever holds it. The onboarding's Features
+step lists every feature by tier (Core, on with no switch; Base modules, what ships in the repo;
+User modules, a plugin of `<data>/plugins` with no place of its own) and then gives a setup step
+to each feature switched on there that has a form or a connection (the shellbox and the Mac
+share one, Her computer; Discord and WhatsApp say how to run the connector; Routines switches
+each routine and sets its time). Off means its skills are not built, and for the connectors and services
 they are stopped at once: a switch, or a changed address in Settings, Features, is live
 without a restart. Docker starts a service only if its profile is in `COMPOSE_PROFILES`
 in `.env`.
