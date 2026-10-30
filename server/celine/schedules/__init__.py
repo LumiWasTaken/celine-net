@@ -83,6 +83,65 @@ class Schedule:
                 "prompt": self.prompt}
 
 
+DAYS = ("Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
+        "Saturdays", "Sundays")        # cron weekdays 0 to 7
+
+
+def _hours(field: str) -> list[int] | None:
+    """The hours a cron hour field names, in order; None for a shape not read here."""
+    out: set[int] = set()
+    for part in field.split(","):
+        span, _, step = part.partition("/")
+        if not (step or "1").isdigit() or int(step or "1") < 1:
+            return None
+        lo, _, hi = ("0-23" if span == "*" else span).partition("-")
+        if not lo.isdigit() or not (hi or lo).isdigit():
+            return None
+        out.update(range(int(lo), int(hi or lo) + 1, int(step or "1")))
+    return sorted(out) if out and max(out) <= 23 else None
+
+
+def _days(field: str) -> str | None:
+    """"" for every day, "Sundays", "Mondays and Thursdays", "Weekdays", "Weekends";
+    None for a shape not read here."""
+    if field == "*":
+        return ""
+    if field == "1-5":
+        return "Weekdays"
+    if not all(d.isdigit() and int(d) <= 7 for d in field.split(",")):
+        return None
+    days = list(dict.fromkeys(DAYS[int(d)] for d in field.split(",")))
+    if sorted(days) == ["Saturdays", "Sundays"]:
+        return "Weekends"
+    return _and(days)
+
+
+def _and(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def words(cron: str) -> str:
+    """A cron line in plain words, 24h times: "Daily at 04:00", "Daily at 09:00 and
+    17:00", "Every 2 hours from 10:00 to 22:00", "Sundays at 03:00". A day of the month,
+    a month or a minute that is not one number: the cron line itself."""
+    parts = cron.split()
+    if len(parts) != 5 or not parts[0].isdigit() or parts[2:4] != ["*", "*"]:
+        return cron
+    minute, hour = int(parts[0]), parts[1]
+    hours, days = _hours(hour), _days(parts[4])
+    if hours is None or days is None or minute > 59:
+        return cron
+    at = [f"{h:02d}:{minute:02d}" for h in hours]
+    gaps = {b - a for a, b in zip(hours, hours[1:])}
+    if len(hours) > 2 and len(gaps) == 1:
+        n = gaps.pop()
+        every = "Every hour" if n == 1 else f"Every {n} hours"
+        if not (hour.startswith("*") and minute == 0):
+            every += f" from {at[0]} to {at[-1]}"
+        return f"{days}, {every[0].lower()}{every[1:]}" if days else every
+    return f"{days or 'Daily'} at {_and(at)}"
+
+
 def shown(s: Schedule) -> str:
     """A schedule's name as people read it: its filled label."""
     return s.title or s.label

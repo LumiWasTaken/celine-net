@@ -17,7 +17,7 @@ export type Schedule = {
   cron: string
   /** "02:00" for a daily one, else null */
   time: string | null
-  /** when it runs, in words: "Every day at 02:00", "Next: Mon 09:30" or "Off" */
+  /** when it runs, in words (the server's): "Daily at 02:00", "Sundays at 07:00", "Every 2 hours from 10:00 to 22:00"; else the cron line */
   every: string
   prompt: string
   /** the schedules whose runs of the same day it runs after */

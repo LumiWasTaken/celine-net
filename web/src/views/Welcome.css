@@ -36,7 +36,8 @@
 /* a routine's row: its switch with its label and summary, its time at the right */
 .onb__routine { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); }
 .onb__time { width: var(--row-column); }
-/* a cron no time field can say, read-only beside the switch */
+/* the time field and, for a schedule that is not daily, its words before it */
+.onb__when { display: flex; align-items: center; gap: var(--s-2); }
 .onb__cron { font-size: var(--t-xs); color: var(--text-muted); white-space: nowrap; }
 /* the Key hash and its Copy on one line */
 .onb__hash { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-2); }

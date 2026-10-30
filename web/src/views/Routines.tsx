@@ -694,7 +694,8 @@ function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKe
               <Field label="Name" error={err('label') ?? err('name')}>
                 <Input value={d.label} onChange={e => put({ label: e.target.value, ...(fresh ? { key: slug(e.target.value) } : {}) })} />
               </Field>
-              <Field label="Schedule" group error={err('time') ?? err('cron')}>
+              <Field label="Schedule" group error={err('time') ?? err('cron')}
+                     hint={d.when === 'cron' && s && d.cron.trim() === s.cron && s.every !== s.cron ? s.every : undefined}>
                 <div className="routines-when">
                   <Segmented label="Schedule" value={d.when} onChange={when => put({ when })}
                              options={[{ value: 'daily', label: 'Every day' }, { value: 'cron', label: 'Cron' }]} />

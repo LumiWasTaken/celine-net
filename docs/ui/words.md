@@ -100,6 +100,7 @@ block at the end of this file lists the words no UI string uses.
 | Activity | the tool calls of one reply, from its "..." | ChatGPT (agent and deep research "Activity") |
 | What (its name) saw | what one reply saw (its requests) | |
 | Plan, Asks you, Waiting for you, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
+| Daily at 04:00, Sundays at 03:00, Weekdays, Weekends, Every 2 hours from 10:00 to 22:00 | when a Routine's schedule runs, 24h times, from the server (schedules.words); a shape it cannot say stays the cron line | Google Calendar "Daily", "Weekly on Sunday" |
 | Started by | a Routine run you or it started by hand, in Events | GitHub Actions "Triggered by" for the same job |
 | (Its possessive pronoun) thoughts, Collapse thinking by default | its reasoning, and how its fold starts | Claude "Thinking", ChatGPT "Thought for" |
 | Thinking | the line while it thinks | Claude, ChatGPT |

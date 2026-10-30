@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+import tomllib
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
@@ -156,6 +158,20 @@ async def test_a_slot_that_passed_while_routines_were_off_is_never_caught_up(sto
     clock.at = datetime(2026, 10, 10, 17, 1, tzinfo=UTC)
     await sched.make_due()
     assert [r["slot"][11:16] for r in await _runs(store)] == ["17:00"]
+
+
+def test_a_cron_line_reads_in_words_and_any_other_shape_as_itself():
+    from celine.schedules import words
+    assert [words(c) for c in (
+        "0 10-23/2 * * *", "0 9,17 * * *", "0 3 * * 0", "30 4 * * *", "0 8 * * 6,0",
+        "0 9-17 * * 1-5", "0 1,13,20 * * *", "0 */2 * * *", "0 3 1 * *", "*/5 * * * *",
+    )] == [
+        "Every 2 hours from 10:00 to 22:00", "Daily at 09:00 and 17:00", "Sundays at 03:00",
+        "Daily at 04:30", "Weekends at 08:00", "Weekdays, every hour from 09:00 to 17:00",
+        "Daily at 01:00, 13:00 and 20:00", "Every 2 hours", "0 3 1 * *", "*/5 * * * *"]
+    for path in (Path(__file__).parents[1] / "config" / "schedules").glob("*.toml"):
+        cron = tomllib.loads(path.read_text())["cron"]
+        assert words(cron) != cron, f"{path.name}: {cron} in words"
 
 
 async def test_slots_past_max_slots_are_made_by_the_next_look(store, cfg, monkeypatch):
@@ -551,7 +567,7 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
         by_name = {s["name"]: s for s in got["schedules"]}
         reflection = by_name["reflection"]
         assert (reflection["time"], reflection["after"]) == ("05:00", ["self-review"])
-        assert reflection["every"] == "Every day at 05:00" and reflection["rounds"] == 8
+        assert reflection["every"] == "Daily at 05:00" and reflection["rounds"] == 8
         assert reflection["next_at"] == "05:00" and reflection["next_night"] >= got["tonight"]
         assert reflection["partner"] == "mentor.md" and "neutral and direct" in \
             reflection["partner_prompt"]
@@ -587,7 +603,7 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
                              )["label"] == "{{username}}'s day", "the placeholder is kept"
         weekly = {k: v for k, v in body.items() if k != "time"} | {"cron": "30 9 * * 1"}
         r = await api.put("/api/schedules/morning", json=weekly)
-        assert r.json()["every"] == "Next: Mon 09:30", "the next time, not the cron line"
+        assert r.json()["every"] == "Mondays at 09:30", "in words, not the cron line"
         r = await api.put("/api/schedules/world", json={**body, "after": ["reflection"]})
         assert r.status_code == 400 and r.json()["error"]["message"] == \
             "Reflection already runs after Morning.", "the circle in words"

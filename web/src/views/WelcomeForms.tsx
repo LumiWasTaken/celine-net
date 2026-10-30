@@ -495,7 +495,8 @@ function ServiceFields({ feature, value, onChange, saveRef, reprobe, withKey }: 
 /* ── routines: every routine as a row (its switch, its label with its summary under it, its
    time): a flipped switch saves at once, a changed time when its field is left, Next saves
    what is still pending. The time is a field with HH:MM when the cron's minute and hour are
-   plain numbers (the other cron fields stay); any other cron is read-only text ── */
+   plain numbers (the other cron fields stay); a schedule that is not daily shows the
+   server's words for it (`every`) beside the field, or alone ── */
 type Rows = Record<string, { on: boolean; time: string }>
 const HHMM = /^([01]?\d|2[0-3]):([0-5]\d)$/
 /** minute and hour are plain numbers: a time to type */
@@ -548,10 +549,13 @@ function RoutinesForm({ value, onChange, saveRef }: FormProps<Rows>) {
           <div key={s.name} className="onb__routine">
             <Switch checked={r.on} disabled={!online || save.busy} onChange={on => void save.run(s.name, set({ on }))}
                     label={<>{s.title}{s.summary && <span className="feature-about">{s.summary}</span>}</>} />
-            {plainCron(s.cron)
-              ? <Input mono className="onb__time" value={r.time} aria-label="Time" spellCheck={false} disabled={!online}
+            <span className="onb__when">
+              {!s.time && <span className="onb__cron">{s.every}</span>}
+              {plainCron(s.cron) && (
+                <Input mono className="onb__time" value={r.time} aria-label="Time" spellCheck={false} disabled={!online}
                        onChange={e => set({ time: e.target.value })} onBlur={() => void save.run(s.name, r)} />
-              : <span className="onb__cron mono">{s.cron}</span>}
+              )}
+            </span>
           </div>
         )
       })}
