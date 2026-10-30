@@ -24,6 +24,7 @@ from celine.intercom.service import Intercom
 from celine.settings import conversations as conv
 from celine.skills import Registry
 from celine.sub_agents import drone, skill as skill_mod
+from celine.sub_agents.drone import Unseen, tally
 from celine.sub_agents.report import head, work
 from celine.sub_agents.skill import SubAgents, agents_of
 from chat_fixtures import until
@@ -150,9 +151,13 @@ def answer(sid: str, text: str, model="main/small", tokens=(1000, 50, 200)) -> N
 
 
 def tool(sid: str, call: str, name: str, title: str) -> None:
-    Fake.events.put({"type": "message.part.updated", "properties": {"sessionID": sid, "part": {
-        "type": "tool", "callID": call, "tool": name,
-        "state": {"status": "running", "input": {}, "title": title}}}})
+    """A tool part as opencode sends it, the session id in the part (cli/cmd/run.ts reads
+    it there)."""
+    Fake.events.put({"type": "message.part.updated", "properties": {"part": {
+        "id": f"prt_{call}", "sessionID": sid, "messageID": "msg_x", "type": "tool",
+        "callID": call, "tool": name,
+        "state": {"status": "running", "input": {}, "title": title, "time": {"start": 1}}},
+        "time": 1}})
 
 
 @pytest.fixture
@@ -340,3 +345,41 @@ async def test_the_parent_sees_where_a_drone_is_and_what_it_does_now(app, store)
     tail = await IntercomSkill(app.cfg).tail_part(
         ToolContext(parent, "t", "k", store, app.cfg, None))
     assert "Your sub-agents: arcade (working, on mac, now bash: npm test)." in tail
+
+
+def test_a_count_whose_last_answer_is_gone_fails_instead_of_counting_twice():
+    msgs = [{"info": {"id": "msg_1", "role": "user"}, "parts": []}]
+    with pytest.raises(Unseen):
+        tally(msgs, "msg_0")
+    assert tally(msgs, None)["asked"] == ["msg_1"]
+
+
+async def test_the_config_changes_only_while_no_drone_works_there(app, store):
+    sub = await _drone(store)
+    Fake.busy.add("ses_other")
+    b = drone.DroneBackend(app, sub, "opencode", "mac")
+    with pytest.raises(drone.BackendError) as e:
+        await _run(b)
+    assert str(e.value).startswith("main/small is not in the opencode config on Her Mac yet")
+    assert not any(m == "PATCH" for m, _, _ in Fake.seen)
+    Fake.config = {"provider": {"celine": {"models": {"main/small": {"name": "main/small"}}}}}
+    evs = await _run(b, lambda ev: isinstance(ev, ReasoningDelta) and answer("ses_1", "ok"))
+    assert [e.text for e in evs if isinstance(e, TextDelta)] == ["ok"]
+    assert not any(m == "PATCH" for m, _, _ in Fake.seen), "its model is there: no change"
+
+
+async def test_a_broken_event_stream_says_so_in_the_turn(app, store, monkeypatch):
+    sub = await _drone(store)
+    b = drone.DroneBackend(app, sub, "opencode", "mac")
+    monkeypatch.setattr(drone, "RETRY", 0)
+    seen = []
+
+    def during(ev):
+        if isinstance(ev, ReasoningDelta) and ev.text.startswith("opencode on"):
+            Fake.events.put(None)                # the server ends the stream
+        elif isinstance(ev, ReasoningDelta) and "broke" in ev.text:
+            seen.append(ev.text)
+            answer("ses_1", "done anyway")
+    evs = await _run(b, during)
+    assert seen == ["The event stream from Her Mac broke (it ended); it is opened again.\n"]
+    assert [e.text for e in evs if isinstance(e, TextDelta)] == ["done anyway"]

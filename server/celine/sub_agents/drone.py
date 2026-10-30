@@ -2,18 +2,20 @@
 (sub_agents__start with `device`), close to the machine, while she supervises.
 
 A device is a plugin that is on with a [drones] block (celine/devices.py). The one
-opencode client is the box's,
-shellbox/agents/opencode.py, loaded from here.
+opencode client is the box's, shellbox/agents/opencode.py, loaded from here.
 
 A drone's turn: the messages it got since the last one sent (`agent_sent`) go to its
 opencode session (`agent_session`, made at its first turn and kept, so the same name
 resumes the same session and a restart finds it again) with `prompt_async`, on the
 model its conversation runs on, which opencode reaches through the app's model proxy
 (queue, freeze and usage stay in the app). The models the proxy offers are put into
-the device's opencode config first when they differ (PATCH /global/config). Its
-progress comes from opencode's event stream (GET /event): one line of the reply's
-thinking per tool it starts, and the tool in `agent_step` (the "Now:" of read and the
-overview). The turn ends when the session is idle: the reply is opencode's last answer
+the device's opencode config first when they differ (PATCH /global/config), and only
+while no session there works: a changed config disposes every opencode instance.
+The messages are marked sent before they go: a crash in between loses them rather than
+sending them twice (at most once). Its progress comes from opencode's event stream (GET
+/event): one line of the reply's thinking per tool it starts, and the tool in
+`agent_step` (the "Now:" of read and the overview); a stream that breaks says so in a
+line of its own and is opened again. The turn ends when the session is idle: the reply is opencode's last answer
 as it came; the tokens of its answers since the last one counted (`agent_seen`) are the
 turn's usage, the files the messages of the turn changed (opencode's diff) go into the
 reply's raw response, where the report finds them (report.work). A waking message that
@@ -80,12 +82,19 @@ def waking(c: sqlite3.Connection, cid: str) -> bool:
         (cid, now())).fetchone() is not None
 
 
+class Unseen(Exception):
+    """The answer counted last is no longer in the session."""
+
+
 def tally(msgs: list[dict], seen: str | None) -> dict:
     """Its answers after `seen` that are complete: {text: the last one's text, models,
-    usage, seen: the last one's id, asked: the ids of the messages sent after `seen`}."""
+    usage, seen: the last one's id, asked: the ids of the messages sent after `seen`}.
+    Raises Unseen when `seen` is not among them."""
     after = msgs
     ids = [m["info"].get("id") for m in msgs]
-    if seen in ids:
+    if seen is not None:
+        if seen not in ids:
+            raise Unseen(seen)
         after = msgs[ids.index(seen) + 1:]
     out = {"text": "", "models": [], "n": [0, 0, 0, 0], "seen": seen, "asked": []}
     for m in after:
@@ -112,6 +121,12 @@ def tally(msgs: list[dict], seen: str | None) -> dict:
         out["seen"] = info.get("id")
     out["usage"] = Usage(*out.pop("n"))
     return out
+
+
+def session_of(ev: dict) -> str | None:
+    """The session an event is about: in its properties, or in its part's."""
+    props = ev.get("properties") or {}
+    return props.get("sessionID") or (props.get("part") or {}).get("sessionID")
 
 
 def step_line(part: dict) -> str:
@@ -146,16 +161,28 @@ class DroneBackend:
         await self._set(agent_step=text)
         await announce(self.services, self.cid)
 
-    async def _models(self, oc, server) -> None:
-        """The proxy's models into the device's opencode config, when they differ."""
+    async def _models(self, oc, server, dev) -> None:
+        """The proxy's models into the device's opencode config, when they differ and no
+        session there works (a changed config disposes every instance). While one
+        works, the config stays: refused when it lacks this drone's model."""
         from ..api.llm_proxy import listing
         want = {ref: {"name": ref, "limit": limit} for ref, limit in oc._limits(
             listing(self.services.cfg.settings), log.info).items()}
         have = (((await _run(oc._call, "GET", "/global/config", server=server) or {})
                  .get("provider") or {}).get("celine") or {}).get("models") or {}
-        if any(have.get(k) != v for k, v in want.items()):
+        if all(have.get(k) == v for k, v in want.items()):
+            return
+        working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
+                                             server=server) or {}).items()
+                   if (v or {}).get("type") in ("busy", "retry")]
+        if not working:
             await _run(oc._call, "PATCH", "/global/config",
                        {"provider": {"celine": {"models": want}}}, server=server)
+        elif self.model not in have:
+            raise BackendError(
+                f"{self.model} is not in the opencode config on {dev.label} yet, and it "
+                f"changes only while no drone works there ({len(working)} working now); "
+                f"start this one when they are done.", retryable=False)
 
     async def stream(self, messages, tools, body=None):
         oc = client()
@@ -176,7 +203,7 @@ class DroneBackend:
         session = row["agent_session"]
         try:
             try:
-                await self._models(oc, server)
+                await self._models(oc, server, dev)
                 if session is None:
                     if not brief:
                         raise BackendError("There is no brief to work on.", retryable=False)
@@ -188,11 +215,13 @@ class DroneBackend:
             events = _Events(oc, server, session)
             try:
                 if brief:
+                    # marked first: a crash before the send loses it, never sends it twice
+                    await self._set(agent_sent=last)
                     try:
                         await _run(oc.prompt, session, self.model, brief, "", server)
                     except oc.Problem as e:
+                        await self._set(agent_sent=row["agent_sent"])   # not sent: again next turn
                         raise BackendError(f"{dev.label}: {e}", retryable=False) from None
-                    await self._set(agent_sent=last)
                     busy = True
                 yield ReasoningDelta(f"{self.cli} on {dev.label}, session {session}\n")
                 cut, started = False, set()
@@ -208,7 +237,10 @@ class DroneBackend:
                             raise BackendError(f"{dev.label}: {e}", retryable=False) from None
                         continue
                     kind, props = ev.get("type"), ev.get("properties") or {}
-                    if kind == "message.part.updated":
+                    if kind == LOST:
+                        yield ReasoningDelta(f"The event stream from {dev.label} broke "
+                                             f"({props['error']}); it is opened again.\n")
+                    elif kind == "message.part.updated":
                         part = props.get("part") or {}
                         if part.get("type") == "tool" and part.get("callID") not in started \
                                 and (part.get("state") or {}).get("status") == "running":
@@ -220,7 +252,7 @@ class DroneBackend:
                             props.get("status") or {}).get("type") == "idle"):
                         busy = False
             finally:
-                events.close()
+                await events.close()
             done = await self._done(oc, server, session, row["agent_seen"], cut, dev)
             ended = True
         finally:
@@ -242,6 +274,14 @@ class DroneBackend:
         try:
             msgs = await _run(oc._messages, session, server, None)
             t = tally(msgs, seen)
+        except Unseen:
+            raise BackendError(
+                f"The answer counted last ({seen}) is no longer in session {session} on "
+                f"{dev.label}, so what came after it cannot be counted.",
+                retryable=False) from None
+        except oc.Problem as e:
+            raise BackendError(f"{dev.label}: {e}", retryable=False) from None
+        try:
             files = {}
             for mid in t["asked"]:
                 for d in await _run(oc._call, "GET", f"/session/{session}/diff",
@@ -267,28 +307,46 @@ async def _run(fn, *args, **kw):
     return await anyio.to_thread.run_sync(lambda: fn(*args, **kw), abandon_on_cancel=True)
 
 
+LOST = "celine.lost"     # what the pump puts in the queue when the stream broke
+
+
 class _Events:
     """The session's events from opencode's stream, read in a thread of their own that
-    opens the stream again when it is lost."""
+    opens the stream again after READ quiet seconds or when it broke (a LOST event says
+    why); it ends with close()."""
 
     def __init__(self, oc, server, session: str):
         self.q: queue.Queue = queue.Queue()
         self.stop = threading.Event()
         self.end = None
         self.oc, self.server, self.session = oc, server, session
-        threading.Thread(target=self._pump, daemon=True).start()
+        self.thread = threading.Thread(target=self._pump, daemon=True)
+        self.thread.start()
 
     def _pump(self) -> None:
         while not self.stop.is_set():
             try:
                 self.end, each = self.oc.events(self.server, READ)
+                if self.stop.is_set():
+                    self.end()
+                    return
                 for ev in each:
                     if self.stop.is_set():
                         return
-                    if (ev.get("properties") or {}).get("sessionID") == self.session:
+                    if session_of(ev) == self.session:
                         self.q.put(ev)
-            except Exception:       # noqa: BLE001 - lost: the turn looks at the session
-                pass
+                why = "it ended"
+            except TimeoutError:
+                log.info("drone events quiet, opened again",
+                         extra={"event": "drone.events_quiet", "session": self.session})
+                continue
+            except Exception as e:      # noqa: BLE001 - said in the turn and the log
+                why = str(e) or type(e).__name__
+            if self.stop.is_set():
+                return
+            log.warning("drone events lost", extra={"event": "drone.events_lost",
+                                                    "session": self.session, "error": why})
+            self.q.put({"type": LOST, "properties": {"error": why}})
             self.stop.wait(RETRY)
 
     async def next(self, timeout: float) -> dict | None:
@@ -298,7 +356,10 @@ class _Events:
         except queue.Empty:
             return None
 
-    def close(self) -> None:
+    async def close(self) -> None:
+        """Ends the stream and waits for the thread."""
         self.stop.set()
         if self.end is not None:
             self.end()
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(self.thread.join, READ + 5)
