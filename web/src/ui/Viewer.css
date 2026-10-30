@@ -37,5 +37,5 @@
   margin: 0 var(--s-4) var(--s-4) 0; padding: var(--s-4); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--e-float); }
 @media (max-width: 767px) {
   .viewer__main--panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .viewer__panel { max-height: 40dvh; margin: 0 var(--s-2) var(--s-2); }
+  .viewer__panel { max-height: calc(0.4 * var(--vh, 100dvh)); margin: 0 var(--s-2) var(--s-2); }
 }

@@ -58,7 +58,7 @@
 }
 .chat-composer__float > * { pointer-events: auto; box-shadow: var(--e-overlay); animation: rise var(--dur) var(--ease); }
 .chat-composer__float--start { justify-content: flex-start; }
-.chat-composer__float > [role='menu'] { width: 100%; max-width: none; max-height: 50vh; overflow-y: auto; }
+.chat-composer__float > [role='menu'] { width: 100%; max-width: none; max-height: calc(0.5 * var(--vh, 100dvh)); overflow-y: auto; }
 /* a command's outcome above the box, with Dismiss */
 .chat-note { display: flex; align-items: center; gap: var(--s-2); padding-inline: var(--s-2); }
 /* a quoted message or a page in the box, with its x */
