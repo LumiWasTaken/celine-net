@@ -35,7 +35,7 @@ from starlette.responses import JSONResponse, Response
 
 from .. import plugins
 from ..api.deps import LLM_PROXY
-from ..api.origin import host_ok
+from ..api.origin import is_loopback
 from ..shares import PREFIX as SHARE
 from ..intercom import tokens
 from . import COOKIE, Auth
@@ -83,10 +83,10 @@ class Gate:
         store = self.auth.store
         headers = Headers(scope=scope)
         session = store.session(cookie_value(scope.get("headers") or []))
-        if session is not None and not self.auth.stored() and not host_ok(
+        if session is not None and not self.auth.stored() and not is_loopback(
                 headers.get("host", "")):
-            # no address stored yet: a session from another address logs in again, and
-            # that login stores the address (routes.py _signed_in)
+            # no address stored yet: a session from anywhere but loopback (allowed_hosts
+            # too) logs in again, and that login stores the address (routes.py _signed_in)
             session = None
         if session is not None:
             scope.setdefault("state", {})["session"] = session

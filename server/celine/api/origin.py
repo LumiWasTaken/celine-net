@@ -53,6 +53,10 @@ def _bare(host_header: str) -> str:
         else host_header.split("]")[0] + "]"
 
 
+def is_loopback(host_header: str) -> bool:
+    return bool(host_header) and _bare(host_header).lower() in _LOOPBACK_HOSTS
+
+
 def host_ok(host_header: str) -> bool:
     if not host_header:
         return False
