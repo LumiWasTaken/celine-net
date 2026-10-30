@@ -480,6 +480,11 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
   font-size: var(--t-xs); line-height: var(--lh-ui); font-weight: var(--fw-medium);
   color: var(--text-muted); letter-spacing: var(--tracking-meta);
 }
+.list-section__fold { display: inline-flex; align-items: center; gap: var(--s-1); margin: calc(-1 * var(--s-1)) 0 calc(-1 * var(--s-1)) calc(-1 * var(--s-1));
+  padding: var(--s-1) var(--s-2) var(--s-1) var(--s-1); border-radius: var(--r-sm); cursor: pointer;
+  font: inherit; letter-spacing: inherit; color: inherit; }
+.list-section__fold:hover { color: var(--text-secondary); background: var(--surface-3); }
+.list-section__count { font-variant-numeric: tabular-nums; font-weight: var(--fw-regular); }
 
 /* ── Drawer: its column at once, the panel slides by transform; over the content from
    the bottom bar on a phone. In on --dur-slow --ease, out on --dur --ease-exit ── */
@@ -1013,10 +1018,17 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 }
 
 /* ── Place: the place sidebar beside the page ── */
-.place { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+.place { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); overflow: clip;
+  transition: grid-template-columns 0s linear 0s; }
 .place__main { min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
-.place-side { min-height: 0; display: flex; flex-direction: column; background: var(--surface-1); border-right: 1px solid var(--border); }
-.place-side--drawer { flex: 1; background: none; border: 0; }
+.place-side { min-height: 0; width: var(--sidebar-w); display: flex; flex-direction: column; background: var(--surface-1); border-right: 1px solid var(--border);
+  transition: transform var(--dur-slow) var(--ease), visibility 0s; }
+/* folded: the sidebar slides out to the left, then its column goes at once; back, the
+   column comes at once and the sidebar slides in */
+.place--folded { grid-template-columns: 0 minmax(0, 1fr); transition: grid-template-columns 0s linear var(--dur); }
+.place--folded > .place-side { transform: translateX(-100%); visibility: hidden;
+  transition: transform var(--dur) var(--ease-exit), visibility 0s linear var(--dur); }
+.place-side--drawer { flex: 1; width: auto; background: none; border: 0; }
 .place-side__head { flex: none; display: flex; align-items: center; gap: var(--s-2); min-height: var(--header-h); padding: 0 var(--s-2) 0 var(--s-4); }
 .place-side__title { flex: 1; min-width: 0; margin: 0; font-size: var(--t-lg); font-weight: var(--fw-medium);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1028,6 +1040,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 
 /* ── PlaceHead: the place's panel button on a phone; the breadcrumb before the title ── */
 .place-head__side { display: none; margin-left: 0; }
+.place-head__side--on { display: inline-flex; }
 .place-head__up { display: none; margin-left: 0; }
 .place-head__crumbs { flex: none; display: flex; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap;
   font-size: var(--t-md); color: var(--text-muted); }

@@ -1,6 +1,6 @@
 /* The agent's place: the chats. The kit's Place: the conversation list in
-   its sidebar with its own head (Search, Select, Archive, Trash, More, New; a drawer from
-   the left on a phone), the chat beside it: the head with its face, its name and its mood,
+   its sidebar with its own head (Close sidebar, Search, Select, Archive, Trash, More, New; a
+   drawer from the left on a phone), the chat beside it: the head with its face, its name and its mood,
    the transcript in the reading column, the composer as the one raised object, and the side
    panel (Model, Tools, Pages, Context). It is one section of the app and stays mounted
    while you are elsewhere, so a running reply and a draft survive switching. The server
@@ -382,8 +382,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const headActs = 1 + (current ? 1 : 0) + (runningJobs > 0 ? 1 : 0) + (isArchived && current ? 1 : 0) + (convo.plan?.steps.length ? 1 : 0)
 
   const listHead = <>
-    <PlaceHead title={placeName} count={shown.data?.count}
-               search={{ value: query, onChange: setQuery, label: 'Search conversations', loading: !!q && found.loading }}
+    <PlaceHead search={{ value: query, onChange: setQuery, label: 'Search conversations', loading: !!q && found.loading }}
                picker={picker} shelf={{ archive: true, trash: true, value: shelf, onChange: setShelf }}
                more={[older.item, { label: 'Go to', icon: Compass, onSelect: () => emit({ type: 'ui.goto' }) }]}
                newLabel="New conversation" onNew={newConversation} />
@@ -411,7 +410,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   return (
     <ShowArtifact.Provider value={showArtifact}>
     <AgentsContext.Provider value={agents}>
-    <Place title={placeName} label="Conversations" open={sidebarOpen} onOpen={onSidebar} head={listHead} side={listBody}>
+    <Place title={placeName} label="Conversations" open={sidebarOpen} onOpen={onSidebar} fold="celine" head={listHead} side={listBody}>
       <div className="chat">
         <main className={cx('chat-main', dragging && 'chat-main--drop')} style={{ '--acts': headActs } as CSSProperties}
               onDragOver={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); setDragging(true) }}

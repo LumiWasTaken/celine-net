@@ -54,7 +54,8 @@ outside `tokens.css` writes a font size, line height, weight or letter spacing a
 
 ### PlaceHead
 **When:** the head of every place, list and page. Nothing else draws a head.
-**Props:** `title`, `count` (the server's number), `detail` (a muted state beside the
+**Props:** `title` (left out in a sidebar that is the place's list: Celine's conversations),
+`count` (the server's number), `detail` (a muted state beside the
 title: a terminal's program, "Deleted"), `level` (1 for a page's h1), `titleAttr`,
 `back` (`label`, `onClick`: the way back to the list where list and page share one pane,
 shown on a phone only), `crumbs` (the pages above a detail page, each `label` with `href`
@@ -82,7 +83,9 @@ Select, Archive and Trash never move under the pointer. Its sides sit on the pag
 filters, Sort or Group in it (they are the Toolbar's); float a New button over the list.
 **Phone:** the same steps: icon buttons, a round "+", Search on its own row.
 Inside a Place, below 1024 px, it starts with the place's panel button, which opens the place
-sidebar as a Drawer from the left (left out on a page with `back` or `crumbs`).
+sidebar as a Drawer from the left (left out on a page with `back` or `crumbs`). In a Place
+with `fold`, on a wide screen, the sidebar's own head starts with Close sidebar and the
+page's head with Open sidebar while the sidebar is away.
 
 ### Toolbar
 **When:** under a PlaceHead, for the state of a list, its filters, Sort and Group.
@@ -108,7 +111,11 @@ While selecting, the SelectBar takes its place.
 `menu` (the group's own "..." and right-click: a folder's Rename, Move to Trash), `onDrop`
 (a dragged row lands in the group; the head takes the accent wash while one is over it).
 **Don't:** open or close (no fold); carry more than its "...".
-`ListSection` stays the small label in a place sidebar ("Recent", "Today").
+`ListSection` stays the small label in a place sidebar ("Recent", "Today"). With `onToggle`
+(and `open`, `count`) its label is a button with the DisclosureArrow (`aria-expanded`) that
+folds the group under it, and a folded one shows its count: Celine's date groups, the
+owner's explicit exception to "no folds". The rows go and come through the list's own
+`useMove`, so the rows below glide; a search shows its matches without groups.
 
 ### Section
 **When:** a block of a page: a settings group, a section of a page with an index.
@@ -414,10 +421,14 @@ the place's list, such as Celine's conversations: its own PlaceHead with Search,
 Archive and Trash in place of the title and action), `side` (the sections with their counts
 as `sm` ListRows, a ListSection "Recent" and its rows, or the list), `foot` (the user's own
 row), `label`, `open` with `onOpen` (the phone's drawer, when the page decides), children
-(the page). `usePlace()` gives a PlaceHead inside it the panel button.
+(the page), `fold` (a key: on a wide screen the sidebar folds away to the left and back,
+this device keeps which). `usePlace()` gives a PlaceHead inside it the panel button.
 **Do:** `--sidebar-w` on `--surface-1`; below 1024 px (a tablet, a phone) a Drawer from the
 left, so the page keeps its width, opened by the panel button in the head, closed by a link
 in it, the scrim, Escape and its X.
+Folding, the sidebar slides out by transform on `--dur --ease-exit`, then its column goes at
+once and the page takes the width; back, the column comes at once and the sidebar slides
+in on `--dur-slow --ease`.
 **Don't:** make it a list pane (a place's list is its page); hand-build a sidebar.
 
 ### Message
@@ -497,4 +508,4 @@ working marks (spin, dots, a running dot) keep moving at half speed.
 |---|---|
 | `Rail` | the app's left column of places; the phone's scrollable bottom bar of icons |
 | `Tabs` | only Celine's side panel (Model, Tools, Pages, Context). Nowhere else |
-| `DisclosureArrow` | only in a Tree |
+| `DisclosureArrow` | only in a Tree, a Fold and a folding ListSection |

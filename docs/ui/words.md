@@ -318,6 +318,8 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Move up, Move down | the order of a list (models) | Google Docs, Word |
 | Move ended terminals to Trash | the ended terminals in one go | built on Move to Trash |
 | Ended today, Ended yesterday, Ended 12 Mar | the heads that group ended terminals by day | Slack "Today", "Yesterday"; Gmail |
+| Today, Yesterday, Previous 7 days, Previous 30 days, March, 2025 | the heads that group conversations by their last activity: the month this year, the year before | ChatGPT's chat history |
+| Close sidebar, Open sidebar | fold the conversation list away to the left and bring it back | ChatGPT "Close sidebar", "Open sidebar" |
 | Open, Act, Scroll, Read, Close | the names of its browser tools, in the History's filter and the manual call (Read is what it did when it looked at the page) | automation "open", "click", "scroll"; browser "Reader" |
 | 1 screenshot, 3 screenshots | the pictures a browser call took | macOS, Windows "Screenshot" |
 | Conversation | the title of a mission's or a sub-agent's conversation page (the Open conversation link opens it) | ChatGPT, Claude: the chat is a conversation |
