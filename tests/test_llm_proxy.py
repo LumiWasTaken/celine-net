@@ -182,7 +182,7 @@ async def test_calls_take_the_shellbox_lane_with_no_lock_of_their_own(proxy):
 async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_was_approved_for(
         proxy, store, monkeypatch):
     from celine import devices
-    from celine.conversations import store as conversations, tree
+    from celine.conversations import store as conversations
     from celine.devices import Device
     from celine.settings import conversations as conv
     monkeypatch.setattr(devices, "devices", lambda cfg: {"mac": Device(
@@ -196,17 +196,18 @@ async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_wa
     assert await ids("dev-key") == ["main/big", "main/small", "default"]
     refused = await ask(proxy, model="or/x/glm", key="dev-key")
     assert refused.status_code == 403 and refused.json()["error"]["message"] == \
-        "or/x/glm is a cloud model no drone working on Her Mac was approved for."
+        "or/x/glm is a cloud model no drone on Her Mac was approved for."
     parent = await conversations.create(store)
+    elsewhere = await conversations.create(store, title="pc", agent_of=parent,
+                                           agent_name="pc", access="work",
+                                           agent_cli="opencode", agent_device="pc")
+    await conv.apply(store, elsewhere, {"model": "or/x/glm"})
+    assert await ids("dev-key") == ["main/big", "main/small", "default"], \
+        "approved for a drone on another device"
     sub = await conversations.create(store, title="arcade", agent_of=parent,
                                      agent_name="arcade", access="work",
                                      agent_cli="opencode", agent_device="mac")
     await conv.apply(store, sub, {"model": "or/x/glm"})
-    assert await ids("dev-key") == ["main/big", "main/small", "default"], "no turn at work"
-
-    def fn(c):
-        m = tree.append(c, store, sub, None, "user", "go", "intercom")
-        tree.queue_turn(c, store, sub, m["id"], origin="intercom")
-    await store.write(fn)
+    # no turn of it is live: opencode's late title call after its turn still gets through
     assert await ids("dev-key") == ["main/big", "main/small", "or/x/glm", "default"]
     assert (await ask(proxy, model="or/x/glm", key="dev-key")).status_code == 200
