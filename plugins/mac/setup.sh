@@ -129,7 +129,7 @@ fi
 
 echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome, four MCP servers and opencode and runs them as background services, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
 say sudo
-sudo -v
+sudo -n true 2>/dev/null || sudo -v   # -v asks even under NOPASSWD while %admin needs one
 sudoers=$(mktemp)
 echo "$(id -un) ALL=(ALL) NOPASSWD: ALL" > "$sudoers"
 sudo visudo -cf "$sudoers" >/dev/null
@@ -170,7 +170,7 @@ if [ "$("$OC" --version 2>/dev/null)" != "$OPENCODE_VERSION" ]; then
   zip=$LIB/opencode.zip
   curl -fsSLo "$zip" "https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION/opencode-darwin-arm64.zip"
   echo "$OPENCODE_SHA256  $zip" | shasum -a 256 -c - >/dev/null
-  unzip -oq "$zip" opencode -d "$LIB/opencode"
+  unzip -oq "$zip" opencode -d "$LIB/opencode" && rm "$zip"
 fi
 
 say token
