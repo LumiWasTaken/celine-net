@@ -24,7 +24,6 @@ import { useResource } from './lib/useResource'
 import { useSlide } from './ui/slide'
 import { SectionBoundary } from './components/SectionBoundary'
 import { ServerDown } from './components/ServerDown'
-import { Portrait } from './components/Portrait'
 import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
 import { isTyping } from './lib/keys'
@@ -170,7 +169,6 @@ function Shell() {
   // the heads' Go to
   useServerEvents(ev => { if (ev.type === 'ui.goto') setSheet('switch') })
 
-  const portrait = status?.owner.portrait
   const rail = useRef<HTMLElement>(null)
   useSlide(rail, '.rail__item[aria-current="page"]', section)
 
@@ -237,8 +235,8 @@ function Shell() {
       <div className="frame">
         <nav ref={rail} className="rail" aria-label="Sections">
           {/* its face when it has one, the app's mark until then */}
-          <div className="rail__brand" title={portrait ? undefined : build}>
-            {portrait ? <Portrait className="rail__face" /> : <Rat size={ICON.lg} aria-hidden />}
+          <div className="rail__brand" title={build}>
+            <Rat size={ICON.lg} aria-hidden />
           </div>
           {places.map(p => railItem(p, bar.includes(p.id) ? undefined : 'rail__item--more'))}
           {frozen && (

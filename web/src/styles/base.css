@@ -17,8 +17,8 @@ html { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
 :is(button, a, label, summary, input, textarea, select, [role='button'], [role='tab'], [role='menuitem'], [role='option']) { touch-action: manipulation; }
 :is(.chat-scroll, .transcript, .dialog, .menu, .ui-drawer__body, .vlist, .page, .place-side__body, .screen__body, .switcher, .rail) { overscroll-behavior: contain; }
 @media (pointer: coarse) {
-  :is(.rail, .place-head, .ui-drawer__head, .dialog__head, .ui-msg__head, .ui-msg__acts, .list-row, .menu__item, .btn) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  :is(.rail, .place-head, .ui-drawer__head, .dialog__head, .list-row) :is(input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; }
+  :is(.rail, .place-head, .ui-drawer__head, .dialog__head, .ui-msg--chat, .list-row, .menu__item, .btn) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  :is(.rail, .place-head, .ui-drawer__head, .dialog__head, .ui-msg--chat, .list-row) :is(input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; }
 }
 
 body {
