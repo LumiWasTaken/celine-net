@@ -11,7 +11,7 @@
    (WelcomeForms.tsx, its draft kept by feature id) whose Check saves and asks the probe
    anew; the features of a group (`group`: the shellbox and the Mac, "Her computer") share
    one step, a SubHead and a form each (GroupStep). Next saves the forms, asks their probes
-   anew and saves the features: what is blocked then is saved off. Then done (All set, what
+   anew and saves the features: what is blocked then is saved off unless it was saved on before (toSave). Then done (All set, what
    is on and off, New conversation), which PUTs `done` when it is reached: Settings stays
    locked until then. A connector's step (Discord, WhatsApp) also links the account and
    offers its archive's switch and the first import (ConnectorSetup).
@@ -39,7 +39,7 @@ import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, SubHead, TextArea } from '../ui'
 import { FeatureSwitch, FeatureTiers, reprobe, stateTone } from './settings/Features'
-import { blocked, firstTime, stepping, stepsOf } from '../lib/featureSteps'
+import { blocked, firstTime, landing, stepping, stepsOf, toSave } from '../lib/featureSteps'
 import { useConnector } from './settings/Connector'
 import { LoginProblem } from './settings/DiscordSource'
 import { TaskLine } from './settings/parts'
@@ -62,11 +62,16 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
   // switch flipped and every Check again on top; the forms' drafts, so Back keeps them
   const [local, setLocal] = useState<FeaturesView | null>(null)
   const [forms, setForms] = useState<Record<string, unknown>>({})
+  // the switches as the server last answered: a blocked one saved on stays saved on
+  const stored = useRef<Record<string, boolean> | null>(null)
   const view = local ?? (res.data ? firstTime(res.data) : null)
   const steps = stepsOf(view)
   const found = steps.indexOf(step ?? 'her')
-  // an unknown step before the catalog came may be a feature card: wait for it
-  const waiting = found < 0 && !view && !res.error
+  // a step not on (a feature switched off, a group's feature): the URL is replaced by where
+  // it lands; before the catalog came it may be a feature's: wait for it
+  const lands = found < 0 && view && step ? landing(view, step) : null
+  useEffect(() => { if (lands) nav.go({ section: 'welcome', step: lands }, { replace: true }) }, [lands]) // eslint-disable-line react-hooks/exhaustive-deps
+  const waiting = found < 0
   const at = Math.max(0, found)
   const go = (i: number) => nav.go({ section: 'welcome', step: steps[Math.min(steps.length - 1, Math.max(0, i))] })
   const nav2 = { back: at > 0 ? () => go(at - 1) : undefined, next: () => go(at + 1) }
@@ -74,7 +79,14 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
   const id = steps[at]!
   const feature = view?.catalog.find(f => f.id === id)
   const members = view ? view.catalog.filter(f => f.group_label && f.group === id && stepping(view)(f)) : []
-  const shared = { view, error: res.error, reload: res.reload, update: setLocal, ...nav2 }
+  /** PUT the features (toSave), so the server, the rail and the Features page agree; the
+      answer replaces the view but for the switches as flipped here and the states probed */
+  const save = async (v: FeaturesView, done?: boolean) => {
+    const r = await settingsApi.putFeatures(toSave(v, stored.current ?? res.data?.features ?? {}), done)
+    stored.current = r.features
+    setLocal({ ...r, catalog: v.catalog, features: v.features })
+  }
+  const shared = { view, error: res.error, reload: res.reload, update: setLocal, save, ...nav2 }
   return (
     <div className="onb">
       <div className="onb__top">
@@ -87,7 +99,7 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
       </div>
       <div className="page onb__page">
         <div className="page__col onb__col">
-          {waiting ? <LoadingRow label="Loading" />
+          {waiting ? <Pending error={res.error} reload={res.reload} />
             : id === 'her' ? <HerStep key="her" {...nav2} />
             : id === 'you' ? <YouStep key="you" {...nav2} />
             : id === 'model' ? <ModelStep key="model" {...nav2} />
@@ -337,33 +349,25 @@ type Shared = StepNav & {
   error: string | null
   reload: () => void
   update: (v: FeaturesView) => void
+  save: Save
 }
+type Save = (v: FeaturesView, done?: boolean) => Promise<void>
 
 /** the Loading or error of the features view while it is not here */
 function Pending({ error, reload }: { error: string | null; reload: () => void }) {
   return error ? <InlineError compact message={error} onRetry={reload} /> : <LoadingRow label="Loading" />
 }
 
-/** PUT the features: what the page shows off, and what is blocked, is saved off, so the
-    server, the rail and the Features page agree; the answer replaces the view but for the
-    switches as flipped here and the states this page probed */
-async function putFeatures(view: FeaturesView, update: (v: FeaturesView) => void, done?: boolean) {
-  const features = { ...view.features }
-  for (const f of view.catalog) if (blocked(f)) features[f.id] = false
-  const r = await settingsApi.putFeatures(features, done)
-  update({ ...r, catalog: view.catalog, features: view.features })
-}
-
 /** a setup step's Next: its forms saved, their features' probes asked anew, the features saved */
-async function saveStep(view: FeaturesView, update: (v: FeaturesView) => void, ids: string[], saves: (SaveRef)[]) {
+async function saveStep(view: FeaturesView, save: Save, ids: string[], saves: SaveRef[]) {
   for (const r of saves) await r.current?.()
-  await putFeatures({ ...view, catalog: await reprobe(view.catalog, ids) }, update)
+  await save({ ...view, catalog: await reprobe(view.catalog, ids) })
 }
 
 /* ── one feature switched on: its about line, its state and detail (Check again on a step
    without a form), then its setup form; Next saves the form, asks the probe anew, then
    saves the features ── */
-function FeatureStep({ feature: f, view, error, reload, update, back, next, form, setForm }: Shared & {
+function FeatureStep({ feature: f, view, error, reload, update, save, back, next, form, setForm }: Shared & {
   feature: Feature
   form: unknown
   setForm: (v: unknown) => void
@@ -377,7 +381,7 @@ function FeatureStep({ feature: f, view, error, reload, update, back, next, form
   })
   const onNext = async () => {
     if (!view) return
-    await saveStep(view, update, [f.id], [saveRef])
+    await saveStep(view, save, [f.id], [saveRef])
     next()
   }
   // the catalog's states came before the model step: a blocked step asks its probe once it opens
@@ -401,7 +405,7 @@ function FeatureStep({ feature: f, view, error, reload, update, back, next, form
       {!view ? <Pending error={error} reload={reload} /> : <>
         {check.error && <InlineError compact message={check.error} />}
         {Form && <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />}
-        {f.archive && f.state === 'ready' && <ConnectorSetup feature={f} view={view} update={update} />}
+        {f.archive && f.state === 'ready' && <ConnectorSetup feature={f} view={view} update={update} put={save} />}
       </>}
     </StepCard>
   )
@@ -410,7 +414,7 @@ function FeatureStep({ feature: f, view, error, reload, update, back, next, form
 /* ── a group's step ("Her computer": Container and Own computer): each feature of the group
    switched on, under its `choice` as a SubHead: its state line and its setup form. Next
    saves every form, asks their probes anew, then saves the features ── */
-function GroupStep({ members, view, error, reload, update, back, next, forms, setForm }: Shared & {
+function GroupStep({ members, view, error, reload, update, save, back, next, forms, setForm }: Shared & {
   members: Feature[]
   forms: Record<string, unknown>
   setForm: (id: string, v: unknown) => void
@@ -419,7 +423,7 @@ function GroupStep({ members, view, error, reload, update, back, next, forms, se
   const refOf = (id: string) => refs.current.get(id) ?? refs.current.set(id, { current: null }).get(id)!
   const onNext = async () => {
     if (!view) return
-    await saveStep(view, update, members.map(f => f.id), members.map(f => refOf(f.id)))
+    await saveStep(view, save, members.map(f => f.id), members.map(f => refOf(f.id)))
     next()
   }
   return (
@@ -460,12 +464,12 @@ function GroupPart({ feature: f, view, update, form, setForm, saveRef }: {
    Messages, saved at once, its probe asked anew) and Import, the first import as a task
    whose line counts the archive's messages and says Done at its end. Skip leaves it to
    Settings, Features and the source's page ── */
-function ConnectorSetup({ feature: f, view, update }: { feature: Feature; view: FeaturesView; update: (v: FeaturesView) => void }) {
+function ConnectorSetup({ feature: f, view, update, put }: { feature: Feature; view: FeaturesView; update: (v: FeaturesView) => void; put: Save }) {
   const online = useOnline()
   const kid = f.kbs[0]!
   const conn = useConnector(kid, true)
   const tasks = useTasks()
-  const save = useAction((v: FeaturesView) => putFeatures(v, update))
+  const save = useAction((v: FeaturesView) => put(v))
   const start = useAction(async () => { await kbApi.importMessages(kid); tasks.reload() })
   const archive = view.catalog.find(x => x.id === f.archive)
   const recheck = useAction(async () => {
@@ -506,10 +510,10 @@ function ConnectorSetup({ feature: f, view, update }: { feature: Feature; view: 
 
 /* ── features: the tiers, a switch per feature, saved with Next; what is switched on
    decides the steps after it ── */
-function FeaturesStep({ view, error, reload, update, back, next }: Shared) {
+function FeaturesStep({ view, error, reload, update, save, back, next }: Shared) {
   const onNext = async () => {
     if (!view) return
-    await putFeatures(view, update)
+    await save(view)
     next()
   }
   return (
@@ -522,10 +526,10 @@ function FeaturesStep({ view, error, reload, update, back, next }: Shared) {
 
 /* ── done: All set, what is on and off, New conversation. Reaching it finishes the setup
    (PUT /features with done), so Settings opens from here on ── */
-function DoneStep({ view, error, reload, update, back, name, onSaved }: Shared & { name: string; onSaved: () => void }) {
+function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & { name: string; onSaved: () => void }) {
   const finish = useAction(async () => {
     if (!view) return
-    await putFeatures(view, update, true)
+    await save(view, true)
     onSaved()
   })
   const ready = !!view

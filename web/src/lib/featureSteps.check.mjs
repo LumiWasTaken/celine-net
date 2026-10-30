@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { firstTime, stepsOf } from './featureSteps.ts'
+import { firstTime, landing, stepsOf, toSave } from './featureSteps.ts'
 
 const f = (id, more = {}) => ({ id, label: id, step: false, state: 'none', warn: '', group: '', group_label: '', ...more })
 const computer = { group: 'computer', group_label: 'Her computer' }
@@ -31,9 +31,24 @@ assert.deepEqual(stepsOf(both), stepsOf(mac))
 const more = { ...start, features: { ...start.features, email: true, guard: true, missions: false, browser: false, routines: false } }
 assert.deepEqual(stepsOf(more), ['her', 'you', 'model', 'features', 'email', 'guard', 'done'])
 
-// run again after a save: what is saved on and not blocked, nothing turned on by its probe
-const saved = firstTime({ ...fresh, saved: true, features: { ...fresh.features, browser: false, shellbox: true } })
+// run again after a save: what is saved, a blocked one too, nothing turned on by its probe
+const stored = { ...fresh.features, browser: false, shellbox: true }
+const saved = firstTime({ ...fresh, saved: true, features: stored })
 assert.equal(saved.features.browser, false)
-assert.equal(saved.features.shellbox, false, 'blocked: off')
+assert.equal(saved.features.shellbox, true, 'saved on, blocked for now: still on')
+assert.deepEqual(stepsOf(saved).slice(4, 5), ['computer'])
+// a PUT keeps a blocked switch that was saved on, and saves a blocked one off that was not
+const put = toSave({ ...saved, features: { ...saved.features, email: true } }, stored)
+assert.equal(put.shellbox, true)
+assert.equal(put.email, false)
+assert.equal(toSave({ ...saved, features: { ...saved.features, shellbox: false } }, stored).shellbox, false, 'switched off: off')
+
+// a URL's step: itself while on; a group's feature, the group; one off, the next one on, else Features
+assert.equal(landing(mac, 'routines'), 'routines')
+assert.equal(landing(mac, 'shellbox'), 'computer')
+assert.equal(landing(start, 'computer'), 'browser')
+assert.equal(landing(start, 'email'), 'routines')
+assert.equal(landing(more, 'routines'), 'features')
+assert.equal(landing(start, 'nonsense'), 'features')
 assert.deepEqual(stepsOf(null), ['her', 'you', 'model', 'features', 'done'])
 console.log('onboarding step checks passed')
