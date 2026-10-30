@@ -4,13 +4,17 @@ could not do ("Could not read the note x") or did not run ("Not run: ..."). Buil
 from the call's name, arguments, display and result, sent as `words` beside `display`
 on every tool event and snapshot row; the client renders it as it comes.
 
-`words()` -> {running, settled, step, where}: `running` while the call is at work,
+`words()` -> {running, settled, step, where, group}: `running` while the call is at work,
 `settled` once it ended (for a call still at work: the words if it is cut off),
 `step` the tool alone at work (a sub-agent's or a routine's step, no arguments),
-`where` the places a search was kept to ("All messages"), or None.
+`where` the places a search was kept to ("All messages"), or None, `group` below.
 
-One sentence per tool, grouped by the skill that owns it; a tool without one (an MCP
-server's) is "Used <skill> <tool>"."""
+One sentence per tool, grouped by the skill that owns it. An MCP server's tool takes its
+sentence from its server's `[servers.<id>.words]` (mcp.toml or a plugin.toml), else it is
+"Used <skill> <tool>".
+
+`group`: the words of a run of such calls one after another ("Ran {n} commands in
+terminal main"); calls with the same group in a row show as one row, {n} their count."""
 from __future__ import annotations
 
 import json
@@ -363,16 +367,48 @@ def _share_words(a, d, r):
     return f"Shared {quote(title)}" if title else "Shared from the shellbox"
 
 
+def _in_terminal(a: Args, d: dict) -> str:
+    term = _terminal(a, d)
+    return f" in terminal {term}" if term else ""
+
+
+def _shell_run(a, d, r):
+    # the command's first line, cut; the whole command is in the call's arguments
+    cmd = _first_line(_str(a.get("command")) or "")
+    return f"Ran {cmd or 'a command'}{_in_terminal(a, d)}"
+
+
+def _shell_type(a, d, r):
+    text = _first_line(_str(d.get("text")) or _str(a.get("text")) or "")
+    keys = _str(d.get("keys")) or " ".join(_list(a.get("keys")))
+    said = f'Typed "{text}" and pressed {keys}' if text and keys else \
+        f'Typed "{text}"' if text else f"Pressed {keys}" if keys else "Typed"
+    return f"{said}{_in_terminal(a, d) or ' in a terminal'}"
+
+
+def _shell_read(a, d, r):
+    term = _terminal(a, d)
+    if not term:
+        return "Listed the terminals"
+    return f"Read the log of terminal {term}" if _num(a.get("from")) is not None else \
+        f"Read terminal {term}"
+
+
+def _shell_wait(a, d, r):
+    # what it waited for: the command at work there, its first line
+    what = _first_line(_str(d.get("text")) or "")
+    term = _terminal(a, d)
+    return f"Waited for {what}{_in_terminal(a, d)}" if what else \
+        f"Waited for terminal {term}" if term else "Waited for a terminal"
+
+
 SHELL: dict[str, Sentence] = {
-    "run": lambda a, d, r: f"Ran a command in terminal {_terminal(a, d)}"
-        if _terminal(a, d) else "Ran a command",
-    "type": lambda a, d, r: f"Typed in terminal {_terminal(a, d)}"
-        if _terminal(a, d) else "Typed in a terminal",
+    "run": _shell_run,
+    "type": _shell_type,
     "stop": lambda a, d, r: f"Stopped the program in terminal {_terminal(a, d)}"
         if _terminal(a, d) else "Stopped a program",
-    "read": lambda a, d, r: f"Read terminal {_terminal(a, d)}"
-        if _terminal(a, d) else "Listed the terminals",
-    "wait": lambda a, d, r: f"Waited for terminal {_terminal(a, d)}",
+    "read": _shell_read,
+    "wait": _shell_wait,
     "share": _share_words,
     "send": lambda a, d, r: f"Sent you {_files(a)}",
     "look": lambda a, d, r: f"Looked at {_files(a)}",
@@ -600,6 +636,26 @@ SENTENCES: dict[str, dict[str, Sentence]] = {
 }
 
 
+# MCP servers' own sentences and groups, by server and tool: their `[servers.<id>.words]`
+# and `[servers.<id>.groups]` (boot.load fills them from mcp.toml and the plugins)
+MCP_WORDS: dict[str, dict[str, str]] = {}
+MCP_GROUPS: dict[str, dict[str, str]] = {}
+
+# a hole in such a sentence: {argument} or {argument|what it says without one}; quotes
+# around a hole leave with it when the argument is missing
+_HOLE = re.compile(r'("?)\{(\w+)(?:\|([^}]*))?\}("?)')
+
+
+def fill(template: str, a: Args) -> str:
+    """`template` with each hole the call's argument: its first line, cut to 60."""
+    def one(m: re.Match) -> str:
+        v = a.get(m.group(2))
+        text = _first_line(", ".join(_list(v)) if isinstance(v, list) else
+                           "" if v is None or isinstance(v, dict) else _js(v), 60)
+        return f"{m.group(1)}{text}{m.group(4)}" if text else m.group(3) or ""
+    return re.sub(r" +", " ", _HOLE.sub(one, template)).strip()
+
+
 def sentence(name: str, a: Args, d: dict, result: str = "") -> str:
     """What it did (and where), in one plain sentence, past tense."""
     skill, _, tool = name.partition("__")
@@ -608,6 +664,9 @@ def sentence(name: str, a: Args, d: dict, result: str = "") -> str:
         return fn(a, d, result)
     if name in VERB:
         return VERB[name]
+    own = MCP_WORDS.get(skill, {}).get(tool)
+    if own:
+        return fill(own, a)
     # a tool without its own sentence: a tool from an MCP server
     parts = name.split("__")
     skill, tool = parts[0], parts[1] if len(parts) > 1 else ""
@@ -635,7 +694,10 @@ VERBS = {
     "Waited": ("Waiting", "wait"), "Set": ("Setting", "set"), "Clicked": ("Clicking", "click"),
     "Filed": ("Filing", "file"), "Paused": ("Pausing", "pause"), "Pressed": ("Pressing", "press"),
     "Chose": ("Choosing", "choose"), "Answered": ("Answering", "answer"),
-    "Saved": ("Saving", "save"),
+    "Saved": ("Saving", "save"), "Took": ("Taking", "take"), "Filled": ("Filling", "fill"),
+    "Went": ("Going", "go"), "Pointed": ("Pointing", "point"), "Dragged": ("Dragging", "drag"),
+    "Uploaded": ("Uploading", "upload"), "Resized": ("Resizing", "resize"),
+    "Installed": ("Installing", "install"),
 }
 
 
@@ -673,25 +735,6 @@ def _state_words(said: str, state: str, d: dict, result: str) -> str:
     return could_not(said) if state == "error" else said
 
 
-def _shell_command(name: str, a: Args, d: dict) -> str:
-    """A shell call's command as the row says it: the command run, the first line typed,
-    the keys, or `read`."""
-    if name == "shell__read":
-        start = _num(a.get("from"))
-        return f"read the log from byte {_js(start)}" if start is not None else "read the screen"
-    if name == "shell__stop":
-        return "Ctrl-C"
-    if name == "shell__wait":
-        waited = _first_line(_str(d.get("text")) or "", 400)
-        return f"wait for {waited}" if waited else "wait"
-    text = _first_line(_str(d.get("text")) or _str(a.get("command")) or _str(a.get("text")) or "",
-                       400)
-    keys = _str(d.get("keys")) or " ".join(_list(a.get("keys")))
-    said = f"keys: {keys}  text: {text}" if keys and text else f"keys: {keys}" if keys else text
-    return said or "watch"
-
-
-TERMINAL_TOOLS = ("shell__run", "shell__type", "shell__stop", "shell__read", "shell__wait")
 MEDIA = ("image_generator", "music_generator")
 
 
@@ -700,15 +743,6 @@ def row(name: str, a: Args, d: dict, result: str, state: str) -> str:
     said = sentence(name, a, d, result)
     skill, _, tool = name.partition("__")
     tool = tool.split("__")[0]
-    if name in TERMINAL_TOOLS:
-        term = _terminal(a, d)
-        if name == "shell__read" and not term:
-            return ongoing("Listed the terminals") if state in BUSY else "Listed the terminals"
-        if state in ("error", "gated"):
-            return f"Could not run {_shell_command(name, a, d)}" \
-                if name == "shell__run" and not not_run(state, d) else \
-                _state_words(said, state, d, result)
-        return " ".join(x for x in (term, _shell_command(name, a, d)) if x)
     if name == "intercom__cancel":
         return f"{'Cancelled' if state == 'ok' else 'Cancel'} #{'' if a.get('id') is None else _js(a['id'])}"
     if name == "missions__update":
@@ -729,6 +763,15 @@ def row(name: str, a: Args, d: dict, result: str, state: str) -> str:
     return _state_words(said, state, d, result)
 
 
+def group(name: str, a: Args, d: dict) -> str | None:
+    """The words of a run of calls like this one, {n} their count; None: it stands alone."""
+    if name == "shell__run":
+        term = _terminal(a, d)
+        return f"Ran {{n}} commands in terminal {term}" if term else "Ran {n} commands"
+    skill, _, tool = name.partition("__")
+    return MCP_GROUPS.get(skill, {}).get(tool)
+
+
 def _args(arguments: Any) -> Args:
     if isinstance(arguments, dict):
         return arguments
@@ -746,13 +789,14 @@ def step(name: str) -> str:
 
 def words(name: str, arguments: Any, state: str, display: Any = None,
           result: str | None = None) -> dict:
-    """The row's words: {running, settled, step, where} (the module's docstring)."""
+    """The row's words: {running, settled, step, where, group} (the module's docstring)."""
     a, d, r = _args(arguments), _dict(display), result or ""
     where = scope_words(d, a)
     return {"running": row(name, a, d, r, "running"),
             "settled": row(name, a, d, r, "interrupted" if state in BUSY else state),
             "step": step(name),
-            "where": where[:1].upper() + where[1:] if where else None}
+            "where": where[:1].upper() + where[1:] if where else None,
+            "group": group(name, a, d)}
 
 
 def of_call(c, call_id: str, state: str, display: Any = None,
@@ -765,7 +809,7 @@ def of_call(c, call_id: str, state: str, display: Any = None,
 
 _FIELD = {k: re.compile(rf'"{k}"\s*:\s*"((?:[^"\\]|\\.)*)"')
           for k in ("path", "name", "title", "query", "url", "terminal", "command", "to",
-                    "folder")}
+                    "folder", "text", "file_path", "input", "element", "key")}
 
 
 def forming(name: str, partial: str) -> str:

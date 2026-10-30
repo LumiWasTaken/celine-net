@@ -160,6 +160,20 @@ args      = ["-y", "@modelcontextprotocol/server-filesystem", "~/projects"]
 `${VAR:-default}` read the environment. A server that fails to start is reported and does
 not stop it.
 
+Its tools' rows in the chat say "Used filesystem read file" until the server gives them
+words, a sentence per tool and the words of a run of the same calls (`{n}` their count):
+
+```toml
+[servers.filesystem.words]
+read_text_file = "Read {path|a file}"       # {argument|what it says without one}
+search_files   = "Searched {path} for \"{pattern}\""
+
+[servers.filesystem.groups]
+read_text_file = "Read {n} files"           # calls in a row with the same words: one row
+```
+
+A plugin's `[servers.<id>]` takes the same tables (`plugins/mac/plugin.toml`).
+
 ## Image and music presets
 
 `config/image_presets/<id>.toml` plus `<id>.json`, and the same in `config/music_presets/`.

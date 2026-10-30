@@ -1,8 +1,15 @@
 """A tool call's row in words (skills/words.py): the same sentence the row has always
 said, at work, done, failed and not run."""
 import json
+import tomllib
+from pathlib import Path
+from types import SimpleNamespace
 
-from celine.skills.words import forming, step, words
+import pytest
+
+from celine.mcp import row_words
+from celine.skills import words as words_mod
+from celine.skills.words import VERBS, forming, step, words
 
 
 def w(name, args, state, display=None, result=None):
@@ -46,7 +53,12 @@ def test_not_run_and_cut_off():
 
 def test_rows_with_their_own_words():
     assert w("shell__run", {"command": "ls -la\npwd"}, "ok", {"terminal": "main"})["settled"] \
-        == "main ls -la"
+        == "Ran ls -la in terminal main"
+    assert w("shell__run", {"command": "ls"}, "running", {"terminal": "lan"})["running"] \
+        == "Running ls in terminal lan"
+    assert w("shell__type", {"text": "y", "keys": ["Enter"], "terminal": "lan"}, "ok")["settled"] \
+        == 'Typed "y" and pressed Enter in terminal lan'
+    assert w("shell__read", {"terminal": "lan"}, "ok")["settled"] == "Read terminal lan"
     assert w("shell__read", {}, "running")["running"] == "Listing the terminals"
     assert w("missions__update", {"status": "needs_you", "note": "the key"}, "ok")["settled"] \
         == "Mission needs you: the key"
@@ -64,3 +76,64 @@ def test_mcp_tool_step_and_forming():
     assert step("intercom__send") == "Sending a message"
     assert forming("notebook__read", '{"path": "ml/muon.md", "fr') == \
         "Reading the note ml/muon.md"
+
+
+def test_a_command_is_its_first_line_cut():
+    first = "for i in $(seq 1 60); do s=$(curl -s -m 5 http://192.168.1.30:8765/health); " \
+            "[ -n \"$s\" ] && break; sleep 1; done"
+    long = f"{first}\necho done"
+    assert w("shell__run", {"command": long}, "ok", {"terminal": "main"})["settled"] == \
+        f"Ran {first[:79]}… in terminal main"
+    assert w("shell__run", {"command": long}, "error", {"terminal": "main"})["settled"] == \
+        f"Could not run {first[:79]}… in terminal main"
+
+
+MAC = tomllib.loads((Path(__file__).parents[1] / "plugins/mac/plugin.toml").read_text())
+
+
+@pytest.fixture
+def mac(monkeypatch):
+    said, groups = row_words(SimpleNamespace(mcp={}), [SimpleNamespace(manifest=MAC)])
+    monkeypatch.setattr(words_mod, "MCP_WORDS", said)
+    monkeypatch.setattr(words_mod, "MCP_GROUPS", groups)
+
+
+def test_a_servers_own_words(mac):
+    cmd = {"command": "brew install ffmpeg\nffmpeg -version"}
+    run = w("macshell__start_process", cmd, "ok")
+    assert run["settled"] == "Ran brew install ffmpeg on the Mac"
+    assert run["running"] == "Running brew install ffmpeg on the Mac"
+    assert run["group"] == "Used the shell on the Mac {n} times"
+    assert w("macshell__start_process", cmd, "error")["settled"] == \
+        "Could not run brew install ffmpeg on the Mac"
+    read = w("macshell__read_process_output", {"pid": 4021}, "ok")
+    assert read["settled"] == "Read the output of process 4021 on the Mac"
+    assert read["group"] == run["group"]
+    # a missing argument: its default, or the hole and its quotes leave
+    assert step("macshell__start_process") == "Running a command on the Mac"
+    assert w("macshell__interact_with_process", {"pid": 7}, "ok")["settled"] == \
+        "Typed in process 7 on the Mac"
+    assert w("macscreen__type", {"text": "hello"}, "ok")["settled"] == 'Typed "hello" on the Mac'
+    assert w("macscreen__click", {}, "ok")["settled"] == "Clicked on the Mac"
+    # the same file read on either server is one kind of call
+    assert w("macfiles__read_text_file", {"path": "/Users/c/a.txt"}, "ok")["group"] == \
+        w("macshell__read_file", {"path": "/Users/c/b.txt"}, "ok")["group"] == \
+        "Read {n} files on the Mac"
+    assert w("macbrowser__browser_navigate", {"url": "https://example.org"}, "ok")["settled"] \
+        == "Opened https://example.org in Chrome on the Mac"
+    assert forming("macshell__start_process", '{"command": "make test", "ti') == \
+        "Running make test on the Mac"
+    # a tool the server gave no words, and calls that stand alone
+    assert w("macshell__give_feedback", {}, "ok")["settled"] == "Used macshell give feedback"
+    assert w("macshell__give_feedback", {}, "ok")["group"] is None
+    assert w("notebook__read", {"path": "a.md"}, "ok")["group"] is None
+    assert w("shell__run", {"command": "ls"}, "ok", {"terminal": "main"})["group"] == \
+        "Ran {n} commands in terminal main"
+
+
+def test_every_mac_group_belongs_to_a_sentence():
+    for sid, server in MAC["servers"].items():
+        assert set(server.get("groups", {})) <= set(server["words"]), sid
+        assert all("{n}" in g for g in server["groups"].values()), sid
+        for text in server["words"].values():
+            assert text.partition(" ")[0] in VERBS, text

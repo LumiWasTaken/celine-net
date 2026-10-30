@@ -13,9 +13,9 @@ from .comfyui import presets
 from .config import Config, Problem, shown_path, read_toml, tables
 from .db.migrate import read_only
 from .kb import read_config as read_kb
-from .mcp import read_servers
+from .mcp import read_servers, row_words
 from .settings import features, seed
-from .skills import BUILTIN
+from .skills import BUILTIN, words
 from .turns import loads
 
 
@@ -35,6 +35,7 @@ def load() -> Config:
         return shown_path(path), read_toml(path, p)
 
     cfg.mcp = read_servers(*file("mcp.toml"), p, keys.env(cfg.data_dir))
+    words.MCP_WORDS, words.MCP_GROUPS = row_words(cfg, plugins.all())
     kb = read_kb(*file("kb.toml"), p)
     cfg.embeddings = kb.pop("embeddings", {})
     cfg.media = kb.pop("media", {})

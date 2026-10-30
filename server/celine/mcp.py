@@ -15,6 +15,9 @@ Three things a server block can add:
   account reference for `user_id` and `from_user`. A connector only reads: a tool of
   its that is not read-only is not offered to Celine.
 - `guides/<server>.md` (skills/guides): the skill's description and guide.
+- `[servers.<id>.words]` and `[servers.<id>.groups]`: its tools' rows, by tool
+  (skills/words.py `fill`): `start_process = "Ran {command|a command} on the Mac"`, and
+  the words of a run of them, `{n}` their count.
 
 A plugin's `[servers.<id>]` blocks (plugin.toml, the same keys) run under its runner
 (api/plugins.py) while it is on: `plugin_servers` fills each `${KEY}` from its form, and
@@ -56,6 +59,7 @@ KEYS = {                    # mcp.toml [servers.<id>]: McpServerConfig
     "enabled": "bool", "transport": "str", "command": "str", "args": "list", "env": "dict",
     "url": "str", "headers": "dict", "startup_timeout_seconds": "num", "max_restarts": "int",
     "kb": "str", "class": CLASSES, "sends": SENDS, "outside": OUTSIDE,
+    "words": "dict", "groups": "dict",
 }
 
 
@@ -81,6 +85,10 @@ class McpServerConfig:
     cls: str = "sensitive"
     sends: str = "public"
     outside: str = "always"
+    # its tools' rows (skills/words.py): a sentence per tool ("Ran {command} on the Mac")
+    # and the words of a run of them ("Used the shell on the Mac {n} times")
+    words: dict[str, str] = field(default_factory=dict)
+    groups: dict[str, str] = field(default_factory=dict)
 
 
 _ENV_REF = re.compile(r"\$\{(\w+)(?:(:?)-([^}]*))?\}")
@@ -126,6 +134,21 @@ def read_servers(file: str, raw: dict[str, Any], problems: list[Problem],
                 s[k] = {str(n): _env_ref(str(v), keys) for n, v in s[k].items()}
         out[sid] = McpServerConfig(id=sid, **s)
     return out
+
+
+def row_words(cfg, plugins) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+    """Every server's `words` and `groups` (mcp.toml's and the plugins', on or off), by
+    server: skills/words.py's MCP_WORDS and MCP_GROUPS."""
+    raw = {sid: {"words": s.words, "groups": s.groups} for sid, s in cfg.mcp.items()}
+    for p in plugins:
+        servers = p.manifest.get("servers")
+        raw |= {sid: s for sid, s in (servers if isinstance(servers, dict) else {}).items()
+                if isinstance(s, dict)}
+
+    def texts(v) -> dict[str, str]:
+        return {k: t for k, t in v.items() if isinstance(t, str)} if isinstance(v, dict) else {}
+    return ({sid: texts(s.get("words")) for sid, s in raw.items()},
+            {sid: texts(s.get("groups")) for sid, s in raw.items()})
 
 
 def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:
