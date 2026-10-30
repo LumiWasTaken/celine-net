@@ -233,6 +233,13 @@ class SubAgents:
         model = model or next(iter(s.chain(role_of("agent")) or s.chain("chat")), None)
         if not model or not her_models.cloud(s, model):
             return None
+        llm = getattr(self.app, "llm", None)
+        if llm is not None:             # known down: nothing to ask the owner about
+            st = llm.router.provider_state(s.split(model)[0])
+            if st.reachable is False:
+                return (f"{' '.join(name.split())} did not start: "
+                        f"{her_models.label(s, model)} does not answer."
+                        + (f" {st.error}" if st.error else ""))
         approvals = getattr(self.app, "approvals", None)
         if approvals is None:
             return "Nobody can approve a cloud model here: it did not start."

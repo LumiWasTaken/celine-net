@@ -423,6 +423,16 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
     assert out.is_error and asked[1][:2] == (
         "model", "start the sub-agent page counter on the cloud model big on OpenRouter"), \
         "no model given: the one its role runs it on"
+    from celine.backends.router import ProviderState
+    states = {"or": ProviderState(reachable=False, error="OpenRouter refused the connection.")}
+    agents.app.llm = SimpleNamespace(router=SimpleNamespace(
+        provider_state=lambda pid: states.get(pid, ProviderState())))
+    out = await agents.start(ctx, brief="Count the pages.", name="page counter 2",
+                             model="or/big")
+    assert out.is_error and out.content == (
+        "page counter 2 did not start: big on OpenRouter does not answer. OpenRouter "
+        "refused the connection."), out.content
+    assert len(asked) == 2, "a model known down is not offered to the owner"
 
 
 async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
