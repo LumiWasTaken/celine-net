@@ -195,7 +195,9 @@ async def _report(services, cid: str) -> None:
     shown_text, shown, total = tokens.cut_to(text, f["cap"])
     if shown < total:
         text = f"{shown_text}\n\n{CUT}"
-    text = f"{head(f['name'], f['state'], f['work'])}\n\n{text}"
+    # one blank line between the head and the answer, however many lines it starts with
+    answer = text.lstrip("\n")
+    text = f"{head(f['name'], f['state'], f['work'])}\n\n{answer}"
     # a sub-agent that was stopped reports without waking its parent: the parent
     # stopped it (its Stop cascades) or knows, and a Stop must stick
     sent = await services.intercom.send(

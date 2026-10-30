@@ -82,7 +82,8 @@ class Script(FakeBackend):
             else:
                 if self.go is not None:
                     await self.go.wait()
-                out = [TextDelta(f"{who.group(1)} done: {task}"), Done(reason="stop")]
+                # a reply that starts with blank lines, as a thinking model's often does
+                out = [TextDelta(f"\n\n\n{who.group(1)} done: {task}"), Done(reason="stop")]
         elif task.startswith(("[Job ", "[Report from")) or done and not (
                 self.then_calls and len(steps) == 1):
             out = [TextDelta("ok"), Done(reason="stop")]
@@ -153,7 +154,7 @@ async def test_start_returns_at_once_and_the_report_comes_later(store, cfg):
     top, answer = landed["content"].split("\n\n", 1)
     assert top.startswith("[car scout, done") and top.endswith("; changed agents/cars/found.md]"), \
         "its head: name, state, work, the notes it changed"
-    assert answer.startswith("car scout done: ")
+    assert answer.startswith("car scout done: "), "one blank line after its head"
     assert "[Brief from Celine (#2)]\nfind the red cars\n\nToday is" in answer, \
         "its brief, under its header, then the tail of its turn (the test model echoes it)"
     assert (cfg.her.notebook / "agents/cars/found.md").read_text().endswith("\nred, red, red")
