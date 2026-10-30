@@ -89,8 +89,7 @@ server needs:
   on the device's localhost.
 - A context that holds an agent's prompt and tools plus its work; the app refuses a
   smaller one and says the numbers.
-- A model that fits the device's memory with room left; your device facts give the
-  memory.
+- A model that fits the device's memory with room left.
 - Decode speed is bounded by memory bandwidth: on the same memory, a model with fewer
   active parameters answers faster.
 - It comes back by itself after a reboot.
