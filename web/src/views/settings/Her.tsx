@@ -1,7 +1,8 @@
 /* Settings, its page (/settings/agent): one column. The agent's picture (a click shows it big; its
    "..." has Upload and Delete), Name, Pronouns, Colour; Persona, Example lines, each a
    long text on a surface that opens in the large editor (HerText below: History and Ask
-   Celine, keys her:persona, her:talk and her:voice; Restore this version saves at once); Banned words with Bias and its switch.
+   Celine, keys her:persona, her:talk and her:voice; Restore this version saves at once); Behaviour (Ask before setting up services, a general
+   setting); Banned words with Bias and its switch.
    Everything saves itself (lib/useAutosave): switches and choices at once, Bias when the
    slider rests, Name when you leave the field, a long text when you leave its editor or
    its box (one History entry per save). Every save sends the version its page was loaded
@@ -75,7 +76,7 @@ export function HerPage() {
         : auto.error && <Section><InlineError compact message={auto.error} onRetry={auto.flush} /></Section>}
       <Who her={her} auto={auto} />
       <Persona her={her} />
-      <Section><GeneralFields only={['ask_before_setup']} /></Section>
+      <Section title="Behaviour"><GeneralFields only={['ask_before_setup']} /></Section>
       <Banned her={her} auto={auto} />
     </Page>
   )
