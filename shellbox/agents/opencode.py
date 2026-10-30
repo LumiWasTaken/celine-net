@@ -188,29 +188,78 @@ def _busy() -> bool:
 
 
 # ---- the agent over HTTP ------------------------------------------------------------------
+# Every function below talks to the box's own server, or to `server`: an `opencode serve`
+# on a device (the app's drones, server/celine/sub_agents/drone.py, load this file: it is
+# the one opencode client).
+
+class Server:
+    """An `opencode serve` elsewhere: its address, its password, where its log is."""
+
+    def __init__(self, url: str, password: str, log: str):
+        self.url, self.password, self.log = url.rstrip("/"), password, log
+
+
+def _request(method: str, path: str, body: dict | None, query: str,
+             server: Server | None) -> urllib.request.Request:
+    url, pw = (server.url, server.password) if server else (URL, PASSWORD)
+    data = json.dumps(body).encode() if body is not None else None
+    auth = base64.b64encode(f"opencode:{pw}".encode()).decode()
+    return urllib.request.Request(url + path + (f"?{query}" if query else ""), data=data,
+                                  method=method, headers={"Authorization": f"Basic {auth}",
+                                                          "Content-Type": "application/json"})
+
+
+def _log_of(server: Server | None) -> str:
+    return server.log if server else str(LOG)
+
 
 def _call(method: str, path: str, body: dict | None = None, query: str = "",
-          timeout: float = 30) -> object:
-    data = json.dumps(body).encode() if body is not None else None
-    auth = base64.b64encode(f"opencode:{PASSWORD}".encode()).decode()
-    req = urllib.request.Request(URL + path + (f"?{query}" if query else ""), data=data,
-                                 method=method, headers={"Authorization": f"Basic {auth}",
-                                                         "Content-Type": "application/json"})
+          timeout: float = 30, server: Server | None = None) -> object:
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(_request(method, path, body, query, server),
+                                    timeout=timeout) as r:
             raw = r.read()
     except urllib.error.HTTPError as e:
         said = _said(e.read())
         if e.code == 404:
             raise Problem(f"No such session ({NAME} answered 404: {said}).", 404) from None
-        raise Problem(f"{NAME} answered {e.code}: {said}. Its log: {LOG}.", 502) from None
+        raise Problem(f"{NAME} answered {e.code}: {said}. Its log: {_log_of(server)}.",
+                      502) from None
     except OSError as e:
-        raise Problem(_down(e), 503) from None
+        raise Problem(_down(e, server), 503) from None
     try:
         return json.loads(raw) if raw.strip() else None
     except ValueError:
         raise Problem(f"{NAME} answered {path} with something that is not JSON: "
-                      f"{_said(raw)}. Its log: {LOG}.", 502) from None
+                      f"{_said(raw)}. Its log: {_log_of(server)}.", 502) from None
+
+
+def events(server: Server | None = None, timeout: float = 60):
+    """opencode's event stream (GET /event, server-sent events) -> (the open response,
+    a generator of its events as dicts). Closing the response ends the generator; no
+    line for `timeout` seconds raises TimeoutError."""
+    try:
+        r = urllib.request.urlopen(_request("GET", "/event", None, "", server),
+                                   timeout=timeout)
+    except urllib.error.HTTPError as e:
+        raise Problem(f"{NAME} answered {e.code} on /event: {_said(e.read())}. "
+                      f"Its log: {_log_of(server)}.", 502) from None
+    except OSError as e:
+        raise Problem(_down(e, server), 503) from None
+
+    def each():
+        data: list[str] = []
+        for raw in r:
+            line = raw.decode(errors="replace").rstrip("\r\n")
+            if line.startswith("data:"):
+                data.append(line[5:].strip())
+            elif not line and data:
+                try:
+                    yield json.loads("\n".join(data))
+                except ValueError:
+                    pass
+                data = []
+    return r, each()
 
 
 def _said(raw: bytes) -> str:
@@ -226,8 +275,11 @@ def _said(raw: bytes) -> str:
     return text[:300]
 
 
-def _down(e: OSError) -> str:
+def _down(e: OSError, server: Server | None = None) -> str:
     """No answer on PORT: what the box knows of the server, and what it can do."""
+    if server is not None:
+        return (f"{NAME} is not answering on {server.url} "
+                f"({getattr(e, 'reason', None) or e}). Its log: {server.log}.")
     proc = _state["proc"]
     if proc is not None and proc.poll() is not None:
         now = (f"`opencode serve` exited with {proc.returncode}; the box starts it again "
@@ -290,12 +342,8 @@ def start(dir: str, task: str, model: str, session: str | None = None,
             raise Problem(f"Session {session} is still working; wait, or abort it.", 409)
         folder = info.get("directory") or folder
     else:
-        info = _call("POST", "/session", {"title": task.strip().splitlines()[0][:80]},
-                     query=_q(folder))
-        session = info["id"]
-    _call("POST", f"/session/{session}/prompt_async",
-          {"model": {"providerID": "celine", "modelID": model},
-           "parts": [{"type": "text", "text": task}]}, query=_q(folder))
+        session = new_session(task, _q(folder))
+    prompt(session, model, task, _q(folder))
     return {"session": session, "state": "running", "dir": folder, "model": model}
 
 
@@ -306,30 +354,46 @@ def attach(session: str) -> str:
             f" opencode attach {URL} --session {shlex.quote(session)}")
 
 
-def _busy_one(session: str) -> bool:
-    st = _call("GET", "/session/status") or {}
+def new_session(task: str, query: str = "", server: Server | None = None) -> str:
+    """A new session titled with the task's first line -> its id."""
+    return _call("POST", "/session", {"title": task.strip().splitlines()[0][:80]},
+                 query=query, server=server)["id"]
+
+
+def prompt(session: str, model: str, task: str, query: str = "",
+           server: Server | None = None) -> None:
+    """`task` to the session on the proxy's `model`; it works in the background. A busy
+    session takes it into the work it is on."""
+    _call("POST", f"/session/{session}/prompt_async",
+          {"model": {"providerID": "celine", "modelID": model},
+           "parts": [{"type": "text", "text": task}]}, query=query, server=server)
+
+
+def _busy_one(session: str, server: Server | None = None) -> bool:
+    st = _call("GET", "/session/status", server=server) or {}
     return (st.get(session) or {}).get("type") in ("busy", "retry")
 
 
-def _messages(session: str) -> list[dict]:
-    return _call("GET", f"/session/{session}/message", query="limit=20") or []
+def _messages(session: str, server: Server | None = None, limit: int = 20) -> list[dict]:
+    return _call("GET", f"/session/{session}/message", query=f"limit={limit}",
+                 server=server) or []
 
 
-def status(session: str) -> dict:
+def status(session: str, server: Server | None = None) -> dict:
     """running while opencode works on it; done when its last answer is complete;
     failed with its error, or when it never answered the last task."""
-    info = _call("GET", f"/session/{session}")
+    info = _call("GET", f"/session/{session}", server=server)
     out = {"session": session, "agent": NAME, "dir": info.get("directory"),
            "title": info.get("title"), "updated": (info.get("time") or {}).get("updated")}
-    if _busy_one(session):
+    if _busy_one(session, server):
         return {**out, "state": "running"}
-    msgs = _messages(session)
+    msgs = _messages(session, server)
     last = msgs[-1]["info"] if msgs else {}
     if last.get("role") != "assistant":
         return {**out, "state": "failed" if msgs else "done",
                 "error": f"No answer came: {NAME} took the task, but the model never "
                          f"answered and {NAME} kept no error. Is the model one of the proxy's, and "
-                         f"is the app's model proxy up? Its log: {LOG}." if msgs else None}
+                         f"is the app's model proxy up? Its log: {_log_of(server)}." if msgs else None}
     err = last.get("error")
     if err:
         data = err.get("data") if isinstance(err.get("data"), dict) else {}
@@ -341,12 +405,12 @@ def status(session: str) -> dict:
             else "running"}
 
 
-def result(session: str) -> dict:
+def result(session: str, server: Server | None = None) -> dict:
     """The status, the last assistant text, the tail of its tool outputs and the files
     the session changed (opencode's diff)."""
-    out = status(session)
+    out = status(session, server)
     text, tools = "", []
-    for m in reversed(_messages(session)):
+    for m in reversed(_messages(session, server)):
         if m["info"].get("role") != "assistant":
             continue
         for p in m.get("parts") or []:
@@ -358,7 +422,7 @@ def result(session: str) -> dict:
             break
     files, files_error = [], None
     try:
-        diff = _call("GET", f"/session/{session}/diff") or []
+        diff = _call("GET", f"/session/{session}/diff", server=server) or []
         files = [{"path": d.get("path"), "status": d.get("status"),
                   "additions": d.get("additions"), "deletions": d.get("deletions")}
                  for d in diff if isinstance(d, dict)]
@@ -368,8 +432,8 @@ def result(session: str) -> dict:
             **({"files_error": files_error} if files_error else {})}
 
 
-def abort(session: str) -> dict:
-    ok = _call("POST", f"/session/{session}/abort")
+def abort(session: str, server: Server | None = None) -> dict:
+    ok = _call("POST", f"/session/{session}/abort", server=server)
     return {"session": session, "aborted": bool(ok)}
 
 
