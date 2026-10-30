@@ -61,6 +61,9 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
 }
 :focus:not(:focus-visible) { outline: none; }
 
+/* where a section move puts the focus (App.tsx): a place, not a control */
+.view:focus, .view h1:focus { outline: none; }
+
 ::selection { background: var(--accent-wash); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

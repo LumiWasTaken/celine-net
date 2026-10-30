@@ -27,7 +27,8 @@ import { ServerDown } from './components/ServerDown'
 import { Portrait } from './components/Portrait'
 import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
-import { Button, ConfirmDialog, ICON, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx } from './ui'
+import { isTyping } from './lib/keys'
+import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
 import { settingsApi, type Home } from './lib/settingsApi'
 import { usePageName } from './lib/title'
@@ -67,6 +68,25 @@ function Shell() {
   // sections mount on first visit and then stay mounted, so their state survives
   const [visited, setVisited] = useState<Set<Section>>(() => new Set([section]))
   useEffect(() => { setVisited(v => v.has(section) ? v : new Set(v).add(section)) }, [section])
+  // a move to another section (not the first load): its title takes the focus, so Tab goes
+  // on from there, and the place is announced. Never from a field being typed in, never on
+  // a touch screen (a focus there can raise the keyboard); a view that took the focus
+  // itself (the composer) keeps it
+  const [announced, setAnnounced] = useState('')
+  const firstSection = useRef(true)
+  useEffect(() => {
+    if (firstSection.current) { firstSection.current = false; return }
+    const frame = requestAnimationFrame(() => {
+      const view = document.querySelector<HTMLElement>(`.sections > .view[data-section="${section}"]`)
+      if (!view) return
+      setAnnounced(view.getAttribute('aria-label') ?? '')
+      if (coarse() || isTyping(document.activeElement) || view.contains(document.activeElement)) return
+      const title = view.querySelector<HTMLElement>('h1') ?? view
+      if (title !== view) title.tabIndex = -1
+      title.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [section])
 
   // the config status is an extra: when it fails, the app still works, so a failure
   // leaves it out instead of showing an error
@@ -232,12 +252,13 @@ function Shell() {
           {VIEWS.map(v => {
             const el = visited.has(v.id) && v.view({ ...shown, active: section === v.id })
             return el && (
-              <section key={v.id} className="view" hidden={section !== v.id} aria-label={labelOf(v.id)}>
+              <section key={v.id} className="view" data-section={v.id} hidden={section !== v.id} aria-label={labelOf(v.id)} tabIndex={-1}>
                 <SectionBoundary><Suspense fallback={<LoadingRow />}>{el}</Suspense></SectionBoundary>
               </section>
             )
           })}
         </div>
+        <p className="sr-only" aria-live="polite">{announced}</p>
       </div>
       </>)}
 
