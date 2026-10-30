@@ -37,7 +37,7 @@ FIELDS: list[dict[str, Any]] = [
      "default": False},
     # turns/prompt.py: on, her prompt carries turns/ask_before_setup.md
     {"key": "ask_before_setup", "label": "Ask before setting up services", "type": "bool",
-     "help": "A server, a model or a service: she says what and why, then waits for "
+     "help": "A server, a model or a service: first the plan and its why, then "
              "your go.", "default": True},
     {"key": "code_websearch", "label": "Web search for the coding agent", "type": "bool",
      "help": "Its searches go to Exa, a third party.", "default": False},
