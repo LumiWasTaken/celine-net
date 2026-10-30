@@ -39,8 +39,8 @@ Stop, and the turn's wall clock and the tool's time do not run meanwhile; in any
 turn (a routine, a mission, a sub-agent) it waits ASK_FOR seconds. The user answers from
 a logged-in session (a named token is refused). One request waits at a time in a
 conversation. Each carries where its conversation lives (`home`, `link`; homes.py), so
-the rail marks that place, the window's title counts them and the conversation's row
-says it waits. A request is in memory: a restart forgets it,
+the rail marks that place, the window's title counts them and the rows of the
+conversation and of its root (a mission, a run, a background task) say it waits. A request is in memory: a restart forgets it,
 and the vault is locked after a restart anyway. Every change is the global event
 `approvals.changed`, and a new request a `notice` (events.py) too.
 """
@@ -99,6 +99,7 @@ class Ask:
     who: str = ""           # her name: the one who asks
     home: str | None = None  # where its conversation lives (homes.of), and the link
     link: str | None = None
+    root: str | None = None  # the top of its agent_of chain (homes.root): a mission, a run
 
     def view(self) -> dict:
         return {"id": self.id, "kind": self.kind, "action": self.action,
@@ -166,6 +167,20 @@ async def close_left(store) -> int:
     return await store.write(fn)
 
 
+def asked(services) -> frozenset[str]:
+    """Approvals.conversations of the app's service, empty without one: the lists
+    (conversations, missions, runs, background tasks) mark those rows."""
+    a = getattr(services, "approvals", None)
+    return a.conversations() if a is not None else frozenset()
+
+
+def _where(c, cid: str) -> dict:
+    """{home, link, root} of conversation `cid` (homes.py); all None when it is gone."""
+    from . import homes
+    top = homes.root(c, cid)
+    return {**homes.of(c, cid), "root": top["id"] if top is not None else None}
+
+
 class Approvals:
     def __init__(self, cfg, emit=None, store=None):
         self.cfg, self.emit, self.store = cfg, emit, store
@@ -208,12 +223,12 @@ class Approvals:
         if kind == "vault" and len(why.strip()) < 10:
             return (f"Nothing was asked: say why you need it in `why`, one real sentence "
                     f"{user} can judge (what for, which site or script).")
+        where = await self.store.read(lambda c: _where(c, conversation)) \
+            if self.store is not None else {}
+        # no await from this check to the insert: two calls at once cannot both pass
         if any(a.conversation == conversation for a in self.waiting.values()):
             return f"Another request waits for {user}; ask again once it is answered."
-        from . import homes
         from .turns.waiting import TURN
-        where = await self.store.read(lambda c: homes.of(c, conversation)) \
-            if self.store is not None else {}
         turn = TURN.get()
         turn = turn if turn is not None and turn.interactive else None
         ask = Ask(id=secrets.token_urlsafe(16), kind=kind, action=action, facts=facts,
@@ -222,7 +237,7 @@ class Approvals:
                   expires=None if turn is not None else now + ASK_FOR,
                   answer=asyncio.get_running_loop().create_future(), ref=ref, call=call,
                   changes=changes, who=getattr(self.cfg, "name", "") or "",
-                  home=where.get("home"), link=where.get("link"))
+                  home=where.get("home"), link=where.get("link"), root=where.get("root"))
         self.waiting[ask.id] = ask
         log.info("approval asked", extra={"event": "approvals.asked", "kind": kind,
                                           "action": action.split(" ")[0]})
@@ -291,18 +306,16 @@ class Approvals:
     def view(self, kind: str | None = None) -> list[dict]:
         return [a.view() for a in self.waiting.values() if kind in (None, a.kind)]
 
-    def homes(self) -> dict[str, dict]:
-        """{home: {count, link}}: how many wait in each place (homes.HOMES), and the link
-        of the oldest, where its rail entry opens."""
-        out: dict[str, dict] = {}
-        for a in self.waiting.values():
-            if a.home is not None:
-                out.setdefault(a.home, {"count": 0, "link": a.link})["count"] += 1
-        return out
+    def count(self) -> int:
+        """How many wait in a conversation that is there (one with a `home`): the
+        window's title; every one of them marks its place."""
+        return sum(1 for a in self.waiting.values() if a.home is not None)
 
     def conversations(self) -> frozenset[str]:
-        """The conversations a request waits in: their rows say they wait for the user."""
-        return frozenset(a.conversation for a in self.waiting.values())
+        """The conversations a request waits in, and the roots of those (a mission, a
+        run, a background task): their rows say they wait for the user."""
+        return frozenset(x for a in self.waiting.values()
+                         for x in (a.conversation, a.root) if x)
 
     def _changed(self) -> None:
         if self.emit is not None:

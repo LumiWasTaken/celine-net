@@ -262,12 +262,57 @@ async def test_an_ask_marks_its_place_and_its_row_until_answered(store, monkeypa
     cid, _ = await _chat(store)
     task = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her", call="k1"))
     await until(lambda: a.waiting)
-    assert a.homes() == {"her": {"count": 1, "link": f"/chat/{cid}"}}
+    [view] = a.view()
+    assert (view["home"], view["link"], a.count()) == ("her", f"/chat/{cid}", 1)
     [row] = await conversations.list(store, asked=a.conversations())
     assert row["state"] == {"tone": "warn", "words": "Waiting for you"}
     [aid] = a.waiting
     assert a.decide(aid, True, OWNER)
     await task
-    assert a.homes() == {} and a.conversations() == frozenset()
+    assert a.count() == 0 and a.conversations() == frozenset()
     [row] = await conversations.list(store, asked=a.conversations())
     assert row["state"] != {"tone": "warn", "words": "Waiting for you"}
+
+
+async def test_two_asks_at_once_in_one_conversation_make_one_card(store, monkeypatch):
+    a = _approvals(store, monkeypatch)
+    cid, _ = await _chat(store)
+    first = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her"))
+    second = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her"))
+    await until(lambda: a.waiting and (first.done() or second.done()))
+    assert len(a.waiting) == 1
+    assert (first.result() if first.done() else second.result()).startswith(
+        "Another request waits for sam")
+    [aid] = a.waiting
+    assert a.decide(aid, False, OWNER)
+    await asyncio.gather(first, second)
+    assert len(await _open(store, cid)) == 0
+
+
+async def test_an_ask_in_a_conversation_that_is_gone_is_not_counted(store, monkeypatch):
+    # a purge is refused while a turn in it waits; a gate asks without a chat line, so a
+    # conversation gone before it asked is the one way an ask has no home
+    a = _approvals(store, monkeypatch)
+    gone = await conversations.create(store)
+    assert await conversations.delete(store, gone)
+    assert await conversations.purge(store, load(), gone) == [gone]
+    task = asyncio.create_task(a.ask("run shell__exec", [], gone, kind="gate"))
+    await until(lambda: a.waiting)
+    [view] = a.view()
+    assert (view["home"], view["link"], a.count()) == (None, None, 0)
+    [aid] = a.waiting
+    assert a.decide(aid, False, OWNER)
+    await task
+
+
+async def test_an_ask_in_a_sub_agent_marks_its_root_too(store, monkeypatch):
+    a = _approvals(store, monkeypatch)
+    top = await conversations.for_trigger(store, "run:r1", "Radar")
+    sub = await conversations.create(store, agent_of=top, kind="agent")
+    task = asyncio.create_task(a.ask("run shell__exec", [], sub, kind="gate"))
+    await until(lambda: a.waiting)
+    assert a.conversations() == {sub, top} and ap.asked(SimpleNamespace(approvals=a)) == {sub, top}
+    assert ap.asked(SimpleNamespace()) == frozenset()
+    [aid] = a.waiting
+    assert a.decide(aid, False, OWNER)
+    await task

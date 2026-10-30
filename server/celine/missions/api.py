@@ -175,11 +175,14 @@ async def list_missions(request: Request, status: str | None = None,
     text, `steps`, each with its `model_label`, `step` the number of the one doing) and its automatic context switch; with `trashed` only the ones in the
     trash, with `archived` only the archived ones (a mission is archived and deleted as
     its conversation is: POST /conversations/{cid}/archive, DELETE /conversations/{cid}).
-    `counts`: the page's numbers (store.counts), whatever the filters."""
+    `counts`: the page's numbers (store.counts), whatever the filters. `asked`: an
+    approval waits in it or in a sub-agent of it (approvals.asked)."""
+    from ..approvals import asked
     store = request.app.state.services.store
     settings = getattr(request.app.state.services.cfg, "settings", None)
-    return {"missions": [_labelled(settings, r) for r in
-                         await missions.list(store, status, trashed, archived)],
+    waits = asked(request.app.state.services)
+    return {"missions": [{**_labelled(settings, r), "asked": r["conversation_id"] in waits}
+                         for r in await missions.list(store, status, trashed, archived)],
             "counts": await missions.counts(store)}
 
 

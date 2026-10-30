@@ -162,8 +162,11 @@ async def list_runs(request: Request, night: str | None = None,
     `until` (default and at most tonight), newest first, each {night, runs: [{schedule,
     state}] (a schedule's newest run), late (a run of a night gone by still waits)};
     `attention` running while a run runs, failed while a run of the last two nights
-    failed, else null (the rail's dot)."""
+    failed, else null (the rail's dot). A run's `asked`: an approval waits in it or in a
+    sub-agent of it (approvals.asked)."""
+    from ..approvals import asked
     cfg, store = request.app.state.services.cfg, request.app.state.services.store
+    waits = asked(request.app.state.services)
     tonight = _tonight(cfg)
     which = (_night(night) if night else tonight).isoformat()
     last = min(_night(until), tonight) if until else tonight
@@ -193,6 +196,7 @@ async def list_runs(request: Request, night: str | None = None,
         mine = [{"schedule": k, "state": v} for k, v in newest.items()]
         nights.append({"night": n, "runs": mine, "late": n < tonight.isoformat() and any(
             d["state"] == "waiting" for d in mine)})
+    runs = [{**r, "asked": r["conversation_id"] in waits} for r in runs]
     return {"runs": runs, "nights": nights, "tonight": tonight.isoformat(),
             "attention": attention}
 

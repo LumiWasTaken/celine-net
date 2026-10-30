@@ -583,8 +583,7 @@ async def test_the_routes_freeze_and_answer_and_a_token_is_refused(store):
         assert (await c.get("/api/guard/freeze")).json()["frozen"]["id"] == r["frozen"]["id"]
         assert (await c.delete("/api/guard/freeze")).json()["unfrozen"]["id"] == \
             r["frozen"]["id"]
-        assert (await c.get("/api/approvals")).json() == {"approvals": [], "count": 0,
-                                                          "homes": {}}
+        assert (await c.get("/api/approvals")).json() == {"approvals": [], "count": 0}
         assert (await c.post("/api/approvals/x/answer", json={"ok": True})).status_code == 404
         app.state.auth = SimpleNamespace()            # passkeys on, no session: a token
         for method, path, body in (("post", "/api/guard/freeze", {"why": "x"}),
