@@ -21,10 +21,12 @@ def behind(lo: int | None, after: int) -> bool:
     return lo is not None and after < lo - 1
 
 
-def catch_up(c: sqlite3.Connection, since: int | None, known: dict[str, int]) -> dict:
-    """`known`: {conversation id: the seq the client has}."""
+def catch_up(c: sqlite3.Connection, since: int | None, known: dict[str, int],
+             settings) -> dict:
+    """`known`: {conversation id: the seq the client has}; `settings` label the
+    sub-agents' models."""
     from ..intercom.store import waiting
-    from ..sub_agents.skill import agents_of
+    from ..sub_agents.skill import agents_of, labelled
     lo, hi = bounds(c)
     stale = since is not None and behind(lo, since)
     named: set[str] = set()        # conversations the feed names after `since`
@@ -58,4 +60,4 @@ def catch_up(c: sqlite3.Connection, since: int | None, known: dict[str, int]) ->
         f"WHERE id IN ({marks}) AND finished_at IS NOT NULL ORDER BY finished_at",
         sorted(job_ids))] if job_ids else []
     return {"global": hi, "resync": stale, "conversations": moved, "gone": gone,
-            "jobs": jobs, "unread": waiting(c, "user"), "agents": agents_of(c)}
+            "jobs": jobs, "unread": waiting(c, "user"), "agents": labelled(settings, agents_of(c))}

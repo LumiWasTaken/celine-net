@@ -5,9 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..attachments import label
 from ..errors import CelineError, NotFound
-from .skill import agents_of, tree_of
+from .skill import agents_of, labelled, tree_of
 
 router = APIRouter(prefix="/api")
 
@@ -36,8 +35,9 @@ async def list_agents(request: Request, conversation: str | None = None) -> dict
     """The sub-agents of one conversation, or every one not in the archive, newest
     first: id, parent, name, access, folder, model, cli, device, working, the step at
     work, the latest report, its last words."""
-    store = request.app.state.services.store
-    return {"agents": await store.read(lambda c: agents_of(c, conversation))}
+    services = request.app.state.services
+    rows = await services.store.read(lambda c: agents_of(c, conversation))
+    return {"agents": labelled(getattr(services.cfg, "settings", None), rows)}
 
 
 @router.get("/conversations/{cid}/sub-agents")
@@ -48,10 +48,7 @@ async def agent_tree(request: Request, cid: str) -> dict:
     out = await services.store.read(lambda c: tree_of(c, cid))
     if out is None:
         raise NotFound("conversation")
-    s = getattr(services.cfg, "settings", None)
-    for a in out["agents"]:
-        a["model"] = label(s, a["model"]) or None
-    return out
+    return {**out, "agents": labelled(getattr(services.cfg, "settings", None), out["agents"])}
 
 
 @router.post("/conversations/{cid}/sub-agents")

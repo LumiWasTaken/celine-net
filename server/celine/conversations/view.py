@@ -130,6 +130,14 @@ async def snapshot(store, cid: str) -> dict:
 
     return await store.read(fn)
 
+def for_client(snap: dict, settings) -> dict:
+    """A snapshot as a client gets it: its sub-agents' models as labels
+    (sub_agents/skill.labelled)."""
+    from ..sub_agents.skill import labelled
+    conv = snap["conversation"]
+    return {**snap, "conversation": {**conv, "agents": labelled(settings, conv["agents"])}}
+
+
 async def resume(store, cid: str, after_seq: int) -> dict:
     """Snapshot-or-replay, in ONE deferred read transaction."""
     def fn(c: sqlite3.Connection) -> dict:

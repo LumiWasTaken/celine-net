@@ -79,9 +79,10 @@ class NewMessage(BaseModel):
 async def conversation(request: Request, cid: str) -> dict:
     """The snapshot as every client gets it (view.snapshot, the socket's too)."""
     try:
-        return await view.snapshot(store_of(request), cid)
+        snap = await view.snapshot(store_of(request), cid)
     except KeyError:
         raise NotFound("conversation") from None
+    return view.for_client(snap, getattr(cfg_of(request), "settings", None))
 
 
 async def writable(request: Request, cid: str) -> None:

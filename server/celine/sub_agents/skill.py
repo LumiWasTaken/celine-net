@@ -515,6 +515,13 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
     return [{**dict(r), **_look(c, r["id"]), **homes.of(c, r["id"])} for r in rows]
 
 
+def labelled(settings, agents: list[dict]) -> list[dict]:
+    """`agents` as a client gets them: each `model` its label (attachments.label), never
+    its ref. Every route, snapshot and event that sends agents_of or tree_of rows."""
+    from ..attachments import label
+    return [{**a, "model": label(settings, a["model"]) or None} for a in agents]
+
+
 ENDED = {"aborted": "stopped", "failed": "failed", "interrupted": "failed",
          "capped": "paused"}     # how a done one's last turn ended, in the tree's words
 
@@ -604,7 +611,8 @@ async def announce(app, sub: str) -> None:
     Sent when a sub-agent starts, stops, and whenever one of its turns or jobs ends."""
     rows = await app.store.read(lambda c: agents_of(c, agent=sub))
     if rows:
-        app.store.emit_global({"type": AGENT_STATE, **rows[0]})
+        [row] = labelled(getattr(app.cfg, "settings", None), rows)
+        app.store.emit_global({"type": AGENT_STATE, **row})
 
 
 def _look(c: sqlite3.Connection, sub: str) -> dict:

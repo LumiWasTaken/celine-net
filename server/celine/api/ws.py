@@ -127,7 +127,8 @@ async def _conversation(state, send, cid: str, after: int) -> None:
                 await send({"type": "error", "conversation": cid, "code": "not_found"})
                 return
             if last == 0:
-                await send({"type": "snapshot", **got})
+                await send({"type": "snapshot",
+                            **view.for_client(got, getattr(state.cfg, "settings", None))})
             elif "resync" in got:
                 await send({"type": "resync", "conversation": cid, "reason": got["resync"]})
                 return
@@ -228,5 +229,6 @@ async def changes(request: Request, since: int | None = None,
         cid, _, seq = part.strip().partition(":")
         if cid:
             known[cid] = int(seq) if seq.isdigit() else 0
-    return await request.app.state.services.store.read(
-        lambda c: changes_mod.catch_up(c, since, known))
+    services = request.app.state.services
+    settings = getattr(services.cfg, "settings", None)
+    return await services.store.read(lambda c: changes_mod.catch_up(c, since, known, settings))
