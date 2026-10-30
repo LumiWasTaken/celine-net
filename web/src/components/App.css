@@ -37,7 +37,7 @@
   flex: none; width: calc(var(--rail-w) - 2 * var(--s-1)); min-height: var(--header-h); padding: 0 var(--s-1); border-radius: var(--r-lg);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-1);
   color: var(--rail-ink); position: relative; text-decoration: none;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .rail__item:hover { background: var(--rail-hover); color: var(--text-secondary); }
 .rail__item[aria-current='page'] { background: var(--rail-active); color: var(--rail-active-ink); }

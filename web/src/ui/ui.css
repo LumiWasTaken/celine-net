@@ -807,7 +807,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .tabs button { position: relative;
   flex: none; display: inline-flex; align-items: center; gap: var(--s-1); white-space: nowrap;
   min-height: var(--h-md); padding: 0 var(--s-3); font-size: var(--t-md); font-weight: var(--fw-medium); color: var(--text-muted);
-  transition: color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .tabs button:hover { color: var(--text-primary); }
 .tabs button[aria-selected='true'], .tabs button[aria-checked='true'] { color: var(--accent); }
