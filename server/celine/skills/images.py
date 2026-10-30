@@ -15,6 +15,8 @@ from collections.abc import Callable
 from typing import Annotated, Literal, Required, TypedDict
 
 from .. import attachments
+from ..clock import zone
+from ..core.ids import when as when_
 from ..comfyui import batches as batches_mod, presets as presets_mod
 from . import ToolContext, ToolResult, guide, tool, described
 
@@ -336,7 +338,7 @@ class ImageGenerator:
             return ToolResult(content="There are no images in this conversation.")
         blocks = []
         for r in rows[:30]:
-            when = r["created_at"][:16].replace("T", " ")
+            when = when_(r["created_at"], zone(self.cfg))
             made = r["made"]
             if made:
                 att = made.get("attachment") or {}

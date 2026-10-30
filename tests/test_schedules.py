@@ -764,3 +764,22 @@ async def test_a_freeze_leaves_the_run_in_flight_waiting_and_the_unfreeze_runs_i
         await until(lambda: _state(store, run["id"], "done"))
     [row] = await _runs(store)
     assert await _turns(store, row["conversation_id"]) == 1, "the cut turn went on"
+
+
+async def test_routines_list_and_read_tell_a_run_in_the_app_zone(store, cfg):
+    from celine.schedules.skill import Routines
+    from celine.skills import ToolContext
+    cfg.timezone = "Europe/Berlin"
+    cfg.schedules = {"world": _s("world")}
+    run_cid = await conversations.create(store, "run")
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
+        "created_at) VALUES('r', 'world', 'World', '2026-10-30T01:00:00.000+00:00', "
+        "'2026-10-30', 'waiting', ?, 'x')", (run_cid,)))
+    skill = Routines(cfg)
+    skill.app = SimpleNamespace(cfg=cfg)
+    ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=store,
+                      config=cfg, emit=None)  # type: ignore[arg-type]
+    listed = (await skill.list(ctx)).content
+    assert listed.endswith(", last run Fri 30 Oct 02:00 waiting"), listed
+    assert "- run:r Fri 30 Oct 02:00 waiting" in (await skill.read(ctx, "world")).content

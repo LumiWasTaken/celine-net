@@ -12,6 +12,8 @@ from ..artifacts import lint
 from ..artifacts import store as artifacts
 from . import ToolContext, ToolResult, guide, tool, described
 from ..core.event_types import ARTIFACT_UPDATED
+from ..clock import zone
+from ..core.ids import when
 
 
 class Artifacts:
@@ -81,7 +83,7 @@ class Artifacts:
             return ToolResult(content="No artifacts" + (" here." if where == "here" else "."),
                               display={"artifacts": 0})
         lines = [f"- {r['id']}: \"{r['title']}\" ({r['kind']}, version {r['n']}, "
-                 f"{r['updated_at'][:16].replace('T', ' ')} UTC)" for r in rows[:LIST_MAX]]
+                 f"{when(r['updated_at'], zone(self.cfg))})" for r in rows[:LIST_MAX]]
         if len(rows) > LIST_MAX:
             lines.append(f"{len(rows) - LIST_MAX} older ones not listed.")
         return ToolResult(content="\n".join(lines), display={"artifacts": len(rows)})
@@ -102,7 +104,7 @@ class Artifacts:
                 f" with a version {version}." if row else "."), is_error=True)
         head = [f"\"{v['title']}\" ({v['kind']}), version {v['n']} of {row['n']}" +
                 (f": {v['note']}" if v["note"] else "."),
-                "Versions: " + ", ".join(f"{x['n']} ({x['created_at'][:10]})"
+                "Versions: " + ", ".join(f"{x['n']} ({when(x['created_at'], zone(self.cfg))})"
                                          for x in row["versions"]) + "."]
         if row["trashed_at"]:
             head.append("It is in the Trash.")

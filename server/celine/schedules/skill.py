@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
+from ..clock import zone
+from ..core.ids import when
 from ..errors import CelineError
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from . import shown
@@ -41,11 +43,11 @@ class Routines:
         # SQLite: the bare columns come from the row of max(slot)
         last = await ctx.store.read(lambda c: {r["schedule"]: dict(r) for r in c.execute(
             "SELECT schedule, state, max(slot) AS slot FROM runs GROUP BY schedule")})
-        lines = []
+        lines, tz = [], zone(ctx.config)
         for s in sorted(every.values(), key=lambda s: (s.time or "99", s.name)):
             r = last.get(s.name)
             lines.append(f"- {s.name}: {shown(s)}, {_when(s)}, {'on' if s.on else 'off'}" +
-                         (f", last run {r['slot'][:16].replace('T', ' ')} UTC {r['state']}"
+                         (f", last run {when(r['slot'], tz)} {r['state']}"
                           if r else ", no runs yet"))
         return ToolResult(content="\n".join(lines), display={"routines": len(every)})
 
@@ -71,7 +73,7 @@ class Routines:
         if s.partner_prompt:
             lines.append(f"Reviewer prompt ({s.partner}):\n{s.partner_prompt}")
         lines.append("Newest runs:" if runs else "No runs yet.")
-        lines += [f"- run:{r['id']} {r['slot'][:16].replace('T', ' ')} UTC {r['state']}"
+        lines += [f"- run:{r['id']} {when(r['slot'], zone(ctx.config))} {r['state']}"
                   + (f", started by {r['started_by']}" if r["started_by"] != "clock" else "")
                   + (f": {r['error'] or r['reason']}" if r["error"] or r["reason"] else "")
                   for r in runs]
