@@ -73,9 +73,10 @@ class _Job:
 # loop only queues a write and awaits it; a write that takes long (a lock held by
 # another process, a large prune) holds up the writes behind it, never the loop.
 class Store:
-    def __init__(self, db_path: Path, bus=None):
+    def __init__(self, db_path: Path, bus=None, cfg=None):
         self.db_path = db_path
         self.bus = bus
+        self.cfg = cfg              # the app's Config: what a tool call's row says (tool_words)
         self.alive = False          # the writer thread runs
         self._pending: list[tuple[str, dict]] = []     # the running write's events
         self._conn: sqlite3.Connection | None = None
@@ -99,6 +100,11 @@ class Store:
         threading.Thread(target=self._serve, name="store-writer", daemon=True).start()
         task_group.start_soon(self._writer, name="store-writer")
 
+
+    @property
+    def tool_words(self) -> dict:
+        """Every MCP server's own row words (Config.tool_words, skills/words.py)."""
+        return self.cfg.tool_words if self.cfg is not None else {}
     def _stop(self) -> None:
         """No write is taken after this; the writer ends after the ones queued."""
         if not self._closed and self._jobs is not None:

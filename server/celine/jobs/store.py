@@ -105,8 +105,8 @@ def interrupt_running(c: sqlite3.Connection, store) -> list[tuple[str, str]]:
                          "state": "interrupted", "reason": "the server restarted",
                          "result": result, "display": None,
                          "words": words.words(call["name"], call["arguments"],
-                                              "interrupted", None, result),
-                         "runs": words.runs_of_call(c, call["id"])})
+                                              "interrupted", None, result, store.tool_words),
+                         **turns.runs_field(c, store, [call["id"]])})
         out.append((row["conversation_id"],
                     f"Job {row['id'][:8]} ({row['tool_name']}): {why}"))
     return out
@@ -161,8 +161,7 @@ async def create(store, job_id: str, conversation_id: str, turn_id: str,
         c.execute("UPDATE tool_calls SET job_id=?, state='detached' WHERE id=?",
                   (job_id, tool_call_id))
         store.event(c, conversation_id, TOOL_DETACHED,
-                    {"tool_call_id": tool_call_id, "job_id": job_id, "name": tool_name,
-                     "runs": words.runs_of_call(c, tool_call_id)})
+                    {"tool_call_id": tool_call_id, "job_id": job_id, "name": tool_name})
         store.event(c, conversation_id, JOB_STATE,
                     {"job_id": job_id, "state": "running", "tool": tool_name})
 
@@ -198,8 +197,8 @@ async def finish(store, job_id: str, call: dict, result, call_state: str,
                     {"tool_call_id": call["id"], "name": call["name"],
                      "ok": call_state == "ok", "state": call_state, "result": said,
                      "display": shown, "job_id": job_id, "finished_at": ts,
-                     "words": words.of_call(c, call["id"], call_state, shown, said),
-                     "runs": words.runs_of_call(c, call["id"])})
+                     "words": words.of_call(c, call["id"], call_state, shown, said, store.tool_words),
+                     **turns.runs_field(c, store, [call["id"]])})
         store.event(c, cid, JOB_STATE,
                     {"job_id": job_id, "state": job_state, "tool": job["tool_name"]})
         data = {"jobs": [job_id], "tools": [job["tool_name"]]}

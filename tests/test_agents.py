@@ -229,14 +229,14 @@ async def test_a_start_over_max_running_is_queued_and_starts_when_one_is_done(st
     assert refusal is refusal2 is None
     assert await _turns(store, first) == [("intercom", "queued")]
     assert await _turns(store, second) == [], "over the cap it waits"
-    [row] = await store.read(lambda c: agents_of(c, agent=second))
+    [row] = await store.read(lambda c: agents_of(c, agent=second, own={}))
     assert row["queued"] and row["working"]
 
     await store.write(lambda c: c.execute("UPDATE turns SET state='done' WHERE "
                                           "conversation_id=?", (first,)))
     await report.on_end(app, first)
     assert await _turns(store, second) == [("intercom", "queued")]
-    [row] = await store.read(lambda c: agents_of(c, agent=second))
+    [row] = await store.read(lambda c: agents_of(c, agent=second, own={}))
     assert not row["queued"]
     reply = await store.read(lambda c: c.execute(
         "SELECT d.turn_id FROM intercom_deliveries d WHERE d.conversation_id=?",
@@ -279,7 +279,7 @@ async def test_stopping_a_queued_sub_agent_drops_its_brief(store, cfg):
     skill.app = app
     sub, _, _, _ = await skill.begin(store, parent, "review the night", "night-rvw")
     await skill.stop_agent(sub)
-    [row] = await store.read(lambda c: agents_of(c, agent=sub))
+    [row] = await store.read(lambda c: agents_of(c, agent=sub, own={}))
     assert not row["queued"] and not row["working"]
 
 
@@ -391,11 +391,11 @@ async def test_an_inherited_folder_leaves_the_default_access_read(store, cfg):
     (cfg.her.notebook / "agents/scout").mkdir(parents=True)
     kid, refusal, _, _ = await agents.begin(store, scout, "look around", "a looker")
     assert refusal is None
-    [row] = await store.read(lambda c: agents_of(c, agent=kid))
+    [row] = await store.read(lambda c: agents_of(c, agent=kid, own={}))
     assert (row["access"], row["folder"]) == ("read", "agents/scout")
     kid, refusal, _, _ = await agents.begin(store, scout, "write it", "a writer",
                                             folder="agents/scout/out")
-    [row] = await store.read(lambda c: agents_of(c, agent=kid))
+    [row] = await store.read(lambda c: agents_of(c, agent=kid, own={}))
     assert (row["access"], row["folder"]) == ("work", "agents/scout/out"), "a folder given"
 
 

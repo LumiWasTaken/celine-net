@@ -329,7 +329,7 @@ async def test_a_device_must_be_one_that_is_on(app, store):
     agents = app.registry.skills["sub_agents"]
     _, refusal, _, _ = await agents.begin(store, parent, "x", "arcade", device="pc")
     assert refusal == "pc is not one of your devices. Yours: mac."
-    rows = await store.read(lambda c: agents_of(c, parent))
+    rows = await store.read(lambda c: agents_of(c, parent, own={}))
     assert rows == []
 
 

@@ -36,7 +36,7 @@ async def list_agents(request: Request, conversation: str | None = None) -> dict
     first: id, parent, name, access, folder, model, cli, device, working, the step at
     work, the latest report, its last words."""
     services = request.app.state.services
-    rows = await services.store.read(lambda c: agents_of(c, conversation))
+    rows = await services.store.read(lambda c: agents_of(c, conversation, own=services.store.tool_words))
     return {"agents": labelled(getattr(services.cfg, "settings", None), rows)}
 
 
@@ -45,7 +45,7 @@ async def agent_tree(request: Request, cid: str) -> dict:
     """The sub-agents under the top of `cid`'s chain, as a tree (skill.tree_of): {top,
     agents}, each with its depth, state, model (its label), tokens, seconds and link."""
     services = request.app.state.services
-    out = await services.store.read(lambda c: tree_of(c, cid))
+    out = await services.store.read(lambda c: tree_of(c, cid, services.store.tool_words))
     if out is None:
         raise NotFound("conversation")
     return {**out, "agents": labelled(getattr(services.cfg, "settings", None), out["agents"])}

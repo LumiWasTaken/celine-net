@@ -60,7 +60,7 @@ async def test_lists_and_senders_carry_the_same_link(store):
         ("missions", f"/mission/{ids['mission']}")
     agent = rows[ids["chat"]]["agents"][0]
     assert (agent["home"], agent["link"]) == ("her", f"/chat/{ids['chat-agent']}")
-    every = {a["id"]: a for a in await store.read(lambda c: agents_of(c))}
+    every = {a["id"]: a for a in await store.read(lambda c: agents_of(c, own={}))}
     assert every[ids["run-agent"]]["link"] == f"/routines/2026-10-22/task/{ids['run-agent']}"
     for k, v in ids.items():
         src = await store.read(lambda c, v=v: source_of(c, f"agent:{v}"))

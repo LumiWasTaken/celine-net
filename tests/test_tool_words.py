@@ -6,15 +6,14 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 
 from celine.mcp import read_servers, row_words
 from celine.skills import words as words_mod
 from celine.skills.words import VERBS, fill, forming, group, runs, step, words
 
 
-def w(name, args, state, display=None, result=None):
-    return words(name, json.dumps(args), state, display, result)
+def w(name, args, state, display=None, result=None, own=None):
+    return words(name, json.dumps(args), state, display, result, own)
 
 
 def test_done_running_and_failed():
@@ -92,43 +91,44 @@ def test_a_command_is_its_first_line_cut():
 MAC = tomllib.loads((Path(__file__).parents[1] / "plugins/mac/plugin.toml").read_text())
 
 
-@pytest.fixture
-def mac(monkeypatch):
-    cfg = SimpleNamespace(tool_words=row_words(SimpleNamespace(mcp={}),
-                                               [SimpleNamespace(manifest=MAC)]))
-    monkeypatch.setattr(words_mod, "_cfg", cfg)
+# Config.tool_words as boot.load makes it of the Mac plugin alone
+OWN = row_words(SimpleNamespace(mcp={}), [SimpleNamespace(manifest=MAC)])
+
+
+def m(name, args, state, display=None):
+    return w(name, args, state, display, None, OWN)
 
 
 def g(name, args):
-    return group(name, args)
+    return group(name, args, OWN)
 
 
-def test_a_servers_own_words(mac):
+def test_a_servers_own_words():
     cmd = {"command": "brew install ffmpeg\nffmpeg -version"}
-    run = w("macshell__start_process", cmd, "ok")
+    run = m("macshell__start_process", cmd, "ok")
     assert run["settled"] == "Ran brew install ffmpeg on the Mac"
     assert run["running"] == "Running brew install ffmpeg on the Mac"
     assert g("macshell__start_process", cmd) == "Used the shell on the Mac {n} times"
-    assert w("macshell__start_process", cmd, "error")["settled"] == \
+    assert m("macshell__start_process", cmd, "error")["settled"] == \
         "Could not run brew install ffmpeg on the Mac"
-    assert w("macshell__read_process_output", {"pid": 4021}, "ok")["settled"] == \
+    assert m("macshell__read_process_output", {"pid": 4021}, "ok")["settled"] == \
         "Read the output of process 4021 on the Mac"
     assert g("macshell__read_process_output", {"pid": 4021}) == g("macshell__start_process", cmd)
     # a missing argument: its default, or the hole and its quotes leave
-    assert step("macshell__start_process") == "Running a command on the Mac"
-    assert w("macshell__interact_with_process", {"pid": 7}, "ok")["settled"] == \
+    assert step("macshell__start_process", OWN) == "Running a command on the Mac"
+    assert m("macshell__interact_with_process", {"pid": 7}, "ok")["settled"] == \
         "Typed in process 7 on the Mac"
-    assert w("macscreen__type", {"text": "hello"}, "ok")["settled"] == 'Typed "hello" on the Mac'
-    assert w("macscreen__click", {}, "ok")["settled"] == "Clicked on the Mac"
+    assert m("macscreen__type", {"text": "hello"}, "ok")["settled"] == 'Typed "hello" on the Mac'
+    assert m("macscreen__click", {}, "ok")["settled"] == "Clicked on the Mac"
     # the same file read on either server is one kind of call
     assert g("macfiles__read_text_file", {"path": "/a.txt"}) == \
         g("macshell__read_file", {"path": "/b.txt"}) == "Read {n} files on the Mac"
-    assert w("macbrowser__browser_navigate", {"url": "https://example.org"}, "ok")["settled"] \
+    assert m("macbrowser__browser_navigate", {"url": "https://example.org"}, "ok")["settled"] \
         == "Opened https://example.org in Chrome on the Mac"
-    assert forming("macshell__start_process", '{"command": "make test", "ti') == \
+    assert forming("macshell__start_process", '{"command": "make test", "ti', OWN) == \
         "Running make test on the Mac"
     # a tool the server gave no words, and calls that stand alone
-    assert w("macshell__give_feedback", {}, "ok")["settled"] == "Used macshell give feedback"
+    assert m("macshell__give_feedback", {}, "ok")["settled"] == "Used macshell give feedback"
     assert g("macshell__give_feedback", {}) is None
     assert g("notebook__read", {"path": "a.md"}) is None
     # the box's run: its terminal from the arguments, the same at its start and after it
@@ -165,20 +165,19 @@ def test_row_words_of_an_mcp_toml_server():
     assert tables["broken"] == {"words": {}, "groups": {}}
 
 
-def call(i, name="shell__run", state="ok", display=None, terminal="main"):
-    return {"id": f"c{i}", "name": name, "state": state, "display": display,
+def call(i, name="shell__run", state="ok", exit=None, time_up=None, terminal="main"):
+    return {"id": f"c{i}", "name": name, "state": state, "exit": exit, "time_up": time_up,
             "arguments": json.dumps({"command": f"ls {i}", "terminal": terminal})}
 
 
 def test_runs():
     # three in a row are a run; two are not; the count and the failed ones from the server
-    block = [call(1), call(2, display={"exit": 2}), call(3, state="error"),
+    block = [call(1), call(2, exit=2), call(3, state="error"),
              call(4, terminal="other"), call(5, terminal="other")]
     assert runs([block]) == [{"ids": ["c1", "c2", "c3"],
                               "words": "Ran 3 commands in terminal main", "failed": 2}]
     # plumbing between them breaks nothing
-    plumbing = {"id": "p", "name": "skills__read_guide", "state": "ok", "display": None,
-                "arguments": "{}"}
+    plumbing = {"id": "p", "name": "skills__read_guide", "state": "ok", "arguments": "{}"}
     assert runs([[call(1), plumbing, call(2), call(3)]])[0]["ids"] == ["c1", "c2", "c3"]
     # a reply's text between them ends the run
     assert runs([[call(1), call(2)], [call(3)]]) == []
@@ -187,7 +186,7 @@ def test_runs():
 def test_calls_that_stand_alone():
     for alone in (call(2, state="pending"), call(2, state="running"),
                   call(2, state="detached"), call(2, state="gated"),
-                  call(2, state="error", display={"time_up": True})):
+                  call(2, state="error", time_up=1)):
         assert runs([[call(1), alone, call(3), call(4)]]) == [], alone["state"]
     # it joins its run once it ran
     assert runs([[call(1), call(2), call(3), call(4)]])[0]["words"] == \
@@ -206,7 +205,8 @@ def test_runs_of_a_turn():
                   (mid, "t1", "assistant", content, f"2026-10-30T10:00:0{mid[1:]}"))
         for x in calls:
             c.execute("INSERT INTO tool_calls VALUES(?,?,?,?,?,?)",
-                      (x["id"], mid, x["name"], x["arguments"], x["state"], None))
+                      (x["id"], mid, x["name"], x["arguments"], x["state"],
+                       json.dumps({"exit": x["exit"]})))
     # each round of calls a message of its own; a text before a round ends the run
     message("m1", "Looking.", call(1))
     message("m2", "", call(2))
@@ -216,8 +216,15 @@ def test_runs_of_a_turn():
     assert words_mod.runs_of_turn(c, "t1") == [
         {"ids": ["c1", "c2", "c3", "c4"], "words": "Ran 4 commands in terminal main",
          "failed": 0}]
-    assert words_mod.runs_of_call(c, "c6") == {"turn": "t1",
-                                               "list": words_mod.runs_of_turn(c, "t1")}
+    # an event says the runs only when the calls that settled changed them
+    assert words_mod.runs_after(c, ["c6"]) is None
+    c.execute("UPDATE tool_calls SET state='ok', display=? WHERE id='c4'", ('{"exit": 1}',))
+    assert words_mod.runs_after(c, ["c4"]) == {"turn": "t1", "list": [
+        {"ids": ["c1", "c2", "c3", "c4"], "words": "Ran 4 commands in terminal main",
+         "failed": 1}]}
+    # a call at work again: the runs go with the event, whatever they are
+    c.execute("UPDATE tool_calls SET state='pending' WHERE id='c3'")
+    assert words_mod.runs_after(c, ["c3"], reset=True) == {"turn": "t1", "list": []}
 
 
 # the tools and their arguments as the Mac's servers list them (the versions setup.sh pins)

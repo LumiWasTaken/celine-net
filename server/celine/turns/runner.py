@@ -553,7 +553,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
             "message_id": mid, "index": i, "name": slot["name"],
             "chars": len(slot["arguments"]), "lines": _lines(slot["arguments"]),
             "preview": _forming_preview(slot["arguments"]),
-            "words": words.forming(slot["name"], slot["arguments"])})
+            "words": words.forming(slot["name"], slot["arguments"], store.tool_words)})
 
     async def show_last(i: int) -> None:
         if acc[i]["name"] and shown.get(i, (0.0, -1))[1] != len(acc[i]["arguments"]):

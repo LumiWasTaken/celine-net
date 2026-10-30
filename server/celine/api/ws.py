@@ -231,4 +231,4 @@ async def changes(request: Request, since: int | None = None,
             known[cid] = int(seq) if seq.isdigit() else 0
     services = request.app.state.services
     settings = getattr(services.cfg, "settings", None)
-    return await services.store.read(lambda c: changes_mod.catch_up(c, since, known, settings))
+    return await services.store.read(lambda c: changes_mod.catch_up(c, since, known, services.store.tool_words, settings))

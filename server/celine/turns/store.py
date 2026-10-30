@@ -37,6 +37,13 @@ _SETTLE_WHY = {"aborted": "stopped", "failed": "the turn failed",
                "interrupted": "the server restarted"}
 
 
+def runs_field(c: sqlite3.Connection, store, call_ids: list[str], reset: bool = False) -> dict:
+    """`runs` for the event of calls whose state changed, when their turn's runs changed
+    (skills/words.py runs_after); nothing otherwise, and the client keeps the last."""
+    r = words.runs_after(c, call_ids, store.tool_words, reset=reset)
+    return {"runs": r} if r else {}
+
+
 def tool_flags(registry):
     """name -> (mutating, mode) from the registry, None for a tool it does not know."""
     def flags(name: str):
@@ -86,8 +93,10 @@ def settle_open_calls(c: sqlite3.Connection, store, cid: str, turn_id: str,
                     {"tool_call_id": r["id"], "name": r["name"], "ok": False,
                      "state": "interrupted", "reason": why, "result": text,
                      "display": None, "withheld": False,
-                     "words": words.of_call(c, r["id"], "interrupted", None, text),
-                     "runs": words.runs_of_call(c, r["id"])})
+                     "words": words.of_call(c, r["id"], "interrupted", None, text,
+                                            store.tool_words),
+                     # the turn's runs once, with the last: every call above has settled
+                     **(runs_field(c, store, [x["id"] for x in rows]) if r is rows[-1] else {})})
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": r["message_id"], "role": "tool",
                      "content": text, "tool_call_id": r["id"], "meta": meta})
@@ -388,8 +397,11 @@ async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
         c.execute("UPDATE turns SET state='queued', reason=?, reason_code=NULL,"
                   " abort_requested=0, finished_at=NULL, worker_id=NULL, continues=?,"
                   " cut=NULL, cap_base=? WHERE id=?", (why, continues, base, turn_id))
-        for call_id in reran:
-            store.event(c, cid, TOOL_RESET, {"tool_call_id": call_id, "state": "pending"})
+        # the turn's runs once, with the last of them: these calls are at work again
+        for i, call_id in enumerate(reran):
+            store.event(c, cid, TOOL_RESET, {
+                "tool_call_id": call_id, "state": "pending",
+                **(runs_field(c, store, reran, reset=True) if i == len(reran) - 1 else {})})
         seq = tree.turn_state(c, store, cid, turn_id, "queued", reason=why,
                               continues=continues)
         return turn_id, seq
@@ -566,8 +578,8 @@ async def record_tool_calls(store, cid: str, message_id: str, calls: list[dict])
                         {"tool_call_id": call["id"], "message_id": message_id,
                          "name": call["name"], "arguments": call["arguments"],
                          "started_at": started,
-                         "words": words.words(call["name"], call["arguments"], "running"),
-                         "runs": words.runs_of_call(c, call["id"])})
+                         "words": words.words(call["name"], call["arguments"], "running",
+                                              own=store.tool_words)})
 
     await store.write(fn)
 
@@ -585,8 +597,8 @@ async def tool_started(store, cid: str, call_id: str) -> None:
                         {"tool_call_id": call_id, "message_id": row["message_id"],
                          "name": row["name"], "arguments": row["arguments"],
                          "started_at": ts,
-                         "words": words.words(row["name"], row["arguments"], "running"),
-                         "runs": words.runs_of_call(c, call_id)})
+                         "words": words.words(row["name"], row["arguments"], "running",
+                                              own=store.tool_words)})
 
     await store.write(fn)
 
@@ -641,8 +653,8 @@ async def finish_tool_call(store, cid: str, parent_message_id: str, call_id: str
             {"tool_call_id": call_id, "name": name, "ok": verdict == "ok",
              "state": verdict, "result": content_, "display": display,
              "withheld": bool(withheld), "finished_at": ts,
-             "words": words.of_call(c, call_id, verdict, display, content_),
-             "runs": words.runs_of_call(c, call_id)})
+             "words": words.of_call(c, call_id, verdict, display, content_, store.tool_words),
+             **runs_field(c, store, [call_id])})
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": parent_message_id, "role": "tool",
                      "content": content_, "tool_call_id": call_id, "meta": meta})

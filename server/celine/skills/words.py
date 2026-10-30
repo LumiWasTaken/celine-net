@@ -637,18 +637,13 @@ SENTENCES: dict[str, dict[str, Sentence]] = {
 }
 
 
-# the running app's Config: its `tool_words`, every MCP server's own sentences and groups
-# by server and tool (mcp.row_words); the app sets it once it has its Config (use)
-_cfg: Any = None
+# every MCP server's own sentences and groups, by server and tool: Config.tool_words
+# (mcp.row_words), handed to each function here that says a call as `own`
+Own = dict[str, dict[str, dict[str, str]]]
 
 
-def use(cfg: Any) -> None:
-    global _cfg
-    _cfg = cfg
-
-
-def _own(kind: str, skill: str, tool: str) -> str | None:
-    return (getattr(_cfg, "tool_words", None) or {}).get(skill, {}).get(kind, {}).get(tool)
+def _own(own: Own | None, kind: str, skill: str, tool: str) -> str | None:
+    return (own or {}).get(skill, {}).get(kind, {}).get(tool)
 
 
 # a hole in such a sentence: {argument} or {argument|what it says without one}; quotes
@@ -667,7 +662,7 @@ def fill(template: str, a: Args) -> str:
     return re.sub(r" *\0 *", " ", _HOLE.sub(one, template)).strip()
 
 
-def sentence(name: str, a: Args, d: dict, result: str = "") -> str:
+def sentence(name: str, a: Args, d: dict, result: str = "", own: Own | None = None) -> str:
     """What it did (and where), in one plain sentence, past tense."""
     skill, _, tool = name.partition("__")
     fn = SENTENCES.get(skill, {}).get(tool)
@@ -675,9 +670,9 @@ def sentence(name: str, a: Args, d: dict, result: str = "") -> str:
         return fn(a, d, result)
     if name in VERB:
         return VERB[name]
-    own = _own("words", skill, tool)
-    if own:
-        return fill(own, a)
+    template = _own(own, "words", skill, tool)
+    if template:
+        return fill(template, a)
     # a tool without its own sentence: a tool from an MCP server
     parts = name.split("__")
     skill, tool = parts[0], parts[1] if len(parts) > 1 else ""
@@ -750,9 +745,9 @@ def _state_words(said: str, state: str, d: dict, result: str) -> str:
 MEDIA = ("image_generator", "music_generator")
 
 
-def row(name: str, a: Args, d: dict, result: str, state: str) -> str:
+def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = None) -> str:
     """The row's words in `state`: what it did, is doing, could not do or did not run."""
-    said = sentence(name, a, d, result)
+    said = sentence(name, a, d, result, own)
     skill, _, tool = name.partition("__")
     tool = tool.split("__")[0]
     if name == "intercom__cancel":
@@ -775,14 +770,14 @@ def row(name: str, a: Args, d: dict, result: str, state: str) -> str:
     return _state_words(said, state, d, result)
 
 
-def group(name: str, a: Args) -> str | None:
+def group(name: str, a: Args, own: Own | None = None) -> str | None:
     """The words of a run of calls like this one, {n} their count; None: it stands alone.
     From the arguments only, so a call is in the same run when it starts and once it ran."""
     if name == "shell__run":
         term = _str(a.get("terminal"))
         return f"Ran {{n}} commands in terminal {term}" if term else "Ran {n} commands"
     skill, _, tool = name.partition("__")
-    return _own("groups", skill, tool)
+    return _own(own, "groups", skill, tool)
 
 
 # ---- runs: calls like each other in a row, one row ------------------------------------
@@ -791,71 +786,91 @@ RUN = 3                                         # the fewest calls a run has
 PLUMBING = ("skills__load", "skills__read_guide")   # never shown beside other calls
 
 
-def failed(state: str, d: dict) -> bool:
+def failed(state: str, exit_: Any) -> bool:
     """A call that failed: an error, or a command that exited non-zero."""
-    exit_ = _num(d.get("exit"))
-    return (state == "error" and not not_run(state, d)) or bool(exit_)
+    return state == "error" or bool(_num(exit_))
 
 
-def _alone(state: str, d: dict) -> bool:
+def _alone(state: str, time_up: Any) -> bool:
     """A call that is never folded into a run: one at work (its line, a job's Stop), gated
     or not run. You see it, or act on it, as itself; it joins its run once it ran."""
-    return state in BUSY or state == "gated" or not_run(state, d)
+    return state in BUSY or state == "gated" or (state == "error" and bool(time_up))
 
 
-def runs(blocks: list[list[dict]]) -> list[dict]:
+def runs(blocks: list[list[dict]], own: Own | None = None) -> list[dict]:
     """The runs among `blocks`, each the calls between two texts of a reply, in order
-    (each {id, name, arguments, state, display}): RUN or more calls in a row with the same
-    group. Plumbing sits between them unseen and breaks nothing. -> [{ids, words, failed}]"""
+    (each {id, name, arguments, state, exit, time_up}): RUN or more calls in a row with the
+    same group. Plumbing sits between them unseen and breaks nothing.
+    -> [{ids, words, failed}]"""
     out: list[dict] = []
     for block in blocks:
-        cur: list[tuple[dict, dict]] = []
+        cur: list[dict] = []
         key = None
 
         def close() -> None:
             if len(cur) >= RUN:
-                out.append({"ids": [c["id"] for c, _ in cur],
+                out.append({"ids": [c["id"] for c in cur],
                             "words": key.replace("{n}", f"{len(cur):,}"),
-                            "failed": sum(failed(c["state"], d) for c, d in cur)})
+                            "failed": sum(failed(c["state"], c.get("exit")) for c in cur)})
 
         for call in block:
-            if call["name"] in PLUMBING:
+            name = call["name"]
+            if name in PLUMBING:
                 continue
-            d = _dict(call["display"] if isinstance(call["display"], dict) else
-                      _args(call["display"]))
-            g = None if _alone(call["state"], d) else group(call["name"], _args(call["arguments"]))
+            # only the box's run reads its arguments (its terminal)
+            g = None if _alone(call["state"], call.get("time_up")) else \
+                group(name, _args(call["arguments"]) if name == "shell__run" else {}, own)
             if g is not None and g == key:
-                cur.append((call, d))
+                cur.append(call)
                 continue
             close()
-            cur, key = ([(call, d)], g) if g is not None else ([], None)
+            cur, key = ([call], g) if g is not None else ([], None)
         close()
     return out
 
 
-def runs_of_turn(c, turn_id: str) -> list[dict]:
-    """runs() of a turn's calls: a reply's text between two calls ends a run."""
+def _blocks(c, turn_id: str) -> list[list[dict]]:
+    """A turn's calls in order, cut where a step of its reply has text."""
     blocks: list[list[dict]] = []
     last = None
     for r in c.execute(
-            "SELECT m.id AS mid, m.content, tc.id, tc.name, tc.arguments, tc.state, tc.display "
+            "SELECT m.id AS mid, m.content != '' AND trim(m.content) != '' AS said, "
+            "tc.id, tc.name, tc.arguments, tc.state, "
+            "json_extract(tc.display, '$.exit') AS exit, "
+            "json_extract(tc.display, '$.time_up') AS time_up "
             "FROM messages m LEFT JOIN tool_calls tc ON tc.message_id = m.id "
             "WHERE m.turn_id=? AND m.role='assistant' "
             "ORDER BY m.created_at, m.rowid, tc.rowid", (turn_id,)):
-        if r["mid"] != last and (not blocks or r["content"].strip()):
+        if r["mid"] != last and (not blocks or r["said"]):
             blocks.append([])
         last = r["mid"]
         if r["id"] is not None:
             blocks[-1].append(dict(r))
-    return runs(blocks)
+    return blocks
 
 
-def runs_of_call(c, call_id: str) -> dict | None:
-    """The runs of the turn a call is in, for its events: {turn, list}; None outside a turn."""
+def runs_of_turn(c, turn_id: str, own: Own | None = None) -> list[dict]:
+    """runs() of a turn's calls: a reply's text between two calls ends a run."""
+    return runs(_blocks(c, turn_id), own)
+
+
+def runs_after(c, call_ids: list[str], own: Own | None = None, *,
+               reset: bool = False) -> dict | None:
+    """For the event of calls that just settled (or, `reset`, were set pending again): their
+    turn's runs, {turn, list}; None outside a turn, or when the runs are the same as with
+    those calls still at work, and the event goes without (the client keeps the last)."""
     r = c.execute("SELECT m.turn_id FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
-                  "WHERE tc.id=?", (call_id,)).fetchone()
-    return {"turn": r["turn_id"], "list": runs_of_turn(c, r["turn_id"])} \
-        if r and r["turn_id"] else None
+                  "WHERE tc.id=?", (call_ids[0],)).fetchone() if call_ids else None
+    if not r or not r["turn_id"]:
+        return None
+    blocks = _blocks(c, r["turn_id"])
+    now_ = runs(blocks, own)
+    if not reset:
+        ids = set(call_ids)
+        if now_ == runs([[{**x, "state": "pending"} if x["id"] in ids else x for x in b]
+                         for b in blocks], own):
+            return None
+    return {"turn": r["turn_id"], "list": now_}
 
 
 def _args(arguments: Any) -> Args:
@@ -868,28 +883,28 @@ def _args(arguments: Any) -> Args:
     return v if isinstance(v, dict) else {}
 
 
-def step(name: str) -> str:
+def step(name: str, own: Own | None = None) -> str:
     """The tool alone at work: "Reading the note"."""
-    return ongoing(VERB.get(name) or sentence(name, {}, {}))
+    return ongoing(VERB.get(name) or sentence(name, {}, {}, "", own))
 
 
 def words(name: str, arguments: Any, state: str, display: Any = None,
-          result: str | None = None) -> dict:
+          result: str | None = None, own: Own | None = None) -> dict:
     """The row's words: {running, settled, step, where} (the module's docstring)."""
     a, d, r = _args(arguments), _dict(display), result or ""
     where = scope_words(d, a)
-    return {"running": row(name, a, d, r, "running"),
-            "settled": row(name, a, d, r, "interrupted" if state in BUSY else state),
-            "step": step(name),
+    return {"running": row(name, a, d, r, "running", own),
+            "settled": row(name, a, d, r, "interrupted" if state in BUSY else state, own),
+            "step": step(name, own),
             "where": where[:1].upper() + where[1:] if where else None}
 
 
 def of_call(c, call_id: str, state: str, display: Any = None,
-            result: str | None = None) -> dict:
+            result: str | None = None, own: Own | None = None) -> dict:
     """words() of a stored call, by its id (its name and arguments from its row)."""
     r = c.execute("SELECT name, arguments FROM tool_calls WHERE id=?", (call_id,)).fetchone()
-    return words(r["name"], r["arguments"], state, display, result) if r else \
-        words("", "{}", state, display, result)
+    return words(r["name"], r["arguments"], state, display, result, own) if r else \
+        words("", "{}", state, display, result, own)
 
 
 _FIELD = {k: re.compile(rf'"{k}"\s*:\s*"((?:[^"\\]|\\.)*)"')
@@ -897,7 +912,7 @@ _FIELD = {k: re.compile(rf'"{k}"\s*:\s*"((?:[^"\\]|\\.)*)"')
                     "folder", "text", "file_path", "input", "element", "key")}
 
 
-def forming(name: str, partial: str) -> str:
+def forming(name: str, partial: str, own: Own | None = None) -> str:
     """A call it is still writing, from the arguments so far: what it is about to do
     ("Reading the note ml/muon.md")."""
     a = {}
@@ -905,4 +920,4 @@ def forming(name: str, partial: str) -> str:
         m = rx.search(partial)
         if m:
             a[k] = re.sub(r"\\(.)", r"\1", m.group(1))
-    return ongoing(sentence(name, a, {}))
+    return ongoing(sentence(name, a, {}, "", own))

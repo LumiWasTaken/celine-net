@@ -158,7 +158,7 @@ class SubAgents:
             asker=ctx, template=template)
         if refusal:
             return _error(refusal)
-        [row] = await store.read(lambda c: agents_of(c, agent=sub))
+        [row] = await store.read(lambda c: agents_of(c, agent=sub, own=store.tool_words))
         said = (f"resumed {row['name']} (brief #{brief_id})." if resumed else
                 f"{row['name']} started (brief #{brief_id}).")
         if row["queued"]:
@@ -193,11 +193,11 @@ class SubAgents:
             nonlocal waited
             # note: a look every second, the store answers it from one indexed read
             while waited < limit and (await ctx.store.read(
-                    lambda c: _look(c, sub["id"])))["working"]:
+                    lambda c: _look(c, sub["id"], ctx.store.tool_words)))["working"]:
                 await anyio.sleep(1)
                 waited += 1
         wrote, _ = await until_set(looks, ctx.user_wrote)
-        f = await ctx.store.read(lambda c: _look(c, sub["id"]))
+        f = await ctx.store.read(lambda c: _look(c, sub["id"], ctx.store.tool_words))
         outside = await ctx.store.read(lambda c: agent_read_outside(c, sub["id"]))
         working = f["working"]
         state = "queued" if f["queued"] else "working" if working else "done"
@@ -299,7 +299,7 @@ class SubAgents:
                      folder: str | None) -> tuple[list, dict | None, str | None, str | None]:
         """What begin refuses once it knows the parent's sub-agents, reading only:
         -> (them, the one called `name` or None, the folder, None) or the refusal last."""
-        mine = await store.read(lambda c: agents_of(c, parent))
+        mine = await store.read(lambda c: agents_of(c, parent, own=store.tool_words))
         known = next((a for a in mine if _same(a["name"], name)), None)
         if known is not None and known["working"]:
             return mine, known, None, (
@@ -352,7 +352,7 @@ class SubAgents:
                               f"Skills: {', '.join(sorted(self._skill_names()))}."), False, None
             template = t.name
             # the template's settings make a new agent; a resumed one keeps its own
-            mine = await store.read(lambda c: agents_of(c, parent))
+            mine = await store.read(lambda c: agents_of(c, parent, own=store.tool_words))
             if not any(_same(a["name"], name) for a in mine):
                 access, model, device = (access or t.access, model or t.model,
                                          device or t.device)
@@ -551,11 +551,11 @@ def max_running(cfg) -> int:
 
 
 def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
-              agent: str | None = None) -> list[dict]:
+              agent: str | None = None, own: dict) -> list[dict]:
     """Sub-agents, newest first, as the overview shows them: who, where, its `home` and
     `link` (homes.of: where it opens), working (report.quiet says), the step at work,
     the latest report, its last words. Those of `parent`, the one `agent`, or (neither
-    given) every one not in the archive."""
+    given) every one not in the archive. `own`: the MCP servers' row words (store.tool_words)."""
     if agent:
         where, args = "WHERE s.id = ? AND s.agent_of IS NOT NULL", (agent,)
     elif parent:
@@ -568,7 +568,7 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
         f"s.agent_device AS device, s.agent_template AS template, "
         f"s.created_at, s.updated_at FROM conversations s "
         f"{where} ORDER BY s.created_at DESC, s.id DESC", args).fetchall()
-    return [{**dict(r), **_look(c, r["id"]), **homes.of(c, r["id"])} for r in rows]
+    return [{**dict(r), **_look(c, r["id"], own), **homes.of(c, r["id"])} for r in rows]
 
 
 def labelled(settings, agents: list[dict]) -> list[dict]:
@@ -582,7 +582,7 @@ ENDED = {"aborted": "stopped", "failed": "failed", "interrupted": "failed",
          "capped": "paused"}     # how a done one's last turn ended, in the tree's words
 
 
-def tree_of(c: sqlite3.Connection, cid: str) -> dict | None:
+def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
     """Every sub-agent under the top of `cid`'s chain, each before its own and siblings
     oldest first: id, parent, depth, name, state (queued, working, done, stopped, failed,
     paused), step_words, model (the newest that answered, else its own), what all its
@@ -595,7 +595,7 @@ def tree_of(c: sqlite3.Connection, cid: str) -> dict | None:
     def walk(parent: str, depth: int) -> None:
         for r in c.execute("SELECT id, agent_name, model_id FROM conversations WHERE "
                            "agent_of=? ORDER BY created_at, id", (parent,)).fetchall():
-            f, w = _look(c, r["id"]), report.work(c, r["id"], whole=True)
+            f, w = _look(c, r["id"], own), report.work(c, r["id"], whole=True)
             last = c.execute("SELECT state FROM turns WHERE conversation_id=? ORDER BY "
                              "created_at DESC LIMIT 1", (r["id"],)).fetchone()
             state = "queued" if f["queued"] else "working" if f["working"] else \
@@ -644,7 +644,7 @@ async def release(app, parent: str) -> None:
     limit = max_running(app.cfg)
 
     def fn(c: sqlite3.Connection) -> list[str]:
-        mine = agents_of(c, parent)
+        mine = agents_of(c, parent, own=app.store.tool_words)
         free = limit - sum(1 for a in mine if a["working"] and not a["queued"])
         queued = sorted((waiting(c, a["id"]), a["id"]) for a in mine if a["queued"])
         started = []
@@ -674,13 +674,13 @@ async def release_all(app) -> None:
 async def announce(app, sub: str) -> None:
     """`agent.state` on the global feed: a client keeps its overview without a refetch.
     Sent when a sub-agent starts, stops, and whenever one of its turns or jobs ends."""
-    rows = await app.store.read(lambda c: agents_of(c, agent=sub))
+    rows = await app.store.read(lambda c: agents_of(c, agent=sub, own=app.store.tool_words))
     if rows:
         [row] = labelled(getattr(app.cfg, "settings", None), rows)
         app.store.emit_global({"type": AGENT_STATE, **row})
 
 
-def _look(c: sqlite3.Connection, sub: str) -> dict:
+def _look(c: sqlite3.Connection, sub: str, own: dict) -> dict:
     """What `read` shows of sub-agent `sub`: whether it is quiet (report.quiet), the
     tool its live turn runs (a drone's: the one opencode runs, drone.py), its latest
     report and its last words."""
@@ -697,7 +697,7 @@ def _look(c: sqlite3.Connection, sub: str) -> dict:
     flown = flown[0] if flown else None
     return {"quiet": quiet, "queued": queued, "working": queued or not quiet,
             "step": step["name"] if step else flown,
-            "step_words": words.step(step["name"]) if step else flown,
+            "step_words": words.step(step["name"], own) if step else flown,
             "report": dict(rep) if rep else None,
             "last": report.last_answer(c, sub)}
 
@@ -709,7 +709,7 @@ def _error(text: str) -> ToolResult:
 async def _find(ctx: ToolContext, name: str) -> tuple[dict | None, ToolResult | None]:
     """The sub-agent of this conversation called `name`, or the error that names its own."""
     name = " ".join(name.split())
-    mine = await ctx.store.read(lambda c: agents_of(c, ctx.conversation_id))
+    mine = await ctx.store.read(lambda c: agents_of(c, ctx.conversation_id, own=ctx.store.tool_words))
     sub = next((a for a in mine if _same(a["name"], name)), None)
     if sub is None:
         return None, _error(f"No sub-agent called {name!r} here." + (

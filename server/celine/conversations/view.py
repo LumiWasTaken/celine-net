@@ -49,7 +49,7 @@ async def snapshot(store, cid: str) -> dict:
                             "conversation_id=?", (cid,)).fetchone()
         from ..intercom.store import source_of
         from ..sub_agents.skill import agents_of
-        agents = agents_of(c, cid)
+        agents = agents_of(c, cid, own=store.tool_words)
         messages = tree.path(c, cid)
         # the live turns in the order they run (the first is the one running or next);
         # the snapshot's turn is the first, else the newest
@@ -73,9 +73,9 @@ async def snapshot(store, cid: str) -> dict:
                 "LEFT JOIN messages r ON r.id = tc.result_message_id "
                 "WHERE tc.message_id=? ORDER BY tc.rowid", (m["id"],)).fetchall()
             if rows:
-                calls[m["id"]] = [_call(r) for r in rows]
+                calls[m["id"]] = [_call(r, store.tool_words) for r in rows]
                 if m.get("turn_id") and m["turn_id"] not in runs:
-                    runs[m["turn_id"]] = words.runs_of_turn(c, m["turn_id"])
+                    runs[m["turn_id"]] = words.runs_of_turn(c, m["turn_id"], store.tool_words)
         # a call still at work (here or as a job) shows its latest progress line
         working = {tc["id"]: tc for tcs in calls.values() for tc in tcs
                    if tc["state"] in ("pending", "running", "detached")}
@@ -244,9 +244,9 @@ def continuable(c: sqlite3.Connection, cid: str, turn) -> dict:
     return {"ok": True, "label": label, "reason": None}
 
 
-def _call(r: sqlite3.Row) -> dict:
+def _call(r: sqlite3.Row, own: dict) -> dict:
     """One tool call as the transcript shows it, its row in words (skills/words.py)."""
     display = json.loads(r["display"]) if r["display"] else None
     return {**dict(r), "display": display,
-            "words": words.words(r["name"], r["arguments"], r["state"], display, r["result"])}
+            "words": words.words(r["name"], r["arguments"], r["state"], display, r["result"], own)}
 
