@@ -124,18 +124,12 @@ def read_servers(file: str, raw: dict[str, Any], problems: list[Problem],
     return out
 
 
-_FIELD_REF = re.compile(r"\$\{(\w+)\}")
-
-
 def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:
-    """Plugin `p`'s [servers.<id>] blocks, each `${KEY}` filled from its form: the field
-    whose key is `key` (a value as saved, a secret as stored). -> (the servers to start,
-    the sentence why each other one is not started: a value it needs is empty, its block
-    is wrong, or its id is taken)."""
+    """Plugin `p`'s [servers.<id>] blocks, each `${KEY}` filled from its form
+    (settings/form.fill). -> (the servers to start, the sentence why each other one is
+    not started: a value it needs is empty, its block is wrong, or its id is taken)."""
     from .settings import form
     fields = (p.form or {}).get("fields", [])
-    by_name = {f["key"].upper(): f for f in fields}
-    saved = form.values(fields, (getattr(cfg.settings, "plugins", None) or {}).get(p.id, {}))
     taken = {META, *(name for name, _, _ in BUILTIN), *cfg.mcp}
     out: dict[str, McpServerConfig] = {}
     why: dict[str, str] = {}
@@ -144,28 +138,19 @@ def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:
         s = checked(f"plugins/{p.id}/plugin.toml", f"servers.{sid}", raw, KEYS, problems)
         empty: list[str] = []
 
-        def one(m: re.Match) -> str:
-            f = by_name.get(m.group(1))
-            if f is None:
-                empty.append(f"{m.group(0)} names no field")
-                return ""
-            got = form.read_secret(cfg, p.id, f["key"]) if f["type"] == "secret" \
-                else saved.get(f["key"])
-            if got is None or str(got) == "":
-                empty.append(f"{f['label']} is empty")
-                return ""
-            return str(got)
+        def one(text) -> str:
+            return form.fill(cfg, p.id, fields, str(text), empty)
 
         if "class" in s:
             s["cls"] = s.pop("class")
         for k in ("command", "url"):
             if k in s:
-                s[k] = _FIELD_REF.sub(one, s[k])
+                s[k] = one(s[k])
         if "args" in s:
-            s["args"] = [_FIELD_REF.sub(one, str(a)) for a in s["args"]]
+            s["args"] = [one(a) for a in s["args"]]
         for k in ("env", "headers"):
             if k in s:
-                s[k] = {str(n): _FIELD_REF.sub(one, str(v)) for n, v in s[k].items()}
+                s[k] = {str(n): one(v) for n, v in s[k].items()}
         if sid in taken:
             why[sid] = f"{sid} is the name of another skill or server."
         elif problems:

@@ -20,6 +20,7 @@ error for a `required` field). Anything else must be a value of its type: "" is 
 no choice and no switch."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -202,3 +203,27 @@ def read_secret(cfg, section: str, key: str) -> str | None:
     """For the code that uses it. Never for an API response."""
     root = getattr(getattr(cfg, "settings", None), "secrets_root", None)
     return secrets.read_key(root, secret_name(section, key)) if root is not None else None
+
+
+_REF = re.compile(r"\$\{(\w+)\}")
+
+
+def fill(cfg, section: str, fields: list[dict[str, Any]], text: str,
+         empty: list[str]) -> str:
+    """`text` with each `${KEY}` the value of the field whose key is `key` (a value as
+    saved, a secret as stored); each one empty or unknown adds its sentence to `empty`."""
+    by_name = {f["key"].upper(): f for f in fields}
+    saved = values(fields, (getattr(cfg.settings, "plugins", None) or {}).get(section, {}))
+
+    def one(m: re.Match) -> str:
+        f = by_name.get(m.group(1))
+        if f is None:
+            empty.append(f"{m.group(0)} names no field")
+            return ""
+        got = read_secret(cfg, section, f["key"]) if f["type"] == "secret" \
+            else saved.get(f["key"])
+        if got is None or str(got) == "":
+            empty.append(f"{f['label']} is empty")
+            return ""
+        return str(got)
+    return _REF.sub(one, text)
