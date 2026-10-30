@@ -270,6 +270,20 @@ def test_her_devices_are_no_escape_the_rest_of_the_lan_is():
         assert esc(cmd) is None, cmd
     assert esc("ssh 10.20.30.40") == "the command has ssh 1"
     assert esc("ssh -J 192.168.1.30 10.20.30.40 ls") is not None
+    # her address inside a longer name is not hers
+    assert esc("curl http://192.168.1.30.evil.com/x") is not None
+    assert esc("ssh mac.local.evil.com") is not None
+    # through her device to elsewhere: every host it names must be hers
+    for cmd in ("ssh -L 8080:db.lan:80 mac.local", "ssh -L8080:db.lan:80 mac.local",
+                "ssh -Jevil.com mac.local", "ssh -vJ evil.com mac.local",
+                "ssh -o ProxyJump=evil.com mac.local", "ssh -o 'ProxyJump evil.com' mac.local",
+                "ssh -o ProxyCommand='nc %h %p' mac.local", "ssh -D 1080 mac.local",
+                "ssh -R 9000 mac.local", "ssh -W db.lan:22 mac.local", "ssh -L 'x mac.local"):
+        assert esc(cmd) is not None, cmd
+    for cmd in ("ssh -L 8080:mac.local:80 mac.local", "ssh -vJ 192.168.1.30 mac.local",
+                "ssh -o ProxyJump=me@192.168.1.30:22 mac.local",
+                "ssh -o ServerAliveInterval=30 mac.local"):
+        assert esc(cmd) is None, cmd
     assert esc("curl http://10.20.30.40/") == "the command has 10.20.30.40"
     assert facts.escape(_shell("ssh 192.168.1.30")) is not None, "no devices: as before"
 

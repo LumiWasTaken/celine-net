@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from dataclasses import dataclass
 from urllib.parse import unquote, unquote_plus, urlsplit
 
@@ -278,36 +279,71 @@ def escape(call: dict) -> str | None:
     return None
 
 
-# ssh, scp and sftp options that take a value; -J's value is a host it goes through
+# ssh, scp and sftp options that take a value
 _VALUED = set("BbcDEeFiJLlmOoPpQRSWw")
+# options whose value can send it somewhere the parse does not follow: never hers
+_UNSURE = set("DF")
+_UNSURE_O = {"proxycommand", "localforward", "remoteforward", "dynamicforward",
+             "hostname", "include", "permitremoteopen"}
 
 
 def _to_own(m: re.Match, cmd: str, own) -> bool:
-    """Whether ESCAPE's match `m` in `cmd` only reaches her own devices: their address,
-    or an ssh, scp or sftp whose every host is one of them."""
+    """Whether ESCAPE's match `m` in `cmd` only reaches her own devices: their address
+    standing alone (not part of a longer name), or an ssh, scp or sftp whose every host
+    is one of them: destination, jump hosts (-J, ProxyJump) and forward targets (-L,
+    -R, -W). Unsure (a dynamic forward, a ProxyCommand, a form it does not read) is
+    not hers."""
     hit = m.group(0).strip().casefold()
     if hit in own:
-        return True
+        edge = cmd[m.start() - 1:m.start()] + cmd[m.end():m.end() + 1]
+        return not re.search(r"[\w.-]", edge)
     if not own or not re.match(r"(?:ssh|scp|sftp)\s", hit):
         return False
-    words = re.split(r"[|;&\n]", cmd[m.start():], maxsplit=1)[0].split()[1:]
-    tool, hosts, plain, after = hit.split()[0], [], [], None
-    for w in words:
-        if after is not None:
-            if after == "J":
-                hosts += w.split(",")
-            after = None
-        elif w.startswith("-"):
-            after = w[1] if len(w) == 2 and w[1] in _VALUED else None
-        else:
+    try:
+        words = shlex.split(re.split(r"[|;&\n]", cmd[m.start():], maxsplit=1)[0])[1:]
+    except ValueError:
+        return False
+    tool, hosts, plain, it = hit.split()[0], [], [], iter(words)
+    for w in it:
+        if w == "--":
+            plain += list(it)
+            break
+        if not w.startswith("-") or w == "-":
             plain.append(w)
+            continue
+        for i, ch in enumerate(w[1:], 1):
+            if ch not in _VALUED:
+                continue
+            value = w[i + 1:] or next(it, None)
+            if value is None or ch in _UNSURE or "[" in value:
+                return False
+            if ch == "o":
+                key, _, val = re.sub(r"\s*=\s*|\s+", "=", value.strip(), count=1) \
+                    .partition("=")
+                if key.casefold() in _UNSURE_O:
+                    return False
+                if key.casefold() == "proxyjump":
+                    hosts += val.split(",")
+            elif ch == "J":
+                hosts += value.split(",")
+            elif ch in "LR":
+                parts = value.split(":")
+                if len(parts) not in (3, 4):
+                    return False
+                hosts.append(parts[-2])
+            elif ch == "W":
+                parts = value.split(":")
+                if len(parts) != 2:
+                    return False
+                hosts.append(parts[0])
+            break
     if tool == "scp":
         hosts += [w for w in plain if ":" in w] or plain[:1]
     else:
         hosts += plain[:1]
-    names = [re.sub(r"^\w+://", "", h).rpartition("@")[2].split(":")[0].strip("[]")
-             .casefold() for h in hosts]
-    return bool(names) and all(n in own for n in names)
+    names = [re.sub(r"^\w+://", "", h).rpartition("@")[2].split(":")[0].casefold()
+             for h in hosts]
+    return bool(names) and all(n and n in own for n in names)
 
 
 def removes(cmd: str) -> str | None:
