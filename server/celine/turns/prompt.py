@@ -168,13 +168,16 @@ async def tail_text(store, cfg, registry, backend, cid: str, carried,
     """The tail of turn `tid`: what holds now and changes from turn to turn, stored once
     on the user message the turn answers (turns/message_context.py put_tail) so it never
     moves: the date and time now, the model it runs on when that is not the first,
-    where else it works, its plan, the skills it cannot use now and the ones it keeps
+    where else it works, its own jobs still running, its plan, the skills it cannot use
+    now and the ones it keeps
     notes on, and the core skills' live state (`tail_part`: the intercom's thread and
     announcements, a mission's status, a sub-agent's report room, the notebook's
     index)."""
     from ..conversations import here
+    from ..jobs import store as job_rows
     parts = [clock.today(cfg), clock.now_line(cfg), await fallback_line(store, backend, cid),
-             await store.read(lambda c: here.busy(c, cid))]
+             await store.read(lambda c: here.busy(c, cid)),
+             await store.read(lambda c: job_rows.running(c, cid, clock.zone(cfg)))]
     plan = plan_flow.block(await plan_flow.current(store, cid))
     parts.append(cfg.substitute(plan) if plan else None)
     if registry:

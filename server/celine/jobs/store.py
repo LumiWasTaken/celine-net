@@ -9,11 +9,14 @@ import json
 import sqlite3
 
 from .. import attachments as files
-from ..core.ids import now
+from ..core.ids import now, when
 from ..intercom.store import insert as intercom_insert
 from ..turns import store as turns
 from ..skills import words
 from ..core.event_types import JOB_STATE, TOOL_DETACHED, TOOL_DONE
+
+
+PROMPT_SHOWN = 120      # characters of a running job's prompt in her tail
 
 
 def prompt_of(arguments: str | None, tool_name: str = "") -> str | None:
@@ -119,6 +122,24 @@ def _view(r: sqlite3.Row) -> dict:
     # opens the live terminal from it
     d["terminal"] = terminal_of(arguments, d["tool_name"])
     return d
+
+
+def running(c: sqlite3.Connection, cid: str, tz) -> str | None:
+    """This conversation's own jobs still running, for its tail (turns/prompt.py): each
+    one's tool, what it was asked, its terminal and since when; None when none runs."""
+    rows = [_view(r) for r in c.execute(
+        f"{_SELECT} WHERE j.conversation_id=? AND j.state='running' ORDER BY j.created_at",
+        (cid,))]
+    if not rows:
+        return None
+    parts = []
+    for j in rows:
+        what = j["tool_name"] + (f" `{j['prompt'][:PROMPT_SHOWN]}`" if j["prompt"] else "")
+        what += f" in terminal {j['terminal']}" if j["terminal"] else ""
+        parts.append(f"job {j['id'][:8]}, {what}, since "
+                     f"[{when(j['started_at'] or j['created_at'], tz)}]")
+    return ("[your jobs running now] " + "; ".join(parts)
+            + ". Each one's result comes here as a message when it ends.")
 
 
 async def create(store, job_id: str, conversation_id: str, turn_id: str,
