@@ -12,8 +12,9 @@ one model its conversation was started and approved on (skill.py _model), which 
 the device's opencode config first when they differ (PATCH /global/config), and only
 while no session there works: a changed config disposes every opencode instance.
 The messages are marked sent before they go: a crash in between loses them rather than
-sending them twice (at most once). Its progress comes from opencode's event stream (GET
-/event): one line of the reply's thinking per tool it starts, and the tool in
+sending them twice (at most once); a refusal or no connection unmarks them, a send
+that got no answer (a timeout after it went out) keeps them marked. Its progress comes
+from opencode's event stream (GET /event): one line of the reply's thinking per tool it starts, and the tool in
 `agent_step` (the "Now:" of read and the overview); a stream that breaks says so in a
 line of its own and is opened again. The turn ends when the session is idle: the reply is opencode's last answer
 as it came; the tokens of its answers since the last one counted (`agent_seen`) are the
@@ -222,7 +223,8 @@ class DroneBackend:
                     try:
                         await _run(oc.prompt, session, self.model, brief, "", server)
                     except oc.Problem as e:
-                        await self._set(agent_sent=row["agent_sent"])   # not sent: again next turn
+                        if e.case != "unknown":     # surely not taken: again next turn
+                            await self._set(agent_sent=row["agent_sent"])
                         raise BackendError(f"{dev.label}: {e}", retryable=False) from None
                     busy = True
                 yield ReasoningDelta(f"{self.cli} on {dev.label}, session {session}\n")

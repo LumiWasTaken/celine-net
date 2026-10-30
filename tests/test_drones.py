@@ -383,3 +383,32 @@ async def test_a_broken_event_stream_says_so_in_the_turn(app, store, monkeypatch
     evs = await _run(b, during)
     assert seen == ["The event stream from Her Mac broke (it ended); it is opened again.\n"]
     assert [e.text for e in evs if isinstance(e, TextDelta)] == ["done anyway"]
+
+
+async def test_a_send_with_no_answer_stays_sent_and_a_refused_one_goes_again(
+        app, store, monkeypatch, fake):
+    oc = drone.client()
+    sub = await _drone(store)
+    b = drone.DroneBackend(app, sub, "opencode", "mac")
+    for case, sent in (("unknown", True), ("unreachable", False), ("refused", False)):
+        def prompt(*a, **kw):
+            raise oc.Problem("no", 503, case)
+        monkeypatch.setattr(oc, "prompt", prompt)
+        with pytest.raises(drone.BackendError):
+            await _run(b)
+        assert ((await _row(store, sub))["agent_sent"] is not None) is sent, case
+        await store.write(lambda c: c.execute(
+            "UPDATE conversations SET agent_sent=NULL WHERE id=?", (sub,)))
+
+
+def test_a_problem_says_whether_the_request_went_out(fake):
+    oc = drone.client()
+    with pytest.raises(oc.Problem) as e:
+        oc._call("GET", "/x", server=oc.Server("http://127.0.0.1:9", PW, ""))
+    assert e.value.case == "unreachable"
+    with pytest.raises(oc.Problem) as e:
+        oc._call("GET", "/session/ses_1/nothing", server=oc.Server(fake, "wrong", ""))
+    assert e.value.case == "refused"
+    with pytest.raises(oc.Problem) as e:      # the stream never ends: no answer in time
+        oc._call("GET", "/event", timeout=0.2, server=oc.Server(fake, PW, ""))
+    assert e.value.case == "unknown"

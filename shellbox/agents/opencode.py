@@ -73,11 +73,14 @@ _state: dict = {"models": None, "proc": None, "as_her": {}, "llm_url": "", "llm_
 
 
 class Problem(Exception):
-    """A plain sentence for the app, with its HTTP status (shellboxd answers it)."""
+    """A plain sentence for the app, with its HTTP status (shellboxd answers it) and its
+    case: "refused" (an answer said no, or the box did), "unreachable" (no connection:
+    the request did not go out) or "unknown" (it went out and no answer came: a timeout
+    or a dropped connection, so it may have been taken)."""
 
-    def __init__(self, text: str, status: int = 400):
+    def __init__(self, text: str, status: int = 400, case: str = "refused"):
         super().__init__(text)
-        self.status = status
+        self.status, self.case = status, case
 
 
 # ---- boot --------------------------------------------------------------------------------
@@ -229,13 +232,15 @@ def _call(method: str, path: str, body: dict | None = None, query: str = "",
             raise Problem(f"No such session ({NAME} answered 404: {said}).", 404) from None
         raise Problem(f"{NAME} answered {e.code}: {said}. Its log: {_log_of(server)}.",
                       502) from None
-    except OSError as e:
-        raise Problem(_down(e, server), 503) from None
+    except urllib.error.URLError as e:     # urllib's wrap of a connect or send error
+        raise Problem(_down(e, server), 503, "unreachable") from None
+    except OSError as e:                    # after the request was written
+        raise Problem(_down(e, server), 503, "unknown") from None
     try:
         return json.loads(raw) if raw.strip() else None
     except ValueError:
         raise Problem(f"{NAME} answered {path} with something that is not JSON: "
-                      f"{_said(raw)}. Its log: {_log_of(server)}.", 502) from None
+                      f"{_said(raw)}. Its log: {_log_of(server)}.", 502, "unknown") from None
 
 
 def events(server: Server | None = None, timeout: float = 60):
