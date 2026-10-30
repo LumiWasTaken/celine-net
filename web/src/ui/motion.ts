@@ -47,14 +47,15 @@ type Rect = { left: number; top: number; width: number; height: number }
     default). A fixed element's copy sits where it is; one in the flow is pinned at `at`,
     its box. `place()` once the copy is in the page and `el` is gone: a transformed parent
     (the centred toast host) places fixed children itself and moves once `el` is gone, so
-    its offset is undone. */
-function copyOf(el: HTMLElement, at: Rect | null, into: Node = el.parentNode!, before: Node | null = el.nextSibling) {
+    its offset is undone. `absolute`: pinned inside a positioned `into` instead (a row in a
+    scroll box, which clips it as it clipped the row). */
+function copyOf(el: HTMLElement, at: Rect | null, into: Node = el.parentNode!, before: Node | null = el.nextSibling, absolute = false) {
   const ghost = el.cloneNode(true) as HTMLElement
   ghost.classList.add('ghost')
   ghost.inert = true
   ghost.setAttribute('aria-hidden', 'true')
   for (const n of [ghost, ...ghost.querySelectorAll('[id]')]) n.removeAttribute('id')
-  if (at) Object.assign(ghost.style, { position: 'fixed', left: `${at.left}px`, top: `${at.top}px`, right: 'auto', bottom: 'auto',
+  if (at) Object.assign(ghost.style, { position: absolute ? 'absolute' : 'fixed', left: `${at.left}px`, top: `${at.top}px`, right: 'auto', bottom: 'auto',
                                        width: `${at.width}px`, height: `${at.height}px`, margin: '0', transform: 'none', translate: 'none' })
   into.insertBefore(ghost, before)
   const place = () => {
@@ -102,16 +103,17 @@ export function rise(el: Element) {
 /** `fade` (base.css) from JS: what replaces a skeleton */
 export const fadeIn = (el: Element) => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms('--dur'), easing: curve('--ease') })
 
-/** When the element of `ref` (a skeleton) goes, what took its place in its parent in the
-    same commit fades in (`fadeIn`), so loaded content never pops. */
+/** When the element of `ref` (a skeleton) goes, what its parent gained in that same commit
+    fades in (`fadeIn`), so loaded content never pops. */
 export function useReplaced(ref: RefObject<HTMLElement | null>) {
   useLayoutEffect(() => {
     const el = ref.current
-    const parent = el?.parentElement
-    if (!el || !parent) return
-    const there = new Set(parent.children)
+    if (!el) return
     return () => {
-      if (reduced()) return
+      // the cleanup runs before React inserts this commit's new nodes: the parent as it was
+      const parent = el.parentElement
+      if (!parent || reduced()) return
+      const there = new Set(parent.children)
       queueMicrotask(() => {
         if (el.isConnected || !parent.isConnected) return
         for (const c of parent.children) if (!there.has(c) && !c.classList.contains('ghost')) fadeIn(c)
@@ -120,33 +122,29 @@ export function useReplaced(ref: RefObject<HTMLElement | null>) {
   }, [ref])
 }
 
-/* the depth of the head last shown in each place (its .view) */
-const shownDepth = new WeakMap<Element, number>()
+/* the head last shown in each place (its .view): its depth and the address it showed at */
+const shownAt = new WeakMap<Element, { depth: number; url: string }>()
 
-/** A phone's list to detail: when a head (`ref`, a PlaceHead) comes on screen, or its
-    `depth` changes while it is there, and its place last showed a head of another depth,
-    its page (the head's parent) pushes in: from the right when it is deeper, from the
-    left when it is back up (a fade and a --push of travel). A place shown again from the
-    rail shows the depth it had, so it never pushes. Only below 768 px; skipped with
-    reduced motion. */
+/** A phone's list to detail: when a head (`ref`, a PlaceHead) is on screen at another
+    `depth` than the head its place showed last, and the address changed since (a link, a
+    back; not crumbs that arrived with a fetch), its page (the head's parent) pushes in:
+    from the right when it is deeper, from the left when it is back up (a fade and a --push
+    of travel). A place shown again from the rail shows the depth it had, so it never
+    pushes. Only below 768 px; skipped with reduced motion. */
 export function usePush(ref: RefObject<HTMLElement | null>, depth: number) {
-  const was = useRef<number | null>(null)
+  const url = location.pathname + location.search
   useLayoutEffect(() => {
     const head = ref.current
-    if (!head) return
-    const on = head.offsetParent !== null
-    const before = was.current
-    was.current = on ? depth : null
-    if (!on || before === depth) return
+    if (!head || head.offsetParent === null) return
     const place = head.closest('.view') ?? document.body
-    const last = shownDepth.get(place)
-    shownDepth.set(place, depth)
+    const last = shownAt.get(place)
+    shownAt.set(place, { depth, url })
     const page = head.parentElement
-    if (last === undefined || last === depth || !page || !isPhone() || reduced()) return
+    if (!last || last.depth === depth || last.url === url || !page || !isPhone() || reduced()) return
     const push = root().getPropertyValue('--push').trim()
-    page.animate([{ opacity: 0, transform: `translateX(calc(${Math.sign(depth - last)} * ${push}))` }, { opacity: 1, transform: 'none' }],
+    page.animate([{ opacity: 0, transform: `translateX(calc(${Math.sign(depth - last.depth)} * ${push}))` }, { opacity: 1, transform: 'none' }],
                  { duration: ms('--dur'), easing: curve('--ease') })
-  })
+  }, [ref, depth, url])
 }
 
 type Box = { x: number; y: number; w: number; h: number; sx: number; sy: number }
@@ -162,9 +160,14 @@ const moving = new WeakMap<Element, Animation>()
     that commit: it is another list, not this one changing. Children are measured against
     the box (its bottom edge for `bottom`, a stack that grows upward), so a scroll is no
     move; a hidden box (a place in the background) forgets them, so nothing glides when it
-    shows again. Skipped with reduced motion. */
-export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown, { enter = false, leave: out = false, quiet = undefined as unknown, bottom = false } = {}) {
+    shows again. `keys`: the keys of the whole list, its children carrying theirs as
+    `data-key` (a virtual list): a child arrives or goes only when its key is new to the
+    list or gone from it, never when it only came into or left the window drawn. Skipped
+    with reduced motion. */
+export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown,
+                        { enter = false, leave: out = false, quiet = undefined as unknown, bottom = false, keys = undefined as ReadonlySet<string> | undefined } = {}) {
   const seen = useRef(new Map<Element, Box>())
+  const known = useRef(keys)
   const was = useRef(on)
   const calm = useRef(quiet)
   useLayoutEffect(() => {
@@ -175,6 +178,12 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown, { ente
     const other = quiet !== calm.current
     calm.current = quiet
     const before = seen.current
+    const had = known.current
+    known.current = keys
+    // with keys: new to the list, gone from the list; without: new to the box, gone from it
+    const key = (el: Element) => (el as HTMLElement).dataset.key ?? ''
+    const isNew = (el: Element) => !keys || !had || !had.has(key(el))
+    const isGone = (el: Element) => !keys || !keys.has(key(el))
     const kids = [...box.children].filter(el => !el.classList.contains('ghost'))
     const c = box.getBoundingClientRect()
     const now = new Map<Element, Box>()
@@ -190,7 +199,7 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown, { ente
     if (!changed || other || !before.size || reduced()) return
     for (const [el, b] of now) {
       const a = before.get(el)
-      if (!a) { if (enter) rise(el); continue }
+      if (!a) { if (enter && isNew(el)) rise(el); continue }
       if (a.x === b.x && a.y === b.y) continue
       // from where it shows now: its old place, plus the glide it was in
       const dx = a.x - b.x + b.sx, dy = a.y - b.y + b.sy
@@ -200,8 +209,9 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown, { ente
     }
     if (!out) return
     for (const [el, a] of before) {
-      if (now.has(el) || el.isConnected) continue
-      const { ghost, place } = copyOf(el as HTMLElement, { left: c.left + a.x + a.sx, top: top + a.y + a.sy, width: a.w, height: a.h }, box, null)
+      if (now.has(el) || el.isConnected || !isGone(el)) continue
+      const { ghost, place } = copyOf(el as HTMLElement, { left: c.left + a.x + a.sx, top: top + a.y + a.sy, width: a.w, height: a.h }, box, null,
+                                     getComputedStyle(box).position !== 'static')
       place()
       play(ghost, g => leave(g, OUT.fade))
     }

@@ -1,7 +1,7 @@
 /* Lists: ListRow (the one row), ListSection (a label above a group), VirtualList
    (owns its scroll box and fills its parent, so no page computes 100vh - Npx). */
 import {
-  useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode, type Ref,
+  useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Key, type ReactNode, type Ref,
 } from 'react'
 import { measureElement, useVirtualizer } from '@tanstack/react-virtual'
 import { Check, type LucideIcon } from 'lucide-react'
@@ -194,7 +194,9 @@ export function VirtualList<T>({
   // rows glide when the items change (a conversation to the top), rise when they arrive and
   // fade where they were when they go; a scroll changes no items and a new filter is another list, so neither moves anything
   const spacer = useRef<HTMLDivElement>(null)
-  useMove(spacer, items, { enter: true, leave: true, quiet: resetOn })
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the keys change with the items, getKey is a new function each render
+  const keys = useMemo(() => new Set(items.map((it, i) => String(getKey(it, i)))), [items])
+  useMove(spacer, items, { enter: true, leave: true, quiet: resetOn, keys })
   const firstReset = useRef(true)
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [margin, setMargin] = useState(0)
@@ -247,7 +249,7 @@ export function VirtualList<T>({
       {before}
       <div ref={spacer} className="vlist__spacer" style={{ height: virt.getTotalSize() }}>
         {rows.map(v => (
-          <div key={v.key} data-index={v.index} ref={virt.measureElement}
+          <div key={v.key} data-index={v.index} data-key={String(v.key)} ref={virt.measureElement}
                className="vlist__row" role={label ? 'listitem' : undefined}
                style={{ transform: `translateY(${v.start - (page ? margin : 0)}px)`,
                         left: inset || undefined, right: inset || undefined }}>
