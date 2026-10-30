@@ -32,8 +32,7 @@ What it sets on the Mac:
 | `~/Library/LaunchAgents/com.celine.chrome.plist` | Chrome with DevTools on 127.0.0.1:9222; its tabs and logins outlive the browser server's sessions |
 | `~/Library/LaunchAgents/com.celine.gateway.plist` | the gateway under `caffeinate -d` while she is logged in |
 | `~/.local/share/celine/opencode/opencode` | opencode |
-| `~/.config/opencode/opencode.json` | written on every run: the app's model proxy as provider `celine` (`<app>/llm/v1`, the link key read from `~/.config/celine/link`), Peekaboo and Playwright MCP (the gateway's own copies, Playwright on the same Chrome), every permission allowed |
-| `~/.config/opencode/opencode.jsonc` | the models of provider `celine`, which the app puts there before a drone starts (`PATCH /global/config`) |
+| `~/.config/opencode/opencode.json` | its own keys set on every run, the rest kept: the app's model proxy as provider `celine` (`<app>/llm/v1`, the link key read from `~/.config/celine/link`), Peekaboo and Playwright MCP (the gateway's own copies, Playwright on the same Chrome), every permission allowed, no autoupdate; the app adds the models of `celine` to the same file (`PATCH /global/config`) while no drone works there |
 | `~/Library/LaunchAgents/com.celine.opencode.plist` | `opencode serve` on 0.0.0.0:4096, logging to `~/Library/Logs/celine-opencode.log` |
 
 With the lid shut, a dummy HDMI plug gives the Mac the display its screenshots need.

@@ -262,23 +262,23 @@ cat > "$AGENTS/$LABEL.plist" <<EOF
 EOF
 say drones   # opencode serve on the app's model proxy (the link key), with Peekaboo and Playwright MCP
 mkdir -p "$HOME/.config/opencode" "$(dirname "$OC_LOG")"
-# this file is this script's; the app keeps the models in opencode.jsonc (PATCH /global/config)
+# only this script's keys are set, the rest stays: the app's models of provider celine
+# land in this same file (PATCH /global/config edits opencode.json when it exists)
 OC_APP="$APP" OC_NODE="$NODE" OC_LIB="$LIB" OC_CDP="$CDP" OC_PEEKABOO="$(brew --prefix)/bin/peekaboo" \
 "$NODE" -e '
 const e = process.env, fs = require("fs"), file = process.argv[1];
-const conf = {
-  $schema: "https://opencode.ai/config.json",
-  permission: "allow",
-  autoupdate: false,
-  mcp: {
-    screen: { type: "local", enabled: true, command: [e.OC_PEEKABOO, "mcp", "--allow-foreground"] },
-    browser: { type: "local", enabled: true, command: [e.OC_NODE,
-      `${e.OC_LIB}/node_modules/@playwright/mcp/cli.js`, "--cdp-endpoint", `http://127.0.0.1:${e.OC_CDP}`] },
-  },
-};
-if (e.OC_APP) conf.provider = { celine: { npm: "@ai-sdk/openai-compatible", name: "Celine",
+const c = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+c.$schema = "https://opencode.ai/config.json";
+c.permission = "allow";
+c.autoupdate = false;
+c.mcp = { ...c.mcp,
+  screen: { type: "local", enabled: true, command: [e.OC_PEEKABOO, "mcp", "--allow-foreground"] },
+  browser: { type: "local", enabled: true, command: [e.OC_NODE,
+    `${e.OC_LIB}/node_modules/@playwright/mcp/cli.js`, "--cdp-endpoint", `http://127.0.0.1:${e.OC_CDP}`] } };
+if (e.OC_APP) c.provider = { ...c.provider, celine: { ...c.provider?.celine,
+  npm: "@ai-sdk/openai-compatible", name: "Celine",
   options: { baseURL: `${e.OC_APP}/llm/v1`, apiKey: "{file:~/.config/celine/link}" } } };
-fs.writeFileSync(file, JSON.stringify(conf, null, 1) + "\n");
+fs.writeFileSync(file, JSON.stringify(c, null, 1) + "\n");
 ' "$HOME/.config/opencode/opencode.json"
 cat > "$AGENTS/$OPENCODE.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
