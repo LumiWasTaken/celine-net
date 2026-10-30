@@ -17,7 +17,7 @@ async def _where(store, cid, role=None):
     return (await store.read(lambda c: here.where(c, cid, role))).split("\n")
 
 
-async def test_a_chat_a_mission_a_sub_agent_and_a_sub_sub_agent(store):
+async def test_a_chat_a_mission_a_sub_agent_a_sub_sub_agent_and_a_drone(store, monkeypatch):
     chat = await conversations.create(store, "Groceries")
     assert await _where(store, chat, "chat") == [
         f"Where you are: a chat (address {chat}).", "Place: chat.",
@@ -50,6 +50,15 @@ async def test_a_chat_a_mission_a_sub_agent_and_a_sub_sub_agent(store):
         "Place: mission, as a sub-agent.", "Device: your box, through opencode.",
         f"Started by: the sub-agent scout (address {scout}).",
         f"You report to: the sub-agent scout (address {scout}).", "Depth: 2" + DEPTH]
+
+    drone = await conversations.create(store, "d", agent_of=scout, agent_name="arcade",
+                                       agent_cli="opencode", agent_device="mac")
+    assert (await _where(store, drone))[2] == "Device: mac, through opencode."
+    from types import SimpleNamespace
+    from celine import plugins
+    monkeypatch.setitem(plugins.LOADED, "mac", SimpleNamespace(
+        manifest={"label": "Mac plugin", "drones": {"label": "Her Mac"}}))
+    assert (await _where(store, drone))[2] == "Device: Her Mac, through opencode."
 
 
 async def test_titles_never_reach_it(store):

@@ -13,7 +13,7 @@ from ..core.states import LIVE_SQL
 from ..intercom.store import OPENING
 
 OTHERS_MAX = 6
-COLS = "id, kind, title, trigger_key, agent_name, agent_of, agent_cli"
+COLS = "id, kind, title, trigger_key, agent_name, agent_of, agent_cli, agent_device"
 
 
 def _run(c: sqlite3.Connection, r) -> sqlite3.Row | None:
@@ -75,7 +75,10 @@ def where(c: sqlite3.Connection, cid: str, role: str | None = None) -> str | Non
     from .store import depth as depth_of
     me, depth = up[0], depth_of(c, cid)
     place = place_of(c, cid) + (", as a sub-agent" if me["kind"] == "agent" else "")
-    device = (f"your box, through {me['agent_cli']}" if me["agent_cli"]
+    from ..devices import label
+    device = (f"{label(me['agent_device'])}, through {me['agent_cli']}"
+              if me["agent_device"] else
+              f"your box, through {me['agent_cli']}" if me["agent_cli"]
               else "the house (the app's own server)")
     starter = boss = "{{username}}"
     if me["kind"] == "agent" and len(up) > 1:
