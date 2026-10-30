@@ -8,7 +8,7 @@ import json
 
 import anyio
 
-from .. import clock, devices, guard
+from .. import clock, devices, guard, prompts
 from ..plans import flow as plan_flow
 from ..skills import CORE, ToolContext
 from ..skills.gating import OFF, down_sentence, is_enabled, overrides_for
@@ -284,6 +284,8 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
         if her is not None and her.persona.strip() else []
     # what the app's marks in its context mean (turns/legend.py), right under who it is
     parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
+    if cfg.r("ask_before_setup"):
+        parts.append(("persona", cfg.substitute(prompts.text(__file__, "ask_before_setup.md"))))
     line = await _chat_line(store, cid)
     if line:
         parts.append(("talk", cfg.substitute(line)))

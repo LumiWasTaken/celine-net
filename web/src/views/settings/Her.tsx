@@ -22,6 +22,7 @@ import { useResource } from '../../lib/useResource'
 import {
   Button, Choice, EmptyState, Face, Field, InlineError, Input, Loaded, MenuButton, Notice, Section, Slider, Switch, Viewer, type MenuItem,
 } from '../../ui'
+import { GeneralFields } from './General'
 import { Page } from './parts'
 import './settings.css'
 
@@ -74,6 +75,7 @@ export function HerPage() {
         : auto.error && <Section><InlineError compact message={auto.error} onRetry={auto.flush} /></Section>}
       <Who her={her} auto={auto} />
       <Persona her={her} />
+      <Section><GeneralFields only={['ask_before_setup']} /></Section>
       <Banned her={her} auto={auto} />
     </Page>
   )
