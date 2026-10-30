@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 18
+LATEST = 19
 
 
 def _version(db) -> int:
@@ -404,3 +404,17 @@ def test_her_stored_persona_gets_the_lines_the_shipped_one_has():
         (BASE / "owner.md").read_text()
     assert step.changed(old) == base_persona()
     assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
+
+
+def test_her_stored_persona_gets_the_training_line_once():
+    import importlib.util
+
+    from celine.her import base_persona
+    spec = importlib.util.spec_from_file_location(
+        "m0019", MIGRATIONS_DIR / "0019_persona_training_line.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    old = base_persona().replace(step.ADDED, "")
+    assert step.changed(old) == base_persona()
+    assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
+    assert step.changed("my own persona") == "my own persona"
