@@ -19,8 +19,8 @@ from ..core.event_types import OVERRIDES_CHANGED
 # A tool that is off, or of a skill that is down, is not in its list (turns/prompt.py);
 # the skill index says so, and a call to it is refused with OFF or down_sentence.
 OFF = "{name} is off here."
-# A sub-agent with read access (sub_agents/skill.py) has only read-only tools and the
-# intercom in its list. A call to another one is refused with this and what it has of
+# A sub-agent with read access (sub_agents/skill.py) has only read-only tools, the
+# intercom and its own sub-agents (they start with read access too) in its list. A call to another one is refused with this and what it has of
 # that skill.
 READ_ONLY_REFUSAL = "You have read access; the read-only tools of {skill} are: {reads}."
 
@@ -36,8 +36,9 @@ def down_sentence(skill: str, why: str) -> str:
 
 
 def read_mode_has(spec: ToolSpec) -> bool:
-    """Whether a sub-agent in read mode has this tool."""
-    return not spec.mutating or spec.skill == "intercom"
+    """Whether a sub-agent in read mode has this tool. Starting a sub-agent is no write
+    in itself: its children get at most its access (sub_agents/skill.py begin)."""
+    return not spec.mutating or spec.skill in ("intercom", "sub_agents")
 
 
 def _defaults(cfg) -> dict[str, str]:

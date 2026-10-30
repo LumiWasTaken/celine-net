@@ -31,12 +31,14 @@ need only when this conversation does.
   resume keeps its own.
   One that is still working is refused.
 - `access`: `read` looks things up and changes nothing (chats, documents, your notebook,
-  the web, the live chats); it still has the intercom. With read access it looks at and
+  the web, the live chats); it still has the intercom and starts sub-agents of its own,
+  with read access too. With read access it looks at and
   scrolls the pages open in a browser, and cannot open, close or act on one. `work` may
   also write, such as notes, and open and act on pages. Without `access` it is read, or work when you give a
   folder.
 - `folder`: a folder of your notebook, such as `agents/<name>`. It sees (and with work
-  access writes) only that folder. Without it, your whole notebook.
+  access writes) only that folder. Without it, your whole notebook, or the folder you
+  are limited to yourself.
 - `model`: which of your models it thinks with (models__list names them). A big one for
   hard reading and judgment, a small fast one for many quick lookups. Without it, the
   model this conversation runs on.

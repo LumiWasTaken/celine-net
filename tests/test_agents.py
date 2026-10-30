@@ -170,8 +170,9 @@ async def test_a_read_sub_agent_has_only_read_tools_and_writes_nothing(store, cf
     [sub] = await _subs_of(store, parent)
     assert sub["access"] == "read", "no folder, no mode: read"
     tools = backend.seen[0]
-    assert "notebook__read" in tools and "intercom__send" in tools
-    assert not {"notebook__write", "notebook__delete", "sub_agents__start"} & set(tools)
+    assert {"notebook__read", "intercom__send", "sub_agents__start"} <= set(tools), \
+        "starting a sub-agent is no write in itself"
+    assert not {"notebook__write", "notebook__delete"} & set(tools)
     # a write it calls anyway is refused at the chokepoint
     assert not (cfg.her.notebook / "stolen.md").exists()
     refused = await store.read(lambda c: c.execute(
@@ -325,6 +326,35 @@ async def test_a_folder_outside_the_notebook_is_refused(store, cfg):
     for bad in ("../out", ".", "tools/x"):
         assert (await agents.start(ctx, brief="x", name="valid name", folder=bad)).is_error, bad
     assert await _subs_of(store, parent) == []
+
+
+async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(store, cfg):
+    from celine.sub_agents.skill import READ_PARENT
+    from celine.turns.loads import offered
+    reg = _registry(cfg)
+    agents = reg.skills["sub_agents"]
+    agents.app = Services(dispatcher=object())     # a refusal never reaches it
+    parent = await conversations.create(store)
+    scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout",
+                                       access="read", notebook_folder="agents/scout")
+    here = await offered(reg, store, scout)
+    assert [s.wire_name for s in here["notebook"]] == [
+        "notebook__list", "notebook__read", "notebook__search"], "what it may call"
+    assert "sub_agents__start" in {s.wire_name for s in here["sub_agents"]}
+
+    async def emit(note, **data):
+        pass
+    ctx = ToolContext(scout, "t", "x", store, cfg, emit)
+    from celine.skills.meta import Skills
+    loaded, *_ = await Skills(reg, cfg).loaded(ctx, ["notebook"])
+    assert "notebook__read" in loaded and "notebook__write" not in loaded, \
+        "a load hands it only what it may call"
+    for more in ({"access": "work"}, {"cli": "opencode"}):
+        out = await agents.start(ctx, brief="x", name="a helper", **more)
+        assert out.is_error and out.content == READ_PARENT, more
+    out = await agents.start(ctx, brief="x", name="a helper", folder="agents/other")
+    assert out.is_error and "agents/scout" in out.content, "no folder above its own"
+    assert await _subs_of(store, scout) == []
 
 
 async def test_sub_agents_start_their_own_down_to_three_levels(store, cfg):

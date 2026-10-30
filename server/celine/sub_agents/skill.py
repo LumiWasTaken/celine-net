@@ -50,6 +50,8 @@ MAX_NAME = 60
 MAX_WAIT = 600      # seconds `read` waits for a sub-agent at most
 MAX_DEPTH = 3       # levels of sub-agents below the top conversation
 BRIEF_FACT = 160    # characters of the brief on a cloud model's approval
+READ_PARENT = ("You have read access, so your sub-agents have read access too and run "
+               "on a model, not a CLI or a device.")
 CLOUD_ASK = "start the sub-agent {name} on the cloud model {model}"
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
@@ -304,6 +306,16 @@ class SubAgents:
         name = " ".join(name.split())
         if device is not None:          # a drone: opencode on the device
             cli = cli or "opencode"
+        # a parent limited to a notebook folder limits its children to it
+        own = await store.read(lambda c: c.execute(
+            "SELECT notebook_folder FROM conversations WHERE id=?", (parent,)).fetchone())
+        if own is not None and own["notebook_folder"]:
+            mine = Path(own["notebook_folder"])
+            if folder is None:
+                folder = str(mine)
+            elif not Path(folder.strip().rstrip("/")).is_relative_to(mine):
+                return None, (f"You see only {mine} of the notebook, so a sub-agent of "
+                              f"yours works in it or a folder under it."), False, None
         given = {"access": access,
                  "folder": str(Path(folder.strip().rstrip("/"))) if folder else None,
                  "model": model, "cli": cli, "device": device}
@@ -314,9 +326,13 @@ class SubAgents:
             return None, f"Keep the name under {MAX_NAME} characters.", False, None
         if not brief.strip():
             return None, "The brief is empty. Say what it must do.", False, None
-        access = access or ("work" if folder is not None else "read")
+        # capabilities pass down: a read parent starts read children only
+        reading = await reads_only(store, parent)
+        access = access or ("work" if folder is not None and not reading else "read")
         if access not in ("read", "work"):
             return None, "access is read or work.", False, None
+        if reading and (access == "work" or cli is not None or device is not None):
+            return None, (READ_PARENT), False, None
         if model is not None and model not in her_models.allowed(self.cfg.settings):
             yours = ", ".join(her_models.allowed(self.cfg.settings)) or "none"
             return None, f"{model} is not one of your models. Yours: {yours}.", False, None

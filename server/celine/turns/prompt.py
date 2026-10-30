@@ -36,19 +36,16 @@ async def tool_specs(registry, store, cid: str, carried, without=frozenset()
     skills offer here (turns/loads.py: a skill with offered_in() offers its tools
     only where that says so, missions in a mission's own conversation; it may also name
     the tools it offers there, as a set), in registry order, but those named in
-    `without`; a sub-agent started with read access gets the read-only tools and the
-    intercom (turns/tools.py refuses the rest)."""
+    `without`; a sub-agent started with read access is offered only what it may call
+    (loads.offered; turns/tools.py refuses the rest)."""
     if not registry:
         return {}, False
     here = await loads.offered(registry, store, cid)
     names = {s.wire_name for n in [*carried.skills, *carried.others]
              for s in here.get(n, ())} - set(without)
     tools = {k: s for k, s in registry.tools.items() if k in names}
-    from ..skills.gating import read_mode_has
     from ..sub_agents.skill import reads_only
-    if await reads_only(store, cid):
-        return {k: s for k, s in tools.items() if read_mode_has(s)}, True
-    return tools, False
+    return tools, await reads_only(store, cid)
 
 
 def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
