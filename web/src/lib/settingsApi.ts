@@ -351,7 +351,7 @@ export const settingsApi = {
   putTool: (target: string, value: ToolDefault | null) =>
     request<{ skills: SkillView[] }>(`/tool-defaults/${enc(target)}`, json('PUT', { default: value })),
 
-  /** `saved`: the general settings were saved at least once */
+  /** `general`: what was saved, a key not there is its field's `default`; `saved`: saved at least once */
   general: () => request<{ fields: FormField[]; general: Record<string, unknown>; version: string; saved: boolean }>('/settings'),
   /** the whole object; a key left out goes back to its default */
   putGeneral: (general: Record<string, unknown>) =>

@@ -336,9 +336,11 @@ async def put_tool_default(request: Request, response: Response, target: str,
 
 @router.get("/settings")
 async def get_general(request: Request, response: Response) -> dict:
+    """`general` holds what was saved, each other key is its field's `default`: a client
+    that sends `general` back with one change saves no default as a choice."""
     s = settings_of(request)
     fields = general_mod.fields()
-    values = {f["key"]: general_mod.value(s.general, f["key"]) for f in fields}
+    values = {f["key"]: s.general[f["key"]] for f in fields if f["key"] in s.general}
     return {"fields": fields, "general": values,
             "version": etag(response, version(s.general)),
             "saved": bool(s.saved.get("general"))}

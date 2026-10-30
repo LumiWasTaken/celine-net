@@ -216,7 +216,9 @@ function HerStep({ back, next }: StepNav) {
   )
 }
 
-/* ── you: your name, your time zone (this browser's until one is saved), about you ── */
+/* ── you: your name (empty until one is saved, the default its placeholder), your time
+   zone (this browser's until one is saved), about you; an empty field is left out, so its
+   default stays ── */
 type You = { user_name: string; timezone: string; user_bio: string }
 
 function YouStep({ back, next }: StepNav) {
@@ -225,15 +227,15 @@ function YouStep({ back, next }: StepNav) {
   const [field, setField] = useState<string | undefined>()
   const [error, setError] = useState<string | null>(null)
   const g = res.data?.general
-  const zoneDefault = res.data?.fields.find(f => f.key === 'timezone')?.default
+  const fallback = (k: string) => String(res.data?.fields.find(f => f.key === k)?.default ?? '')
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone
-  const saved: You | null = g ? { user_name: String(g.user_name ?? ''), timezone: String(g.timezone ?? ''), user_bio: String(g.user_bio ?? '') } : null
-  const d = draft ?? (saved && !res.data?.saved && saved.timezone === zoneDefault && here ? { ...saved, timezone: here } : saved)
+  const saved: You | null = g ? { user_name: String(g.user_name ?? ''), timezone: String(g.timezone ?? here ?? ''), user_bio: String(g.user_bio ?? '') } : null
+  const d = draft ?? saved
   const set = (k: keyof You, v: string) => d && setDraft({ ...d, [k]: v })
   const onNext = async () => {
     if (!g || !d) return
     setField(undefined); setError(null)
-    try { await settingsApi.putGeneral({ ...g, ...d }) } catch (e) {
+    try { await settingsApi.putGeneral(Object.fromEntries(Object.entries({ ...g, ...d }).filter(([, v]) => v !== ''))) } catch (e) {
       setField(fieldOf(e)); setError(e instanceof Error ? e.message : String(e))
       throw e
     }
@@ -244,7 +246,7 @@ function YouStep({ back, next }: StepNav) {
     <StepCard title="You" back={back} next={next} skip={next} onNext={onNext} disabled={!d && (res.error ?? 'Loading')}>
       {!d ? (res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : <LoadingRow label="Loading" />) : <>
         <Field label="Your name" error={err('user_name')}>
-          <Input value={d.user_name} maxLength={40} invalid={!!err('user_name')} onChange={e => set('user_name', e.target.value)} autoFocus />
+          <Input value={d.user_name} placeholder={fallback('user_name')} maxLength={40} invalid={!!err('user_name')} onChange={e => set('user_name', e.target.value)} autoFocus />
         </Field>
         <Field label="Time zone" error={err('timezone')}>
           <Input value={d.timezone} placeholder="America/New_York" spellCheck={false} invalid={!!err('timezone')} onChange={e => set('timezone', e.target.value)} />

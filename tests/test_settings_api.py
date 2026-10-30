@@ -214,6 +214,15 @@ async def test_an_advanced_value_is_saved_checked_and_read_at_once(api):
     assert api.cfg.r("max_concurrent_turns") == 2, "a refused save changes nothing"
 
 
+async def test_general_holds_what_was_saved_and_the_fields_the_defaults(api):
+    """A fresh install has no name: the field's default is the placeholder, not a value."""
+    r = (await api.get("/api/settings")).json()
+    assert "user_name" not in r["general"]
+    assert next(f for f in r["fields"] if f["key"] == "user_name")["default"] == "User"
+    await api.put("/api/settings", json={"general": {"user_name": "Sam"}})
+    assert (await api.get("/api/settings")).json()["general"] == {"user_name": "Sam"}
+
+
 async def test_status_links_the_source_of_this_build(api, monkeypatch):
     """The AGPL's offer: GET /api/status `build.source` is the code this build runs, at its
     commit when the commit is known."""

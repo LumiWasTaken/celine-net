@@ -105,7 +105,7 @@ export function AddressField() {
   </>
 }
 
-/* ── you: your name, your time zone (this browser's until one is saved: shown, and saved
+/* ── you: your name (empty until one is saved, the default its placeholder), your time zone (this browser's until one is saved: shown, and saved
    with the rest when you leave), what you write about you ── */
 function YouCard() {
   const online = useOnline()
@@ -115,13 +115,13 @@ function YouCard() {
     const r = await settingsApi.putGeneral({ ...res.data?.general, ...changes })
     res.set(d => d && { ...d, general: r.general })
   })
-  const zoneDefault = res.data?.fields.find(f => f.key === 'timezone')?.default
+  const fallback = (k: string) => String(res.data?.fields.find(f => f.key === k)?.default ?? '')
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone
-  // never saved and still the default zone: this browser's
-  const prefill = !!g && !res.data?.saved && g.timezone === zoneDefault && !!here && here !== g.timezone
+  // no zone saved: this browser's
+  const prefill = !!g && g.timezone == null && !!here && here !== fallback('timezone')
   useEffect(() => { if (prefill) auto.set('timezone', here, 'blur') }, [prefill]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!g) return <Section title="You">{res.error && <InlineError compact message={res.error} onRetry={res.reload} />}</Section>
-  const value = (k: string) => String(auto.pending[k] ?? g[k] ?? '')
+  const value = (k: string) => String(auto.pending[k] ?? g[k] ?? (k === 'timezone' ? fallback(k) : ''))
   const field = (k: string) => ({
     value: value(k), disabled: !online,
     onChange: (e: { target: { value: string } }) => auto.set(k, e.target.value, 'blur'),
@@ -131,7 +131,7 @@ function YouCard() {
   return (
     <Section title="You">
       <div className="form" title={online ? undefined : OFFLINE_TITLE}>
-        <Field label="Your name"><Input {...field('user_name')} maxLength={40} onKeyDown={enter} /></Field>
+        <Field label="Your name"><Input {...field('user_name')} placeholder={fallback('user_name')} maxLength={40} onKeyDown={enter} /></Field>
         <Field label="Time zone"><Input {...field('timezone')} placeholder="America/New_York" spellCheck={false} onKeyDown={enter} /></Field>
         <Field label="About you"><TextArea {...field('user_bio')} rows={4} maxLength={2000} /></Field>
         {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
