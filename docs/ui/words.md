@@ -92,6 +92,7 @@ block at the end of this file lists the words no UI string uses.
 | Try again | the same, inside a sentence ("Try again later") | ChatGPT |
 | Stop | stop the reply | ChatGPT, Claude |
 | Send | send | everyone |
+| Message (its name) | the composer's placeholder: its name in its chats, a sub-agent's name in that sub-agent's conversation | ChatGPT "Message ChatGPT", Slack "Message #channel" |
 | Branch, Branch from here | a new chat from this message | ChatGPT "Branch in new chat" |
 | Impersonate | it writes your next message as a draft | plain |
 | Copy, Edit, Delete | on a message | everyone |

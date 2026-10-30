@@ -364,6 +364,8 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const open = (id: string) => { setSelected(id); onSidebar(false) }
   const conversationTitle = current?.title || convo.conversation?.title || ''
   const startedBy = convo.conversation?.started_by ?? null
+  // whom the composer writes to: the sub-agent in its conversation, her in her own
+  const writingTo = startedBy ? convo.conversation?.agent_name ?? conversationTitle : name
   const isArchived = current ? !!current.archived_at : !!convo.conversation?.archived_at
   const headMore = current ? [
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(current.id) },
@@ -424,7 +426,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                        /* a sub-agent's conversation: its name under the one that started it */
                        crumbs: [{ label: startedBy.name, href: startedBy.link ?? undefined,
                                   onClick: startedBy.link ? (e: { preventDefault(): void }) => { e.preventDefault(); nav.goPath(startedBy.link!) } : undefined }],
-                       title: convo.conversation?.agent_name ?? conversationTitle,
+                       title: writingTo,
                      } : {
                      lead: <HerFace who={who} size="sm" speaking={convo.running} mood={mood} />,
                      title:
@@ -495,7 +497,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
             </div>
           )}
 
-          <Composer handle={composer} conversationId={selected} exists={!!current} active={active && !drawerOpen} name={name}
+          <Composer handle={composer} conversationId={selected} exists={!!current} active={active && !drawerOpen} name={writingTo}
                     running={convo.running} offline={offline} sending={!!pending} pending={!!shownPending}
                     empty={empty} hidden={missing} closed={null} settings={convo.settings}
                     draftSettings={newSettings} onDraftSettings={setNewSettings} onModelPanel={() => openPanel('model')}

@@ -628,7 +628,9 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
 /* The conversation and the box to write in: a word to it where it works (Routines shows
    what an event started with it too) */
 export function Work({ cid, convo, active, closed }: { cid: string; convo: ReturnType<typeof useConversation>; active: boolean; closed: boolean }) {
-  const name = useName()
+  const her = useName()
+  // a sub-agent's conversation writes to the sub-agent
+  const name = convo.conversation?.agent_name ?? her
   return (
     <Talk cid={cid} convo={convo} active={active} name={name} user=""
           send={(text, attachments) => conversationApi.send(cid, text, attachments)}
