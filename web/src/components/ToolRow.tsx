@@ -437,7 +437,9 @@ const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
     Open), a message it set for later while it waits (with Cancel), and the pictures and
     music it makes, each one block from start to end.
     `inline` (the chat): the calls that settled stay under its words as
-    their rows, the same rows the Activity list has, each opening its result. */
+    their rows, the same rows the Activity list has, each opening its result.
+    One call is in one place at a time: a call the list holds has no line, even while what
+    it started still works (a sub-agent, a message that waits); its row shows that. */
 export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline?: boolean }) {
   // a settled batch or page has its block under its words already (the gallery, the card):
   // no row for it too. read and stop name a batch again to show it: they get their row.
@@ -445,15 +447,15 @@ export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline
   // leave theirs, and a step left with none draws no list.
   const { runOf } = useContext(ToolRuns)
   const sheets = useContext(SheetsContext)
+  const listed = (c: ToolCall) => inline && !busy(c) && !PLUMBING.has(c.name)
+    && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display))
   const rows = calls.filter(c => {
     const r = runOf(c.id)
-    return !busy(c) && !PLUMBING.has(c.name)
-      && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display))
-      && (!r || (sheets?.here(r) ?? r.ids[0]) === c.id)
+    return listed(c) && (!r || (sheets?.here(r) ?? r.ids[0]) === c.id)
   })
   return <>
-    {calls.map(c => <ToolLine key={c.id} call={c} />)}
-    {inline && rows.length > 0 && (
+    {calls.filter(c => !listed(c)).map(c => <ToolLine key={c.id} call={c} />)}
+    {rows.length > 0 && (
       <div className="tool-list"><Rows calls={rows} /></div>
     )}
   </>
