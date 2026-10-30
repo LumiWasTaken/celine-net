@@ -462,15 +462,14 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
 
 
 async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
-    from types import SimpleNamespace
     from celine.sub_agents.skill import release, waiting
 
-    async def abort(_cid):
-        pass
-    agents = _registry(cfg).skills["sub_agents"]
+    reg = _registry(cfg)
+    agents = reg.skills["sub_agents"]
+    dispatcher = Dispatcher(store, cfg, EventBus(), lambda: None, reg)
+    dispatcher.notify = lambda: None
     app = agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store),
-                                dispatcher=SimpleNamespace(notify=lambda: None,
-                                                           abort_conversation=abort))
+                                dispatcher=dispatcher)
     parent = await conversations.create(store)
     scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout")
     kid = await conversations.create(store, "kid", agent_of=scout, agent_name="kid")
@@ -481,6 +480,15 @@ async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):
     await release(app, scout)
     assert not await store.read(lambda c: c.execute(
         "SELECT 1 FROM turns WHERE conversation_id=?", (kid,)).fetchone()), "nothing starts"
+    sibling = await conversations.create(store, "sib", agent_of=parent, agent_name="sib")
+    await app.intercom.send(f"agent:{parent}", f"agent:{sibling}", "go", kind="brief",
+                            wake=False)
+    await dispatcher.abort_conversation(parent)
+    assert await store.read(lambda c: waiting(c, sibling)) is None, \
+        "a Stop on the parent drops its children's queued briefs"
+    await release(app, parent)
+    assert not await store.read(lambda c: c.execute(
+        "SELECT 1 FROM turns WHERE conversation_id=?", (sibling,)).fetchone())
 
 
 async def test_a_long_report_is_cut_from_the_parents_window_and_its_tail_says_so(

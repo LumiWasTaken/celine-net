@@ -431,13 +431,8 @@ class SubAgents:
 
     async def stop_agent(self, sub: str) -> None:
         """Its turn, its jobs, the messages it scheduled that have not landed, and the
-        queued briefs of it and every sub-agent under it, so no release starts one."""
-        def fn(c: sqlite3.Connection) -> None:
-            for one in conversations.family(c, sub):
-                c.execute("UPDATE intercom SET cancelled_at=? WHERE id IN (SELECT i.id FROM "
-                          "intercom i JOIN intercom_deliveries d ON d.intercom_id = i.id "
-                          f"WHERE {queued_sql()})", (now(), one))
-        await self.app.store.write(fn)
+        queued briefs of it and every sub-agent under it (the dispatcher's
+        abort_conversation, drop_queued)."""
         await self.app.intercom.cancel_scheduled(sub)
         await self.dispatcher.abort_conversation(sub)
         await announce(self.app, sub)
@@ -571,6 +566,15 @@ def queued_sql(conversation: str = "?") -> str:
     return (f"d.conversation_id = {conversation} AND i.kind='brief' AND i.wake=0 AND "
             "i.cancelled_at IS NULL AND d.state <> 'cancelled' AND d.turn_id IS NULL AND "
             "d.message_id IS NOT NULL")
+
+
+def drop_queued(c: sqlite3.Connection, cid: str) -> None:
+    """Cancel the queued briefs of `cid` and every sub-agent under it, so no release
+    starts one."""
+    for one in conversations.family(c, cid):
+        c.execute("UPDATE intercom SET cancelled_at=? WHERE id IN (SELECT i.id FROM "
+                  "intercom i JOIN intercom_deliveries d ON d.intercom_id = i.id "
+                  f"WHERE {queued_sql()})", (now(), one))
 
 
 def waiting(c: sqlite3.Connection, sub: str) -> tuple[int, str] | None:
