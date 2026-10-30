@@ -697,7 +697,8 @@ VERBS = {
     "Saved": ("Saving", "save"), "Took": ("Taking", "take"), "Filled": ("Filling", "fill"),
     "Went": ("Going", "go"), "Pointed": ("Pointing", "point"), "Dragged": ("Dragging", "drag"),
     "Uploaded": ("Uploading", "upload"), "Resized": ("Resizing", "resize"),
-    "Installed": ("Installing", "install"),
+    "Recorded": ("Recording", "record"),
+    "Pasted": ("Pasting", "paste"), "Dropped": ("Dropping", "drop"),
 }
 
 

@@ -131,9 +131,19 @@ def test_a_servers_own_words(mac):
         "Ran {n} commands in terminal main"
 
 
-def test_every_mac_group_belongs_to_a_sentence():
+# the tools and their arguments as the Mac's servers list them (the versions setup.sh pins)
+MAC_TOOLS = json.loads((Path(__file__).parent / "data/mac_tools.json").read_text())
+
+
+def test_every_mac_tool_has_words_and_a_group():
+    assert set(MAC["servers"]) == set(MAC_TOOLS)
     for sid, server in MAC["servers"].items():
-        assert set(server.get("groups", {})) <= set(server["words"]), sid
+        tools = MAC_TOOLS[sid]
+        assert set(server["words"]) == set(tools), sid
+        assert set(server["groups"]) == set(tools), sid
         assert all("{n}" in g for g in server["groups"].values()), sid
-        for text in server["words"].values():
+        for tool, text in server["words"].items():
             assert text.partition(" ")[0] in VERBS, text
+            # a hole names a real argument, or its subject silently drops
+            for hole in words_mod._HOLE.finditer(text):
+                assert hole.group(2) in tools[tool], f"{sid} {tool}: {{{hole.group(2)}}}"

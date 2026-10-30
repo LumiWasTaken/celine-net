@@ -1,0 +1,646 @@
+{
+ "macbrowser": {
+  "browser_click": [
+   "button",
+   "doubleClick",
+   "element",
+   "modifiers",
+   "target"
+  ],
+  "browser_close": [],
+  "browser_console_messages": [
+   "all",
+   "filename",
+   "level"
+  ],
+  "browser_drag": [
+   "endElement",
+   "endTarget",
+   "startElement",
+   "startTarget"
+  ],
+  "browser_drop": [
+   "data",
+   "element",
+   "paths",
+   "target"
+  ],
+  "browser_emulate_media": [
+   "colorScheme",
+   "contrast",
+   "forcedColors",
+   "media",
+   "reducedMotion"
+  ],
+  "browser_evaluate": [
+   "element",
+   "filename",
+   "function",
+   "target"
+  ],
+  "browser_file_upload": [
+   "paths"
+  ],
+  "browser_fill_form": [
+   "fields"
+  ],
+  "browser_find": [
+   "filename",
+   "regex",
+   "text"
+  ],
+  "browser_handle_dialog": [
+   "accept",
+   "promptText"
+  ],
+  "browser_hover": [
+   "element",
+   "target"
+  ],
+  "browser_navigate": [
+   "url"
+  ],
+  "browser_navigate_back": [],
+  "browser_network_request": [
+   "filename",
+   "index",
+   "part"
+  ],
+  "browser_network_requests": [
+   "filename",
+   "filter",
+   "static"
+  ],
+  "browser_press_key": [
+   "key"
+  ],
+  "browser_resize": [
+   "height",
+   "width"
+  ],
+  "browser_run_code_unsafe": [
+   "code",
+   "filename"
+  ],
+  "browser_select_option": [
+   "element",
+   "target",
+   "values"
+  ],
+  "browser_snapshot": [
+   "boxes",
+   "depth",
+   "filename",
+   "target"
+  ],
+  "browser_tabs": [
+   "action",
+   "index",
+   "url"
+  ],
+  "browser_take_screenshot": [
+   "element",
+   "filename",
+   "fullPage",
+   "scale",
+   "target",
+   "type"
+  ],
+  "browser_type": [
+   "element",
+   "slowly",
+   "submit",
+   "target",
+   "text"
+  ],
+  "browser_wait_for": [
+   "text",
+   "textGone",
+   "time"
+  ]
+ },
+ "macfiles": {
+  "create_directory": [
+   "path"
+  ],
+  "directory_tree": [
+   "excludePatterns",
+   "path"
+  ],
+  "edit_file": [
+   "dryRun",
+   "edits",
+   "path"
+  ],
+  "get_file_info": [
+   "path"
+  ],
+  "list_allowed_directories": [],
+  "list_directory": [
+   "path"
+  ],
+  "list_directory_with_sizes": [
+   "path",
+   "sortBy"
+  ],
+  "move_file": [
+   "destination",
+   "source"
+  ],
+  "read_file": [
+   "head",
+   "path",
+   "tail"
+  ],
+  "read_media_file": [
+   "path"
+  ],
+  "read_multiple_files": [
+   "paths"
+  ],
+  "read_text_file": [
+   "head",
+   "path",
+   "tail"
+  ],
+  "search_files": [
+   "excludePatterns",
+   "path",
+   "pattern"
+  ],
+  "write_file": [
+   "content",
+   "path"
+  ]
+ },
+ "macscreen": {
+  "action": [
+   "action",
+   "on",
+   "snapshot"
+  ],
+  "agent": [
+   "dry_run",
+   "listSessions",
+   "max_steps",
+   "model",
+   "noCache",
+   "quiet",
+   "resume",
+   "resumeSession",
+   "task",
+   "verbose"
+  ],
+  "analyze": [
+   "image_path",
+   "provider_config",
+   "question"
+  ],
+  "app": [
+   "action",
+   "all",
+   "bundleId",
+   "cycle",
+   "except",
+   "force",
+   "foreground",
+   "name",
+   "newInstance",
+   "openTargets",
+   "to",
+   "wait",
+   "waitForWindow",
+   "waitUntilReady"
+  ],
+  "browser": [
+   "action",
+   "auto_stop",
+   "background",
+   "bring_to_front",
+   "browser_url",
+   "channel",
+   "dialog_action",
+   "double",
+   "format",
+   "full_page",
+   "include_preserved",
+   "include_snapshot",
+   "insight_name",
+   "insight_set_id",
+   "key",
+   "mcp_args_json",
+   "mcp_tool",
+   "message_id",
+   "navigation_type",
+   "page_id",
+   "page_index",
+   "page_size",
+   "path",
+   "quality",
+   "reload",
+   "request_file_path",
+   "request_id",
+   "resource_types",
+   "response_file_path",
+   "submit_key",
+   "text",
+   "timeout",
+   "to_uid",
+   "trace_action",
+   "types",
+   "uid",
+   "url",
+   "value"
+  ],
+  "capture": [
+   "active_fps",
+   "app",
+   "autoclean_minutes",
+   "capture_focus",
+   "diff_budget_ms",
+   "diff_strategy",
+   "duration_seconds",
+   "end_ms",
+   "every_ms",
+   "heartbeat_sec",
+   "highlight_changes",
+   "idle_fps",
+   "input",
+   "max_frames",
+   "max_mb",
+   "mode",
+   "no_diff",
+   "output_dir",
+   "pid",
+   "quiet_ms",
+   "region",
+   "resolution_cap",
+   "sample_fps",
+   "screen_index",
+   "source",
+   "start_ms",
+   "threshold_percent",
+   "video_out",
+   "window_index",
+   "window_title"
+  ],
+  "click": [
+   "background",
+   "coordinate_reference",
+   "coordinate_space",
+   "coords",
+   "double",
+   "foreground",
+   "middle",
+   "modifiers",
+   "on",
+   "pid",
+   "query",
+   "right",
+   "snapshot",
+   "triple",
+   "wait_for"
+  ],
+  "clipboard": [
+   "action",
+   "allowLarge",
+   "alsoText",
+   "data_base64",
+   "file_path",
+   "outputPath",
+   "prefer",
+   "slot",
+   "text",
+   "uti"
+  ],
+  "dialog": [
+   "action",
+   "app",
+   "button",
+   "clear",
+   "ensure_expanded",
+   "field",
+   "field_index",
+   "force",
+   "foreground",
+   "name",
+   "path",
+   "pid",
+   "select",
+   "text",
+   "window_id",
+   "window_index",
+   "window_title"
+  ],
+  "dock": [
+   "action",
+   "app",
+   "foreground",
+   "include_all",
+   "select"
+  ],
+  "drag": [
+   "button",
+   "duration",
+   "foreground",
+   "from",
+   "from_coords",
+   "modifiers",
+   "profile",
+   "snapshot",
+   "steps",
+   "to",
+   "to_app",
+   "to_coords"
+  ],
+  "image": [
+   "app_target",
+   "capture_focus",
+   "format",
+   "max_dimension",
+   "path",
+   "retina",
+   "scale",
+   "window_id"
+  ],
+  "inspect_ui": [
+   "app_target",
+   "fresh",
+   "include_elements",
+   "max_children",
+   "max_depth",
+   "max_elements",
+   "snapshot",
+   "web_focus",
+   "window_id"
+  ],
+  "menu": [
+   "action",
+   "app",
+   "foreground",
+   "item",
+   "path"
+  ],
+  "move": [
+   "center",
+   "coordinates",
+   "duration",
+   "foreground",
+   "id",
+   "profile",
+   "smooth",
+   "snapshot",
+   "steps",
+   "to"
+  ],
+  "paste": [
+   "allowLarge",
+   "alsoText",
+   "app",
+   "dataBase64",
+   "filePath",
+   "foreground",
+   "imagePath",
+   "pid",
+   "restore_delay_ms",
+   "text",
+   "uti",
+   "window_id",
+   "window_index",
+   "window_title"
+  ],
+  "permissions": [],
+  "press": [
+   "app",
+   "count",
+   "delay",
+   "foreground",
+   "hold",
+   "key",
+   "keys",
+   "modifiers",
+   "pid",
+   "snapshot",
+   "window_id",
+   "window_index",
+   "window_title"
+  ],
+  "scroll": [
+   "amount",
+   "coordinate_reference",
+   "coordinate_space",
+   "coords",
+   "delay",
+   "direction",
+   "foreground",
+   "on",
+   "smooth",
+   "snapshot"
+  ],
+  "see": [
+   "annotate",
+   "app_target",
+   "capture_engine",
+   "fresh",
+   "include_elements",
+   "max_children",
+   "max_depth",
+   "max_elements",
+   "ocr",
+   "path",
+   "roi",
+   "snapshot",
+   "web_focus",
+   "window_id"
+  ],
+  "select_text": [
+   "on",
+   "prefix",
+   "selection_type",
+   "snapshot",
+   "suffix",
+   "text"
+  ],
+  "set_value": [
+   "on",
+   "snapshot",
+   "value"
+  ],
+  "sleep": [
+   "duration"
+  ],
+  "space": [
+   "action",
+   "app",
+   "detailed",
+   "follow",
+   "foreground",
+   "to",
+   "to_current",
+   "window_id",
+   "window_index",
+   "window_title"
+  ],
+  "type": [
+   "app",
+   "clear",
+   "coordinate_reference",
+   "coordinate_space",
+   "coords",
+   "delay",
+   "foreground",
+   "on",
+   "pid",
+   "profile",
+   "snapshot",
+   "text",
+   "window_id",
+   "window_index",
+   "window_title",
+   "wpm"
+  ],
+  "verify_state": [
+   "app",
+   "final_screenshot",
+   "pid",
+   "predicates",
+   "stable_samples",
+   "timeout_ms",
+   "window_id",
+   "window_index",
+   "window_title"
+  ],
+  "window": [
+   "action",
+   "app",
+   "foreground",
+   "height",
+   "include_window_details",
+   "index",
+   "title",
+   "width",
+   "window_id",
+   "x",
+   "y"
+  ]
+ },
+ "macshell": {
+  "create_directory": [
+   "path"
+  ],
+  "edit_block": [
+   "content",
+   "expected_replacements",
+   "file_path",
+   "new_string",
+   "old_string",
+   "options",
+   "origin",
+   "range"
+  ],
+  "force_terminate": [
+   "pid"
+  ],
+  "get_config": [
+   "origin"
+  ],
+  "get_file_info": [
+   "path"
+  ],
+  "get_more_search_results": [
+   "length",
+   "offset",
+   "sessionId"
+  ],
+  "get_recent_tool_calls": [
+   "maxResults",
+   "since",
+   "toolName"
+  ],
+  "get_usage_stats": [],
+  "give_feedback_to_desktop_commander": [],
+  "interact_with_process": [
+   "input",
+   "pid",
+   "timeout_ms",
+   "verbose_timing",
+   "wait_for_prompt"
+  ],
+  "kill_process": [
+   "pid"
+  ],
+  "list_directory": [
+   "depth",
+   "origin",
+   "path"
+  ],
+  "list_processes": [],
+  "list_searches": [],
+  "list_sessions": [],
+  "move_file": [
+   "destination",
+   "source"
+  ],
+  "read_file": [
+   "isUrl",
+   "length",
+   "offset",
+   "options",
+   "origin",
+   "path",
+   "range",
+   "sheet"
+  ],
+  "read_multiple_files": [
+   "paths"
+  ],
+  "read_process_output": [
+   "length",
+   "offset",
+   "pid",
+   "timeout_ms",
+   "verbose_timing"
+  ],
+  "set_config_value": [
+   "key",
+   "origin",
+   "value"
+  ],
+  "start_process": [
+   "command",
+   "origin",
+   "shell",
+   "timeout_ms",
+   "verbose_timing"
+  ],
+  "start_search": [
+   "contextLines",
+   "earlyTermination",
+   "filePattern",
+   "ignoreCase",
+   "includeHidden",
+   "literalSearch",
+   "maxResults",
+   "origin",
+   "path",
+   "pattern",
+   "searchType",
+   "timeout_ms"
+  ],
+  "stop_search": [
+   "sessionId"
+  ],
+  "write_file": [
+   "content",
+   "mode",
+   "origin",
+   "path"
+  ],
+  "write_pdf": [
+   "content",
+   "options",
+   "outputPath",
+   "path"
+  ]
+ }
+}
