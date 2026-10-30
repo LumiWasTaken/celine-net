@@ -324,3 +324,19 @@ async def test_a_device_must_be_one_that_is_on(app, store):
     assert refusal == "pc is not one of your devices. Yours: mac."
     rows = await store.read(lambda c: agents_of(c, parent))
     assert rows == []
+
+
+async def test_the_parent_sees_where_a_drone_is_and_what_it_does_now(app, store):
+    from celine.intercom.skill import IntercomSkill
+    from celine.skills import ToolContext
+    sub = await _drone(store)
+    parent = await store.read(lambda c: c.execute(
+        "SELECT agent_of FROM conversations WHERE id=?", (sub,)).fetchone()[0])
+    await store.write(lambda c: c.execute(
+        "UPDATE conversations SET agent_step='bash: npm test' WHERE id=?", (sub,)))
+    await store.write(lambda c: c.execute(
+        "INSERT INTO turns(id, conversation_id, state, created_at) VALUES('t1', ?, "
+        "'streaming', '2026-10-30T10:00:00.000+00:00')", (sub,)))
+    tail = await IntercomSkill(app.cfg).tail_part(
+        ToolContext(parent, "t", "k", store, app.cfg, None))
+    assert "Your sub-agents: arcade (working, on mac, now bash: npm test)." in tail
