@@ -17,7 +17,8 @@ not the parent conversation. When it is done, its report comes back as an interc
 when asked. `model` picks its model among its own (settings/her_models.py), kept as its
 conversation's model; a cloud model (her_models.cloud) waits for the user's approval at
 every start. `cli` hands its briefs to an agent CLI in its shellbox instead (`agent_cli`,
-cli.py).
+cli.py); `device` to opencode on one of its devices, a drone (`agent_device`,
+drone.py).
 
 A sub-agent starts sub-agents of its own, down to MAX_DEPTH levels below the top of
 the chain (conversations/store.depth reads the agent_of chain); each reports to the one
@@ -41,6 +42,7 @@ from ..skills.gating import overrides_for
 from . import report
 from ..guard.sources import agent_read_outside
 from .cli import CLIS
+from ..devices import devices as all_devices
 from ..core.event_types import AGENT_STATE
 
 MIN_NAME = 5
@@ -123,6 +125,10 @@ class SubAgents:
         cli: Annotated[Literal[*CLIS] | None,
                        "An agent CLI in your shellbox that works on the brief instead, "
                        "in ~/agents/<its terminal>."] = None,
+        device: Annotated[str | None,
+                          "A device of yours, such as mac: opencode works on the brief "
+                          "there instead, close to the machine, on your model (a drone). "
+                          "The same name carries on in the same session."] = None,
     ) -> ToolResult:
         """Start a sub-agent: a new conversation with your personality and notebook, and
         one brief. For work that would fill your context: many searches, many notes,
@@ -132,7 +138,8 @@ class SubAgents:
         Returns at once. End your turn to wait, or sub_agents__read with wait."""
         store = ctx.store
         sub, refusal, resumed, brief_id = await self.begin(
-            store, ctx.conversation_id, brief, name, access, folder, model, cli, asker=ctx)
+            store, ctx.conversation_id, brief, name, access, folder, model, cli, device,
+            asker=ctx)
         if refusal:
             return _error(refusal)
         [row] = await store.read(lambda c: agents_of(c, agent=sub))
@@ -145,7 +152,7 @@ class SubAgents:
                           display={"name": row["name"], "conversation_id": sub,
                                    "link": row["link"], "access": row["access"], "folder": row["folder"],
                                    "model": row["model"], "cli": row["cli"],
-                                   "resumed": resumed})
+                                   "device": row["device"], "resumed": resumed})
 
     @tool(timeout=MAX_WAIT + 30)
     async def read(
@@ -270,9 +277,10 @@ class SubAgents:
             where = f" and the folder {known['folder']}" if known["folder"] else ""
             where += f", the model {known['model']}" if known["model"] else ""
             where += f", the CLI {known['cli']}" if known["cli"] else ""
+            where += f" on {known['device']}" if known["device"] else ""
             return mine, known, None, (
                 f"{known['name']} exists with {known['access']} access{where}; start it "
-                f"under another name or leave access, folder, model and cli out.")
+                f"under another name or leave access, folder, model, cli and device out.")
         if known is not None:
             return mine, known, None, None
         if (refusal := await self._over_cap(store, parent, len(mine))):
@@ -285,7 +293,7 @@ class SubAgents:
     async def begin(self, store, parent: str, brief: str, name: str,
                     access: str | None = None, folder: str | None = None,
                     model: str | None = None, cli: str | None = None,
-                    asker: ToolContext | None = None
+                    device: str | None = None, asker: ToolContext | None = None
                     ) -> tuple[str | None, str | None, bool]:
         """Start a sub-agent of `parent`, in the parent's mode: its conversation,
         settings and brief; the name of one that is done gives that one the brief,
@@ -294,9 +302,11 @@ class SubAgents:
         (_cloud_approval). -> (its conversation id, None, resumed, its brief's number) or
         (None, the refusal, False, None)."""
         name = " ".join(name.split())
+        if device is not None:          # a drone: opencode on the device
+            cli = cli or "opencode"
         given = {"access": access,
                  "folder": str(Path(folder.strip().rstrip("/"))) if folder else None,
-                 "model": model, "cli": cli}
+                 "model": model, "cli": cli, "device": device}
         if len(name) < MIN_NAME:
             return None, (f"Give it a name of at least {MIN_NAME} characters, so you "
                           f"can keep your sub-agents apart."), False, None
@@ -312,6 +322,13 @@ class SubAgents:
             return None, f"{model} is not one of your models. Yours: {yours}.", False, None
         if cli is not None and cli not in CLIS:
             return None, f"cli is one of {', '.join(CLIS)}.", False, None
+        if device is not None:
+            devices = all_devices(self.cfg)
+            if device not in devices:
+                return None, (f"{device} is not one of your devices. Yours: "
+                              f"{', '.join(devices) or 'none'}."), False, None
+            if devices[device].why:
+                return None, devices[device].why, False, None
         if (deep := await store.read(lambda c: conversations.depth(c, parent))) >= MAX_DEPTH:
             return None, self.cfg.substitute(
                 f"Sub-agents go at most {MAX_DEPTH} levels below {{{{name}}}}, and this "
@@ -339,7 +356,8 @@ class SubAgents:
                                                                      exist_ok=True)
                 sub = await conversations.create(
                     store, title=name, agent_of=parent, agent_name=name,
-                    notebook_folder=folder, access=access, agent_cli=cli)
+                    notebook_folder=folder, access=access, agent_cli=cli,
+                    agent_device=device)
                 await self._settings(store, parent, sub, model)
             # the brief lands without waking it; release starts it now, or, over
             # max_running, when one of the parent's sub-agents is done
@@ -347,8 +365,9 @@ class SubAgents:
                                                 kind="brief", wake=False)
             await release(self.app, parent)
         await announce(self.app, sub)
-        metrics.SUB_AGENTS_STARTED.labels("cli" if (cli or (known or {}).get("cli"))
-                                          else "model").inc()
+        kind = "drone" if (device or (known or {}).get("device")) else \
+            "cli" if (cli or (known or {}).get("cli")) else "model"
+        metrics.SUB_AGENTS_STARTED.labels(kind).inc()
         return sub, None, known is not None, int(sent["intercom_id"]) if sent else None
 
     async def _over_cap(self, store, parent: str, started: int) -> str | None:
@@ -451,6 +470,7 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
     rows = c.execute(
         f"SELECT s.id, s.agent_of AS parent, s.agent_name AS name, s.access, "
         f"s.notebook_folder AS folder, s.model_id AS model, s.agent_cli AS cli, "
+        f"s.agent_device AS device, "
         f"s.created_at, s.updated_at FROM conversations s "
         f"{where} ORDER BY s.created_at DESC, s.id DESC", args).fetchall()
     return [{**dict(r), **_look(c, r["id"]), **homes.of(c, r["id"])} for r in rows]
@@ -550,19 +570,23 @@ async def announce(app, sub: str) -> None:
 
 def _look(c: sqlite3.Connection, sub: str) -> dict:
     """What `read` shows of sub-agent `sub`: whether it is quiet (report.quiet), the
-    tool its live turn runs, its latest report and its last words."""
+    tool its live turn runs (a drone's: the one opencode runs, drone.py), its latest
+    report and its last words."""
     step = c.execute(
         "SELECT tc.name FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
         "WHERE m.conversation_id=? AND tc.state IN ('pending', 'running', 'detached') "
         "ORDER BY tc.started_at DESC LIMIT 1", (sub,)).fetchone()
+    flown = c.execute("SELECT agent_step FROM conversations WHERE id=?", (sub,)).fetchone()
     rep = c.execute("SELECT id, text FROM intercom WHERE from_addr=? AND kind='report' "
                     "ORDER BY id DESC LIMIT 1", (f"agent:{sub}",)).fetchone()
     quiet = report.quiet(c, sub)
     queued = waiting(c, sub) is not None
     # a queued one is working too: it has a brief to do (release)
+    flown = flown[0] if flown else None
     return {"quiet": quiet, "queued": queued, "working": queued or not quiet,
-            "step": step["name"] if step else None,
-            "step_words": words.step(step["name"]) if step else None, "report": dict(rep) if rep else None,
+            "step": step["name"] if step else flown,
+            "step_words": words.step(step["name"]) if step else flown,
+            "report": dict(rep) if rep else None,
             "last": report.last_answer(c, sub)}
 
 

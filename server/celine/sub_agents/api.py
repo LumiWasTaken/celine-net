@@ -19,6 +19,7 @@ class AgentIn(BaseModel):
     folder: str | None = None
     model: str | None = None         # one of its models (settings/her_models.py)
     cli: str | None = None           # an agent CLI in its shellbox (cli.py CLIS)
+    device: str | None = None        # a device it runs on, a drone (drone.py devices)
 
 
 def _skill(request: Request):
@@ -32,7 +33,7 @@ def _skill(request: Request):
 @router.get("/sub-agents")
 async def list_agents(request: Request, conversation: str | None = None) -> dict:
     """The sub-agents of one conversation, or every one not in the archive, newest
-    first: id, parent, name, access, folder, model, cli, working, the step at
+    first: id, parent, name, access, folder, model, cli, device, working, the step at
     work, the latest report, its last words."""
     store = request.app.state.services.store
     return {"agents": await store.read(lambda c: agents_of(c, conversation))}
@@ -58,7 +59,8 @@ async def start_agent(request: Request, cid: str, body: AgentIn) -> dict:
             "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
         raise NotFound("conversation")
     sub, refusal, resumed, _ = await _skill(request).begin(
-        store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli)
+        store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli,
+        body.device)
     if refusal:
         raise CelineError("refused", refusal, 409)
     return {"conversation_id": sub, "resumed": resumed}

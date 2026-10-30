@@ -260,12 +260,17 @@ class Dispatcher:
 
     async def _cli_backend(self, cid: str, clock):
         """A sub-agent started with an agent CLI runs its turns there
-        (sub_agents/cli.py); None for every other conversation."""
+        (sub_agents/cli.py), on a device as a drone (sub_agents/drone.py); None for every
+        other conversation."""
         app = getattr(self.registry, "app", None)
-        cli = await self.store.read(lambda c: (c.execute(
-            "SELECT agent_cli FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
+        cli, device = await self.store.read(lambda c: c.execute(
+            "SELECT agent_cli, agent_device FROM conversations WHERE id=?",
+            (cid,)).fetchone() or (None, None))
         if not cli or app is None:
             return None
+        if device:              # a drone (sub_agents/drone.py)
+            from ..sub_agents.drone import DroneBackend
+            return DroneBackend(app, cid, cli, device, clock)
         from ..sub_agents.cli import CliBackend
         return CliBackend(app, cid, cli, clock)
 

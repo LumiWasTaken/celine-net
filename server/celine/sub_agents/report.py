@@ -8,7 +8,8 @@ for work it was given: a stretch with a brief or a message from its parent or th
 since its last report; a message from its own sub-agent alone gets no report. It goes
 to the one that started it, never further up. The report is a head (its name, how its
 last turn ended, what its work since its last report took: the models that answered,
-the tokens in and out, the seconds its turns ran, the notes it changed) and its final
+the tokens in and out, the seconds its turns ran, the notes it changed, the files a
+drone changed) and its final
 answer (not what it said between tool calls), cut to REPORT_SHARE of the parent's
 window; the rest stays in its conversation. How its last turn ended is in
 `data.state`, the work in `data.work`. A job's result therefore reaches the report,
@@ -77,7 +78,8 @@ def work(c: sqlite3.Connection, cid: str, whole: bool = False) -> dict:
     """What the turns of `cid` since its last report (`whole`: ever) took: {models: the
     models that answered, the newest last; prompt_tokens, completion_tokens: summed as
     the servers counted them; seconds: the turns' run time, summed; files: the notes
-    its calls changed, oldest first}."""
+    its calls changed, oldest first, then the files a drone's turns changed (their raw
+    responses, drone.py)}."""
     last = "" if whole else c.execute(
         "SELECT coalesce(max(created_at), '') FROM intercom WHERE from_addr=? AND "
         "kind='report'", (f"agent:{cid}",)).fetchone()[0]
@@ -97,6 +99,12 @@ def work(c: sqlite3.Connection, cid: str, whole: bool = False) -> dict:
         f"tool_calls tc JOIN messages m ON m.id = tc.message_id WHERE "
         f"m.conversation_id=? AND tc.state='ok' AND tc.name IN ({marks}) AND "
         f"tc.started_at > ? GROUP BY f ORDER BY at", (cid, *CHANGES, last)) if r[0]]
+    for (f,) in c.execute(
+            "SELECT j.value FROM messages m JOIN raw_responses r ON r.message_id = m.id, "
+            "json_each(r.body, '$.files') j WHERE m.conversation_id=? AND m.turn_id IN "
+            f"({turns}) ORDER BY m.rowid, j.key", (cid, cid, last)):
+        if f not in files:
+            files.append(f)
     return {"models": [r["provider"] for r in rows],
             "prompt_tokens": sum(r["p"] for r in rows),
             "completion_tokens": sum(r["o"] for r in rows), "seconds": round(secs),

@@ -42,9 +42,11 @@ saw (no answer on PORT, the server's exit code), with LOG named, so it can act o
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import secrets
 import shlex
+import socket
 import subprocess
 import threading
 import time
@@ -111,12 +113,14 @@ def _models(llm_url: str, llm_key: str) -> dict[str, dict] | None:
         return None
 
 
-def _limits(data: list[dict]) -> dict[str, dict]:
+def _limits(data: list[dict], log=None) -> dict[str, dict]:
+    """{ref: its limit} from the proxy's model list; `log` takes the line about a model
+    it does not size (LOG by default)."""
     out = {}
     for m in data:
         ctx = m.get("context_length")
         if not isinstance(ctx, int) or ctx <= 0:
-            _log(f"the model proxy names no context for {m['id']}: {CONTEXT} it is")
+            (log or _log)(f"the model proxy names no context for {m['id']}: {CONTEXT} it is")
             ctx = CONTEXT
         out[str(m["id"])] = {"context": ctx, "output": m.get("max_output_tokens") or ctx // 4}
     return out
@@ -235,17 +239,26 @@ def _call(method: str, path: str, body: dict | None = None, query: str = "",
 
 
 def events(server: Server | None = None, timeout: float = 60):
-    """opencode's event stream (GET /event, server-sent events) -> (the open response,
-    a generator of its events as dicts). Closing the response ends the generator; no
-    line for `timeout` seconds raises TimeoutError."""
+    """opencode's event stream (GET /event, server-sent events) -> (a function that
+    ends it from any thread, a generator of its events as dicts). No line for `timeout`
+    seconds raises TimeoutError."""
+    req = _request("GET", "/event", None, "", server)
+    conn = (http.client.HTTPSConnection if req.type == "https" else
+            http.client.HTTPConnection)(req.host, timeout=timeout)
     try:
-        r = urllib.request.urlopen(_request("GET", "/event", None, "", server),
-                                   timeout=timeout)
-    except urllib.error.HTTPError as e:
-        raise Problem(f"{NAME} answered {e.code} on /event: {_said(e.read())}. "
-                      f"Its log: {_log_of(server)}.", 502) from None
+        conn.request("GET", req.selector, headers=dict(req.header_items()))
+        r = conn.getresponse()
     except OSError as e:
         raise Problem(_down(e, server), 503) from None
+    if r.status != 200:
+        raise Problem(f"{NAME} answered {r.status} on /event: {_said(r.read())}. "
+                      f"Its log: {_log_of(server)}.", 502)
+
+    def end() -> None:
+        try:                  # a shutdown, not a close: a read in another thread holds the
+            conn.sock.shutdown(socket.SHUT_RDWR)        # response's lock
+        except (OSError, AttributeError):
+            pass
 
     def each():
         data: list[str] = []
@@ -259,7 +272,7 @@ def events(server: Server | None = None, timeout: float = 60):
                 except ValueError:
                     pass
                 data = []
-    return r, each()
+    return end, each()
 
 
 def _said(raw: bytes) -> str:
@@ -374,8 +387,8 @@ def _busy_one(session: str, server: Server | None = None) -> bool:
     return (st.get(session) or {}).get("type") in ("busy", "retry")
 
 
-def _messages(session: str, server: Server | None = None, limit: int = 20) -> list[dict]:
-    return _call("GET", f"/session/{session}/message", query=f"limit={limit}",
+def _messages(session: str, server: Server | None = None, limit: int | None = 20) -> list[dict]:
+    return _call("GET", f"/session/{session}/message", query=f"limit={limit}" if limit else "",
                  server=server) or []
 
 
