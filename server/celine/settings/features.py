@@ -5,8 +5,13 @@ once saved, every feature is on until the file says otherwise, but one with `sta
 False (shares, guard), which is on only once the file says so. `done` is False until a
 PUT says the onboarding finished (config status `setup`).
 
-The plug: CORE declares each core feature once, and each plugin is one more
-(`catalog()`, from its plugin.toml: celine/plugins.py). Adding a core module is one
+Three tiers (TIERS): core, what she is made of, with no switch (CORE: the chat and each
+core skill of skills.CORE that no feature owns); base, what ships in the repo (BASE, and
+the plugins in plugins/) or has a place of its own; user, a plugin from <data>/plugins
+with no place, whose removal leaves at most its data behind.
+
+The plug: BASE declares each base feature once, and each plugin is one more
+(`catalog()`, from its plugin.toml: celine/plugins.py). Adding a base module is one
 Feature here and one `probe(cfg, services)` beside the module. The skills, the MCP servers, the archives,
 the UI places and Settings pages, `celine doctor` and the onboarding all follow.
 
@@ -58,39 +63,51 @@ class Feature:
     probe: str = ""                  # "celine.module:function", async (cfg, services) -> Probe
     setup: str = ""                  # the onboarding's setup form for it
     form: str = ""                   # its form at /api/forms/<id> (Settings, the onboarding)
-    # the onboarding's card: "detect" when its service answered (ready) or has an address
-    # and did not (missing); "always" (the guard, routines, and the connectors, whose card
-    # says how to run them); "" never (email, vault: the Later card and Settings)
-    card: str = ""
-    # a connector's archive feature (discord, whatsapp: "messages"): its onboarding card
+    # a connector's archive feature (discord, whatsapp: "messages"): its onboarding step
     # offers that switch and the first import once the connection is linked
     archive: str = ""
     # on only once saved on: never on by itself, not on a fresh install nor for an id left out
     start_on: bool = True
-    # the confirm a switch on shows first (Settings, Features and its onboarding card)
+    # the confirm a switch on shows first (Settings, Features and the onboarding)
     warn: str = ""
-    # the onboarding card it shares with the other features of its group (GROUPS), and
-    # its switch's label there
+    # the onboarding step it shares with the other features of its group (GROUPS), and
+    # its sub-heading there
     group: str = ""
     choice: str = ""
+    tier: str = "base"               # "base" or "user" (TIERS)
 
 
-# the onboarding's shared cards: id -> its title (cfg.substitute fills the pronoun)
+# the onboarding's shared steps: id -> its title (cfg.substitute fills the pronoun)
 GROUPS = {"computer": "{{Her}} computer"}
+
+# the tiers in their order: id -> its heading
+TIERS = {"core": "Core", "base": "Base modules", "user": "User modules"}
+
+# The core, with no switch: the chat, and each core skill no feature owns (skills.CORE; a
+# test holds them equal). id, label, about (cfg.substitute fills the names).
+CORE: tuple[tuple[str, str, str], ...] = (
+    ("chat", "Chat", "Conversations with {{name}}, with branches, files and pictures."),
+    ("notebook", "Notebook", "{{Her}} own notes, kept as files and carried into every conversation."),
+    ("mind", "Mind", "{{Her}} mood and thoughts between conversations."),
+    ("plan", "Plan", "The steps of a bigger job, pinned at the top of its conversation."),
+    ("intercom", "Intercom", "Messages between you, {{name}}, missions and sub-agents, and reminders."),
+    ("past_conversations", "Past conversations", "Your earlier conversations, searched by word."),
+    ("bugreport", "Bug reports", "Problems {{she}} finds in the app, sent to you on the intercom."),
+)
 
 
 # The order is the UI's; the plugins come after.
-CORE: tuple[Feature, ...] = (
+BASE: tuple[Feature, ...] = (
     Feature("shellbox", "Shellbox", "Turns on once the shellbox answers.",
             "An isolated Linux computer with a terminal, files and programs of its own, nothing on your machine.",
             "No shellbox container is running.",
             skills=("shell", "code"), places=("terminals",), probe="celine.skills.shell:probe",
-            setup="service", card="detect", group="computer", choice="Container"),
+            setup="service", group="computer", choice="Container"),
     Feature("shares", "Shares", "Turns on once the shellbox is on.",
             "Shows you a page, game, tool or file from the shellbox in a new tab.",
             "Nothing of the shellbox should open outside it.",
             tools=("shell__share", "shell__unshare", "shell__list_shares"),
-            probe="celine.shares:probe", card="always", start_on=False,
+            probe="celine.shares:probe", start_on=False,
             warn="The link of a share is its key. A page opens only for you while you are "
                  "logged in, but anyone who gets a link can reach what it shares with a "
                  "script until it ends (24 hours, or what you set) or you stop it. A public "
@@ -99,39 +116,39 @@ CORE: tuple[Feature, ...] = (
             "An isolated Brave browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch.",
             "No browser container is running.",
             skills=("browser",), places=("browser",), probe="celine.browser.sync:probe",
-            setup="service", card="detect"),
+            setup="service"),
     Feature("images", "Images", "Turns on once ComfyUI answers.",
             "Pictures made with ComfyUI in the styles of the presets you keep.",
             "No ComfyUI, or no GPU time for pictures.",
             skills=("image_generator",), probe="celine.comfyui.server:probe_images",
-            pages=("media",), setup="comfyui", card="detect"),
+            pages=("media",), setup="comfyui"),
     Feature("music", "Music", "Turns on once ComfyUI answers.",
             "Music made with ComfyUI from a few words about the track.",
             "No ComfyUI, or no GPU time for music.",
             skills=("music_generator",), probe="celine.comfyui.server:probe_music",
-            pages=("media",), setup="comfyui", card="detect"),
+            pages=("media",), setup="comfyui"),
     Feature("speech_input", "Dictation", "Pick a Dictation model first.",
             "Speak a message, read it over, then send it.",
             "Typing only.",
-            probe="celine.speech:probe_input", setup="speech", card="always", start_on=False),
+            probe="celine.speech:probe_input", setup="speech", start_on=False),
     Feature("speech_output", "Read aloud", "Pick a Read aloud model first.",
             "Replies read out loud, in a voice you pick.",
             "Replies stay text.",
-            probe="celine.speech:probe_output", setup="speech", card="always", start_on=False),
+            probe="celine.speech:probe_output", setup="speech", start_on=False),
     Feature("web", "Web search", "Turns on once SearXNG answers.",
             "Web search through your own SearXNG, with the pages found read as text or in the browser.",
             "Only what is on this machine should be known.",
-            skills=("web",), probe="celine.skills.web:probe", setup="address", card="detect"),
+            skills=("web",), probe="celine.skills.web:probe", setup="address"),
     Feature("discord", "Discord", "Turns on once the Discord connector answers.",
             "Your Discord history in the archive, and a chat from Discord itself.",
             "You do not use Discord.",
             pages=("source:discord",), mcp=("discord",), kbs=("discord",),
-            probe="celine.mcp:probe_discord", card="always", archive="messages"),
+            probe="celine.mcp:probe_discord", archive="messages"),
     Feature("whatsapp", "WhatsApp", "Turns on once the WhatsApp connector answers.",
             "Your WhatsApp history in the archive, and a chat from WhatsApp itself.",
             "You do not use WhatsApp.",
             pages=("source:whatsapp",), mcp=("whatsapp",), kbs=("whatsapp",),
-            probe="celine.mcp:probe_whatsapp", card="always", archive="messages"),
+            probe="celine.mcp:probe_whatsapp", archive="messages"),
     Feature("email", "Email", "Turns on once the account is filled in.",
             "A mailbox of yours read on your behalf: what came in, searchable and summarised.",
             "Mail should stay out of reach.",
@@ -145,7 +162,7 @@ CORE: tuple[Feature, ...] = (
             "Bastet, a second model that checks risky actions before they run and asks you "
             "when unsure.",
             "No second opinion wanted on tool use.",
-            probe="celine.guard.rules:probe", setup="guard", card="always", start_on=False),
+            probe="celine.guard.rules:probe", setup="guard", start_on=False),
     Feature("documents", "Documents", "",
             "A folder of your documents, searched, read and cited.",
             "No documents to give.",
@@ -154,7 +171,7 @@ CORE: tuple[Feature, ...] = (
             "Your chat history in one archive, searched by word or by topic.",
             "No Discord or WhatsApp connected.",
             skills=("chat_archive",), places=("chats", "search"), pages=("people", "search"),
-            probe="celine.kb:probe", setup="search", card="detect"),
+            probe="celine.kb:probe", setup="search"),
     Feature("artifacts", "Artifacts", "",
             "Built pages: a chart, a table, a small app, kept with every version.",
             "Text only.",
@@ -162,7 +179,7 @@ CORE: tuple[Feature, ...] = (
     Feature("routines", "Routines", "",
             "Jobs on a schedule, a morning digest or a nightly tidy of the notes; change a time or switch one off.",
             "Only on demand, nothing on a schedule.",
-            skills=("routines",), places=("routines",), setup="routines", card="always"),
+            skills=("routines",), places=("routines",), setup="routines"),
     Feature("missions", "Missions", "",
             "A long job carried over days, with check-ins as it goes.",
             "Short questions only.",
@@ -183,14 +200,21 @@ def of_plugin(p: plugins.Plugin) -> Feature:
                    places=tuple(m.get("places", ())),
                    pages=(p.id,) if p.form is not None else (),
                    form=p.id if p.form is not None else "",
-                   card=m.get("card", ""), start_on=bool(m.get("start_on", False)),
+                   start_on=bool(m.get("start_on", False)),
                    warn=m.get("warn", ""), mcp=tuple(m.get("servers", ())),
                    group=m.get("group", "") if m.get("group") in GROUPS else "",
-                   choice=m.get("choice", ""))
+                   choice=m.get("choice", ""),
+                   tier="user" if p.user and not m.get("places") else "base")
 
 
 def catalog() -> tuple[Feature, ...]:
-    return CORE + tuple(of_plugin(p) for p in plugins.all())
+    """BASE then the plugins, by tier; a group's features together at its first one's place."""
+    items = BASE + tuple(of_plugin(p) for p in plugins.all())
+    tiers = list(TIERS)
+    first = {f.group: i for i, f in reversed(list(enumerate(items))) if f.group}
+    order = sorted(range(len(items)), key=lambda i: (
+        tiers.index(items[i].tier), first.get(items[i].group, i), i))
+    return tuple(items[i] for i in order)
 
 
 def get(fid: str) -> Feature:
@@ -231,36 +255,14 @@ def view(f: Feature) -> dict[str, Any]:
     """The static shape the client gets (no probe)."""
     return {"id": f.id, "label": f.label, "needs": f.needs, "about": f.about,
             "off_when": f.off_when, "places": list(f.places), "pages": list(f.pages),
-            "setup": f.setup, "form": f.form, "card": f.card, "kbs": list(f.kbs), "archive": f.archive,
-            "warn": f.warn, "group": f.group, "choice": f.choice}
+            "setup": f.setup, "form": f.form, "kbs": list(f.kbs), "archive": f.archive,
+            "warn": f.warn, "group": f.group, "choice": f.choice, "tier": f.tier,
+            "step": has_step(f)}
 
 
-# which saved thing means "the user gave this feature an address" (a card even when it
-# does not answer); a feature not here gets a card only when its probe is ready
-ADDRESSED: dict[str, str] = {"shellbox": "shellbox", "browser": "browser", "web": "searxng"}
-
-
-def card_now(cfg, f: Feature, probe: dict[str, str]) -> str:
-    """The onboarding's card policy for what the probe found now: "always"; "detect" when
-    the service answers, or when it has an address (a saved services url from the user, a
-    saved ComfyUI provider, the default address a probe found something at: `url`) and it
-    does not answer; "" otherwise (Later)."""
-    if f.card != "detect":
-        return f.card
-    state = probe["state"]
-    if state == "ready" or (state == "missing" and probe.get("url")):
-        return "detect"
-    if state != "missing":
-        return ""
-    s = getattr(cfg, "settings", None)
-    if s is None:
-        return ""
-    if f.id in ADDRESSED:
-        saved = (s.saved or {}).get("services", False)
-        return "detect" if saved and (s.services.get(ADDRESSED[f.id]) or {}).get("url") else ""
-    if f.id in ("images", "music"):
-        return "detect" if any(p.get("kind") == "comfyui" for p in s.providers.values()) else ""
-    return ""
+def has_step(f: Feature) -> bool:
+    """The onboarding gives it a setup step while it is on: a form, or a connection."""
+    return bool(f.setup or f.form or f.archive)
 
 
 def validate(data: Any) -> dict[str, bool]:
