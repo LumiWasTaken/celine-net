@@ -780,10 +780,19 @@ def _keys_at(root: Path, rel: str, mtime: int) -> tuple[str, ...]:
     return tuple(keys_line(read_note(root, rel, head=True) or ""))
 
 
+def without_load(text: str) -> str:
+    """A note as the notes block shows it: without its `load:` head line, which only says
+    why it is in the block."""
+    lines = text.splitlines()
+    end = next((i for i, x in enumerate(lines) if not x.strip() and i), len(lines))
+    return "\n".join(x for i, x in enumerate(lines)
+                     if i >= end or not re.match(r"\s*load\s*:", x, re.I)).strip()
+
+
 def notes_block(cfg, notes: list[dict]) -> str | None:
     """The notes it always carries (turns/loads.py) as one block, by path so the block
-    changes only where a note comes or goes; the ones the user left out here named in
-    one line."""
+    changes only where a note comes or goes, each without its `load:` line; the ones the
+    user left out here named in one line."""
     from ..turns.loads import OFF_HERE
     loaded = sorted((n for n in notes if n["state"] == "included"), key=lambda n: n["path"])
     off = [n["path"] for n in notes if n["why"] == OFF_HERE]
@@ -791,8 +800,9 @@ def notes_block(cfg, notes: list[dict]) -> str | None:
         return None
     parts = [cfg.substitute(
         f"{NOTES_HEAD} you always carry: your notes about {{{{username}}}} and the ones "
-        "marked load: always. Read any other with notebook__read.")]
-    parts += [f"### {n['path']}\n{n['text']}" for n in loaded]
+        "you set to load always. A keys line in a note names the words that bring it "
+        "back. Read any other note with notebook__read.")]
+    parts += [f"### {n['path']}\n{without_load(n['text'])}" for n in loaded]
     if off:
         parts.append(cfg.substitute(f"Left out by {{{{username}}}} in this conversation: "
                                     f"{', '.join(off)}."))
@@ -834,8 +844,10 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
 
     hidden = max(0, total - shown)
     where = f"Your notebook, limited to {folder}" if folder else "Your notebook"
+    which = (f"all {total} notes" if shown == total else
+             f"the {shown} notes you changed last, of {total}")
     head = cfg.substitute(
-        f"{where} ({shown} of {total} entries, most recently changed first). Every note "
+        f"{where}: {which}, newest first. Every note "
         f"without a tag is yours, written by you. The tagged notes are "
         f"{{{{username}}}}'s or generated:")
     out = [head, "", *lines, ""]

@@ -1,23 +1,24 @@
 ---
 name: sub_agents
-description: Your sub-agents, to keep your context small. Give them work that would fill
-  it (many searches, many notes, long files) and get back only what you ask for. Not for
-  one lookup you can do in a single call.
+description: Your agents and drones. Hand them work that takes many steps, and keep your
+  chat for {{username}}. Each one reports back only what you ask for.
 ---
-Everything you read stays in your context, and many notes, many searches or long files
-fill it fast. A sub-agent does that reading in a conversation of its own and gives you
-back only its report.
+You are the one who sends agents off. Work that takes many steps (a long search, a
+folder of notes, a build, an app to go through on your Mac) goes to a sub-agent or a
+drone, and you keep your chat for {{username}}. On the Mac this shows: the same work
+took 55 to 70 steps when you did it yourself and 4 to 8 steps of yours through a drone.
+Everything you read stays in your context; a sub-agent does the reading in a
+conversation of its own and gives you back only its report.
 
-When: work that takes many searches or reads, going through a folder of notes or a long
-document, several separate things at once. Not when one call answers it: do that
-yourself.
+Not when one call answers it: do that yourself.
 
 Say exactly what you want back and in which form: "only the references", "at most five
 lines", "yes or no, with the one message that proves it". Its last message is its
 report.
 
-`sub_agents__start(brief, name, access, folder, model, cli)` starts one: a new
-conversation with your personality and your notebook, on the model you give it, else on
+`sub_agents__start(brief, name, access, folder, model, cli, device, template)` starts
+one: a new conversation with your notebook and its own short prompt (who it is, how it
+reports, its template when you give one), on the model you give it, else on
 the model this conversation uses when it has one of its own (in a mission, the model of
 the step you are on). It does not see this
 conversation, so the `brief` holds everything it needs: what to do, where to look, and
@@ -92,6 +93,23 @@ instructions list your sub-agents, each working or done.
 
 `sub_agents__stop(name)` stops one: its turn, its jobs and the messages it scheduled.
 Its report then says what it did until then.
+
+Agent templates: an agent you will want again is a note in `templates/` of your
+notebook, one file each, written with your notebook tools ({{username}} sees them in the
+Notebook). A `---` head with `name`, `description` (when to use it), and optional
+`model`, `access` (read or work), `tools` (the skills it gets, such as `web, notebook`;
+without it, every skill) and `device`; under the head, its prompt: who it is and how it
+works. `sub_agents__start(template="web scout", name=..., brief=...)` starts one; the
+arguments you give win over the template's. Your instructions list the templates you
+have. Example, templates/web-scout.md:
+
+    ---
+    name: web scout
+    description: Finds facts on the web and cites each one.
+    access: read
+    tools: web, notebook
+    ---
+    You look things up on the web. Every fact in your report has its link.
 
 Several at once: start them in the same step and they run at the same time, a few at
 most; one more is queued, and it starts when one of them is done.

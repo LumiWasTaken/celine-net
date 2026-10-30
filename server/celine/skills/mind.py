@@ -1,8 +1,8 @@
 """The agent's mind.
 
 - The agent's own block: the `message_context` hook adds to the end of a new user message, once
-  (the cache prefix never changes), its mood, the gap since the last talk, a new model
-  and what is down. The time is not in it: the message's own stamp says when it was
+  (the cache prefix never changes), its mood, its status and when it was set (so it sees
+  one gone stale), the gap since the last talk, a new model and what is down. The time is not in it: the message's own stamp says when it was
   sent and the tail says now (clock.now_line). The block only when something in it
   changed since the last whole block on this branch that it still sees (its report's
   `state` in `message_context`, so it holds across a restart; a compaction or the
@@ -197,6 +197,9 @@ def start(app) -> None:
 
 
 def _ago(seconds: float) -> str:
+    if seconds < 3600:
+        n = max(1, round(seconds / 60))
+        return f"{n} minute{'s' if n != 1 else ''} ago"
     h = seconds / 3600
     if h < 48:
         n = max(1, round(h))
@@ -273,6 +276,10 @@ class Mind:
         mood = await _mood_now(store, cfg, now_)
         if mood:
             lines.append(mood)
+        shown = await get_mood(store)
+        status_h = (now_ - _at(shown["set_at"])).total_seconds() / 3600 if shown else None
+        lines.append(f"your status: {shown['text']}, set {_ago(status_h * 3600)}"
+                     if shown else "your status: none set")
         gap = []
         here_h = (now_ - _at(f["here"])).total_seconds() / 3600 if f["here"] else None
         anywhere_h = (now_ - _at(f["anywhere"])).total_seconds() / 3600 \
@@ -296,7 +303,8 @@ class Mind:
         # the block only when something in it changed since the last whole one it sees
         # (a pause here is always news); else nothing, the report alone
         state = {"mood": mood, "gap": _gap_bucket(anywhere_h), "model": model,
-                 "down": down, "bastet": bastet}
+                 "down": down, "bastet": bastet,
+                 "status": [shown["text"] if shown else None, _gap_bucket(status_h)]}
         full = state != f["last"] or bool(unfrozen) or (
             here_h is not None and here_h > GAP_HERE_H)
         if not full:

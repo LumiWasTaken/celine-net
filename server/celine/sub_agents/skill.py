@@ -39,7 +39,7 @@ from ..skills import ToolContext, ToolResult, guide, knob, tool, described
 from ..settings import her_models
 from ..skills import words
 from ..skills.gating import overrides_for
-from . import report
+from . import report, templates
 from ..guard.sources import agent_read_outside
 from .cli import CLIS
 from ..devices import devices as all_devices
@@ -140,9 +140,13 @@ class SubAgents:
                           "A device of yours, such as mac: opencode works on the brief "
                           "there instead, close to the machine, on your model (a drone). "
                           "The same name carries on in the same session."] = None,
+        template: Annotated[str | None,
+                            "One of your agent templates (templates/ in your notebook): "
+                            "its prompt, tools, access, model and device; the arguments "
+                            "you give win."] = None,
     ) -> ToolResult:
-        """Start a sub-agent: a new conversation with your personality and notebook, and
-        one brief. For work that would fill your context: many searches, many notes,
+        """Start a sub-agent: a new conversation with your notebook, its own short prompt
+        (your agent template's, when you give one), and one brief. For work that would fill your context: many searches, many notes,
         long files, a website to go through. Not for one lookup that one call does.
         Example: sub_agents__start(brief="Which of my notes mention the beach trip?
         Only the paths, one per line.", name="trip finder")
@@ -150,7 +154,7 @@ class SubAgents:
         store = ctx.store
         sub, refusal, resumed, brief_id = await self.begin(
             store, ctx.conversation_id, brief, name, access, folder, model, cli, device,
-            asker=ctx)
+            asker=ctx, template=template)
         if refusal:
             return _error(refusal)
         [row] = await store.read(lambda c: agents_of(c, agent=sub))
@@ -303,7 +307,8 @@ class SubAgents:
             where += f" on {known['device']}" if known["device"] else ""
             return mine, known, None, (
                 f"{known['name']} exists with {known['access']} access{where}; start it "
-                f"under another name or leave access, folder, model, cli and device out.")
+                f"under another name or leave access, folder, model, cli, device and "
+                f"template out.")
         if known is not None:
             return mine, known, None, None
         if (refusal := await self._over_cap(store, parent, len(mine))):
@@ -316,15 +321,25 @@ class SubAgents:
     async def begin(self, store, parent: str, brief: str, name: str,
                     access: str | None = None, folder: str | None = None,
                     model: str | None = None, cli: str | None = None,
-                    device: str | None = None, asker: ToolContext | None = None
+                    device: str | None = None, asker: ToolContext | None = None,
+                    template: str | None = None
                     ) -> tuple[str | None, str | None, bool]:
         """Start a sub-agent of `parent`, in the parent's mode: its conversation,
         settings and brief; the name of one that is done gives that one the brief,
         refused when a given access or folder is not its own. The agent's tool and the API
         share it; the tool's call (`asker`) asks the user first for a cloud model
-        (_cloud_approval). -> (its conversation id, None, resumed, its brief's number) or
-        (None, the refusal, False, None)."""
+        (_cloud_approval). `template`: one of its agent templates (templates.py), whose
+        access, model and device count where none is given. -> (its conversation id,
+        None, resumed, its brief's number) or (None, the refusal, False, None)."""
         name = " ".join(name.split())
+        if template is not None:
+            t = templates.find(self.cfg, template)
+            if t is None:
+                have = ", ".join(x.name for x in templates.all_templates(self.cfg).values())
+                return None, (f"There is no agent template {template!r} in "
+                              f"{templates.FOLDER}/. Yours: {have or 'none'}."), False, None
+            template = t.name
+            access, model, device = access or t.access, model or t.model, device or t.device
         if device is not None:          # a drone: opencode on the device
             cli = cli or "opencode"
         if folder is not None:
@@ -343,8 +358,8 @@ class SubAgents:
             elif not Path(folder).is_relative_to(mine):
                 return None, (f"You see only {mine} of the notebook, so a sub-agent of "
                               f"yours works in it or a folder under it."), False, None
-        given = {"access": access, "folder": folder,
-                 "model": model, "cli": cli, "device": device}
+        given = {"access": access, "folder": folder, "model": model, "cli": cli,
+                 "device": device, "template": template}
         if len(name) < MIN_NAME:
             return None, (f"Give it a name of at least {MIN_NAME} characters, so you "
                           f"can keep your sub-agents apart."), False, None
@@ -406,7 +421,7 @@ class SubAgents:
                 sub = await conversations.create(
                     store, title=name, agent_of=parent, agent_name=name,
                     notebook_folder=folder, access=access, agent_cli=cli,
-                    agent_device=device)
+                    agent_device=device, agent_template=template)
                 await self._settings(store, parent, sub, model)
             # the brief lands without waking it; release starts it now, or, over
             # max_running, when one of the parent's sub-agents is done
@@ -455,14 +470,22 @@ class SubAgents:
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
         """Only in a sub-agent's own conversation: who it is, who started it, what it is
-        for, that its last message is its report. How much of it goes up depends on the
+        for, that its last message is its report (fragment.md; drone.md for a CLI or a
+        drone, which has none of its tools). How much of it goes up depends on the
         parent's window now: tail_part."""
         row = await ctx.store.read(lambda c: c.execute(
-            "SELECT s.agent_of, s.agent_name, s.notebook_folder, s.access, "
-            "p.agent_name AS parent FROM conversations s LEFT JOIN conversations p "
-            "ON p.id = s.agent_of WHERE s.id=?", (ctx.conversation_id,)).fetchone())
+            "SELECT s.agent_of, s.agent_name, s.notebook_folder, s.access, s.agent_cli, "
+            "s.agent_device, p.agent_name AS parent FROM conversations s LEFT JOIN "
+            "conversations p ON p.id = s.agent_of WHERE s.id=?",
+            (ctx.conversation_id,)).fetchone())
         if row is None or not row["agent_of"]:
             return None
+        parent = row["parent"] or "{{name}}"
+        if row["agent_cli"]:            # a CLI or a drone: none of its tools, its own report
+            dev = all_devices(self.cfg).get(row["agent_device"] or "")
+            return prompts.fill(self.cfg, __file__, "drone.md",
+                                agent_name=row["agent_name"], parent=parent,
+                                device=dev.label if dev else "a Linux box")
         folder = row["notebook_folder"]
         if row["access"] == "read":
             can = ("You were started to look things up: you have only tools that read, "
@@ -476,21 +499,26 @@ class SubAgents:
                      "Your notebook here is {{name}}'s whole notebook. Write what the "
                      "brief asks for and leave the rest as it is.")
         return prompts.fill(self.cfg, __file__, "fragment.md", agent_name=row["agent_name"],
-                            parent=row["parent"] or "{{name}}", can=can, where=where)
+                            parent=parent, can=can, where=where)
 
     async def tail_part(self, ctx: ToolContext) -> str | None:
-        """In a sub-agent's own conversation: how much of its report reaches its parent
-        (report.cap, from the parent's window now)."""
+        """Its agent templates (templates.listing) where it may start sub-agents; in a
+        sub-agent's own conversation also how much of its report reaches its parent
+        (report.cap, from the parent's window now). Both change between turns."""
         row = await ctx.store.read(lambda c: c.execute(
-            "SELECT s.agent_of, p.agent_name AS parent FROM conversations s LEFT JOIN "
-            "conversations p ON p.id = s.agent_of WHERE s.id=?",
+            "SELECT s.agent_of, s.agent_cli, p.agent_name AS parent FROM conversations s "
+            "LEFT JOIN conversations p ON p.id = s.agent_of WHERE s.id=?",
             (ctx.conversation_id,)).fetchone())
-        if row is None or not row["agent_of"]:
+        if row is None or row["agent_cli"]:
             return None
-        cap = await ctx.store.read(lambda c: report.cap(c, row["agent_of"]))
-        return self.cfg.substitute(f"Your report reaches {row['parent'] or '{{name}}'} cut "
-                                   f"at about {cap:,} tokens; the rest stays in this "
-                                   f"conversation.")
+        out = [templates.listing(self.cfg)
+               if await self.offered_in(ctx.store, ctx.conversation_id) else None]
+        if row["agent_of"]:
+            cap = await ctx.store.read(lambda c: report.cap(c, row["agent_of"]))
+            out.append(self.cfg.substitute(
+                f"Your report reaches {row['parent'] or '{{name}}'} cut at about {cap:,} "
+                f"tokens; the rest stays in this conversation."))
+        return "\n\n".join(x for x in out if x) or None
 
 
 def max_running(cfg) -> int:
@@ -513,7 +541,7 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
     rows = c.execute(
         f"SELECT s.id, s.agent_of AS parent, s.agent_name AS name, s.access, "
         f"s.notebook_folder AS folder, s.model_id AS model, s.agent_cli AS cli, "
-        f"s.agent_device AS device, "
+        f"s.agent_device AS device, s.agent_template AS template, "
         f"s.created_at, s.updated_at FROM conversations s "
         f"{where} ORDER BY s.created_at DESC, s.id DESC", args).fetchall()
     return [{**dict(r), **_look(c, r["id"]), **homes.of(c, r["id"])} for r in rows]

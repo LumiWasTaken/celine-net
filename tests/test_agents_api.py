@@ -121,7 +121,7 @@ async def test_agents_and_missions_are_managed_over_http_with_events(db_path, mo
                              json={"brief": "x", "name": "car scout", "access": "work"})
             assert r.json()["error"]["message"] == (
                 "car scout exists with read access; start it under another name or leave "
-                "access, folder, model, cli and device out.")
+                "access, folder, model, cli, device and template out.")
             r = (await c.post(f"/api/conversations/{parent}/sub-agents",
                               json={"brief": "and the blue ones", "name": "Car Scout"})).json()
             assert r == {"conversation_id": sub, "resumed": True}, "done: it takes the brief"

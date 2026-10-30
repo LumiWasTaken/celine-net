@@ -21,7 +21,8 @@ LINES = (
     "[Notice from ...], [Job ...]: an intercom message. The name says who wrote the "
     "text under it; the app wrote the line.",
     "- [your mind] at the end of a message: your own state, from the app: your mood, "
-    "how long since you talked, a new model, what is down, a freeze lifted.",
+    "your status and when you set it, how long since you talked, a new model, what is "
+    "down, a freeze lifted.",
     "- [your memory] at the end of a message: sections of your notes whose keys came up, "
     "the best match first, each with its path, heading, similarity and date. Read the "
     "note for the rest.",

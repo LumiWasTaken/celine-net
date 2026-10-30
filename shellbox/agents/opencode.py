@@ -380,12 +380,15 @@ def new_session(task: str, query: str = "", server: Server | None = None) -> str
 
 
 def prompt(session: str, model: str, task: str, query: str = "",
-           server: Server | None = None) -> None:
+           server: Server | None = None, system: str | None = None) -> None:
     """`task` to the session on the proxy's `model`; it works in the background. A busy
-    session takes it into the work it is on."""
-    _call("POST", f"/session/{session}/prompt_async",
-          {"model": {"providerID": "celine", "modelID": model},
-           "parts": [{"type": "text", "text": task}]}, query=query, server=server)
+    session takes it into the work it is on. `system`: the message's system prompt,
+    after opencode's own (its prompt body's `system`)."""
+    body = {"model": {"providerID": "celine", "modelID": model},
+            "parts": [{"type": "text", "text": task}]}
+    if system:
+        body["system"] = system
+    _call("POST", f"/session/{session}/prompt_async", body, query=query, server=server)
 
 
 def _busy_one(session: str, server: Server | None = None) -> bool:

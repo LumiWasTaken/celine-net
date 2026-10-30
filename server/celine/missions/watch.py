@@ -52,8 +52,8 @@ NOTE = "The mission stopped without saying whether it is done."
 PAST = "The time limit passed before the mission was closed."
 WAITING = "A question for you at step {n}: {title}."
 KEEP_GOING = ("The mission is still active and nothing is set to wake you. Do the next "
-              "step, missions__wait until a time when you wait on something, or close it "
-              "with missions__update(status=\"Done\").")
+              "step; when you wait on something, missions__wait until the time to look "
+              "again; or close it with missions__update(status=\"Done\").")
 OVER = ("The time limit has passed. Deliver what you have, report, and close the mission "
         "with missions__update(status=\"Done\") and a note on what is still open.")
 
