@@ -1,4 +1,5 @@
-"""The model proxy for opencode and the other programs in its shellbox.
+"""The model proxy for opencode and the other programs in its shellbox, and for the
+drones on its devices (sub_agents/drone.py).
 
     GET  /llm/v1/models             the models it may use (settings/her_models.py), and
                                     `default`: the first of them its chats run on
@@ -15,14 +16,16 @@ with the real numbers (shellbox/agents/opencode.py writes them as opencode's
                         the provider's model list states (OpenRouter, Anthropic)
 
 The shellbox never holds a provider key: it has the app's keys/shellbox-llm.key, which this app checks
-(`Authorization: Bearer`). These routes skip the login's gate and the
-origin check (auth/gate.py, api/origin.py) and answer 401 without the key, 503 while
-the key is missing, 403 to a call while it is frozen (guard/freeze.py). The key
+(`Authorization: Bearer`); a device has its own key (sub_agents/drone.py devices), and
+comes from wherever the device reaches the app. These routes skip the login's gate and
+the origin check (auth/gate.py, api/origin.py) and answer 401 without a key, 503 while
+the box's key is missing, 403 to a call while it is frozen (guard/freeze.py). A key
 opens these routes only: on /api it is no token (the gate's 404, api/settings.py
 _person's 403).
 
-Every call takes its slot in the app's model queue (backends/queue.py) in the
-`shellbox` lane at background priority, so its turns and the user's go first; it waits
+Every call takes its slot in the app's model queue (backends/queue.py): the box's in the
+`shellbox` lane at background priority, so its turns and the user's go first; a
+device's in a lane named after it at agent priority, as the sub-agents' turns. It waits
 as long as it takes, and leaving the call gives the slot back. The request goes to the
 model's provider with the provider's key and the provider's own model name; the answer
 (an SSE stream or JSON) comes back byte for byte, its status included.
@@ -65,16 +68,25 @@ def _error(status: int, message: str, kind: str) -> JSONResponse:
 _PROXIED = ("x-forwarded-for", "forwarded", "x-real-ip")
 
 
-def _refused(request: Request) -> JSONResponse | None:
-    """The key check: None when the caller holds the shellbox-llm key and came straight
-    from the box, not through the public origin."""
+def _caller(request: Request) -> tuple[tuple[str, str, Priority] | None,
+                                        JSONResponse | None]:
+    """The key check -> ((its lane, its label, its priority), None), or (None, the
+    refusal). The shellbox-llm key only straight from the box, not through the public
+    origin; a device's key from anywhere."""
+    from ..devices import devices
+    given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    for d in devices(request.app.state.services.cfg).values():
+        if d.key and hmac.compare_digest(given.encode(), d.key.encode()):
+            return (d.id, d.label, Priority.AGENT), None
+    return (LANE, "Shellbox", Priority.BACKGROUND), _refused(request, given)
+
+
+def _refused(request: Request, given: str) -> JSONResponse | None:
     if any(n in request.headers for n in _PROXIED):
-        return _error(403, "The model proxy is for the shellbox only.", "permission_error")
+        return _error(403, "The shellbox's key works only from the shellbox.", "permission_error")
     want = key(request.app.state.services.cfg)
     if not want:
         return _error(503, "The model proxy is off: the app has no keys/shellbox-llm.key.", "unavailable")
-    h = request.headers
-    given = h.get("authorization", "").removeprefix("Bearer ").strip()
     if not hmac.compare_digest(given.encode(), want.encode()):
         return _error(401, "Wrong key: use $OPENAI_API_KEY from your shell.",
                       "authentication_error")
@@ -90,9 +102,10 @@ class ProxyCall(Response):
     slot is freed whatever happens."""
 
     def __init__(self, services, ref: str, endpoint: str, path: str, body: dict,
-                 headers: dict, timeout: float, provider: str):
+                 headers: dict, timeout: float, provider: str,
+                 caller: tuple[str, str, Priority]):
         super().__init__()
-        self.services, self.ref, self.body = services, ref, body
+        self.services, self.ref, self.body, self.caller = services, ref, body, caller
         self.provider = provider
         self.endpoint, self.url = endpoint, f"{endpoint}/{path}"
         self.upstream, self.timeout = headers, timeout
@@ -111,12 +124,12 @@ class ProxyCall(Response):
 
     async def _run(self, send) -> None:
         llm = self.services.llm
+        lane, label, priority = self.caller
         ticket = Ticket(endpoint=self.endpoint, model=self.body["model"],
-                        priority=Priority.BACKGROUND, lane=LANE, role=LANE,
-                        label="Shellbox")
+                        priority=priority, lane=lane, role=lane, label=label)
         raw = json.dumps(self.body).encode()
         await llm.scheduler.acquire(ticket)
-        metrics.QUEUE_WAIT.labels(LANE, self.provider).observe(ticket.waited_ms / 1000)
+        metrics.QUEUE_WAIT.labels(lane, self.provider).observe(ticket.waited_ms / 1000)
         started, status, seen = False, "cancelled", b""
         try:
             async with httpx.AsyncClient(
@@ -168,7 +181,8 @@ def resolve(s, model: str) -> str | None:
 
 
 async def _forward(request: Request, path: str):
-    if (refused := _refused(request)) is not None:
+    caller, refused = _caller(request)
+    if refused is not None:
         return refused
     services = request.app.state.services
     from ..guard.freeze import frozen
@@ -197,22 +211,28 @@ async def _forward(request: Request, path: str):
     headers = {"content-type": "application/json",
                **provider_headers(p["kind"], bc.api_key)}
     return ProxyCall(services, ref, bc.base_url, path, body, headers,
-                     float((bc.raw or {}).get("timeout", 600.0)), bc.label)
+                     float((bc.raw or {}).get("timeout", 600.0)), bc.label, caller)
 
 
 @router.get("/models")
 async def models(request: Request):
-    if (refused := _refused(request)) is not None:
+    _, refused = _caller(request)
+    if refused is not None:
         return refused
     s = getattr(request.app.state.services.cfg, "settings", None)
-    refs = her_models.allowed(s) if s is not None else []
+    return {"object": "list", "data": listing(s) if s is not None else []}
+
+
+def listing(s) -> list[dict]:
+    """/models' data: every model it may use with its sizes, and `default`."""
+    refs = her_models.allowed(s)
     data = [{"id": r, "object": "model", "created": 0, "owned_by": "celine",
              "name": her_models.label(s, r), **_sizes(s, r)} for r in refs]
     if refs:
         d = resolve(s, "default")
         data.append({"id": "default", "object": "model", "created": 0, "owned_by": "celine",
                      "name": f"default: {her_models.label(s, d)}", **_sizes(s, d)})
-    return {"object": "list", "data": data}
+    return data
 
 
 def _sizes(s, ref: str) -> dict:

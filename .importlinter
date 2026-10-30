@@ -31,6 +31,7 @@ forbidden_modules =
     celine.bugreports
     celine.comfyui
     celine.conversations
+    celine.devices
     celine.events
     celine.guard
     celine.her

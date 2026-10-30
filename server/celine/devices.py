@@ -1,0 +1,39 @@
+"""Her devices: each plugin that is on with a [drones] block in its plugin.toml, named
+by the plugin's id. The block: `url` and `password` of its `opencode serve` (filled from
+its form, settings/form.fill), `key` (its secret that is its key to the app's model
+proxy, api/llm_proxy.py), `label`, and `log` (where its server logs). Drones run there
+(sub_agents/drone.py)."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass
+class Device:
+    id: str
+    label: str
+    url: str
+    password: str
+    key: str
+    log: str
+    why: str | None        # why no drone starts on it now, None when one does
+
+
+def devices(cfg) -> dict[str, Device]:
+    """Every device that is on, by name."""
+    from . import plugins
+    from .settings import features, form
+    out = {}
+    for p in plugins.all():
+        d = p.manifest.get("drones")
+        if not isinstance(d, dict) or not features.on(cfg, p.id):
+            continue
+        fields = (p.form or {}).get("fields", [])
+        empty: list[str] = []
+        url = form.fill(cfg, p.id, fields, str(d.get("url", "")), empty)
+        password = form.fill(cfg, p.id, fields, str(d.get("password", "")), empty)
+        key = (form.read_secret(cfg, p.id, d["key"]) or "") if d.get("key") else ""
+        label = str(d.get("label") or p.manifest["label"])
+        out[p.id] = Device(p.id, label, url, password, key, str(d.get("log", "")),
+                           f"{label}: {'; '.join(dict.fromkeys(empty))}." if empty else None)
+    return out
