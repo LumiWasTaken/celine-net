@@ -38,6 +38,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 import anyio
 import httpx
@@ -46,6 +47,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import keys, metrics
 from ..backends.queue import Priority, Ticket
+from ..core.ids import iso
 from ..settings import her_models
 from ..settings.kinds import headers as provider_headers, server_output
 from ..settings.registry import backend_config
@@ -183,18 +185,25 @@ def resolve(s, model: str, refs: list[str]) -> str | None:
     return model if model in refs else None
 
 
+APPROVAL_GRACE = 600    # s a drone's approved cloud model stays served after its turn
+
+
 async def yours(services, lane: str) -> list[str]:
     """The models a caller may use: the box every one of hers; a device its local ones
     and the cloud model each drone there was approved on (sub_agents/skill.py _model,
-    its conversation's model), also after its turn ended (opencode's late title and
-    summary calls)."""
+    its conversation's model) while it works, and for APPROVAL_GRACE after it started or
+    its last turn ended (opencode's late title and summary calls)."""
+    from ..core.states import LIVE_SQL
     s = services.cfg.settings
     refs = her_models.allowed(s)
     if lane == LANE:
         return refs
+    since = iso(datetime.now(timezone.utc) - timedelta(seconds=APPROVAL_GRACE))
     approved = await services.store.read(lambda c: {r[0] for r in c.execute(
-        "SELECT DISTINCT model_id FROM conversations WHERE agent_device=? "
-        "AND trashed_at IS NULL", (lane,))})
+        "SELECT DISTINCT c.model_id FROM conversations c WHERE c.agent_device=? "
+        "AND c.trashed_at IS NULL AND (c.created_at >= ? OR EXISTS (SELECT 1 FROM turns t "
+        f"WHERE t.conversation_id = c.id AND (t.state IN {LIVE_SQL} OR t.finished_at >= ?)))",
+        (lane, since, since))})
     return [r for r in refs if r in approved or not her_models.cloud(s, r)]
 
 

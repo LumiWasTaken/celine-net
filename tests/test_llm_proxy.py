@@ -211,3 +211,8 @@ async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_wa
     # no turn of it is live: opencode's late title call after its turn still gets through
     assert await ids("dev-key") == ["main/big", "main/small", "or/x/glm", "default"]
     assert (await ask(proxy, model="or/x/glm", key="dev-key")).status_code == 200
+    # long done: the approval served that drone, not the device for good
+    await store.write(lambda c: c.execute(
+        "UPDATE conversations SET created_at='2020-01-01T00:00:00.000+00:00' WHERE id=?",
+        (sub,)))
+    assert await ids("dev-key") == ["main/big", "main/small", "default"]

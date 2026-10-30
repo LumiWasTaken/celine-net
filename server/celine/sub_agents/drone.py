@@ -181,7 +181,10 @@ class DroneBackend:
         async with _config_lock.setdefault(self.device, anyio.Lock()):
             conf = await _run(oc._call, "GET", "/global/config", server=server) or {}
             have = ((conf.get("provider") or {}).get("celine") or {}).get("models") or {}
-            if have == want and conf.get("small_model") == small:
+            # opencode deep-merges a PATCH: a model dropped from `want` stays in `have`, so
+            # only what is wanted is compared, or every start would patch again
+            if all(have.get(k) == v for k, v in want.items()) and \
+                    conf.get("small_model") == small:
                 return
             working = [k for k, v in (await _run(oc._call, "GET", "/session/status",
                                                  server=server) or {}).items()
