@@ -143,7 +143,8 @@ function SetupForm({ Form, feature, value, onChange, reprobe }: {
   return <div className="feature-setup"><Form feature={feature} value={value} onChange={onChange} saveRef={saveRef} reprobe={reprobe} /></div>
 }
 
-/** one feature's switch: the state Dot (grey once the switch is off) and the label.
+/** one feature's switch: the state Dot (grey once the switch is off; its tip the server's
+    reason: what the probe said or what turns it on, else why someone turns it off) and the label.
     Blocked (its service missing or not set up): off and greyed, its `needs` sentence under
     it, and a click shows it as a toast; `free` (the onboarding, a feature whose setup step
     comes next): it switches as any other. With `about` the sentence is a second line and
@@ -169,7 +170,7 @@ export function FeatureSwitch({ feature: f, on, disabled = false, about = false,
       <Switch checked={!off && on} disabled={disabled || off} title={title}
               onChange={v => (v && f.warn ? setAsking(true) : onChange(v))}
               label={<>
-                {tone && <Dot tone={tone} label={f.detail || undefined} />}
+                {tone && <Dot tone={tone} label={f.detail || (on ? '' : f.off_when) || undefined} />}
                 {tone && ' '}{f.label}
                 {line && <span className="feature-about">{line}</span>}
               </>} />
