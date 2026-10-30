@@ -141,9 +141,12 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     await message_context.ensure(store, cfg, registry, cid, tid,
                                  message_context.unsent(chain), tool_turn["max_output_tokens"])
     answers, stored = await message_context.tail_of(store, chain)
-    if answers is not None and stored is None:
+    # a Regenerate answers the user message again from its first step: a tail of now
+    fresh = bool(turn.get("again")) and not reopen and iteration == 0 and \
+        turn["root_message_id"] == answers
+    if answers is not None and (stored is None or fresh):
         await message_context.put_tail(store, answers, await prompt.tail_text(
-            store, cfg, registry, backend, cid, carried))
+            store, cfg, registry, backend, cid, carried), fresh)
     # the context builder (turns/context.py): old results as stubs and older turns as
     # a summary when the conversation nears the window; decisions are persisted
     built = await build("start", chain)

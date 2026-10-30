@@ -53,13 +53,15 @@ async def tail_of(store, chain: list[dict]) -> tuple[str | None, str | None]:
     return mid, r[0] if r else None
 
 
-async def put_tail(store, mid: str, tail: str) -> None:
+async def put_tail(store, mid: str, tail: str, fresh: bool = False) -> None:
     """The tail of the turn that answers user message `mid`, written once: a message
-    with a tail keeps it (a later turn on it sends the same bytes)."""
+    with a tail keeps it (a later step, a Continue or a restart sends the same bytes).
+    `fresh`: a new answer to it (Regenerate) writes its own; the reply before it is done,
+    so nothing reads the old one again."""
     await store.write(lambda c: c.execute(
         "INSERT INTO message_context(message_id, text, tail) VALUES(?, '', ?) "
         "ON CONFLICT(message_id) DO UPDATE SET tail=excluded.tail "
-        "WHERE message_context.tail IS NULL", (mid, tail)))
+        "WHERE message_context.tail IS NULL OR ?", (mid, tail, fresh)))
 
 
 def unsent(chain: list[dict]) -> list[dict]:
