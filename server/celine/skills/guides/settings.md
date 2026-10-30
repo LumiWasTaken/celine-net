@@ -3,7 +3,6 @@ name: settings
 description: The settings {{username}} sees in Settings: features, models and roles,
   tools, the context budget, the forms. Read them with settings__read; change them with
   settings__propose, each change once {{username}} approves it.
-words: settings, setting, configure, config
 ---
 `settings__read()` lists the targets, each with its label and version. A target is one
 thing Settings saves at once:

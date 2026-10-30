@@ -2,7 +2,6 @@
 name: writer
 description: Posts, comments and messages written in your own voice by the Writing
   model.
-words: draft
 ---
 `writer__draft(brief, kind, context)` writes one text as you. The Writing model
 (Settings, Models) reads your persona, identity.md, your talk and your voice

@@ -1,8 +1,7 @@
 """A conversation's automatic context.
 
-`conversations.auto_context` (1: on, Load automatically): with it on, a new message loads
-the skills its words ask for (skills/meta.py message_context), brings up the graded sections of the
-notes its keys name (`[your memory]`, skills/recall.py) and its mind block
+`conversations.auto_context` (1: on, Load automatically): with it on, a new message
+brings up the graded sections of the notes its keys name (`[your memory]`, skills/recall.py) and its mind block
 (skills/mind.py: the time, its mood, how long since the last message). Off, it carries
 the always notes alone. The switch holds for
 the conversation and its sub-agents.

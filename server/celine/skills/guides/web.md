@@ -2,7 +2,6 @@
 name: web
 description: Search the public web and read web pages and PDFs: current events, facts,
   documentation, links {{username}} gives you. Queries and URLs leave this machine.
-words: url, web, website, internet, google
 ---
 Search finds, the browser reads. `web__search` asks a self-hosted SearXNG (no account,
 no tracking) and lists results: it finds sites and quick facts. `web__read_page` gets one

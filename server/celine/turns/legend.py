@@ -3,7 +3,7 @@ means, and who wrote what follows it.
 
 Everything the app inserts is marked one way, a line in square brackets: the send time
 (context.time_line), the intercom headers (intercom/render.py header), its mind block
-(skills/mind.py HEAD), the skills a message loads (skills/meta.py HEAD), its memory block (skills/recall.py HEAD), its notes (skills/notebook.py notes_block), the other chats working now
+(skills/mind.py HEAD), its memory block (skills/recall.py HEAD), its notes (skills/notebook.py notes_block), the other chats working now
 (conversations/here.py busy), shortened and cut
 results (compact.STUB_HEAD, tools._capped) and a screen (context, "[the screen from ...]").
 Outside text is the one exception: while Bastet
@@ -26,8 +26,6 @@ LINES = (
     "the best match first, each with its path, heading, similarity and date. Read the "
     "note for the rest.",
     "- [also working now]: your other chats working at the same time.",
-    "- [loaded for this message] at the end of a message: what skills__load gives "
-    "for the skills its words ask for, loaded by the app.",
     "- [your notes]: notes from your notebook, written by you unless their tag says "
     "otherwise.",
     "- [earlier result, shortened to save room] and [cut: ...]: the app shortened a tool "

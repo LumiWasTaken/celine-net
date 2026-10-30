@@ -3,7 +3,6 @@ name: browser
 description: Your own web browser, a real Brave that keeps your cookies: open pages,
   act on them and read them like a person. For pages that need clicks, forms or their
   scripts, and for threads and comments; a plain article reads faster with web__read_page.
-words: url, browser, website
 ---
 Your browser is a real Brave on a screen of its own, in a box next to your shellbox.
 It keeps its profile across restarts: cookies, history, site settings. Downloads land

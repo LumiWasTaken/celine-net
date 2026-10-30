@@ -2,7 +2,6 @@
 name: macshell
 description: A shell on your own Mac: commands, processes, and its files to read, write,
   search and edit.
-words: mac
 ---
 Your Mac is your own computer, a Mac in the house that belongs to you. Four servers on it
 give you its tools: macscreen, macshell (this one), macbrowser and macfiles.

@@ -3,7 +3,6 @@ name: code
 description: Your coding agent in your shellbox. Hand it a coding task in a folder of
   yours with a model you pick; it reads, edits and runs the code on its own in the
   background and answers when it is done.
-words: coding agent, code session, refactor, implement, fix the tests
 ---
 Your coding agent is opencode, running in your shellbox, and it works on a folder of
 your home the way a colleague would: it reads the code, edits files, runs commands and

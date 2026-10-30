@@ -108,7 +108,7 @@ block at the end of this file lists the words no UI string uses.
 | Model, Tools, Pages, Context | the tabs of Celine's side panel; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
 | Model | which model answers | everyone |
 | load: | a note's head line, as the note writes it, in the Context tab's why ("load: off") | Obsidian properties |
-| Load automatically, Tools and notes that match each message | the Context tab's switch and its tooltip: each new message loads the tools its words ask for and brings up the sections of its notes it matches | |
+| Load automatically, Notes that match each message | the Context tab's switch and its tooltip: each new message brings up the sections of its notes it matches | |
 | Waiting for the GPU. | an image batch waits for its GPU (the lease) | ComfyUI, Stable Diffusion WebUI "Waiting" |
 | Paused., The reply failed. | soft status words where the next line appears | |
 

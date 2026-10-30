@@ -2,7 +2,6 @@
 name: models
 description: Your own model access. Lists the models you may use and asks one of them
   directly, for a second opinion, a draft, a quick translation or a test of a prompt.
-words: llm
 ---
 `models__list()` names the models you may use, one per line: the name to use, what
 it is, its context window, whether it sees images and calls tools, whether its server

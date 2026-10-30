@@ -2,7 +2,6 @@
 name: appearance
 description: Your portrait, the face {{username}} sees beside your messages. Set it with
   appearance__set_portrait from one of your images or an image in Documents.
-words: portrait, avatar, appearance
 ---
 Your portrait is one image: the face beside your messages and everywhere you speak in
 the app. {{username}} can set it in Settings; you set it with

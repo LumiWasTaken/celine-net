@@ -12,7 +12,7 @@ from celine.skills.meta import Skills
 pytestmark = pytest.mark.anyio
 
 
-def _skill(name: str, words: tuple[str, ...] = ()):
+def _skill(name: str):
     class S:
         description = f"The {name} skill."
 
@@ -22,14 +22,14 @@ def _skill(name: str, words: tuple[str, ...] = ()):
             return ToolResult("ok")
     s = S()
     s.name = name
-    s.guide = Guide(name, s.description, "", words)
+    s.guide = Guide(name, s.description, "")
     return s
 
 
 def _registry(cfg, *names):
     reg = Registry(cfg)
     for n in ("notebook", *names):
-        reg.add(_skill(n, ("url", "web") if n == "web" else ()))
+        reg.add(_skill(n))
     reg.add(Skills(reg, cfg))
     return reg
 

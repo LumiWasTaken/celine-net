@@ -3,7 +3,6 @@ name: shell
 description: Your shellbox, your own little Linux computer, through real terminals.
   Run commands, drive programs, install, build, play, experiment. Not for Messages archive
   questions.
-words: terminal, shell, shellbox
 ---
 Your shellbox is your own little world: a Debian computer that belongs to you. Play in
 it. Write scripts, install software, build tools for yourself, run experiments, change

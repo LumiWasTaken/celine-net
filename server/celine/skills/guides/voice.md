@@ -2,7 +2,6 @@
 name: voice
 description: Voice notes to {{username}}: your text spoken by the Read aloud model, an
   audio file on your message.
-words: voice, voice note, speak, say it, audio
 ---
 voice__send(text) speaks your text with the Read aloud model and puts the audio on your
 message, where {{username}} plays it. The text is spoken exactly as written, so it is

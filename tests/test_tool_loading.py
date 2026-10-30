@@ -178,47 +178,6 @@ async def test_a_load_counts_everything_it_holds_against_one_result(store, tmp_p
     assert "file" not in out.content
 
 
-async def test_a_message_that_asks_for_a_skill_gets_its_load_once(store, tmp_path):
-    from chat_fixtures import user_says
-    from celine.conversations import tree
-    from celine.skills import guide as guide_of
-    from celine.skills.meta import HEAD
-    from celine.turns import message_context
-
-    class Painter:
-        name = "image_generator"
-        description = "Makes images."
-        guide = guide_of("image_generator")
-
-        @tool()
-        async def generate_image(self, ctx, prompt: str) -> ToolResult:
-            """Make an image."""
-            return ToolResult("made")
-    cfg = load()
-    reg = _registry(cfg)
-    reg.add(Painter())
-    cid = await conversations.create(store)
-
-    async def says(text):
-        mid, tid, _ = await user_says(store, cid, text)
-        [m] = await store.read(lambda c: [dict(r) for r in c.execute(
-            "SELECT * FROM messages WHERE id=?", (mid,))])
-        await message_context.ensure(store, cfg, reg, cid, tid, [m], 5000)
-        reply = await tree.start_assistant_message(store, cid, mid, tid)
-        await tree.finish_assistant_message(store, cid, reply, "ok", None)
-        await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
-        return m.get("context") or ""
-    first = await says("draw me a picture of the sea")
-    assert first.startswith(HEAD + "\n# image_generator\n\n")
-    assert '"name": "image_generator__generate_image"' in first
-    assert await says("another picture") == "", "brought once on its branch"
-    await store.write(lambda c: c.execute("UPDATE conversations SET auto_context=0"))
-    other = await conversations.create(store)
-    await store.write(lambda c: c.execute("UPDATE conversations SET auto_context=0"))
-    cid = other
-    assert await says("a picture please") == "", "nothing by need while it is off"
-
-
 def test_the_name_form_goes_through_every_backend():
     entry = {"type": "function", "function": {
         "name": "mac__run", "description": "Run a command.",

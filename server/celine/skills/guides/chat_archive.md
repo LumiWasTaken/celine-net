@@ -3,7 +3,6 @@ name: chat_archive
 description: {{username}}'s Messages archive (WhatsApp, Discord, every imported chat). Use it for
   any question about what was said, by whom, when, or how often. Start with
   chat_archive__search, or chat_archive__count for numbers.
-words: whatsapp, discord, archive
 ---
 The Messages archive holds {{username}}'s own chats. You do not remember it: every question
 about it starts with a tool call, and the answer comes only from what the tools showed you.

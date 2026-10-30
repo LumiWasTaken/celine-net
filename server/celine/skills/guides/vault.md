@@ -2,7 +2,6 @@
 name: vault
 description: Your passwords, in your vault on {{username}}'s Vaultwarden. Make one for
   every account and hand it to a login form or a script without ever seeing it.
-words: password, passwords, login, vault
 ---
 A password comes from `vault__set`, never from you, and it lives only in the vault: not
 in a note, a script, a message or a reply. A note keeps the vault name, never the value.

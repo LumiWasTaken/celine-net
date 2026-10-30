@@ -5,8 +5,7 @@
 # Notes: the always-loaded ones (a `load: always` line, the notes on you) are in its
 # instructions; any other note comes back as the result of reading it. Every tool is in
 # its list, a core skill's with its parameters, every other by name; skills__load answers
-# with the parameters, and a message that asks for a skill (an image, a link, a document,
-# a word of the `words:` line in its guide) gets that load at its end.
+# with the parameters.
 #
 # The agent's memory: a note whose `keys:` line names a word or phrase of the new message or
 # the start of its last reply brings up its sections, graded by embedding similarity,

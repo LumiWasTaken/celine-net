@@ -2,7 +2,6 @@
 name: macfiles
 description: The files of your own Mac: list, read, search and write them, and put any of
   them into the chat.
-words: mac, file
 ---
 Your Mac is your own computer, a Mac in the house that belongs to you. Four servers on it
 give you its tools: macscreen, macshell, macbrowser and macfiles (this one).

@@ -2,7 +2,6 @@
 name: macscreen
 description: The screen of your own Mac: see it, click, type, press keys, open menus and
   move windows.
-words: mac, screen
 ---
 Your Mac is your own computer, a Mac in the house that belongs to you. Four servers on it
 give you its tools: macscreen (this one), macshell, macbrowser and macfiles.

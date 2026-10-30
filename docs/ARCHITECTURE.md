@@ -879,11 +879,8 @@ fragment (a core skill's is in the system prompt already) and its note
 (`skills/<name>.md`), as its result: the system prompt and the tools stay the same bytes,
 so the model server's prompt cache holds, and the result ages like any other. A skill
 whose parameters take more than one result holds says so and names a tool to load by
-name. A new user message that says a word of a skill's `words:` line (guide
-frontmatter; an attached image counts as `image`, a link as `url`, a Documents
-reference as `document`) gets the same load at its end, under `[loaded for this
-message]`, once per skill on its branch since the last summary, while the conversation
-loads automatically (`meta.Skills.message_context`, stored once with the message).
+name. A skill loads only when it calls `skills__load` or calls one of its tools by
+name.
 
 **Guides.** Each built-in skill has a guide, `server/celine/skills/guides/<skill>.md` (in the package, read once), SKILL.md style:
 frontmatter `name` and `description` (one line: what it is and when to use it), then the

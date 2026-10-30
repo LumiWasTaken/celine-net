@@ -2,7 +2,6 @@
 name: music_generator
 description: Makes songs and instrumental tracks with ComfyUI, in batches. Use it when
   {{username}} asks for music, a track, an ambient soundscape or a song.
-words: music, song, songs
 ---
 `music_generator__generate` makes a batch: a list of items, each one track. An item has
 a `style`; a song also has `lyrics` and `instrumental=false`. `count` makes that many

@@ -1,7 +1,7 @@
 """Skills and tools.
 
 A skill is a Python class with `@tool` coroutines plus a guide, `guides/<skill>.md`
-(SKILL.md style: frontmatter `name`, `description`, optional `words`, then the body).
+(SKILL.md style: frontmatter `name` and `description`, then the body).
 What it has in context every turn: the skill index (one line per skill offered here,
 from the frontmatter) and every tool offered here, a core skill's (CORE below) with its
 parameters, another's by name and one line (turns/prompt.py wire_tools). A tool that is
@@ -188,14 +188,12 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
 
 
 class Guide:
-    """guides/<name>.md: `---` frontmatter (name, description, and `words`: what a new
-    user message says when it needs the skill, turns/loads.asked), then the body, with
+    """guides/<name>.md: `---` frontmatter (name, description), then the body, with
     {{key}} filled from `fill` (a number the code owns, like browser's MAX_TABS). Read
-    when asked: `body`, `description` and `words` follow the file."""
+    when asked: `body` and `description` follow the file."""
 
     def __init__(self, name: str, description: str | None = None, body: str = "",
-                 words: tuple[str, ...] = (), fill: dict[str, Any] | None = None,
-                 file: str = __file__, rel: str = ""):
+                 fill: dict[str, Any] | None = None, file: str = __file__, rel: str = ""):
         """With a `description`: a guide made of these words, no file (tests, a stub).
         `rel` beside `file`: where it is read (a plugin's guide.md); else guides/<name>.md."""
         self.name = name
@@ -203,8 +201,7 @@ class Guide:
         self._fill = fill or {}
         self._parsed: tuple[str, dict[str, str], str] | None = None
         if description is not None:
-            self._parsed = (None, {"description": description, "words": ", ".join(words)},
-                            body)
+            self._parsed = (None, {"description": description}, body)
 
     def _parse(self) -> tuple[dict[str, str], str]:
         if self._parsed is not None and self._parsed[0] is None:    # fixed words
@@ -240,11 +237,6 @@ class Guide:
     @property
     def body(self) -> str:
         return self._parse()[1]
-
-    @property
-    def words(self) -> tuple[str, ...]:
-        return tuple(w.strip().lower() for w in self._parse()[0].get("words", "").split(",")
-                     if w.strip())
 
 
 class described:

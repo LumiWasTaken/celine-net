@@ -2,7 +2,6 @@
 name: image_generator
 description: Makes new images from a text prompt, and edits images, with ComfyUI, in
   batches. Load it before the first image. It has the prompt rules of each preset.
-words: image, images, picture, pictures, draw, paint, selfie
 ---
 `image_generator__generate` makes a batch: a list of items, each one image. An item
 with a `prompt` makes a new image; an item with `source` too edits that image, and the

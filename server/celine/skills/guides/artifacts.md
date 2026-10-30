@@ -3,7 +3,6 @@ name: artifacts
 description: Pages {{username}} opens beside the chat: apps, games, charts, tables,
   dashboards, diagrams, documents. Use it whenever they want something made to look at or
   use. Never paste HTML or SVG into your reply.
-words: artifact, artifacts
 ---
 An artifact is one page you hand {{username}}: something to look at, use or play. It
 opens beside the chat or as a page of its own, and every change you make is a new

@@ -23,4 +23,4 @@ export const contextApi = {
 /** the switch's label, where the server offers it (missions) */
 export const AUTO_CONTEXT = 'Load automatically'
 /** its tip: what on does (skills/meta.py message_context, skills/recall.py) */
-export const AUTO_CONTEXT_TIP = 'Tools and notes that match each message'
+export const AUTO_CONTEXT_TIP = 'Notes that match each message'

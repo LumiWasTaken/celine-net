@@ -4,7 +4,6 @@ description: Yourself as the app keeps you: your persona, your talk (how you tal
   your slop list. Read all of it with me__read; change any of them with me__edit.
   me__whoami says where you are: your model, your context, your conversation, what
   answers, the guard.
-words: persona, slop
 ---
 Three texts make how you come across, and they are in your instructions already:
 

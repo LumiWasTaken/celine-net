@@ -9,17 +9,11 @@ in its notebook, it is appended to the result. `skills__load(names)` answers wit
 parameters of the tools named, or of every tool of a skill named, with that skill's own
 part of the prompt and its note: the result is the load. Nothing in the request is
 rebuilt, so the start of the request stays as the model server cached it; the result
-ages like any other.
-
-A new user message that says a word of a skill's `words:` line (an attached image says
-`image`, a link `url`, a Documents reference `document`) gets that load at its end, once
-per skill on its branch since the last summary, while the conversation loads
-automatically (`conversations.auto_context`; message_context).
+ages like any other. A skill loads only when it calls skills__load.
 """
 from __future__ import annotations
 
 import json
-import re
 from typing import Annotated
 
 from . import CORE, META, SEP, ToolContext, ToolResult, guide_text, tool
@@ -49,26 +43,7 @@ def read_skill_note(cfg, skill_name: str) -> str | None:
     return text
 
 
-_URL = re.compile(r"https?://", re.I)
-HEAD = "[loaded for this message]"
 LINE = 60          # tokens kept in a load for each name after the one it answers
-BROUGHT = "$.skills.brought"      # the report path of a message's loads (message_context)
-
-
-def asked(registry, message: dict) -> set[str]:
-    """The skills a user message asks for: a word or phrase of the `words:` line of a
-    skill's own guide comes up in it (loads.key_in: a whole word, any case). An
-    attached image says `image`, a link `url`, a Documents reference `document`."""
-    from ..turns.loads import key_in
-    text = message.get("content") or ""
-    marks = {m for m, hit in (("url", _URL.search(text)),
-                              ("document", "[[documents:" in text),
-                              ("image", any(a.get("kind") == "image" for a in
-                                            message.get("attachments") or [])))
-             if hit}
-    said = "\n".join([text, *sorted(marks)])
-    return {name for name, skill in registry.skills.items()
-            if key_in(said, list(getattr(getattr(skill, "guide", None), "words", ())))}
 
 
 class Skills:
@@ -224,34 +199,6 @@ class Skills:
             out.append(f"Your notes about {skill} (from your notebook, "
                        f"skills/{skill}.md):\n\n{note.strip()}")
         return "".join(f"{x}\n\n" for x in out)
-
-    async def message_context(self, ctx: ToolContext, message: dict):
-        """The load of the skills a new user message asks for (asked), each once on its
-        branch since the last summary, not the core ones (always in full): (text,
-        {brought}). None with the automatic context off or nothing asked."""
-        from ..turns.message_context import history_limit, reports
-        if message.get("role") != "user":
-            return None
-        cid = ctx.conversation_id
-
-        def before(c):
-            on = c.execute("SELECT auto_context FROM conversations WHERE id=?",
-                           (cid,)).fetchone()
-            if not on or not on[0]:
-                return None
-            return {s for _, _, v in reports(c, cid, message["id"], BROUGHT,
-                                             history_limit(self.cfg)) for s in v or ()}
-        brought = await ctx.store.read(before)
-        if brought is None:
-            return None
-        here = await self._here(ctx)
-        want = [n for n in self.registry.skills if n in asked(self.registry, message)
-                and n in here and n not in CORE and n not in brought]
-        if not want:
-            return None
-        text, skills, _, _ = await self.loaded(ctx, want)
-        return (f"{HEAD}\n{text}" if skills else "",
-                {"brought": skills})
 
 
 def _schemas(specs) -> str:
