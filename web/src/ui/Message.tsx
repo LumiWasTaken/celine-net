@@ -11,12 +11,13 @@
    in, the text box, then a bar with the caller's buttons (the plus, Attach) at the left and
    Send at the right; Send becomes Stop while it answers. Enter sends, Shift+Enter is a new
    line. */
-import { useState, type KeyboardEvent, type ReactNode, type Ref } from 'react'
+import { useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { IconButton, SendButton } from './Button'
 import { cx } from './cx'
 import { TextArea } from './Form'
 import { MenuButton, useContextMenu, type MenuItem } from './Menu'
+import { useMove } from './motion'
 
 /** one rule for every composer: Enter sends, Shift+Enter is a new line (and Enter while an
     input method composes a word does nothing) */
@@ -110,9 +111,12 @@ export function ComposerBox({ value, onChange, onSend, onStop, running = false, 
   className?: string
 }) {
   const can = (ready ?? value.trim().length > 0) && !disabled
+  // a chip rises in (ui.css); one that goes fades where it was and the rest close up
+  const row = useRef<HTMLDivElement>(null)
+  useMove(row, undefined, { leave: true })
   return (
     <div className={cx('composer-box', className)}>
-      {files && <div className="composer-box__files">{files}</div>}
+      {files && <div ref={row} className="composer-box__files">{files}</div>}
       <TextArea ref={inputRef} bare rows={1} max={13} value={value} placeholder={placeholder} aria-label={label ?? placeholder}
                 className="composer-box__text" autoFocus={autoFocus} onPaste={onPaste}
                 onChange={e => onChange(e.target.value)}
