@@ -1,8 +1,8 @@
 /* Drawer: a side panel beside the content (a run, a panel of settings). On a desktop it
    takes its column at once and the panel slides in by transform, so the content beside it
-   changes width once, never on every frame; on a phone it lies over the content, from the
-   bottom edge, or from the left edge for `side="left"` (the place sidebar), over a scrim
-   that closes it. Escape and its X close it; closed, it is inert. `fill`: its body is one
+   changes width once, never on every frame; on a phone it lies over the content as a sheet
+   from the bottom edge, over a scrim that closes it. `side="left"` (the place sidebar)
+   comes from the left edge from 768 to 1023 px. Escape and its X close it; closed, it is inert. `fill`: its body is one
    box for a list that fills it (a VirtualList), with no padding and no scroll of its own.
    `enter`: made on its first open, it is drawn closed for a frame and then slides in. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
