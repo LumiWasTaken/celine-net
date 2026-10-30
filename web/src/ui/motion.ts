@@ -6,6 +6,7 @@
    `transform`; the glides and the rise move the `translate` property, so neither fights
    a part's own transform (a virtual row's offset, a press, a centred toast). */
 import { useLayoutEffect, useRef, type RefObject } from 'react'
+import { isPhone } from './phone'
 
 const root = () => getComputedStyle(document.documentElement)
 
@@ -114,6 +115,51 @@ export function useReplaced(ref: RefObject<HTMLElement | null>) {
       queueMicrotask(() => {
         if (el.isConnected || !parent.isConnected) return
         for (const c of parent.children) if (!there.has(c) && !c.classList.contains('ghost')) fadeIn(c)
+      })
+    }
+  }, [ref])
+}
+
+/* the head that went in this commit, for the one that comes in its place */
+let gone: { depth: number; dir: number } | null = null
+
+/** A phone's list to detail: the page of a head (`ref`, a PlaceHead) one `depth` deeper
+    than the one it replaced pushes in from the right (`push`, base.css) while the page left
+    slides a --push to the left and fades; back reverses both. A head of the same depth, or
+    one that comes after its page loaded, only fades. The page is the place's main column,
+    or the head's parent. Only below 768 px; skipped with reduced motion. */
+export function usePush(ref: RefObject<HTMLElement | null>, depth: number) {
+  const deep = useRef(depth)
+  deep.current = depth
+  useLayoutEffect(() => {
+    const head = ref.current
+    if (!head) return
+    const page = () => (head.closest('.place__main') ?? head.parentElement) as HTMLElement | null
+    const push = root().getPropertyValue('--push').trim()
+    const from = gone
+    if (from && !reduced()) {
+      from.dir = Math.sign(deep.current - from.depth)
+      const box = page()
+      if (from.dir && box) for (const c of box.children) {
+        if (c.classList.contains('ghost')) continue
+        c.animate([{ opacity: 0, transform: `translateX(calc(${from.dir} * ${push}))` }, { opacity: 1, transform: 'none' }],
+                  { duration: ms('--dur'), easing: curve('--ease') })
+      }
+    }
+    return () => {
+      const box = page()
+      if (!box || !box.isConnected || !isPhone() || reduced()) return
+      const { ghost, place } = copyOf(box, box.getBoundingClientRect(), box.parentNode!, box.nextSibling)
+      const me = { depth: deep.current, dir: 0 }
+      gone = me
+      queueMicrotask(() => {
+        if (gone === me) gone = null
+        // StrictMode's pretend unmount: the head is still there
+        if (head.isConnected) { ghost.remove(); return }
+        place()
+        play(ghost, g => me.dir
+          ? leave(g, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateX(calc(${-me.dir} * ${push}))` }], '--dur')
+          : leave(g, OUT.fade))
       })
     }
   }, [ref])

@@ -21,6 +21,7 @@ import { cx } from './cx'
 import { SearchField } from './Form'
 import { ICON } from './icons'
 import { coarse } from './phone'
+import { usePush } from './motion'
 import { Menu, MenuButton, useContextMenu, type MenuItem } from './Menu'
 import { usePlace } from './Place'
 import type { Picker } from './Select'
@@ -176,13 +177,16 @@ export function PlaceHead({
   const H = level === 1 ? 'h1' : 'h2'
   const place = usePlace()
   const up = crumbs?.at(-1)
+  // a phone: a deeper page pushes in, back reverses it
+  const self = useRef<HTMLElement>(null)
+  usePush(self, (crumbs?.length ?? 0) + (back ? 1 : 0))
   const searchBox = search && (
     <SearchField value={search.value} onChange={search.onChange} placeholder={search.placeholder ?? 'Search'}
                  label={search.label} loading={search.loading} inputRef={search.inputRef} onKeyDown={search.onKeyDown}
                  className="place-head__search" />
   )
   return (
-    <header className={cx('place-head', narrow && 'place-head--narrow', !words && 'place-head--icons', className)}>
+    <header ref={self} className={cx('place-head', narrow && 'place-head--narrow', !words && 'place-head--icons', className)}>
       <div ref={row} className="place-head__row">
         {place && !back && !up && <IconButton icon={PanelLeft} label={place.title} className="place-head__side" onClick={place.open} />}
         {back && <IconButton icon={ChevronLeft} label={back.label} className="place-head__back" iconSize="lg" onClick={back.onClick} />}
