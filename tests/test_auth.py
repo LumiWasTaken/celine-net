@@ -432,7 +432,7 @@ def test_answers_cannot_be_framed_and_https_cookies_are_secure(app):
     for r in (client(app).get("/"), client(app).get("/api/sources")):
         assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
         assert r.headers["x-frame-options"] == "DENY"
-    https = make_app(public_origin="https://celine.example.net")
+    https = make_app()
     pk = SoftPasskey("celine.example.net", "https://celine.example.net")
     r = setup_first_passkey(https, client(https, base="https://celine.example.net"), pk)
     assert "Secure" in r.headers["set-cookie"]
@@ -690,3 +690,100 @@ def test_sessions_from_before_keep_working_and_must_prove(tmp_path):
         assert [(r.created_at, r.refreshed_at) for r in s.sessions()] == [(10, 20)]
     finally:
         s.close()
+
+
+# ---- the app's own address: learned at the setup or the first login ---------------------
+
+LAN = "http://192.168.1.20:8766"
+SITE = "https://celine.example.net"
+
+
+def stored(app) -> str:
+    return app.state.services.cfg.settings.address.get("origin", "")
+
+
+def forget_address(app) -> None:
+    """An instance from before the address was stored: none yet."""
+    (Path(os.environ["CELINE_DATA_DIR"]) / "settings" / "address.toml").unlink()
+    app.state.services.cfg.settings.address = {}
+
+
+def test_a_fresh_install_learns_its_address_at_the_setup(app):
+    lan = client(app, base=LAN)
+    assert lan.get("/").status_code == 200                       # the setup page
+    assert stored(app) == ""
+    r = setup_password(app, lan)
+    assert r.status_code == 200, r.text
+    assert stored(app) == LAN
+    assert 'origin = "http://192.168.1.20:8766"' in (
+        Path(os.environ["CELINE_DATA_DIR"]) / "settings" / "address.toml").read_text()
+    assert lan.get("/api/auth/status").json()["setup"] is False   # its session works there
+    # the window closed: another address is refused, even with the password
+    other = client(app, base="http://10.0.0.9:8766")
+    r = other.post("/api/auth/login", json={"method": "password", "secret": PASSWORD})
+    assert r.status_code == 403 and stored(app) == LAN
+
+
+def test_an_instance_without_an_address_learns_it_at_the_next_login(app):
+    pk = SoftPasskey("celine.example.net", SITE)
+    site = client(app, base=SITE)
+    setup_first_passkey(app, site, pk)
+    assert stored(app) == SITE
+    forget_address(app)
+    # a session from before counts only after a login, which stores the address
+    assert site.get("/api/auth/status").status_code == 404
+    r = login(client(app, base=SITE), pk)                  # the passkey from before works
+    assert r.status_code == 200, r.text
+    assert stored(app) == SITE and "Secure" in r.headers["set-cookie"]
+    assert site.get("/api/auth/status").status_code == 200
+
+
+def test_a_foreign_origin_or_a_failed_login_never_stores_an_address(app):
+    setup_password(app, client(app))
+    forget_address(app)
+    lan = client(app, base=LAN)
+    # an Origin that is not its own Host
+    evil = lan.post("/api/auth/login", json={"method": "password", "secret": PASSWORD},
+                    headers={"origin": "http://evil.example"})
+    assert evil.status_code == 403
+    # no Origin at all: a write from elsewhere
+    bare = TestClient(app, base_url=LAN)
+    assert bare.post("/api/auth/login", json={"method": "password",
+                                              "secret": PASSWORD}).status_code == 403
+    # its own Origin, the wrong password
+    assert lan.post("/api/auth/login", json={"method": "password",
+                                             "secret": "not it, no"}).status_code == 401
+    assert stored(app) == ""
+    ok = lan.post("/api/auth/login", json={"method": "password", "secret": PASSWORD})
+    assert ok.status_code == 200 and stored(app) == LAN
+
+
+def test_until_an_address_is_stored_other_routes_take_only_loopback(app):
+    c = client(app)
+    setup_password(app, c)
+    forget_address(app)
+    # a session's cookie sent from another address: refused there, fine on loopback
+    lan = TestClient(app, base_url=LAN, headers={"origin": LAN}, cookies=c.cookies)
+    assert lan.post("/api/auth/sessions/logout-others").status_code in (403, 404)
+    assert c.post("/api/auth/sessions/logout-others").status_code == 200
+    assert stored(app) == ""
+
+
+def test_the_address_changes_in_settings(app):
+    c = client(app)
+    setup_password(app, c)
+    assert stored(app) == ORIGIN
+    v = c.get("/api/address").json()
+    assert v["origin"] == ORIGIN
+    bad = c.put("/api/address", json={"origin": "celine.example.net/x"},
+                headers={"if-match": v["version"]})
+    assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == "address.origin"
+    r = c.put("/api/address", json={"origin": SITE + "/"}, headers={"if-match": v["version"]})
+    assert r.status_code == 200 and r.json()["origin"] == SITE and stored(app) == SITE
+    stale = c.put("/api/address", json={"origin": LAN}, headers={"if-match": v["version"]})
+    assert stale.status_code == 412
+    site = client(app, base=SITE)
+    assert site.post("/api/auth/login", json={"method": "password",
+                                              "secret": PASSWORD}).status_code == 200
+    assert client(app, base=LAN).post("/api/auth/login", json={
+        "method": "password", "secret": PASSWORD}).status_code == 403

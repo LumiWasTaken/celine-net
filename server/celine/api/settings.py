@@ -422,6 +422,29 @@ async def test_service(request: Request, id: str) -> dict:
     return await features_mod.probe(services.cfg, services, feature)
 
 
+# ---- the app's own address -----------------------------------------------------------
+# Where the browser opens the app (settings/address.py): learned at the setup or the
+# first login, changed here.
+
+def _address(request: Request, response: Response) -> dict:
+    a = settings_of(request).address
+    return {"origin": a.get("origin", ""), "version": etag(response, version(a))}
+
+
+@router.get("/address")
+async def get_address(request: Request, response: Response) -> dict:
+    return _address(request, response)
+
+
+@router.put("/address")
+async def put_address(request: Request, response: Response,
+                      if_match: str | None = Header(default=None)) -> dict:
+    """{"origin": "https://celine.example.net"}; "" forgets it (the next login learns it)."""
+    body = await json_body(request, need=("origin",), allow=("origin",))
+    out = await saves.address(services_of(request), body, if_match)
+    return {**_address(request, response), **out}
+
+
 # ---- email ---------------------------------------------------------------------------
 
 @router.get("/email")

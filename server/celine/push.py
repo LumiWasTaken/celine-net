@@ -38,7 +38,7 @@ from .auth.routes import device
 from .core.event_types import NOTICE, PUSH_SUBSCRIPTIONS
 from .core.ids import now
 from .errors import CelineError, NotFound
-from .settings import secrets
+from .settings import address, secrets
 
 log = logging.getLogger("celine.push")
 router = APIRouter(prefix="/api")
@@ -75,10 +75,14 @@ class Push:
     def __init__(self, cfg, store, bus, auth=None, send=None):
         self.store, self.bus, self.auth = store, bus, auth
         self.vapid, self.public_key = keys(secrets.secrets_dir(cfg.data_dir))
-        origin = urlsplit(str(cfg.server.get("public_origin") or "http://localhost"))
-        self.sub = f"https://{origin.hostname or 'localhost'}"    # RFC 8292 contact
+        self.cfg = cfg
         self.send = send or self._post
         self.focused: set = set()          # the sockets of pages open and focused
+
+    @property
+    def sub(self) -> str:
+        """The RFC 8292 contact: the app's address's host."""
+        return f"https://{urlsplit(address.base(self.cfg)).hostname or 'localhost'}"
 
     def focus(self, page, on: bool) -> None:
         (self.focused.add if on else self.focused.discard)(page)

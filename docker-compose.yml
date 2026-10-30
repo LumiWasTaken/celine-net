@@ -39,10 +39,9 @@ services:
     restart: unless-stopped
     ports:
       # loopback by default; CELINE_PUBLISH=8766 (or a LAN address) opens it to the
-      # network, then set CELINE_PUBLIC_ORIGIN too
+      # network
       - "${CELINE_PUBLISH:-127.0.0.1:8766}:8766"
     environment:
-      CELINE_PUBLIC_ORIGIN: ${CELINE_PUBLIC_ORIGIN:-}
       CELINE_TRUSTED_PROXIES: ${CELINE_TRUSTED_PROXIES:-}
       DISCORD_LINK_URL: http://discord-link:8768/mcp
       WA_LINK_URL: http://wa-link:8767/mcp

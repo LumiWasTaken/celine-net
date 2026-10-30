@@ -117,7 +117,7 @@ def shown_path(path: Path) -> str:
 # dropped, so the reader's default counts. Each owner keeps the table of its own file
 # (mcp.py, kb/__init__.py, skills/__init__.py, backends/llm.py); boot.py reads them.
 SERVER_KEYS = {             # __main__.py, auth/__init__.py, api/origin.py
-    "host": "str", "port": "int", "login": "str", "public_origin": "str",
+    "host": "str", "port": "int", "login": "str",
     "allowed_hosts": "list", "trusted_proxies": "list", "health_port": "int",
     "metrics_port": "int",
 }
@@ -127,7 +127,6 @@ _TYPES = {"int": "a whole number", "num": "a number", "str": "text", "bool": "tr
 # environment overrides for [server], so a container can bind 0.0.0.0 and turn the login
 # on while config/ stays a read-only copy of the files you run locally
 _SERVER_ENV = {"CELINE_HOST": "host", "CELINE_PORT": "port", "CELINE_LOGIN": "login",
-               "CELINE_PUBLIC_ORIGIN": "public_origin",
                "CELINE_TRUSTED_PROXIES": "trusted_proxies",
                "CELINE_HEALTH_PORT": "health_port",
                "CELINE_METRICS_PORT": "metrics_port"}

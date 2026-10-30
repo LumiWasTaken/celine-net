@@ -87,7 +87,7 @@ fresh install's row starts from it (`her.seed`). The agent's name (`{{name}}` in
 and pronouns are its row's; your name (`{{username}}`) is Settings, General.
 
 `celine.toml` is how the app is served, read at start: `[server] host`, `port`
-(127.0.0.1, 8766; `CELINE_HOST`, `CELINE_PORT` win), `login`, `public_origin`,
+(127.0.0.1, 8766; `CELINE_HOST`, `CELINE_PORT` win), `login`,
 `allowed_hosts`, `trusted_proxies`, `health_port`, `metrics_port`, and `[paths] data`
 (var). `config.load` reads it and writes nothing; `boot.load` reads the rest
 (mcp.toml, kb.toml, skills.toml, llm.toml, the presets, var/settings, its row), each

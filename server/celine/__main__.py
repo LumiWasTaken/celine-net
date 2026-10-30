@@ -398,8 +398,10 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from . import auth as auth_mod
     from .auth.gate import not_found
     from .auth.install import install as install_login
+    from .settings import address
     origin_mod.install(app, cfg.port, dev, log, server=cfg.server,
-                       login_on=auth_mod.mode(cfg.server) == "on")
+                       login_on=auth_mod.mode(cfg.server) == "on",
+                       stored=lambda: address.get(cfg))
     install_login(app, cfg, dev)             # the session gate
     from .api.headers import SecurityHeaders
     app.add_middleware(SecurityHeaders)      # outermost: covers the gate's answers too

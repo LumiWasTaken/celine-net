@@ -6,8 +6,11 @@ allowed only while the server binds to loopback; the Docker image turns it on.
 With login on, a request without a valid session sees nothing: every path answers
 the same 404 as an unknown route, the WebSocket too (gate.py). The exceptions are the
 login screen at `/` and the endpoints it calls (routes.py, open_router). The relying party
-(RP ID and origin) comes from `[server] public_origin` (CELINE_PUBLIC_ORIGIN), never
-from request headers; the default is http://localhost:<port>.
+(RP ID and origin) is the app's stored address (settings/address.py). Until one is stored
+it is the origin of the login page's own request (its Origin naming its Host,
+api/origin.py), and the first login or setup stores that one (routes.py `_signed_in`).
+Passkeys need https or localhost (the browser's rule); a password or a PIN works on any
+address.
 
 Why py_webauthn: the Duo Labs library is the maintained, spec-tracking WebAuthn
 server for Python (attestation and assertion checks, sign counts), on `cryptography`.
@@ -22,9 +25,10 @@ import time
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from ..settings import address
 from .store import AuthStore
 
 log = logging.getLogger("celine.auth")
@@ -67,7 +71,6 @@ def startup_problem(server: dict, host: str, port: int, dev: bool) -> str | None
         return bad
     try:
         if mode(server) == "on":
-            settings(server, port, dev)
             return None
     except AuthConfigError as e:
         return str(e)
@@ -95,46 +98,25 @@ def _proxy_problem(proxies) -> str | None:
 
 
 @dataclass
-class Settings:
+class Party:
+    """The relying party of one origin: its RP ID is the origin's host."""
     rp_id: str
-    rp_name: str
-    user_name: str
     origin: str
     origins: list[str]
-    secure: bool
 
 
-def settings(server: dict, port: int, dev: bool, rp_name: str = "Celine",
-             user_name: str = "owner") -> Settings:
-    """The relying party from the deployment config. Raises AuthConfigError."""
-    origin = str(server.get("public_origin") or f"http://localhost:{port}").rstrip("/")
-    parts = urlsplit(origin)
-    host = parts.hostname or ""
-    if (parts.scheme not in ("http", "https") or not host or parts.path or parts.query
-            or parts.fragment):
-        raise AuthConfigError(f"The public origin {origin!r} must look like "
-                              f"https://celine.example.net or http://localhost:{port}.")
-    try:
-        ipaddress.ip_address(host)
-        is_address = True
-    except ValueError:
-        is_address = False
-    if is_address:
-        raise AuthConfigError(f"Passkeys need a host name, not the address {host}. "
-                              f"Use http://localhost:{port} locally.")
-    if parts.scheme == "http" and host != "localhost":
-        raise AuthConfigError(f"Passkeys need https for {host}. Only localhost may use "
-                              f"http.")
+def party(origin: str, dev: bool = False) -> Party:
+    host = urlsplit(origin).hostname or "localhost"
     origins = [origin]
     if dev and host == "localhost":
         origins += [f"http://localhost:{p}" for p in (5174, 4173)]   # vite dev, vite preview
-    return Settings(rp_id=host, rp_name=rp_name, user_name=user_name, origin=origin,
-                    origins=origins, secure=parts.scheme == "https")
+    return Party(rp_id=host, origin=origin, origins=origins)
 
 
 @dataclass
 class Ceremony:
     kind: str                       # "login", "register" (with a code) or "add"
+    origin: str                     # where it started: its finish is checked against it
     challenge: bytes
     expires: float
     client: str
@@ -144,15 +126,28 @@ class Ceremony:
 
 @dataclass
 class Auth:
-    settings: Settings
     store: AuthStore
+    stored: Callable[[], str]        # the app's address, "" while none (settings/address.py)
+    port: int = 8766
+    dev: bool = False
+    rp_name: str = "Celine"
+    user_name: str = "owner"
     ceremonies: OrderedDict[str, Ceremony] = field(default_factory=OrderedDict)
     login_failures: dict[str, deque[float]] = field(
         default_factory=lambda: defaultdict(deque))
 
     @classmethod
-    def open(cls, data_dir: Path, s: Settings) -> "Auth":
-        return cls(settings=s, store=AuthStore(data_dir / "auth.db"))
+    def open(cls, data_dir: Path, stored: Callable[[], str], **kw: Any) -> "Auth":
+        return cls(store=AuthStore(data_dir / "auth.db"), stored=stored, **kw)
+
+    def origin_for(self, headers) -> str:
+        """The app's address; while none is stored, the request's own origin (its Origin
+        naming its Host), else this machine."""
+        return (self.stored() or address.same_origin(headers)
+                or f"http://localhost:{self.port}")
+
+    def party(self, origin: str) -> Party:
+        return party(origin, self.dev)
 
     # ---- ceremonies (one browser's started login or registration) --------------------
     def begin(self, c: Ceremony) -> str:
@@ -217,7 +212,7 @@ class Auth:
                         extra={"event": "auth.setup_code_file_failed"})
         log.warning(f"No login is set up yet. The setup code for the first passkey, "
                     f"password or PIN is in {self.setup_code_file}; open "
-                    f"{self.settings.origin} and enter it.",
+                    f"{self.stored() or 'the app'} and enter it.",
                     extra={"event": "auth.setup_code"})
 
     def forget_setup_code(self) -> None:
@@ -225,6 +220,7 @@ class Auth:
         registration, auth/routes.py)."""
         self.setup_code_file.unlink(missing_ok=True)
 
-    def cookie(self, token: str, max_age: int) -> dict:
+    def cookie(self, token: str, max_age: int, origin: str) -> dict:
+        """The session cookie for a browser at `origin`: Secure on https."""
         return {"key": COOKIE, "value": token, "max_age": max_age, "path": "/",
-                "httponly": True, "samesite": "strict", "secure": self.settings.secure}
+                "httponly": True, "samesite": "strict", "secure": origin.startswith("https:")}

@@ -28,7 +28,7 @@ HEADER = ("Written by celine-net Settings. Hand edits are fine. The app reads th
           "file.")
 
 SECTIONS = ("providers", "roles", "tools", "general", "email", "vault", "triggers",
-            "appearance", "guard", "features", "services")
+            "appearance", "guard", "features", "services", "address")
 
 _lock = threading.Lock()
 

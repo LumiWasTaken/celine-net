@@ -1,5 +1,5 @@
 """Settings the app writes: var/settings/*.toml (providers, roles, tools, general,
-email, vault, triggers, appearance, guard, features, services) and var/secrets/*.key..
+email, vault, triggers, appearance, guard, features, services, address) and var/secrets/*.key..
 
 boot.load() calls `apply(cfg)` once config/ is read: `load(cfg)` reads each
 var/settings file, validates it and the result goes on the Config (settings/registry.py). A file that does
@@ -13,7 +13,8 @@ from typing import Any
 
 from .. import plugins
 from ..config import ConfigError, Problem, shown_path
-from . import features as features_mod, files, form, general as general_mod
+from . import address as address_mod, features as features_mod, files, form
+from . import general as general_mod
 from . import mail as mail_mod, services as services_mod, vault as vault_mod
 from .files import Invalid
 from .registry import (
@@ -98,6 +99,7 @@ def load(cfg) -> Settings:
     s.services = pick("services", services_mod.validate)
     if not s.saved["services"]:          # the environment, read nowhere else
         s.services = services_mod.seed()
+    s.address = pick("address", address_mod.validate)
     for p in plugins.with_form():        # var/settings/<id>.toml
         s.plugins[p.id] = pick(p.id, lambda v, p=p: form.validate(p.id, p.form["fields"], v))
     return s
