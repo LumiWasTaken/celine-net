@@ -61,6 +61,12 @@ Open http://localhost:8766, enter the setup code and pick a login (passkey, pass
 PIN). After that the setup walks you through naming her, telling her about you, connecting
 a model and turning features on.
 
+To use it from other machines on your network (her Mac, your phone) without a domain:
+put `CELINE_PUBLISH=8766` in `.env`, run `docker compose up -d` again, open
+`http://<this machine's LAN address>:8766` and enter the setup code there. The app keeps
+the address you set it up at. Log in with a password or a PIN: passkeys need https or
+localhost.
+
 The box, the browser, SearXNG and the connectors are optional containers. You turn them on
 with compose profiles in `.env`, see `.env.example`. More about running it for real is in
 [docs/DEPLOY.md](docs/DEPLOY.md).
