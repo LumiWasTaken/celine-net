@@ -135,8 +135,7 @@ async def probe(cfg, services) -> dict[str, str]:
     then the box's own probe: a share opens only while it answers."""
     if not features.on(cfg, "shellbox"):
         return {"state": "unset", "detail": "The shellbox is off."}
-    from .skills.shell import probe as box
-    got = await box(cfg, services)
+    got = await features.probe(cfg, services, "shellbox")
     if got["state"] != "ready":
         return {k: v for k, v in got.items() if k != "url"} | {"state": "missing"}
     return {"state": "ready", "detail": "The shellbox is on."}
