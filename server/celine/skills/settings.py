@@ -390,7 +390,9 @@ class Settings:
         approvals = getattr(self.app, "approvals", None)
         if approvals is None:
             return ToolResult(content=NOBODY, is_error=True)
-        action = f"change the {t.label} settings"
+        pid = t.id.removeprefix("providers.")
+        action = f"add the model provider {pid}" if t.id.startswith("providers.") and \
+            pid not in self.cfg.settings.providers else f"change the {t.label} settings"
         if no := await approvals.ask(action, [], ctx.conversation_id, why, action,
                                      kind="settings", call=ctx.tool_call_id or None,
                                      changes=rows):

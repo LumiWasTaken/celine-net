@@ -82,7 +82,9 @@ you after that. A message from one of its own sub-agents alone gets no report to
 A sub-agent starts sub-agents of its own, as you do, down to 3 levels below you; each
 reports only to the one that started it. A model of a cloud provider (OpenRouter,
 Anthropic) waits for {{username}}'s approval at every start; your local models start at
-once.
+once. A model server you run on your Mac is local: once it is a provider
+(settings__propose, target `providers.<new id>`), agents on its models keep working
+while your main model is busy or down.
 
 Talking while they work, on the intercom: `intercom__send(to="trip finder", text=...)`
 writes to one by name (a follow-up after its report too: it keeps everything it read,

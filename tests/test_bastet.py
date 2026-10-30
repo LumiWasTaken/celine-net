@@ -403,25 +403,25 @@ async def test_confirm_asks_the_owner_and_his_answer_decides(store):
 
 
 async def test_a_fresh_install_confirms_the_steps_that_reach_out_or_change_her(store):
-    """The seed of the confirm list: a public share, the coding agent, a CLI sub-agent
-    and an edit of herself wait for the owner; a private share or a model sub-agent do
+    """The seed of the confirm list: a public share and an edit of herself wait for the
+    owner; a private share, a sub-agent and the coding agent on her own machines do
     not. The owner's own list replaces the seed."""
     cfg = _cfg()
-    assert rules.current(cfg)["confirm"]["tools"] == [
-        "shell__share:public", "code__start", "sub_agents__start:cli", "me__edit"]
+    assert rules.current(cfg)["confirm"]["tools"] == ["shell__share:public", "me__edit"]
 
     def call(tool, **args):
         return {"id": f"s-{tool}-{sorted(args.items())}", "name": tool,
                 "message_id": None, "read_only": False, "args": args}
     for c in (call("shell__share", title="Snake", port=8000, public=True),
-              call("code__start", dir="site", task="build it", model="main/big"),
-              call("sub_agents__start", brief="tidy up", name="helper", cli="opencode"),
               call("me__edit", what="phrases", add=["you were right"])):
         v = await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
                               ask=FakeAsk(0.0), cfg=cfg)
         assert v is not None and v.decision == "asked" and v.rule == "confirm", c["name"]
     for c in (call("shell__share", title="Snake", port=8000, public=False),
               call("shell__share", title="Snake", port=8000),
+              call("code__start", dir="site", task="build it", model="main/big"),
+              call("sub_agents__start", brief="tidy up", name="helper", cli="opencode"),
+              call("sub_agents__start", brief="tidy up", name="helper", device="mac"),
               call("sub_agents__start", brief="tidy up", name="helper")):
         assert await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
                                  ask=FakeAsk(0.0), cfg=cfg) is None, c["args"]
