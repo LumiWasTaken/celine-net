@@ -41,7 +41,7 @@ async def test_defaults_then_put_then_get(api):
     r = (await api.get("/api/features")).json()
     assert r["saved"] is False and r["done"] is False and "restart" not in r
     assert {f["id"] for f in r["catalog"]} == set(r["features"])
-    assert [f["id"] for f in r["catalog"]][:3] == ["shellbox", "shares", "browser"]
+    assert [f["id"] for f in r["catalog"]][:3] == ["shellbox", "mac", "shares"]
     # nothing that needs a service runs before Setup saved it: no connector starts at boot
     off = {i for i, on in r["features"].items() if not on}
     assert off == {"shellbox", "shares", "browser", "images", "music", "web", "discord",
@@ -84,21 +84,33 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
-    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "card", "kbs", "archive", "warn",
-            "state", "detail", "group", "choice", "group_label"}
+    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "kbs", "archive", "warn",
+            "state", "detail", "group", "choice", "group_label", "tier", "step"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
     assert by["documents"]["state"] == "none" and by["documents"]["detail"] == ""
-    # the onboarding's fold: a card when the service answered, or when it has an address
-    # and does not answer; the guard always; email and vault never (the Later card and
-    # Settings). On this fake app (no kbs: the config's word) only the archive probe is ready.
-    assert {f["id"] for f in catalog if f["card"] == "detect"} == {"messages"}
-    assert {f.id for f in features.catalog() if f.card == "detect"} == \
-        {"shellbox", "browser", "images", "music", "web", "messages"}
-    assert {f["id"] for f in catalog if f["card"] == "always"} == \
-        {"shares", "discord", "whatsapp", "guard", "routines", "speech_input", "speech_output", "mac"}
     assert {f["id"] for f in catalog if f["warn"]} == {"shares"}
-    assert by["email"]["card"] == "" and by["vault"]["card"] == ""
+    # the onboarding's setup steps: a form, or a connection
+    assert {f["id"] for f in catalog if f["step"]} == {
+        "shellbox", "browser", "images", "music", "speech_input", "speech_output", "web", "discord",
+        "whatsapp", "email", "vault", "guard", "messages", "routines", "mac"}
+
+
+async def test_the_tiers_come_in_order_with_the_core_and_a_group_together(api, _test_skills_core):
+    r = (await api.get("/api/features")).json()
+    assert [t["id"] for t in r["tiers"]] == ["core", "base"], "no user module: no user tier"
+    assert [t["label"] for t in r["tiers"]] == ["Core", "Base modules"]
+    assert {f["tier"] for f in r["catalog"]} == {"base"}
+    # the core is the chat and every core skill no feature owns; no switch, no feature id
+    owned = set(features.skill_owners())
+    assert {c["id"] for c in r["core"]} == {"chat"} | (_test_skills_core - owned)   # skills.CORE as shipped
+    assert "skills" in {c["id"] for c in r["core"]}, "META, the guides' skill"
+    assert not {c["id"] for c in r["core"]} & set(r["features"])
+    assert all(c["label"] and c["about"] and "{{" not in c["about"] for c in r["core"])
+    # her computer's choices sit together, the Mac right after the shellbox
+    ids = [f["id"] for f in r["catalog"]]
+    assert ids[:3] == ["shellbox", "mac", "shares"]
+    assert r["catalog"][1]["group_label"] == r["catalog"][0]["group_label"] != ""
 
 
 import httpx as _httpx
@@ -145,18 +157,15 @@ async def test_the_shellbox_probe_tries_the_default_address_and_hands_it_over(ap
     found = await features.probe(api.cfg, api.services, "shellbox")
     assert found == {"state": "ready", "detail": "Found at http://127.0.0.1:8770.",
                      "url": "http://127.0.0.1:8770"}
-    assert features.card_now(api.cfg, features.get("shellbox"), found) == "detect"
     box(lambda r: httpx.Response(401 if r.url.path == "/status" else 200, json={}))
     bad = await features.probe(api.cfg, api.services, "shellbox")
     assert bad["state"] == "missing" and bad["url"] == "http://127.0.0.1:8770"
-    assert features.card_now(api.cfg, features.get("shellbox"), bad) == "detect"
 
     def down(r):
         raise httpx.ConnectError("refused")
     box(down)
     none = await features.probe(api.cfg, api.services, "shellbox")
     assert none["state"] == "unset" and "url" not in none
-    assert features.card_now(api.cfg, features.get("shellbox"), none) == ""
 
 
 async def test_the_browser_probe_reads_browserd_state(api, monkeypatch):

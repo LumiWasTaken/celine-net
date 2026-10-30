@@ -1,7 +1,8 @@
 # Her own computer: a Mac
 
-A base plugin: the switch "Own computer" on the "Her computer" card (Setup, and Settings,
-Features), its form a Settings page. `setup.sh` makes a Mac (Apple silicon, macOS 15 or
+A base plugin: the switch "Her Mac" under Base modules (Setup's Features step, and Settings,
+Features); switched on in Setup, its form is the "Own computer" part of the "Her computer"
+step, and a Settings page. `setup.sh` makes a Mac (Apple silicon, macOS 15 or
 later) a computer she uses from the app. It installs with Homebrew and npm only (no Apple
 Account):
 
@@ -49,7 +50,7 @@ In the app:
 
 ## Run
 
-With the switch on, the card shows the command, with the app's address and the link key
+With the switch on, the form shows the command, with the app's address and the link key
 in it. Logged in at the Mac as her (an admin), in Terminal:
 
 ```sh
@@ -71,7 +72,7 @@ permissions it lacks. A second run updates the gateway's config and restarts it 
 Chrome; the token stays.
 
 The app reconnects to the four servers by itself while the Mac is away (a reboot waits
-for FileVault's unlock and her login); the card says why they are down until then.
+for FileVault's unlock and her login); the form says why they are down until then.
 
 ## From the Mac
 
@@ -100,5 +101,5 @@ Security, with the + button and Cmd+Shift+G for the path:
 - **Accessibility**: node and peekaboo, and opencode (this also covers the synthetic clicks and keys
   Peekaboo reports as Event Synthesizing).
 
-Check on the card lists each permission the screen server still lacks. An upgrade of node
+Check on the form lists each permission the screen server still lacks. An upgrade of node
 or peekaboo changes the binaries, and macOS asks for the permissions again.

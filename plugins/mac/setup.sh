@@ -10,7 +10,7 @@
 #
 # The report is one JSON line: the gateway address, the token, the drones' address, the
 # tools that answer, the macOS permissions each still lacks and opencode's version. --app posts that line to the app with the key
-# its "Her computer" card shows in the command.
+# its "Her computer" form shows in the command.
 set -euo pipefail
 
 PORT=8765
@@ -415,7 +415,7 @@ for _ in $(seq 30); do   # 401 without the password: it answers
 done
 
 line=$(report)
-if [ -n "$APP" ]; then   # the app saves the address and the token into its "Her computer" card
+if [ -n "$APP" ]; then   # the app saves the address and the token into its "Her computer" form
   curl -fsS -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $KEY" \
     --data "$line" "$APP/api/plugins/mac/gateway" >/dev/null
 fi

@@ -4,7 +4,6 @@ id = "mac"
 label = "Her Mac"
 about = "Her own Mac: its screen, a shell and its files, and a browser."
 off_when = "The Mac is off or nobody is logged in."
-card = "always"
 group = "computer"
 choice = "Own computer"
 routes = ["gateway:router"]

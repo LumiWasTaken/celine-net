@@ -23,7 +23,7 @@ def load() -> Config:
     cfg = config.load()
     p = cfg.problems
     # every manifest before the settings, so the plugins' switches and forms are known
-    reserved = frozenset(f.id for f in features.CORE) | frozenset(settings.files.SECTIONS)
+    reserved = frozenset(f.id for f in features.BASE) | frozenset(settings.files.SECTIONS)
     p += [Problem("plugins", m) for m in plugins.scan(cfg.data_dir, reserved,
                                                                  settings.form.check_toml)]
     p += [Problem("plugins", f"plugins/{x.id}: there is no group {x.manifest['group']!r}, "

@@ -48,6 +48,7 @@ def test_scan_reads_the_base_and_the_data_dir_replaces_by_id(tmp_path, monkeypat
     boot.load()
     p = plugins.get("echo")
     assert p.dir == base / "echo" and not p.user and p.form["fields"][0]["key"] == "prefix"
+    assert features.get("echo").tier == "base"
     assert "echo" in features.ids() and features.skill_owners()["echo"] == "echo"
     assert features.get("echo").start_on is False and features.get("echo").pages == ("echo",)
     mine = _echo(var)
@@ -60,6 +61,11 @@ def test_scan_reads_the_base_and_the_data_dir_replaces_by_id(tmp_path, monkeypat
     plugins.scan(var, frozenset())
     assert plugins.get("echo").dir == mine and plugins.get("echo").user
     assert features.get("echo").label == "My echo"
+    assert features.get("echo").tier == "user", "from the data dir, no place: a user module"
+    (mine / "plugin.toml").write_text('places = ["echo"]\n' + (mine / "plugin.toml").read_text())
+    monkeypatch.setattr(plugins, "_scanned", None)
+    plugins.scan(var, frozenset())
+    assert features.get("echo").tier == "base", "a place of its own: a base module"
 
 
 def test_a_bad_manifest_is_a_problem_and_no_plugin(tmp_path, monkeypatch):

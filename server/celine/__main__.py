@@ -235,7 +235,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                         for kid in f.kbs:
                             kbs.close(kid)
                 return Runner(tg, run)
-            for f in features.CORE:          # a plugin's servers run under its own runner
+            for f in features.BASE:          # a plugin's servers run under its own runner
                 if f.mcp:
                     runners[f.id] = connector_runner(f)
                     if on[f.id]:
