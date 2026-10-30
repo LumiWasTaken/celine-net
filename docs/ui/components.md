@@ -194,6 +194,8 @@ ListRows.
 `after`, `inset`, `resetOn`, `page` (the list is part of a page that scrolls, such as a
 Section of a long page: no scroll box of its own, it follows the page's). Every row is
 measured once drawn, so `estimate` is only the first guess and rows never overlap or gap.
+When `items` change, rows glide to their new places, new rows rise and gone rows fade
+(`useMove`); a scroll or a new `resetOn` moves nothing.
 
 ### ListPage
 **When:** a place's list page. Kit classes,
@@ -223,8 +225,9 @@ card's whole top, to its edges: a cover), `title`, `subtitle`, `meta`, `selected
 (a pick: the accent ring), `onClick`, `href`, `menu` (the "..." items, also right-click and
 long press), `menuLabel`, `children` (a few lines under the head), `actions` (buttons at its
 foot, each its own press beside the card's: Open, New folder), `pick` (the grid's
-Select: a check on the card while selecting), `tooltip`.
-**Don't:** hand-build a card; put more than one primary in it.
+Select: a check on the card while selecting), `tooltip`. `CardGrid` lays cards out in as
+many columns as fit; a card that goes fades and the rest glide into its place.
+**Don't:** hand-build a card or a grid of them; put more than one primary in it.
 
 ### Tree
 **When:** only a real hierarchy of folders (Notebook, Documents).
@@ -453,6 +456,39 @@ selecting),
 **When:** what its terminal or its browser shows, and its browser's shots.
 **Props:** `title` (a program, an address), `mono` (a terminal's text), `current` (the one
 shown now among shots), children.
+
+## Motion
+
+Every duration and curve is a token (`tokens.css`); only `opacity` and `transform` (or
+`translate`) animate. The one exception is Progress's bar width.
+
+| Token | For |
+|---|---|
+| `--dur-fast` 120 ms | hover, press, small exits (a menu, a toast, a row) |
+| `--dur` 220 ms | small enters, large exits, glides (a row, a tab's underline, a place) |
+| `--dur-slow` 320 ms | large enters: a dialog, a sheet, a drawer, the Viewer |
+| `--ease` | enter and move |
+| `--ease-exit` | leave |
+| `--ease-spring` | the rail's pill only: a destination; tabs and Segmented glide on `--ease` |
+
+Enter is slower than exit: a drawer slides in on `--dur-slow --ease` and out on
+`--dur --ease-exit`. Keyframes in `base.css`: `fade`, `rise`, `grow`, `pulse`, `sheet-up`,
+`spin`, `skeleton`, `shimmer`, `highlight`.
+
+| Primitive (`ui/motion.ts`) | For |
+|---|---|
+| `useLeave(ref, exit)` with `leave(g, OUT.x)` | anything that goes: plays the exit on a copy as React removes it |
+| `useMove(ref, on, { enter, leave, quiet, bottom })` | the children of a box glide to new places (FLIP): VirtualList, CardGrid, the toast stack, the composer's chips |
+| `useReplaced(ref)` | what takes a skeleton's place fades in (LoadingRow has it) |
+| `usePush(ref, depth)` | a phone: a deeper page pushes in from the right, back reverses it (PlaceHead has it) |
+| `useSlide` (`ui/slide.ts`) | one mark that slides to the chosen item: rail, Tabs, Segmented, Radios |
+
+A place switch fades the new place in over the one left (`App.tsx`). Press is
+`scale(0.98)` on `:active` with `transform` in the transition. A row that scrolls into view
+never animates. No `width`, `height` or `margin` transitions, no `will-change`.
+
+Reduced motion (`base.css`): every duration is 0.01 ms and the JS primitives skip; the
+working marks (spin, dots, a running dot) keep moving at half speed.
 
 ## Shell parts
 
