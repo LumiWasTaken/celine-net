@@ -380,6 +380,25 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
     assert {s["id"] for s in await _subs_of(store, scout)} == {worker, cli}
 
 
+async def test_an_inherited_folder_leaves_the_default_access_read(store, cfg):
+    from types import SimpleNamespace
+    agents = _registry(cfg).skills["sub_agents"]
+    agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store),
+                          dispatcher=SimpleNamespace(notify=lambda: None))
+    parent = await conversations.create(store)
+    scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout",
+                                       access="work", notebook_folder="agents/scout")
+    (cfg.her.notebook / "agents/scout").mkdir(parents=True)
+    kid, refusal, _, _ = await agents.begin(store, scout, "look around", "a looker")
+    assert refusal is None
+    [row] = await store.read(lambda c: agents_of(c, agent=kid))
+    assert (row["access"], row["folder"]) == ("read", "agents/scout")
+    kid, refusal, _, _ = await agents.begin(store, scout, "write it", "a writer",
+                                            folder="agents/scout/out")
+    [row] = await store.read(lambda c: agents_of(c, agent=kid))
+    assert (row["access"], row["folder"]) == ("work", "agents/scout/out"), "a folder given"
+
+
 async def test_sub_agents_start_their_own_down_to_three_levels(store, cfg):
     agents = _registry(cfg).skills["sub_agents"]
     agents.app = Services(dispatcher=object())     # a refusal never reaches it

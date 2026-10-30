@@ -332,6 +332,7 @@ class SubAgents:
                 return None, (f"{folder!r} is not a folder inside your notebook. Leave "
                               f"`folder` out for the whole notebook."), False, None
             folder = plain
+        asked_folder = folder          # the default access follows the folder given
         # a parent limited to a notebook folder limits its children to it
         own = await store.read(lambda c: c.execute(
             "SELECT notebook_folder FROM conversations WHERE id=?", (parent,)).fetchone())
@@ -353,7 +354,7 @@ class SubAgents:
             return None, "The brief is empty. Say what it must do.", False, None
         # capabilities pass down: a read parent starts read children only
         reading = await reads_only(store, parent)
-        access = access or ("work" if folder is not None and not reading else "read")
+        access = access or ("work" if asked_folder is not None and not reading else "read")
         if access not in ("read", "work"):
             return None, "access is read or work.", False, None
         if reading and (access == "work" or cli is not None or device is not None):
