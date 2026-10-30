@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 16
+LATEST = 17
 
 
 def _version(db) -> int:
@@ -389,3 +389,18 @@ def test_0015_takes_keep_thinking_out_of_the_saved_models_once(tmp_path):
     assert not list(path.parent.glob("*.tmp")), "written atomically, no temp file left"
     migrate_all(db)
     assert path.read_bytes() == before, "the runner applies it to a fresh database too"
+
+
+def test_her_stored_persona_gets_the_lines_the_shipped_one_has():
+    import importlib.util
+
+    from celine.her import BASE, base_persona
+    spec = importlib.util.spec_from_file_location(
+        "m0017", MIGRATIONS_DIR / "0017_persona_lines.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    shipped = (BASE / "persona.md").read_text()
+    old = shipped.replace(step.ADDED, "").rstrip() + step.DUPLICATE + "\n\n" + \
+        (BASE / "owner.md").read_text()
+    assert step.changed(old) == base_persona()
+    assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
