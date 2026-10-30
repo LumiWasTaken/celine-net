@@ -256,6 +256,8 @@ export type Feature = {
   archive: string
   /** what switching it on asks first (shares), or "" */
   warn: string
+  /** on only while this feature is on: off and greyed while that switch is off */
+  after: string
   /** the onboarding step it shares with the rest of its group, that step's title and its
       sub-heading there; "" for a step of its own */
   group: string

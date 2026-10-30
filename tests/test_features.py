@@ -84,7 +84,7 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
-    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "kbs", "archive", "warn",
+    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "kbs", "archive", "warn", "after",
             "state", "detail", "blocks", "group", "choice", "group_label", "tier", "step"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
@@ -571,9 +571,13 @@ async def test_shares_start_off_and_their_switch_saves_on(api, monkeypatch):
         "a share opens only while the box answers"
     box = {"state": "ready", "detail": "The shellbox at box answers."}
     assert (await api.get("/api/features/shares/probe")).json()["state"] == "ready"
+    assert down["blocks"] is False, "its switch follows the shellbox's switch, not the box"
+    shares_view = next(f for f in (await api.get("/api/features")).json()["catalog"]
+                       if f["id"] == "shares")
+    assert shares_view["after"] == "shellbox"
     await api.put("/api/features", json={"features": {"shares": True, "shellbox": False}})
-    assert (await api.get("/api/features/shares/probe")).json() == \
-        {"state": "unset", "detail": "The shellbox is off.", "blocks": True}
+    assert features.on(api.cfg, "shares") is False, "off while the shellbox is off"
+    assert tools.isdisjoint(reg.tools)
     assert f"{shares.PRIVATE_HOURS} hours" in features.get("shares").warn
 
 

@@ -69,6 +69,8 @@ class Feature:
     archive: str = ""
     # on only once saved on: never on by itself, not on a fresh install nor for an id left out
     start_on: bool = True
+    # on only while this feature is on: its switch is off and greyed while that one is off
+    after: str = ""
     # the confirm a switch on shows first (Settings, Features and the onboarding)
     warn: str = ""
     # the onboarding step it shares with the other features of its group (GROUPS), and
@@ -109,7 +111,7 @@ BASE: tuple[Feature, ...] = (
             "Shows you a page, game, tool or file from the shellbox in a new tab.",
             "Nothing of the shellbox should open outside it.",
             tools=("shell__share", "shell__unshare", "shell__list_shares"),
-            probe="celine.shares:probe", start_on=False,
+            probe="celine.shares:probe", start_on=False, after="shellbox",
             warn="The link of a share is its key. A page opens only for you while you are "
                  "logged in, but anyone who gets a link can reach what it shares with a "
                  "script until it ends (24 hours, or what you set) or you stop it. A public "
@@ -258,7 +260,7 @@ def view(f: Feature) -> dict[str, Any]:
     return {"id": f.id, "label": f.label, "needs": f.needs, "about": f.about,
             "off_when": f.off_when, "places": list(f.places), "pages": list(f.pages),
             "setup": f.setup, "form": f.form, "kbs": list(f.kbs), "archive": f.archive,
-            "warn": f.warn, "group": f.group, "choice": f.choice, "tier": f.tier,
+            "warn": f.warn, "after": f.after, "group": f.group, "choice": f.choice, "tier": f.tier,
             "step": has_step(f)}
 
 
@@ -282,8 +284,10 @@ def validate(data: Any) -> dict[str, bool]:
 
 
 def effective(saved: dict[str, bool] | None) -> dict[str, bool]:
-    """Every feature, a missing one on unless it starts off."""
-    return {f.id: (saved or {}).get(f.id, f.start_on) for f in catalog()}
+    """Every feature, a missing one on unless it starts off; one `after` a feature that
+    is off is off."""
+    out = {f.id: (saved or {}).get(f.id, f.start_on) for f in catalog()}
+    return {f.id: out[f.id] and (not f.after or out[f.after]) for f in catalog()}
 
 
 def done(saved: dict[str, bool] | None) -> bool:
@@ -363,6 +367,8 @@ async def probe(cfg, services, feature: str) -> dict[str, Any]:
     for key in ("url", "why"):          # why: what she reads (me__whoami), when it differs
         if result.get(key):
             out[key] = result[key]
+    if "blocks" in result:              # a probe whose state never blocks its switch
+        out["blocks"] = result["blocks"]
     return out
 
 

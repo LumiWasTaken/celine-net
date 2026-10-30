@@ -5,6 +5,15 @@ import type { Feature, FeaturesView } from './settingsApi'
 /** a feature's switch cannot be on: the server says so (its probe's `blocks`) */
 export const blocked = (f: Feature) => f.blocks
 
+/** a feature `after` another whose switch, as flipped, is off: off and greyed */
+export const waits = (view: FeaturesView, f: Feature) => !!f.after && view.features[f.after] === false
+
+/** the switches with `id` flipped to `on`: off, every feature after it goes off too */
+export const flip = (view: FeaturesView, id: string, on: boolean) => ({
+  ...view.features, [id]: on,
+  ...(on ? {} : Object.fromEntries(view.catalog.filter(f => f.after === id).map(f => [f.id, false]))),
+})
+
 /** the onboarding's steps before the features' own */
 const FIXED = ['her', 'you', 'model', 'features']
 

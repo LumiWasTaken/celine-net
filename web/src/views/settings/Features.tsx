@@ -14,7 +14,7 @@ import { ArrowUpRight, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { format } from '../../lib/nav'
 import { useRef, useState } from 'react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
-import { blocked } from '../../lib/featureSteps'
+import { blocked, flip, waits } from '../../lib/featureSteps'
 import { STATE_TONE, settingsApi, type Feature, type FeaturesView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
@@ -107,7 +107,7 @@ export function FeatureTiers({ view, disabled = false, about = false, free = fal
               <div key={f.id}>
                 <div className="feature-line">
                   <FeatureSwitch feature={f} on={view.features[f.id] !== false} about={about} free={free && f.step}
-                                 disabled={disabled} onChange={v => onChange({ ...view.features, [f.id]: v })} />
+                                 waiting={waits(view, f)} disabled={disabled} onChange={v => onChange(flip(view, f.id, v))} />
                   {onOpen && page && (
                     <Button variant="ghost" size="sm" icon={ArrowUpRight} href={format({ section: 'settings', page })}>
                       {page === 'guard' ? 'Open Guard' : 'Open Images & Music'}
@@ -147,20 +147,23 @@ function SetupForm({ Form, feature, value, onChange, reprobe }: {
     reason: what the probe said or what turns it on, else why someone turns it off) and the label.
     Blocked (its service missing or not set up): off and greyed, its `needs` sentence under
     it, and a click shows it as a toast; `free` (the onboarding, a feature whose setup step
-    comes next): it switches as any other. With `about` the sentence is a second line and
+    comes next): it switches as any other. `waiting` (the feature it comes `after` is switched
+    off, as flipped on this page): off and greyed as when blocked. With `about` the sentence is a second line and
     the tooltip is `off_when`; without, the tooltip is `about`. A tooltip never repeats what
     the row shows: an off row has none. A feature with `warn` (shares) asks first when
     switched on (Turn on); off needs no confirm */
-export function FeatureSwitch({ feature: f, on, disabled = false, about = false, free = false, onChange }: {
+export function FeatureSwitch({ feature: f, on, disabled = false, about = false, free = false, waiting = false, onChange }: {
   feature: Feature
   on: boolean
   disabled?: boolean
   about?: boolean
   free?: boolean
+  /** the feature it comes after is switched off: off and greyed as when blocked */
+  waiting?: boolean
   onChange: (on: boolean) => void
 }) {
   const tone = stateTone(f, on)
-  const off = blocked(f) && !free
+  const off = (blocked(f) && !free) || waiting
   const line = off ? f.needs : about ? f.about : ''
   const title = off ? undefined : (about ? f.off_when : f.about) || undefined
   const [asking, setAsking] = useState(false)

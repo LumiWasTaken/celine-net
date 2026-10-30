@@ -160,15 +160,15 @@ async def _file_head(cfg, device: str | None, path: str) -> httpx.Response:
                            headers={"Range": "bytes=0-0"})
 
 
-async def probe(cfg, services) -> dict[str, str]:
-    """Settings, Features: a share goes through its box, so the shellbox feature first,
-    then the box's own probe: a share opens only while it answers."""
-    if not features.on(cfg, "shellbox"):
-        return {"state": "unset", "detail": "The shellbox is off."}
+async def probe(cfg, services) -> dict:
+    """Settings, Features: a share goes through its box, so the box's own probe: a share
+    opens only while it answers. It never blocks the switch: that follows the shellbox's
+    switch (the feature's `after`), and the box is set up in its own step."""
     got = await features.probe(cfg, services, "shellbox")
     if got["state"] != "ready":
-        return {k: v for k, v in got.items() if k != "url"} | {"state": "missing"}
-    return {"state": "ready", "detail": "The shellbox is on."}
+        return {k: v for k, v in got.items() if k != "url"} | {"state": "missing",
+                                                                "blocks": False}
+    return {"state": "ready", "detail": "The shellbox answers.", "blocks": False}
 
 
 def down_words(port: int, device: str | None = None) -> str:

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
-import { firstTime, landing, stepsOf, toSave } from './featureSteps.ts'
+import { firstTime, flip, landing, stepsOf, toSave, waits } from './featureSteps.ts'
 
 // `blocks` as the server sends it: missing or unset blocks, but a plugin waiting for its own form
-const f = (id, more = {}) => ({ id, label: id, step: false, state: 'none', warn: '', group: '', group_label: '',
+const f = (id, more = {}) => ({ id, label: id, step: false, state: 'none', warn: '', after: '', group: '', group_label: '',
   blocks: more.state === 'missing' || more.state === 'unset', ...more })
 const computer = { group: 'computer', group_label: 'Her computer' }
 const catalog = [
   f('shellbox', { step: true, state: 'unset', ...computer }),
   f('mac', { step: true, state: 'unset', blocks: false, ...computer }),
-  f('shares', { state: 'unset', warn: 'Careful.' }),
+  f('shares', { state: 'missing', blocks: false, warn: 'Careful.', after: 'shellbox' }),
   f('browser', { step: true, state: 'ready' }),
   f('email', { step: true, state: 'unset' }),
   f('guard', { step: true, state: 'unset' }),
@@ -55,4 +55,12 @@ assert.equal(landing(start, 'email'), 'routines')
 assert.equal(landing(more, 'routines'), 'features')
 assert.equal(landing(start, 'nonsense'), 'features')
 assert.deepEqual(stepsOf(null), ['her', 'you', 'model', 'features', 'done'])
+// shares come after the shellbox: greyed while its switch, as flipped, is off; off with it
+const shareOf = v => waits(v, v.catalog.find(x => x.id === 'shares'))
+assert.equal(shareOf(start), true)
+const box = { ...start, features: flip(start, 'shellbox', true) }
+assert.equal(shareOf(box), false, 'the shellbox switched on: shares switch, its box not set up yet')
+const withShares = { ...box, features: flip(box, 'shares', true) }
+assert.equal(toSave(withShares, fresh.features).shares, true)
+assert.equal(flip(withShares, 'shellbox', false).shares, false, 'the shellbox off: shares off')
 console.log('onboarding step checks passed')
