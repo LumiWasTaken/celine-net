@@ -11,7 +11,8 @@ import { cx } from './cx'
 import { leave, OUT, useLeave } from './motion'
 import { Checkbox } from './Form'
 import { InlineError } from './Notice'
-import { usePhone } from './phone'
+import { coarse, usePhone } from './phone'
+import { isTyping } from '../lib/keys'
 
 // what Tab reaches: a radio group's other options (tabindex -1) are reached by the arrows
 const FOCUSABLE = ['a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])', 'select:not([disabled])',
@@ -105,12 +106,13 @@ function ModalDialog(props: DialogProps) {
   }, [])
 
   // focus in: an autoFocus child already has it; otherwise the first field or button
-  // in the body, then the actions (never the close X first)
+  // in the body, then the actions (never the close X first). On a touch screen a field
+  // would raise the keyboard before anyone tapped it: the box takes the focus instead
   useEffect(() => {
     const el = box.current
     if (!el || el.contains(document.activeElement)) return
-    const all = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(n => !n.closest('.dialog__head'))
-    ;(all[0] ?? el).focus()
+    const first = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].find(n => !n.closest('.dialog__head'))
+    ;(first && !(coarse() && isTyping(first)) ? first : el).focus({ preventScroll: true })
   }, [])
 
   const onKeyDown = (e: React.KeyboardEvent) => {
