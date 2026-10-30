@@ -1,8 +1,8 @@
 /* Place: a place with sections (Documents, the Gallery, Settings, Notebook) is its sidebar
    beside the page. The sidebar (--sidebar-w) holds the place's name with its New as an
    icon, its sections with their counts, then Recent, and the user's own row at its foot;
-   it is navigation, not a list pane. Below 1024 px (a tablet, a phone) it is a Drawer from
-   the left, opened by the panel button every PlaceHead inside the place shows there; a
+   it is navigation, not a list pane. Below 1024 px it is a Drawer (from the left on a
+   tablet, a sheet from the bottom edge on a phone), opened by the panel button every PlaceHead inside the place shows there; a
    link in it closes it. With `fold` the sidebar folds away to the left on a wide screen:
    its head starts with Close sidebar, the page's head with Open sidebar while it is away,
    and this device keeps which.
