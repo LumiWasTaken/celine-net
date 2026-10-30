@@ -30,6 +30,7 @@ async def test_always_notes_and_the_ones_left_out_here(store, tmp_path):
         "people/joe.md": "included", "style.md": "included"}, "nothing by need"
     block = notes_block(cfg, got.notes)
     assert block.startswith("[your notes] you always carry: your notes about Joe")
+    assert "### style.md\nShort sentences." in block, "no load line"
     await conversations.update(store, cid, notes_off=["people/joe.md"])
     got = await select_turn(store, cfg, None, cid, 2)
     assert {n["path"]: (n["state"], n["why"]) for n in got.notes}["people/joe.md"] == \
