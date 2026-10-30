@@ -181,7 +181,7 @@ async def offered(registry, store, cid: str, turn_id: str | None = None
                   ) -> dict[str, list]:
     """The tools each skill offers in this conversation: only in the places
     skills/places.PLACES puts it (an MCP connector: chat, mission, background), and only
-    what its offered_in allows (sub_agents not inside a sub-agent, the intercom's
+    what its offered_in allows (no sub_agents at sub_agents.skill.MAX_DEPTH, the intercom's
     start_chat away from the user); skills offering none left out."""
     from ..skills.places import offered as offered_at
     at = "chat" if store is None else await store.read(lambda c: place(c, cid, turn_id))

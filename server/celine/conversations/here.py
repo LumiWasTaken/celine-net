@@ -72,7 +72,8 @@ def where(c: sqlite3.Connection, cid: str, role: str | None = None) -> str | Non
     up = chain(c, cid)
     if not up:
         return None
-    me, depth = up[0], len(up) - 1
+    from .store import depth as depth_of
+    me, depth = up[0], depth_of(c, cid)
     place = place_of(c, cid) + (", as a sub-agent" if me["kind"] == "agent" else "")
     device = (f"your box, through {me['agent_cli']}" if me["agent_cli"]
               else "the house (the app's own server)")

@@ -2,8 +2,8 @@
 small.
 
 A sub-agent is a conversation of kind `agent` (it works in its notebook) on the tasks
-role (settings/roles.py), carrying its own notes and tools
-by need (turns/loads.py), with four extra columns: `agent_of`
+role (settings/roles.py), carrying what any conversation carries (turns/loads.py: the
+always notes, every tool offered at its place), with four extra columns: `agent_of`
 (the conversation that started it), `agent_name` (the name it gave it, unique among
 the sub-agents of that conversation, its handle for it), `notebook_folder` (the
 notebook folder it is limited to; NULL is the whole notebook, enforced in
