@@ -1,43 +1,37 @@
-/* Settings, Features (/settings/features): one row per feature in the server's catalog
-   order: the Dot of what its probe found (the detail sentence as the tooltip), its label
-   (its `about` as the row's tooltip), its switch (off and greyed while the service is
-   missing or not set up, its `needs` sentence under it and in a toast on a click), saved
-   on each change (the whole object). A feature with a setup form opens it under its row
-   (Edit), the same form the onboarding used (WelcomeForms.tsx), so "later" is one click;
-   its Check saves and asks the probe anew, the row's Dot follows. A form's draft is kept
-   by feature id, one per feature. "Check again" in the head
-   asks every probe anew. The onboarding draws the same rows (FeatureRows) for the plain
-   switches, with `about` as a second line, and for the Later card (`later`: off, greyed,
-   "Turn on later in Settings"). API: lib/settingsApi.ts settingsApi.features /
-   putFeatures / probeFeature. */
+/* Settings, Features (/settings/features): the server's tiers in its order (FeatureTiers),
+   each under its SubHead: Core, its rows on and fixed (no switch to flip); Base modules
+   and User modules, one row per feature: the Dot of what its probe found (the detail
+   sentence as the tooltip), its label (its `about` as the row's tooltip), its switch (off
+   and greyed while the service is missing or not set up, its `needs` sentence under it and
+   in a toast on a click), saved on each change (the whole object). A feature with a setup
+   form opens it under its row (Edit), the same form the onboarding uses (WelcomeForms.tsx);
+   its Check saves and asks the probe anew, the row's Dot follows. A form's draft is kept by
+   feature id. "Check again" in the head asks every probe anew. The onboarding's Features
+   step draws the same tiers with `about` as a second line, and a feature with a setup step
+   switches on even while blocked (`free`): its step comes next. API: lib/settingsApi.ts
+   settingsApi.features / putFeatures / probeFeature. */
 import { ArrowUpRight, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { format } from '../../lib/nav'
 import { useRef, useState } from 'react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
+import { blocked } from '../../lib/featureSteps'
 import { STATE_TONE, settingsApi, type Feature, type FeaturesView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, ConfirmDialog, cx, Dot, InlineError, Loaded, Section, Switch, toast } from '../../ui'
+import { Button, ConfirmDialog, cx, Dot, InlineError, Loaded, Section, SubHead, Switch, toast } from '../../ui'
 import { formOf, type SaveRef } from '../WelcomeForms'
 import { Page } from './parts'
 import './settings.css'
 
-/** a feature's switch cannot be on: its service is missing or not set up */
-export const blocked = (f: Feature) => f.state === 'missing' || f.state === 'unset'
-/** the onboarding gives it a card: the server's policy on what the probe found */
-export const showsCard = (f: Feature) =>
-  f.card === 'always' || (f.card === 'detect' && (f.state === 'ready' || f.state === 'missing'))
 /** the Dot of a feature's state: grey once its switch is off, whatever the probe found */
 export const stateTone = (f: Feature, on: boolean) => (f.state === 'ready' && !on ? 'muted' : STATE_TONE[f.state ?? 'none'])
-/** a plain switch: nothing to detect, nothing to set up */
-export const isPlain = (f: Feature) => !f.setup && !f.form && f.state === 'none'
-const LATER = 'Turn on later in Settings'
 const MEDIA = new Set(['images', 'music'])
 
-/** every feature's probe, asked now; the catalog with the answers */
-export async function reprobe(catalog: Feature[]): Promise<Feature[]> {
-  const probes = await Promise.all(catalog.map(f => f.state === 'none' ? null : settingsApi.probeFeature(f.id)))
+/** the probes of the catalog's features (or `only` those ids), asked now; the catalog with the answers */
+export async function reprobe(catalog: Feature[], only?: string[]): Promise<Feature[]> {
+  const ask = (f: Feature) => f.state !== 'none' && (!only || only.includes(f.id))
+  const probes = await Promise.all(catalog.map(f => ask(f) ? settingsApi.probeFeature(f.id) : null))
   return catalog.map((f, i) => ({ ...f, ...(probes[i] ?? {}) }))
 }
 
@@ -65,9 +59,9 @@ export function Features() {
       <Section>
         {res.data ? (
           <div title={online ? undefined : OFFLINE_TITLE}>
-            <FeatureRows view={{ ...res.data, features: { ...res.data.features, ...save.pending } }} disabled={!online}
-                         onChange={f => Object.entries(f).forEach(([id, on]) => { if (on !== (save.pending[id] ?? res.data!.features[id])) save.set(id, on) })}
-                         open={open} onOpen={setOpen} forms={forms} setForms={setForms} reprobe={reprobeOne} />
+            <FeatureTiers view={{ ...res.data, features: { ...res.data.features, ...save.pending } }} disabled={!online}
+                          onChange={f => Object.entries(f).forEach(([id, on]) => { if (on !== (save.pending[id] ?? res.data!.features[id])) save.set(id, on) })}
+                          open={open} onOpen={setOpen} forms={forms} setForms={setForms} reprobe={reprobeOne} />
             {save.error && <InlineError compact message={save.error} onRetry={save.flush} />}
             {check.error && <InlineError compact message={check.error} />}
           </div>
@@ -77,15 +71,16 @@ export function Features() {
   )
 }
 
-/** the catalog (or `only` those ids) as switch rows; `onChange` gets the whole object;
-    `about`: each row says what its feature gives (the onboarding); `later`: the Later card's
-    rows. With `open`, a row with a setup form opens it (Edit) */
-export function FeatureRows({ view, only, disabled = false, about = false, later = false, onChange, open, onOpen, forms, setForms, reprobe }: {
+/** the server's tiers, each under its heading: the core's rows on and fixed, then each
+    tier's features as switch rows; `onChange` gets the whole object. `about`: each row says
+    what it gives (the onboarding); `free`: a feature with a setup step switches on even
+    while blocked (the onboarding, whose step for it comes next). With `open`, a row with a
+    setup form opens it (Edit) */
+export function FeatureTiers({ view, disabled = false, about = false, free = false, onChange, open, onOpen, forms, setForms, reprobe }: {
   view: FeaturesView
-  only?: string[]
   disabled?: boolean
   about?: boolean
-  later?: boolean
+  free?: boolean
   onChange: (features: Record<string, boolean>) => void
   open?: string | null
   onOpen?: (id: string | null) => void
@@ -94,34 +89,44 @@ export function FeatureRows({ view, only, disabled = false, about = false, later
   reprobe?: (id: string) => Promise<void>
 }) {
   return (
-    <div className="form">
-      {view.catalog.filter(f => !only || only.includes(f.id)).map(f => {
-        // a feature with a page of its own links to it (Guard; Images & Music while on)
-        const page = f.id === 'guard' ? 'guard' : MEDIA.has(f.id) && view.features[f.id] !== false ? 'media' : null
-        const Form = onOpen && !page ? formOf(f) : undefined
-        const isOpen = open === f.id
-        return (
-          <div key={f.id}>
-            <div className="feature-line">
-              <FeatureSwitch feature={f} on={view.features[f.id] !== false} about={about} later={later}
-                             disabled={disabled} onChange={v => onChange({ ...view.features, [f.id]: v })} />
-              {onOpen && page && (
-                <Button variant="ghost" size="sm" icon={ArrowUpRight} href={format({ section: 'settings', page })}>
-                  {page === 'guard' ? 'Open Guard' : 'Open Images & Music'}
-                </Button>
-              )}
-              {Form && (
-                <Button variant="ghost" size="sm" icon={isOpen ? ChevronUp : ChevronDown} title="Edit" pressed={isOpen}
-                        onClick={() => onOpen?.(isOpen ? null : f.id)}>Edit</Button>
-              )}
+    <div className="feature-tiers">
+      {view.tiers.map(t => (
+        <div key={t.id} className="feature-tier">
+          <SubHead>{t.label}</SubHead>
+          {t.id === 'core' ? view.core.map(c => (
+            <div key={c.id} className="feature-row">
+              <Switch checked disabled title={about ? undefined : c.about} onChange={() => undefined}
+                      label={<>{c.label}{about && <span className="feature-about">{c.about}</span>}</>} />
             </div>
-            {Form && isOpen && (
-              <SetupForm Form={Form} feature={f} value={forms?.[f.id]} onChange={v => setForms?.({ ...forms, [f.id]: v })}
-                         reprobe={() => reprobe?.(f.id) ?? Promise.resolve()} />
-            )}
-          </div>
-        )
-      })}
+          )) : view.catalog.filter(f => f.tier === t.id).map(f => {
+            // a feature with a page of its own links to it (Guard; Images & Music while on)
+            const page = f.id === 'guard' ? 'guard' : MEDIA.has(f.id) && view.features[f.id] !== false ? 'media' : null
+            const Form = onOpen && !page ? formOf(f) : undefined
+            const isOpen = open === f.id
+            return (
+              <div key={f.id}>
+                <div className="feature-line">
+                  <FeatureSwitch feature={f} on={view.features[f.id] !== false} about={about} free={free && f.step}
+                                 disabled={disabled} onChange={v => onChange({ ...view.features, [f.id]: v })} />
+                  {onOpen && page && (
+                    <Button variant="ghost" size="sm" icon={ArrowUpRight} href={format({ section: 'settings', page })}>
+                      {page === 'guard' ? 'Open Guard' : 'Open Images & Music'}
+                    </Button>
+                  )}
+                  {Form && (
+                    <Button variant="ghost" size="sm" icon={isOpen ? ChevronUp : ChevronDown} title="Edit" pressed={isOpen}
+                            onClick={() => onOpen?.(isOpen ? null : f.id)}>Edit</Button>
+                  )}
+                </div>
+                {Form && isOpen && (
+                  <SetupForm Form={Form} feature={f} value={forms?.[f.id]} onChange={v => setForms?.({ ...forms, [f.id]: v })}
+                             reprobe={() => reprobe?.(f.id) ?? Promise.resolve()} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -140,37 +145,32 @@ function SetupForm({ Form, feature, value, onChange, reprobe }: {
 
 /** one feature's switch: the state Dot (grey once the switch is off) and the label.
     Blocked (its service missing or not set up): off and greyed, its `needs` sentence under
-    it, and a click shows it as a toast. `later`: the Later card's row, off and greyed with
-    "Turn on later in Settings" under it. With `about` the sentence is a second line and
-    the tooltip is `off_when`; without, the tooltip is `about`. `aboutShown`: the card
-    already shows `about`, its state line and its `needs`, so the tooltip is `off_when`,
-    the Dot says nothing more and there is no second line. A tooltip never repeats what
+    it, and a click shows it as a toast; `free` (the onboarding, a feature whose setup step
+    comes next): it switches as any other. With `about` the sentence is a second line and
+    the tooltip is `off_when`; without, the tooltip is `about`. A tooltip never repeats what
     the row shows: an off row has none. A feature with `warn` (shares) asks first when
     switched on (Turn on); off needs no confirm */
-export function FeatureSwitch({ feature: f, on, disabled = false, about = false, aboutShown = false, later = false, label, onChange }: {
+export function FeatureSwitch({ feature: f, on, disabled = false, about = false, free = false, onChange }: {
   feature: Feature
   on: boolean
-  /** its words in place of its label (a group card: its `choice`) */
-  label?: string
   disabled?: boolean
   about?: boolean
-  aboutShown?: boolean
-  later?: boolean
+  free?: boolean
   onChange: (on: boolean) => void
 }) {
   const tone = stateTone(f, on)
-  const off = later || blocked(f)
-  const line = later ? LATER : blocked(f) ? (aboutShown ? '' : f.needs) : about ? f.about : ''
-  const title = off ? undefined : (about || aboutShown ? f.off_when : f.about) || undefined
+  const off = blocked(f) && !free
+  const line = off ? f.needs : about ? f.about : ''
+  const title = off ? undefined : (about ? f.off_when : f.about) || undefined
   const [asking, setAsking] = useState(false)
   return (
     <div className={cx('feature-row', off && 'feature-row--off')}
-         onClick={blocked(f) && !later ? () => toast({ text: f.needs }) : undefined}>
-      <Switch checked={!blocked(f) && on} disabled={disabled || off} title={title}
+         onClick={off ? () => toast({ text: f.needs }) : undefined}>
+      <Switch checked={!off && on} disabled={disabled || off} title={title}
               onChange={v => (v && f.warn ? setAsking(true) : onChange(v))}
               label={<>
-                {tone && <Dot tone={tone} label={aboutShown || later ? undefined : f.detail || undefined} />}
-                {tone && ' '}{label ?? f.label}
+                {tone && <Dot tone={tone} label={f.detail || undefined} />}
+                {tone && ' '}{f.label}
                 {line && <span className="feature-about">{line}</span>}
               </>} />
       {asking && (

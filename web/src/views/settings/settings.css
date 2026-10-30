@@ -243,9 +243,11 @@ a.batches__time:hover { text-decoration: underline; }
 .her-preview--mono { -webkit-line-clamp: 6; font-family: var(--font-mono); font-size: var(--t-md); }
 .her-preview__empty { color: var(--text-muted); }
 
-/* ── Features: a row is its switch and, with a setup form, Edit; the form opens under it.
-   A greyed switch (blocked, or the Later card's) says why on a second line; the click lands
-   on the row, which shows the sentence as a toast ── */
+/* ── Features: a tier is its heading and its rows; a row is its switch and, with a setup
+   form, Edit; the form opens under it. A greyed switch (blocked) says why on a second line;
+   the click lands on the row, which shows the sentence as a toast ── */
+.feature-tiers { display: grid; gap: var(--s-5); }
+.feature-tier { display: grid; gap: var(--s-3); }
 .feature-about { display: block; font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
 .feature-line { display: flex; align-items: center; gap: var(--s-2); }
 .feature-line > .feature-row { flex: 1; min-width: 0; }

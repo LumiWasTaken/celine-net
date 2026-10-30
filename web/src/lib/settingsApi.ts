@@ -246,18 +246,18 @@ export type Feature = {
   setup: string
   /** its form at /api/forms/<id> (a plugin's settings.toml), or "": its Settings page and its card's body */
   form: string
-  /** the onboarding's card: "detect" when the service answered or has an address and did
-      not, "always" (shares, the guard, routines, the connectors), "" never (email, vault: the Later
-      card and Settings) */
-  card: '' | 'detect' | 'always'
+  /** the onboarding gives it a setup step while it is on (a form, or a connection) */
+  step: boolean
+  /** its tier (FeaturesView `tiers`): the core has no feature, only rows */
+  tier: 'base' | 'user'
   /** the archives it fills (Discord, WhatsApp: its source id) */
   kbs: string[]
-  /** the feature of that archive ("messages"): its card offers the switch and the first import */
+  /** the feature of that archive ("messages"): its step offers the switch and the first import */
   archive: string
   /** what switching it on asks first (shares), or "" */
   warn: string
-  /** the onboarding card it shares with the rest of its group, that card's title and its
-      switch's label there; "" for a card of its own */
+  /** the onboarding step it shares with the rest of its group, that step's title and its
+      sub-heading there; "" for a step of its own */
   group: string
   group_label: string
   choice: string
@@ -270,7 +270,11 @@ export type Feature = {
 type Probe = { state: FeatureState; detail: string; url?: string }
 export type FeaturesView = {
   features: Record<string, boolean>
+  /** the catalog in the server's order: by tier, a group together */
   catalog: Feature[]
+  /** the tiers in order, each with a row; the core's rows (`core`) have no switch */
+  tiers: { id: 'core' | 'base' | 'user'; label: string }[]
+  core: { id: string; label: string; about: string }[]
   saved: boolean
   /** the onboarding finished */
   done: boolean
