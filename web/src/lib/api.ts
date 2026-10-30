@@ -505,6 +505,10 @@ export type Snapshot = {
   conversation: {
     id: string; title: string; seq: number; archived_at: string | null
     agent_of: string | null; agents: SubAgent[]
+    /** a sub-agent's name, null for any other */
+    agent_name?: string | null
+    /** a sub-agent's parent: its name and the path that opens it; null for any other */
+    started_by?: { name: string; link: string | null } | null
     /** what it is: the place that shows it */
     kind?: ConversationSummary['kind']
     /** the app path that shows it: a chat, a mission, a task's or a run's page */

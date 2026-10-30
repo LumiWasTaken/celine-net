@@ -363,6 +363,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   )
   const open = (id: string) => { setSelected(id); onSidebar(false) }
   const conversationTitle = current?.title || convo.conversation?.title || ''
+  const startedBy = convo.conversation?.started_by ?? null
   const isArchived = current ? !!current.archived_at : !!convo.conversation?.archived_at
   const headMore = current ? [
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(current.id) },
@@ -419,8 +420,14 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                 e.preventDefault(); composer.current?.addFiles(e.dataTransfer.files)
               }}>
           <PlaceHead level={1}
-                     lead={<HerFace who={who} size="sm" speaking={convo.running} mood={mood} />}
-                     title={
+                     {...(startedBy ? {
+                       /* a sub-agent's conversation: its name under the one that started it */
+                       crumbs: [{ label: startedBy.name, href: startedBy.link ?? undefined,
+                                  onClick: startedBy.link ? (e: { preventDefault(): void }) => { e.preventDefault(); nav.goPath(startedBy.link!) } : undefined }],
+                       title: convo.conversation?.agent_name ?? conversationTitle,
+                     } : {
+                     lead: <HerFace who={who} size="sm" speaking={convo.running} mood={mood} />,
+                     title:
                        <span className="chat-who">
                          {name}<MoodText mood={mood} />
                          {renaming === current?.id ? (
@@ -429,8 +436,8 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                          ) : (
                            conversationTitle && <span className="chat-head__title">{conversationTitle}</span>
                          )}
-                       </span>
-                     }
+                       </span>,
+                     })}
                      titleAttr={conversationTitle || undefined}
                      actions={<>
                        <PlanButton plan={convo.plan} />

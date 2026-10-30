@@ -23,6 +23,18 @@ from ..core.event_types import (
 )
 
 
+def _started_by(c: sqlite3.Connection, parent: str | None) -> dict | None:
+    """A sub-agent's parent as its head names it: {name, link}; None for any other."""
+    if not parent:
+        return None
+    r = c.execute("SELECT agent_name, title FROM conversations WHERE id=?",
+                  (parent,)).fetchone()
+    if r is None:
+        return None
+    from .. import homes
+    return {"name": r["agent_name"] or r["title"] or "", "link": homes.of(c, parent)["link"]}
+
+
 async def snapshot(store, cid: str) -> dict:
     """Everything the client needs for a first paint, read in one transaction."""
     def fn(c: sqlite3.Connection) -> dict:
@@ -105,7 +117,8 @@ async def snapshot(store, cid: str) -> dict:
                                  "mission": dict(mission) if mission else None,
                                  "agents": agents,
                                  # the app path that shows it (intercom source_of)
-                                 "link": (source_of(c, f"agent:{cid}") or {}).get("link")},
+                                 "link": (source_of(c, f"agent:{cid}") or {}).get("link"),
+                                 "started_by": _started_by(c, conv["agent_of"])},
                 "messages": messages,
                 "tool_calls": calls, "compactions": compactions,
                 "turn": tdict, "unanswered": tree.unanswered(c, cid), "switched": switched, "image_notices": image_notices,
