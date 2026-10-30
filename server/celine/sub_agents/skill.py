@@ -375,6 +375,9 @@ class SubAgents:
         _, known, _, refusal = await self._check(store, parent, name, given, access, folder)
         if refusal:
             return None, refusal, False, None
+        if reading and known is not None and (known["access"] == "work" or known["cli"]
+                                              or known["device"]):
+            return None, READ_PARENT, False, None     # a resume gives no more either
         # the user's answer may take minutes: asked outside the lock, checked again in it
         if asker is not None and (no := await self._cloud_approval(
                 asker, brief, name, model, known)):

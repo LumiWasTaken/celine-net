@@ -361,6 +361,24 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
                                  out.content), (wider, "no folder above its own")
     assert await _subs_of(store, scout) == []
 
+    # read, stop and a resume reach only its own sub-agents
+    other = await conversations.create(store, "other", agent_of=parent, agent_name="other",
+                                       access="work")
+    await conversations.create(store, "deep", agent_of=other, agent_name="deep one")
+    for call in (agents.read(ctx, "other"), agents.read(ctx, "deep one"),
+                 agents.stop(ctx, "other"), agents.stop(ctx, "deep one")):
+        out = await call
+        assert out.is_error and out.content.startswith("No sub-agent called"), out.content
+    worker = await conversations.create(store, "w", agent_of=scout, agent_name="old worker",
+                                        notebook_folder="agents/scout", access="work")
+    cli = await conversations.create(store, "c", agent_of=scout, agent_name="old cli",
+                                     notebook_folder="agents/scout", access="read",
+                                     agent_cli="opencode")
+    assert (await agents.start(ctx, brief="again", name="old worker")).is_error
+    out = await agents.start(ctx, brief="again", name="old cli")
+    assert out.is_error and out.content == READ_PARENT, "a resume gives no more than read"
+    assert {s["id"] for s in await _subs_of(store, scout)} == {worker, cli}
+
 
 async def test_sub_agents_start_their_own_down_to_three_levels(store, cfg):
     agents = _registry(cfg).skills["sub_agents"]
