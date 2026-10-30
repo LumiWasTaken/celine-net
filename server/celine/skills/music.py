@@ -96,9 +96,9 @@ class MusicGenerator:
         items: Annotated[list[Item], "The tracks, in order."],
         count: Annotated[int, "How many tracks of each item, each with its own seed. "
                               "Default 1."] = 1,
-        wait: Annotated[bool, "True: your turn waits until the batch is done, as long "
-                              "as its time allows. Default false: the call returns at "
-                              "once."] = False,
+        wait: Annotated[bool, "True: your turn waits until the batch is done or the user "
+                              "writes, as long as its time allows. Default false: the "
+                              "call returns at once."] = False,
     ) -> ToolResult:
         """Make music with ComfyUI: instrumental tracks, or songs with lyrics. Load the
         guide first: it has the style rules. The call returns at once with the batch id

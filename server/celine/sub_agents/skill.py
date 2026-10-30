@@ -41,6 +41,7 @@ from ..skills import words
 from ..skills.gating import overrides_for
 from . import report, templates
 from ..guard.sources import agent_read_outside
+from ..turns.cancel import until_set
 from .cli import CLIS
 from ..devices import devices as all_devices
 from ..core.event_types import AGENT_STATE
@@ -179,7 +180,7 @@ class SubAgents:
     ) -> ToolResult:
         """Look at one of your sub-agents: working or done, the step it is on, and its
         latest report (or, before one, its last words). With wait, first wait until it
-        is done or the seconds run out."""
+        is done, the seconds run out or {{username}} writes."""
         sub, refusal = await _find(ctx, name)
         if refusal:
             return refusal
@@ -187,11 +188,15 @@ class SubAgents:
         if ctx.time_left is not None:
             limit = min(limit, max(int(ctx.time_left), 0))
         waited = 0
-        # note: a look every second, the store answers it from one indexed read
-        while waited < limit and (await ctx.store.read(
-                lambda c: _look(c, sub["id"])))["working"]:
-            await anyio.sleep(1)
-            waited += 1
+
+        async def looks() -> None:
+            nonlocal waited
+            # note: a look every second, the store answers it from one indexed read
+            while waited < limit and (await ctx.store.read(
+                    lambda c: _look(c, sub["id"])))["working"]:
+                await anyio.sleep(1)
+                waited += 1
+        wrote, _ = await until_set(looks, ctx.user_wrote)
         f = await ctx.store.read(lambda c: _look(c, sub["id"]))
         outside = await ctx.store.read(lambda c: agent_read_outside(c, sub["id"]))
         working = f["working"]
@@ -199,7 +204,8 @@ class SubAgents:
         lines = [f"{sub['name']}: {state}."]
         if limit:
             lines.append(f"It finished after {waited} s of waiting." if not working else
-                         f"The wait of {limit} s ran out.")
+                         f"The wait ended after {waited} s: {self.cfg.user} wrote."
+                         if wrote else f"The wait of {limit} s ran out.")
         if working and f["step"]:
             lines.append(f"Now: {f['step']}.")
         if f["report"] is not None:

@@ -144,7 +144,7 @@ async def batch_generate(app, ctx: ToolContext, role: str, items, count: int, wa
                                      tool_call_id=ctx.tool_call_id, **kw)
     except batches_mod.TooMany as e:
         return ToolResult(content=str(e), is_error=True)
-    b = await batches.begin(b, wait=wait, time_left=ctx.time_left)
+    b = await batches.begin(b, wait=wait, time_left=ctx.time_left, wrote=ctx.user_wrote)
     # the call's display is the batch's own: it fills it in place (batches._publish)
     return ToolResult(content=text(b, b["state"] == "running" and not wait),
                       is_error=b["state"] != "running" and not any(
@@ -223,9 +223,9 @@ class ImageGenerator:
                                      "prompt, or with source an edit."],
         count: Annotated[int, "How many images of each item, each with its own seed. "
                               "Default 1."] = 1,
-        wait: Annotated[bool, "True: your turn waits until the batch is done, as long "
-                              "as its time allows. Default false: the call returns at "
-                              "once."] = False,
+        wait: Annotated[bool, "True: your turn waits until the batch is done or the user "
+                              "writes, as long as its time allows. Default false: the "
+                              "call returns at once."] = False,
     ) -> ToolResult:
         """Make images with ComfyUI: new ones from a prompt, or edits of an image (an
         item with `source`). Load the guide first: it has each preset's prompt rules.

@@ -455,16 +455,19 @@ class Batches:
         if hit is not None:
             await hit[1].wait()
 
-    async def begin(self, b: dict, *, wait: bool, time_left: float | None) -> dict:
+    async def begin(self, b: dict, *, wait: bool, time_left: float | None,
+                    wrote=None) -> dict:
         """The agent's call's batch, started; with `wait`, waited for as long as its turn's time
-        allows, ANSWER seconds kept to answer. -> the batch as it is then."""
+        allows, ANSWER seconds kept to answer, until `wrote` is set (the user's message,
+        ToolContext.user_wrote). -> the batch as it is then."""
+        from ..turns.cancel import until_set
         if b["state"] != "running":
             return b
         self.start(b["id"])
         if wait:
             limit = WAIT_MAX if time_left is None else min(WAIT_MAX, time_left - ANSWER)
             with anyio.move_on_after(max(0.0, limit)):
-                await self.wait(b["id"])
+                await until_set(lambda: self.wait(b["id"]), wrote)
             b = await get(self.app.store, b["id"])
         return b
 
