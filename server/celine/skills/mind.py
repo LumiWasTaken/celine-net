@@ -254,7 +254,8 @@ class Mind:
         self.app = None
 
     async def prompt_fragment(self, ctx: ToolContext) -> str:
-        """The places in its app, as the user sees them (skills/mind_places.md)."""
+        """The places in its app, as the user sees them, and its status next to its name
+        (skills/mind_places.md)."""
         return prompts.fill(self.cfg, __file__, "mind_places.md")
 
     async def message_context(self, ctx: ToolContext, message: dict):
@@ -352,7 +353,8 @@ class Mind:
     @tool(read_only=False, destructive=False)
     async def set_status(self, ctx: ToolContext,
                      text: Annotated[str, "Emojis or a kaomoji."]) -> ToolResult:
-        """Set the emojis or the kaomoji shown next to your name. Example:
+        """Set the emojis or the kaomoji shown next to your name, whenever your mood or
+        what you are doing changes, during a reply too. Example:
         mind__set_status(text="\U0001f319\u2615\u2728")."""
         mood = await store_mood(ctx.store, text)
         return ToolResult(content=f"Shown: {mood['text']}", display={"text": mood["text"]})
