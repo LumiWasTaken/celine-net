@@ -76,16 +76,24 @@ function Shell() {
   const firstSection = useRef(true)
   useEffect(() => {
     if (firstSection.current) { firstSection.current = false; return }
-    const frame = requestAnimationFrame(() => {
+    // a view that loads on its first visit draws its title a moment later
+    const place = () => {
       const view = document.querySelector<HTMLElement>(`.sections > .view[data-section="${section}"]`)
-      if (!view) return
+      const title = view?.querySelector<HTMLElement>('h1')
+      if (!view || !title) return false
       setAnnounced(view.getAttribute('aria-label') ?? '')
-      if (coarse() || isTyping(document.activeElement) || view.contains(document.activeElement)) return
-      const title = view.querySelector<HTMLElement>('h1') ?? view
-      if (title !== view) title.tabIndex = -1
-      title.focus({ preventScroll: true })
-    })
-    return () => cancelAnimationFrame(frame)
+      if (!coarse() && !isTyping(document.activeElement) && !view.contains(document.activeElement)
+          && !document.querySelector('[aria-modal="true"]')) {
+        title.tabIndex = -1
+        title.focus({ preventScroll: true })
+      }
+      return true
+    }
+    const box = document.querySelector('.sections')
+    if (!box || place()) return
+    const watch = new MutationObserver(() => { if (place()) watch.disconnect() })
+    watch.observe(box, { childList: true, subtree: true })
+    return () => watch.disconnect()
   }, [section])
 
   // the config status is an extra: when it fails, the app still works, so a failure
@@ -252,7 +260,7 @@ function Shell() {
           {VIEWS.map(v => {
             const el = visited.has(v.id) && v.view({ ...shown, active: section === v.id })
             return el && (
-              <section key={v.id} className="view" data-section={v.id} hidden={section !== v.id} aria-label={labelOf(v.id)} tabIndex={-1}>
+              <section key={v.id} className="view" data-section={v.id} hidden={section !== v.id} aria-label={labelOf(v.id)}>
                 <SectionBoundary><Suspense fallback={<LoadingRow />}>{el}</Suspense></SectionBoundary>
               </section>
             )
