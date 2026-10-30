@@ -2,7 +2,8 @@
 # Her own computer, macOS on Apple silicon: Peekaboo (screen), Desktop Commander (shell),
 # Playwright MCP (browser, on a Chrome of its own) and the MCP filesystem server (files)
 # behind one Supergateway with a bearer token, `opencode serve` for her drones (the
-# same token as its password) and share.js for her shares (the same token), kept running by LaunchAgents in her login session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
+# same token as its password) and share.js for her shares (the same token), kept running by LaunchAgents in her login session under ~/Applications/Celine.app, the one app
+# that holds macOS's grants for all of them. The Mac never sleeps or locks its screen, and she runs sudo without a password.
 # Run it as her; safe to run again.
 #
 #   curl -fsSL <app>/api/plugins/mac/setup/<token> | bash   the setup line of the app's
@@ -35,6 +36,8 @@ CHROME=com.celine.chrome
 OPENCODE=com.celine.opencode
 SHARE=com.celine.share
 OC=$LIB/opencode/opencode
+CELINE_APP=$HOME/Applications/Celine.app   # every server runs under it: its grants are theirs
+RUN=$CELINE_APP/Contents/MacOS/Celine
 OC_LOG=$HOME/Library/Logs/celine-opencode.log
 BREW=/opt/homebrew/bin/brew      # Apple silicon only; Intel brew lives in /usr/local
 
@@ -149,7 +152,7 @@ if [ -n "$STATUS" ]; then
   exit
 fi
 
-echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome, four MCP servers and opencode and runs them as background services, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
+echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome, four MCP servers and opencode and runs them as background services under the app Celine, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
 say sudo
 sudo -n true 2>/dev/null || sudo -v   # -v asks even under NOPASSWD while %admin needs one
 sudoers=$(mktemp)
@@ -195,6 +198,77 @@ if [ "$("$OC" --version 2>/dev/null)" != "$OPENCODE_VERSION" ]; then
   unzip -oq "$zip" opencode -d "$LIB/opencode" && rm "$zip"
 fi
 
+say app
+# macOS keeps a grant (Screen Recording, Accessibility) for the process a LaunchAgent
+# starts, and every process that one starts uses it: Peekaboo under the gateway asks with
+# the gateway's grants (launchctl procinfo: "responsible pid"). That process is Celine.app,
+# never brew's node (ad-hoc signed: a grant holds only its cdhash, gone with each upgrade,
+# https://developer.apple.com/forums/thread/697278) and never one of its Cellar paths.
+# Ad-hoc signed too, so built only when its source changes: one grant for good.
+src=$(mktemp -d)
+cat > "$src/launcher.c" <<'EOF'
+// Celine.app's program: starts its arguments as its child and waits, passing on TERM, INT
+// and HUP (exec would make the child the process macOS asks). --ask first: asks for
+// Screen Recording and Accessibility, which puts Celine into both lists of System Settings.
+#include <ApplicationServices/ApplicationServices.h>
+#include <errno.h>
+#include <signal.h>
+#include <spawn.h>
+#include <string.h>
+#include <sys/wait.h>
+
+extern char **environ;
+static pid_t child;
+
+static void pass(int sig) { if (child > 0) kill(child, sig); }
+
+int main(int argc, char **argv) {
+  int first = 1;
+  if (argc > 1 && strcmp(argv[1], "--ask") == 0) {
+    first = 2;
+    if (!CGPreflightScreenCaptureAccess()) CGRequestScreenCaptureAccess();
+    const void *k[] = {kAXTrustedCheckOptionPrompt}, *v[] = {kCFBooleanTrue};
+    CFDictionaryRef o = CFDictionaryCreate(NULL, k, v, 1, &kCFTypeDictionaryKeyCallBacks,
+                                           &kCFTypeDictionaryValueCallBacks);
+    AXIsProcessTrustedWithOptions(o);   // asks only while it is off
+    CFRelease(o);
+  }
+  if (first >= argc) return 2;
+  signal(SIGTERM, pass);
+  signal(SIGINT, pass);
+  signal(SIGHUP, pass);
+  if (posix_spawnp(&child, argv[first], NULL, NULL, argv + first, environ) != 0) return 127;
+  int st;
+  while (waitpid(child, &st, 0) < 0)
+    if (errno != EINTR) return 1;
+  return WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st);
+}
+EOF
+cat > "$src/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.celine.mac</string>
+  <key>CFBundleName</key><string>Celine</string>
+  <key>CFBundleExecutable</key><string>Celine</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSUIElement</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Celine uses the apps on this Mac.</string>
+</dict>
+</plist>
+EOF
+if ! diff -rq "$src" "$LIB/app" >/dev/null 2>&1 || ! codesign -v "$CELINE_APP" 2>/dev/null; then
+  rm -rf "$CELINE_APP"
+  mkdir -p "$CELINE_APP/Contents/MacOS"
+  cp "$src/Info.plist" "$CELINE_APP/Contents/"
+  clang -O2 -Wall -framework ApplicationServices -o "$RUN" "$src/launcher.c"
+  codesign --force --sign - "$CELINE_APP"
+  rm -rf "$LIB/app"
+  cp -R "$src" "$LIB/app"
+fi
+rm -rf "$src"
+
 say token
 mkdir -p "$CONF" && chmod 700 "$CONF"
 [ -s "$TOKEN" ] || (umask 077; openssl rand -hex 32 > "$TOKEN")
@@ -239,7 +313,7 @@ cat > "$CONF/gateway.json" <<EOF
   "mcpServers": {
     "screen": {
       "command": "$(brew --prefix)/bin/peekaboo",
-      "args": ["mcp", "--allow-foreground"]
+      "args": ["mcp", "--allow-foreground", "--no-remote"]
     },
     "shell": {
       "command": "$NODE",
@@ -265,6 +339,8 @@ cat > "$AGENTS/$LABEL.plist" <<EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
+    <string>$RUN</string>
+    <string>--ask</string>
     <string>/usr/bin/caffeinate</string>
     <string>-d</string>
     <string>$NODE</string>
@@ -358,6 +434,7 @@ cat > "$AGENTS/$SHARE.plist" <<EOF
   <key>Label</key><string>$SHARE</string>
   <key>ProgramArguments</key>
   <array>
+    <string>$RUN</string>
     <string>$NODE</string>
     <string>$LIB/share.js</string>
     <string>$SHARE_PORT</string>
@@ -383,7 +460,8 @@ c.$schema = "https://opencode.ai/config.json";
 c.permission = "allow";
 c.autoupdate = false;
 c.mcp = { ...c.mcp,
-  screen: { type: "local", enabled: true, command: [e.OC_PEEKABOO, "mcp", "--allow-foreground"] },
+  screen: { type: "local", enabled: true, command: [e.OC_PEEKABOO, "mcp", "--allow-foreground",
+    "--no-remote"] },
   browser: { type: "local", enabled: true, command: [e.OC_NODE,
     `${e.OC_LIB}/node_modules/@playwright/mcp/cli.js`, "--cdp-endpoint", `http://127.0.0.1:${e.OC_CDP}`] } };
 if (e.OC_APP) c.provider = { ...c.provider, celine: { ...c.provider?.celine,
@@ -399,6 +477,7 @@ cat > "$AGENTS/$OPENCODE.plist" <<EOF
   <key>Label</key><string>$OPENCODE</string>
   <key>ProgramArguments</key>
   <array>
+    <string>$RUN</string>
     <string>/bin/sh</string>
     <string>-c</string>
     <string>OPENCODE_SERVER_PASSWORD=\$(cat "$TOKEN") exec "$OC" serve --hostname 0.0.0.0 --port $AGENTS_PORT</string>
@@ -452,13 +531,20 @@ for (const [name, s] of Object.entries(r.servers))
 console.log(`opencode ${r.opencode.version ?? "no answer: " + r.opencode.error}`);'
 again="bash setup.sh --status"   # a piped run left no file: the app serves it
 [ -z "$APP" ] || again="curl -fsSL $APP/api/plugins/mac/setup.sh | bash -s -- --status"
-cat <<EOF
+case $line in *'"missing":["'*)   # the screen server lacks a grant: the panes, one by one
+  pane=x-apple.systempreferences:com.apple.preference.security
+  open -R "$CELINE_APP"
+  open "$pane?Privacy_ScreenCapture"
+  cat <<EOF
 
-Grant once in System Settings, Privacy & Security, under Screen & System Audio Recording
-and under Accessibility (the + button, then Cmd+Shift+G for the path):
-  $(realpath "$NODE")
-  $(realpath "$(brew --prefix)/bin/peekaboo")
-  $OC
-Then: $again
+Turn on Celine in the System Settings window, under Screen & System Audio Recording now
+and under Accessibility next. Not in the list: drag Celine in from the Finder window.
 EOF
+  printf 'Press Return when it is on. '
+  read -r _ </dev/tty || true
+  open "$pane?Privacy_Accessibility"
+  printf 'Accessibility is open now: press Return when Celine is on there too. '
+  read -r _ </dev/tty || true
+esac
+echo "Check: $again"
 }

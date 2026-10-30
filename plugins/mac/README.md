@@ -31,6 +31,7 @@ What it sets on the Mac:
 | `~/.config/celine/gateway.json` | the gateway's servers and settings, written on every run |
 | `~/.local/share/celine` | the npm packages, and `chrome/`, Chrome's profile |
 | `~/Library/LaunchAgents/com.celine.chrome.plist` | Chrome with DevTools on 127.0.0.1:9222; its tabs and logins outlive the browser server's sessions |
+| `~/Applications/Celine.app`, `~/.local/share/celine/app` | the app every server runs under, so macOS's grants are its own (Permissions); its source |
 | `~/Library/LaunchAgents/com.celine.gateway.plist` | the gateway under `caffeinate -d` while she is logged in |
 | `~/.local/share/celine/opencode/opencode` | opencode |
 | `~/.config/opencode/opencode.json` | its own keys set on every run, the rest kept: the app's model proxy as provider `celine` (`<app>/llm/v1`, the link key read from `~/.config/celine/link`), Peekaboo and Playwright MCP (the gateway's own copies, Playwright on the same Chrome), every permission allowed, no autoupdate; the app adds the models of `celine` to the same file (`PATCH /global/config`) while no drone works there |
@@ -98,13 +99,15 @@ sub-agent (server/celine/sub_agents/drone.py).
 
 ## Permissions, once at the Mac
 
-Peekaboo needs Screen Recording and Accessibility. It runs as a child of the gateway's
-node, so both binaries setup.sh prints at the end go into System Settings, Privacy &
-Security, with the + button and Cmd+Shift+G for the path:
+Peekaboo needs Screen Recording and Accessibility (which also covers what it reports as
+Event Synthesizing). macOS asks them of the process a LaunchAgent starts, and every
+process under it uses that one's grants. setup.sh builds `~/Applications/Celine.app`
+(bundle id `com.celine.mac`, ad-hoc signed, rebuilt only when its source changes) and
+runs the gateway, opencode and share.js under it, Peekaboo with `--no-remote` so it asks
+in its own process. One app gets both grants, and upgrades of node, peekaboo or opencode
+keep them. Under the gateway Celine asks for both once, which puts it into both lists;
+at its end setup.sh opens the two panes one after the other and shows Celine in Finder to
+drag in should it be missing.
 
-- **Screen & System Audio Recording**: node and peekaboo, and opencode for the drones.
-- **Accessibility**: node and peekaboo, and opencode (this also covers the synthetic clicks and keys
-  Peekaboo reports as Event Synthesizing).
-
-Check on the form lists each permission the screen server still lacks. An upgrade of node
-or peekaboo changes the binaries, and macOS asks for the permissions again.
+Check on the form, its note, and her `settings__read(target="forms.mac")` name each
+permission that is off and where to turn Celine on.
