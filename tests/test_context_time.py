@@ -34,7 +34,10 @@ async def test_user_messages_carry_their_time(store):
     assert snap["messages"][0]["content"] == "hello", "the stored row stays bare"
 
 
-async def test_keep_thinking_sends_the_thinking_of_earlier_exchanges(store):
+async def test_a_reply_goes_with_its_thinking_the_same_way_in_every_request(store):
+    """A stored reply serializes byte-identically in every request (the server's cached
+    prefix holds): its thinking goes with it, steps of the exchange going on and earlier
+    exchanges alike; the chat template decides what the model reads."""
     cfg = load()
     cid = await conversations.create(store)
     for n in (1, 2):
@@ -48,23 +51,24 @@ async def test_keep_thinking_sends_the_thinking_of_earlier_exchanges(store):
         return [m.get("reasoning_content") for m in built.messages if m["role"] == "assistant"]
 
     backend = FakeBackend()
-    assert thoughts(await context.build(store, cfg, backend, cid, system="S", tools=[])) == [None, None]
-    backend.cfg = type("Cfg", (), {"raw": {"keep_thinking": 1}})()
-    assert thoughts(await context.build(store, cfg, backend, cid, system="S", tools=[])) == [None, "thought 2"]
-
-    # the exchange going on: only its last two replies keep their thinking
-    backend = FakeBackend()
+    before = await context.build(store, cfg, backend, cid, system="S", tools=[])
+    assert thoughts(before) == ["thought 1", "thought 2"]
     leaf = await store.read(lambda c: c.execute(
         "SELECT active_leaf_id FROM conversations WHERE id=?", (cid,)).fetchone()[0])
     tid = await store.read(lambda c: c.execute(
         "SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC LIMIT 1",
         (cid,)).fetchone()[0])
-    for n in (1, 2, 3):
+    sent = []
+    for n in (1, 2, 3, 4):
         reply = await tree.start_assistant_message(store, cid, leaf, tid)
         await tree.finish_assistant_message(store, cid, reply, f"step {n}", reasoning=f"t{n}")
         leaf = reply
-    assert thoughts(await context.build(store, cfg, backend, cid, system="S", tools=[])) == \
-        [None, None, None, "t2", "t3"]
+        sent.append((await context.build(store, cfg, backend, cid, system="S",
+                                         tools=[])).messages)
+    for earlier, later in zip(sent, sent[1:]):
+        assert later[:len(earlier)] == earlier, "each request starts with the one before"
+    assert thoughts(before) == thoughts(await context.build(
+        store, cfg, backend, cid, system="S", tools=[]))[:2]
 
 
 async def test_her_tail_starts_with_today_in_the_app_zone(store):

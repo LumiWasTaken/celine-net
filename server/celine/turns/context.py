@@ -221,17 +221,16 @@ def malformed(messages: list[dict], cid: str) -> str | None:
 
 # ---- the path as items ----------------------------------------------------------------
 HER_FIRST = "This chat starts with your message."   # history: before a reply that is first
-THINKING_KEPT = 2             # replies of the current exchange that keep their thinking
 
 
 def _thought(it: "_Item") -> dict:
-    """The agent's thinking on a reply, sent back with it when the reply is `current`
-    (_Plan._select): as reasoning_content (a Qwen chat template puts it back inside
-    <think>; llama-server and OpenRouter take it) and, for Anthropic, its own signed
-    thinking blocks (`thinking`, kept in the reply's meta; a tool loop needs them; a
-    reply without a signature has none)."""
-    if not it.current:
-        return {}
+    """The agent's thinking on a reply, sent back with it every time: as
+    reasoning_content (a Qwen chat template puts it back inside <think> for the exchange
+    going on and leaves it out before; llama-server and OpenRouter take it) and, for
+    Anthropic, its own signed thinking blocks (`thinking`, kept in the reply's meta; a
+    tool loop needs them; a reply without a signature has none). A stored reply goes on
+    the wire the same way in every request, so the server's cached prefix holds; which
+    thinking the model reads is its chat template's to say."""
     return {**({"reasoning_content": it.reasoning} if it.reasoning else {}),
             **({"thinking": it.thinking} if it.thinking else {})}
 
@@ -239,7 +238,7 @@ def _thought(it: "_Item") -> dict:
 class _Item:
     """One message as it goes on the wire: user text, or an assistant reply with its
     calls and their results. Tool rows of the tree are carried by their call."""
-    __slots__ = ("idx", "id", "role", "content", "reasoning", "thinking", "current",
+    __slots__ = ("idx", "id", "role", "content", "reasoning", "thinking",
                  "attachments", "calls", "turn", "cid", "_wire", "_cost")
 
     def __init__(self, idx: int, m: dict, calls: list[dict] | None, tz, user: str = "",
@@ -265,7 +264,6 @@ class _Item:
                 self.content += "\n\n" + m["tail"]
         self.reasoning = (m.get("reasoning") or None) if self.role == "assistant" else None
         self.thinking = m.get("thinking") if self.role == "assistant" else None
-        self.current = False                # its thinking goes on the wire (see _select)
         self.attachments = m.get("attachments") or []
         self.calls = calls or None
         self._wire: dict[bool, list[dict]] = {}
@@ -322,30 +320,10 @@ class _Plan:
         self._select()
 
     def _select(self) -> None:
-        """The items after the newest summary, past `limit` cut at a user message, and
-        which replies keep their thinking (`current`): the last THINKING_KEPT replies of
-        the exchange still going on (measured: the whole exchange's thinking took 44 %
-        of a sub-agent's window, and the live loop sends none for older steps anyway),
-        and a model's `keep_thinking` earlier exchanges whole. Older exchanges go
-        without it, as the templates do."""
+        """The items after the newest summary, past `limit` cut at a user message."""
         items = [it for it in self.all_items if it.idx >= self.start]
         if self.limit and len(items) > self.limit:     # history_messages, at a user
             items = items[self._cut(items):]
-        # an item's age: how many user messages come after it (0: the exchange going on)
-        keep = int((getattr(getattr(self.backend, "cfg", None), "raw", None) or {})
-                   .get("keep_thinking") or 0)
-        age = 0
-        recent = 0                    # replies of the exchange going on, newest first
-        for it in reversed(items):
-            if it.role == "assistant" and age == 0:
-                recent += 1
-            thinks = age <= keep and (age > 0 or recent <= THINKING_KEPT)
-            if it.current != thinks:
-                it.current = thinks
-                it._wire.clear()
-                it._cost.clear()
-            if it.role == "user":
-                age += 1
         self.items = items
 
     def cut_through(self, idx: int) -> None:

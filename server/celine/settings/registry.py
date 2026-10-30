@@ -81,7 +81,7 @@ OPTIONS: dict[str, dict[str, tuple]] = {
     },
 }
 _PROVIDER_KEYS = {"kind", "label", "base_url", "options", "models"}
-_MODEL_KEYS = {"label", "caps", "context", "slots", "keep_thinking", "params", "llama", "reasoning_effort",
+_MODEL_KEYS = {"label", "caps", "context", "slots", "params", "llama", "reasoning_effort",
                "thinking_levels", "zdr", "provider", "vision_twin", "max_tokens", "cache_ttl"}
 # an Anthropic model's `max_tokens` (the API needs one) when unset; its most is what the
 # provider states (settings/kinds.py server_output)
@@ -268,7 +268,7 @@ def validate_model(kind: str, name: str, m: Any, path: str,
                                       "image_generation or music_generation, and only "
                                       "ComfyUI has them.")
     out["caps"] = list(dict.fromkeys(caps))
-    for k in ("context", "slots", "keep_thinking"):
+    for k in ("context", "slots"):
         if m.get(k) not in (None, 0):
             out[k] = _typed(f"{path}.{k}", m[k], "int", None)
     for k in ("params", "llama"):
@@ -475,9 +475,8 @@ def backend_config(s: Settings, ref: str) -> BackendConfig | None:
     caps = kinds_mod.caps_of(p, name)
     raw: dict[str, Any] = {"kind": kinds_mod.KINDS[kind]["backend"], "provider_kind": kind,
                            "images": "vision" in caps, "tools": "tools" in caps}
-    for k in ("context", "keep_thinking"):
-        if m.get(k):
-            raw[k] = m[k]
+    if m.get("context"):
+        raw["context"] = m["context"]
     if opts.get("timeout"):
         raw["timeout"] = float(opts["timeout"])
     params = dict(copy.deepcopy(m.get("params") or {}))
