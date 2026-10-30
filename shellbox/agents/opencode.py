@@ -247,6 +247,7 @@ def events(server: Server | None = None, timeout: float = 60):
             http.client.HTTPConnection)(req.host, timeout=timeout)
     try:
         conn.request("GET", req.selector, headers=dict(req.header_items()))
+        sock = conn.sock        # the response keeps it; the connection may let go of it
         r = conn.getresponse()
     except OSError as e:
         raise Problem(_down(e, server), 503) from None
@@ -256,8 +257,8 @@ def events(server: Server | None = None, timeout: float = 60):
 
     def end() -> None:
         try:                  # a shutdown, not a close: a read in another thread holds the
-            conn.sock.shutdown(socket.SHUT_RDWR)        # response's lock
-        except (OSError, AttributeError):
+            sock.shutdown(socket.SHUT_RDWR)             # response's lock
+        except OSError:
             pass
 
     def each():
