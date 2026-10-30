@@ -433,15 +433,6 @@ def locked(c: sqlite3.Connection, cid: str) -> str | None:
     return ARCHIVED if r["archived_at"] and lock_archived(c) else None
 
 
-def top_of(c: sqlite3.Connection, cid: str) -> str:
-    """The conversation a sub-agent's `cid` belongs to, all the way up; `cid` itself
-    for any other."""
-    while (r := c.execute("SELECT agent_of FROM conversations WHERE id=?",
-                          (cid,)).fetchone()) and r["agent_of"]:
-        cid = r["agent_of"]
-    return cid
-
-
 def depth(c: sqlite3.Connection, cid: str) -> int:
     """How many levels `cid` is below the top of its agent_of chain: 0 for a
     conversation that is not a sub-agent."""
@@ -461,7 +452,7 @@ def set_archived(c: sqlite3.Connection, store, cid: str, archived: bool) -> bool
     works; with Lock archived chats only while a turn of the user's is live, and what
     waits to land there from anyone else is dropped (its running work is stopped by the
     caller, conversations/api.py). -> whether anything changed."""
-    top = top_of(c, cid)
+    top = (homes.root(c, cid) or {"id": cid})["id"]
     row = c.execute("SELECT archived_at FROM conversations WHERE id=?", (top,)).fetchone()
     if row is None or (row["archived_at"] is not None) == archived:
         return False
