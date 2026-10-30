@@ -30,7 +30,7 @@ async function others(): Promise<Item[]> {
   }) as Item), none)
   const schedules = routinesApi.schedules().then(r => r.schedules.map(s => ({
     key: `s:${s.name}`, id: s.name, route: { section: 'routines', night: r.tonight, schedule: s.name }, title: s.title,
-    detail: `Schedule, ${s.every}`, icon: CalendarClock, at: 0,
+    detail: `Schedule, ${s.on ? s.every : 'Off'}`, icon: CalendarClock, at: 0,
   }) as Item), none)
   const nights = routinesApi.runs().then(r => r.nights.map(n => ({
     key: `n:${n.night}`, id: n.night, route: { section: 'routines', night: n.night },

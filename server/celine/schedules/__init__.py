@@ -87,6 +87,9 @@ DAYS = ("Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
         "Saturdays", "Sundays")        # cron weekdays 0 to 7
 
 
+SAID = 6                       # the most times one schedule says as a list
+
+
 def _hours(field: str) -> list[int] | None:
     """The hours a cron hour field names, in order; None for a shape not read here."""
     out: set[int] = set()
@@ -94,7 +97,9 @@ def _hours(field: str) -> list[int] | None:
         span, _, step = part.partition("/")
         if not (step or "1").isdigit() or int(step or "1") < 1:
             return None
-        lo, _, hi = ("0-23" if span == "*" else span).partition("-")
+        # a start with a step runs to the day's end: 3/5 is 3-23/5
+        lo, _, hi = ("0-23" if span == "*" else
+                     f"{span}-23" if step and span.isdigit() else span).partition("-")
         if not lo.isdigit() or not (hi or lo).isdigit():
             return None
         out.update(range(int(lo), int(hi or lo) + 1, int(step or "1")))
@@ -122,8 +127,9 @@ def _and(items: list[str]) -> str:
 
 def words(cron: str) -> str:
     """A cron line in plain words, 24h times: "Daily at 04:00", "Daily at 09:00 and
-    17:00", "Every 2 hours from 10:00 to 22:00", "Sundays at 03:00". A day of the month,
-    a month or a minute that is not one number: the cron line itself."""
+    17:00", "Every 2 hours from 10:00 to 22:00" (a step that divides 24), "Sundays at 03:00". A
+    day of the month, a month, a minute that is not one number or more than SAID times
+    that are no steady interval: the cron line itself."""
     parts = cron.split()
     if len(parts) != 5 or not parts[0].isdigit() or parts[2:4] != ["*", "*"]:
         return cron
@@ -133,12 +139,15 @@ def words(cron: str) -> str:
         return cron
     at = [f"{h:02d}:{minute:02d}" for h in hours]
     gaps = {b - a for a, b in zip(hours, hours[1:])}
-    if len(hours) > 2 and len(gaps) == 1:
+    # a steady interval only for a step that divides the day: */5 runs at 20:00, then 00:00
+    if len(hours) > 2 and len(gaps) == 1 and 24 % next(iter(gaps)) == 0:
         n = gaps.pop()
         every = "Every hour" if n == 1 else f"Every {n} hours"
         if not (hour.startswith("*") and minute == 0):
             every += f" from {at[0]} to {at[-1]}"
         return f"{days}, {every[0].lower()}{every[1:]}" if days else every
+    if len(at) > SAID:
+        return cron
     return f"{days or 'Daily'} at {_and(at)}"
 
 

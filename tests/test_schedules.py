@@ -165,10 +165,15 @@ def test_a_cron_line_reads_in_words_and_any_other_shape_as_itself():
     assert [words(c) for c in (
         "0 10-23/2 * * *", "0 9,17 * * *", "0 3 * * 0", "30 4 * * *", "0 8 * * 6,0",
         "0 9-17 * * 1-5", "0 1,13,20 * * *", "0 */2 * * *", "0 3 1 * *", "*/5 * * * *",
+        "0 3/5 * * *", "0 5/2 * * *", "0 */5 * * *", "0 */7 * * *", "0 */9 * * *",
+        "0 */6 * * *", "0 1-23/2 * * *",
     )] == [
         "Every 2 hours from 10:00 to 22:00", "Daily at 09:00 and 17:00", "Sundays at 03:00",
         "Daily at 04:30", "Weekends at 08:00", "Weekdays, every hour from 09:00 to 17:00",
-        "Daily at 01:00, 13:00 and 20:00", "Every 2 hours", "0 3 1 * *", "*/5 * * * *"]
+        "Daily at 01:00, 13:00 and 20:00", "Every 2 hours", "0 3 1 * *", "*/5 * * * *",
+        "Daily at 03:00, 08:00, 13:00, 18:00 and 23:00", "Every 2 hours from 05:00 to 23:00",
+        "Daily at 00:00, 05:00, 10:00, 15:00 and 20:00", "Daily at 00:00, 07:00, 14:00 and 21:00",
+        "Daily at 00:00, 09:00 and 18:00", "Every 6 hours", "Every 2 hours from 01:00 to 23:00"]
     for path in (Path(__file__).parents[1] / "config" / "schedules").glob("*.toml"):
         cron = tomllib.loads(path.read_text())["cron"]
         assert words(cron) != cron, f"{path.name}: {cron} in words"
