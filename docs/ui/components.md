@@ -344,11 +344,10 @@ most eight words.
 
 ### Face
 **When:** its face and every person's (`Avatar` for a chat contact).
-**Props:** `name`, `src`, `color`, `size` (`sm`, `md`, `lg`), `speaking`, `away`, `info` (its
-card: the big face, the name, one line, the caller's actions).
+**Props:** `name`, `src`, `color`, `size` (`sm`, `md`, `lg`), `speaking`, `away`.
 **Do:** one initial (the UI font, medium) on an OKLCH tint when there is no picture or it
 fails.
-**Don't:** show two letters.
+**Don't:** show two letters; give it a tooltip or a click (a face is a picture only).
 
 ## Fields
 

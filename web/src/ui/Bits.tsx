@@ -7,7 +7,7 @@ import {
   type LucideIcon, type LucideProps,
 } from 'lucide-react'
 import { Sheet } from './Dialog'
-import { Face, type FaceInfo } from './Face'
+import { Face } from './Face'
 import { cx } from './cx'
 import { ICON } from './icons'
 import { useSlide } from './slide'
@@ -248,18 +248,16 @@ export function SourceGlyph({ source, label, showLabel = false, className }: {
    person always gets the same colour. `kind` picks the glyph for a name with no letter (a
    phone number): a person, a group, `#` for a channel. `size` in px picks the nearest of
    the three face sizes. ── */
-export function Avatar({ name, src, seed, size = 40, kind = 'person', info }: {
+export function Avatar({ name, src, seed, size = 40, kind = 'person' }: {
   name: string | null | undefined
   src?: string | null
   seed?: string | number
   size?: number
   kind?: 'person' | 'dm' | 'group' | 'channel'
-  /** what its card says */
-  info?: FaceInfo
 }) {
   const n = avatarHue(seed ?? name)
   return <Face name={name ?? ''} src={src} bg={`var(--av-${n}-bg)`} fg={`var(--av-${n}-fg)`}
-               size={size <= 32 ? 'sm' : size <= 64 ? 'md' : 'lg'} info={info}
+               size={size <= 32 ? 'sm' : size <= 64 ? 'md' : 'lg'}
                fallback={kind === 'channel' ? Hash : kind === 'group' ? Users : User} />
 }
 

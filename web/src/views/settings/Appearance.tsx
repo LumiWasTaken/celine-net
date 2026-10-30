@@ -121,7 +121,7 @@ function Preview({ hideThinking, hideTools, collapseThinking }: { hideThinking: 
   const thoughtsTitle = `${capital(words.possessive)} thoughts`
   const [draft, setDraft] = useState('what did she knock over?')
   const face = (name: string, hue: string) => (
-    <Face name={name} size="sm" bg={`color-mix(in oklch, var(--char-${hue}) 22%, var(--surface-2))`} fg={`var(--char-${hue})`} still />
+    <Face name={name} size="sm" bg={`color-mix(in oklch, var(--char-${hue}) 22%, var(--surface-2))`} fg={`var(--char-${hue})`} />
   )
   return (
     <div className="appearance__preview" inert>

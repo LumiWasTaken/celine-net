@@ -129,7 +129,7 @@ function Who({ her, auto }: { her: HerView; auto: Autosave<unknown> }) {
              style={{ background: `color-mix(in oklch, ${color} 22%, var(--surface-2))` }} onClick={her.portrait ? () => setBig(true) : pick}
              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (her.portrait) setBig(true); else pick() } }}>
           {her.portrait ? <img className="her-pic__img" src={her.portrait.url} alt={her.name} draggable={false} />
-            : <Face name={her.name} size="lg" still bg={`color-mix(in oklch, ${color} 22%, var(--surface-2))`} fg={color} />}
+            : <Face name={her.name} size="lg" bg={`color-mix(in oklch, ${color} 22%, var(--surface-2))`} fg={color} />}
         </div>
         <span className="her-pic__more"><MenuButton icon={MoreHorizontal} size="sm" label={`More for ${her.name}`} items={menu} /></span>
       </div>
