@@ -112,6 +112,7 @@
   --dur-highlight: 2400ms;  /* the highlight after a jump */
   --dur-shimmer: 3s;        /* one sweep of a running line's shimmer */
   --delay-hover: 150ms;     /* a hover that reveals something */
+  --dur-wait: 300ms;        /* a busy mark waits this long before it shows: a quick load never flickers */
   --ease:      cubic-bezier(0.32, 0.72, 0, 1);    /* enter and move */
   --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);   /* leave */
   --ease-spring: linear(0, .077, .247, .443, .625, .775, .886, .961, 1.006, 1.03, 1.038, 1.037, 1.031, 1.024, 1.017, 1.01, 1);  /* transforms only */

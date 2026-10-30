@@ -6,7 +6,7 @@
    `onSend`; a command runs here and says only what the server says. The page reaches in
    through `handle`: focus the box, add files dropped anywhere on it, read the draft. */
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Dispatch, type ReactNode, type Ref, type SetStateAction } from 'react'
-import { Bell, LoaderCircle, Paperclip, Plus, Quote, TriangleAlert, Undo2, UserPen, X } from 'lucide-react'
+import { ArrowDown, Bell, LoaderCircle, Paperclip, Plus, Quote, TriangleAlert, Undo2, UserPen, X } from 'lucide-react'
 import {
   api, conversationApi, deleteAttachment, uploadAttachment,
   type Attachment, type ChatModel, type NewConversationSettings,
@@ -20,7 +20,7 @@ import { SETTINGS_EVENTS, settingsApi, type ConversationSettings, type ProviderV
 import { OFFLINE_TITLE } from '../lib/socket'
 import { THINK_WORD, commandsApi, menuRows, parseCommand, useCommands } from '../lib/commands'
 import { isTyping } from '../lib/keys'
-import { Button, Chip, coarse, ComposerBox, IconButton, Menu, Notice, cx, curve, ms, reduced, type MenuItem } from '../ui'
+import { Button, Chip, coarse, ComposerBox, IconButton, Menu, Notice, cx, curve, leave, ms, OUT, reduced, useLeave, type MenuItem } from '../ui'
 import './Composer.css'
 import { SpeechControls } from './Speech'
 
@@ -68,6 +68,14 @@ function pickFiles(onFiles: (files: File[]) => void) {
   input.click()
 }
 
+/** "New messages" on the box's top edge: back to the bottom with a glide; it rises in and
+    drops out */
+export function NewMessages({ onClick }: { onClick: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  useLeave(ref, g => leave(g, OUT.drop))
+  return <Button ref={ref} size="sm" icon={ArrowDown} onClick={onClick}>New messages</Button>
+}
+
 export function Composer({
   handle, conversationId: selected, exists, active, name, running, offline, sending, pending, empty, hidden, closed,
   settings, draftSettings: newSettings = NO_DRAFT, onDraftSettings: setNewSettings = noop, onModelPanel = noop, onSend, onStop,
@@ -102,7 +110,8 @@ export function Composer({
   /** /model without a name: the side panel on its models */
   onModelPanel?: () => void
   /** your message with its attachments (ids, file names); rejects when it was not sent */
-  onSend: (text: string, attachments: string[], names: string[]) => Promise<void>
+  /** the ids to send and the files themselves, drawn at once as they will be */
+  onSend: (text: string, attachments: string[], files: Attachment[]) => Promise<void>
   onStop: () => void
   setNote: Dispatch<SetStateAction<Note | null>>
   /** /compact ran: its outcome arrives later */
@@ -316,7 +325,7 @@ export function Composer({
     setDraftRefs([])
     setUploads([])
     try {
-      await onSend(out, ready, readyUploads.map(u => u.name))
+      await onSend(out, ready, readyUploads.map(u => u.att!))
       onTag(null)
     } catch {
       // what you typed comes back (the reason is the page's note)

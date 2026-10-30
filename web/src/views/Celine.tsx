@@ -6,10 +6,10 @@
    while you are elsewhere, so a running reply and a draft survive switching. The server
    sends every group, count, row state and its mood; the page draws them. */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { ArrowDown, Archive, Bell, Compass, Download, Images, LoaderCircle, PanelRight, Pencil, Pin, PinOff, Plus, RotateCcw, Trash2, TriangleAlert, X } from 'lucide-react'
+import { Archive, Bell, Compass, Download, Images, LoaderCircle, PanelRight, Pencil, Pin, PinOff, Plus, RotateCcw, Trash2, TriangleAlert, X } from 'lucide-react'
 import {
   api, conversationApi,
-  type ConfigStatus, type ConversationSummary, type Message, type NewConversationSettings, type Job,
+  type Attachment, type ConfigStatus, type ConversationSummary, type Message, type NewConversationSettings, type Job,
 } from '../lib/api'
 import { emit, useServerEvents } from '../lib/bus'
 import { ShowArtifact } from '../lib/artifacts'
@@ -31,10 +31,10 @@ import { ConversationReminders, remindersApi } from '../lib/reminders'
 import { snapshotAgain, useOnline, OFFLINE_TITLE } from '../lib/socket'
 import { useConversation } from '../lib/useConversation'
 import { useResource } from '../lib/useResource'
-import { useStickToBottom } from '../lib/useStickToBottom'
-import { Transcript, type Pending } from '../components/Transcript'
+import { KeepPlace, useStickToBottom } from '../lib/useStickToBottom'
+import { Transcript, TranscriptLoading, type Pending } from '../components/Transcript'
 import { SideHost } from '../components/MessageActions'
-import { Composer, type ComposerHandle, type Note } from '../components/Composer'
+import { Composer, NewMessages, type ComposerHandle, type Note } from '../components/Composer'
 import { waitWords } from '../components/Status'
 import { PhotoViewer } from '../components/PhotoViewer'
 import { GalleryContext, collectGeneratedImages, madeDetails, type Made } from '../components/Batch'
@@ -257,9 +257,9 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
 
   // your message, on screen at once with the dots; the requests follow. A message not sent
   // says why, and the Composer puts back what you typed
-  const post = useCallback(async (text: string, ready: string[], names: string[]) => {
+  const post = useCallback(async (text: string, ready: string[], files: Attachment[]) => {
     setNote(null)
-    setPending({ cid: selected, text, files: names })
+    setPending({ cid: selected, text, files })
     jumpRef.current({ smooth: false })
     try {
       const id = selected ?? await createConversation()
@@ -349,10 +349,11 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const missing = !!selected && !!list.data && !current && !shownPending && !convo.conversation
   const empty = !selected && !shownPending
   const drawn = !!(current || shownPending || (selected && convo.conversation))
-  const lastMessage = convo.messages.at(-1)
-  const { onScroll: onTranscriptScroll, unseen, jump: jumpToLatest } = useStickToBottom(
-    transcript, [lastMessage?.content, lastMessage?.reasoning, lastMessage?.id, convo.toolCalls, pendingReminders.length],
-    [selected], [selected, convo.messages.length > 0, drawn])
+  // the snapshot is not in yet: the transcript's shape stands in (TranscriptLoading)
+  const snapshotDue = !!selected && !convo.conversation && !shownPending
+  const { onScroll: onTranscriptScroll, unseen, jump: jumpToLatest, keep } = useStickToBottom(
+    transcript, [convo.messages.length, convo.live?.message_id, pendingReminders.length],
+    [selected], [selected, convo.messages.length > 0, drawn, snapshotDue])
   jumpRef.current = jumpToLatest
 
   const noteLine = note && (
@@ -427,7 +428,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                                   onClick: startedBy.link ? (e: { preventDefault(): void }) => { e.preventDefault(); nav.goPath(startedBy.link!) } : undefined }],
                        title: writingTo,
                      } : {
-                     lead: <HerFace who={who} size="sm" speaking={convo.running} mood={mood} />,
+                     lead: <HerFace who={who} size="sm" speaking={convo.running} />,
                      title:
                        <span className="chat-who">
                          {name}<MoodText mood={mood} />
@@ -463,7 +464,8 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
               <GalleryContext.Provider value={{ images: galleryImages, openImage }}>
                 <SideHost.Provider value={{ host: side, active: activeSide, setActive: handleSetActiveSide }}>
                 <ConversationReminders.Provider value={conversationReminders}>
-                  <Transcript conversationId={selected}
+                <KeepPlace.Provider value={keep}>
+                  {snapshotDue ? <TranscriptLoading /> : <Transcript conversationId={selected}
                               messages={convo.messages}
                               toolCalls={convo.toolCalls} runs={convo.runs} turn={convo.turn} unanswered={convo.unanswered}
                               running={convo.running} error={convo.error}
@@ -472,14 +474,17 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                               imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
                               waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue}
                               note={null} assistant={name}
-                              user={status?.user ?? ''} />
+                              user={status?.user ?? ''} />}
+                </KeepPlace.Provider>
                 </ConversationReminders.Provider>
                 </SideHost.Provider>
               </GalleryContext.Provider>
               <ReminderLines list={pendingReminders} />
             </div>
           ) : loading ? (
-            <div className="chat-scroll">{list.error && <EmptyState><InlineError message={list.error} onRetry={list.reload} /></EmptyState>}</div>
+            <div className="chat-scroll">
+              {list.error ? <EmptyState><InlineError message={list.error} onRetry={list.reload} /></EmptyState> : <TranscriptLoading />}
+            </div>
           ) : missing ? (
             <div className="chat-scroll chat-scroll--empty">
               <EmptyState icon={TriangleAlert} title="Not found"
@@ -488,7 +493,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
           ) : (
             <div className="chat-scroll chat-scroll--empty">
               <div className="chat-greeting">
-                <HerFace who={who} size="lg" mood={mood} />
+                <HerFace who={who} size="lg" />
                 <div className="chat-greeting__name">{name}</div>
                 <MoodText mood={mood} />
               </div>
@@ -504,7 +509,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                     toNew={toNew} attempt={attempt} onReminders={current ? () => setRemindersOpen(true) : undefined}
                     notices={noteLine}
                     setup={current && <FirstRun />}
-                    jump={unseen && <Button size="sm" icon={ArrowDown} onClick={jumpToLatest}>New messages</Button>} />
+                    jump={unseen && <NewMessages onClick={jumpToLatest} />} />
         </main>
 
         <div ref={setSide} className="chat-side" />

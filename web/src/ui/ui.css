@@ -269,7 +269,7 @@
 }
 .empty--compact .empty__head { font-size: var(--t-md); margin-bottom: var(--s-1); }
 
-.skeleton { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-2); }
+.skeleton { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-2); animation: fade var(--dur) var(--ease) var(--dur-wait) both; }
 .skeleton > i {
   display: block; height: var(--row-md); border-radius: var(--r-md); background: var(--surface-2);
   animation: skeleton calc(var(--dur-pulse) * 4 / 3) var(--ease) infinite;

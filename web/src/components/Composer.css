@@ -34,6 +34,8 @@
   flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; position: relative; scrollbar-gutter: stable both-edges;
   mask-image: linear-gradient(to bottom, transparent 0, var(--opaque) var(--s-5), var(--opaque) calc(100% - var(--s-4)), transparent 100%);
 }
+/* unpinned (useStickToBottom), the browser keeps your reading place when something above grows */
+.chat-scroll[data-unpinned] { overflow-anchor: auto; }
 .chat-col { width: min(100% - 2 * var(--s-4), var(--chat-col)); margin: 0 auto; }
 /* the lines of its life after the messages: every reminder of this conversation, one line
    each, in from the edge like the transcript's quiet lines */
