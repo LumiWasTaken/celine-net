@@ -63,7 +63,8 @@ async def test_a_step_with_a_model_switches_the_mission_to_it(tmp_path, monkeypa
     await store.write(lambda c: c.execute(
         "UPDATE conversations SET auto_context=0 WHERE id=?", (cid,)))
     sub = await conversations.create(store, "scout", agent_of=cid, agent_name="scout")
-    await SubAgents(cfg)._settings(store, cid, sub)
+    agents = SubAgents(cfg)
+    await agents._settings(store, cid, sub, await agents._model(store, cid, None, None))
     assert (await conv.get(store, sub))["model"] == "main/big"
     assert await store.read(lambda c: c.execute(
         "SELECT auto_context FROM conversations WHERE id=?", (sub,)).fetchone()[0]) == 0
