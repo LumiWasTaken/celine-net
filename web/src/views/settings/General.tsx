@@ -1,6 +1,7 @@
 /* General: when a settings file has an error, one quiet line and the list under it; You
    (your name, time zone, what you write about you), each saved when you leave it; Chats
-   (Lock archived chats, Describe new chat photos), saved on change. How the app looks is
+   (Lock archived chats, Describe new chat photos), saved on change; Network: the app's
+   address (logins, share links and her Mac's setup line use it). How the app looks is
    Appearance; its name is its own (Her.tsx). Source code: the code this build runs, its
    commit on the link (the server's `build`, the AGPL's offer). Advanced: the time limits and
    sizes (the server's `advanced` fields; a skill's own under its label), each saved on change
@@ -10,6 +11,7 @@ import { ArrowUpRight } from 'lucide-react'
 import type { ConfigStatus } from '../../lib/api'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { settingsApi } from '../../lib/settingsApi'
+import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
 import { Button, Field, Form, type FormField, InlineError, Input, Section, TextArea } from '../../ui'
@@ -34,6 +36,7 @@ export function General({ status }: { status: ConfigStatus | null }) {
       <Section title="Chats">
         <GeneralFields only={['lock_archived', 'image_captions_auto']} />
       </Section>
+      <Section title="Network"><AddressField /></Section>
       {status && (
         <Section title="Source code"
                  action={<Button variant="ghost" size="sm" icon={ArrowUpRight} href={status.build.source} target="_blank" rel="noopener">
@@ -85,6 +88,21 @@ export function GeneralFields({ only, advanced = false }: { only?: string[]; adv
       {groups.map(g => <Section key={g} title={g}>{form(schema.filter(f => f.group === g))}</Section>)}
     </>
   )
+}
+
+const ADDRESS: FormField = { key: 'origin', label: 'Address', type: 'text', mono: true, placeholder: 'https://celine.example.net' }
+
+/** the app's own address (GET/PUT /api/address), saved when you leave the field: here
+    under Network, and on a plugin's form whose view asks for it (her Mac's) */
+export function AddressField() {
+  const res = useResource(() => settingsApi.address(), [], { events: ev => ev.type === 'settings.changed' })
+  const save = useAction(async (origin: string) => { res.set(await settingsApi.putAddress(res.data?.version ?? '', origin)) })
+  if (!res.data) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : null
+  return <>
+    <Form fields={[ADDRESS]} values={{ origin: res.data.origin }} disabled={save.busy}
+          onChange={(_, v) => void save.run(String(v ?? ''))} />
+    {save.error && <InlineError compact message={save.error} />}
+  </>
 }
 
 /* ── you: your name, your time zone (this browser's until one is saved: shown, and saved

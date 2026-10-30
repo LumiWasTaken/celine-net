@@ -1,6 +1,7 @@
 """The app's own address (var/settings/address.toml `origin`): the origin of the browser
 in which the setup code was entered or, on an instance that has none yet, the first
-login came from (auth/routes.py `_signed_in`); changed in Settings, Security. The login's
+login came from (auth/routes.py `_signed_in`); changed in Settings, General (Network) and
+on a plugin's form that asks for it (her Mac's, while it is localhost). The login's
 relying party (auth), the origin check (api/origin.py), share links (shares.py) and push
 (push.py) read it here.
 

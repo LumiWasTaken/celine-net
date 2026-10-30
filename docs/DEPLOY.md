@@ -407,7 +407,7 @@ digits). Then the screen shows ten recovery codes once: save them. Every restart
 a login writes a new setup code, and the old one stops working.
 
 **The app's address.** The app keeps the address of the browser the setup code was
-entered in (`var/settings/address.toml`); Settings, Security changes it. Logins, share
+entered in (`var/settings/address.toml`); Settings, General, Network changes it. Logins, share
 links, push and her Mac's setup line use it, and requests from any other address but
 localhost are refused. An install from before that has none learns it at the next login:
 until then only the login and the setup are accepted from elsewhere, and only from their
@@ -434,7 +434,7 @@ was last seen, and logs out one or every other.
 ## Behind a reverse proxy (https)
 
 Open the app at `https://celine.example.net` and enter the setup code there: the app keeps
-that address (Settings, Security), and passkeys belong to it.
+that address (Settings, General, Network), and passkeys belong to it.
 
 ```sh
 # .env

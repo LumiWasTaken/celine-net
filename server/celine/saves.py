@@ -106,7 +106,7 @@ async def addresses(app, values: Any, if_match: str | None = None) -> dict:
 
 
 async def address(app, values: Any, if_match: str | None = None) -> dict:
-    """The app's own address (settings/address.py): Settings, Security, and the first
+    """The app's own address (settings/address.py): Settings, General, and the first
     login or setup (auth/routes.py). Written and set in place, no reload: nothing else
     is built from it, every reader asks for it when it runs."""
     async with write.lock():
