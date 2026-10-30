@@ -1421,7 +1421,10 @@ def wait_call(body: dict, progress, conn) -> dict:
     cid = t.cmd["id"]
     state = "done" if ended(cid) else "closed" if p["dead"] else \
         watch_run(t, name, p["pid"], cid, timeout, progress, conn)
-    return run_answer(t, name, cid, state, notes, chars=chars)
+    res = run_answer(t, name, cid, state, notes, chars=chars)
+    if state == "closed":
+        remove_terminal(name)
+    return res
 
 
 def watch_run(t: Terminal, name: str, shell_pid: int, cid: str, timeout: float,

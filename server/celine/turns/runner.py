@@ -198,8 +198,12 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         # what reached this conversation since the last step joins the request here
         # (intercom/deliver.py); a reply continued in place takes it next step
         if not reopen:
-            token.user_wrote = anyio.Event()      # what the user wrote is in this step
             taken = await deliver.take(store, cid, tid, parent)
+            # what the user wrote is in this step; one sent after the take still ends a
+            # wait (Intercom.send commits before it sets the event)
+            token.user_wrote = anyio.Event()
+            if await deliver.user_waits(store, cid):
+                token.user_wrote.set()
             if taken:
                 await message_context.ensure(store, cfg, registry, cid, tid, taken,
                                              tool_turn["max_output_tokens"])
