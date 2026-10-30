@@ -194,8 +194,7 @@ async def test_a_url_server_stays_down_with_its_reason_and_comes_back_by_itself(
         skill = sup.skills["away"]
         await until(lambda: skill.restarts >= 2)
         assert skill.status == "down", "past max_restarts a url server is not dead"
-        assert skill.error == ("The away server did not answer at 127.0.0.1:9. Start it, or "
-                               "fix the address.")
+        assert skill.error == "The away server at 127.0.0.1:9 does not answer."
         here = _cfg().mcp["echo"]                   # its host answers again
         sup._connect = lambda _cfg: connect(here)
         skill.kick.set()

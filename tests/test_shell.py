@@ -249,7 +249,7 @@ async def test_failures_are_error_results_and_never_take_the_skill_down(
     monkeypatch.delenv("CELINE_SHELL_URL")
     down = Shell(load())
     assert (down.status, down.error) == ("down", (
-        "The shellbox has no address yet. Type one below, or leave it off."))
+        "The shellbox is not set up."))
 
 
 async def test_the_users_terminal_is_read_only_until_they_allow_it(store, shell, box):

@@ -31,7 +31,7 @@ def _fresh(monkeypatch):
     web._pages.clear()
 
 
-REFUSED = "SearXNG did not answer at searx.test. Start it, or fix the address."
+REFUSED = "SearXNG at searx.test does not answer."
 
 
 async def test_a_dead_search_fails_with_searxng_named_and_no_way_around():
@@ -52,11 +52,10 @@ async def test_a_wrong_searxng_says_which():
         lambda req: httpx.Response(200, text="<html>not searx</html>")))
     r = await html.search(_ctx(), "x")
     assert r.is_error and r.content == ("SearXNG at searx.test answered something that is "
-                                        "not JSON: fix the address so it points at SearXNG.")
+                                        "not JSON.")
     r = await Web(CFG, transport=httpx.MockTransport(
         lambda req: httpx.Response(403))).search(_ctx(), "x")
-    assert r.content.startswith("SearXNG at searx.test answered 403 instead of JSON results")
-    assert "search.formats" in r.content
+    assert r.content == "SearXNG at searx.test answered 403 instead of JSON results."
 
 
 async def test_settings_tools_say_where_each_skill_is_offered_and_web_down(tmp_path, monkeypatch,

@@ -281,8 +281,12 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
         return httpx.Response(200, json={"running": [], "models": []})
     llm = LLM(cfg, router=Router(cfg, None, transport=httpx.MockTransport(reply)))
     probes = {"shellbox": {"state": "missing",
-                           "detail": "The shellbox at box:8700 did not answer."},
-              "web": {"state": "ready", "detail": "SearXNG answers."}}
+                           "detail": "The shellbox did not answer at box:8700. Start it, "
+                                     "or fix the address.",
+                           "why": "The shellbox at box:8700 does not answer."},
+              "browser": {"state": "unset", "detail": "Type one below, or leave it off."},
+              "web": {"state": "ready", "detail": "SearXNG answers."},
+              "guard": {"state": "ready", "detail": "Decision model: small."}}
 
     async def probe_all(cfg, services, *, cache=True):
         return {f.id: probes.get(f.id, {"state": "none", "detail": ""})
@@ -305,8 +309,10 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
     assert "Model: lan/small for chat, a fallback. main/big: llama-swap does not answer." in out
     assert f"Where you are: a chat (address {parent})." in out
     assert "This turn: Joe's message." in out
-    assert "Shellbox: The shellbox at box:8700 did not answer." in out
-    assert "Web search: SearXNG answers." in out and "Guard: off" in out
+    assert "Shellbox: The shellbox at box:8700 does not answer." in out, "her words"
+    assert "Browser: not set up." in out and "below" not in out and "fix" not in out
+    assert "Web search: SearXNG answers." in out and out.count("Guard:") == 1
+    assert "Guard: off." in out
     assert "[image]" not in out and "—" not in out
 
     sub = await conversations.create(store, "s", agent_of=parent, agent_name="scout")

@@ -24,7 +24,7 @@ from .. import shellbox
 from ..settings import general
 from ..core.ids import now
 from ..terminals import store as terminals
-from ..errors import ToolRefused, not_set_up, unreachable_words
+from ..errors import ToolRefused, her_not_set_up, her_unreachable
 
 POLL_SECONDS = 20          # between two code__status looks (it is told)
 RESULT_CHARS = 2000        # of the agent's last answer code__result carries
@@ -69,7 +69,7 @@ class Code:
 
     @property
     def error(self) -> str | None:
-        return None if shellbox.url(self.cfg) else not_set_up("the shellbox")
+        return None if shellbox.url(self.cfg) else her_not_set_up("the shellbox")
 
     # ---- the tools ------------------------------------------------------------------------
 
@@ -252,7 +252,7 @@ class Code:
     def _unreachable(self, e: httpx.HTTPError) -> ToolResult:
         if isinstance(e, (httpx.ConnectError, httpx.TimeoutException,
                           httpx.UnsupportedProtocol)):
-            content = unreachable_words("the shellbox", shellbox.url(self.cfg), e)
+            content = her_unreachable("the shellbox", shellbox.url(self.cfg))
         else:
             content = (f"The shellbox at {urlsplit(shellbox.url(self.cfg)).netloc} dropped the "
                        f"connection or restarted ({type(e).__name__}: {e}). Look with "

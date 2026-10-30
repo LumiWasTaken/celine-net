@@ -215,8 +215,9 @@ def install_error_handler(app) -> None:
 
 # ---- a box that is not there ----------------------------------------------------------------
 # The shellbox, the browser, SearXNG and ComfyUI are services the app runs without. When one
-# has no address, does not answer or does not take the app's key, every page, probe and tool
-# result says so in the same plain sentence: the service and its address.
+# has no address, does not answer or does not take the app's key, a page or probe says so in
+# the same plain sentence: the service, its address and what the user does about it. What
+# she reads (a tool result, the tail, me__whoami) is the her_ sentence: the fact alone.
 
 def _name(what: str) -> str:
     return f"{what[0].upper()}{what[1:]}"
@@ -237,6 +238,20 @@ def unreachable_words(what: str, url: str, e: Exception) -> str:
     if not url:
         return not_set_up(what)
     return f"{_name(what)} did not answer at {_host(url)}. Start it, or fix the address."
+
+
+def her_not_set_up(what: str) -> str:
+    return f"{_name(what)} is not set up."
+
+
+def her_unreachable(what: str, url: str) -> str:
+    if not url:
+        return her_not_set_up(what)
+    return f"{_name(what)} at {_host(url)} does not answer."
+
+
+def her_bad_key(what: str, url: str) -> str:
+    return f"{_name(what)} at {_host(url)} does not take the app's key."
 
 
 def bad_key(what: str, url: str) -> str:

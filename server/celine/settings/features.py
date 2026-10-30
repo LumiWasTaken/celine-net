@@ -324,7 +324,8 @@ def probe_fn(f: Feature):
 
 async def probe(cfg, services, feature: str) -> dict[str, str]:
     """One feature's state now: {"state", "detail"}, with "url" when the probe found the
-    service at its default address while none is saved (the setup form prefills it).
+    service at its default address while none is saved (the setup form prefills it), and
+    "why" when what she reads differs from the page's words (errors.her_*).
     "none" when it has nothing to detect; a probe that does not answer within
     PROBE_SECONDS, or raises, is "missing"."""
     f = get(feature)
@@ -347,8 +348,9 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
     if result is None:
         return {"state": "none", "detail": ""}
     out = {"state": result["state"], "detail": result.get("detail", "")}
-    if result.get("url"):
-        out["url"] = result["url"]
+    for key in ("url", "why"):          # why: what she reads (me__whoami), when it differs
+        if result.get(key):
+            out[key] = result[key]
     return out
 
 

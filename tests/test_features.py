@@ -526,7 +526,7 @@ async def test_put_answers_from_the_probes_the_page_saw(api, monkeypatch):
     assert api.services.feature_probes is None, "the next GET probes anew"
 
 
-async def test_shares_start_off_and_their_switch_saves_on(api):
+async def test_shares_start_off_and_their_switch_saves_on(api, monkeypatch):
     """Shares are off on a fresh install and for an id left out; while off its three
     share tools are not built, the shell's others are; saved on, they are back. Off
     again, a share that still runs answers 404 (tests/test_shares.py)."""
@@ -546,6 +546,16 @@ async def test_shares_start_off_and_their_switch_saves_on(api):
     assert put.json()["features"]["shares"] is True
     assert "shares = true" in (api.var / "settings" / "features.toml").read_text()
     assert tools <= set(reg.tools)
+    import celine.skills.shell as shell_mod
+    box = {"state": "missing", "detail": "page words", "why": "The shellbox at box does not answer."}
+
+    async def box_probe(cfg, services):
+        return box
+    monkeypatch.setattr(shell_mod, "probe", box_probe)
+    down = (await api.get("/api/features/shares/probe")).json()
+    assert down["state"] == "missing" and down["why"] == box["why"], \
+        "a share opens only while the box answers"
+    box = {"state": "ready", "detail": "The shellbox at box answers."}
     assert (await api.get("/api/features/shares/probe")).json()["state"] == "ready"
     await api.put("/api/features", json={"features": {"shares": True, "shellbox": False}})
     assert (await api.get("/api/features/shares/probe")).json() == \

@@ -114,6 +114,17 @@ def edited(cfg, what: str, old: str, new: str, add: list[str],
             f"Your {what}: {len(add)} added, {len(remove)} removed, {len(items)} now.")
 
 
+def feature_words(p: dict) -> str:
+    """A feature's probe as she reads it: the probe's own words for her (`why`), its
+    detail while it is ready, else its state; a page's detail tells the user what to
+    type, and that is not hers."""
+    if p.get("why"):
+        return p["why"]
+    if p["state"] == "ready":
+        return p["detail"] or "ready."
+    return "not set up." if p["state"] == "unset" else "down."
+
+
 async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
     """Where it is, one fact per line, from what the app reads for the UI: the turn's
     running event (backends/llm.py) and the router for its model and the chain, the
@@ -160,14 +171,16 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
     probes = await features.probe_all(cfg, app)
     for f in features.catalog():
         p = probes.get(f.id)
-        if p and p["state"] != "none" and features.on(cfg, f.id):
-            lines.append(f"{f.label}: {p['detail'] or p['state']}")
+        if p and p["state"] != "none" and features.on(cfg, f.id) and f.id != "guard":
+            lines.append(f"{f.label}: {feature_words(p)}")
     mcp = getattr(app, "mcp", None)
     owned = features.connector_owners()        # a probed feature's line says it already
     for s in (mcp.skills.values() if mcp is not None else ()):
         if s.name not in owned or not features.get(owned[s.name]).probe:
             lines.append(f"{s.name} (MCP): {s.status}" + (f", {s.error}" if s.error else ""))
-    lines.append(f"Guard: {switch.mode(cfg, cid)}")
+    guard_probe = probes.get("guard") or {}
+    lines.append(f"Guard: {switch.mode(cfg, cid)}." + (
+        f" {guard_probe['detail']}" if guard_probe.get("state") == "ready" else ""))
     if held := await hold.her_hold(store, llm):
         lines.append(f"House: {held}.")
     return [cfg.substitute(x) for x in lines]

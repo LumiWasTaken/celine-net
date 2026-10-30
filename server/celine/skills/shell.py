@@ -29,7 +29,8 @@ from ..core.ids import now, when
 from ..terminals import store as terminals
 from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
-from ..errors import CelineError, ToolRefused, TooLarge, bad_key, not_set_up, unreachable_words
+from ..errors import (CelineError, ToolRefused, TooLarge, bad_key, her_bad_key,
+                      her_not_set_up, her_unreachable, not_set_up, unreachable_words)
 from .. import shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
@@ -419,7 +420,7 @@ class Shell:
     @property
     def error(self) -> str | None:
         if not shellbox.url(self.cfg):
-            return not_set_up("the shellbox")
+            return her_not_set_up("the shellbox")
         return None
 
     # ---- the tools ------------------------------------------------------------------------
@@ -808,7 +809,7 @@ class Shell:
         """POST /run: progress lines go to `progress`, the final object comes back. A
         stream that ends without one is a dropped connection."""
         if not shellbox.url(self.cfg):
-            raise ToolRefused(not_set_up("the shellbox"))
+            raise ToolRefused(her_not_set_up("the shellbox"))
         async with shellbox.client(self.cfg, None, self.transport) as client, \
                 client.stream("POST", shellbox.url(self.cfg) + "/run", json=body) as r:
             if r.status_code != 200:
@@ -869,7 +870,7 @@ class Shell:
         sentence that names its address."""
         if isinstance(e, (httpx.ConnectError, httpx.TimeoutException,
                           httpx.UnsupportedProtocol)):
-            content = unreachable_words("the shellbox", shellbox.url(self.cfg), e)
+            content = her_unreachable("the shellbox", shellbox.url(self.cfg))
         else:
             what = f"terminal {name} and what ran in it are" if name else \
                 "your terminals and what ran in them are"
@@ -1164,11 +1165,14 @@ async def probe(cfg, services) -> dict[str, str]:
             r = await c.get(url + "/status", timeout=PROBE_WAIT)
     except httpx.HTTPError as e:
         if not saved:
-            return {"state": "unset", "detail": not_set_up("the shellbox")}
-        return {"state": "missing", "detail": unreachable_words("the shellbox", url, e)}
+            return {"state": "unset", "detail": not_set_up("the shellbox"),
+                    "why": her_not_set_up("the shellbox")}
+        return {"state": "missing", "detail": unreachable_words("the shellbox", url, e),
+                "why": her_unreachable("the shellbox", url)}
     found = {} if saved else {"url": url}
     if r.status_code in (401, 403):
-        return {"state": "missing", "detail": bad_key("the shellbox", url), **found}
+        return {"state": "missing", "detail": bad_key("the shellbox", url),
+                "why": her_bad_key("the shellbox", url), **found}
     if saved:
         return {"state": "ready", "detail": f"The shellbox at {host} answers."}
     return {"state": "ready", "detail": f"Found at {url}.", "url": url}

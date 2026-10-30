@@ -44,7 +44,7 @@ from . import attachments
 from .config import ROOT, Problem, checked
 from .core.ids import now
 from .kb.identity import REF
-from .errors import TooLarge, unreachable_words
+from .errors import TooLarge, her_unreachable
 from .skills import BUILTIN, GUIDES_DIR, META, Annotations, ToolContext, ToolResult, ToolSpec, guide
 
 log = logging.getLogger("celine.mcp")
@@ -335,7 +335,7 @@ class Supervisor:
                 # a server of ours that quit says so; anything else is the server at its
                 # address not answering (a connect error, a timeout, an ExceptionGroup)
                 skill.error = str(e) if isinstance(e, RuntimeError) else \
-                    unreachable_words(f"the {skill.name} server", skill.cfg.url, e)
+                    her_unreachable(f"the {skill.name} server", skill.cfg.url)
                 log.warning("mcp server failed", extra={"event": "mcp.failed",
                                                         "server": skill.name,
                                                         "error": skill.error})

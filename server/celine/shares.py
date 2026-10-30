@@ -131,9 +131,14 @@ def opens(cfg, row: dict | None) -> bool:
 
 
 async def probe(cfg, services) -> dict[str, str]:
-    """Settings, Features: a share goes through its box, so the shellbox feature first."""
+    """Settings, Features: a share goes through its box, so the shellbox feature first,
+    then the box's own probe: a share opens only while it answers."""
     if not features.on(cfg, "shellbox"):
         return {"state": "unset", "detail": "The shellbox is off."}
+    from .skills.shell import probe as box
+    got = await box(cfg, services)
+    if got["state"] != "ready":
+        return {k: v for k, v in got.items() if k != "url"} | {"state": "missing"}
     return {"state": "ready", "detail": "The shellbox is on."}
 
 

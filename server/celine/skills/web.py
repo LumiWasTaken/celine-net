@@ -39,7 +39,7 @@ import httpx
 
 from ..turns.compact import one_line
 from . import ToolContext, ToolResult, guide, knob, tool, described
-from ..errors import ToolRefused, unreachable_words
+from ..errors import ToolRefused, her_unreachable, unreachable_words
 from ..settings import services as services_mod
 
 DEFAULT_UA = ("Mozilla/5.0 (compatible; Celine/0.1; self-hosted personal assistant; "
@@ -62,8 +62,19 @@ KNOBS = (
 
 
 def search_down_text(endpoint: str, e: Exception | int) -> str:
-    """Why a search failed, one sentence that names SearXNG's address: no connection or
-    too slow (an exception), or an answer that is not its JSON (the status)."""
+    """Why a search failed, as she reads it: one sentence that names SearXNG's address,
+    no connection or too slow (an exception), or an answer that is not its JSON (the
+    status)."""
+    host = urlsplit(endpoint).netloc or endpoint
+    if isinstance(e, int):
+        return f"SearXNG at {host} answered {e} instead of JSON results."
+    if isinstance(e, ValueError):
+        return f"SearXNG at {host} answered something that is not JSON."
+    return her_unreachable("SearXNG", endpoint)
+
+
+def search_down_page(endpoint: str, e: Exception | int) -> str:
+    """search_down_text as Settings says it: with what the user does about it."""
     host = urlsplit(endpoint).netloc or endpoint
     if isinstance(e, int):
         return (f"SearXNG at {host} answered {e} instead of JSON results: fix the address "
@@ -739,7 +750,9 @@ async def probe(cfg, services) -> dict[str, str]:
         async with httpx.AsyncClient(trust_env=False, timeout=2.5) as client:
             r = await client.get(f"{endpoint}/healthz")
     except httpx.HTTPError as e:
-        return {"state": "missing", "detail": search_down_text(endpoint, e)}
+        return {"state": "missing", "detail": search_down_page(endpoint, e),
+                "why": search_down_text(endpoint, e)}
     if r.status_code >= 500:
-        return {"state": "missing", "detail": search_down_text(endpoint, r.status_code)}
+        return {"state": "missing", "detail": search_down_page(endpoint, r.status_code),
+                "why": search_down_text(endpoint, r.status_code)}
     return {"state": "ready", "detail": f"SearXNG at {urlsplit(endpoint).netloc} answers."}

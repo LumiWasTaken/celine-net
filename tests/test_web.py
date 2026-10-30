@@ -116,7 +116,7 @@ async def test_search_down_points_at_her_browser_when_she_has_one():
     got = await Web(cfg, transport=httpx.MockTransport(down), check_addresses=False).search(
         _ctx(), query="celine")
     assert got.is_error and got.content.endswith(" Your browser is on: search there.")
-    assert got.content.startswith("SearXNG did not answer at ")
+    assert got.content.startswith("SearXNG at searx.test does not answer.")
     cfg.settings.features = {"browser": False}
     got = await Web(cfg, transport=httpx.MockTransport(down), check_addresses=False).search(
         _ctx(), query="celine")

@@ -218,7 +218,8 @@ async def features(services, probes: dict | None = None) -> dict[str, Any]:
     if probes is None:
         probes = await features_mod.probe_all(services.cfg, services)
     return {"features": features_mod.effective(s.features),
-            "catalog": [{**features_mod.view(f), **probes[f.id],
+            "catalog": [{**features_mod.view(f),
+                         **{k: v for k, v in probes[f.id].items() if k != "why"},
                          "card": features_mod.card_now(services.cfg, f, probes[f.id]),
                          "group_label": services.cfg.substitute(
                              features_mod.GROUPS.get(f.group, ""))}

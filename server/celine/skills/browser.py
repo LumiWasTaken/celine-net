@@ -43,7 +43,7 @@ from .. import vault as vault_mod
 from ..vault import EntryError, VaultError, reason
 from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
-from ..errors import ToolRefused, bad_key, not_set_up, unreachable_words
+from ..errors import ToolRefused, her_bad_key, her_not_set_up, her_unreachable
 from .web import split_parts
 
 log = logging.getLogger("celine.browser")
@@ -355,7 +355,7 @@ class Browser:
     @property
     def error(self) -> str | None:
         if not sync.url(self.cfg):
-            return not_set_up("the browser")
+            return her_not_set_up("the browser")
         return None
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
@@ -1047,7 +1047,7 @@ class Browser:
         return ToolResult(content=text, is_error=True, display={"tab": tab, "refused": True})
 
     def _unreachable(self, tab: str | None, e: Exception) -> ToolResult:
-        return self._error(f"{unreachable_words('the browser', sync.url(self.cfg), e)} Tell "
+        return self._error(f"{her_unreachable('the browser', sync.url(self.cfg))} Tell "
                            f"{self.cfg.user} if it stays away.", tab)
 
     def _refusal(self, e: BrowserRefused, tab: str | None, steps: list | None = None) -> ToolResult:
@@ -1066,7 +1066,7 @@ class Browser:
                                f"on the screen; nothing was done. " + (
                                    f"It said: \"{said}\"" if said else "It said nothing."), tab)
         if e.status in (401, 403):
-            return self._error(f"{bad_key('the browser', sync.url(self.cfg))} Tell {user}.", tab)
+            return self._error(f"{her_bad_key('the browser', sync.url(self.cfg))} Tell {user}.", tab)
         if code == "no_tab":
             open_tabs = f.get("tabs") or []
             return self._error(f"No tab named {tab}. " + (
