@@ -52,11 +52,11 @@ async def test_a_chat_a_mission_a_sub_agent_a_sub_sub_agent_and_a_drone(store, m
         f"You report to: the sub-agent scout (address {scout}).", "Depth: 2" + DEPTH]
 
     drone = await conversations.create(store, "d", agent_of=scout, agent_name="arcade",
-                                       agent_cli="opencode", agent_device="mac")
-    assert (await _where(store, drone))[2] == "Device: mac, through opencode."
+                                       agent_cli="opencode", agent_device="toaster")
+    assert (await _where(store, drone))[2] == "Device: toaster, through opencode."
     from types import SimpleNamespace
     from celine import plugins
-    monkeypatch.setitem(plugins.LOADED, "mac", SimpleNamespace(
+    monkeypatch.setitem(plugins.LOADED, "toaster", SimpleNamespace(
         manifest={"label": "Mac plugin", "drones": {"label": "Her Mac"}}))
     assert (await _where(store, drone))[2] == "Device: Her Mac, through opencode."
 
