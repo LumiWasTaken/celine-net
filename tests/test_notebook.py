@@ -207,6 +207,24 @@ async def test_search_takes_plain_words_with_punctuation(store, cfg):
         assert "people/noor.md" in (await nb.search(ctx, q)).content, q
 
 
+async def test_a_search_matches_any_word_best_first_and_quotes_a_phrase(store, cfg):
+    """The live miss: "climbing bouldering hike hiking" found nothing while each word
+    alone found notes."""
+    nb = Notebook(cfg)
+    await nb.seed(store)
+    ctx = _ctx("c", store, cfg)
+    await nb.write(ctx, "people/noor.md", "Noor goes climbing and bouldering, then hiking.", "noor")
+    await nb.write(ctx, "trips/alps.md", "A long hike in the Alps.", "alps")
+    await nb.write(ctx, "food.md", "Rock and sushi, then climbing gear.", "food")
+    out = (await nb.search(ctx, "climbing bouldering hike hiking")).content
+    paths = re.findall(r"^(\S+\.md) ", out, re.M)
+    assert set(paths) == {"people/noor.md", "trips/alps.md", "food.md"}, out
+    assert paths[0] == "people/noor.md", "the note with the most of the words ranks first"
+    out = (await nb.search(ctx, '"climbing and bouldering"')).content
+    assert re.findall(r"^(\S+\.md) ", out, re.M) == ["people/noor.md"], out
+    assert "No note contains" in (await nb.search(ctx, "OR")).content
+
+
 async def test_a_search_shows_each_matching_section_with_its_lines_to_read_from(store, cfg):
     nb = Notebook(cfg)
     await nb.seed(store)

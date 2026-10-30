@@ -384,11 +384,13 @@ class Notebook:
     async def search(
         self,
         ctx: ToolContext,
-        query: Annotated[str, "The words to search for."],
+        query: Annotated[str, 'The words to search for. A note matches when it holds '
+                              'any of them; "quoted words" match as a phrase.'],
         limit: Annotated[int, "The most notes."] = 10,
     ) -> ToolResult:
-        """Search your notes by word search over paths, summaries and text, best match
-        first. Search before you write a fact. Search when {{username}} asks what you
+        """Search your notes by word over paths, summaries and text: a note matches when
+        it holds any word of the query, the notes with the most and rarest of them first;
+        "quoted words" match only as that phrase. Search before you write a fact. Search when {{username}} asks what you
         know. Returns: per note its path, day, summary and keys, then per section that
         matches its heading and its matching line with the lines around it, numbered
         as notebook__read numbers them (`12:` the match, `11-` around it), so you read
