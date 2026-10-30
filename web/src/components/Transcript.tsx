@@ -34,7 +34,7 @@ import { useHer } from '../lib/her'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
-import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, ToolRuns, artifactsOf, sharesOf, useToolRuns } from './ToolRow'
+import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, ToolRuns, ToolSheets, artifactsOf, sharesOf, useToolRuns } from './ToolRow'
 import { GuardBanner } from './GuardBanner'
 import { ApprovalAsk } from './ApprovalAsk'
 import { useFrozen, type GuardBanner as Banner } from '../lib/guard'
@@ -263,7 +263,7 @@ export function Transcript(
               writing={writingHere} thoughts={hide_thinking ? thoughtsOf(seg.msgs) : null}
               face={faceOf(writingHere, at)} time={<Stamp at={at} />}>
           {edit ? <Editor conversationId={conversationId!} message={lastM} onClose={() => setEditing(null)} /> : (
-            <div className="reply">
+            <ToolSheets calls={calls}><div className="reply">
               {!hide_thinking && reasoning && (
                 <Fold key={String(collapse_thinking)} title={thoughtsTitle} icon={Brain} defaultOpen={!collapse_thinking}
                       remember={`thoughts:${seg.msgs[0]!.id}`}><Thoughts>{reasoning}</Thoughts></Fold>
@@ -273,7 +273,7 @@ export function Transcript(
               <ArtifactCards cards={artifactsOf(calls)} />
               <ShareCards cards={sharesOf(calls)} />
               <FileCards list={seg.msgs.flatMap(m => (m.attachments ?? []).filter(a => !a.batch_id && a.kind !== 'image' && a.kind !== 'audio'))} />
-            </div>
+            </div></ToolSheets>
           )}
         </Line>
       </div>

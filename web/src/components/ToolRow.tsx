@@ -318,7 +318,7 @@ function CallRow({ call, onOpen }: { call: ToolCall; onOpen: () => void }) {
 export function ToolGroup({ calls }: { calls: ToolCall[] }) {
   const shown = calls.some(c => !PLUMBING.has(c.name)) ? calls.filter(c => !PLUMBING.has(c.name)) : calls
   if (shown.length === 0) return null
-  return <div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div>
+  return <ToolSheets calls={shown}><div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div></ToolSheets>
 }
 
 /* The runs the server made of each turn's calls (skills/words.py runs): calls alike in a
@@ -338,35 +338,56 @@ export function useToolRuns(toolCalls: Record<string, ToolCall[]>, runs: Record<
   }, [toolCalls, runs])
 }
 
-/* what the list's Sheet shows: a call, a run (by its first call), or a call of a run */
+/* what the Sheet shows: a call, a run (by its first call), or a call of a run */
 type Opened = { call?: string; run?: string }
+type Sheets = {
+  open: (o: Opened) => void
+  /** a call by its id: of these calls, else of the conversation */
+  find: (id: string) => ToolCall | undefined
+  /** where a run shows here: its first call among these calls */
+  here: (r: ToolRun) => string | undefined
+}
+const SheetsContext = createContext<Sheets | null>(null)
 
-/* The rows of a list: a run where its first call is, its other calls left out. What is open
-   lives here, by id, so a row that turns into its run (or back) keeps its Sheet open. */
-function Rows({ calls }: { calls: ToolCall[] }) {
+/** The one Sheet of a reply's rows (its steps' lists, or its Activity), and what is open
+    in it, by id. It lives above the lists, so no change of a row (a call that joins a run,
+    a step's list that empties) ever closes it. `calls`: the reply's. */
+export function ToolSheets({ calls, children }: { calls: ToolCall[]; children: ReactNode }) {
   const { runOf, callOf } = useContext(ToolRuns)
   const [opened, setOpened] = useState<Opened | null>(null)
-  const find = (id: string) => calls.find(c => c.id === id) ?? callOf(id)
-  const rows = calls.flatMap(c => {
-    const r = runOf(c.id)
-    if (!r) return [<CallRow key={c.id} call={c} onOpen={() => setOpened({ call: c.id })} />]
-    if (r.ids[0] !== c.id) return []
-    const members = r.ids.map(find).filter((x): x is ToolCall => !!x)
-    return [<RunRow key={c.id} run={r} calls={members} onOpen={() => setOpened({ run: c.id })} />]
-  })
+  const value = useMemo<Sheets>(() => {
+    const byId = new Map(calls.map(c => [c.id, c]))
+    return { open: setOpened, find: id => byId.get(id) ?? callOf(id), here: r => r.ids.find(id => byId.has(id)) }
+  }, [calls, callOf])
   const run = opened?.run ? runOf(opened.run) : undefined
-  const members = run ? run.ids.map(find).filter((x): x is ToolCall => !!x) : []
-  const call = opened?.call ? find(opened.call) : undefined
+  const members = run ? run.ids.map(value.find).filter((x): x is ToolCall => !!x) : []
+  const call = opened?.call ? value.find(opened.call) : undefined
   const shown = call ?? members[0]
-  return <>
-    {rows}
-    {opened && shown && (
-      <CallsSheet call={call} run={run} members={members} shown={shown}
-                  onPick={id => setOpened({ run: opened.run, call: id })}
-                  onBack={run && call ? () => setOpened({ run: opened.run }) : undefined}
-                  onClose={() => setOpened(null)} />
-    )}
-  </>
+  return (
+    <SheetsContext.Provider value={value}>
+      {children}
+      {opened && shown && (
+        <CallsSheet call={call} run={run} members={members} shown={shown}
+                    onPick={id => setOpened({ run: opened.run, call: id })}
+                    onBack={run && call ? () => setOpened({ run: opened.run }) : undefined}
+                    onClose={() => setOpened(null)} />
+      )}
+    </SheetsContext.Provider>
+  )
+}
+
+/* The rows of a list: a run where its first call in this reply is, its other calls left
+   out. Inside a ToolSheets (the Transcript's replies, ToolGroup). */
+function Rows({ calls }: { calls: ToolCall[] }) {
+  const { runOf } = useContext(ToolRuns)
+  const sheets = useContext(SheetsContext)!
+  return <>{calls.flatMap(c => {
+    const r = runOf(c.id)
+    if (!r) return [<CallRow key={c.id} call={c} onOpen={() => sheets.open({ call: c.id })} />]
+    if (sheets.here(r) !== c.id) return []
+    const members = r.ids.map(sheets.find).filter((x): x is ToolCall => !!x)
+    return [<RunRow key={c.id} run={r} calls={members} onOpen={() => sheets.open({ run: r.ids[0] })} />]
+  })}</>
 }
 
 /* a run as one row: the server's words, its failed calls counted (a call at work is never
@@ -420,11 +441,16 @@ const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
 export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline?: boolean }) {
   // a settled batch or page has its block under its words already (the gallery, the card):
   // no row for it too. read and stop name a batch again to show it: they get their row.
-  // A run shows where its first call is, in its step: its other calls leave theirs.
+  // A run shows where its first call in this reply is, in that step: its other calls
+  // leave theirs, and a step left with none draws no list.
   const { runOf } = useContext(ToolRuns)
-  const rows = calls.filter(c => !busy(c) && !PLUMBING.has(c.name)
-    && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display))
-    && (runOf(c.id)?.ids[0] ?? c.id) === c.id)
+  const sheets = useContext(SheetsContext)
+  const rows = calls.filter(c => {
+    const r = runOf(c.id)
+    return !busy(c) && !PLUMBING.has(c.name)
+      && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display))
+      && (!r || (sheets?.here(r) ?? r.ids[0]) === c.id)
+  })
   return <>
     {calls.map(c => <ToolLine key={c.id} call={c} />)}
     {inline && rows.length > 0 && (

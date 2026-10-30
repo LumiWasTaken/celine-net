@@ -103,13 +103,13 @@ export type Frame =
   | ({ type: 'message.done' | 'message.rewritten'; message_id: string; text: string } & Of)
   | ({ type: 'conversation.notes_off'; notes_off?: string[] } & Of)
   | ({ type: 'tool.forming'; message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string } & Of)
-  | ({ type: 'tool.started'; message_id: string; tool_call_id: string; name: string; arguments: string; words: ToolWords; started_at?: string | null; runs?: TurnRuns | null } & Of)
+  | ({ type: 'tool.started'; message_id: string; tool_call_id: string; name: string; arguments: string; words: ToolWords; started_at?: string | null } & Of)
   | ({ type: 'tool.done' | 'tool.gated'; tool_call_id: string; state?: ToolCall['state']; ok?: boolean; display?: ToolCall['display']; words?: ToolWords
        result?: string | null; job_id?: string | null; finished_at?: string | null; runs?: TurnRuns | null } & Of)
-  | ({ type: 'tool.detached'; tool_call_id: string; job_id: string; name: string; runs?: TurnRuns | null } & Of)
+  | ({ type: 'tool.detached'; tool_call_id: string; job_id: string; name: string } & Of)
   | ({ type: 'images.batch' | 'music.batch'; batch: unknown } & Of)
   | ({ type: 'tool.progress'; tool_call_id: string; note: string } & Of)
-  | ({ type: 'tool.reset'; tool_call_id: string } & Of)
+  | ({ type: 'tool.reset'; tool_call_id: string; runs?: TurnRuns | null } & Of)
   | ({ type: 'llm.queue'; message_id?: string | null; state: 'waiting' | 'loading' | 'running' | string; model: string
        fallback?: boolean; instead_of?: string; why?: string | null; ahead?: number; running?: number
        reason?: string | null; message?: string | null; holder?: string | null } & Of)

@@ -180,8 +180,8 @@ function fromSnapshot(s: State, snap: Snapshot): State {
 }
 
 function apply(s: State, ev: Frame): State {
-  // a tool event carries its turn's runs, all of them
-  if ((ev.type === 'tool.started' || ev.type === 'tool.done' || ev.type === 'tool.gated' || ev.type === 'tool.detached') && ev.runs) {
+  // a tool event whose calls changed its turn's runs carries them, all of them
+  if ((ev.type === 'tool.done' || ev.type === 'tool.gated' || ev.type === 'tool.reset') && ev.runs) {
     s = { ...s, runs: { ...s.runs, [ev.runs.turn]: ev.runs.list } }
   }
   switch (ev.type) {
