@@ -21,6 +21,34 @@ Also:
 
 ---
 
+## Typography
+
+One scale, ratio 1.125, in `web/src/styles/tokens.css`. Each step is one clamp, fluid from a
+380 px phone to a 1920 px desktop and flat beyond, times the Appearance text size. No CSS
+outside `tokens.css` writes a font size, line height, weight or letter spacing as a number.
+
+| Step | Phone to desktop | For | Line height | Tracking |
+|---|---|---|---|---|
+| `--t-xs` | 12.5 to 14 px | meta: times, counts, hints, chips, small labels, mono tool bodies | `--lh-ui` | `--tracking-meta` on muted labels (list sections, menu headings, groups) |
+| `--t-md` | 14 to 16 px | every piece of UI text: rows, buttons, fields, menus, names | `--lh-ui` one line, `--lh-body` wrapping | none |
+| `--t-lg` | 16 to 18 px | reading text: bubbles, prose, the composer, documents; card and empty-state heads | `--lh-body`, the story editor `--lh-story` | `--tracking-title` when it is a title |
+| `--t-xl` | 20 to 22.5 px | place, section and dialog titles, prose h2 | `--lh-title` | `--tracking-title` |
+| `--t-2xl` | 28 to 32 px | display: the greeting name, prose h1 | `--lh-title` | `--tracking-display` |
+
+- On a touch screen `--t-md` is `--t-lg`: the phone UI has one text size, 16 px, so a field
+  never zooms on iOS and its label matches it.
+- Inline code in a sentence is `--t-code` (0.9em); a code block is `--t-md`.
+- Weights: `--fw-regular` for text, `--fw-medium` for names, labels, buttons, rows and
+  titles, `--fw-bold` for `strong` and a prose h1. Nothing else.
+- Reading widths are in em of `--t-lg`: `--measure` (the chat column, 32em of text plus the
+  bubble's padding) and `--measure-prose` (notes, documents, the story editor, 32em), about
+  66 characters a line at every text size. Forms and card grids (`--measure-form`,
+  `--measure-wide`) stay in rem.
+- Text size (Appearance) moves every step by whole steps of the scale: Small one down,
+  Large one up, Larger two up. Control heights, icons and faces stay.
+
+---
+
 ## Heads
 
 ### PlaceHead
