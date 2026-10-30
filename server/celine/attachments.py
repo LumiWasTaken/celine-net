@@ -586,8 +586,9 @@ def _insert(c: sqlite3.Connection, sha: str, size: int, media_type: str, filenam
     if mid is not None:
         store.event(c, r["conversation_id"], MESSAGE_ATTACHMENTS,
                     {"message_id": mid, "attachments": of_message(c, mid)})
+    w, h = c.execute("SELECT width, height FROM blobs WHERE sha256=?", (sha,)).fetchone()
     return {"id": aid, "filename": filename, "kind": kind, "sha256": sha,
-            "bytes": size, "media_type": media_type}
+            "bytes": size, "media_type": media_type, "width": w, "height": h}
 
 
 async def get(store, aid: str) -> dict | None:

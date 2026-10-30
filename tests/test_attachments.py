@@ -133,6 +133,8 @@ async def test_a_picture_keeps_its_size_and_one_smaller_copy_per_width(cfg, stor
     size = await store.read(lambda c: tuple(c.execute(
         "SELECT width, height FROM blobs WHERE sha256=?", (big["sha256"],)).fetchone()))
     assert size == (2000, 1000)
+    # the upload's answer carries it: the message you send keeps its shape from the start
+    assert (big["width"], big["height"]) == (2000, 1000)
     # a phone photo turned by its EXIF orientation is as tall as it is shown
     exif = Image.Exif()
     exif[0x0112] = 6
