@@ -149,7 +149,7 @@ async def test_a_valid_proposal_asks_with_before_and_after_and_deny_changes_noth
     (kind, asked), (closed, _) = await _approval_events(app)
     assert (kind, closed) == ("approval.asked", "approval.closed")
     chat = asked["approval"]
-    assert chat["label"] == "Settings" and chat["line"] == "Change General."
+    assert chat["label"] == "Settings" and chat["line"] == "Celine asks to change the General settings."
     assert chat["changes"] == [{"label": "Turn time limit", "before": "1800",
                                 "after": "3600"}]
     assert chat["why"] == "Long research turns stop at the limit."

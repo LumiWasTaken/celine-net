@@ -63,7 +63,7 @@ async def test_an_ask_lands_in_its_chat_and_approve_takes_it_away(store, monkeyp
     [ask] = await _open(store, cid)
     [aid] = a.waiting
     assert ask == {"id": aid, "kind": "her", "label": "Persona", "tool_call_id": "k1",
-                   "message_id": mid, "line": "Change the Persona. new: I garden.; old: x"}
+                   "message_id": mid, "line": "Celine asks to change the Persona. New: I garden.; old: x"}
     assert await _events(store, cid) == [("approval.asked", {"approval": ask})]
     assert a.decide(aid, True, OWNER)
     assert await task is None

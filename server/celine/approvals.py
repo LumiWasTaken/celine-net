@@ -93,6 +93,7 @@ class Ask:
     ref: int | None = None  # gate: Bastet's row, so her banner can answer it
     call: str | None = None  # the tool call it is for
     changes: list[dict] | None = None   # settings: [{label, before, after}]
+    who: str = ""           # her name: the one who asks
 
     def view(self) -> dict:
         return {"id": self.id, "kind": self.kind, "action": self.action,
@@ -102,12 +103,14 @@ class Ask:
                 max(0, round(self.expires - time.time()))}
 
     def line(self) -> str:
-        """Its line in the chat: the action, then the call's own data on one line."""
-        what = self.action[:1].upper() + self.action[1:] + "."
+        """Its line in the chat: who asks for the action, then the call's own data on
+        one line, each a sentence."""
+        what = f"{self.who} asks to {self.action}." if self.who else \
+            self.action[:1].upper() + self.action[1:] + "."
         facts = " ".join("; ".join(self.facts).split())
         if len(facts) > LINE_MAX:
             facts = facts[:LINE_MAX - 1].rstrip() + "\u2026"
-        return f"{what} {facts}" if facts else what
+        return f"{what} {facts[:1].upper()}{facts[1:]}" if facts else what
 
     def live(self) -> bool:
         return not self.answer.done() and (self.expires is None or
@@ -209,7 +212,7 @@ class Approvals:
                   read=self.read.get(conversation),
                   expires=None if turn is not None else now + ASK_FOR,
                   answer=asyncio.get_running_loop().create_future(), ref=ref, call=call,
-                  changes=changes)
+                  changes=changes, who=getattr(self.cfg, "name", "") or "")
         self.waiting[ask.id] = ask
         log.info("approval asked", extra={"event": "approvals.asked", "kind": kind,
                                           "action": action.split(" ")[0]})

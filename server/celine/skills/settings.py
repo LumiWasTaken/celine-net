@@ -390,7 +390,7 @@ class Settings:
         approvals = getattr(self.app, "approvals", None)
         if approvals is None:
             return ToolResult(content=NOBODY, is_error=True)
-        action = f"change {t.label}"
+        action = f"change the {t.label} settings"
         if no := await approvals.ask(action, [], ctx.conversation_id, why, action,
                                      kind="settings", call=ctx.tool_call_id or None,
                                      changes=rows):
