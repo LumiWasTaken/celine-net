@@ -484,8 +484,9 @@ export type ToolCall = {
 
 /** a call in words: `running` while it is at work ("Reading the note x"), `settled` once
  *  it ended ("Read the note x", "Could not read the note x", "Not run: ..."), `step` the
- *  tool alone at work ("Reading the note"), `where` the places a search was kept to */
-export type ToolWords = { running: string; settled: string; step: string; where: string | null }
+ *  tool alone at work ("Reading the note"), `where` the places a search was kept to,
+ *  `group` the words of a run of calls like it in a row ("Ran {n} commands"), {n} their count */
+export type ToolWords = { running: string; settled: string; step: string; where: string | null; group: string | null }
 
 /** what a running tool says it is doing */
 type ToolProgress = {

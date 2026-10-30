@@ -120,7 +120,7 @@ export function Elapsed({ since, until }: { since: string; until?: string | null
    duration or count; a call at work has the running dot, a failed one says "Could not", one
    not run or off is muted. A click opens everything about it in a Sheet: the call by its
    name, the arguments, where it looked and the complete result, nothing cut. Its own
-   buttons (Stop, Open, Cancel) sit at its end. Nothing folds. ── */
+   buttons (Stop, Open, Cancel) sit at its end. Only a run of the same calls (RunRow) opens to its rows. ── */
 type Tone = 'running' | 'error' | 'muted' | null
 
 const busy = (call: ToolCall) => call.state === 'pending' || call.state === 'running' || call.state === 'detached'
@@ -294,8 +294,8 @@ function useView(call: ToolCall): View {
   }
 }
 
-/* one call in a list: a click opens it whole */
-function CallRow({ call }: { call: ToolCall }) {
+/* one call in a list: a click opens it whole; `depth` 1 under its run's row */
+function CallRow({ call, depth }: { call: ToolCall; depth?: number }) {
   const v = useView(call)
   const [open, setOpen] = useState(false)
   const words = plainWords(v.words)
@@ -303,7 +303,7 @@ function CallRow({ call }: { call: ToolCall }) {
     <div className="tool">
       {/* a failed row keeps its icon (its sentence says "Could not"), so every row's text
           starts at one edge; only a call at work trades it for the running dot */}
-      <ListRow density="sm" icon={v.tone === 'running' ? undefined : v.icon}
+      <ListRow density="sm" depth={depth} icon={v.tone === 'running' ? undefined : v.icon}
                dot={v.tone === 'running' ? 'running' : undefined}
                title={<TextWithRefs text={v.words} />} tooltip={words}
                meta={v.meta} muted={v.tone === 'muted'} onClick={() => setOpen(true)}
@@ -327,7 +327,46 @@ function CallRow({ call }: { call: ToolCall }) {
 export function ToolGroup({ calls }: { calls: ToolCall[] }) {
   const shown = calls.some(c => !PLUMBING.has(c.name)) ? calls.filter(c => !PLUMBING.has(c.name)) : calls
   if (shown.length === 0) return null
-  return <div className="tool-list" role="list" aria-label="Activity">{shown.map(c => <CallRow key={c.id} call={c} />)}</div>
+  return <div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div>
+}
+
+/* RUN or more calls in a row with the same words for a run (the server's `words.group`)
+   are one row, "Ran 8 commands in terminal main"; a call at work joins its run as it
+   starts. A click shows its rows under it. */
+const RUN = 3
+
+function Rows({ calls }: { calls: ToolCall[] }) {
+  const runs: ToolCall[][] = []
+  for (const c of calls) {
+    const last = runs[runs.length - 1]
+    if (last && c.words.group && last[0]!.words.group === c.words.group) last.push(c)
+    else runs.push([c])
+  }
+  return <>{runs.flatMap(r => (r.length < RUN ? r.map(c => <CallRow key={c.id} call={c} />)
+    : [<RunRow key={r[0]!.id} calls={r} />]))}</>
+}
+
+/* a run as one row: at work while one of its calls is, its failed calls counted */
+function RunRow({ calls }: { calls: ToolCall[] }) {
+  const first = calls[0]!
+  const last = calls[calls.length - 1]!
+  const v = useView(first)
+  const [open, setOpen] = useState(false)
+  const running = calls.some(busy)
+  const failed = calls.filter(c => c.state === 'error').length
+  const words = first.words.group!.replace('{n}', String(calls.length))
+  return (
+    <>
+      <div className="tool">
+        <ListRow density="sm" icon={running ? undefined : failed ? AlertTriangle : v.icon}
+                 dot={running ? 'running' : undefined} title={words} tooltip={words}
+                 meta={failed ? `${failed} failed` : first.started_at &&
+                   <Elapsed since={first.started_at} until={running ? null : last.finished_at ?? last.started_at} />}
+                 onClick={() => setOpen(o => !o)} />
+      </div>
+      {open && calls.map(c => <CallRow key={c.id} call={c} depth={1} />)}
+    </>
+  )
 }
 
 /* loading, unloading, reading a guide: plumbing, named only when it is all there is */
@@ -346,7 +385,7 @@ export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline
   return <>
     {calls.map(c => <ToolLine key={c.id} call={c} />)}
     {inline && rows.length > 0 && (
-      <div className="tool-list">{rows.map(c => <CallRow key={c.id} call={c} />)}</div>
+      <div className="tool-list"><Rows calls={rows} /></div>
     )}
   </>
 }
