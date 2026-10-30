@@ -186,7 +186,7 @@ opencode comes with the box, so every reset brings it back, and it runs on your 
 `OPENAI_API_KEY`. `agent` runs it headless on one task in the current folder, shows what
 it does, and prints its final answer after a line `==== answer`:
 
-    cd ~/proj && agent opencode -m llama-swap/my-model -o answer.md "make the tests pass"
+    cd ~/proj && agent opencode -m local/my-model -o answer.md "make the tests pass"
 
 `agent list` names the CLI and your models. `-f brief.md` reads the task from a file,
 `-o file` keeps the answer, `--minutes 60` ends the run after an hour (exit 124).

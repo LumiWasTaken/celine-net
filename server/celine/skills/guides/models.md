@@ -23,5 +23,5 @@ request waits in the model queue with your other calls and runs on exactly the m
 name. When that model fails, the call fails and says why.
 
 Example:
-models__ask(model="llama/my-model", system="Answer in one line.", messages=[{"role":
+models__ask(model="local/my-model", system="Answer in one line.", messages=[{"role":
 "user", "content": "What rhymes with orange?"}])
