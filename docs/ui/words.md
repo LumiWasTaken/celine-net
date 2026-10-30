@@ -159,7 +159,7 @@ block at the end of this file lists the words no UI string uses.
 | An embedding model lets Search find messages by topic, not only by their words, and a reranker model puts the best matches first. Any OpenAI-compatible server can run them, for example Ollama: run ollama pull nomic-embed-text on the server from Connect a model and it shows up here. You can also pick them later in Settings, Models, under Topic search and Reranking. | the Messages setup form (the Setup card, Settings, Features, Edit) above its Topic search and Reranking pickers: the one paragraph, the exception to "no explainer text" (AGENT.md rule 7) | plain |
 | Same ComfyUI as Images | the Music card once Images has a ComfyUI address: no second address field | plain |
 | Her computer, Container, Own computer | the Setup card of where she works, her possessive pronoun in its title, and its two switches: the shellbox, and her own machine (the mac plugin); both may be on. Container and Own computer also head each one's fields while it is on | plain |
-| Her Mac, Run on the Mac, Address, Token, Check | the Own computer form (its Setup card, its Settings page): the command with Copy, the gateway's address and token (the script posts them back), and Check | plain |
+| Her Mac, Run on the Mac, Address, Agents, Token, Check | the Own computer form (its Setup card, its Settings page): the command with Copy, the gateway's address, the address of opencode serve for her drones and the token (the script posts them back), and Check | plain |
 | Screen: 26 tools, Shell: Address is empty., Accessibility (Required): Not Granted. Grant via: System Settings > Privacy & Security > Accessibility | Check's lines on the Mac's form, one Dot each: each server's tool count or what kept it down, and each macOS permission the screen server lacks, as Peekaboo says it | plain; Peekaboo's own words |
 | Anything worth knowing about you | the placeholder of About you | plain |
 | All set. {name} is ready., On:, Off:, Off (did not answer), You can change all of this later in Settings. | the last Setup card: done, then the features on, the ones whose service did not answer, and the rest off, as muted lines, then that Settings changes all of it | Apple setup "All set", Google "All set"; plain |
@@ -194,6 +194,7 @@ block at the end of this file lists the words no UI string uses.
 | Context size, Server: {n}, differs from the server | a model's written context and what its server says it runs with (the server's number counts) | LM Studio "Context Length"; Open WebUI "Context Length"; plain |
 | Unload after | how long an idle model stays loaded | plain; Ollama says `keep_alive`, Open WebUI "Keep Alive" |
 | Read-only, Can edit | sub-agent access | Google Docs "Can edit" |
+| Device | where a drone runs: one of her devices (mac), next to Agent CLI on a sub-agent | Apple, Google "Device" |
 | Instructions | a mission's task text | ChatGPT and Claude Projects "Instructions" |
 | Minimum time, Runs at least until | how long a mission runs at least before it may close as done, in its form and on its page | plain |
 | Result, Results | what a mission or sub-agent sends back | Apple Shortcuts "Show Result", Google "Results" |

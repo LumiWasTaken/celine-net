@@ -15,6 +15,7 @@ Account):
 | [Playwright MCP](https://github.com/microsoft/playwright-mcp) | `browser` |
 | [MCP filesystem server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) | `files`: the whole disk; `read_media_file` puts any file into the chat |
 | [Supergateway](https://github.com/supercorp-ai/supergateway) | the four at `http://<mac>:8765/{screen,shell,browser,files}/mcp` behind a bearer token |
+| [opencode](https://opencode.ai) 1.19.4 (the release zip, its sha256 checked) | `opencode serve` at `http://<mac>:4096` for her drones, the token as its password |
 
 What it sets on the Mac:
 
@@ -30,6 +31,10 @@ What it sets on the Mac:
 | `~/.local/share/celine` | the npm packages, and `chrome/`, Chrome's profile |
 | `~/Library/LaunchAgents/com.celine.chrome.plist` | Chrome with DevTools on 127.0.0.1:9222; its tabs and logins outlive the browser server's sessions |
 | `~/Library/LaunchAgents/com.celine.gateway.plist` | the gateway under `caffeinate -d` while she is logged in |
+| `~/.local/share/celine/opencode/opencode` | opencode |
+| `~/.config/opencode/opencode.json` | written on every run: the app's model proxy as provider `celine` (`<app>/llm/v1`, the link key read from `~/.config/celine/link`), Peekaboo and Playwright MCP (the gateway's own copies, Playwright on the same Chrome), every permission allowed |
+| `~/.config/opencode/opencode.jsonc` | the models of provider `celine`, which the app puts there before a drone starts (`PATCH /global/config`) |
+| `~/Library/LaunchAgents/com.celine.opencode.plist` | `opencode serve` on 0.0.0.0:4096, logging to `~/Library/Logs/celine-opencode.log` |
 
 With the lid shut, a dummy HDMI plug gives the Mac the display its screenshots need.
 
@@ -37,8 +42,8 @@ In the app:
 
 | What | Where |
 |---|---|
-| `plugin.toml` | the switch and the four servers, `macscreen`, `macshell`, `macbrowser`, `macfiles`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token |
-| `settings.toml` | the form: the command, Address, Token, Check |
+| `plugin.toml` | the switch and the four servers, `macscreen`, `macshell`, `macbrowser`, `macfiles`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token; `[drones]`, the device `mac` (server/celine/devices.py): `${AGENTS}` and the Token, the link key its model proxy key |
+| `settings.toml` | the form: the command, Address, Agents, Token, Check |
 | `gateway.py` | `GET /api/plugins/mac/setup.sh`, `POST /api/plugins/mac/gateway` (the report), `POST /api/plugins/mac/events` (her scripts), the command, Check |
 | `guides/` | each server's guide |
 
@@ -78,14 +83,21 @@ curl -fsS -H "Authorization: Bearer $(cat ~/.config/celine/link)" -H 'Content-Ty
   -d '{"text": "the backup is done", "conversation": "<id>"}' "$(cat ~/.config/celine/app)/api/plugins/mac/events"
 ```
 
+## Drones
+
+`sub_agents__start(brief, name, device="mac")` starts a drone: opencode on the Mac works
+on the brief in a session of its own, on her model through the app's model proxy (its
+queue, freeze and usage), with Peekaboo and Playwright MCP, and reports like any
+sub-agent (server/celine/sub_agents/drone.py).
+
 ## Permissions, once at the Mac
 
 Peekaboo needs Screen Recording and Accessibility. It runs as a child of the gateway's
 node, so both binaries setup.sh prints at the end go into System Settings, Privacy &
 Security, with the + button and Cmd+Shift+G for the path:
 
-- **Screen & System Audio Recording**: node and peekaboo.
-- **Accessibility**: node and peekaboo (this also covers the synthetic clicks and keys
+- **Screen & System Audio Recording**: node and peekaboo, and opencode for the drones.
+- **Accessibility**: node and peekaboo, and opencode (this also covers the synthetic clicks and keys
   Peekaboo reports as Event Synthesizing).
 
 Check on the card lists each permission the screen server still lacks. An upgrade of node

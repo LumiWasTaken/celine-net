@@ -48,7 +48,7 @@ const missionsNoun = (n: number) => count(n, 'mission')
 const agentsNoun = (n: number) => count(n, 'sub-agent')
 
 /** a sub-agent as GET /agents sends it: its model and agent CLI too */
-type AgentRow = Agent & { model?: string | null; cli?: string | null; last?: string }
+type AgentRow = Agent & { model?: string | null; cli?: string | null; device?: string | null; last?: string }
 
 type Show = 'all' | MissionStatus
 const SHOW: { value: Show; label: string }[] = [
@@ -467,7 +467,7 @@ function AgentLine({ a }: { a: AgentRow }) {
   ]
   return (
     <ListRow density="lg" dot={a.working ? 'running' : 'ok'} title={a.name} subtitle={agentLine(a)} aside={a.model ?? undefined}
-             detail={a.cli ?? undefined} meta={agentWord(a)} muted={!a.working}
+             detail={[a.cli, a.device].filter(Boolean).join(', ') || undefined} meta={agentWord(a)} muted={!a.working}
              href={format({ section: 'missions', conversation: a.id })} onClick={click(() => nav.go({ section: 'missions', conversation: a.id }))}
              tooltip={stop.error ?? undefined}
              trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
@@ -553,6 +553,7 @@ function AgentPage({ a, mission, active }: { a: AgentRow; mission: Mission; acti
             <Facts grid items={[
               { label: 'Model', value: a.model ?? 'Default' },
               ...(a.cli ? [{ label: 'Agent CLI', value: a.cli }] : []),
+              ...(a.device ? [{ label: 'Device', value: a.device }] : []),
               { label: 'Access', value: a.access === 'read' ? 'Read-only' : 'Can edit' },
               ...(a.folder ? [{ label: 'Folder', value: a.folder }] : []),
               { label: 'Started', value: stamp(a.created_at) },
@@ -611,7 +612,7 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
             <VirtualList items={list} estimate={84} getKey={a => a.id} label="Sub-agents" resetOn={`${show}|${of}`}
                          renderRow={a => (
                            <ListRow density="lg" icon={Bot} title={a.name} subtitle={agentLine(a)} detail={name.get(a.parent)}
-                                    column={<span>{[a.model, a.cli].filter(Boolean).join(', ')}</span>} cell={agentWord(a)}
+                                    column={<span>{[a.model, a.cli, a.device].filter(Boolean).join(', ')}</span>} cell={agentWord(a)}
                                     meta={listTime(a.updated_at)} muted={!a.working}
                                     href={format({ section: 'missions', conversation: a.id })} onClick={click(() => nav.go({ section: 'missions', conversation: a.id }))}
                                     onContextMenu={e => ctx.open(e, menu(a), a.name)}

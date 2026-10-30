@@ -27,8 +27,8 @@ need only when this conversation does.
 - `name`: anything you like, at least 5 characters, different from your other
   sub-agents here. It is its address on the intercom and the title of its conversation.
   The name of one that is done gives that one the new brief ("resumed trip finder"): it
-  keeps everything it read. Leave access, folder, model and cli out then: a resume keeps
-  its own.
+  keeps everything it read. Leave access, folder, model, cli and device out then: a
+  resume keeps its own.
   One that is still working is refused.
 - `access`: `read` looks things up and changes nothing (chats, documents, your notebook,
   the web, the live chats); it still has the intercom. With read access it looks at and
@@ -47,6 +47,16 @@ need only when this conversation does.
   has the box's shell and files, none of your tools or notes. A new brief to it runs the
   CLI again in the same folder, with what the folder holds. It may take a while: its
   model calls wait behind every turn.
+- `device`: one of your devices, such as `mac` (your Mac, while its plugin is on): a
+  drone. opencode works on the brief there, close to the machine, on `model` or your
+  default one: the device's shell and files, and on the Mac its screen (Peekaboo) and a
+  browser (Playwright), at the machine's speed, none of your tools or notes. Good for
+  work you would do there step by step: build something and test it, play a game, go
+  through an app. Its conversation shows each tool it starts, and `sub_agents__read`
+  the one it is on. Its last answer is its report, with the files it changed. A
+  message to it while it works reaches it at once; the same name carries on in the same
+  opencode session, with everything it did. The folder it starts in is your home
+  there; say in the brief where to work.
 
 `sub_agents__start` returns at once ("trip finder started"); the sub-agent works on
 while you go on. A sub-agent is done when it has nothing left running: no turn, no
@@ -88,6 +98,9 @@ Examples:
 sub_agents__start(brief="Which of my notes mention the beach trip? Only the paths, one
 per line.", name="trip finder")
 sub_agents__read(name="trip finder", wait=60)
+sub_agents__start(brief="Build Pac-Man in ~/games/pacman as one web page, then play it
+with a Playwright test until it runs at 60 fps. Report the path and what the test
+saw.", name="arcade", device="mac")
 sub_agents__start(brief="Open the shop page of the island ferry and tell me the next
 three departures with prices.", name="ferry eyes", access="work")
 sub_agents__start(brief="In ~/proj, make the failing test in tests/test_dates.py pass.
