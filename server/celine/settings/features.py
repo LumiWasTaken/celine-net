@@ -197,9 +197,7 @@ def of_plugin(p: plugins.Plugin) -> Feature:
     """A plugin's switch, from its plugin.toml; off until saved on unless it says
     `start_on = true`."""
     m = p.manifest
-    needs = m.get("needs") or ("Turns on once its settings are filled in."
-                               if m.get("servers") else "")
-    return Feature(p.id, m["label"], needs, m.get("about", ""),
+    return Feature(p.id, m["label"], m.get("needs", ""), m.get("about", ""),
                    m.get("off_when", ""), skills=tuple(p.skills),
                    places=tuple(m.get("places", ())),
                    pages=(p.id,) if p.form is not None else (),
@@ -328,7 +326,13 @@ def probe_fn(f: Feature):
     return getattr(importlib.import_module(module), name)
 
 
-async def probe(cfg, services, feature: str) -> dict[str, str]:
+def shown(p: dict[str, Any]) -> dict[str, Any]:
+    """A probe as the client gets it, with "blocks": whether its switch cannot be on
+    (missing or unset, but a plugin waiting for its own form: _plugin_state)."""
+    return {**p, "blocks": p.get("blocks", p["state"] in ("missing", "unset"))}
+
+
+async def probe(cfg, services, feature: str) -> dict[str, Any]:
     """One feature's state now: {"state", "detail"}, with "url" when the probe found the
     service at its default address while none is saved (the setup form prefills it), and
     "why" when what she reads differs from the page's words (errors.her_*).
@@ -362,10 +366,11 @@ async def probe(cfg, services, feature: str) -> dict[str, str]:
     return out
 
 
-def _plugin_state(cfg, feature: str) -> dict[str, str]:
+def _plugin_state(cfg, feature: str) -> dict[str, Any]:
     """A feature without a probe: "unset" for a plugin while a value its servers need
     (a `${KEY}` of its form in its [servers] blocks, form.fill) is empty, with what is
-    empty; else "none"."""
+    empty; else "none". It never blocks the switch: its form is filled from what runs
+    only while it is on (its setup line, its routes)."""
     from . import form
     p = plugins.get(feature)
     if p is None or not p.manifest.get("servers"):
@@ -375,7 +380,8 @@ def _plugin_state(cfg, feature: str) -> dict[str, str]:
               json.dumps(p.manifest["servers"]), empty)
     if not empty:
         return {"state": "none", "detail": ""}
-    return {"state": "unset", "detail": "; ".join(dict.fromkeys(empty)) + "."}
+    return {"state": "unset", "detail": "; ".join(dict.fromkeys(empty)) + ".",
+            "blocks": False}
 
 
 async def probe_all(cfg, services, *, cache: bool = True) -> dict[str, dict[str, str]]:

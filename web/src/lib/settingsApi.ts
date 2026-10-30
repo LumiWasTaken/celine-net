@@ -264,10 +264,12 @@ export type Feature = {
   /** what the probe found; "none": nothing to detect */
   state: FeatureState
   detail: string
+  /** its switch cannot be on now (missing or unset, but a plugin waiting for its own form) */
+  blocks: boolean
   /** the address the probe found the service at while none is saved: the form prefills it */
   url?: string
 }
-type Probe = { state: FeatureState; detail: string; url?: string }
+type Probe = { state: FeatureState; detail: string; blocks: boolean; url?: string }
 export type FeaturesView = {
   features: Record<string, boolean>
   /** the catalog in the server's order: by tier, a group together */

@@ -221,7 +221,8 @@ async def features(services, probes: dict | None = None) -> dict[str, Any]:
     catalog = features_mod.catalog()
     return {"features": features_mod.effective(s.features),
             "catalog": [{**features_mod.view(f),
-                         **{k: v for k, v in probes[f.id].items() if k != "why"},
+                         **{k: v for k, v in features_mod.shown(probes[f.id]).items()
+                            if k != "why"},
                          "group_label": cfg.substitute(features_mod.GROUPS.get(f.group, ""))}
                         for f in catalog],
             # the tiers in order, each with a row; the core's rows have no switch

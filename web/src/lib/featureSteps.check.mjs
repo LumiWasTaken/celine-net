@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { firstTime, landing, stepsOf, toSave } from './featureSteps.ts'
 
-const f = (id, more = {}) => ({ id, label: id, step: false, state: 'none', warn: '', group: '', group_label: '', ...more })
+// `blocks` as the server sends it: missing or unset blocks, but a plugin waiting for its own form
+const f = (id, more = {}) => ({ id, label: id, step: false, state: 'none', warn: '', group: '', group_label: '',
+  blocks: more.state === 'missing' || more.state === 'unset', ...more })
 const computer = { group: 'computer', group_label: 'Her computer' }
 const catalog = [
   f('shellbox', { step: true, state: 'unset', ...computer }),
-  f('mac', { step: true, ...computer }),
+  f('mac', { step: true, state: 'unset', blocks: false, ...computer }),
   f('shares', { state: 'unset', warn: 'Careful.' }),
   f('browser', { step: true, state: 'ready' }),
   f('email', { step: true, state: 'unset' }),
@@ -42,6 +44,8 @@ const put = toSave({ ...saved, features: { ...saved.features, email: true } }, s
 assert.equal(put.shellbox, true)
 assert.equal(put.email, false)
 assert.equal(toSave({ ...saved, features: { ...saved.features, shellbox: false } }, stored).shellbox, false, 'switched off: off')
+// a plugin waiting for its own form (unset, not blocking) switched on is saved on: its form fills from what runs while on
+assert.equal(toSave(mac, fresh.features).mac, true)
 
 // a URL's step: itself while on; a group's feature, the group; one off, the next one on, else Features
 assert.equal(landing(mac, 'routines'), 'routines')

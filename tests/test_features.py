@@ -85,13 +85,14 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
     keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "kbs", "archive", "warn",
-            "state", "detail", "group", "choice", "group_label", "tier", "step"}
+            "state", "detail", "blocks", "group", "choice", "group_label", "tier", "step"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
     assert by["documents"]["state"] == "none" and by["documents"]["detail"] == ""
     # a plugin whose servers wait for its empty form is not set up, with what is empty
-    assert (by["mac"]["state"], by["mac"]["detail"]) == (
-        "unset", "Address is empty; Token is empty.")
+    assert (by["mac"]["state"], by["mac"]["detail"], by["mac"]["blocks"]) == (
+        "unset", "Address is empty; Token is empty.", False), "never a lock"
+    assert by["email"]["blocks"] is True
     assert {f["id"] for f in catalog if f["warn"]} == {"shares"}
     # the onboarding's setup steps: a form, or a connection
     assert {f["id"] for f in catalog if f["step"]} == {
@@ -236,7 +237,8 @@ async def test_get_carries_the_probes_and_caches_them(api, monkeypatch):
     by = {f["id"]: f for f in (await api.get("/api/features")).json()["catalog"]}
     assert by["shellbox"]["state"] == "missing", "cached for 10 s"
     fresh = (await api.get("/api/features/shellbox/probe")).json()
-    assert fresh == {"state": "ready", "detail": "The shellbox at box:8770 answers."}
+    assert fresh == {"state": "ready", "detail": "The shellbox at box:8770 answers.",
+                     "blocks": False}
     api.services.feature_probes = None
     by = {f["id"]: f for f in (await api.get("/api/features")).json()["catalog"]}
     assert by["shellbox"]["state"] == "ready"
@@ -255,7 +257,7 @@ async def test_a_slow_or_broken_probe_is_missing(api, monkeypatch):
     monkeypatch.setattr(features, "PROBE_SECONDS", 0.05)
     monkeypatch.setattr(web, "probe", slow)
     assert (await api.get("/api/features/web/probe")).json() == {
-        "state": "missing", "detail": "Web search did not answer in time."}
+        "state": "missing", "detail": "Web search did not answer in time.", "blocks": True}
     monkeypatch.setattr(web, "probe", broken)
     assert (await api.get("/api/features/web/probe")).json()["state"] == "missing"
 
@@ -571,7 +573,7 @@ async def test_shares_start_off_and_their_switch_saves_on(api, monkeypatch):
     assert (await api.get("/api/features/shares/probe")).json()["state"] == "ready"
     await api.put("/api/features", json={"features": {"shares": True, "shellbox": False}})
     assert (await api.get("/api/features/shares/probe")).json() == \
-        {"state": "unset", "detail": "The shellbox is off."}
+        {"state": "unset", "detail": "The shellbox is off.", "blocks": True}
     assert f"{shares.PRIVATE_HOURS} hours" in features.get("shares").warn
 
 

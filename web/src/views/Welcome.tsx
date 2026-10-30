@@ -122,11 +122,11 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
 
 type StepNav = { back?: () => void; next: () => void }
 
-/** a feature is on: its switch, and nothing blocks it */
-const isOn = (view: FeaturesView, f: Feature) => view.features[f.id] !== false && !blocked(f)
-/** switched on in this run, or saved on, and blocked: its service did not answer or it
-    is not set up */
-const asked = (view: FeaturesView, f: Feature) => view.features[f.id] !== false && blocked(f)
+/** switched on in this run, or saved on, as the probe found it: ready (or nothing to
+    detect), its service did not answer, or not set up */
+const switched = (view: FeaturesView, f: Feature, state: 'on' | 'missing' | 'unset') =>
+  view.features[f.id] !== false &&
+    (state === 'on' ? f.state !== 'missing' && f.state !== 'unset' : f.state === state)
 /** the labels of the features `pick` keeps, in the catalog's order; "None" for none */
 const labels = (view: FeaturesView, pick: (f: Feature) => boolean) =>
   view.catalog.filter(pick).map(f => f.label).join(', ') || 'None'
@@ -542,14 +542,14 @@ function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & {
     <Section title="All set">
       {!view ? <Pending error={error} reload={reload} /> : <>
         <p className="onb__line">{name} is ready.</p>
-        <p className="onb__line">On: {labels(view, f => isOn(view, f))}</p>
-        {labels(view, f => asked(view, f) && f.state === 'missing') !== 'None' && (
-          <p className="onb__line">Off (did not answer): {labels(view, f => asked(view, f) && f.state === 'missing')}</p>
+        <p className="onb__line">On: {labels(view, f => switched(view, f, 'on'))}</p>
+        {labels(view, f => switched(view, f, 'missing')) !== 'None' && (
+          <p className="onb__line">Off (did not answer): {labels(view, f => switched(view, f, 'missing'))}</p>
         )}
-        {view.catalog.filter(f => asked(view, f) && f.state === 'unset').map(f => (
+        {view.catalog.filter(f => switched(view, f, 'unset')).map(f => (
           <p key={f.id} className="onb__line">Not set up: {f.label}. {f.detail}</p>
         ))}
-        <p className="onb__line">Off: {labels(view, f => !isOn(view, f) && !asked(view, f))}</p>
+        <p className="onb__line">Off: {labels(view, f => view.features[f.id] === false)}</p>
         <p className="onb__line">You can change all of this later in Settings.</p>
         {finish.error && <InlineError compact message={finish.error} onRetry={() => void finish.run()} />}
       </>}

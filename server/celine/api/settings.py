@@ -368,7 +368,7 @@ async def probe_feature(request: Request, id: str) -> dict:
     if id not in features_mod.ids():
         raise NotFound(f"There is no feature '{id}'.")
     services = request.app.state.services
-    return await features_mod.probe(services.cfg, services, id)
+    return features_mod.shown(await features_mod.probe(services.cfg, services, id))
 
 
 @router.put("/features")
@@ -419,7 +419,7 @@ async def test_service(request: Request, id: str) -> dict:
         raise NotFound(f"There is no service '{id}'.")
     feature = "web" if id == "searxng" else id
     services = request.app.state.services
-    return await features_mod.probe(services.cfg, services, feature)
+    return features_mod.shown(await features_mod.probe(services.cfg, services, feature))
 
 
 # ---- the app's own address -----------------------------------------------------------

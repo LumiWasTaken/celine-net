@@ -304,3 +304,33 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     cfg.settings.plugins["mac"] = {}
     out = await p.attr("gateway:check")(services, p, None)
     assert out["lines"][1] == {"text": "Shell: Address is empty.", "tone": "error"}
+
+
+async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
+        tmp_path, monkeypatch, store):
+    """Its form fills from what runs only while it is on: not set up never blocks it."""
+    var = scratch(tmp_path, monkeypatch)
+    (var / "settings" / "features.toml").unlink(missing_ok=True)
+    cfg = boot.load()
+    app, services, routes = _app(cfg, store)
+    p = plugins.get("mac")
+    async with anyio.create_task_group() as tg, client(app) as c:
+        mac = next(f for f in (await c.get("/api/features")).json()["catalog"]
+                   if f["id"] == "mac")
+        assert (mac["state"], mac["blocks"]) == ("unset", False)
+        runners = services.runners = Runners()
+        runners["mac"] = Runner(tg, functools.partial(plugins_api.run, services, routes, p))
+        await c.put("/api/features", json={"features": {"mac": True}})
+        await until(lambda: p.data is not None)
+        await saves.address(services, {"origin": "http://192.168.1.20:8766"})
+        view = (await c.get("/api/forms/mac")).json()
+        command = next(f for f in view["fields"] if f["key"] == "command")
+        assert command["label"] == "Run on the Mac"
+        token = command["value"].split("/setup/")[1].split()[0]
+        assert (await c.get(f"/api/plugins/mac/setup/{token}")).status_code == 200
+        got = (await c.get("/api/features")).json()
+        mac = next(f for f in got["catalog"] if f["id"] == "mac")
+        assert got["features"]["mac"] is True
+        assert (mac["state"], mac["blocks"]) == ("unset", False)
+        assert "is empty" in mac["detail"]
+        tg.cancel_scope.cancel()

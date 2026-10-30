@@ -2,8 +2,8 @@
    by featureSteps.check.mjs in the prebuild). */
 import type { Feature, FeaturesView } from './settingsApi'
 
-/** a feature's switch cannot be on: its service is missing or not set up */
-export const blocked = (f: Feature) => f.state === 'missing' || f.state === 'unset'
+/** a feature's switch cannot be on: the server says so (its probe's `blocks`) */
+export const blocked = (f: Feature) => f.blocks
 
 /** the onboarding's steps before the features' own */
 const FIXED = ['her', 'you', 'model', 'features']
