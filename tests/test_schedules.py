@@ -40,6 +40,7 @@ def cfg():
     c = load()
     c.timezone = "UTC"
     c.settings.general.update({"max_concurrent_turns": 2})
+    c.settings.features["done"] = True       # the onboarding is done: routines run
     c.user = "Joe"
     return c
 
@@ -104,8 +105,7 @@ async def test_missed_slots_are_made_oldest_first_and_older_than_a_week_skipped(
     clock = Clock(datetime(2026, 10, 10, 11, tzinfo=UTC))
     sched = Scheduler(_app(store, cfg), clock)
     await sched.make_due()
-    assert [(r["night"], r["state"]) for r in await _runs(store)] == [
-        ("2026-10-10", "waiting")], "the first look makes tonight's passed slots, no more"
+    assert await _runs(store) == [], "the first look makes nothing that passed"
     await store.kv_set(CHECKED, iso(clock.at - timedelta(days=9)))
     await sched.make_due()
     got = [(r["night"], r["state"], r["reason"]) for r in await _runs(store)]
@@ -115,6 +115,47 @@ async def test_missed_slots_are_made_oldest_first_and_older_than_a_week_skipped(
         "a missed slot is finished"
     await sched.make_due()
     assert len(await _runs(store)) == 9, "a slot has one run"
+
+
+async def test_no_routine_runs_before_the_onboarding_is_done(store, cfg):
+    """A fresh install at 18:58 with Radar at 09:00 and 17:00: switching Routines on
+    during the onboarding makes no run, not the 17:00 that passed nor a slot that comes
+    while it goes on; a run made by hand waits. Once done, the next slot runs."""
+    cfg.settings.features.pop("done")
+    cfg.schedules = {"radar": _s("radar", "0 9,17 * * *")}
+    clock = Clock(datetime(2026, 10, 10, 18, 58, tzinfo=UTC))
+    sched = Scheduler(_app(store, cfg), clock)
+    started: list[str] = []
+    sched._start = lambda r: started.append(r["schedule"])
+    await sched.tick()
+    assert await _runs(store) == []
+    clock.at = datetime(2026, 10, 11, 9, 1, tzinfo=UTC)
+    await sched.run_now("radar")
+    await sched.tick()
+    assert [r["slot"] for r in await _runs(store)] == [iso(clock.at.replace(microsecond=0))], \
+        "the 09:00 slot during the onboarding is not made"
+    assert started == [], "nothing starts before the onboarding is done"
+    cfg.settings.features["done"] = True
+    clock.at = datetime(2026, 10, 11, 17, 0, 30, tzinfo=UTC)
+    await sched.tick()
+    assert [r["slot"][11:16] for r in await _runs(store)] == ["09:01", "17:00"]
+    assert started, "once it is done, the waiting runs start"
+
+
+async def test_a_slot_that_passed_while_routines_were_off_is_never_caught_up(store, cfg):
+    """Routines on until 08:00, off over the 09:00 slot, on again at 10:00: nothing is
+    made for 09:00; the 17:00 slot is."""
+    cfg.schedules = {"radar": _s("radar", "0 9,17 * * *")}
+    clock = Clock(datetime(2026, 10, 10, 8, tzinfo=UTC))
+    sched = Scheduler(_app(store, cfg), clock)
+    await sched.make_due()
+    await sched.forget()                  # Routines switched off (core/runners.py)
+    clock.at = datetime(2026, 10, 10, 10, tzinfo=UTC)
+    await sched.make_due()
+    assert await _runs(store) == []
+    clock.at = datetime(2026, 10, 10, 17, 1, tzinfo=UTC)
+    await sched.make_due()
+    assert [r["slot"][11:16] for r in await _runs(store)] == ["17:00"]
 
 
 async def test_slots_past_max_slots_are_made_by_the_next_look(store, cfg, monkeypatch):

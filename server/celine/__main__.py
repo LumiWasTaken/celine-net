@@ -343,7 +343,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                 finally:
                     for kind in (talk.KIND, talk.NOTE):
                         dispatcher.work.handlers.pop(kind, None)
-            runners["routines"] = Runner(tg, routines_run)
+            runners["routines"] = Runner(tg, routines_run, on_stop=scheduler.forget)
             runners["guard"] = Runner(tg, guard_run)
             runners["missions"] = Runner(tg, lambda: mission_watch.run(services))  # check-ins
             for fid in ("routines", "guard", "missions"):

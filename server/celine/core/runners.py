@@ -21,10 +21,12 @@ log = logging.getLogger("celine.runners")
 
 class Runner:
     def __init__(self, tg: anyio.abc.TaskGroup, fn: Callable[[], Awaitable[Any]],
-                 features: tuple[str, ...] = ()):
+                 features: tuple[str, ...] = (),
+                 on_stop: Callable[[], Awaitable[Any]] | None = None):
         self.tg = tg
         self.what = fn
         self.features = features    # on while any of them is on; () its own id
+        self.on_stop = on_stop      # after it stops because its feature was switched off
         self.scope: anyio.CancelScope | None = None
         self.done: anyio.Event | None = None
 
@@ -62,7 +64,10 @@ class Runners(dict[str, Runner]):
         whose address changed, started again when on."""
         for fid, r in self.items():
             if not any(on.get(f, True) for f in r.features or (fid,)):
+                was = r.running
                 await r.stop()
+                if was and r.on_stop is not None:
+                    await r.on_stop()
             elif fid in changed:
                 await r.stop()
                 await r.start()

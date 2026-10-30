@@ -3,10 +3,13 @@
 When a run exists. At the next slot, every TICK seconds at most, on every `models.state`
 change, at the end of every turn and after every change to the schedules, the scheduler
 makes the run of every slot of a schedule that is on and came due since its last look
-(kv `schedules.checked`; the first look makes those since the start of the current
-night). A run's night is `night_of` its slot. Slots missed while the app was off are
-made too, oldest first: those of the last CATCH_UP_DAYS wait like any other, older ones
-are written `skipped` with the reason. A slot is never dropped silently.
+(kv `schedules.checked`). A slot counts only once its routine is on: the first look, a
+look before the onboarding is done (features `done`) and the first look after Routines
+was switched off (`forget`) make nothing that passed, they only start the count. While
+the onboarding is not done no run starts. A run's night is `night_of` its slot. Slots
+missed while the app was off with Routines on are made too, oldest first: those of the
+last CATCH_UP_DAYS wait like any other, older ones are written `skipped` with the
+reason. A slot is never dropped silently.
 
 When a run starts. A run is `waiting` until all of these hold; its `reason` says the
 first that does not, in words:
@@ -82,7 +85,7 @@ from ..core.states import LIVE_SQL
 from ..skills import ToolContext
 from ..clock import zone
 from ..sub_agents.report import asked, last_answer, quiet
-from . import NONE, depth, fill, night_of, night_start, run_date, shown
+from . import NONE, depth, fill, night_of, run_date, shown
 from .variables import FROM_USER, extras
 from ..core.event_types import RUN_STATE
 
@@ -369,8 +372,7 @@ class Scheduler:
         at, tz, schedules, store = self.now(), zone(self.app.cfg), self.schedules, \
             self.app.store
         since = await store.kv_get(CHECKED)
-
-        start = datetime.fromisoformat(since) if since else night_start(night_of(at, tz), tz)
+        start = datetime.fromisoformat(since) if since and self.ready() else at
 
         def fn(c: sqlite3.Connection) -> None:
             horizon, checked = at - timedelta(days=CATCH_UP_DAYS), at
@@ -396,6 +398,16 @@ class Scheduler:
                 c.execute("INSERT INTO kv(k, v) VALUES(?, ?) ON CONFLICT(k) DO UPDATE SET "
                           "v = excluded.v", (CHECKED, iso(checked)))
         await store.write(fn)
+
+    def ready(self) -> bool:
+        """The onboarding is done: routines may run."""
+        from ..settings import features
+        return features.done(getattr(getattr(self.app.cfg, "settings", None), "features", None))
+
+    async def forget(self) -> None:
+        """Routines was switched off: the next start counts from its first look."""
+        await self.app.store.write(lambda c: c.execute("DELETE FROM kv WHERE k = ?",
+                                                       (CHECKED,)))
 
     async def run_now(self, name: str, by: str = "user") -> dict:
         """A run of `name` at this second, waiting like any other, started `by` the user
@@ -451,6 +463,8 @@ class Scheduler:
         if self.current:
             await self._watch()
         await self.make_due()
+        if not self.ready():
+            return
         store, schedules = self.app.store, self.schedules
         waiting = await store.read(lambda c: [dict(r) for r in c.execute(
             "SELECT * FROM runs WHERE state = 'waiting'")])

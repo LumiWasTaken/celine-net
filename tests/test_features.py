@@ -339,6 +339,7 @@ async def test_guard_off_means_bastet_is_off(api):
 
 class FakeRunner:
     features = ()
+    on_stop = None
 
     def __init__(self):
         self.log: list[str] = []
