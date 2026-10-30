@@ -593,3 +593,13 @@ async def test_a_sub_agent_is_addressed_by_its_exact_name(store):
         pass
     else:
         raise AssertionError("a name in another case reaches nobody")
+
+
+async def test_a_name_is_looked_up_among_the_senders_own_sub_agents_only(store):
+    from celine.intercom import addresses
+    parent = await conversations.create(store, "p")
+    scout = await conversations.create(store, "s", agent_of=parent, agent_name="scout")
+    kid = await conversations.create(store, "k", agent_of=scout, agent_name="digger")
+    await conversations.create(store, "d", agent_of=parent, agent_name="digger")
+    found = await store.read(lambda c: addresses.resolve(c, "digger", f"agent:{scout}"))
+    assert found[1] == [(f"agent:{kid}", kid)], "a newer sibling never shadows its own"
