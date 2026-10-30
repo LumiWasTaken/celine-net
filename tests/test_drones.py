@@ -176,7 +176,7 @@ def fake():
 def app(tmp_path, monkeypatch, store, fake):
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles=ROLES)
     cfg = boot.load()
-    mac = Device("mac", "Her Mac", fake, PW, "dev-key", "~/oc.log", None)
+    mac = Device("mac", "Her Mac", fake, PW, "dev-key", "~/oc.log", "", None)
     monkeypatch.setattr(drone, "devices", lambda cfg: {"mac": mac})
     monkeypatch.setattr(skill_mod, "all_devices", lambda cfg: {"mac": mac})
     monkeypatch.setattr(drone, "POLL", 0.05)

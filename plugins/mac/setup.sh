@@ -1,8 +1,8 @@
 #!/bin/bash
 # Her own computer, macOS on Apple silicon: Peekaboo (screen), Desktop Commander (shell),
 # Playwright MCP (browser, on a Chrome of its own) and the MCP filesystem server (files)
-# behind one Supergateway with a bearer token, and `opencode serve` for her drones (the
-# same token as its password), kept running by LaunchAgents in her login session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
+# behind one Supergateway with a bearer token, `opencode serve` for her drones (the
+# same token as its password) and share.js for her shares (the same token), kept running by LaunchAgents in her login session. The Mac never sleeps or locks its screen, and she runs sudo without a password.
 # Run it as her; safe to run again.
 #
 #   bash setup.sh [--app URL --key KEY] [--json]    install or update, then report
@@ -15,6 +15,7 @@ set -euo pipefail
 
 PORT=8765
 AGENTS_PORT=4096                 # opencode serve, for her drones
+SHARE_PORT=8767                  # share.js, her shares of the Mac's ports and files
 OPENCODE_VERSION=1.19.4          # the box's (shellbox/Dockerfile), pinned by its sha256
 OPENCODE_SHA256=c400a2f8c8ab7e99478a7f4dd1a466b57bf33888e520d85c55780a5464c4b689
 CDP=9222                         # Chrome's DevTools port, on 127.0.0.1 only
@@ -25,6 +26,7 @@ AGENTS=$HOME/Library/LaunchAgents
 LABEL=com.celine.gateway
 CHROME=com.celine.chrome
 OPENCODE=com.celine.opencode
+SHARE=com.celine.share
 OC=$LIB/opencode/opencode
 OC_LOG=$HOME/Library/Logs/celine-opencode.log
 BREW=/opt/homebrew/bin/brew      # Apple silicon only; Intel brew lives in /usr/local
@@ -51,8 +53,9 @@ report() {
   # shellcheck disable=SC2016  # JavaScript, not shell
   ADDRESS="http://${ip:-127.0.0.1}:$PORT" TOKEN_FILE="$TOKEN" GATEWAY_PORT="$PORT" \
     AGENTS="http://${ip:-127.0.0.1}:$AGENTS_PORT" AGENTS_PORT="$AGENTS_PORT" \
+    SHARE="http://${ip:-127.0.0.1}:$SHARE_PORT" \
     "$(brew --prefix)/bin/node" --input-type=module -e '
-const { ADDRESS, TOKEN_FILE, GATEWAY_PORT, AGENTS, AGENTS_PORT } = process.env;
+const { ADDRESS, TOKEN_FILE, GATEWAY_PORT, AGENTS, AGENTS_PORT, SHARE } = process.env;
 const fs = await import("node:fs");
 const token = fs.existsSync(TOKEN_FILE) ? fs.readFileSync(TOKEN_FILE, "utf8").trim() : null;
 const base = `http://127.0.0.1:${GATEWAY_PORT}`;
@@ -113,7 +116,7 @@ try {
   opencode = { version: null, error: String(e.message ?? e) };
 }
 console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, agents: AGENTS,
-                             servers, opencode }));
+                             share: SHARE, servers, opencode }));
 '
 }
 
@@ -260,6 +263,95 @@ cat > "$AGENTS/$LABEL.plist" <<EOF
 </dict>
 </plist>
 EOF
+say shares   # share.js: the app's shares of the Mac's ports and files (server/celine/shares.py)
+cat > "$LIB/share.js" <<'EOF'
+// The app asks this as it asks shellboxd, with the token as the bearer:
+// GET /forward?port=<n> with Upgrade: tcp: 101, then raw bytes both ways to localhost:<n>
+// (502 when nothing listens there); GET /file?path=<path from home, or from />: the file,
+// or one byte range of it (206, 416 past its end); 404 missing, 400 "folder": true.
+const http = require("http"), net = require("net"), fs = require("fs"), os = require("os");
+const path = require("path"), crypto = require("crypto");
+const [port, tokenFile] = process.argv.slice(2);
+const token = Buffer.from(`Bearer ${fs.readFileSync(tokenFile, "utf8").trim()}`);
+const ok = req => {
+  const got = Buffer.from(req.headers.authorization || "");
+  return got.length === token.length && crypto.timingSafeEqual(got, token);
+};
+const json = (res, status, body) => {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+};
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, "http://share");
+  if (url.pathname === "/health") return json(res, 200, {});
+  if (!ok(req)) return json(res, 401, { error: "Wrong token." });
+  if (req.method !== "GET" || url.pathname !== "/file") return json(res, 404, { error: "No such endpoint." });
+  const asked = (url.searchParams.get("path") || "").replace(/^~(?=\/|$)/, os.homedir());
+  const p = path.resolve(os.homedir(), asked);
+  let st;
+  try { st = fs.statSync(p); } catch { return json(res, 404, { error: `No file ${p} on the Mac.` }); }
+  if (st.isDirectory()) return json(res, 400, { error: `${p} is a folder.`, folder: true });
+  if (!st.isFile()) return json(res, 400, { error: `${p} is not a file.` });
+  const size = st.size, m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
+  let first = 0, last = size - 1;
+  if (m && (m[1] || m[2])) {
+    if (m[1]) { first = +m[1]; if (m[2]) last = Math.min(+m[2], size - 1); }
+    else first = Math.max(0, size - +m[2]);
+    if (first > last) {
+      res.writeHead(416, { "content-range": `bytes */${size}`, "content-length": 0 });
+      return res.end();
+    }
+  }
+  const part = Boolean(m && (m[1] || m[2]));
+  res.writeHead(part ? 206 : 200, { "content-type": "application/octet-stream",
+    "accept-ranges": "bytes", "content-length": last - first + 1,
+    ...(part ? { "content-range": `bytes ${first}-${last}/${size}` } : {}) });
+  if (size === 0 || req.method === "HEAD") return res.end();
+  fs.createReadStream(p, { start: first, end: last }).pipe(res);
+});
+server.on("upgrade", (req, sock) => {
+  const url = new URL(req.url, "http://share"), n = Number(url.searchParams.get("port"));
+  const no = (status, error) => {
+    const body = JSON.stringify({ error });
+    sock.end(`HTTP/1.1 ${status}\r\nContent-Type: application/json\r\n` +
+             `Content-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`);
+  };
+  if (!ok(req)) return no("401 Unauthorized", "Wrong token.");
+  if (url.pathname !== "/forward" || !Number.isInteger(n) || n < 1 || n > 65535)
+    return no("400 Bad Request", "port is a number from 1 to 65535.");
+  const up = net.connect({ port: n, host: "localhost" });
+  up.once("error", () => no("502 Bad Gateway", `Nothing is running on port ${n}.`));
+  up.once("connect", () => {
+    up.removeAllListeners("error");
+    up.on("error", () => sock.destroy());
+    sock.on("error", () => up.destroy());
+    sock.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: tcp\r\nConnection: Upgrade\r\n\r\n");
+    up.pipe(sock).pipe(up);
+  });
+});
+server.listen(Number(port), "0.0.0.0");
+EOF
+cat > "$AGENTS/$SHARE.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$SHARE</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$NODE</string>
+    <string>$LIB/share.js</string>
+    <string>$SHARE_PORT</string>
+    <string>$TOKEN</string>
+  </array>
+  <key>WorkingDirectory</key><string>$HOME</string>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+EOF
+
 say drones   # opencode serve on the app's model proxy (the link key), with Peekaboo and Playwright MCP
 mkdir -p "$HOME/.config/opencode" "$(dirname "$OC_LOG")"
 # only this script's keys are set, the rest stays: the app's models of provider celine
@@ -309,13 +401,14 @@ if ! launchctl print "gui/$uid" >/dev/null 2>&1; then
   echo "No desktop session for $(id -un): log in at the Mac, then run this again." >&2
   exit 1
 fi
-for label in "$CHROME" "$LABEL" "$OPENCODE"; do   # each restarts with this run's config
+for label in "$CHROME" "$LABEL" "$OPENCODE" "$SHARE"; do   # each restarts with this run's config
   launchctl bootout "gui/$uid/$label" 2>/dev/null || true
   while launchctl print "gui/$uid/$label" >/dev/null 2>&1; do sleep 1; done
   launchctl bootstrap "gui/$uid" "$AGENTS/$label.plist"
 done
 for _ in $(seq 30); do curl -sf "http://127.0.0.1:$CDP/json/version" >/dev/null && break; sleep 1; done
 for _ in $(seq 30); do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 1; done
+for _ in $(seq 30); do curl -sf "http://127.0.0.1:$SHARE_PORT/health" >/dev/null && break; sleep 1; done
 for _ in $(seq 30); do   # 401 without the password: it answers
   [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$AGENTS_PORT/global/health")" = 401 ] && break
   sleep 1
@@ -333,7 +426,7 @@ fi
 # shellcheck disable=SC2016  # JavaScript, not shell
 echo "$line" | "$NODE" -e '
 const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
-console.log(`\nAddress: ${r.address}\nToken:   ${r.token}\nAgents:  ${r.agents}\n`);
+console.log(`\nAddress: ${r.address}\nToken:   ${r.token}\nAgents:  ${r.agents}\nShares:  ${r.share}\n`);
 for (const [name, s] of Object.entries(r.servers))
   console.log(`${name.padEnd(8)} ${s.tools === null ? "no answer: " + s.error : s.tools + " tools"}` +
               (s.missing.length ? `, needs ${s.missing.join(" and ")}` : ""));

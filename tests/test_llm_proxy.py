@@ -186,7 +186,7 @@ async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_wa
     from celine.devices import Device
     from celine.settings import conversations as conv
     monkeypatch.setattr(devices, "devices", lambda cfg: {"mac": Device(
-        "mac", "Her Mac", "http://mac:4096", "pw", "dev-key", "", None)})
+        "mac", "Her Mac", "http://mac:4096", "pw", "dev-key", "", "", None)})
     monkeypatch.setattr(proxy.cfg.settings, "key_missing", lambda pid: False)
 
     async def ids(key):

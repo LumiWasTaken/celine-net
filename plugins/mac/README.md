@@ -34,6 +34,7 @@ What it sets on the Mac:
 | `~/.local/share/celine/opencode/opencode` | opencode |
 | `~/.config/opencode/opencode.json` | its own keys set on every run, the rest kept: the app's model proxy as provider `celine` (`<app>/llm/v1`, the link key read from `~/.config/celine/link`), Peekaboo and Playwright MCP (the gateway's own copies, Playwright on the same Chrome), every permission allowed, no autoupdate; the app adds the models of `celine` to the same file (`PATCH /global/config`) while no drone works there |
 | `~/Library/LaunchAgents/com.celine.opencode.plist` | `opencode serve` on 0.0.0.0:4096, logging to `~/Library/Logs/celine-opencode.log` |
+| `~/.local/share/celine/share.js`, `~/Library/LaunchAgents/com.celine.share.plist` | her shares (`shell__share(device="mac")`) on 0.0.0.0:8767 behind the token: `GET /forward?port=` tunnels to a localhost port, `GET /file?path=` serves a file, as shellboxd does |
 
 With the lid shut, a dummy HDMI plug gives the Mac the display its screenshots need.
 
@@ -41,8 +42,8 @@ In the app:
 
 | What | Where |
 |---|---|
-| `plugin.toml` | the switch and the four servers, `macscreen`, `macshell`, `macbrowser`, `macfiles`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token; `[drones]`, the device `mac` (server/celine/devices.py): `${AGENTS}` and the Token, the link key its model proxy key |
-| `settings.toml` | the form: the command, Address, Agents, Token, Check |
+| `plugin.toml` | the switch and the four servers, `macscreen`, `macshell`, `macbrowser`, `macfiles`, filled from the form: `${URL}` the Address, `${TOKEN}` the Token; `[drones]`, the device `mac` (server/celine/devices.py): `${AGENTS}` and the Token, `${SHARE}` its share server, the link key its model proxy key |
+| `settings.toml` | the form: the command, Address, Agents, Shares, Token, Check |
 | `gateway.py` | `GET /api/plugins/mac/setup.sh`, `POST /api/plugins/mac/gateway` (the report), `POST /api/plugins/mac/events` (her scripts), the command, Check |
 | `guides/` | each server's guide |
 

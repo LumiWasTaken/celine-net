@@ -3,8 +3,8 @@ her scripts' messages to her, the command the form shows, and Check.
 
 - GET /api/plugins/mac/setup.sh: the script, so the Mac needs nothing but the app.
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
-  report line {address, token, agents, ...}; the address, the token and the drones'
-  address are saved into the form (celine/saves.py plugin_form), so the servers start
+  report line {address, token, agents, share, ...}; the address, the token, the drones'
+  and the share server's addresses are saved into the form (celine/saves.py plugin_form), so the servers start
   again with them.
 - POST /api/plugins/mac/events with the link key: {text, conversation?}, a message from
   her to herself (intercom__send to "me") in that conversation, else her newest chat: it
@@ -86,8 +86,9 @@ async def gateway(request: Request) -> dict[str, Any]:
         raise Invalid("body", "The address and the token are text.")
     p = plugins.get("mac")
     values = {**services.cfg.settings.plugins.get(p.id, {}), "url": body["address"]}
-    if isinstance(body.get("agents"), str):
-        values["agents"] = body["agents"]
+    for key in ("agents", "share"):
+        if isinstance(body.get(key), str):
+            values[key] = body[key]
     return await plugin_form(services, p, values, {"token": body["token"]})
 
 

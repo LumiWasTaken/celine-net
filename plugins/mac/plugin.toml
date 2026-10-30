@@ -17,6 +17,7 @@ open = ["GET /setup.sh", "POST /gateway", "POST /events"]   # the Mac reaches th
 [drones]
 url      = "${AGENTS}"
 password = "${TOKEN}"
+share    = "${SHARE}"           # share.js (setup.sh): her shares of its ports and files, shares.py
 key      = "link"
 label    = "Her Mac"
 
