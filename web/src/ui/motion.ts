@@ -165,7 +165,10 @@ export function usePush(ref: RefObject<HTMLElement | null>, depth: number) {
   }, [ref])
 }
 
-type Box = { x: number; y: number; w: number; h: number }
+type Box = { x: number; y: number; w: number; h: number; sx: number; sy: number }
+
+/** the translate an animation gives `el` now, in px */
+const shift = (el: Element) => getComputedStyle(el).translate.split(' ').map(v => parseFloat(v) || 0)
 const moving = new WeakMap<Element, Animation>()
 
 /** FLIP for the children of `ref` (rows, cards, toasts). After a commit that changed `on`
@@ -189,28 +192,32 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown, { ente
     calm.current = quiet
     const before = seen.current
     const kids = [...box.children].filter(el => !el.classList.contains('ghost'))
-    if (changed) for (const el of kids) moving.get(el)?.cancel()
     const c = box.getBoundingClientRect()
     const now = new Map<Element, Box>()
     seen.current = now
     if (!c.width && !c.height) return
+    const top = bottom ? c.bottom : c.top
     for (const el of kids) {
+      // where it is laid out: its box less the glide or rise it is in
       const r = el.getBoundingClientRect()
-      now.set(el, { x: r.left - c.left, y: r.top - (bottom ? c.bottom : c.top), w: r.width, h: r.height })
+      const [sx = 0, sy = 0] = el.getAnimations().length ? shift(el) : []
+      now.set(el, { x: r.left - c.left - sx, y: r.top - top - sy, w: r.width, h: r.height, sx, sy })
     }
     if (!changed || other || !before.size || reduced()) return
     for (const [el, b] of now) {
       const a = before.get(el)
       if (!a) { if (enter) rise(el); continue }
-      const dx = a.x - b.x, dy = a.y - b.y
-      if (!dx && !dy) continue
+      if (a.x === b.x && a.y === b.y) continue
+      // from where it shows now: its old place, plus the glide it was in
+      const dx = a.x - b.x + b.sx, dy = a.y - b.y + b.sy
+      moving.get(el)?.cancel()
       moving.set(el, el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }],
                                 { duration: ms('--dur'), easing: curve('--ease'), composite: 'add' }))
     }
     if (!out) return
     for (const [el, a] of before) {
       if (now.has(el) || el.isConnected) continue
-      const { ghost, place } = copyOf(el as HTMLElement, { left: c.left + a.x, top: (bottom ? c.bottom : c.top) + a.y, width: a.w, height: a.h }, box, null)
+      const { ghost, place } = copyOf(el as HTMLElement, { left: c.left + a.x + a.sx, top: top + a.y + a.sy, width: a.w, height: a.h }, box, null)
       place()
       play(ghost, g => leave(g, OUT.fade))
     }
