@@ -19,6 +19,7 @@ import { getJson, getPref, setJson, setPref } from '../lib/prefs'
 import { SETTINGS_EVENTS, settingsApi, type ConversationSettings, type ProviderView } from '../lib/settingsApi'
 import { OFFLINE_TITLE } from '../lib/socket'
 import { THINK_WORD, commandsApi, menuRows, parseCommand, useCommands } from '../lib/commands'
+import { isTyping } from '../lib/keys'
 import { Button, Chip, coarse, ComposerBox, IconButton, Menu, Notice, cx, curve, ms, reduced, type MenuItem } from '../ui'
 import './Composer.css'
 import { SpeechControls } from './Speech'
@@ -180,8 +181,11 @@ export function Composer({
     if (!coarse()) setTimeout(() => text.current?.focus(), 0)
   }
 
-  // focus after the selection rendered (not on a touch screen: the keyboard would cover it)
-  useEffect(() => { if (active && !coarse()) text.current?.focus() }, [selected, active])
+  // focus after the selection rendered (not on a touch screen: the keyboard would cover it;
+  // never from another field someone is typing in)
+  useEffect(() => {
+    if (active && !coarse() && !isTyping(document.activeElement)) text.current?.focus()
+  }, [selected, active])
 
   useEffect(() => {
     const p = pendingPrefill.current
