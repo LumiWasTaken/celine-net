@@ -212,3 +212,25 @@ async def test_a_chat_past_history_messages_keeps_the_last_ones(store, cfg):
     built = await context.build(store, cfg, Model(window=100_000), cid, system="s", tools=[])
     asked = [m["content"] for m in built.messages if m["role"] == "user"]
     assert "question 7" in asked[0] and "question 6" not in json.dumps(built.messages)
+
+
+async def test_a_background_completion_does_not_count_its_wait_in_the_queue():
+    """complete's limit runs while the model works on the request: a queued backend's
+    wait for its slot (backends/llm.paused) holds it, as it holds a turn's clock."""
+    import math
+    from celine.backends.base import Done, TextDelta
+    from celine.backends.llm import TOOL_CLOCKS, paused
+    seen = []
+
+    class Queued:
+        model = "m"
+
+        async def stream(self, messages, tools):
+            with paused(None):                       # waiting for the slot
+                seen.append([c.deadline for c in TOOL_CLOCKS.get()])
+            seen.append([c.deadline for c in TOOL_CLOCKS.get()])
+            yield TextDelta("a title")
+            yield Done(reason="stop")
+    assert await compact.complete(Queued(), [], 30) == "a title"
+    assert seen[0] == [math.inf], "its limit holds while it waits"
+    assert seen[1][0] != math.inf, "and runs again once the model works"

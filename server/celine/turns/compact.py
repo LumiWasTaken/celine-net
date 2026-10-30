@@ -276,21 +276,27 @@ async def fold(backend, system: str, previous: str, lines: list[str], *, window:
 async def complete(backend, messages, limit: float, tools=(), token=None,
                    errors: bool = False) -> str | None:
     """One non-streamed completion; text only, tool calls ignored. None on failure,
-    when `limit` seconds run out before the reply ends (never the part written so far),
-    or when `token` stops it. `errors`: a backend error, and the time limit as one, is
-    raised instead (a work item tells a host that is down from a real error, work.py)."""
+    when `limit` seconds of the model's own work run out before the reply ends (never
+    the part written so far; a wait for the model in its queue does not count), or when
+    `token` stops it. `errors`: a backend error, and the time limit as one, is raised
+    instead (a work item tells a host that is down from a real error, work.py)."""
+    from ..backends.llm import TOOL_CLOCKS
     parts: list[str] = []
     try:
         with anyio.move_on_after(limit) as scope:
-            # a queued backend frees its model slot as soon as we stop reading
-            async with closing(stoppable(backend, messages, tools, token)) as events:
-                async for ev in events:
-                    if token is not None and token.cancelled:
-                        return None
-                    if isinstance(ev, TextDelta):
-                        parts.append(ev.text)
-                    elif isinstance(ev, Done):
-                        break
+            clocks = TOOL_CLOCKS.set((*TOOL_CLOCKS.get(), scope))
+            try:
+                # a queued backend frees its model slot as soon as we stop reading
+                async with closing(stoppable(backend, messages, tools, token)) as events:
+                    async for ev in events:
+                        if token is not None and token.cancelled:
+                            return None
+                        if isinstance(ev, TextDelta):
+                            parts.append(ev.text)
+                        elif isinstance(ev, Done):
+                            break
+            finally:
+                TOOL_CLOCKS.reset(clocks)
         if scope.cancelled_caught:
             raise BackendError(f"{getattr(backend, 'model', None) or 'The model'} did not "
                                f"finish its reply within {limit:.0f} seconds.")

@@ -100,8 +100,9 @@ _LOAD_FAILED = ("exited prematurely", "failed to start", "unable to load", "out 
 Emit = Callable[[dict[str, Any]], Awaitable[None]]
 
 
-# the time limits of the tool calls running here (turns/tools.py): a wait for a model
-# inside a tool moves them like the turn's clock
+# the time limits of the tool calls (turns/tools.py) and background completions
+# (turns/compact.complete) running here: a wait for a model moves them like the turn's
+# clock
 TOOL_CLOCKS: contextvars.ContextVar[tuple] = contextvars.ContextVar("tool_clocks",
                                                                     default=())
 
