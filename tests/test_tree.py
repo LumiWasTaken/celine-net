@@ -379,7 +379,7 @@ async def test_a_reply_that_said_nothing_leaves_the_message_unanswered(store):
     await run_turn(turn, store, load(), FakeBackend([ReasoningDelta("hm"), Done(reason="stop")]),
                    EventBus(), Token(turn["id"]))
     told = {"message_id": mid, "turn_id": turn["id"], "state": "done",
-            "reason": "The answer was empty.", "continues": False}
+            "reason": "The reply was empty.", "continues": False}
     assert (await view.snapshot(store, cid))["unanswered"] == told
     assert (await _last_state_event(store, cid))["unanswered"] == told
     await tree.regenerate(store, cid)

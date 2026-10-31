@@ -135,7 +135,7 @@ async def test_sweep_interrupts_every_running_turn_with_its_reason(store):
     assert out["interrupted"] == 2
     ro, mut = await _turn(store, tid_ro), await _turn(store, tid_mut)
     assert (ro["state"], ro["reason_code"]) == ("interrupted", "restart")
-    assert ro["reason"] == "The server restarted during the answer."
+    assert ro["reason"] == "The server restarted during the reply."
     assert (await _calls(store, tid_ro))[0]["state"] == "interrupted"
     assert mut["state"] == "interrupted" and "arch__write" in mut["reason"]
     assert (await _calls(store, tid_mut))[0]["state"] == "interrupted"

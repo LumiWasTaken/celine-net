@@ -67,7 +67,7 @@ async def test_orphans_end_interrupted_with_their_reason(store):
         "SELECT state, worker_id, reason FROM turns WHERE id=?", (tid,)).fetchone())
     row = await state(clean)
     assert row["state"] == "interrupted" and row["worker_id"] is None
-    assert row["reason"] == "The server restarted during the answer."
+    assert row["reason"] == "The server restarted during the reply."
     row = await state(busy)
     assert row["state"] == "interrupted" and "shell__run_command" in row["reason"]
 

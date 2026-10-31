@@ -501,9 +501,9 @@ prefills = None
 
 
 # why no answer came, by how the turn that tried ended
-_NO_ANSWER = {"failed": "The answer failed.", "interrupted": "The server restarted during "
-              "the answer.", "aborted": "Stopped.", "capped": "Stopped at the step limit.",
-              "done": "The answer was empty."}
+_NO_ANSWER = {"failed": "The reply failed.", "interrupted": "The server restarted during "
+              "the reply.", "aborted": "Stopped.", "capped": "Stopped at the step limit.",
+              "done": "The reply was empty."}
 
 
 def unanswered(c: sqlite3.Connection, cid: str) -> dict | None:

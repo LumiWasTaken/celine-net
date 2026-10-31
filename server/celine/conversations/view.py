@@ -223,14 +223,14 @@ def continuable(c: sqlite3.Connection, cid: str, turn) -> dict:
         return {"ok": False, "label": label, "reason": reason}
 
     if state in LIVE:
-        return no("The answer is still being written.")
+        return no("The reply is still being written.")
     latest = c.execute("SELECT id FROM turns WHERE conversation_id=? "
                        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
                        (cid,)).fetchone()
     if latest is None or latest["id"] != turn["id"]:
         return no("A newer turn follows this one.")
     if state == "done" and not cut:
-        return no("The answer is complete. Regenerate the answer, or write a new "
+        return no("The reply is complete. Regenerate it, or write a new "
                   "message.")
     if state == "failed":
         retryable = code in ("backend_retryable", "crash", "wall_clock", "no_model", "busy")

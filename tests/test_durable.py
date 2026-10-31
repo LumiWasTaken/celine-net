@@ -242,7 +242,7 @@ async def test_a_restart_during_a_read_only_find_ends_it_for_regenerate(db_path,
         mine = [m for m in snap["messages"] if m["role"] == "user"][-1]
         assert snap["unanswered"] == {
             "message_id": mine["id"], "turn_id": snap["turn"]["id"], "state": "interrupted",
-            "reason": "The server restarted during the answer.", "continues": False}
+            "reason": "The server restarted during the reply.", "continues": False}
         arch.block = False
         async with anyio.create_task_group() as tg:
             d = Dispatcher(store, cfg, EventBus(), lambda: Scripted(["arch__find"]), reg)

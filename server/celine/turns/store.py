@@ -260,7 +260,7 @@ def _cut(c: sqlite3.Connection, store, rows, registry) -> None:
             "SELECT tc.name, tc.state, tc.mutating, tc.mode FROM tool_calls tc "
             "JOIN messages m ON m.id = tc.message_id WHERE m.turn_id = ? AND "
             "tc.state IN ('pending','running','detached')", (row["id"],)).fetchall()
-        why = restarted(open_calls, flags) or "The server restarted during the answer."
+        why = restarted(open_calls, flags) or "The server restarted during the reply."
         c.execute("UPDATE turns SET worker_id=NULL WHERE id=?", (row["id"],))
         set_state(c, store, row["conversation_id"], row["id"], "interrupted", why, "restart")
 
