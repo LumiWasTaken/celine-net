@@ -61,7 +61,7 @@ MOVED=''
 if [ -n "$APP" ] && [ -s "$CONF/app" ] && [ "$(cat "$CONF/app")" != "$APP" ]; then
   MOVED=1
   if [ -z "$JSON$STATUS" ]; then
-    printf 'This Mac belongs to the Celine at %s.\nGoing on moves it to %s, and the other one loses it.\nPress Return to go on, or Ctrl+C to stop. ' \
+    printf 'This Mac belongs to the Celine at %s.\nContinuing moves it to %s, and the other one loses it.\nPress Return to continue, or Ctrl+C to stop. ' \
       "$(cat "$CONF/app")" "$APP"
     read -r _ </dev/tty 2>/dev/null || true
   fi

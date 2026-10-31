@@ -630,6 +630,6 @@ export function Work({ cid, convo, active, closed }: { cid: string; convo: Retur
   return (
     <Talk cid={cid} convo={convo} active={active} name={name} user=""
           send={(text, attachments) => conversationApi.send(cid, text, attachments)}
-          closed={closed ? 'It is in the Trash. Restore it to go on.' : null} />
+          closed={closed ? 'It is in the Trash. Restore it to continue.' : null} />
   )
 }

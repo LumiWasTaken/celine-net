@@ -496,7 +496,7 @@ async def ensure_writable(store, cid: str) -> None:
         "SELECT trashed_at FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
     if trashed:
         from ..errors import CelineError
-        raise CelineError("deleted", "This conversation is deleted. Restore it to go on.",
+        raise CelineError("deleted", "This conversation is deleted. Restore it to continue.",
                           409)
     await archive(store, cid, False)
 
