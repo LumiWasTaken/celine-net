@@ -442,8 +442,11 @@ function GroupStep({ members, view, error, reload, update, save, back, next, for
   return (
     <StepCard title={members[0]!.group_label} back={back} next={next} onNext={onNext} disabled={!view && (error ?? 'Loading')}>
       {!view ? <Pending error={error} reload={reload} />
-        : members.map(f => <GroupPart key={f.id} feature={f} view={view} update={update} form={forms[f.id]}
-                                      setForm={v => setForm(f.id, v)} saveRef={refOf(f.id)} />)}
+        : <>
+          {members.length > 1 && <p className="onb__line">Both can be on at the same time.</p>}
+          {members.map(f => <GroupPart key={f.id} feature={f} view={view} update={update} form={forms[f.id]}
+                                       setForm={v => setForm(f.id, v)} saveRef={refOf(f.id)} />)}
+        </>}
     </StepCard>
   )
 }
@@ -463,13 +466,13 @@ function GroupPart({ feature: f, view, update, form, setForm, saveRef }: {
   useServerEvents(ev => { if (savedFor(ev, f.id)) void check.run() })
   const Form = formOf(f)
   const tone = stateTone(f, true)
-  return <>
+  return <div className="onb__part">
     <SubHead>{f.choice || f.label}</SubHead>
     {f.about && <p className="onb__about">{f.about}</p>}
     {tone && <span className="onb__state"><Dot tone={tone} /><span className="onb__detail">{f.detail}</span></span>}
     {check.error && <InlineError compact message={check.error} />}
     {Form && <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />}
-  </>
+  </div>
 }
 
 /* ── a connector's step (Discord, WhatsApp) while its connector answers: the feature is

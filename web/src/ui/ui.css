@@ -9,9 +9,9 @@
 
 /* ── Tip: one at a time, above its control ──────────────────────────────── */
 .tip {
-  position: fixed; z-index: var(--z-menu); max-width: min(22rem, calc(100vw - 2 * var(--s-2)));
-  padding: var(--s-1) var(--s-2); border-radius: var(--r-sm); background: var(--surface-4); box-shadow: var(--e-float);
-  font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-primary); pointer-events: none;
+  position: fixed; z-index: var(--z-menu); max-width: min(26rem, calc(100vw - 2 * var(--s-2)));
+  padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--surface-4); box-shadow: var(--e-float);
+  font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-primary); pointer-events: none;
   animation: fade var(--dur-fast) var(--ease);
 }
 
