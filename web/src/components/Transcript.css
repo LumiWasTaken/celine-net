@@ -11,6 +11,8 @@
   .is-transcript { max-width: none; width: min(100cqi - 2 * var(--s-4), var(--chat-col)); padding-inline: 0; margin-inline: auto; }
 }
 .msg-hers, .msg-yours { position: relative; }
+/* positioned: a row that goes fades where it was, inside the scroll (useMove) */
+.is-transcript { position: relative; }
 .msg-yours + .msg-yours { margin-top: calc(-1 * var(--s-1)); }
 .msg__face { display: inline-flex; }
 

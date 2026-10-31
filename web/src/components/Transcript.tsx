@@ -24,7 +24,7 @@ import { TILE, fileUrl, tileUrl } from '../lib/media'
 import { format } from '../lib/nav'
 import { getPref, setPref } from '../lib/prefs'
 import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Repeat, Shrink, type LucideIcon } from 'lucide-react'
-import { Button, EventLine, Fold, ICON, InlineError, LoadingRow, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey } from '../ui'
+import { Button, EventLine, Fold, ICON, InlineError, LoadingRow, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey, useMove } from '../ui'
 import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
@@ -123,6 +123,8 @@ type Props = {
   live: Live | null
   /** the live turns in the order they run: the ones after the first show "Queued" */
   queue?: Queued[]
+  /** the snapshots that brought another version (useConversation): such a change moves nothing */
+  swaps?: number
   /** replies another model wrote because the chosen one failed */
   switched: Record<string, Switched>
   /** the lines after a switch to a model that can't see images */
@@ -152,7 +154,7 @@ type T = {
 }
 
 export function Transcript(
-  { conversationId, messages, toolCalls, runs, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
+  { conversationId, messages, toolCalls, runs, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], swaps = 0, switched, imageNotices, banners = [],
     approvals = [], forming = [], note, assistant, user, onRetry, closed = false }: Props,
 ) {
   const streaming = running && turn?.state === 'streaming'
@@ -372,10 +374,18 @@ export function Transcript(
   // what the live region says: what the screen shows
   const liveWords = held ? 'Queued' : pending || running ? (waiting ?? `${assistant} is writing.`) : endWords(turn, error, closed ? null : unanswered) ?? ''
 
+  // Its rows glide to their new places and a row that goes fades where it was (useMove), as
+  // a list's rows do: an edit opens or closes, a message goes, a row comes or goes. A reply
+  // growing as it is written moves nothing; another conversation or another version (a
+  // version, an edit saved, Regenerate) is another list.
+  const box = useRef<HTMLDivElement>(null)
+  const shape = [editing, running, ghost, later.length, pending && !landed, banners.length, approvals.length, ...visible.map(m => m.id)].join('|')
+  useMove(box, shape, { leave: true, quiet: `${cidKey}|${swaps}` })
+
   return (
     <ToolRuns.Provider value={toolRuns}>
     <KeepPlace.Provider value={keep}>
-    <div className="transcript__inner is-transcript" data-cid={cidKey} data-watching={watched || undefined}>
+    <div ref={box} className="transcript__inner is-transcript" data-cid={cidKey} data-watching={watched || undefined}>
       {segments.map(seg => {
         const ids = seg.kind === 'msg' ? [seg.m.id] : seg.msgs.map(m => m.id)
         return [renderSegment(seg), ...divider(ids), ...noticesAfter(ids), ...bannersAfter(ids), ...asksAfter(ids)]
