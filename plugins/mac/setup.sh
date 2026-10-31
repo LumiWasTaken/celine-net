@@ -55,6 +55,18 @@ done
 
 say() { [ -n "$JSON$STATUS" ] || printf '== %s\n' "$*"; }
 
+# a Mac linked to another app moves to this one: say so and wait for Return first; its
+# new token (below) locks the other app out
+MOVED=''
+if [ -n "$APP" ] && [ -s "$CONF/app" ] && [ "$(cat "$CONF/app")" != "$APP" ]; then
+  MOVED=1
+  if [ -z "$JSON$STATUS" ]; then
+    printf 'This Mac belongs to the Celine at %s.\nGoing on moves it to %s, and the other one loses it.\nPress Return to go on, or Ctrl+C to stop. ' \
+      "$(cat "$CONF/app")" "$APP"
+    read -r _ </dev/tty 2>/dev/null || true
+  fi
+fi
+
 # One JSON line: gateway address, token, each server's tool count (null: no answer) and
 # the permissions it lacks, asked through the gateway so the grants are the gateway's own.
 report() {
@@ -278,6 +290,7 @@ rm -rf "$src"
 
 say token
 mkdir -p "$CONF" && chmod 700 "$CONF"
+[ -z "$MOVED" ] || rm -f "$TOKEN"
 [ -s "$TOKEN" ] || (umask 077; openssl rand -hex 32 > "$TOKEN")
 chmod 600 "$TOKEN"
 if [ -n "$APP" ]; then   # her scripts reach the app with these (README, From the Mac)
