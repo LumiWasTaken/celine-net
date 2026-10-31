@@ -155,11 +155,12 @@ def append(c: sqlite3.Connection, store, cid: str, parent: str | None, role: str
          "attachments": files.of_message(c, mid),
          "intercom": view(c, intercom_id, cid) if intercom_id is not None else None,
          "meta": meta_view(meta, role, quiet)}
+    # the version first: a client fetches the new path and skips what follows it
+    _say_if_new_version(c, store, cid, parent, mid, old_leaf)
     store.event(c, cid, MESSAGE_CREATED, {
         "message_id": mid, "parent_id": parent, "role": role, "content": text,
         "ordinal": ordinal, "author": author, "attachments": m["attachments"],
         "intercom": m["intercom"], "meta": m["meta"], "turn_id": turn_id})
-    _say_if_new_version(c, store, cid, parent, mid, old_leaf)
     return m
 
 
@@ -342,11 +343,11 @@ async def start_assistant_message(store, cid: str, parent_id: str | None,
             c.execute("UPDATE messages SET preferred_child_id=? WHERE id=?",
                       (mid, parent_id))
         c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (mid, cid))
+        _say_if_new_version(c, store, cid, parent_id, mid, old_leaf)
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": parent_id, "role": "assistant",
                      "ordinal": ordinal, "turn_id": turn_id,
                      "meta": meta_view(None, "assistant", t and t["quiet"])})
-        _say_if_new_version(c, store, cid, parent_id, mid, old_leaf)
         return mid
 
     return await store.write(fn)
@@ -578,9 +579,9 @@ async def retry(store, cid: str, message_id: str) -> tuple[str, int]:
             raise ValueError("Nothing to retry. This is the first message.")
         c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (parent, cid))
         c.execute("UPDATE messages SET preferred_child_id=NULL WHERE id=?", (parent,))
-        out = queue_turn(c, store, cid, parent, **again_as(c, msg["turn_id"], message_id))
+        # the version first, then the turn that answers on it (as regenerate)
         store.event(c, cid, VERSION_CHANGED, {"parent_id": parent, "active_leaf_id": parent})
-        return out
+        return queue_turn(c, store, cid, parent, **again_as(c, msg["turn_id"], message_id))
 
     return await store.write(fn)
 

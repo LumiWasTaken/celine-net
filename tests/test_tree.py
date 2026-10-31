@@ -97,7 +97,8 @@ async def test_an_edit_further_up_says_version_changed(store):
     await store.write(lambda c: tree.append(c, store, cid, first["id"], "assistant", "two", "model"))
     await store.write(lambda c: tree.append(c, store, cid, None, "user", "one, edited", "user"))
     events = (await view.resume(store, cid, 0))["events"]
-    assert [e["type"] for e in events][-2:] == ["message.created", "version.changed"]
+    # the version first: a client fetches the new path and skips what follows it
+    assert [e["type"] for e in events][-2:] == ["version.changed", "message.created"]
     assert sum(e["type"] == "version.changed" for e in events) == 1, "continuing never says it"
 
 
