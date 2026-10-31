@@ -425,9 +425,10 @@ this device keeps which). `usePlace()` gives a PlaceHead inside it the panel but
 **Do:** `--sidebar-w` on `--surface-1`; below 1024 px (a tablet, a phone) a Drawer from the
 left, so the page keeps its width, opened by the panel button in the head, closed by a link
 in it, the scrim, Escape and its X.
-Folding, the sidebar slides out by transform on `--dur --ease-exit`, then its column goes at
-once and the page takes the width; back, the column comes at once and the sidebar slides
-in on `--dur-slow --ease`.
+Folding, the column goes at once and the sidebar slides out over the page by transform on
+`--dur --ease-exit`; back, the column comes at once and the sidebar slides in on
+`--dur-slow --ease`. The page takes its new width at once and glides (translate) from where
+its middle was on the sidebar's curve; its heads' actions on the right edge hold still.
 **Don't:** make it a list pane (a place's list is its page); hand-build a sidebar.
 
 ### Message
@@ -489,7 +490,8 @@ Enter is slower than exit: a drawer slides in on `--dur-slow --ease` and out on
 | Primitive (`ui/motion.ts`) | For |
 |---|---|
 | `useLeave(ref, exit)` with `leave(g, OUT.x)` | anything that goes: plays the exit on a copy as React removes it |
-| `useMove(ref, on, { enter, leave, quiet, bottom })` | the children of a box glide to new places (FLIP): VirtualList, CardGrid, the toast stack, the composer's chips |
+| `useMove(ref, on, { enter, leave, quiet, bottom })` | the children of a box glide to new places (FLIP): VirtualList, CardGrid, the toast stack, the composer's chips, the transcript's rows |
+| `glideAfter(el)` | before a change that resizes `el` alone (Fold): what follows it up to its scroller glides from where it was |
 | `useReplaced(ref)` | what takes a skeleton's place fades in (LoadingRow has it) |
 | `usePush(ref, depth)` | a phone: a deeper page pushes in from the right, back reverses it (PlaceHead has it) |
 | `useSlide` (`ui/slide.ts`) | one mark that slides to the chosen item: rail, Tabs, Segmented, Radios |

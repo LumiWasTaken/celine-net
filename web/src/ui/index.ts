@@ -7,7 +7,7 @@ export { Notice, InlineError, StatusLine, LoadingRow, EmptyState, Loaded, type N
 export { Dialog, ConfirmDialog, CloseButton, Sheet, useModal } from './Dialog'
 export { Menu, MenuButton, useContextMenu, type MenuItem } from './Menu'
 export { TipLayer } from './Tip'
-export { leave, ms, curve, reduced, OUT, useLeave, useMove, type Exit } from './motion'
+export { leave, ms, curve, reduced, OUT, useLeave, useMove, glideAfter, type Exit } from './motion'
 export { Face, type FaceSize } from './Face'
 export { Viewer } from './Viewer'
 export { ListRow, ListSection, VirtualList, type VirtualListHandle } from './List'
