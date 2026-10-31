@@ -74,9 +74,13 @@ OpenAI-compatible server, and with OpenRouter or Anthropic if you have a key.
 ## Run it
 
 ```sh
+cp .env.example .env
 docker compose up -d
 docker compose exec -u celine celine cat /data/app/setup-code.txt
 ```
+
+`.env` starts her Linux box, her browser, web search and the Discord and WhatsApp
+connectors along with the app. Take out of `COMPOSE_PROFILES` what you don't want.
 
 Open http://localhost:8766, enter the setup code and pick a login (passkey, password or
 PIN). After that the setup walks you through naming her, telling her about you, connecting
@@ -88,9 +92,7 @@ put `CELINE_PUBLISH=8766` in `.env`, run `docker compose up -d` again, open
 the address you set it up at. Log in with a password or a PIN: passkeys need https or
 localhost.
 
-The box, the browser, SearXNG and the connectors are optional containers. You turn them on
-with compose profiles in `.env`, see `.env.example`. More about running it for real is in
-[docs/DEPLOY.md](docs/DEPLOY.md).
+More about running it for real is in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Just look around
 
