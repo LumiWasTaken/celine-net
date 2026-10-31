@@ -3,7 +3,9 @@ but more than that it's a custom harness built around one agent who lives on you
 A lot of things here work differently from the usual agent setups, so it's worth reading a
 bit before you dive in.
 
-![A chat with Celine](docs/screenshots/chat.jpg)
+[![A tour of Celine, with sound](docs/videos/tour.jpg)](docs/videos/tour.mp4)
+
+[Watch the tour](docs/videos/tour.mp4) (1:20, with sound)
 
 ## What's different
 
@@ -41,9 +43,28 @@ Every feature can be switched on or off on its own.
 I'd recommend giving her her own accounts for things like email and the vault, not your
 personal ones. But it's your setup, so that's up to you.
 
-| A mission | Routines | Features |
+## A look around
+
+| A chat | Her notebook | Everything she did |
 |---|---|---|
-| ![Mission](docs/screenshots/mission.jpg) | ![Routines](docs/screenshots/routines.jpg) | ![Features](docs/screenshots/features.jpg) |
+| ![A chat with her thoughts and tools](docs/screenshots/chat.jpg) | ![A note in her notebook](docs/screenshots/notebook.jpg) | ![Events](docs/screenshots/events.jpg) |
+
+| A mission | Routines | Setting up a routine |
+|---|---|---|
+| ![A mission with its plan and sub-agents](docs/screenshots/mission.jpg) | ![The night's routine runs](docs/screenshots/routines.jpg) | ![Setting up a routine](docs/screenshots/schedule-setup.jpg) |
+
+| Appearance | Features | Tools |
+|---|---|---|
+| ![Appearance settings](docs/screenshots/appearance.jpg) | ![Features](docs/screenshots/features.jpg) | ![Tools](docs/screenshots/tools.jpg) |
+
+## On your phone
+
+The whole app works on a phone: the lists open as sheets from the bottom, and a long
+press on a message opens its menu.
+
+<a href="docs/videos/phone.mp4"><img src="docs/videos/phone.jpg" alt="Celine on a phone, with sound" width="300"></a>
+
+[Watch it on a phone](docs/videos/phone.mp4) (1:12, with sound)
 
 ## Models
 
