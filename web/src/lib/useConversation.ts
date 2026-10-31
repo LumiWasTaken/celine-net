@@ -105,8 +105,9 @@ export function useConversation(conversationId: string | null) {
     if (!conversationId) return
     const cid = conversationId
     let held: Frame[] = []
-    // waiting for the snapshot; `swap`: it brings another version
-    let stale = false, swap = false
+    // waiting for a snapshot as new as `stale` (the seq that asked for it); `swap`: it brings
+    // another version
+    let stale = 0, swap = false
     // a frame id and a timeout id are separate counters: each is cancelled only as itself
     let frame = 0, timeout = 0
     const cancel = () => {
@@ -132,9 +133,11 @@ export function useConversation(conversationId: string | null) {
       onFrame: ev => {
         if (ev.type === 'resync') { held = []; seq.current = 0; snapshotAgain(cid); return }
         if (ev.type === 'snapshot') {
+          // one asked for before the version moved: the one asked for after it follows
+          if (stale && ev.seq < stale) return
           cancel(); held = []; seq.current = ev.seq
           const swapped = swap
-          stale = swap = false
+          stale = 0; swap = false
           setState(s => ({ ...apply(s, ev), swaps: s.swaps + (swapped ? 1 : 0) }))
           return
         }
@@ -144,7 +147,7 @@ export function useConversation(conversationId: string | null) {
         }
         // the version moved or a message went: the server's snapshot, never a guess
         if (ev.type === 'version.changed' || ev.type === 'message.purged') {
-          cancel(); held = []; stale = true; swap ||= ev.type === 'version.changed'
+          cancel(); held = []; stale = Math.max(1, ev.seq ?? seq.current); swap ||= ev.type === 'version.changed'
           snapshotAgain(cid); return
         }
         held.push(ev); later()
