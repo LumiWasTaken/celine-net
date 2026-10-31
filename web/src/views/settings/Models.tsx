@@ -511,6 +511,13 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
     return (list.data?.models ?? []).filter(d => !d.added)
       .filter(d => !f || d.id.toLowerCase().includes(f) || (d.name ?? '').toLowerCase().includes(f))
   }, [list.data, q])
+  // a model the server does not list: the name as typed
+  const typed = q.trim()
+  const unlisted = !!typed && !/[\s'"]/.test(typed) && !(list.data?.models ?? []).some(d => d.id === typed)
+  const addTyped = useAction(async () => {
+    await settingsApi.putModel(p.id, typed, { label: typed, ...(zdr ? { zdr: true } : {}), ...(provider.trim() ? { provider: provider.trim() } : {}) })
+    onAdded(); onClose()
+  })
   const add = useAction(async () => {
     for (const id of picked) {
       const d = list.data?.models.find(x => x.id === id)
@@ -525,10 +532,15 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
   return (
     <Dialog title={`Add models from ${p.provider.label}`} onClose={onClose} size="lg" dismissable={!add.busy}>
       <div className="dialog__form">
-        <SearchField value={q} onChange={setQ} placeholder="Search models" autoFocus />
+        <SearchField value={q} onChange={setQ} placeholder="Search models or type a model ID" autoFocus />
+        {unlisted && (
+          <Button variant="secondary" icon={Plus} loading={addTyped.busy} disabled={add.busy} onClick={() => void addTyped.run()}>
+            Add "{typed}"
+          </Button>
+        )}
         {list.error && !list.data ? <InlineError compact message={list.error} onRetry={list.reload} />
           : !list.data ? <LoadingRow label="Loading" />
-          : shown.length === 0 ? <EmptyState compact>{q ? `No model matches "${q}".` : 'Every model it has is added already.'}</EmptyState>
+          : shown.length === 0 ? (unlisted ? null : <EmptyState compact>{q ? `No model matches "${q}".` : 'Every model it has is added already.'}</EmptyState>)
           : (
             <div className="boxed-list boxed-list--dialog" style={{ '--rows': shown.length } as CSSProperties}>
               <VirtualList items={shown} estimate={44} getKey={d => d.id} resetOn={q}
@@ -555,7 +567,7 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
             </Field>
           </>
         )}
-        {add.error && <InlineError compact message={add.error} />}
+        {(add.error || addTyped.error) && <InlineError compact message={add.error ?? addTyped.error} />}
         <div className="dialog__actions">
           <Button variant="secondary" onClick={onClose} disabled={add.busy}>Cancel</Button>
           <Button variant="primary" loading={add.busy} disabled={picked.size === 0} onClick={() => void add.run()}>
