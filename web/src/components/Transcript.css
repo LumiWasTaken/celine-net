@@ -148,9 +148,3 @@
 
 /* while a conversation loads: its shape, after --dur-wait */
 .transcript-loading { animation: fade var(--dur) var(--ease) var(--dur-wait) both; }
-/* a fold that opens while you watch opens by its height (`interpolate-size`, base.css) */
-.is-transcript[data-watching] .ui-fold__body {
-  overflow: clip; transition: height var(--dur) var(--ease), opacity var(--dur) var(--ease);
-  @starting-style { height: 0; opacity: 0; }
-}
-

@@ -218,3 +218,33 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown,
     }
   })
 }
+
+/** Before a change that resizes `el` alone (a Fold opening or closing): what follows it,
+    up to the box that scrolls it, glides from where it was once the change is in. Call the
+    function it returns after the commit. What stays below the window both times does not
+    move. Skipped with reduced motion. */
+export function glideAfter(el: Element): () => void {
+  const after: Element[] = []
+  for (let at: Element | null = el; at; ) {
+    for (let s = at.nextElementSibling; s; s = s.nextElementSibling) if (!s.classList.contains('ghost')) after.push(s)
+    const up: Element | null = at.parentElement
+    at = up && up !== document.body && !/(auto|scroll)/.test(getComputedStyle(up).overflowY) ? up : null
+  }
+  // where each is laid out: its box less the glide it is in
+  const spot = (s: Element) => {
+    const r = s.getBoundingClientRect()
+    const [sx = 0, sy = 0] = s.getAnimations().length ? shift(s) : []
+    return { x: r.left - sx, y: r.top - sy, sx, sy }
+  }
+  const was = after.map(spot)
+  return () => {
+    if (reduced()) return
+    after.forEach((s, i) => {
+      const a = was[i]!, b = spot(s)
+      if (!s.isConnected || (a.x === b.x && a.y === b.y) || (a.y > innerHeight && b.y > innerHeight)) return
+      moving.get(s)?.cancel()
+      moving.set(s, s.animate([{ translate: `${a.x - b.x + b.sx}px ${a.y - b.y + b.sy}px` }, { translate: '0 0' }],
+                              { duration: ms('--dur'), easing: curve('--ease'), composite: 'add' }))
+    })
+  }
+}

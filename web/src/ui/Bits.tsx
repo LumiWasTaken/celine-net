@@ -11,6 +11,7 @@ import { Face } from './Face'
 import { cx } from './cx'
 import { ICON } from './icons'
 import { useSlide } from './slide'
+import { OUT, glideAfter, leave, reduced, rise, useLeave } from './motion'
 import { getJson, setJson } from '../lib/prefs'
 
 /** one of the eight avatar tints (--av-1..8), the same for the same key */
@@ -123,7 +124,8 @@ export function Thoughts({ children, className }: { children: ReactNode; classNa
 /* ── Fold: a block of its own that opens and closes (its thinking above a reply). The head
    is a button with the DisclosureArrow and says what is inside; `defaultOpen` is how it
    starts (the Appearance setting); the body is the content itself. With `remember` this
-   device keeps the reader's click (lib/prefs). ── */
+   device keeps the reader's click (lib/prefs). Clicked, the body rises in or fades where
+   it was, and what is below it glides (glideAfter). ── */
 export function Fold({ title, icon: Icon, defaultOpen = false, remember, children, className }: {
   /** the head's words: what is inside ("The agent's thoughts") */
   title: ReactNode
@@ -137,20 +139,35 @@ export function Fold({ title, icon: Icon, defaultOpen = false, remember, childre
 }) {
   const key = remember && `fold:${remember}`
   const [open, setOpen] = useState(() => (key ? getJson<boolean | null>(key, null) : null) ?? defaultOpen)
+  const box = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const glide = useRef<(() => void) | null>(null)
   const toggle = () => {
+    if (box.current) glide.current = glideAfter(box.current)
     setOpen(!open)
     if (key) setJson(key, !open === defaultOpen ? null : !open)
   }
+  useLayoutEffect(() => {
+    if (!glide.current) return
+    glide.current()
+    glide.current = null
+    if (body.current && !reduced()) rise(body.current)
+  }, [open])
   return (
-    <div className={cx('ui-fold', className)}>
+    <div ref={box} className={cx('ui-fold', className)}>
       <button type="button" className="ui-fold__head" aria-expanded={open} onClick={toggle}>
         {Icon && <Icon size={ICON.sm} aria-hidden />}
         <span className="ui-fold__title">{title}</span>
         <DisclosureArrow />
       </button>
-      {open && <div className="ui-fold__body">{children}</div>}
+      {open && <FoldBody ref={body}>{children}</FoldBody>}
     </div>
   )
+}
+
+function FoldBody({ ref, children }: { ref: React.RefObject<HTMLDivElement | null>; children: ReactNode }) {
+  useLeave(ref, g => leave(g, OUT.fade))
+  return <div ref={ref} className="ui-fold__body">{children}</div>
 }
 
 /* ── Facts: what a thing is, as labels and values. In rows (a label beside its value,
