@@ -208,7 +208,10 @@ export function VirtualList<T>({
   const spacer = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the keys change with the items, getKey is a new function each render
   const keys = useMemo(() => new Set(items.map((it, i) => String(getKey(it, i)))), [items])
-  useMove(spacer, items, { enter: true, leave: true, quiet: resetOn, keys })
+  // the list a new `resetOn` names is the one whose items come next (a fetch lands later)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- taken when the items change, not when resetOn does
+  const listed = useMemo(() => resetOn, [items])
+  useMove(spacer, items, { enter: true, leave: true, quiet: listed, keys })
   const firstReset = useRef(true)
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [margin, setMargin] = useState(0)
