@@ -2,13 +2,18 @@ copies = "gateway:copies"
 # every field but the line is filled by the Mac's report (gateway.py), never typed
 
 [[fields]]
+key = "publish"
+label = "Run on this computer, in the Celine folder"
+type = "copy"
+
+[[fields]]
 key = "command"
-label = "Run on the Mac"
+label = "Run in the Terminal on the Mac"
 type = "copy"
 
 [[fields]]
 key = "url"
-filled = "Run the setup line on the Mac"
+filled = "The Mac is not connected yet"
 label = "Address"
 type = "text"
 default = ""
@@ -16,7 +21,7 @@ word = true
 
 [[fields]]
 key = "agents"
-filled = "Run the setup line on the Mac"
+filled = "The Mac is not connected yet"
 label = "Agents"
 type = "text"
 default = ""
@@ -24,7 +29,7 @@ word = true
 
 [[fields]]
 key = "share"
-filled = "Run the setup line on the Mac"
+filled = "The Mac is not connected yet"
 label = "Shares"
 type = "text"
 default = ""
@@ -32,14 +37,14 @@ word = true
 
 [[fields]]
 key = "about"
-filled = "Run the setup line on the Mac"
+filled = "The Mac is not connected yet"
 label = "About This Mac"
 type = "text"
 default = ""
 
 [[fields]]
 key = "token"
-filled = "Run the setup line on the Mac"
+filled = "The Mac is not connected yet"
 label = "Token"
 type = "secret"
 

@@ -142,9 +142,13 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         # the app only on localhost: no line, what to do first and the app's address field
         view = (await c.get("/api/forms/mac")).json()
         assert view["note"] == gateway.LOCAL and view["address"] is True
-        assert [f["key"] for f in view["fields"]] == [], "the Mac fills every other field"
+        assert [f["key"] for f in view["fields"]] == ["publish"], "the Mac fills every other field"
+        assert view["fields"][0]["value"] == gateway.PUBLISH
+        assert [a["id"] for a in view["actions"]] == ["check"], "Set up again only once connected"
         assert view["values"] == {} and view["secrets"] == {}
-        assert await _copies(services, p) == {"note": gateway.LOCAL}, "no field for her"
+        assert await _copies(services, p) == {
+            "note": gateway.LOCAL,
+            "copy": {"Run on this computer, in the Celine folder": gateway.PUBLISH}}, "the line to publish, for her too"
         # on the network: one line, a token that works once, the key never in the line
         await saves.address(services, {"origin": "http://192.168.1.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
@@ -161,7 +165,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert gateway.PRESET not in served.text and served.text.startswith("#!/bin/bash")
         assert (await c.get(f"/api/plugins/mac/setup/{m[1]}")).status_code == 404, "once"
         # an hour later it is gone
-        late = (await _copies(services, p))["copy"]["Run on the Mac"].split("/")[-1].split()[0]
+        late = (await _copies(services, p))["copy"]["Run in the Terminal on the Mac"].split("/")[-1].split()[0]
         gateway._tokens[late] -= gateway.SETUP_SECONDS + 1
         assert (await c.get(f"/api/plugins/mac/setup/{late}")).status_code == 404
         # a served copy always has the app and the key in it
@@ -184,13 +188,13 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
             return json.loads((await sk.read(ctx, target="forms.mac")).content)
         chat = await conversations.create(store)
         agent = await conversations.create(store, agent_of=chat, agent_name="a", kind="agent")
-        assert (await read_in(chat))["copy"]["Run on the Mac"].startswith("curl -fsSL ")
+        assert (await read_in(chat))["copy"]["Run in the Terminal on the Mac"].startswith("curl -fsSL ")
         ctx = ToolContext(conversation_id=chat, turn_id="t", tool_call_id="k", store=store,
                           config=cfg, emit=None)  # type: ignore[arg-type]
         no = await sk.propose(ctx, target="forms.mac", changes={"url": "http://x:8765"}, why="t")
         assert no.is_error and no.content.startswith("Not a setting of forms.mac: url.")
         assert "copy" not in await read_in(agent) and "note" not in await read_in(agent)
-        assert devices(cfg)["mac"].why == "Her Mac: Run the setup line on the Mac."
+        assert devices(cfg)["mac"].why == "Her Mac: The Mac is not connected yet."
         assert about(cfg) is None
         before = next(f for f in (await c.get("/api/features")).json()["catalog"]
                       if f["id"] == "mac")
@@ -360,7 +364,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
 
     cfg.settings.plugins["mac"] = {}
     out = await p.attr("gateway:check")(services, p, None)
-    assert out["lines"][1] == {"text": "Shell: Run the setup line on the Mac.", "tone": "error"}
+    assert out["lines"] == [{"text": gateway.NOT_YET, "tone": "warn"}], "one line before it connects"
 
 
 async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
@@ -382,12 +386,12 @@ async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
         await saves.address(services, {"origin": "http://192.168.1.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
         command = next(f for f in view["fields"] if f["key"] == "command")
-        assert command["label"] == "Run on the Mac"
+        assert command["label"] == "Run in the Terminal on the Mac"
         token = command["value"].split("/setup/")[1].split()[0]
         assert (await c.get(f"/api/plugins/mac/setup/{token}")).status_code == 200
         got = (await c.get("/api/features")).json()
         mac = next(f for f in got["catalog"] if f["id"] == "mac")
         assert got["features"]["mac"] is True
         assert (mac["state"], mac["blocks"]) == ("unset", False)
-        assert mac["detail"] == "Run the setup line on the Mac."
+        assert mac["detail"] == "The Mac is not connected yet."
         tg.cancel_scope.cancel()

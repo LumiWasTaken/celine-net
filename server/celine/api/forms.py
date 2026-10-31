@@ -51,8 +51,10 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
         copies = await p.attr(ref)(services_of(request), p)
     note = copies.pop("note", None) or p.form.get("note")
     ask = copies.pop("address", None)
+    hide = set(copies.pop("hide", ()))      # actions that do nothing now (the plugin says)
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root, copies),
-           "actions": form.actions_view(p.form.get("actions", [])),
+           "actions": form.actions_view([a for a in p.form.get("actions", [])
+                                         if a["id"] not in hide]),
            "version": etag(response, version(saves.form_version(s, p))),
            "saved": bool(s.saved.get(p.id)),
            "running": p.data is not None}

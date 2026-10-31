@@ -46,9 +46,13 @@ LINK = "link"                       # its secret: var/secrets/mac.link.key
 SCRIPT = Path(__file__).with_name("setup.sh")
 PRESET = "APP='' KEY='' JSON='' STATUS=''"      # setup.sh's line a served copy fills in
 SETUP_SECONDS = 3600
-LOCAL = ("Her Mac cannot reach localhost. Publish the app on your network "
-         "(CELINE_PUBLISH=8766 in .env, then docker compose up -d) and enter its network address.")
-WAITING = "Waiting for the Mac."
+LOCAL = ("This page is open at localhost, and her Mac cannot reach that. First run the line "
+         "below on this computer, in the Celine folder. Then type the address her Mac can "
+         "reach, such as http://192.168.1.20:8766, and press Check. The setup line for the "
+         "Mac shows up here.")
+PUBLISH = "echo CELINE_PUBLISH=8766 >> .env && docker compose up -d"
+WAITING = "Run the setup line in the Terminal on the Mac. This page shows when it is connected."
+NOT_YET = "Not connected yet."
 _tokens: dict[str, float] = {}      # a setup line's token -> when it stops working
 _again: set[str] = set()            # plugins whose line Set up again shows until a report
 NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser",
@@ -87,14 +91,14 @@ async def copies(services, p) -> dict[str, str]:
         return {"note": " ".join([note, *(x["text"] for x in off)])}
     app = address.base(cfg)
     if address.is_loopback(app):
-        return {"note": LOCAL, "address": "ask"}
+        return {"note": LOCAL, "address": "ask", "publish": PUBLISH, "hide": ["again"]}
     now = time.monotonic()
     for t in [t for t, end in _tokens.items() if end < now]:
         del _tokens[t]
     token = random.token_urlsafe(32)
     _tokens[token] = now + SETUP_SECONDS
     return {"command": f"curl -fsSL {shlex.quote(f'{app}/api/plugins/{p.id}/setup/{token}')}"
-                       f" | bash", "note": WAITING}
+                       f" | bash", "note": WAITING, "hide": ["again"]}
 
 
 async def again(services, p, _input) -> dict[str, Any]:
@@ -208,6 +212,8 @@ async def events(request: Request) -> dict[str, Any]:
 async def check(services, p, _input) -> dict[str, Any]:
     """Each server as the app sees it now (its tools, or why it does not answer, as said),
     and each macOS permission the screen server says it lacks, with where it is granted."""
+    if not (services.cfg.settings.plugins.get(p.id) or {}).get("url"):
+        return {"ok": False, "sentence": "", "lines": [{"text": NOT_YET, "tone": "warn"}]}
     _, why = plugin_servers(services.cfg, p)
     lines: list[dict[str, str]] = []
     for sid in p.manifest["servers"]:

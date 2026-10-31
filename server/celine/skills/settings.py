@@ -103,6 +103,7 @@ async def _copies(app, pl) -> dict[str, Any]:
         return {}
     got = dict(await pl.attr(ref)(app, pl))
     got.pop("address", None)        # the app's address field: the page's, not hers
+    got.pop("hide", None)           # the page's actions, not hers
     out: dict[str, Any] = {"note": got.pop("note")} if "note" in got else {}
     labels = {f["key"]: f["label"] for f in pl.form["fields"]}
     if got:
