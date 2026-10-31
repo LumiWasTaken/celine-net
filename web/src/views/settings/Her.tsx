@@ -27,7 +27,7 @@ import { GeneralFields } from './General'
 import { Page } from './parts'
 import './settings.css'
 
-export const PRONOUNS = [{ value: 'she', label: 'She' }, { value: 'he', label: 'He' }, { value: 'they', label: 'They' }]
+export const PRONOUNS = [{ value: 'she', label: 'She' }, { value: 'he', label: 'He' }, { value: 'they', label: 'They' }, { value: 'it', label: 'It' }]
 
 const herPage: Route = { section: 'settings', page: 'agent' }
 const editRoute = (key: string, history = false): Route => ({ section: 'settings', page: 'agent', edit: key, ...(history && { history }) })

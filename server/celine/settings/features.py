@@ -80,8 +80,8 @@ class Feature:
     tier: str = "base"               # "base" or "user" (TIERS)
 
 
-# the onboarding's shared steps: id -> its title (cfg.substitute fills the pronoun)
-GROUPS = {"computer": "{{Her}} computer"}
+# the onboarding's shared steps: id -> its title (cfg.substitute fills the name)
+GROUPS = {"computer": "{{name}}'s computer"}
 
 # the tiers in their order: id -> its heading
 TIERS = {"core": "Core", "base": "Base modules", "user": "User modules"}
@@ -255,12 +255,13 @@ def seed() -> dict[str, bool]:
     return {f.id: False for f in catalog() if needs_service(f) or not f.start_on}
 
 
-def view(f: Feature) -> dict[str, Any]:
-    """The static shape the client gets (no probe)."""
-    return {"id": f.id, "label": f.label, "needs": f.needs, "about": f.about,
-            "off_when": f.off_when, "places": list(f.places), "pages": list(f.pages),
+def view(f: Feature, fill=lambda text: text) -> dict[str, Any]:
+    """The static shape the client gets (no probe); `fill` puts its name and pronouns in
+    (cfg.substitute)."""
+    return {"id": f.id, "label": fill(f.label), "needs": fill(f.needs), "about": fill(f.about),
+            "off_when": fill(f.off_when), "places": list(f.places), "pages": list(f.pages),
             "setup": f.setup, "form": f.form, "kbs": list(f.kbs), "archive": f.archive,
-            "warn": f.warn, "after": f.after, "group": f.group, "choice": f.choice, "tier": f.tier,
+            "warn": fill(f.warn), "after": f.after, "group": f.group, "choice": fill(f.choice), "tier": f.tier,
             "step": has_step(f)}
 
 

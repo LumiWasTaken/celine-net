@@ -88,7 +88,8 @@ async def run_action(request: Request, id: str, action: str) -> dict:
     p = _plugin(id)
     a = next((a for a in p.form.get("actions", []) if a["id"] == action), None)
     if a is None:
-        raise NotFound(f"There is no action '{action}' on {p.manifest['label']}.")
+        raise NotFound(f"There is no action '{action}' on "
+                       f"{services_of(request).cfg.substitute(p.manifest['label'])}.")
     body = await json_body(request, allow=("input",)) if await request.body() else {}
     if p.data is None:
         raise Busy(f"{p.manifest['label']} is not running.")

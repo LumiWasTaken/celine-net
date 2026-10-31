@@ -194,7 +194,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         no = await sk.propose(ctx, target="forms.mac", changes={"url": "http://x:8765"}, why="t")
         assert no.is_error and no.content.startswith("Not a setting of forms.mac: url.")
         assert "copy" not in await read_in(agent) and "note" not in await read_in(agent)
-        assert devices(cfg)["mac"].why == "Her Mac: The Mac is not connected yet."
+        assert devices(cfg)["mac"].why == "Celine's Mac: The Mac is not connected yet."
         assert about(cfg) is None
         before = next(f for f in (await c.get("/api/features")).json()["catalog"]
                       if f["id"] == "mac")
@@ -249,7 +249,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert seen and all(x == (["mac"], None) for x in seen), \
             "a page that reloads on the event reads new states"
         assert cfg.settings.plugins["mac"]["about"] == facts
-        assert about(cfg) == f"Her Mac: {facts}."
+        assert about(cfg) == f"Celine's Mac: {facts}."
         mac = devices(cfg)["mac"]      # the drones' device: its password the token, its key the link
         assert (mac.url, mac.password, mac.key, mac.why) == (
             "http://127.0.0.1:4096", "mac-token-1", key, None)

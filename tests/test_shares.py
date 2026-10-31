@@ -458,7 +458,7 @@ def test_a_share_on_her_mac_goes_through_its_share_server(app, mac, web, clock):
     assert c.get(f"/share/{t}/").text == "<h1>Mac</h1>"
     port = free_port()
     t = make(app, port=port, public=True, device="mac")["token"]
-    assert f"Nothing is running on port {port} on Her Mac right now." in \
+    assert f"Nothing is running on port {port} on Celine's Mac right now." in \
         c.get(f"/share/{t}/").text
     with pytest.raises(RuntimeError, match="No file"):
         make(app, path="nothing.mp4", device="mac")
@@ -469,7 +469,7 @@ def test_a_share_on_her_mac_goes_through_its_share_server(app, mac, web, clock):
     out = anyio.run(lambda: shell.share(ctx, title="Mac panel", port=web, device="mac"))
     assert not out.is_error, out.content
     assert out.content.endswith("at shell__unshare.")
-    assert f"\"Mac panel\", port {web} on Her Mac, answers" in \
+    assert f"\"Mac panel\", port {web} on Celine's Mac, answers" in \
         anyio.run(lambda: shell.list_shares(ctx)).content
     out = anyio.run(lambda: shell.share(ctx, title="x", port=web, device="pc"))
     assert out.is_error and out.content == "pc is not one of your devices that is on. Yours: mac."

@@ -251,7 +251,7 @@ class Config:
 # it, it (possessive), itself, them (the object) for each choice of a character's
 # pronouns
 PRONOUNS = {"she": ("she", "her", "herself", "her"), "he": ("he", "his", "himself", "him"),
-            "they": ("they", "their", "themselves", "them")}
+            "they": ("they", "their", "themselves", "them"), "it": ("it", "its", "itself", "it")}
 
 
 def _is(v: Any, t: Any) -> bool:

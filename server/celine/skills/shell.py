@@ -175,11 +175,11 @@ def program_of(res: dict) -> tuple[str | None, int | None]:
     return chosen["name"], chosen.get("pid")
 
 
-def _shown(port: int | None, path: str | None, device: str | None) -> str:
+def _shown(port: int | None, path: str | None, device: str | None, cfg=None) -> str:
     """What a share shows, in her words: a port or a path, in her box or on a device."""
     what = f"port {port}" if port is not None else \
         path if device is not None else shellbox.home_short(path)
-    return what if device is None else f"{what} on {devices.label(device)}"
+    return what if device is None else f"{what} on {devices.label(device, cfg)}"
 
 
 def shown_name(p: dict) -> str:
@@ -811,7 +811,7 @@ class Shell:
                 return ToolResult(content=f"{mine[device].label} has no share server: its "
                                           f"Shares address in Settings is empty.",
                                   is_error=True)
-        what = _shown(port, rel, device)
+        what = _shown(port, rel, device, self.cfg)
         if public and (no := await self._public(ctx, title, what, hours)):
             return ToolResult(content=no, is_error=True)
         try:
@@ -871,7 +871,7 @@ class Shell:
         states = [await shares.state(self.cfg, ctx.store, r) for r in rows]
         tz = zone(self.cfg)
         lines = [f"- {r['token']}: \"{r['title']}\", "
-                 + _shown(r["port"], r["path"], r["device"])
+                 + _shown(r["port"], r["path"], r["device"], self.cfg)
                  + (", public" if r["public"] else "")
                  + (f", ended {when(shares.end_of(r), tz)}" if st == "ended" else
                     (", answers" if st == "live" else ", nothing answers")

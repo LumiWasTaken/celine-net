@@ -1,8 +1,8 @@
 # Her own computer, a Mac: the four servers setup.sh runs behind its gateway, filled from
 # the form (settings.toml): ${URL} is the Address, ${TOKEN} the Token; and its drones.
 id = "mac"
-label = "Her Mac"
-about = "Her own Mac: its screen, a shell and its files, and a browser."
+label = "{{name}}'s Mac"
+about = "{{name}}'s own Mac: its screen, a shell and its files, and a browser."
 off_when = "Turn it off if the Mac is off or nobody is logged in."
 group = "computer"
 choice = "Own computer"
@@ -18,7 +18,7 @@ url      = "${AGENTS}"
 password = "${TOKEN}"
 share    = "${SHARE}"           # share.js (setup.sh): her shares of its ports and files, shares.py
 key      = "link"
-label    = "Her Mac"
+label    = "{{name}}'s Mac"
 about    = "${ABOUT}"           # what setup.sh reported of the Mac (gateway.py about)
 
 [servers.macscreen]               # Peekaboo: see, click, type, menus, windows

@@ -171,8 +171,8 @@ async def probe(cfg, services) -> dict:
     return {"state": "ready", "detail": "The shellbox answers.", "blocks": False}
 
 
-def down_words(port: int, device: str | None = None) -> str:
-    where = "in the shellbox" if device is None else f"on {devices.label(device)}"
+def down_words(port: int, device: str | None = None, cfg=None) -> str:
+    where = "in the shellbox" if device is None else f"on {devices.label(device, cfg)}"
     return f"Nothing is running on port {port} {where} right now."
 
 
@@ -426,7 +426,7 @@ async def _forward(request: Request, cfg, store, row: dict, rest: str) -> Respon
     port = row["port"]
     got = await tunnel(cfg, port, row["device"])
     if got is None:
-        return _page(502, down_words(port, row["device"]))
+        return _page(502, down_words(port, row["device"], cfg))
     sock, reset = got
     if reset != row["reset"]:
         sock.close()
@@ -447,7 +447,7 @@ async def _forward(request: Request, cfg, store, row: dict, rest: str) -> Respon
             headers=head, content=request.stream()))
     except (httpcore.ProtocolError, httpcore.NetworkError, OSError):
         await conn.aclose()
-        return _page(502, down_words(port, row["device"]))
+        return _page(502, down_words(port, row["device"], cfg))
 
     async def body():
         try:
@@ -480,7 +480,7 @@ async def _file(request: Request, cfg, store, row: dict, rest: str) -> Response:
     except httpx.HTTPError:
         await client.aclose()
         return _page(502, BOX_DOWN if row["device"] is None else
-                     f"{devices.label(row['device'])} is not answering right now.")
+                     f"{devices.label(row['device'], cfg)} is not answering right now.")
     if r.headers.get("x-shellbox-reset", "") != row["reset"] or \
             r.status_code not in (200, 206, 416):
         await r.aread()

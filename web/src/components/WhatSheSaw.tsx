@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { conversationApi, type Message, type SentRequest } from '../lib/api'
 import { contextApi, type OnHerMind } from '../lib/context'
-import { usePronouns } from '../lib/name'
+import { useOwner } from '../lib/name'
 import { errorText, num } from '../lib/format'
 import { Button, InlineError, LoadingRow, Sheet, StatusLine, useCopied } from '../ui'
 import './Transcript.css'
@@ -68,14 +68,14 @@ export function WhatSheSaw({ conversationId, steps, title, onClose }: {
 
 /* its mood, the gap */
 function MindView({ mind }: { mind: OnHerMind }) {
-  const { possessive } = usePronouns()
+  const owner = useOwner()
   const lines = [
     // the server's line already starts with "mood:"
     ...(mind.mood ? [mind.mood.charAt(0).toUpperCase() + mind.mood.slice(1)] : []),
     ...(mind.gap ? [mind.gap] : []),
   ]
   if (!lines.length) return null
-  return <Block label={`On ${possessive} mind`}>{lines.join('\n')}</Block>
+  return <Block label={`On ${owner} mind`}>{lines.join('\n')}</Block>
 }
 
 function StepView({ n, step }: { n: number | null; step: Step }) {

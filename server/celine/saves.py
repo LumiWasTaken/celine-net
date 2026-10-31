@@ -210,7 +210,7 @@ async def plugin_form(app, p: plugins.Plugin, values: Any, secrets: Any,
     runner again, so its servers run with what was saved."""
     s = app.cfg.settings
     async with write.lock():
-        files.check_version(p.manifest["label"], form_version(s, p), if_match)
+        files.check_version(app.cfg.substitute(p.manifest["label"]), form_version(s, p), if_match)
         clean = form.validate(p.id, p.form["fields"], values)
         checked = form.check_secrets(p.id, p.form["fields"], secrets)
         if checked and s.secrets_root is None:

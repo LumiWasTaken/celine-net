@@ -41,7 +41,7 @@ def devices(cfg) -> dict[str, Device]:
         password = form.fill(cfg, p.id, fields, str(d.get("password", "")), empty)
         share = form.fill(cfg, p.id, fields, str(d.get("share", "")), [])
         key = (form.read_secret(cfg, p.id, d["key"]) or "") if d.get("key") else ""
-        label = _label(p)
+        label = cfg.substitute(_label(p))
         servers = [form.fill(cfg, p.id, fields, str(s.get("url", "")), [])
                    for s in (p.manifest.get("servers") or {}).values() if isinstance(s, dict)]
         out[p.id] = Device(p.id, label, url, password, key, str(d.get("log", "")), share,
@@ -74,12 +74,14 @@ def _hosts(urls) -> frozenset[str]:
     return frozenset(out)
 
 
-def label(device: str) -> str:
-    """A device's label, on or not; its name when no plugin has it."""
+def label(device: str, cfg=None) -> str:
+    """A device's label, on or not; its name when no plugin has it. With `cfg` its
+    `{{name}}` filled; without, a prompt's own substitute fills it."""
     from . import plugins
     p = plugins.get(device)
-    return _label(p) if p is not None and isinstance(p.manifest.get("drones"), dict) \
+    out = _label(p) if p is not None and isinstance(p.manifest.get("drones"), dict) \
         else device
+    return cfg.substitute(out) if cfg is not None else out
 
 
 def _label(p) -> str:

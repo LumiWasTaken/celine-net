@@ -29,7 +29,7 @@ import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
 import { Status, TurnEnd, endWords } from './Status'
-import { capital, usePronouns } from '../lib/name'
+import { capital, useOwner, usePronouns } from '../lib/name'
 import { useHer } from '../lib/her'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
@@ -216,7 +216,8 @@ export function Transcript(
   const her = useHer()
   // by its name, as chosen ("What Celine saw")
   const sawTitle = `What ${her?.name || words.subject} saw`
-  const thoughtsTitle = `${capital(words.possessive)} thoughts`
+  const owner = useOwner()
+  const thoughtsTitle = `${capital(owner)} thoughts`
   // the message being written now: its row keeps its place, empty
   const liveId = running ? live?.message_id ?? (streaming ? last?.id : undefined) : undefined
   const thoughtsOf = (msgs: Message[]) => {

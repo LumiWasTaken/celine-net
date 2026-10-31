@@ -28,7 +28,7 @@ import { format, refHref } from '../lib/nav'
 import { intercomApi } from '../lib/intercom'
 import { ConversationReminders } from '../lib/reminders'
 import { useAction } from '../lib/useAction'
-import { usePronouns } from '../lib/name'
+import { useOwner } from '../lib/name'
 import { useNow } from '../lib/useNow'
 import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
 import { Button, Dot, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
@@ -696,7 +696,7 @@ export function ShareCards({ cards }: { cards: ShareCardData[] }) {
 }
 
 function ShareCard({ card }: { card: ShareCardData }) {
-  const { possessive } = usePronouns()
+  const owner = useOwner()
   const res = useResource(signal => sharesApi.get(card.token, signal), [card.token], { events: shareEvent(card.token) })
   const s = res.data
   const now = useNow(!!s && s.state !== 'ended')
@@ -713,7 +713,7 @@ function ShareCard({ card }: { card: ShareCardData }) {
         <span className="artcard__main">
           <span className="artcard__title">{card.title}</span>
           <span className="artcard__sub">
-            {dot ? <Dot tone={dot.tone} text={ended ? dot.label : `${dot.label}, ${duration(left)} left`} /> : `Shared from ${possessive} box`}
+            {dot ? <Dot tone={dot.tone} text={ended ? dot.label : `${dot.label}, ${duration(left)} left`} /> : `Shared from ${owner} box`}
           </span>
         </span>
         {s?.public && <span className="artcard__open" title="Public" role="img" aria-label="Public"><Globe size={ICON.sm} aria-hidden /></span>}
