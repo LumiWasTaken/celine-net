@@ -131,7 +131,9 @@ async def test_a_call_by_name_is_checked_against_the_real_schema(store):
     spec = reg.tools["mac__tool02"]
     assert rows[0][:2] == ("mac__tool02", "error")
     assert rows[0][2] == ("invalid arguments: missing command; unexpected cmd\nThe tool: "
-                          + json.dumps(spec.as_wire()["function"], ensure_ascii=False))
+                          + json.dumps({"name": "mac__tool02",
+                                        "parameters": spec.as_wire()["function"]["parameters"]},
+                                       ensure_ascii=False)), "its parameters, not its description"
     assert rows[1][:2] == ("mac__tool02", "ok") and RAN == [{"tool": 2, "command": "sw_vers"}]
 
 

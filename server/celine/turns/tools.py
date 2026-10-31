@@ -227,9 +227,10 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return no
     args = call["args"]
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
-        # a tool sent by name: its parameters with the error
-        full = "" if spec.skill in CORE else \
-            "\nThe tool: " + json.dumps(spec.as_wire()["function"], ensure_ascii=False)
+        # a tool sent by name: its name and parameters with the error, not its description
+        fn = spec.as_wire()["function"]
+        full = "" if spec.skill in CORE else "\nThe tool: " + json.dumps(
+            {"name": fn["name"], "parameters": fn.get("parameters")}, ensure_ascii=False)
         return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
                                    is_error=True), None
 
