@@ -3,9 +3,7 @@ but more than that it's a custom harness built around one agent who lives on you
 A lot of things here work differently from the usual agent setups, so it's worth reading a
 bit before you dive in.
 
-[![A tour of Celine, with sound](docs/videos/tour.jpg)](docs/videos/tour.mp4)
-
-[Watch the tour](docs/videos/tour.mp4) (1:20, with sound)
+https://github.com/user-attachments/assets/TOUR_VIDEO
 
 ## What's different
 
@@ -62,9 +60,7 @@ personal ones. But it's your setup, so that's up to you.
 The whole app works on a phone: the lists open as sheets from the bottom, and a long
 press on a message opens its menu.
 
-<a href="docs/videos/phone.mp4"><img src="docs/videos/phone.jpg" alt="Celine on a phone, with sound" width="300"></a>
-
-[Watch it on a phone](docs/videos/phone.mp4) (1:12, with sound)
+https://github.com/user-attachments/assets/PHONE_VIDEO
 
 ## Models
 
