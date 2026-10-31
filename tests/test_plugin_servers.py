@@ -329,7 +329,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     skills = {"macscreen": SimpleNamespace(status="up", error=None, client=Client()),
               "macshell": SimpleNamespace(status="down", client=None,
                                           error="The macshell server did not answer at "
-                                                "mac:8765. Start it, or fix the address.")}
+                                                "mac:8765. Make sure it is running and the address is right, then press Check.")}
     tools = {f"macscreen__t{i}": SimpleNamespace(skill="macscreen") for i in range(26)}
     services = SimpleNamespace(cfg=cfg, mcp=SimpleNamespace(skills=skills),
                                registry=SimpleNamespace(tools=tools))
@@ -338,8 +338,8 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
                "Screen & System Audio Recording and Accessibility.")
     assert out == {"ok": False, "sentence": turn_on, "lines": [
         {"text": "Screen: 26 tools", "tone": "ok"},
-        {"text": "Shell: The macshell server did not answer at mac:8765. Start it, or fix "
-                 "the address.", "tone": "error"},
+        {"text": "Shell: The macshell server did not answer at mac:8765. Make sure it is running "
+                 "and the address is right, then press Check.", "tone": "error"},
         {"text": "Browser: starting", "tone": "error"},
         {"text": "Files: starting", "tone": "error"},
         {"text": "Screen Recording is off: no screenshots.", "tone": "error"},

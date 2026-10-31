@@ -191,7 +191,7 @@ ol{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4) var(--s-3) var(--s-7);bac
 
   <section id="v-codes" hidden>
     <h2>Recovery codes</h2>
-    <p>Each code works once. The app does not show them again.</p>
+    <p>Save these codes somewhere safe. Each one works once, and the app does not show them again.</p>
     <ol id="codes"></ol>
     <div class="row">
       <button id="copy" class="secondary" type="button">Copy</button>
@@ -236,12 +236,12 @@ async function post(path, body) {
   try {
     r = await fetch('/api/auth/' + path, { method: 'POST', headers: { 'content-type': 'application/json' },
                                            body: JSON.stringify(body || {}) })
-  } catch { throw new Error('The server did not answer.') }
+  } catch { throw new Error('The server did not answer. Check your connection and try again.') }
   const j = await r.json().catch(() => ({}))
   if (!r.ok) {
     const e = j.error || {}
     if (e.code === 'locked' && e.locked_until)
-      throw new Error('Too many wrong tries. Try again after ' + new Date(e.locked_until * 1000).toLocaleString() + '.')
+      throw new Error('Too many failed attempts. Try again after ' + new Date(e.locked_until * 1000).toLocaleString() + '.')
     throw new Error(e.message || 'The request failed (HTTP ' + r.status + ').')
   }
   return j
@@ -250,7 +250,7 @@ async function post(path, body) {
 function explain(e) {
   if (e && e.name === 'NotAllowedError') return 'You closed the passkey prompt, or it timed out.'
   if (e && e.name === 'InvalidStateError') return 'This passkey is already registered here.'
-  if (e && e.name === 'SecurityError') return 'Passkeys work only at ' + ORIGIN + '.'
+  if (e && e.name === 'SecurityError') return 'Passkeys work only at ' + ORIGIN + '. Open the app there to use one.'
   return (e && e.message) || 'The request failed.'
 }
 

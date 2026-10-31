@@ -349,12 +349,13 @@ async def probe(cfg, services) -> dict[str, str]:
         chats = [str(b.get("title") or kid) for kid, b in cfg.kb.items()
                  if b.get("kind") == "chat" and features.allows_connector(cfg, kid)]
     if not chats:
-        return {"state": "unset", "detail": "No source connected yet."}
+        return {"state": "unset", "detail": "Connect Discord or WhatsApp first."}
     from .retrieve.rerank import reranker_available
     from .semantic import embeddings_available
     notes = [f"Sources: {', '.join(chats)}."]
     if not embeddings_available(cfg):
-        notes.append("Word search only: no topic search model.")
+        notes.append("Search finds messages only by their words. Pick a Topic search "
+                     "model in Settings, Models to search by topic too.")
     if not reranker_available(cfg):
-        notes.append("No reranking model.")
+        notes.append("Pick a Reranking model in Settings, Models to put the best matches first.")
     return {"state": "ready", "detail": " ".join(notes)}

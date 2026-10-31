@@ -516,10 +516,12 @@ async def check(kind: str, base_url: str, key: str | None, *, key_required: bool
         models = await discover(kind, base_url, key, refresh=True, transport=transport)
     except httpx.TimeoutException:
         return {"ok": False, "level": "needs_you",
-                "sentence": f"No answer from {host} within 8 s."}
+                "sentence": f"{host} did not answer within 8 seconds. Make sure the server "
+                             f"is running and the address is right."}
     except httpx.ConnectError:
         return {"ok": False, "level": "needs_you",
-                "sentence": f"Not reachable: connection refused at {host}."}
+                "sentence": f"Nothing answered at {host}. Make sure the server is running "
+                             f"and the address is right."}
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
         if code in (401, 403):
@@ -527,11 +529,13 @@ async def check(kind: str, base_url: str, key: str | None, *, key_required: bool
                     "sentence": f"The server rejected the key ({code}).", "fix": "replace_key"}
         if no_credits(code, e.response.text):
             return {"ok": False, "level": "needs_you",
-                    "sentence": f"{KINDS[kind]['label']} is out of credits."}
-        return {"ok": False, "level": "needs_you", "sentence": f"The server answered {code}."}
+                    "sentence": f"{KINDS[kind]['label']} is out of credits. Add credits on its "
+                                f"website, then press Check."}
+        return {"ok": False, "level": "needs_you", "sentence": f"The server answered with error {code}. "
+                                                         f"Check the address and the type."}
     except (httpx.HTTPError, ValueError) as e:
         return {"ok": False, "level": "needs_you",
-                "sentence": f"Not reachable: {type(e).__name__} at {host}."}
+                "sentence": f"Could not connect to {host} ({type(e).__name__}). Check the address."}
     # all is fine: no sentence, the page says nothing
     out: dict[str, Any] = {"ok": True, "level": "ok", "models": len(models)}
     loaded = [m["id"] for m in models if m.get("loaded")]

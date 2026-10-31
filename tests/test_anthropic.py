@@ -327,7 +327,7 @@ async def test_discovery_pages_through_the_model_list():
                               transport=httpx.MockTransport(lambda r: httpx.Response(400, json={
                                   "type": "error", "error": {"type": "invalid_request_error",
                                   "message": "Your credit balance is too low."}})))
-    assert broke["sentence"] == "Anthropic is out of credits."
+    assert broke["sentence"] == "Anthropic is out of credits. Add credits on its website, then press Check."
 
 
 async def test_thinking_sends_the_effort_and_room_for_it_and_no_temperature(monkeypatch):

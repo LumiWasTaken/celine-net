@@ -201,7 +201,7 @@ def validate_provider(pid: str, p: Any, path: str = "") -> dict[str, Any]:
             raise Invalid(f"{base}.{k}", f"'{k}' is not a provider setting.")
     kind = p.get("kind")
     if kind not in kinds_mod.KINDS:
-        raise Invalid(f"{base}.kind", "The kind must be one of "
+        raise Invalid(f"{base}.kind", "The type must be one of "
                       + ", ".join(kinds_mod.KINDS) + ".")
     out: dict[str, Any] = {"kind": kind}
     label = p.get("label", pid)
@@ -286,7 +286,7 @@ def validate_model(kind: str, name: str, m: Any, path: str,
     if eff not in (None, ""):
         if kind != "openrouter":
             raise Invalid(f"{path}.reasoning_effort", "Reasoning effort is an OpenRouter "
-                                                      "option. For other kinds, set it in "
+                                                      "option. For other types, set it in "
                                                       "params.")
         from .thinking import valid
         if not valid(eff):
@@ -326,7 +326,7 @@ def validate_model(kind: str, name: str, m: Any, path: str,
     if m.get("max_tokens") not in (None, 0):
         if kind != "anthropic":
             raise Invalid(f"{path}.max_tokens", "Max tokens is an Anthropic option. For other "
-                                                "kinds, set it in params.")
+                                                "types, set it in params.")
         n = _typed(f"{path}.max_tokens", m["max_tokens"], "int", None)
         top = kinds_mod.server_output(base_url, name)
         if top is not None and n > top:

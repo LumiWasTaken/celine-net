@@ -432,4 +432,4 @@ async def probe(cfg, services) -> dict[str, str]:
     if shutil.which("bw") is None:
         return {"state": "missing", "detail": "The bw program is not installed where Celine "
                                               "runs. Install the Bitwarden CLI."}
-    return {"state": "ready", "detail": f"{urlsplit(a.url).netloc}, bw installed."}
+    return {"state": "ready", "detail": f"Connected to {urlsplit(a.url).netloc}."}

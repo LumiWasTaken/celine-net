@@ -128,7 +128,7 @@ async def test_new_provider(request: Request) -> dict:
     body = await json_body(request, allow=("kind", "base_url", "key"))
     kind = body.get("kind") or None
     if kind is not None and kind not in kinds.KINDS:
-        raise Invalid("kind", "The kind must be one of " + ", ".join(kinds.KINDS) + ".")
+        raise Invalid("kind", "The type must be one of " + ", ".join(kinds.KINDS) + ".")
     raw = str(body.get("base_url") or "")
     # as typed for detection (it tries /v1 itself), the kind's one saved form after
     url = kinds.normalize_url(kind, raw) if kind else kinds.address(raw)
@@ -141,8 +141,8 @@ async def test_new_provider(request: Request) -> dict:
         kind, answered, url = await kinds.detect(url, key or None)
         if kind is None:
             if answered:
-                sentence = (f"The app cannot detect the provider at "
-                            f"{urlsplit(url).netloc}.")
+                sentence = (f"A server answered at {urlsplit(url).netloc}, but the app "
+                            f"cannot tell what type it is.")
             else:                       # the check says why: refused, no answer, ...
                 sentence = (await kinds.check("openai", url, key or None,
                                               key_required=False))["sentence"]
@@ -170,8 +170,8 @@ async def available_models(request: Request, pid: str, refresh: bool = False,
     except Exception as e:
         check = await kinds.check(p["kind"], p["base_url"], key, key_required=False)
         raise CelineError("unreachable", check.get("sentence") or
-                          f"The app could not ask {p.get('label', pid)}: "
-                          f"{type(e).__name__}.",
+                          f"{p.get('label', pid)} did not answer ({type(e).__name__}). "
+                          f"Make sure it is running and its address is right.",
                           502) from None
     have = set(p.get("models") or {})
     ql = q.strip().lower()
@@ -368,7 +368,7 @@ async def get_features(request: Request, response: Response) -> dict:
 async def probe_feature(request: Request, id: str) -> dict:
     """"Check again": one feature's state now, no cache."""
     if id not in features_mod.ids():
-        raise NotFound(f"There is no feature '{id}'.")
+        raise NotFound("feature")
     services = request.app.state.services
     return features_mod.shown(await features_mod.probe(services.cfg, services, id))
 
@@ -418,7 +418,7 @@ async def put_services(request: Request, response: Response,
 async def test_service(request: Request, id: str) -> dict:
     """The feature's probe, fresh, against the saved address: {state, detail}."""
     if id not in services_mod.IDS:
-        raise NotFound(f"There is no service '{id}'.")
+        raise NotFound("service")
     feature = "web" if id == "searxng" else id
     services = request.app.state.services
     return features_mod.shown(await features_mod.probe(services.cfg, services, feature))
@@ -556,7 +556,7 @@ async def config_status(request: Request) -> dict:
             "features": features_mod.effective(cfg.settings.features),
             "setup": features_mod.done(cfg.settings.features),
             "catalog": [{"id": f.id, "label": f.label, "form": f.form,
-                         "about": f.about, "off_when": f.off_when,
+                         "about": cfg.substitute(f.about), "off_when": f.off_when,
                          "places": list(f.places), "pages": list(f.pages)}
                         for f in features_mod.catalog()],
             "problems": [{"file": p.file, "message": p.message, "fatal": p.fatal}

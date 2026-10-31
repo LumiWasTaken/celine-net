@@ -169,7 +169,8 @@ async def probe(cfg, services) -> dict[str, str]:
         if e.status in (401, 403):
             return {"state": "missing", "detail": bad_key("the browser", at),
                     "why": her_bad_key("the browser", at), "key": True, **found}
-        return {"state": "missing", "detail": f"The browser box at {host} answered {e.status}.",
+        return {"state": "missing", "detail": f"The browser at {host} answered with error {e.status}. Check the "
+                                               f"address, or restart the browser container.",
                 **found}
     if now.get("state") != "up":
         why = now.get("reason") or f"it is {now.get('state') or 'down'}"

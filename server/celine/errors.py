@@ -125,7 +125,7 @@ class UnresolvedToolCalls(CelineError):
         joined = ", ".join(names)
         super().__init__(
             "unresolved_tool_calls",
-            f"{joined} still runs. Stop the tool call first, then edit or regenerate.",
+            f"{joined} is still running. Stop it first, then edit or regenerate.",
             409,
             {"tools": joined},
         )
@@ -142,7 +142,8 @@ class TooLarge(CelineError):
 
 class ForbiddenOrigin(CelineError):
     def __init__(self, origin: str):
-        super().__init__("forbidden_origin", f"origin {origin!r} is not allowed", 403)
+        super().__init__("forbidden_origin", f"This page's address ({origin}) cannot use the app. "
+                                             "Open the app at its own address.", 403)
 
 
 async def _as_hers(request: Request, text: str) -> str:
@@ -247,7 +248,8 @@ def unreachable_words(what: str, url: str, e: Exception) -> str:
     if profile:
         return (f"{_name(what)} is not running. In the Celine folder, put {profile} in "
                 f"COMPOSE_PROFILES in .env and run docker compose up -d.")
-    return f"{_name(what)} did not answer at {_host(url)}. Start it, or fix the address."
+    return (f"{_name(what)} did not answer at {_host(url)}. Make sure it is running and the "
+            f"address is right, then press Check.")
 
 
 def her_not_set_up(what: str) -> str:
@@ -266,5 +268,5 @@ def her_bad_key(what: str, url: str) -> str:
 
 def bad_key(what: str, url: str) -> str:
     """The box answered 401 or 403: its key.hash is not the hash of the app's key."""
-    return (f"{_name(what)} at {_host(url)} does not accept this app's key. Put the key "
-            f"hash below into the box's key.hash file.")
+    return (f"{_name(what)} at {_host(url)} does not accept this app's key. Copy the key "
+            f"hash below into its key.hash file, then press Check.")

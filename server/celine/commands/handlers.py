@@ -178,7 +178,7 @@ async def _model(services, cid: str, text: str, *, wait: bool = False) -> dict:
         except Exception as e:                  # it fails with the provider's reason
             check = await kinds.check(p["kind"], p["base_url"], key, key_required=False)
             raise CelineError("unreachable", check.get("sentence") or
-                              f"The app could not ask {label}: {type(e).__name__}.",
+                              f"{label} did not answer ({type(e).__name__}). Make sure it is running and its address is right.",
                               502) from None
         by_lower = {i.lower(): i for i in found}
         by_label = {str(v.get("label", "")).lower(): k for k, v in added.items()

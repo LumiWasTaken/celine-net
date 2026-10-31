@@ -701,11 +701,13 @@ async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
                                               f"{server} to COMPOSE_PROFILES in .env and run "
                                               f"docker compose up -d."}
     if r.status_code in (401, 403):
-        return {"state": "missing", "detail": f"A {label} connector answers at {host} but it "
-                                              f"is not this app's."}
+        return {"state": "missing", "detail": f"The {label} connector at {host} does not "
+                                              f"accept this app's key. Give it the same key "
+                                              f"as this app, then press Check."}
     if r.status_code != 200:
-        return {"state": "missing", "detail": f"{label}'s connector at {host} answered "
-                                              f"{r.status_code}."}
+        return {"state": "missing", "detail": f"The {label} connector at {host} answered "
+                                              f"with error {r.status_code}. Restart it and "
+                                              f"press Check."}
     try:
         state = (r.json().get("connection") or {}).get("state") or "running"
     except ValueError:

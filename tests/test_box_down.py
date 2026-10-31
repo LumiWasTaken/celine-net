@@ -23,8 +23,8 @@ pytestmark = pytest.mark.anyio
 NOT_SET_UP = "The shellbox has no address yet. Type one below, or leave it off."
 REFUSED = ("The shellbox is not running. In the Celine folder, put shellbox in "
            "COMPOSE_PROFILES in .env and run docker compose up -d.")
-BAD_KEY = ("The shellbox at shellbox:8770 does not accept this app's key. Put the key hash "
-           "below into the box's key.hash file.")
+BAD_KEY = ("The shellbox at shellbox:8770 does not accept this app's key. Copy the key hash "
+           "below into its key.hash file, then press Check.")
 # what she reads in a tool result: the fact, no field to type in
 HER_NOT_SET_UP = "The shellbox is not set up."
 HER_REFUSED = "The shellbox at shellbox:8770 does not answer."
