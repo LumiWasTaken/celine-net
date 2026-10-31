@@ -1267,7 +1267,7 @@ async def probe(cfg, services) -> dict[str, str]:
     found = {} if saved else {"url": url}
     if r.status_code in (401, 403):
         return {"state": "missing", "detail": bad_key("the shellbox", url),
-                "why": her_bad_key("the shellbox", url), **found}
+                "why": her_bad_key("the shellbox", url), "key": True, **found}
     if saved:
         return {"state": "ready", "detail": f"The shellbox at {host} answers."}
     return {"state": "ready", "detail": f"Found at {url}.", "url": url}

@@ -21,7 +21,8 @@ from test_terminals_api import Daemon, _app, _client, term
 pytestmark = pytest.mark.anyio
 
 NOT_SET_UP = "The shellbox has no address yet. Type one below, or leave it off."
-REFUSED = "The shellbox did not answer at shellbox:8770. Start it, or fix the address."
+REFUSED = ("The shellbox is not running. In the Celine folder, put shellbox in "
+           "COMPOSE_PROFILES in .env and run docker compose up -d.")
 BAD_KEY = ("The shellbox at shellbox:8770 does not accept this app's key. Put the key hash "
            "below into the box's key.hash file.")
 # what she reads in a tool result: the fact, no field to type in
@@ -122,7 +123,8 @@ async def test_a_dead_box_never_fails_an_upload_copy(tmp_path, monkeypatch):
 # ---- the browser --------------------------------------------------------------------------
 
 B_NOT_SET_UP = "The browser has no address yet. Type one below, or leave it off."
-B_REFUSED = "The browser did not answer at browser:8771. Start it, or fix the address."
+B_REFUSED = ("The browser is not running. In the Celine folder, put browser in "
+             "COMPOSE_PROFILES in .env and run docker compose up -d.")
 B_HER_NOT_SET_UP = "The browser is not set up."
 B_HER_REFUSED = "The browser at browser:8771 does not answer."
 

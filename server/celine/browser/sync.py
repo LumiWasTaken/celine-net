@@ -168,7 +168,7 @@ async def probe(cfg, services) -> dict[str, str]:
     except BrowserRefused as e:
         if e.status in (401, 403):
             return {"state": "missing", "detail": bad_key("the browser", at),
-                    "why": her_bad_key("the browser", at), **found}
+                    "why": her_bad_key("the browser", at), "key": True, **found}
         return {"state": "missing", "detail": f"The browser box at {host} answered {e.status}.",
                 **found}
     if now.get("state") != "up":

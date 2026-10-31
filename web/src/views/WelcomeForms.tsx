@@ -7,8 +7,8 @@
    Decision model, the `small` role, and its Second look model, PUT /guard/rules, each with what
    it does and what happens without it; a pick saves at once; no chat model at all: the way to
    one), service (the shellbox and its browser: Address and the
-   read-only Key hash with Copy, what the box's key.hash file holds, shown while the box does
-   not take the key), address (SearXNG: the
+   read-only Key hash with Copy, what the box's key.hash file holds, shown while the box
+   refuses the key), address (SearXNG: the
    address alone) and routines (every routine as a row: its switch, its label and summary, its
    time; a switch saves at once, a time when the field is left: PUT /schedules/<name> with the
    whole routine). Check is the one action of a form: it saves, then asks the card's probe
@@ -479,7 +479,7 @@ function ServiceFields({ feature, value, onChange, saveRef, reprobe, withKey }: 
         <Input value={d.url} placeholder={EXAMPLE[id]} spellCheck={false}
                onChange={e => onChange({ url: e.target.value })} />
       </Field>
-      {withKey && feature.state !== 'ready' && (
+      {withKey && feature.key && (
         <Field label="Key hash">
           <span className="onb__hash">
             <Input value={hash} readOnly mono spellCheck={false} title="Put this in the box's key.hash file" />

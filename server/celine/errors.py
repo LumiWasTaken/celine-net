@@ -233,10 +233,20 @@ def not_set_up(what: str) -> str:
     return f"{_name(what)} has no address yet. Type one below, or leave it off."
 
 
+# a compose service's host name -> the profile in .env that starts it (docker-compose.yml)
+PROFILES = {"shellbox": "shellbox", "browser": "browser", "searxng": "web"}
+
+
 def unreachable_words(what: str, url: str, e: Exception) -> str:
-    """No answer from the box at `url`: refused, too slow or cut off."""
+    """No answer from the box at `url`: refused, too slow or cut off. At a compose service's
+    own address, the way to start that container."""
     if not url:
         return not_set_up(what)
+    from urllib.parse import urlsplit
+    profile = PROFILES.get(urlsplit(url).hostname or "")
+    if profile:
+        return (f"{_name(what)} is not running. In the Celine folder, put {profile} in "
+                f"COMPOSE_PROFILES in .env and run docker compose up -d.")
     return f"{_name(what)} did not answer at {_host(url)}. Start it, or fix the address."
 
 

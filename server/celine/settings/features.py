@@ -54,7 +54,7 @@ class Feature:
     label: str
     needs: str = ""                  # the disabled switch's tooltip: what turns it on
     about: str = ""                  # one sentence: what it gives the user
-    off_when: str = ""               # one short phrase: why someone turns it off
+    off_when: str = ""               # one sentence: "Turn it off if ...", the switch's tooltip
     skills: tuple[str, ...] = ()     # skill ids it owns: off while the feature is off
     tools: tuple[str, ...] = ()      # tool wire names of a skill it does not own: off with it
     places: tuple[str, ...] = ()     # UI place ids (web/src/routes.tsx)
@@ -104,12 +104,12 @@ CORE: tuple[tuple[str, str, str], ...] = (
 BASE: tuple[Feature, ...] = (
     Feature("shellbox", "Shellbox", "Turns on once the shellbox answers.",
             "An isolated Linux computer with a terminal, files and programs of its own, nothing on your machine.",
-            "No shellbox container is running.",
+            "Turn it off if you don't run the shellbox container.",
             skills=("shell", "code"), places=("terminals",), probe="celine.skills.shell:probe",
             setup="service", group="computer", choice="Container"),
     Feature("shares", "Shares", "Turns on once the shellbox is on.",
             "Shows you a page, game, tool or file from the shellbox in a new tab.",
-            "Nothing of the shellbox should open outside it.",
+            "Turn it off if nothing from the shellbox should open in a tab.",
             tools=("shell__share", "shell__unshare", "shell__list_shares"),
             probe="celine.shares:probe", start_on=False, after="shellbox",
             warn="The link of a share is its key. A page opens only for you while you are "
@@ -118,79 +118,79 @@ BASE: tuple[Feature, ...] = (
                  "share opens for anyone."),
     Feature("browser", "Browser", "Turns on once the browser answers.",
             "An isolated Brave browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch.",
-            "No browser container is running.",
+            "Turn it off if you don't run the browser container.",
             skills=("browser",), places=("browser",), probe="celine.browser.sync:probe",
             setup="service"),
     Feature("images", "Images", "Turns on once ComfyUI answers.",
             "Pictures made with ComfyUI in the styles of the presets you keep.",
-            "No ComfyUI, or no GPU time for pictures.",
+            "Turn it off if you have no ComfyUI, or no GPU time for pictures.",
             skills=("image_generator",), probe="celine.comfyui.server:probe_images",
             pages=("media",), setup="comfyui"),
     Feature("music", "Music", "Turns on once ComfyUI answers.",
             "Music made with ComfyUI from a few words about the track.",
-            "No ComfyUI, or no GPU time for music.",
+            "Turn it off if you have no ComfyUI, or no GPU time for music.",
             skills=("music_generator",), probe="celine.comfyui.server:probe_music",
             pages=("media",), setup="comfyui"),
     Feature("speech_input", "Dictation", "Pick a Dictation model first.",
             "Speak a message, read it over, then send it.",
-            "Typing only.",
+            "Turn it off if you only want to type.",
             probe="celine.speech:probe_input", setup="speech", start_on=False),
     Feature("speech_output", "Read aloud", "Pick a Read aloud model first.",
             "Replies read out loud, in a voice you pick.",
-            "Replies stay text.",
+            "Turn it off if replies should stay text.",
             probe="celine.speech:probe_output", setup="speech", start_on=False),
     Feature("web", "Web search", "Turns on once SearXNG answers.",
             "Web search through your own SearXNG, with the pages found read as text or in the browser.",
-            "Only what is on this machine should be known.",
+            "Turn it off if nothing should be looked up on the internet.",
             skills=("web",), probe="celine.skills.web:probe", setup="address"),
     Feature("discord", "Discord", "Turns on once the Discord connector answers.",
             "Your Discord history in the archive, and a chat from Discord itself.",
-            "You do not use Discord.",
+            "Turn it off if you don't use Discord.",
             pages=("source:discord",), mcp=("discord",), kbs=("discord",),
             probe="celine.mcp:probe_discord", archive="messages"),
     Feature("whatsapp", "WhatsApp", "Turns on once the WhatsApp connector answers.",
             "Your WhatsApp history in the archive, and a chat from WhatsApp itself.",
-            "You do not use WhatsApp.",
+            "Turn it off if you don't use WhatsApp.",
             pages=("source:whatsapp",), mcp=("whatsapp",), kbs=("whatsapp",),
             probe="celine.mcp:probe_whatsapp", archive="messages"),
     Feature("email", "Email", "Turns on once the account is filled in.",
             "A mailbox of yours read on your behalf: what came in, searchable and summarised.",
-            "Mail should stay out of reach.",
+            "Turn it off if your mail should stay out of reach.",
             skills=("email",), pages=("email",), probe="celine.skills.mail:probe",
             setup="email"),
     Feature("vault", "Vault", "Turns on once the Vaultwarden details are filled in.",
             "A Vaultwarden collection with the logins used in the browser on your behalf.",
-            "No Vaultwarden, or no password should be held at all.",
+            "Turn it off if you have no Vaultwarden, or no password should be stored.",
             skills=("vault",), pages=("vault",), probe="celine.vault:probe", setup="vault"),
     Feature("guard", "Guard", "Turns on once a decision model is picked.",
             "Bastet, a second model that checks risky actions before they run and asks you "
             "when unsure.",
-            "No second opinion wanted on tool use.",
+            "Turn it off if you want no second check before risky actions.",
             probe="celine.guard.rules:probe", setup="guard", start_on=False),
     Feature("documents", "Documents", "",
             "A folder of your documents, searched, read and cited.",
-            "No documents to give.",
+            "Turn it off if you have no documents to share.",
             skills=("user_documents",), places=("documents",), kbs=("documents",)),
     Feature("messages", "Messages", "Turns on once Discord or WhatsApp is connected.",
             "Your chat history in one archive, searched by word or by topic.",
-            "No Discord or WhatsApp connected.",
+            "Turn it off if you have no Discord or WhatsApp connected.",
             skills=("chat_archive",), places=("chats", "search"), pages=("people", "search"),
             probe="celine.kb:probe", setup="search"),
     Feature("artifacts", "Artifacts", "",
             "Built pages: a chart, a table, a small app, kept with every version.",
-            "Text only.",
+            "Turn it off if replies should only be text.",
             skills=("artifacts",)),
     Feature("routines", "Routines", "",
             "Jobs on a schedule, a morning digest or a nightly tidy of the notes; change a time or switch one off.",
-            "Only on demand, nothing on a schedule.",
+            "Turn it off if nothing should run on a schedule, only when you write.",
             skills=("routines",), places=("routines",), setup="routines"),
     Feature("missions", "Missions", "",
             "A long job carried over days, with check-ins as it goes.",
-            "Short questions only.",
+            "Turn it off if you only ask short questions.",
             skills=("missions",), places=("missions",)),
     Feature("sub_agents", "Sub-agents", "",
             "Parts of a big job handed to helpers, their results collected.",
-            "One conversation at a time on a small model server.",
+            "Turn it off if your model server handles only one conversation at a time.",
             skills=("sub_agents",)),
 )
 
@@ -364,7 +364,8 @@ async def probe(cfg, services, feature: str) -> dict[str, Any]:
     # the reason its Dot shows: what the probe said, else what turns it on
     detail = result.get("detail") or (f.needs if result["state"] in ("missing", "unset") else "")
     out = {"state": result["state"], "detail": detail}
-    for key in ("url", "why"):          # why: what she reads (me__whoami), when it differs
+    # why: what she reads (me__whoami), when it differs; key: the box refused the app's key
+    for key in ("url", "why", "key"):
         if result.get(key):
             out[key] = result[key]
     if "blocks" in result:              # a probe whose state never blocks its switch

@@ -281,6 +281,8 @@ export type Feature = {
   blocks: boolean
   /** the address the probe found the service at while none is saved: the form prefills it */
   url?: string
+  /** the box answers but refuses the app's key: the form shows the key hash to put there */
+  key?: boolean
 }
 type Probe = { state: FeatureState; detail: string; blocks: boolean; url?: string }
 export type FeaturesView = {
