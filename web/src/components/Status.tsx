@@ -5,7 +5,11 @@
    its oldest queued turn; turns after it a muted "Queued".
 
    TurnEnd is the line where an answer did not come, in soft words: "Paused." with
-   Continue, "The reply failed." with Retry, the server's sentence as their tooltip. A line
+   Continue, "The reply failed." with Retry, the server's sentence as their tooltip. Under
+   your message that has no answer (the server's `unanswered`: a turn that failed, was
+   interrupted, answered nothing or was stopped) its reason, with Regenerate, and Continue
+   before it when the server offers it (a failed reply that said something, on a model
+   that continues a reply). A line
    that needs the user (it names a setting, or the failure carries a reason) says it
    whole, with Open Settings when it names one. A reply that failed because its provider is
    busy (reason_code `busy`) offers Switch provider (the model chooser; the pick becomes the
@@ -14,7 +18,7 @@
    `statusWords` is what both say, so the live region (Transcript) reads what the screen
    shows. */
 import { useEffect, useState } from 'react'
-import { RUNNING, conversationApi, type Live, type Turn } from '../lib/api'
+import { RUNNING, conversationApi, type Live, type Turn, type Unanswered } from '../lib/api'
 import { errorText } from '../lib/format'
 import { useNav } from '../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
@@ -50,26 +54,25 @@ export function Status({ words, queued = false }: { words: string | null; queued
 /* One sentence for a reason the server says nothing about in words. A failed turn's
    reason is the server's sentence (turns.reason) and shows as it is. */
 const REASON: Record<string, string> = {
-  restart: 'The server restarted during the answer.',
-  wall_clock: 'The answer took too long and was stopped.',
-  time_up: 'The answer took too long and was stopped.',
+  restart: 'The server restarted during the reply.',
+  wall_clock: 'The reply took too long and was stopped.',
   max_tool_iterations: 'Stopped at the step limit.',
-  cut_length: 'The answer reached the length limit.',
+  cut_length: 'The reply reached the length limit.',
 }
 const ENDED: Record<string, string> = {
-  aborted: 'Stopped.', interrupted: 'Interrupted.', capped: 'Stopped at the step limit.', failed: 'The answer failed.',
-  done: 'The answer reached the length limit.',
+  aborted: 'Stopped.', interrupted: 'Interrupted.', capped: 'Stopped at the step limit.', failed: 'The reply failed.',
+  done: 'The reply reached the length limit.',
 }
 
 /** the line under an answer that did not come; null when it came */
-export function endWords(turn: Turn | null, error: { message: string } | null, unanswered: boolean): string | null {
+export function endWords(turn: Turn | null, error: { message: string } | null, unanswered: Unanswered | null): string | null {
+  if (unanswered) return unanswered.reason
   const ended = !!turn && !RUNNING.includes(turn.state) && (turn.state !== 'done' || !!turn.cut)
   if (ended) {
     if (turn.state === 'failed' && turn.reason) return turn.reason
-    return (turn.reason_code && REASON[turn.reason_code]) || ENDED[turn.state] || 'The answer did not finish.'
+    return (turn.reason_code && REASON[turn.reason_code]) || ENDED[turn.state] || 'The reply did not finish.'
   }
-  if (error) return error.message
-  return unanswered ? 'No answer yet.' : null
+  return error ? error.message : null
 }
 
 /* "Settings, Models" in a sentence: the page it names */
@@ -85,7 +88,7 @@ export function settingOf(sentence: string): { label: string; page: string } | n
 
 export function TurnEnd({ conversationId, turn, running, error, unanswered, onRetry }: {
   conversationId: string; turn: Turn | null; running: boolean
-  error: { message: string; retryable: boolean } | null; unanswered: boolean; onRetry: () => Promise<void>
+  error: { message: string; retryable: boolean } | null; unanswered: Unanswered | null; onRetry: () => Promise<void>
 }) {
   const online = useOnline()
   const nav = useNav()
@@ -100,9 +103,11 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
   const ended = !!turn && !RUNNING.includes(turn.state)
   // the provider is busy: Switch provider or Keep waiting, in place of Continue and Retry
   const busyTurn = ended && turn.state === 'failed' && turn.reason_code === 'busy'
-  const canContinue = !busyTurn && !!(ended && turn.continuable?.ok)
+  // your message has no answer: Regenerate, in place of Continue and Retry
+  const regen = !busyTurn && !!unanswered
+  const canContinue = !busyTurn && !regen && !!(ended && turn.continuable?.ok)
   // a stop you asked for needs no Retry; everything else that left no answer does
-  const canRetry = !busyTurn && !canContinue && (turn?.state === 'failed' || turn?.state === 'interrupted' || unanswered || !!error?.retryable)
+  const canRetry = !busyTurn && !regen && !canContinue && (turn?.state === 'failed' || turn?.state === 'interrupted' || !!error?.retryable)
   const setting = settingOf(sentence)
 
   const act = async (fn: () => Promise<unknown>, el: HTMLElement) => {
@@ -116,8 +121,9 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
     } catch (e) { setFailed(errorText(e)) } finally { setBusy(false) }
   }
   // a failure with the server's reason, or one that names a setting, needs the user: said whole
-  const broke = turn?.state === 'failed' || turn?.state === 'interrupted' || (!!error && !ended)
-  const owner = !!setting || (turn?.state === 'failed' && !!turn.reason) || (!!error && !ended)
+  const lost = regen && (unanswered.state === 'failed' || unanswered.state === 'interrupted')
+  const broke = lost || (!regen && (turn?.state === 'failed' || turn?.state === 'interrupted' || (!!error && !ended)))
+  const owner = lost || !!setting || (turn?.state === 'failed' && !!turn.reason) || (!!error && !ended)
   const words = broke ? 'The reply failed.' : canContinue ? 'Paused.' : sentence
   return (
     <div className={cx('turn-end', owner && broke && 'turn-end--error')}>
@@ -141,10 +147,16 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
                         await settingsApi.patchConversationSettings(conversationId, { model: ref }); await onRetry()
                       }, document.body) }} />
       ) : providers.error && <InlineError compact message={providers.error} onRetry={providers.reload} />)}
-      {(canContinue || canRetry) && (
+      {regen && unanswered.continues && unanswered.turn_id && (
+        <Button size="sm" icon={Play} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
+                onClick={e => { const el = e.currentTarget; const tid = unanswered.turn_id!; void act(() => conversationApi.continueTurn(conversationId, tid), el) }}>
+          Continue
+        </Button>
+      )}
+      {(canContinue || canRetry || regen) && (
         <Button size="sm" icon={canContinue ? Play : RefreshCw} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
                 onClick={e => { const el = e.currentTarget; void act(canContinue ? () => conversationApi.continueTurn(conversationId, turn!.id) : onRetry, el) }}>
-          {canContinue ? 'Continue' : 'Retry'}
+          {canContinue ? 'Continue' : regen ? 'Regenerate' : 'Retry'}
         </Button>
       )}
       {failed && <InlineError compact message={failed} />}

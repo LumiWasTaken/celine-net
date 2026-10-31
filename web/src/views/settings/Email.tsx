@@ -10,8 +10,8 @@ import { LINK, settingsApi, type EmailCheck } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, Field, InlineError, Input, Notice, Section } from '../../ui'
-import { Page, SchemaForm } from './parts'
+import { Button, Field, Form, InlineError, Input, Notice, Section } from '../../ui'
+import { Page } from './parts'
 import './settings.css'
 
 export function Email() {
@@ -41,10 +41,10 @@ export function Email() {
     <Page title={title}
           actions={<Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check email</Button>}>
       <Section>
-        {set && <p className="src-line">{checked ? (checked.ok ? LINK.up : LINK.down) : check.error ? LINK.down : 'Testing'}</p>}
+        {set && <p className="src-line">{checked ? (checked.ok ? LINK.up : LINK.down) : check.error ? LINK.down : 'Checking'}</p>}
         <div title={online ? undefined : OFFLINE_TITLE}>
-          <SchemaForm schema={res.data.fields} values={{ ...res.data.email, ...auto.pending }} disabled={!online}
-                      onChange={(k, v) => auto.set(k, v)} />
+          <Form fields={res.data.fields} values={{ ...res.data.email, ...auto.pending }} disabled={!online}
+                onChange={(k, v) => auto.set(k, v)} />
         </div>
         <form className="key-form" onSubmit={e => { e.preventDefault(); if (password) void savePassword.run() }}>
           <Field label="Password">

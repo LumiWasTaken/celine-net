@@ -41,11 +41,11 @@ async def test_defaults_then_put_then_get(api):
     r = (await api.get("/api/features")).json()
     assert r["saved"] is False and r["done"] is False and "restart" not in r
     assert {f["id"] for f in r["catalog"]} == set(r["features"])
-    assert [f["id"] for f in r["catalog"]][:3] == ["shellbox", "shares", "browser"]
+    assert [f["id"] for f in r["catalog"]][:3] == ["shellbox", "mac", "shares"]
     # nothing that needs a service runs before Setup saved it: no connector starts at boot
     off = {i for i, on in r["features"].items() if not on}
     assert off == {"shellbox", "shares", "browser", "images", "music", "web", "discord",
-                   "whatsapp", "email", "vault", "guard", "speech_input", "speech_output"}
+                   "whatsapp", "email", "vault", "guard", "speech_input", "speech_output", "mac"}
     assert "shell" not in _skills(api) and "discord" not in _skills(api)
     assert not features.allows_connector(api.cfg, "discord")
     assert api.cfg.settings.features == features.seed()
@@ -74,8 +74,9 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
     status = (await api.get("/api/status")).json()
     assert status["features"]["web"] is False and status["setup"] is False
     box = next(f for f in status["catalog"] if f["id"] == "shellbox")
-    assert box == {"id": "shellbox", "about": features.BY_ID["shellbox"].about,
-                   "off_when": features.BY_ID["shellbox"].off_when,
+    assert box == {"id": "shellbox", "label": "Shellbox", "form": "",
+                   "about": api.cfg.substitute(features.get("shellbox").about),
+                   "off_when": features.get("shellbox").off_when,
                    "places": ["terminals"], "pages": []}
     await api.put("/api/features", json={"features": {}})
     assert "web" in _skills(api)
@@ -83,21 +84,37 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
-    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "card", "kbs", "archive", "warn",
-            "state", "detail"}
+    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "kbs", "archive", "warn", "after",
+            "state", "detail", "blocks", "group", "choice", "group_label", "tier", "step"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
     assert by["documents"]["state"] == "none" and by["documents"]["detail"] == ""
-    # the onboarding's fold: a card when the service answered, or when it has an address
-    # and does not answer; the guard always; email and vault never (the Later card and
-    # Settings). On this fake app (no kbs: the config's word) only the archive probe is ready.
-    assert {f["id"] for f in catalog if f["card"] == "detect"} == {"messages"}
-    assert {f.id for f in features.CATALOG if f.card == "detect"} == \
-        {"shellbox", "browser", "images", "music", "web", "messages"}
-    assert {f["id"] for f in catalog if f["card"] == "always"} == \
-        {"shares", "discord", "whatsapp", "guard", "routines", "speech_input", "speech_output"}
+    # a plugin whose servers wait for its empty form is not set up, with what is empty
+    assert (by["mac"]["state"], by["mac"]["detail"], by["mac"]["blocks"]) == (
+        "unset", "The Mac is not connected yet.", False), "never a lock"
+    assert by["email"]["blocks"] is True
     assert {f["id"] for f in catalog if f["warn"]} == {"shares"}
-    assert by["email"]["card"] == "" and by["vault"]["card"] == ""
+    # the onboarding's setup steps: a form, or a connection
+    assert {f["id"] for f in catalog if f["step"]} == {
+        "shellbox", "browser", "images", "music", "speech_input", "speech_output", "web", "discord",
+        "whatsapp", "email", "vault", "guard", "messages", "routines", "mac"}
+
+
+async def test_the_tiers_come_in_order_with_the_core_and_a_group_together(api, _test_skills_core):
+    r = (await api.get("/api/features")).json()
+    assert [t["id"] for t in r["tiers"]] == ["core", "base"], "no user module: no user tier"
+    assert [t["label"] for t in r["tiers"]] == ["Core", "Base modules"]
+    assert {f["tier"] for f in r["catalog"]} == {"base"}
+    # the core is the chat and every core skill no feature owns; no switch, no feature id
+    owned = set(features.skill_owners())
+    assert {c["id"] for c in r["core"]} == {"chat"} | (_test_skills_core - owned)   # skills.CORE as shipped
+    assert "skills" in {c["id"] for c in r["core"]}, "META, the guides' skill"
+    assert not {c["id"] for c in r["core"]} & set(r["features"])
+    assert all(c["label"] and c["about"] and "{{" not in c["about"] for c in r["core"])
+    # her computer's choices sit together, the Mac right after the shellbox
+    ids = [f["id"] for f in r["catalog"]]
+    assert ids[:3] == ["shellbox", "mac", "shares"]
+    assert r["catalog"][1]["group_label"] == r["catalog"][0]["group_label"] != ""
 
 
 import httpx as _httpx
@@ -121,7 +138,8 @@ async def test_a_connector_probe_says_one_thing(api, monkeypatch):
     monkeypatch.setattr(mcp.httpx, "AsyncClient", _answering(refused))
     said = await mcp.probe_discord(api.cfg, api.services)
     assert said == {"state": "missing", "detail":
-                    "A Discord connector answers at 127.0.0.1:8768 but it is not this app's."}
+                    "The Discord connector at 127.0.0.1:8768 does not accept this app's key. Give it the "
+                    "same key as this app, then press Check."}
 
     def down(r):
         raise httpx.ConnectError("refused")
@@ -144,18 +162,15 @@ async def test_the_shellbox_probe_tries_the_default_address_and_hands_it_over(ap
     found = await features.probe(api.cfg, api.services, "shellbox")
     assert found == {"state": "ready", "detail": "Found at http://127.0.0.1:8770.",
                      "url": "http://127.0.0.1:8770"}
-    assert features.card_now(api.cfg, features.BY_ID["shellbox"], found) == "detect"
     box(lambda r: httpx.Response(401 if r.url.path == "/status" else 200, json={}))
     bad = await features.probe(api.cfg, api.services, "shellbox")
     assert bad["state"] == "missing" and bad["url"] == "http://127.0.0.1:8770"
-    assert features.card_now(api.cfg, features.BY_ID["shellbox"], bad) == "detect"
 
     def down(r):
         raise httpx.ConnectError("refused")
     box(down)
     none = await features.probe(api.cfg, api.services, "shellbox")
     assert none["state"] == "unset" and "url" not in none
-    assert features.card_now(api.cfg, features.BY_ID["shellbox"], none) == ""
 
 
 async def test_the_browser_probe_reads_browserd_state(api, monkeypatch):
@@ -223,7 +238,8 @@ async def test_get_carries_the_probes_and_caches_them(api, monkeypatch):
     by = {f["id"]: f for f in (await api.get("/api/features")).json()["catalog"]}
     assert by["shellbox"]["state"] == "missing", "cached for 10 s"
     fresh = (await api.get("/api/features/shellbox/probe")).json()
-    assert fresh == {"state": "ready", "detail": "The shellbox at box:8770 answers."}
+    assert fresh == {"state": "ready", "detail": "The shellbox at box:8770 answers.",
+                     "blocks": False}
     api.services.feature_probes = None
     by = {f["id"]: f for f in (await api.get("/api/features")).json()["catalog"]}
     assert by["shellbox"]["state"] == "ready"
@@ -242,7 +258,7 @@ async def test_a_slow_or_broken_probe_is_missing(api, monkeypatch):
     monkeypatch.setattr(features, "PROBE_SECONDS", 0.05)
     monkeypatch.setattr(web, "probe", slow)
     assert (await api.get("/api/features/web/probe")).json() == {
-        "state": "missing", "detail": "Web search did not answer in time."}
+        "state": "missing", "detail": "Web search did not answer in time.", "blocks": True}
     monkeypatch.setattr(web, "probe", broken)
     assert (await api.get("/api/features/web/probe")).json()["state"] == "missing"
 
@@ -268,15 +284,17 @@ async def test_the_messages_probe_says_what_search_can_do(api, monkeypatch):
     for sid in ("discord", "whatsapp"):
         api.services.connectors.open(sid)
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said == {"state": "unset", "detail": "No source connected yet."}, "no connector answered yet"
+    assert said == {"state": "unset", "detail": "Connect Discord or WhatsApp first."}, "no connector answered yet"
     for c in api.services.connectors.all.values():
         c.status = {"connection": {"state": "connected"}}
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said["state"] == "ready" and "Word search only" not in said["detail"]
+    assert said["state"] == "ready" and "only by their words" not in said["detail"]
     await api.put("/api/roles/embeddings", json={"chain": []})
     await api.put("/api/roles/reranker", json={"chain": []})
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said["detail"].endswith(" Word search only: no topic search model. No reranking model.")
+    assert said["detail"].endswith(" Search finds messages only by their words. Pick a Topic search model in "
+                                 "Settings, Models to search by topic too. Pick a Reranking model in Settings, "
+                                 "Models to put the best matches first.")
     assert said["detail"].startswith("Sources: ")
     files.write(api.var / "settings", "features", {"discord": False, "whatsapp": False})
     reload.apply(api.services)
@@ -323,6 +341,9 @@ async def test_guard_off_means_bastet_is_off(api):
 
 
 class FakeRunner:
+    features = ()
+    on_stop = None
+
     def __init__(self):
         self.log: list[str] = []
         self.running = False
@@ -342,7 +363,7 @@ async def test_a_switch_or_an_address_change_starts_and_stops_what_runs(api, mon
     from celine.core.runners import Runners
 
     async def unset(cfg, services, cache=True):      # no probe of the made-up addresses
-        return {f.id: {"state": "unset", "detail": ""} for f in features.CATALOG}
+        return {f.id: {"state": "unset", "detail": ""} for f in features.catalog()}
     monkeypatch.setattr(features, "probe_all", unset)
     runners = api.services.runners = Runners()
     runners["shellbox"] = box = FakeRunner()
@@ -519,11 +540,11 @@ async def test_put_answers_from_the_probes_the_page_saw(api, monkeypatch):
         raise AssertionError("the PUT probed")
     monkeypatch.setattr(features, "probe_all", never)
     r = await api.put("/api/features", json={"features": {"web": False}})
-    assert r.status_code == 200 and {f["id"] for f in r.json()["catalog"]} == set(features.IDS)
+    assert r.status_code == 200 and {f["id"] for f in r.json()["catalog"]} == set(features.ids())
     assert api.services.feature_probes is None, "the next GET probes anew"
 
 
-async def test_shares_start_off_and_their_switch_saves_on(api):
+async def test_shares_start_off_and_their_switch_saves_on(api, monkeypatch):
     """Shares are off on a fresh install and for an id left out; while off its three
     share tools are not built, the shell's others are; saved on, they are back. Off
     again, a share that still runs answers 404 (tests/test_shares.py)."""
@@ -531,7 +552,7 @@ async def test_shares_start_off_and_their_switch_saves_on(api):
     tools = {"shell__share", "shell__unshare", "shell__list_shares"}
     _fresh(api)
     assert features.on(api.cfg, "shares") is False
-    assert set(features.BY_ID["shares"].tools) == tools
+    assert set(features.get("shares").tools) == tools
     await api.put("/api/features", json={"features": {}})
     assert features.on(api.cfg, "shares") is False, "an id left out stays off"
     reg = api.services.registry
@@ -543,11 +564,25 @@ async def test_shares_start_off_and_their_switch_saves_on(api):
     assert put.json()["features"]["shares"] is True
     assert "shares = true" in (api.var / "settings" / "features.toml").read_text()
     assert tools <= set(reg.tools)
+    import celine.skills.shell as shell_mod
+    box = {"state": "missing", "detail": "page words", "why": "The shellbox at box does not answer."}
+
+    async def box_probe(cfg, services):
+        return box
+    monkeypatch.setattr(shell_mod, "probe", box_probe)
+    down = (await api.get("/api/features/shares/probe")).json()
+    assert down["state"] == "missing" and down["why"] == box["why"], \
+        "a share opens only while the box answers"
+    box = {"state": "ready", "detail": "The shellbox at box answers."}
     assert (await api.get("/api/features/shares/probe")).json()["state"] == "ready"
+    assert down["blocks"] is False, "its switch follows the shellbox's switch, not the box"
+    shares_view = next(f for f in (await api.get("/api/features")).json()["catalog"]
+                       if f["id"] == "shares")
+    assert shares_view["after"] == "shellbox"
     await api.put("/api/features", json={"features": {"shares": True, "shellbox": False}})
-    assert (await api.get("/api/features/shares/probe")).json() == \
-        {"state": "unset", "detail": "The shellbox is off."}
-    assert f"{shares.PRIVATE_HOURS} hours" in features.BY_ID["shares"].warn
+    assert features.on(api.cfg, "shares") is False, "off while the shellbox is off"
+    assert tools.isdisjoint(reg.tools)
+    assert f"{shares.PRIVATE_HOURS} hours" in features.get("shares").warn
 
 
 async def test_the_guard_starts_off_until_the_user_switches_it_on(api):

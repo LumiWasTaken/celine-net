@@ -3,7 +3,6 @@ name: discord
 description: Live Discord, read only: a chat that is not in the Messages archive, the newest
   messages, Discord's own search in a DM or a server, a user's profile, a server's
   members, and every message someone wrote on a server on one day.
-words: discord
 ---
 These tools read {{username}}'s Discord account live, through the Discord connection.
 The Messages archive already has every synced DM and every included server, offline and

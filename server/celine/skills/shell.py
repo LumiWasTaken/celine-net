@@ -1,8 +1,11 @@
 """The agent's terminals: real ones, in its shellbox (shellbox/shellboxd.py).
 
-Nine tools. shell__run runs a command in a terminal's shell and waits for its end (the
-shellbox's run function writes its exit status, duration and log); asked into the
-background, the wait becomes a job whose result comes back as a message. shell__type
+Ten tools. shell__run runs a command in a terminal's shell and waits for its end (the
+shellbox's run function writes its exit status, duration and log), at most WAIT_MAX
+seconds; asked into the background, the wait becomes a job whose result comes back as a
+message. shell__wait waits the same way for the run already going in a terminal. A
+message from the user ends a wait in the turn at once; the command keeps running.
+shell__type
 types into a program like at a keyboard and shows the screen. shell__stop presses
 Ctrl-C. shell__read pages a run's log, shows the screen, or lists the terminals.
 shell__look shows its images of its home. shell__send attaches files of its home to the conversation (box_files.py streams it).
@@ -29,21 +32,24 @@ from ..core.ids import now, when
 from ..terminals import store as terminals
 from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
-from ..errors import CelineError, ToolRefused, bad_key, not_set_up, unreachable_words
-from .. import shares, shellbox, vision
+from ..errors import (CelineError, ToolRefused, TooLarge, bad_key, her_bad_key,
+                      her_not_set_up, her_unreachable, not_set_up, unreachable_words)
+from .. import devices, shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
+from ..turns.cancel import until_set
 
 # ---- numbers --------------------------------------------------------------------------
 RUN_MAX = 3000         # seconds one shell__run waits at most (the shellbox's RUN_MAX)
+WAIT_DEFAULT = 120     # seconds a run or a wait in the turn waits without a timeout
+WAIT_MAX = 600         # seconds a run or a wait in the turn waits at most; in the
+                       # background one waits up to RUN_MAX
 SELF_END = 3500        # the app ends a run the shellbox has not answered by then
 TURN_MARGIN = 3        # seconds a run's wait ends before its turn's time: the answer
                        # comes back as "still running", not as the turn's "time is up"
 HEAD, TAIL = 2000, 6000    # characters of a long output kept: its start and its end
 READ_CHARS = 8000      # characters one shell__read page carries
 PROBE_WAIT = 2.5       # seconds Settings, Features waits for the box's answer
-WEDGE_MAX = 3          # wedges in one conversation, then shell__run and new terminals are
-                       # refused there (the cap)
 
 # ---- words that never change ------------------------------------------------------------
 KEY_FORMAT = "keys is one string, names separated by spaces: keys=\"Escape\", keys=\"Down Down Enter\"."
@@ -80,11 +86,6 @@ KEY_ALIASES = {
 }
 CTRL = re.compile(r"^(?:c-|ctrl[+-]|\^)(.)$", re.I)     # C-c, Ctrl+c, ctrl-c, ^C
 ALT = re.compile(r"^(?:m-|alt[+-])(.)$", re.I)           # M-x, Alt+x
-# a text that is only a key written out: it meant keys (llama.cpp hands strings over raw)
-KEY_AS_TEXT = re.compile(r"^(?:(?:c-|ctrl[+-]|\^|m-|alt[+-]).|\\u[0-9a-f]{4}|\\x[0-9a-f]{2}"
-                         r"|\\[nrte]|\\0?33|enter|return|escape|esc|tab|shifttab|backspace"
-                         r"|delete|space|up|down|left|right|pageup|pagedown|f[1-9]|f1[0-2])$",
-                         re.I)
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,15}$")    # the shellbox's NAME
 log = logging.getLogger("celine.skills.shell")
 
@@ -127,15 +128,6 @@ def parse_keys(value: Any) -> list[str]:
                           f"{KEY_NAMES}.")
         names.append(name)
     return names
-
-
-def check_text(text: str) -> None:
-    """A text that is only a key notation (C-c, ^C, \\u0003, Escape, Enter) is refused."""
-    t = text.strip()
-    if (len(t) == 1 and (ord(t) < 32 or t == "\x7f")) or KEY_AS_TEXT.match(t):
-        raise ToolRefused(f"text {json.dumps(t)} is a key, and text is typed as written. Special "
-                      f"keys go in keys, by name: keys=\"Escape\", keys=\"Enter\"; Ctrl-C is "
-                      f"shell__stop.")
 
 
 def check_name(name: str) -> str:
@@ -181,6 +173,13 @@ def program_of(res: dict) -> tuple[str | None, int | None]:
     real = [p for p in front if p["name"] not in WRAPPERS and not VAR.match(p["name"])]
     chosen = (real or front)[0]
     return chosen["name"], chosen.get("pid")
+
+
+def _shown(port: int | None, path: str | None, device: str | None, cfg=None) -> str:
+    """What a share shows, in her words: a port or a path, in her box or on a device."""
+    what = f"port {port}" if port is not None else \
+        path if device is not None else shellbox.home_short(path)
+    return what if device is None else f"{what} on {devices.label(device, cfg)}"
 
 
 def shown_name(p: dict) -> str:
@@ -396,11 +395,15 @@ def path_list(value: Any) -> list[str] | str:
 # all of it its own, the commands log shows none of it)
 SHELL_DETACHED = ("running in the background as job {job}, watching terminal {terminal}. "
                   "You'll get the result as a message when the watch ends.")
+STARTED = object()     # _stream: the command is in its terminal
+TIMEOUT_HELP = (f"Most seconds to wait, 1 to {WAIT_MAX}, or with background to {RUN_MAX}. "
+                f"Without it {WAIT_DEFAULT}, or with background until the command ends.")
+BACKGROUND_HELP = ("True hands the wait to a background job: the call answers within 5 "
+                   "seconds and the result reaches you as a message when the command ends.")
 
 
 class Shell:
     name = "shell"
-    exact_args = True   # turns/tools.py: in a terminal "a" is not "A"
     app = None          # the running app (core/services.py), from skills.build
     guide = guide("shell")
     description = described()
@@ -415,13 +418,19 @@ class Shell:
         self.full_noted: set[str] = set()
         self.hinted: set[tuple[str, str]] = set()
         self.told: set[tuple[str, str]] = set()
-        # per conversation: its wedges so far (in memory: an app restart starts at 0)
-        self.wedges: dict[str, int] = {}
 
     def carry(self, old) -> None:
         """A reload's rebuild keeps what it was already told (reload.py)."""
-        for a in ("boots", "apt_noted", "full_noted", "hinted", "told", "wedges"):
+        for a in ("boots", "apt_noted", "full_noted", "hinted", "told"):
             setattr(self, a, getattr(old, a))
+
+    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
+        """This conversation's own terminal (terminals/store.default_terminal)."""
+        if ctx.store is None:
+            return None
+        from ..terminals.store import default_terminal
+        name = await default_terminal(ctx.store, ctx.conversation_id)
+        return f"Your terminal in this conversation is `{name}`."
 
     @property
     def status(self) -> str:
@@ -430,51 +439,84 @@ class Shell:
     @property
     def error(self) -> str | None:
         if not shellbox.url(self.cfg):
-            return not_set_up("the shellbox")
+            return her_not_set_up("the shellbox")
         return None
 
     # ---- the tools ------------------------------------------------------------------------
 
     @tool(mode="detach", read_only=False, destructive=True, open_world=True,
-          background="background", timeout=SELF_END, terminal_arg="terminal",
+          background="background", timeout=SELF_END,
           detached=SHELL_DETACHED, detached_display={"head": 1})
     async def run(
         self,
         ctx: ToolContext,
         command: Annotated[str, "The command line, run by your shell as if typed at its "
                                 "prompt. Several lines are fine."],
-        timeout: Annotated[float | None, "Most seconds to wait, 1 to 3000. Without it, until "
-                                         "the command ends or the time of your turn is up. "
-                                         "The command keeps running after it."] = None,
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal; a new name opens a new terminal."] = None,
-        background: Annotated[bool, "True hands the wait to a background job: the call "
-                                    "answers within 5 seconds and the result reaches you as a "
-                                    "message when the command ends."] = False,
+        terminal: Annotated[str, "Which terminal, by name. A new name opens a new "
+                                 "terminal."],
+        timeout: Annotated[float | None, TIMEOUT_HELP + " The command keeps running "
+                                                        "after it."] = None,
+        background: Annotated[bool, BACKGROUND_HELP] = False,
     ) -> ToolResult:
         """Run a command in your shell, in a terminal of your shellbox, and wait for its
-        end. The shell keeps its directory and variables between runs. For programs that
-        wait for keys (ssh, python3, vim, a server's console) use shell__type.
+        end, at most the timeout. The shell keeps its directory and variables between
+        runs. For programs that wait for keys (ssh, python3, vim, a server's console) use
+        shell__type. A message from {{username}} ends the wait at once; the command keeps
+        running.
         Returns: a status line (terminal, directory, exit status and duration, or still
         running), the output (its start and end when long) and the log's path."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
             command = "" if command is None else str(command)
             if not command.strip():
                 raise ToolRefused("command is the command line to run, like command=\"ls -la\".")
-            given = as_number(timeout, "timeout", "timeout=60")
-            seconds = float(RUN_MAX) if given is None else min(max(given, 1), RUN_MAX)
-            if ctx.time_left is not None and not as_bool(background, "background"):
-                seconds = max(1, min(seconds, int(ctx.time_left - TURN_MARGIN)))
+            seconds = self._seconds(ctx, timeout, as_bool(background, "background"))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
-        if self._capped(ctx):
-            return self._refused(self._cap_words(), name)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         body = {"terminal": name, "command": command, "timeout": seconds,
                 "chars": self._chars(ctx, HEAD + TAIL)}
+        return await self._watch(ctx, "/run", body, name, command)
 
+    @tool(mode="detach", read_only=True, open_world=True,
+          background="background", timeout=SELF_END,
+          detached=SHELL_DETACHED, detached_display={"head": 1})
+    async def wait(
+        self,
+        ctx: ToolContext,
+        terminal: Annotated[str, "Which terminal, by name."],
+        timeout: Annotated[float | None, TIMEOUT_HELP] = None,
+        background: Annotated[bool, BACKGROUND_HELP] = False,
+    ) -> ToolResult:
+        """Wait for the end of the latest shell__run in a terminal, as shell__run waits
+        for its own: for a command still running after its run's wait. When it ended
+        already, its result at once. A message from {{username}} ends the wait at once.
+        Returns: as shell__run."""
+        try:
+            name = check_name(str(terminal))
+            seconds = self._seconds(ctx, timeout, as_bool(background, "background"))
+        except ToolRefused as e:
+            return self._refused(str(e), terminal)
+        body = {"terminal": name, "timeout": seconds, "chars": self._chars(ctx, HEAD + TAIL)}
+        return await self._watch(ctx, "/wait", body, name)
+
+    @staticmethod
+    def _seconds(ctx: ToolContext, timeout: Any, background: bool) -> float:
+        """How long a run or a wait waits: in the turn WAIT_DEFAULT, at most WAIT_MAX and
+        never past the turn's time; in the background until the end, at most RUN_MAX."""
+        given = as_number(timeout, "timeout", "timeout=60")
+        if background:
+            return float(RUN_MAX) if given is None else min(max(given, 1), RUN_MAX)
+        seconds = float(WAIT_DEFAULT) if given is None else min(max(given, 1), WAIT_MAX)
+        if ctx.time_left is not None:
+            seconds = max(1, min(seconds, int(ctx.time_left - TURN_MARGIN)))
+        return seconds
+
+    async def _watch(self, ctx: ToolContext, path: str, body: dict, name: str,
+                     command: str = "") -> ToolResult:
+        """POST /run or /wait, and its result. A message from the user
+        (ctx.user_wrote) ends the wait with what the run printed so far."""
         async def progress(line: str) -> None:
             if ctx.emit is not None:
                 try:
@@ -484,7 +526,11 @@ class Shell:
 
         try:
             with anyio.move_on_after(SELF_END) as limit:
-                res = await self._run_request(body, progress)
+                res = await self._stream(path, body, progress, ctx.user_wrote)
+                cut = res is None
+                if cut:                 # the user wrote: what it has now
+                    res = await self._stream("/wait", {"terminal": name, "timeout": 0.1,
+                                                       "chars": body["chars"]}, progress)
             if limit.cancelled_caught:
                 return ToolResult(content=f"The shellbox did not answer in {dur(SELF_END)}; "
                                           f"the command may still run. "
@@ -494,12 +540,20 @@ class Shell:
             return self._refused(str(e), name)
         except httpx.HTTPError as e:
             return self._unreachable(name, e)
-        return await self._result(ctx, res, "run", name, text=command)
+        if res.get("no_run"):
+            return ToolResult(content=f"No run of yours in terminal {name} to wait for. "
+                                      f"{call('shell__read', name)} shows its screen.",
+                              is_error=True, display={"terminal": name})
+        notes = [f"The wait ended: {self.cfg.user} wrote."] \
+            if cut and res.get("state") == "running" else None
+        return await self._result(ctx, res, "run", name,
+                                  text=command or str(res.get("command") or ""), notes=notes)
 
-    @tool(read_only=False, destructive=True, open_world=True, terminal_arg="terminal")
+    @tool(read_only=False, destructive=True, open_world=True)
     async def type(
         self,
         ctx: ToolContext,
+        terminal: Annotated[str, "Which terminal, by name."],
         text: Annotated[str, "Typed exactly as written. Several lines arrive as one paste. "
                              "Use real line breaks: a written \\n arrives as a backslash and "
                              "an n."] = "",
@@ -507,8 +561,6 @@ class Shell:
                              "Enter, Tab, Up, Down, Left, Right, Home, End, PageUp, PageDown, "
                              "Backspace, Delete, Space, F1 to F12, C-d (Ctrl), or one single "
                              "character. Examples: \"Escape\", \"Down Down Enter\"."] = "",
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal."] = None,
         enter: Annotated[bool, "Press Enter after text. False types without Enter, for a "
                                "single letter in a full-screen program."] = True,
     ) -> ToolResult:
@@ -519,22 +571,12 @@ class Shell:
         Returns: a status line (terminal, what is in front and whether it waits for input),
         then the screen."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
             text = "" if text is None else str(text)
             key_list = parse_keys(keys)
-            if text:
-                check_text(text)
             press = as_bool(enter, "enter")
         except ToolRefused as e:
             return self._refused(f"{e} Nothing was typed.", terminal)
-        if self._capped(ctx):
-            try:
-                status, listed = await self._post("/read", {}, read=60)
-            except (ToolRefused, httpx.HTTPError):
-                listed = {}
-            if name not in {t.get("name") for t in listed.get("terminals") or []
-                            if isinstance(t, dict)}:
-                return self._refused(f"{self._cap_words()} Nothing was typed.", name)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
         notes = []
@@ -551,12 +593,11 @@ class Shell:
         return await self._result(ctx, res, "type", name, text=text, keys=key_list,
                                   notes=notes)
 
-    @tool(read_only=False, destructive=True, open_world=True, terminal_arg="terminal")
+    @tool(read_only=False, destructive=True, open_world=True)
     async def stop(
         self,
         ctx: ToolContext,
-        terminal: Annotated[str | None, "Which terminal. Leave it out for your default "
-                                        "terminal."] = None,
+        terminal: Annotated[str, "Which terminal, by name."],
     ) -> ToolResult:
         """Press Ctrl-C in a terminal: the program in front stops, or the run waiting
         there ends (usually exit 130). A program that reads Ctrl-C as a key (python3, nano)
@@ -564,7 +605,7 @@ class Shell:
         this call.
         Returns: how the run ended, or the screen."""
         try:
-            name = check_name(str(terminal or "main"))
+            name = check_name(str(terminal))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
         if (refused := await self._not_hers(ctx, name)) is not None:
@@ -630,7 +671,7 @@ class Shell:
         """Send {{username}} files from your shellbox: they are attached to this
         conversation, images shown, other files to download. Up to 5 at once; for more,
         zip them first (`zip -r ~/out/files.zip <folder>`) and send the zip.
-        Returns: each file's name and size."""
+        Returns: each file's name, size and short id (intercom__send takes it)."""
         from .. import attachments, box_files
         paths = path_list(path)
         if isinstance(paths, str):
@@ -647,15 +688,21 @@ class Shell:
             try:
                 row = await attachments.save_stream(
                     self.cfg, ctx.store, box_files.stream(self.cfg, rel, transport=self.transport),
-                    name, None, tool_call_id=ctx.tool_call_id)
+                    name, None, tool_call_id=ctx.tool_call_id,
+                    limit=int(self.cfg.r("max_attachment_bytes")))
             except (FileNotFoundError, RuntimeError) as e:
                 lines.append(str(e))
+                continue
+            except TooLarge as e:
+                lines.append(f"{e.message} Share it instead (shell__share), or zip it "
+                             f"smaller.")
                 continue
             except httpx.HTTPError as e:
                 return self._unreachable(None, e)
             sent.append({k: row[k] for k in ("id", "sha256", "filename", "media_type",
                                              "bytes")})
-            lines.append(f"Sent {self.cfg.user} {name} ({attachments.size(row['bytes'])}).")
+            lines.append(f"Sent {self.cfg.user} {name} ({attachments.size(row['bytes'])}), "
+                         f"short id {row['id'][:attachments.SHORT]}.")
         return ToolResult(content="\n".join(lines), is_error=not sent,
                           display={"paths": paths, "attachments": sent})
 
@@ -681,7 +728,7 @@ class Shell:
             return ToolResult(content="Only a conversation can look at images.",
                               is_error=True)
         sees = await attachments.turn_sees_images(self.cfg, ctx)
-        lines, ids, shown = [], [], []
+        lines, ids = [], []
         for rel in paths:
             name = rel.rsplit("/", 1)[-1]
             media = LOOKS.get(name.rsplit(".", 1)[-1].lower())
@@ -702,8 +749,6 @@ class Shell:
             except httpx.HTTPError as e:
                 return self._unreachable(None, e)
             ids.append(row["id"])
-            shown.append({k: row[k] for k in ("id", "sha256", "filename", "media_type",
-                                              "bytes")})
             if sees:
                 lines.append(f"{name} ({attachments.size(row['bytes'])}):")
             else:
@@ -713,7 +758,7 @@ class Shell:
                                              question)
                 lines.append(f"{name}: {said}")
         return ToolResult(content="\n".join(lines), is_error=not ids,
-                          display={"paths": paths, "attachments": shown},
+                          display={"paths": paths},
                           images=ids if sees and ids else None)
 
     @tool(read_only=False, destructive=False, open_world=True)
@@ -733,12 +778,15 @@ class Shell:
                                        f"hours, at most {shares.PRIVATE_MAX}; a public one "
                                        f"{shares.PUBLIC_HOURS} hours, at most "
                                        f"{shares.PUBLIC_MAX}."] = None,
+        device: Annotated[str | None, "A device of yours, such as mac: the port or the path "
+                                      "is on it (a path there from its home, or from /)."
+                                      ] = None,
     ) -> ToolResult:
-        """Show {{username}} something in your shellbox: a server you run on a port (a web
-        app, a game, a dashboard) or a file or folder in your home (a video, an image, a
-        page, a built game). They see it as a card under your reply and open it in a tab of
-        its own. A share is private; a public one waits for their approval. Returns: its
-        id, its link and when it ends."""
+        """Show {{username}} something in your shellbox or on a device of yours: a server you
+        run on a port (a web app, a game, a dashboard) or a file or folder in your home (a
+        video, an image, a page, a built game). They see it as a card under your reply and
+        open it in a tab of its own. A share is private; a public one waits for their
+        approval. Returns: its id, its link and when it ends."""
         title = (title or "").strip()
         if (port is None) == (path is None or not str(path).strip()):
             return ToolResult(content="Give a port or a path, one of them.", is_error=True)
@@ -753,13 +801,23 @@ class Shell:
                                       f"{'public' if public else 'private'} share.",
                               is_error=True)
         rel = str(path).strip().rstrip("/") if port is None else None
-        what = f"port {port}" if port is not None else shellbox.home_short(rel)
+        if device is not None:
+            mine = devices.devices(self.cfg)
+            if device not in mine:
+                return ToolResult(content=f"{device} is not one of your devices that is on. "
+                                          f"Yours: {', '.join(mine) or 'none'}.",
+                                  is_error=True)
+            if not mine[device].share:
+                return ToolResult(content=f"{mine[device].label} has no share server: its "
+                                          f"Shares address in Settings is empty.",
+                                  is_error=True)
+        what = _shown(port, rel, device, self.cfg)
         if public and (no := await self._public(ctx, title, what, hours)):
             return ToolResult(content=no, is_error=True)
         try:
             row = await shares.create(self.cfg, ctx.store, title, port=port, path=rel,
                                       conversation_id=ctx.conversation_id, public=public,
-                                      hours=hours)
+                                      hours=hours, device=device)
             st = await shares.state(self.cfg, ctx.store, row)
         except RuntimeError as e:
             return ToolResult(content=str(e), is_error=True)
@@ -770,9 +828,9 @@ class Shell:
         lines = [f"Shared \"{title}\" ({what}) as share {row['token']}. {self.cfg.user} sees it "
                  f"as a card under your reply. {who}: {shares.link(self.cfg, row)}",
                  f"Your own browser opens it at {shares.INSIDE}{shares.page_path(row)}",
-                 f"It ends {when(row['ends_at'], zone(self.cfg))}, at shell__unshare "
-                 f"or at the next reset of your box."]
-        if st == "down":
+                 f"It ends {when(row['ends_at'], zone(self.cfg))}, at shell__unshare"
+                 + (" or at the next reset of your box." if device is None else ".")]
+        if st == "down" and port is not None:
             lines.append(f"Nothing is running on port {port} yet: it shows once your "
                          f"server answers there.")
         return ToolResult(content="\n".join(lines),
@@ -813,8 +871,7 @@ class Shell:
         states = [await shares.state(self.cfg, ctx.store, r) for r in rows]
         tz = zone(self.cfg)
         lines = [f"- {r['token']}: \"{r['title']}\", "
-                 + (f"port {r['port']}" if r["port"] is not None
-                    else shellbox.home_short(r["path"]))
+                 + _shown(r["port"], r["path"], r["device"], self.cfg)
                  + (", public" if r["public"] else "")
                  + (f", ended {when(shares.end_of(r), tz)}" if st == "ended" else
                     (", answers" if st == "live" else ", nothing answers")
@@ -825,28 +882,44 @@ class Shell:
 
     # ---- the shellbox over HTTP ------------------------------------------------------------
 
-    async def _run_request(self, body: dict, progress) -> dict:
-        """POST /run: progress lines go to `progress`, the final object comes back. A
-        stream that ends without one is a dropped connection."""
+    async def _stream(self, path: str, body: dict, progress, wrote=None) -> dict | None:
+        """POST /run or /wait: progress lines go to `progress`, the final object comes
+        back. A stream that ends without one is a dropped connection. `wrote` (an
+        anyio.Event) set ends the wait once the command is in its terminal (a run's
+        "started" line; a /wait's at once): None, and the box stops watching when the
+        connection closes."""
         if not shellbox.url(self.cfg):
-            raise ToolRefused(not_set_up("the shellbox"))
+            raise ToolRefused(her_not_set_up("the shellbox"))
         async with shellbox.client(self.cfg, None, self.transport) as client, \
-                client.stream("POST", shellbox.url(self.cfg) + "/run", json=body) as r:
+                client.stream("POST", shellbox.url(self.cfg) + path, json=body) as r:
             if r.status_code != 200:
                 await r.aread()
                 raise shellbox.refusal(self.cfg, r, self.cfg.user)
-            async for line in r.aiter_lines():
-                if not line.strip():
-                    continue
-                try:
-                    msg = json.loads(line)
-                except ValueError:
-                    raise httpx.ReadError("not a line of JSON") from None
-                if "progress" in msg and "state" not in msg:
-                    await progress(str(msg["progress"]))
-                    continue
-                return msg
-        raise httpx.ReadError("the stream ended without a result")
+            lines = r.aiter_lines()
+
+            async def upto(started: bool):
+                """The next result, or with `started` STARTED at the "started" line."""
+                async for line in lines:
+                    if not line.strip():
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except ValueError:
+                        raise httpx.ReadError("not a line of JSON") from None
+                    if "state" not in msg and "started" in msg:
+                        if started:
+                            return STARTED
+                    elif "state" not in msg and "progress" in msg:
+                        await progress(str(msg["progress"]))
+                    else:
+                        return msg
+                raise httpx.ReadError("the stream ended without a result")
+
+            if wrote is not None and path == "/run" and \
+                    (out := await upto(True)) is not STARTED:
+                return out
+            ended, out = await until_set(lambda: upto(False), wrote)
+            return None if ended else out
 
     async def _post(self, path: str, body: dict, read: float) -> tuple[int, dict]:
         return await shellbox.call(self.cfg, "POST", path, body, read=read, transport=self.transport,
@@ -890,7 +963,7 @@ class Shell:
         sentence that names its address."""
         if isinstance(e, (httpx.ConnectError, httpx.TimeoutException,
                           httpx.UnsupportedProtocol)):
-            content = unreachable_words("the shellbox", shellbox.url(self.cfg), e)
+            content = her_unreachable("the shellbox", shellbox.url(self.cfg))
         else:
             what = f"terminal {name} and what ran in it are" if name else \
                 "your terminals and what ran in them are"
@@ -952,8 +1025,7 @@ class Shell:
                                       f"terminal: {said}.",
                               is_error=True, display={"terminal": name, "state": "error"})
         if state == "busy":
-            wedge = self._wedge(ctx) if res.get("reason") != "paused" else None
-            return self._refused(" ".join(filter(None, [self._busy(res, name), wedge])), name)
+            return self._refused(self._busy(res, name), name)
         prog, pid = program_of(res)
         is_run = "cmd" in res and isinstance(res.get("cmd"), str)
         lines = [self._status(res, name, prog, pid, is_run)]
@@ -963,9 +1035,6 @@ class Shell:
             ended_by = await terminals.last_ended_by(ctx.store, name)
         lines += self._notes(ctx, res, name, ended_by) + (notes or [])
         lines += self._explain(ctx, res, name, state, prog, pid, is_run)
-        if (tool_name == "run" and state == "waiting") or \
-                (tool_name == "stop" and state not in ("done", "prompt", "closed", "ended")):
-            lines.append(self._wedge(ctx))
         if is_run:
             self.told.add((ctx.conversation_id, res["cmd"]))
         else:
@@ -1011,26 +1080,6 @@ class Shell:
             await terminals.upsert(ctx.store, str(res["id"]), name, owner, now(),
                                    ctx.conversation_id if mine else None)
         return ToolResult(content="\n".join(lines).rstrip(), display=display)
-
-    def _capped(self, ctx: ToolContext) -> bool:
-        return self.wedges.get(ctx.conversation_id, 0) >= WEDGE_MAX
-
-    def _cap_words(self) -> str:
-        return (f"Refused: you hit {WEDGE_MAX} wedged terminals in this conversation, so "
-                f"shell__run and new terminals are off here. Stop using the shell in this "
-                f"conversation and report what happened: bugreport__file, or tell "
-                f"{self.cfg.user}.")
-
-    def _wedge(self, ctx: ToolContext) -> str:
-        """One more wedge for this conversation (a run that waits for input or was refused,
-        a stop that did not free the terminal), in words."""
-        n = self.wedges[ctx.conversation_id] = self.wedges.get(ctx.conversation_id, 0) + 1
-        if n < WEDGE_MAX:
-            return (f"Wedge {n} of {WEDGE_MAX} in this conversation: at {WEDGE_MAX}, shell__run "
-                    f"and new terminals are refused here.")
-        return (f"Wedge {n} of {WEDGE_MAX} in this conversation: shell__run and new terminals "
-                f"are now refused here. Stop using the shell in this conversation and report "
-                f"what happened: bugreport__file, or tell {self.cfg.user}.")
 
     def _busy(self, res: dict, name: str) -> str:
         """Why a run was not sent, and how to get past it: one sentence."""
@@ -1122,8 +1171,10 @@ class Shell:
                        f"key. {call('shell__stop', name)} again ends it (SIGTERM, then "
                        f"SIGKILL).")
         elif is_run and state in ("running", "waiting"):
-            out.append(f"It keeps running: {call('shell__read', name, **{'from': size})} "
-                       f"shows what it prints from here, {call('shell__stop', name)} stops it."
+            out.append(f"It keeps running: {call('shell__wait', name)} waits for its end "
+                       f"(with background=true its result comes as a message), "
+                       f"{call('shell__read', name, **{'from': size})} shows what it prints "
+                       f"from here, {call('shell__stop', name)} stops it."
                        if state == "running" else
                        f"Answer with {call('shell__type', name, text='...')}, or "
                        f"{call('shell__stop', name)} stops it.")
@@ -1209,11 +1260,14 @@ async def probe(cfg, services) -> dict[str, str]:
             r = await c.get(url + "/status", timeout=PROBE_WAIT)
     except httpx.HTTPError as e:
         if not saved:
-            return {"state": "unset", "detail": not_set_up("the shellbox")}
-        return {"state": "missing", "detail": unreachable_words("the shellbox", url, e)}
+            return {"state": "unset", "detail": not_set_up("the shellbox"),
+                    "why": her_not_set_up("the shellbox")}
+        return {"state": "missing", "detail": unreachable_words("the shellbox", url, e),
+                "why": her_unreachable("the shellbox", url)}
     found = {} if saved else {"url": url}
     if r.status_code in (401, 403):
-        return {"state": "missing", "detail": bad_key("the shellbox", url), **found}
+        return {"state": "missing", "detail": bad_key("the shellbox", url),
+                "why": her_bad_key("the shellbox", url), "key": True, **found}
     if saved:
         return {"state": "ready", "detail": f"The shellbox at {host} answers."}
     return {"state": "ready", "detail": f"Found at {url}.", "url": url}

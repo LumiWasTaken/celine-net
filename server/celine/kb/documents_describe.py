@@ -22,7 +22,6 @@ models is back, or after work.DEFER_SECONDS, and so does the next upload or resc
 from __future__ import annotations
 
 import logging
-import re
 import sqlite3
 import time
 from typing import Any, Callable
@@ -35,8 +34,6 @@ log = logging.getLogger("celine.kb.documents")
 
 PART_CHARS = 8000
 MAX_PARTS = 12
-MAX_OUT = 1200
-MAX_ATTEMPTS = 3
 
 # the prompts, beside this module: describe.md (the card), describe_part.md and
 # describe_part_late.md (one part of a long file, early and late), describe_check.md
@@ -63,7 +60,7 @@ def default_describer(kb) -> Callable[[str, str], tuple[str, str]]:
     loop = kb.tasks.loop if kb.tasks is not None else None
 
     async def one(system: str, user: str) -> tuple[str, str]:
-        from ..backends.base import BackendError, Done, TextDelta
+        from ..backends.base import Done, TextDelta
         from ..backends.queue import Priority
         from ..backends.router import NoModel
         from ..settings.thinking import OFF
@@ -80,21 +77,15 @@ def default_describer(kb) -> Callable[[str, str], tuple[str, str]]:
                 async for ev in events:
                     if isinstance(ev, TextDelta):
                         parts.append(ev.text)
-                        if sum(len(p) for p in parts) > 4 * MAX_OUT:
-                            break
                     elif isinstance(ev, Done):
                         break
             finally:
                 await events.aclose()
         except NoModel as e:
             raise Soft(e.sentence) from None
-        except BackendError as e:
-            if e.retryable:
-                raise Soft(str(e)) from None
-            raise
         model = getattr(qb.answered, "model", "")
-        text = clean("".join(parts))
-        if not text:
+        text = "".join(parts)
+        if not text.strip():
             raise RuntimeError(f"{model} gave an empty answer")
         return text, model
 
@@ -118,21 +109,6 @@ def default_captioner(kb) -> Callable[[bytes, str], dict[str, Any]]:
         except media.Waiting as e:
             raise Soft(str(e)) from None
     return call
-
-
-_THINK = re.compile(r"<think>.*?</think>", re.S)
-
-
-def clean(text: str) -> str:
-    t = _THINK.sub("", text or "").strip()
-    t = re.sub(r"^(?:\*\*)?(?:description|catalogue card|card|notes)(?:\*\*)?\s*:\s*", "", t,
-               flags=re.I)
-    t = t.strip().strip('"“”').strip()
-    t = " ".join(t.split())
-    if len(t) > MAX_OUT:
-        cut = t.rfind(". ", 0, MAX_OUT)
-        t = t[:cut + 1] if cut > MAX_OUT // 2 else t[:MAX_OUT].rstrip() + "…"
-    return t
 
 
 # ---- what goes to the model -------------------------------------------------------------------
@@ -316,10 +292,7 @@ def run(kb, ctx) -> dict[str, Any]:
             _store(kb, it, ai_state="skipped", ai_error=str(e)[:300])
             res["skipped"] += 1
         except Exception as e:                 # noqa: BLE001 - one file never stops the rest
-            n = int(kb.file.read_sync(lambda c: c.execute(
-                "SELECT ai_attempts FROM items WHERE id = ?", (it["id"],)).fetchone()[0] or 0))
-            _store(kb, it, ai_attempts=n + 1, ai_error=f"{type(e).__name__}: {e}"[:300],
-                   ai_state="failed" if n + 1 >= MAX_ATTEMPTS else "pending")
+            _store(kb, it, ai_error=f"{type(e).__name__}: {e}", ai_state="failed")
             res["failed"] += 1
             log.warning("document description failed", extra={
                 "event": "documents.describe_failed", "kb": kb.id, "item": it["id"],

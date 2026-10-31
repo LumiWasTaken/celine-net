@@ -5,7 +5,7 @@
    one of the six HTTP/1.1 connections a browser keeps per site, so a few open tabs
    would starve every request. /intercom/stream is for other clients (curl, a CLI). */
 import { createContext } from 'react'
-import { json, post, query, request } from './api'
+import { json, post, query, request, type Attachment } from './api'
 
 /** how many messages wait for you, the server's (the rail's count, App); null until it
     answered */
@@ -42,6 +42,8 @@ export type IntercomMessage = {
   /** it starts a turn where it lands */
   wake: boolean
   data: Record<string, unknown>
+  /** the files it carries */
+  attachments: Attachment[]
   /** where it came from; null for your own */
   source: Source | null
   state: 'pending' | 'sent' | 'cancelled'
@@ -138,7 +140,7 @@ export const isScheduled = (m: Pick<IntercomMessage, 'due_at' | 'state'>) => !!m
 
 /** an address as you read it (the server names it) */
 export function addressName(addr: string, names: Record<string, string | null>): string {
-  if (addr === 'all') return 'everyone working'
+  if (addr === 'all') return 'everyone'
   const name = names[addr] ?? addr
   return addr.startsWith('team:') ? `the team of ${name}` : name
 }

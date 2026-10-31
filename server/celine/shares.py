@@ -1,6 +1,11 @@
-"""Shares: something of its shellbox the user opens through the app. A share is a port (a
-server it runs in its box: a game, a dev server, a control panel) or a path in its home
-(a file, or a folder served as static files). /share/<token>/... reaches it.
+"""Shares: something of its shellbox, or of one of its devices, the user opens through the
+app. A share is a port (a server it runs in its box: a game, a dev server, a control
+panel) or a path in its home (a file, or a folder served as static files).
+/share/<token>/... reaches it.
+
+On a device (devices.py, `share` in its plugin's [drones] block) its share server
+(plugins/mac/setup.sh writes share.js) answers GET /forward and GET /file as shellboxd
+does, with the device's token as the bearer; a device has no resets.
 
 A port goes through shellboxd's GET /forward, a raw tunnel to localhost:<port> inside its
 box: only the app talks to its box, and a server bound to 127.0.0.1 works too. HTTP and
@@ -46,12 +51,12 @@ from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from starlette.requests import cookie_parser
 from websockets.asyncio.client import connect as ws_connect
 
-from . import keys, shellbox
+from . import devices, keys, shellbox
 from .artifacts.page import HEAD as PAGE_HEAD
 from .core.ids import iso
 from .errors import NotFound
 from .core.event_types import SHARE_UPDATED
-from .settings import features
+from .settings import address, features
 
 router = APIRouter()
 
@@ -94,7 +99,7 @@ def clock() -> datetime:
 
 
 def _origin(cfg) -> str:
-    return str(cfg.server.get("public_origin") or f"http://localhost:{cfg.port}").rstrip("/")
+    return address.base(cfg)
 
 
 def link(cfg, row: dict) -> str:
@@ -120,53 +125,81 @@ def running(row: dict) -> bool:
     return end_of(row) > iso(clock())
 
 
-def on(cfg) -> bool:
-    """The shares feature is on, and the shellbox it goes through."""
-    return features.on(cfg, "shellbox") and features.on(cfg, "shares")
+def on(cfg, device: str | None = None) -> bool:
+    """The shares feature is on, and the shellbox or the device it goes through."""
+    return features.on(cfg, "shares") and (
+        features.on(cfg, "shellbox") if device is None else device in devices.devices(cfg))
 
 
 def opens(cfg, row: dict | None) -> bool:
     """/share/ answers for it: it runs and shares are on."""
-    return row is not None and running(row) and on(cfg)
+    return row is not None and running(row) and on(cfg, row["device"])
 
 
-async def probe(cfg, services) -> dict[str, str]:
-    """Settings, Features: a share goes through its box, so the shellbox feature first."""
-    if not features.on(cfg, "shellbox"):
-        return {"state": "unset", "detail": "The shellbox is off."}
-    return {"state": "ready", "detail": "The shellbox is on."}
+def _where(cfg, device: str | None) -> tuple[str, str]:
+    """The address and the key of what serves a share: its box, or the device's share
+    server; ("", "") for a device that is off."""
+    if device is None:
+        return shellbox.url(cfg), keys.read(cfg.data_dir, "shell")
+    d = devices.devices(cfg).get(device)
+    return (d.share, d.password) if d is not None else ("", "")
 
 
-def down_words(port: int) -> str:
-    return f"Nothing is running on port {port} in the shellbox right now."
+def _client(cfg, device: str | None, read: float | None) -> httpx.AsyncClient:
+    if device is None:
+        return shellbox.client(cfg, read)
+    return httpx.AsyncClient(timeout=httpx.Timeout(CONNECT, read=read), headers={
+        "Authorization": f"Bearer {_where(cfg, device)[1]}"})
+
+
+async def _file_head(cfg, device: str | None, path: str) -> httpx.Response:
+    """Its first byte of the file at `path`: whether it is there (200, 206, 416) or a
+    folder (400 with "folder": true)."""
+    async with _client(cfg, device, CONNECT) as c:
+        return await c.get(_where(cfg, device)[0] + "/file", params={"path": path},
+                           headers={"Range": "bytes=0-0"})
+
+
+async def probe(cfg, services) -> dict:
+    """Settings, Features: a share goes through its box, so the box's own probe: a share
+    opens only while it answers. It never blocks the switch: that follows the shellbox's
+    switch (the feature's `after`), and the box is set up in its own step."""
+    got = await features.probe(cfg, services, "shellbox")
+    if got["state"] != "ready":
+        return {k: v for k, v in got.items() if k != "url"} | {"state": "missing",
+                                                                "blocks": False}
+    return {"state": "ready", "detail": "The shellbox answers.", "blocks": False}
+
+
+def down_words(port: int, device: str | None = None, cfg=None) -> str:
+    where = "in the shellbox" if device is None else f"on {devices.label(device, cfg)}"
+    return f"Nothing is running on port {port} {where} right now."
 
 
 # ---- rows ------------------------------------------------------------------------------
 
 async def create(cfg, store, title: str, *, port: int | None = None, path: str | None = None,
                  conversation_id: str | None = None, public: bool = False,
-                 hours: float | None = None) -> dict:
-    """A new share of a port or a path, for `hours` (its kind's default when None). RuntimeError
-    with its sentence when the box says no or the path is not there; httpx.HTTPError when
-    the box does not answer."""
-    _, status = await shellbox.call(cfg, "GET", "/status")
+                 hours: float | None = None, device: str | None = None) -> dict:
+    """A new share of a port or a path in its box or on `device`, for `hours` (its kind's
+    default when None). RuntimeError with its sentence when the box or the device says no
+    or the path is not there; httpx.HTTPError when it does not answer."""
+    status = (await shellbox.call(cfg, "GET", "/status"))[1] if device is None else {}
     folder = False
     if path is not None:
-        async with shellbox.client(cfg, CONNECT) as c:
-            r = await c.get(shellbox.url(cfg) + "/file", params={"path": path},
-                            headers={"Range": "bytes=0-0"})
+        r = await _file_head(cfg, device, path)
         folder = r.status_code == 400 and _said(r).get("folder") is True
         if r.status_code not in (200, 206, 416) and not folder:
-            raise RuntimeError(_said(r).get("error") or f"No file or folder {path} in your home.")
+            raise RuntimeError(_said(r).get("error") or f"No file or folder {path}.")
     row = {"token": "".join(secrets.choice(TOKEN_CHARS) for _ in range(TOKEN_LEN)),
            "title": title, "port": port, "path": path, "folder": int(folder),
            "reset": str(status.get("reset") or ""), "conversation_id": conversation_id,
            "public": int(public), "secret": secrets.token_urlsafe(24),
            "created_at": iso(clock()), "ends_at": iso(clock() + timedelta(
                hours=hours or (PUBLIC_HOURS if public else PRIVATE_HOURS))),
-           "ended_at": None}
+           "ended_at": None, "device": device}
     cols = ("token", "title", "port", "path", "folder", "reset", "conversation_id", "public",
-            "secret", "created_at", "ends_at")
+            "secret", "created_at", "ends_at", "device")
 
     def fn(c: sqlite3.Connection) -> None:
         c.execute(f"INSERT INTO shares({', '.join(cols)}) VALUES({', '.join('?' * len(cols))})",
@@ -211,19 +244,17 @@ async def state(cfg, store, row: dict) -> str:
     off) or ended; a box reset since it was shared ends it here."""
     if not running(row):
         return "ended"
-    if not on(cfg):
+    if not on(cfg, row["device"]):
         return "down"
     if row["port"] is not None:
-        got = await tunnel(cfg, row["port"])
+        got = await tunnel(cfg, row["port"], row["device"])
         if got is None:
             return "down"
         got[0].close()
         reset = got[1]
     else:
         try:
-            async with shellbox.client(cfg, CONNECT) as c:
-                r = await c.get(shellbox.url(cfg) + "/file", params={"path": row["path"]},
-                                headers={"Range": "bytes=0-0"})
+            r = await _file_head(cfg, row["device"], row["path"])
         except httpx.HTTPError:
             return "down"
         reset = r.headers.get("x-shellbox-reset", "")
@@ -242,7 +273,8 @@ async def _ended(store, row: dict) -> str:
 def shown(row: dict, st: str) -> dict:
     """A share as the UI gets it; `url` opens it in a tab of its own."""
     return {"token": row["token"], "title": row["title"], "port": row["port"],
-            "path": row["path"], "conversation_id": row["conversation_id"],
+            "path": row["path"], "device": row["device"],
+            "conversation_id": row["conversation_id"],
             "public": bool(row["public"]), "created_at": row["created_at"],
             "ends_at": end_of(row), "state": st,
             "url": f"/api/shares/{row['token']}/open"}
@@ -294,15 +326,18 @@ def _said(r: httpx.Response) -> dict:
 
 # ---- the tunnel ------------------------------------------------------------------------
 
-async def tunnel(cfg, port: int) -> tuple[socket.socket, str] | None:
-    """A raw connection to localhost:<port> in its box (shellboxd's /forward), and the
-    box's last reset; None when nothing listens there or the box does not answer."""
-    # note: plain http to the box only; a box behind TLS needs a TLS socket here
-    base = urlsplit(shellbox.url(cfg))
+async def tunnel(cfg, port: int, device: str | None = None
+                 ) -> tuple[socket.socket, str] | None:
+    """A raw connection to localhost:<port> in its box or on `device` (GET /forward), and
+    the box's last reset ("" on a device); None when nothing listens there or it does not
+    answer."""
+    # note: plain http only; a box or a device behind TLS needs a TLS socket here
+    where, key = _where(cfg, device)
+    base = urlsplit(where)
     if not base.hostname:
         return None
     hello = (f"GET /forward?port={port} HTTP/1.1\r\nHost: {base.netloc}\r\n"
-             f"Authorization: Bearer {keys.read(cfg.data_dir, 'shell')}\r\n"
+             f"Authorization: Bearer {key}\r\n"
              "Connection: Upgrade\r\nUpgrade: tcp\r\n\r\n").encode()
 
     def dial() -> tuple[socket.socket, str] | None:
@@ -389,9 +424,9 @@ async def share(request: Request, token: str, rest: str) -> Response:
 
 async def _forward(request: Request, cfg, store, row: dict, rest: str) -> Response:
     port = row["port"]
-    got = await tunnel(cfg, port)
+    got = await tunnel(cfg, port, row["device"])
     if got is None:
-        return _page(502, down_words(port))
+        return _page(502, down_words(port, row["device"], cfg))
     sock, reset = got
     if reset != row["reset"]:
         sock.close()
@@ -412,7 +447,7 @@ async def _forward(request: Request, cfg, store, row: dict, rest: str) -> Respon
             headers=head, content=request.stream()))
     except (httpcore.ProtocolError, httpcore.NetworkError, OSError):
         await conn.aclose()
-        return _page(502, down_words(port))
+        return _page(502, down_words(port, row["device"], cfg))
 
     async def body():
         try:
@@ -436,15 +471,16 @@ async def _file(request: Request, cfg, store, row: dict, rest: str) -> Response:
         rel += "" if sub == "/" else sub
         if rest == "" or rest.endswith("/"):
             rel += "/index.html"
-    client = shellbox.client(cfg, None)
+    client = _client(cfg, row["device"], None)
     try:
         r = await client.send(client.build_request(
-            "GET", shellbox.url(cfg) + "/file", params={"path": rel},
+            "GET", _where(cfg, row["device"])[0] + "/file", params={"path": rel},
             headers={"Range": request.headers["range"]} if "range" in request.headers else {}),
             stream=True)
     except httpx.HTTPError:
         await client.aclose()
-        return _page(502, BOX_DOWN)
+        return _page(502, BOX_DOWN if row["device"] is None else
+                     f"{devices.label(row['device'], cfg)} is not answering right now.")
     if r.headers.get("x-shellbox-reset", "") != row["reset"] or \
             r.status_code not in (200, 206, 416):
         await r.aread()
@@ -480,7 +516,7 @@ async def share_socket(ws: WebSocket, token: str, rest: str) -> None:
     message both ways until either side closes."""
     cfg, store = _services(ws.app)
     row = await get(store, token)
-    got = await tunnel(cfg, row["port"]) if opens(cfg, row) and row["port"] and \
+    got = await tunnel(cfg, row["port"], row["device"]) if opens(cfg, row) and row["port"] and \
         allowed(row, ws.headers, False, await from_browser(cfg, ws.client and ws.client.host)) \
         else None
     if got is None:

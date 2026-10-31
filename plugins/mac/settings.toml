@@ -1,0 +1,94 @@
+copies = "gateway:copies"
+# every field but the line is filled by the Mac's report (gateway.py), never typed
+
+[[fields]]
+key = "publish"
+label = "Run in a terminal in the Celine folder on this computer"
+type = "copy"
+
+[[fields]]
+key = "command"
+label = "Run in Terminal on the Mac"
+type = "copy"
+
+[[fields]]
+key = "url"
+filled = "The Mac is not connected yet"
+label = "Address"
+type = "text"
+default = ""
+word = true
+
+[[fields]]
+key = "agents"
+filled = "The Mac is not connected yet"
+label = "Coding agent"
+type = "text"
+default = ""
+word = true
+
+[[fields]]
+key = "share"
+filled = "The Mac is not connected yet"
+label = "Shares"
+type = "text"
+default = ""
+word = true
+
+[[fields]]
+key = "about"
+filled = "The Mac is not connected yet"
+label = "About This Mac"
+type = "text"
+default = ""
+
+[[fields]]
+key = "token"
+filled = "The Mac is not connected yet"
+label = "Token"
+type = "secret"
+
+[[fields]]
+key = "chip"
+filled = "The Mac is not connected yet"
+label = "Chip"
+type = "text"
+default = ""
+
+[[fields]]
+key = "memory"
+filled = "The Mac is not connected yet"
+label = "Memory"
+type = "text"
+default = ""
+
+[[fields]]
+key = "macos"
+filled = "The Mac is not connected yet"
+label = "macOS"
+type = "text"
+default = ""
+
+[[fields]]
+key = "network"
+filled = "The Mac is not connected yet"
+label = "Network"
+type = "text"
+default = ""
+
+[[fields]]
+key = "user"
+filled = "The Mac is not connected yet"
+label = "User"
+type = "text"
+default = ""
+
+[[actions]]
+id = "check"
+label = "Check"
+run = "gateway:check"
+
+[[actions]]
+id = "again"
+label = "Set up again"
+run = "gateway:again"

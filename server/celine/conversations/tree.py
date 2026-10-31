@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 
 from ..core.ids import new_id, now
@@ -21,6 +22,8 @@ from ..core.event_types import (
     TURN_STATE,
     VERSION_CHANGED,
 )
+
+log = logging.getLogger("celine.tree")
 
 
 class Busy(errors.Busy):
@@ -152,11 +155,12 @@ def append(c: sqlite3.Connection, store, cid: str, parent: str | None, role: str
          "attachments": files.of_message(c, mid),
          "intercom": view(c, intercom_id, cid) if intercom_id is not None else None,
          "meta": meta_view(meta, role, quiet)}
+    # the version first: a client fetches the new path and skips what follows it
+    _say_if_new_version(c, store, cid, parent, mid, old_leaf)
     store.event(c, cid, MESSAGE_CREATED, {
         "message_id": mid, "parent_id": parent, "role": role, "content": text,
         "ordinal": ordinal, "author": author, "attachments": m["attachments"],
         "intercom": m["intercom"], "meta": m["meta"], "turn_id": turn_id})
-    _say_if_new_version(c, store, cid, parent, mid, old_leaf)
     return m
 
 
@@ -271,9 +275,11 @@ def live_queue(c: sqlite3.Connection, cid: str) -> list[dict]:
 def turn_state(c: sqlite3.Connection, store, cid: str, turn_id: str, state: str,
                **more) -> int:
     """The one `turn.state` event: the turn, its state, the conversation's live queue
-    after the change (`queue`, live_queue) and what `more` adds. -> its seq."""
+    after the change (`queue`, live_queue), the message Regenerate answers
+    (`unanswered`) and what `more` adds. -> its seq."""
     return store.event(c, cid, TURN_STATE, {"turn_id": turn_id, "state": state,
-                                              "queue": live_queue(c, cid), **more})
+                                              "queue": live_queue(c, cid),
+                                              "unanswered": unanswered(c, cid), **more})
 
 
 def queue_turn(c: sqlite3.Connection, store, cid: str, root: str | None, *,
@@ -337,11 +343,11 @@ async def start_assistant_message(store, cid: str, parent_id: str | None,
             c.execute("UPDATE messages SET preferred_child_id=? WHERE id=?",
                       (mid, parent_id))
         c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (mid, cid))
+        _say_if_new_version(c, store, cid, parent_id, mid, old_leaf)
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": parent_id, "role": "assistant",
                      "ordinal": ordinal, "turn_id": turn_id,
                      "meta": meta_view(None, "assistant", t and t["quiet"])})
-        _say_if_new_version(c, store, cid, parent_id, mid, old_leaf)
         return mid
 
     return await store.write(fn)
@@ -458,37 +464,97 @@ async def active_leaf(store, cid: str) -> str | None:
 
 # ---- the user's tree edits --------------------------------------------------------------
 
+def _no_reply(c: sqlite3.Connection, cid: str) -> tuple[str, str | None] | None:
+    """The user's message at the end of the active path that nothing answered, walking
+    up from the leaf: a reply that never said anything (tool calls only, or a failed
+    stream) or one a failed turn wrote does not count as an answer, and a message that
+    landed quietly after it (a notice with wake off) waits for none. -> (its id, the
+    turn that tried to answer it or None, whether that turn's reply said something);
+    None when a reply answered it."""
+    mid = leaf(c, cid)
+    tried, said = None, False
+    while True:
+        m = c.execute("SELECT m.id, m.role, m.parent_id, m.content, m.turn_id, i.wake "
+                      "FROM messages m LEFT JOIN intercom i ON i.id = m.intercom_id "
+                      "WHERE m.id=?", (mid,)).fetchone()
+        if m is None:
+            return None
+        if m["role"] == "user" and m["wake"] != 0:
+            break
+        if m["role"] == "assistant" and (m["content"] or "").strip() and not (
+                m["turn_id"] and c.execute("SELECT 1 FROM turns WHERE id=? AND "
+                                           "state='failed'", (m["turn_id"],)).fetchone()):
+            return None
+        said = said or bool((m["content"] or "").strip())
+        tried = tried or (m["turn_id"] if m["role"] == "assistant" else None)
+        mid = m["parent_id"]
+    # one that failed before it wrote anything
+    tried = tried or (c.execute(
+        "SELECT id FROM turns WHERE conversation_id=? AND root_message_id=? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1", (cid, mid)).fetchone() or [None])[0]
+    return mid, tried, said
+
+
+# fn(cid) -> whether the conversation's chat model continues a reply in place
+# (turns/prompt.supports_prefill); the app sets it at start, None: it never does
+prefills = None
+
+
+# why no answer came, by how the turn that tried ended
+_NO_ANSWER = {"failed": "The reply failed.", "interrupted": "The server restarted during "
+              "the reply.", "aborted": "Stopped.", "capped": "Stopped at the step limit.",
+              "done": "The reply was empty."}
+
+
+def unanswered(c: sqlite3.Connection, cid: str) -> dict | None:
+    """What Regenerate answers, while no turn of the conversation runs or waits:
+    {message_id, turn_id and state (the turn that tried and how it ended, None when
+    none tried), reason (why no answer came, a sentence), continues (Continue picks
+    up the reply it said before it failed: view.continuable, and the chat model
+    continues a reply in place)}; None when the last message has its answer."""
+    from .view import continuable
+    if c.execute(f"SELECT 1 FROM turns WHERE conversation_id=? AND state IN {LIVE_SQL} "
+                 "LIMIT 1", (cid,)).fetchone():
+        return None
+    found = _no_reply(c, cid)
+    if found is None:
+        return None
+    mid, tried, said = found
+    t = c.execute("SELECT * FROM turns WHERE id=?", (tried,)).fetchone() \
+        if tried else None
+    if t is None:
+        return {"message_id": mid, "turn_id": None, "state": None,
+                "reason": "No answer yet.", "continues": False}
+    told = t["reason"] if t["state"] in ("failed", "interrupted") else None
+    return {"message_id": mid, "turn_id": t["id"], "state": t["state"],
+            "reason": told or _NO_ANSWER.get(t["state"], "No answer yet."),
+            "continues": said and continuable(c, cid, t)["ok"] and _prefills(cid)}
+
+
+def _prefills(cid: str) -> bool:
+    """`prefills`, inside a write: a model lookup that breaks offers no Continue and
+    never fails the write that tells the turn's state."""
+    if prefills is None:
+        return False
+    try:
+        return bool(prefills(cid))
+    except Exception:
+        log.exception("prefill check failed", extra={"event": "tree.prefill_check_failed"})
+        return False
+
+
 async def regenerate(store, cid: str) -> tuple[str, int]:
-    """A new turn for the last user message when no reply followed it."""
+    """A new turn for the last user message when no reply followed it (_no_reply)."""
     def fn(c: sqlite3.Connection) -> tuple[str, int]:
         row = c.execute("SELECT active_leaf_id FROM conversations WHERE id=?",
                         (cid,)).fetchone()
         if row is None:
             raise KeyError(cid)
         refuse_if_live(c, cid)
-        # walk up from the leaf: a reply that never said anything (tool calls only, or
-        # a failed stream) does not count as an answer
-        mid = row["active_leaf_id"]
-        tried = None             # the turn that tried to answer: who speaks again
-        while True:
-            m = c.execute("SELECT id, role, parent_id, content, turn_id FROM messages "
-                          "WHERE id=?", (mid,)).fetchone()
-            if m is None:
-                raise ValueError("the last message is not yours")
-            if m["role"] == "user":
-                break
-            if m["role"] == "assistant" and (m["content"] or "").strip():
-                failed = bool(m["turn_id"] and (c.execute(
-                    "SELECT 1 FROM turns WHERE id=? AND state='failed'",
-                    (m["turn_id"],)).fetchone()))
-                if not failed:
-                    raise ValueError("the last message is not yours")
-            tried = tried or (m["turn_id"] if m["role"] == "assistant" else None)
-            mid = m["parent_id"]
-        # one that failed before it wrote anything
-        tried = tried or (c.execute(
-            "SELECT id FROM turns WHERE conversation_id=? AND root_message_id=? "
-            "ORDER BY created_at DESC, rowid DESC LIMIT 1", (cid, mid)).fetchone() or [None])[0]
+        found = _no_reply(c, cid)
+        if found is None:
+            raise ValueError("the last message is not yours")
+        mid, tried, _ = found
         if mid != row["active_leaf_id"]:
             c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (mid, cid))
             c.execute("UPDATE messages SET preferred_child_id=NULL WHERE id=?", (mid,))
@@ -513,9 +579,9 @@ async def retry(store, cid: str, message_id: str) -> tuple[str, int]:
             raise ValueError("Nothing to retry. This is the first message.")
         c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (parent, cid))
         c.execute("UPDATE messages SET preferred_child_id=NULL WHERE id=?", (parent,))
-        out = queue_turn(c, store, cid, parent, **again_as(c, msg["turn_id"], message_id))
+        # the version first, then the turn that answers on it (as regenerate)
         store.event(c, cid, VERSION_CHANGED, {"parent_id": parent, "active_leaf_id": parent})
-        return out
+        return queue_turn(c, store, cid, parent, **again_as(c, msg["turn_id"], message_id))
 
     return await store.write(fn)
 
@@ -567,12 +633,17 @@ async def edit(store, cid: str, message_id: str,
 KEEP_TIME = "keep_time:"    # + a turn id: the conversation's time to put back after it
 
 
-async def continue_message(store, cid: str, message_id: str) -> tuple[str, str, int]:
+NO_PREFILL = "This model cannot continue a reply where it stopped."
+
+
+async def continue_message(store, cid: str, message_id: str, *,
+                           prefill: bool) -> tuple[str, str, int]:
     """The agent's finished reply at the active leaf, carried on: a new version of it holding
     its text, and a queued turn that streams on into that version (the runner's
     reopen step: its text as a prefilled assistant turn, thinking off). The old text
-    stays as the previous version. -> (message id, turn id, seq). ValueError with the
-    sentence why when it cannot be continued."""
+    stays as the previous version. `prefill`: whether the conversation's model takes
+    one; without it nothing is written. -> (message id, turn id, seq). ValueError with
+    the sentence why when it cannot be continued."""
     def fn(c: sqlite3.Connection) -> tuple[str, str, int]:
         m = c.execute("SELECT role, parent_id, content, created_at, turn_id, meta "
                       "FROM messages WHERE id=? AND conversation_id=?",
@@ -589,6 +660,8 @@ async def continue_message(store, cid: str, message_id: str) -> tuple[str, str, 
             raise ValueError("Only the last message can be continued.")
         if not (m["content"] or "").strip():
             raise ValueError("The reply has no text to continue.")
+        if not prefill:
+            raise ValueError(NO_PREFILL)
         # the new version keeps the reply's time, and the conversation its place in the
         # list: its time now is put back when the turn ends (turns/store.py set_state)
         was = c.execute("SELECT updated_at FROM conversations WHERE id=?", (cid,)).fetchone()[0]
@@ -704,12 +777,10 @@ async def branch(store, cid: str, message_id: str) -> dict | None:
 
 
 def final_words(c: sqlite3.Connection, turn_id: str) -> str:
-    """The agent's answer of a turn: its last reply that called no tool, without web citation
-    marks (their numbers mean something only in its context). "" when it has none:
-    what it said between tool calls is no answer."""
-    from ..skills.web import uncite
+    """The agent's answer of a turn as she wrote it: its last reply that called no tool.
+    "" when it has none: what it said between tool calls is no answer."""
     r = c.execute("SELECT content FROM messages m WHERE turn_id = ? AND role = 'assistant' "
                   "AND coalesce(content, '') <> '' AND NOT EXISTS (SELECT 1 FROM tool_calls "
                   "tc WHERE tc.message_id = m.id) ORDER BY created_at DESC, rowid DESC "
                   "LIMIT 1", (turn_id,)).fetchone()
-    return uncite(r[0]).strip() if r else ""
+    return r[0] if r else ""

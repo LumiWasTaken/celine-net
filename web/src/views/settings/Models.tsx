@@ -16,7 +16,7 @@ import { clock, errorText } from '../../lib/format'
 import { format, useNav } from '../../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import {
-  SETTINGS_EVENTS, settingsApi, type Available, type Cap, type FieldSchema, type KindInfo, type ModelConfig,
+  SETTINGS_EVENTS, settingsApi, type Available, type Cap, type KindInfo, type ModelConfig,
   type OptionSchema, type ProviderKind, type ProviderModel, type ProviderView, type RoleView,
   LINK,
 } from '../../lib/settingsApi'
@@ -26,10 +26,9 @@ import { useResource, type Resource } from '../../lib/useResource'
 import { ModelChooser, contextWords, findModel, modelDetail, modelName } from '../../components/ModelChooser'
 import { EMPTY_PROVIDER, ProviderFields, host, kindInfo, ready, type ProviderDraft } from '../../components/ProviderFields'
 import {
-  Button, Checkbox, Choice, ConfirmDialog, Dialog, Dot, EmptyState, Field, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton,
-  Notice, NumberField, SearchField, Section, Step, SubHead, Switch, useContextMenu, VirtualList, type DotTone, type MenuItem,
+  Button, Checkbox, Choice, ConfirmDialog, Dialog, Dot, EmptyState, Field, Form, type FormField, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton, Notice, NumberField, SearchField, Section, Step, SubHead, Switch, useContextMenu, VirtualList, type DotTone, type MenuItem,
 } from '../../ui'
-import { Page, SchemaForm } from './parts'
+import { Page } from './parts'
 import { ROLE } from '../../lib/media'
 import './settings.css'
 
@@ -65,7 +64,7 @@ export function providerProblem(p: ProviderView): string | null {
 
 /** why a model cannot be used now, or null */
 function modelProblem(m: ProviderModel | undefined, p: ProviderView | undefined): string | null {
-  if (!m || !p) return 'Not on its provider any more.'
+  if (!m || !p) return 'This model is no longer on its provider. Pick another one.'
   if (p.state.key_missing) return `${p.provider.label} has no API key.`
   if (p.state.reachable === false) return `${p.provider.label} is not connected.`
   if (m.state.state === 'failed') {
@@ -197,22 +196,22 @@ export function RoleRow({ role, info, providers, onChanged, fallback, onSave, he
 
 // plain words for the provider options the server lists per kind; others are humanised
 const OPTION: Record<string, { label: string; help?: string; unit?: string; choices?: Record<string, string> }> = {
-  service_tier: { label: 'Speed and price', choices: { '': 'Default', flex: 'Flex (cheaper, slower)', priority: 'Priority (faster, dearer)' } },
+  service_tier: { label: 'Speed and price', choices: { '': 'Default', flex: 'Flex (cheaper, slower)', priority: 'Priority (faster, more expensive)' } },
   data_collection: { label: 'Provider may keep data', choices: { deny: 'No', allow: 'Yes' } },
   require_parameters: { label: 'Require parameters' },
   allow_fallbacks: { label: 'Allow fallbacks' },
   sort: { label: 'Sort by', choices: { '': 'Default', throughput: 'Throughput', latency: 'Latency', price: 'Price' } },
   timeout: { label: 'Timeout', unit: 'seconds' },
-  max_concurrent: { label: 'Requests at once', help: '0 = no limit' },
-  keep_alive: { label: 'Unload after', help: '5m' },
+  max_concurrent: { label: 'Requests at once', help: '0 means no limit.' },
+  keep_alive: { label: 'Unload after', help: 'How long an idle model stays loaded, for example 5m or 1h.' },
   shares_gpu_with: { label: 'Shares its GPU with',
-                     help: 'The app unloads its models before each image.' },
+                     help: 'Before each image, the app unloads this provider\'s models to free the GPU.' },
 }
 // lists of OpenRouter provider names: edited in var/settings/providers.toml
 const FILE_ONLY = new Set(['order', 'only', 'ignore', 'quantizations', 'backup_models', 'thinking_levels'])
 
 /** the options of one provider; `others`: the llama-swap and tabbyAPI providers it can share a GPU with */
-export function optionSchema(opts: OptionSchema[], others: ProviderView[]): FieldSchema[] {
+export function optionSchema(opts: OptionSchema[], others: ProviderView[]): FormField[] {
   return opts.filter(o => !FILE_ONLY.has(o.key)).map(o => {
     const m = OPTION[o.key]
     const label = m?.label ?? (o.key.charAt(0).toUpperCase() + o.key.slice(1)).replace(/_/g, ' ')
@@ -300,8 +299,8 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
 
       {schema.length > 0 && (
         <Section title="Options">
-          <SchemaForm schema={schema} values={{ ...cfg.options, ...opts.pending }} disabled={!online}
-                      onChange={(k, v) => opts.set(k, v)} />
+          <Form fields={schema} values={{ ...cfg.options, ...opts.pending }} disabled={!online}
+                onChange={(k, v) => opts.set(k, v)} />
           {opts.error && <InlineError compact message={opts.error} onRetry={opts.flush} />}
         </Section>
       )}
@@ -312,7 +311,7 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
       {open && <ModelDialog p={p} m={open} onClose={() => setEditing(null)} onChanged={onChanged} />}
       {dropping && (
         <ConfirmDialog title={`Remove ${modelName(dropping)}?`} danger confirmLabel="Remove"
-                       body={`It leaves ${cfg.label}.`}
+                       body={`It is removed from ${cfg.label} and from every role that uses it.`}
                        onClose={() => setDropping(null)}
                        onConfirm={async () => {
                          try { await settingsApi.deleteModel(p.id, dropping.name); setDropping(null); onChanged() }
@@ -321,7 +320,7 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
       )}
       {remove && (
         <ConfirmDialog title={`Remove ${cfg.label}?`} danger confirmLabel="Remove"
-                       body="Its models leave every role. The app deletes its key."
+                       body="Its models are removed from every role, and its saved key is deleted."
                        onClose={() => setRemove(false)}
                        onConfirm={async () => {
                          try { await settingsApi.deleteProvider(p.id); onChanged(); nav.go({ section: 'settings', page: 'models' }) }
@@ -432,7 +431,8 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
         <Field label="Capabilities" group>
           <div className="settings__caps">
             {(['chat', 'tools', 'vision'] as const).map(c => (
-              <Switch key={c} label={c.charAt(0).toUpperCase() + c.slice(1)} checked={d.caps.includes(c)} disabled={!online}
+              <Switch key={c} label={c.charAt(0).toUpperCase() + c.slice(1)}
+                      checked={stated(m, c) ?? d.caps.includes(c)} disabled={!online || stated(m, c) !== null}
                       onChange={v => change({ caps: v ? [...d.caps, c] : d.caps.filter(x => x !== c) })} />
             ))}
           </div>
@@ -511,6 +511,13 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
     return (list.data?.models ?? []).filter(d => !d.added)
       .filter(d => !f || d.id.toLowerCase().includes(f) || (d.name ?? '').toLowerCase().includes(f))
   }, [list.data, q])
+  // a model the server does not list: the name as typed
+  const typed = q.trim()
+  const unlisted = !!typed && !/[\s'"]/.test(typed) && !(list.data?.models ?? []).some(d => d.id === typed)
+  const addTyped = useAction(async () => {
+    await settingsApi.putModel(p.id, typed, { label: typed, ...(zdr ? { zdr: true } : {}), ...(provider.trim() ? { provider: provider.trim() } : {}) })
+    onAdded(); onClose()
+  })
   const add = useAction(async () => {
     for (const id of picked) {
       const d = list.data?.models.find(x => x.id === id)
@@ -525,10 +532,15 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
   return (
     <Dialog title={`Add models from ${p.provider.label}`} onClose={onClose} size="lg" dismissable={!add.busy}>
       <div className="dialog__form">
-        <SearchField value={q} onChange={setQ} placeholder="Search models" autoFocus />
+        <SearchField value={q} onChange={setQ} placeholder="Search models or type a model ID" autoFocus />
+        {unlisted && (
+          <Button variant="secondary" icon={Plus} loading={addTyped.busy} disabled={add.busy} onClick={() => void addTyped.run()}>
+            Add "{typed}"
+          </Button>
+        )}
         {list.error && !list.data ? <InlineError compact message={list.error} onRetry={list.reload} />
           : !list.data ? <LoadingRow label="Loading" />
-          : shown.length === 0 ? <EmptyState compact>{q ? `No model matches "${q}".` : 'Every model it has is added already.'}</EmptyState>
+          : shown.length === 0 ? (unlisted ? null : <EmptyState compact>{q ? `No model matches "${q}".` : 'All models from this provider are already added.'}</EmptyState>)
           : (
             <div className="boxed-list boxed-list--dialog" style={{ '--rows': shown.length } as CSSProperties}>
               <VirtualList items={shown} estimate={44} getKey={d => d.id} resetOn={q}
@@ -555,7 +567,7 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
             </Field>
           </>
         )}
-        {add.error && <InlineError compact message={add.error} />}
+        {(add.error || addTyped.error) && <InlineError compact message={add.error ?? addTyped.error} />}
         <div className="dialog__actions">
           <Button variant="secondary" onClick={onClose} disabled={add.busy}>Cancel</Button>
           <Button variant="primary" loading={add.busy} disabled={picked.size === 0} onClick={() => void add.run()}>
@@ -568,6 +580,9 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
 }
 
 /** capabilities as words: "chat, tools", "image generation" */
+/** whether the server states the model has `c` (tools, vision); null when it does not say */
+const stated = (m: ProviderModel, c: Cap): boolean | null =>
+  m.server_caps && (c === 'tools' || c === 'vision') ? m.server_caps.includes(c) : null
 const capWords = (caps: string[] | undefined) => (caps ?? []).map(c => c.replace(/_/g, ' ')).join(', ')
 
 /* ── Add a provider: check the address first, then save ── */

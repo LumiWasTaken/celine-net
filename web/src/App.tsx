@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DoorOpen, Ellipsis, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
 import './components/Shell.css'
 import './components/App.css'
@@ -13,7 +13,7 @@ import { HerContext } from './lib/her'
 import { NameContext, PronounsContext } from './lib/name'
 import { AppearanceContext, useAppearanceSettings } from './lib/appearance'
 import { SpeechProvider } from './components/Speech'
-import { NavProvider, useNav, type Section } from './lib/nav'
+import { NavProvider, format, useNav, type Section } from './lib/nav'
 import { ConnectionProvider, changesApi } from './lib/socket'
 import { useLostLogins } from './lib/sources'
 import { useRoutinesAttention } from './lib/routines'
@@ -24,11 +24,12 @@ import { useResource } from './lib/useResource'
 import { useSlide } from './ui/slide'
 import { SectionBoundary } from './components/SectionBoundary'
 import { ServerDown } from './components/ServerDown'
-import { Portrait } from './components/Portrait'
 import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
-import { Button, ConfirmDialog, ICON, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx } from './ui'
+import { isTyping } from './lib/keys'
+import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
+import { settingsApi, type Home } from './lib/settingsApi'
 import { usePageName } from './lib/title'
 import { BAR, TITLE, VIEWS, Welcome, sectionHref, shownPlaces, type RailEntry } from './routes'
 
@@ -44,6 +45,8 @@ export function App() {
 }
 
 const WORK_WORD: Record<RowState, string> = { running: 'Running', failed: 'Failed', needs_you: 'Waiting for you' }
+/** the rail entry of each place a conversation lives in (server/celine/homes.py) */
+const HOME_SECTION: Record<Home, Section> = { her: 'celine', missions: 'missions', routines: 'routines' }
 
 function Shell() {
   const nav = useNav()
@@ -64,6 +67,32 @@ function Shell() {
   // sections mount on first visit and then stay mounted, so their state survives
   const [visited, setVisited] = useState<Set<Section>>(() => new Set([section]))
   useEffect(() => { setVisited(v => v.has(section) ? v : new Set(v).add(section)) }, [section])
+  // a move to another section (not the first load): its title takes the focus, so Tab goes
+  // on from there, and the place is announced. Never from a field being typed in, never on
+  // a touch screen (a focus there can raise the keyboard); a view that took the focus
+  // itself (the composer) keeps it
+  const [announced, setAnnounced] = useState('')
+  const firstSection = useRef(true)
+  useEffect(() => {
+    if (firstSection.current) { firstSection.current = false; return }
+    // a view that loads on its first visit draws its title a moment later
+    const view = document.querySelector<HTMLElement>(`.sections > .view[data-section="${section}"]`)
+    setAnnounced(view?.getAttribute('aria-label') ?? '')
+    const place = () => {
+      const title = view?.querySelector<HTMLElement>('h1')
+      if (!view || !title) return false
+      if (!coarse() && !isTyping(document.activeElement) && !view.contains(document.activeElement)
+          && !document.querySelector('[aria-modal="true"]')) {
+        title.tabIndex = -1
+        title.focus({ preventScroll: true })
+      }
+      return true
+    }
+    if (!view || place()) return
+    const watch = new MutationObserver(() => { if (place()) watch.disconnect() })
+    watch.observe(view, { childList: true, subtree: true })
+    return () => watch.disconnect()
+  }, [section])
 
   // the config status is an extra: when it fails, the app still works, so a failure
   // leaves it out instead of showing an error
@@ -97,13 +126,20 @@ function Shell() {
   const waiting = useResource(() => changesApi.get(null).then(c => c.unread), [], { events: isIntercomEvent })
   useServerEvents(ev => { if (ev.type === 'changes') waiting.set(ev.unread as number) })
   const unread = waiting.data ?? 0
+  // the approvals that wait, the server's: a dot on the place each one's conversation lives
+  // in (unless it is the page on screen), which opens it, and the count in the window's title
+  const asks = useResource(() => settingsApi.approvals(), [], { events: ev => ev.type === 'approvals.changed' })
+  const asked = asks.data?.count ?? 0
+  const onScreen = format(nav.route)
+  const askedIn = (id: Section) =>
+    asks.data?.approvals.find(a => a.home && a.link && HOME_SECTION[a.home] === id && a.link !== onScreen)
 
   // the window's title, on every page: the waiting count first (not in Setup, which has no
   // rail), then the page's own name (a terminal, an artifact: lib/title; Celine's place: its
   // name, views/Celine) or the section's
   const pageName = usePageName()
   const own = terminal || artifact || section === 'celine' ? pageName : ''
-  useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread)
+  useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread + asked)
 
   // a source that lost its login: a dot on Settings
   const lost = useLostLogins()
@@ -133,9 +169,21 @@ function Shell() {
   // the heads' Go to
   useServerEvents(ev => { if (ev.type === 'ui.goto') setSheet('switch') })
 
-  const portrait = status?.owner.portrait
   const rail = useRef<HTMLElement>(null)
   useSlide(rail, '.rail__item[aria-current="page"]', section)
+
+  // switching place: the place left stays painted under the one fading in until the fade
+  // is done, so the canvas never shows between them
+  const [under, setUnder] = useState<Section | null>(null)
+  const lastSection = useRef(section)
+  useLayoutEffect(() => {
+    const from = lastSection.current
+    lastSection.current = section
+    if (from === section || reduced()) return
+    setUnder(from)
+    const t = window.setTimeout(() => setUnder(null), ms('--dur'))
+    return () => window.clearTimeout(t)
+  }, [section])
 
   // the brand mark says which build this is (hover, and the accessible name)
   const built = status?.build
@@ -143,10 +191,14 @@ function Shell() {
   const labelOf = (id: Section) => (id === 'celine' ? name : TITLE[id])
   const go = (id: Section) => (e: React.MouseEvent) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
-    e.preventDefault(); nav.goSection(id)
+    e.preventDefault()
+    const at = askedIn(id)?.link
+    if (at) nav.goPath(at)
+    else nav.goSection(id)
   }
   const badge = (id: Section) => {
     if (id === 'intercom' && unread > 0) return <span className="rail__count" aria-hidden>{unread > 99 ? '99+' : unread}</span>
+    if (askedIn(id)) return <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
     if (id === 'settings' && lost.length > 0) return <span className="rail__dot" aria-label={`${lost.length} to fix`} />
     if (id === 'routines' && routines && id !== section) return <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} />
     const w = id === section ? undefined : id === 'celine' ? work.celine : id === 'missions' && missionsWaiting ? 'needs_you' : undefined
@@ -183,8 +235,8 @@ function Shell() {
       <div className="frame">
         <nav ref={rail} className="rail" aria-label="Sections">
           {/* its face when it has one, the app's mark until then */}
-          <div className="rail__brand" title={portrait ? undefined : build}>
-            {portrait ? <Portrait className="rail__face" /> : <Rat size={ICON.lg} aria-hidden />}
+          <div className="rail__brand" title={build}>
+            <Rat size={ICON.lg} aria-hidden />
           </div>
           {places.map(p => railItem(p, bar.includes(p.id) ? undefined : 'rail__item--more'))}
           {frozen && (
@@ -207,7 +259,9 @@ function Shell() {
                   aria-haspopup="dialog" onClick={() => setSheet('more')}>
             <Ellipsis size={ICON.lg} aria-hidden />
             <span className="rail__label">More</span>
-            {lost.length > 0 ? <span className="rail__dot" aria-label={`${lost.length} to fix`} />
+            {places.some(p => !bar.includes(p.id) && askedIn(p.id))
+              ? <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
+              : lost.length > 0 ? <span className="rail__dot" aria-label={`${lost.length} to fix`} />
               : routines && section !== 'routines' ? <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} /> : null}
           </Button>
         </nav>
@@ -216,12 +270,14 @@ function Shell() {
           {VIEWS.map(v => {
             const el = visited.has(v.id) && v.view({ ...shown, active: section === v.id })
             return el && (
-              <section key={v.id} className="view" hidden={section !== v.id} aria-label={labelOf(v.id)}>
+              <section key={v.id} className={cx('view', under === v.id && section !== v.id && 'view--under')} data-section={v.id}
+                       hidden={section !== v.id && under !== v.id} inert={section !== v.id || undefined} aria-label={labelOf(v.id)}>
                 <SectionBoundary><Suspense fallback={<LoadingRow />}>{el}</Suspense></SectionBoundary>
               </section>
             )
           })}
         </div>
+        <p className="sr-only" aria-live="polite">{announced}</p>
       </div>
       </>)}
 

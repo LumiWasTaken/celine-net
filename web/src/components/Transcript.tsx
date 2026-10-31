@@ -1,43 +1,46 @@
 /* The transcript, the same everywhere (Celine's chat, a mission), in the one design: every message is the kit's Message with its action row under
    it, the last one too, shown on hover, focus or tap with its height reserved
-   (MessageActions); times on hover only (the action row, the face's tooltip). Settled tool
+   (MessageActions); times on hover only (the action row). Settled tool
    calls are not in the stream: a call at work is one shimmering line, its pictures and
    music are their blocks, and the reply's "..." has Activity. Wait words are the typing
    dots with the words as their tooltip; where an answer did not come, "Paused." with
-   Continue or "The reply failed." with Retry (Status TurnEnd). The agent's thinking follows
+   Continue, "The reply failed." with Retry, or under your message that has none (the
+   server's `unanswered`) its reason with Regenerate (Status TurnEnd). The agent's thinking follows
    Appearance: hidden with Hide thinking (moved to Thoughts in "..."), or shown above
    its reply as a fold ("The agent's thoughts") whose starting state follows Collapse thinking by
    default. While it thinks and has no words yet, one shimmering "Thinking" line. The agent's
    settled tool calls sit under its words as their rows (hidden with Hide tool calls,
    leaving Activity in "..."). Bastet's banners sit after the reply whose call she
    decided on (GuardBanner), and so does a request of hers that waits for you
-   (ApprovalAsk). Never hidden: Retry, Continue, Stop, reminders, intercom lines,
+   (ApprovalAsk). Never hidden: Retry, Continue, Regenerate, Stop, reminders, intercom lines,
    Bastet's banners and her requests. */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   conversationApi, type Attachment, type Compaction, type ImageNotice, type Live, type Message, type Queued, type Switched,
-  type ToolCall, type Turn,
+  type ToolCall, type ToolRun, type Turn, type Unanswered,
 } from '../lib/api'
 import { bytes, errorText, fullDate, stamp } from '../lib/format'
-import { fileUrl } from '../lib/media'
+import { TILE, fileUrl, tileUrl } from '../lib/media'
 import { format } from '../lib/nav'
 import { getPref, setPref } from '../lib/prefs'
-import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Paperclip, Repeat, Shrink, type LucideIcon } from 'lucide-react'
-import { Button, EventLine, Fold, ICON, IconButton, InlineError, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey } from '../ui'
+import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Repeat, Shrink, type LucideIcon } from 'lucide-react'
+import { Button, EventLine, Fold, ICON, InlineError, LoadingRow, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey, useMove } from '../ui'
 import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
 import { Status, TurnEnd, endWords } from './Status'
-import { capital, usePronouns } from '../lib/name'
+import { capital, useOwner, usePronouns } from '../lib/name'
 import { useHer } from '../lib/her'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
-import { ArtifactCards, FormingRow, ShareCards, ToolLines, artifactsOf, sharesOf } from './ToolRow'
+import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, ToolRuns, ToolSheets, artifactsOf, sharesOf, useToolRuns } from './ToolRow'
 import { GuardBanner } from './GuardBanner'
 import { ApprovalAsk } from './ApprovalAsk'
 import { useFrozen, type GuardBanner as Banner } from '../lib/guard'
 import type { ChatApproval } from '../lib/settingsApi'
+import { KeepPlace } from '../lib/useStickToBottom'
+import { Appear } from './Appear'
 import './Transcript.css'
 
 /** when it was written: the local time, the full date on hover */
@@ -46,7 +49,6 @@ function Stamp({ at }: { at: string }) {
   if (Number.isNaN(t)) return null
   return <span title={fullDate(t)}>{stamp(t)}</span>
 }
-const fullOf = (at: string) => { const t = Date.parse(at); return Number.isNaN(t) ? undefined : fullDate(t) }
 
 /* A message that reached the conversation other than as you typed it: one quiet line,
    its text behind the line. `Reminder` (one it set; one you set reads `Note to Celine`), `Brief from
@@ -96,14 +98,19 @@ type Segment =
   | { kind: 'reply'; msgs: Message[]; index: number }
   | { kind: 'quiet'; msgs: Message[]; index: number }
 
-/** your message, shown the moment you send it, until the server's copy arrives */
-export type Pending = { text: string; files: string[] }
+/** your message, shown the moment you send it, until the server's copy arrives: its files
+    as the server's copy draws them, so the swap changes nothing */
+export type Pending = { text: string; files: Attachment[]; intercomId?: number }
 
 type Props = {
   conversationId: string | null
   messages: Message[]
   toolCalls: Record<string, ToolCall[]>
+  /** each turn's runs of calls alike, by turn id (the server's) */
+  runs: Record<string, ToolRun[]>
   turn: Turn | null
+  /** your message that has no answer, and why (the server's) */
+  unanswered: Unanswered | null
   running: boolean
   error: { message: string; retryable: boolean } | null
   pending: Pending | null
@@ -116,6 +123,8 @@ type Props = {
   live: Live | null
   /** the live turns in the order they run: the ones after the first show "Queued" */
   queue?: Queued[]
+  /** the snapshots that brought another version (useConversation): such a change moves nothing */
+  swaps?: number
   /** replies another model wrote because the chosen one failed */
   switched: Record<string, Switched>
   /** the lines after a switch to a model that can't see images */
@@ -132,11 +141,15 @@ type Props = {
   assistant: string
   /** your name, for the brief you gave it ('' until the status is in) */
   user: string
-  /** answer the last message again (Retry) */
+  /** answer the last message again (Retry, Regenerate) */
   onRetry: () => Promise<void>
   /** read-only (a mission in the Trash): nothing here writes to it */
   closed?: boolean
 }
+
+/** the row where a reply lands (the dots, "Queued"), as useMove knows it: never gone */
+const LANDS = 'lands'
+const STAYS: ReadonlySet<string> = new Set([LANDS])
 
 /** what every line of one transcript shares */
 type T = {
@@ -145,16 +158,17 @@ type T = {
 }
 
 export function Transcript(
-  { conversationId, messages, toolCalls, turn, running, error, pending, compactions, waiting, live, queue = [], switched, imageNotices, banners = [],
+  { conversationId, messages, toolCalls, runs, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], swaps = 0, switched, imageNotices, banners = [],
     approvals = [], forming = [], note, assistant, user, onRetry, closed = false }: Props,
 ) {
   const streaming = running && turn?.state === 'streaming'
   const frozen = useFrozen()
+  const toolRuns = useToolRuns(toolCalls, runs)
   // a background job's result shows in the call that started the job, not again here
   const visible = messages.filter(m => m.role !== 'tool' && m.intercom?.kind !== 'job')
   const last = visible.at(-1)
   const [editing, setEditing] = useState<string | null>(null)
-  const t: T = { cid: conversationId ?? '', running, turn, closed, lastId: last?.id, editing, setEditing }
+  const t: T = { cid: conversationId ?? '', running, turn, closed, lastId: last?.id, editing, setEditing: id => { if (id) keep(id); setEditing(id) } }
 
   // The agent's replies that arrive while you watch rise in once (Web Animations, so a return to
   // this conversation or this section never replays them). A conversation that loads
@@ -163,12 +177,30 @@ export function Transcript(
   if (seen.current.cid !== conversationId || (seen.current.ids.size === 0 && visible.length > 1)) {
     seen.current = { cid: conversationId, ids: new Set(visible.map(m => m.id)) }
   }
-  const arrive = (m: Message) => (el: HTMLDivElement | null) => {
+  // a version, an edit or Regenerate keeps its message where it is (KeepPlace) and what
+  // the server's snapshot brings stands in place, risen in by nobody; until your next message
+  const outerKeep = useContext(KeepPlace)
+  const kept = useRef(false)
+  if (pending) kept.current = false
+  const keep = (id: string) => {
+    kept.current = true
+    // a step of a reply is kept by its reply's row (data-id: its first message)
+    const seg = segments.find(g => (g.kind === 'msg' ? g.m.id === id : g.msgs.some(m => m.id === id)))
+    outerKeep(!seg ? id : seg.kind === 'msg' ? seg.m.id : seg.msgs[0]!.id)
+  }
+  // `live`: the reply being written takes the dots' place, which rose already
+  const arrive = (m: Message, live = false) => (el: HTMLDivElement | null) => {
     if (!el || seen.current.ids.has(m.id)) return
     seen.current.ids.add(m.id)
     // your own message rose already, as the one shown at once (pending)
-    if (m.role !== 'user' || m.author !== 'user') riseIn(el)
+    if (!live && !kept.current && (m.role !== 'user' || m.author !== 'user')) riseIn(el)
   }
+  // from the first drawn frame of a conversation on, what comes and goes is watched (Appear)
+  const [watching, setWatching] = useState<string | null>(null)
+  const cidKey = conversationId ?? ''
+  const hasContent = visible.length > 0 || !!pending
+  useEffect(() => { if (hasContent) setWatching(cidKey) }, [cidKey, hasContent])
+  const watched = watching === cidKey
 
   const segments: Segment[] = []
   visible.forEach((m, index) => {
@@ -184,7 +216,8 @@ export function Transcript(
   const her = useHer()
   // by its name, as chosen ("What Celine saw")
   const sawTitle = `What ${her?.name || words.subject} saw`
-  const thoughtsTitle = `${capital(words.possessive)} thoughts`
+  const owner = useOwner()
+  const thoughtsTitle = `${capital(owner)} thoughts`
   // the message being written now: its row keeps its place, empty
   const liveId = running ? live?.message_id ?? (streaming ? last?.id : undefined) : undefined
   const thoughtsOf = (msgs: Message[]) => {
@@ -195,11 +228,11 @@ export function Transcript(
 
   // the calls it is still writing under a message
   const formingOf = (id: string) => forming.filter(f => f.message_id === id)
-    .map(f => <FormingRow key={f.index} name={f.name} chars={f.chars} preview={f.preview} words={f.words} />)
+    .map(f => <FormingRow key={f.index} name={f.name} chars={f.chars} lines={f.lines} preview={f.preview} words={f.words} />)
 
-  // its face on a reply; the time on hover
-  const faceOf = (speaking: boolean, at?: string) => (
-    <span className="msg__face" title={at ? `${assistant}, ${fullOf(at)}` : undefined}><Portrait size="sm" speaking={speaking} /></span>
+  // its face on a reply: a picture only
+  const faceOf = (speaking: boolean) => (
+    <span className="msg__face" aria-hidden><Portrait size="sm" speaking={speaking} /></span>
   )
   function renderSegment(seg: Segment): ReactNode {
     if (seg.kind === 'quiet') {
@@ -208,7 +241,7 @@ export function Transcript(
       const calls = seg.msgs.flatMap(m => toolCalls[m.id] ?? [])
       const writing = seg.msgs.flatMap(m => formingOf(m.id))
       if (!calls.length && !writing.length) return null
-      return <div key={seg.msgs[0]!.id} ref={arrive(seg.msgs[0]!)} className="msg-quiet">{writing}<ToolLines calls={calls} /></div>
+      return <div key={seg.msgs[0]!.id} data-id={seg.msgs[0]!.id} ref={arrive(seg.msgs[0]!)} className="msg-quiet">{writing}<ToolLines calls={calls} /></div>
     }
     if (seg.kind === 'reply') return renderReply(seg)
     const m = seg.m
@@ -217,7 +250,7 @@ export function Transcript(
     const ev = m.role === 'user' ? eventOf(m, user, assistant, words.object) : null
     if (ev) {
       return (
-        <div key={m.id} ref={arrive(m)} className="msg-event">
+        <div key={m.id} data-id={m.id} ref={arrive(m)} className="msg-event">
           <EventLine quiet icon={ev.icon ?? Mail} meta={<Stamp at={m.created_at} />}
                      detail={ev.body && <TextWithRefs text={ev.body} />}>{ev.heading}</EventLine>
         </div>
@@ -226,7 +259,7 @@ export function Transcript(
     const edit = editing === m.id && !!conversationId
     const before = (m.attachments ?? []).length > 0 && <Attached list={m.attachments!} />
     return (
-      <div key={m.id} ref={arrive(m)} className="msg-yours">
+      <div key={m.id} data-id={m.id} ref={arrive(m)} className="msg-yours">
         <Line t={t} m={m} mine sawTitle="" before={before || undefined} time={<Stamp at={m.created_at} />}>
           {edit ? <Editor conversationId={conversationId!} message={m} onClose={() => setEditing(null)} />
             : <div className="msg__text"><Markdown text={m.content} breaks /></div>}
@@ -238,7 +271,9 @@ export function Transcript(
 
   function renderReply(seg: Extract<Segment, { kind: 'reply' }>) {
     const lastM = seg.msgs.at(-1)!
-    const writingHere = seg.msgs.some(m => m.id === liveId)
+    // the next step of this reply is on its way (Regenerate on a step, Continue): its dots here
+    const waitsHere = joins && seg === segments.at(-1)
+    const writingHere = waitsHere || seg.msgs.some(m => m.id === liveId)
     const calls = seg.msgs.flatMap(m => toolCalls[m.id] ?? [])
     // a step with words, calls or a call on its way draws; a step with none draws nothing
     const steps = seg.msgs.filter(m => m.content.trim() || switched[m.id] || m.id === liveId || forming.some(f => f.message_id === m.id)
@@ -252,22 +287,23 @@ export function Transcript(
     const at = seg.msgs[0]!.created_at
     const edit = replyEdit(lastM)
     return (
-      <div key={seg.msgs[0]!.id} ref={arrive(seg.msgs[0]!)} className="msg-hers">
+      <div key={seg.msgs[0]!.id} data-id={seg.msgs[0]!.id} ref={arrive(seg.msgs[0]!, writingHere)} className="msg-hers">
         <Line t={t} m={lastM} steps={seg.msgs} calls={calls} sawTitle={sawTitle}
               writing={writingHere} thoughts={hide_thinking ? thoughtsOf(seg.msgs) : null}
-              face={faceOf(writingHere, at)} time={<Stamp at={at} />}>
+              face={faceOf(writingHere)} time={<Stamp at={at} />}>
           {edit ? <Editor conversationId={conversationId!} message={lastM} onClose={() => setEditing(null)} /> : (
-            <div className="reply">
+            <ToolSheets calls={calls}><div className="reply">
               {!hide_thinking && reasoning && (
                 <Fold key={String(collapse_thinking)} title={thoughtsTitle} icon={Brain} defaultOpen={!collapse_thinking}
                       remember={`thoughts:${seg.msgs[0]!.id}`}><Thoughts>{reasoning}</Thoughts></Fold>
               )}
-              {thinkingNow && <EventLine quiet running>Thinking</EventLine>}
+              {thinkingNow && <EventLine quiet running className="thinking">Thinking</EventLine>}
               {steps.map(renderStep)}
+              {waitsHere && <div className="step">{thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}</div>}
               <ArtifactCards cards={artifactsOf(calls)} />
               <ShareCards cards={sharesOf(calls)} />
               <FileCards list={seg.msgs.flatMap(m => (m.attachments ?? []).filter(a => !a.batch_id && a.kind !== 'image' && a.kind !== 'audio'))} />
-            </div>
+            </div></ToolSheets>
           )}
         </Line>
       </div>
@@ -315,47 +351,66 @@ export function Transcript(
     .map((n, k) => <div key={`images-${n.after_message_id}-${k}`} className="msg-event"><EventLine quiet icon={ImageIcon}>{imageNoticeText(n)}</EventLine></div>)
 
   const bannersAfter = (ids: string[]) => banners.filter(b => b.message_id && ids.includes(b.message_id))
-    .map(b => <GuardBanner key={`guard-${b.id}`} banner={b} user={user} />)
+    .map(b => <Appear key={`guard-${b.id}`}><GuardBanner banner={b} user={user} /></Appear>)
   const asksAfter = (ids: string[]) => approvals.filter(a => a.message_id && ids.includes(a.message_id))
-    .map(a => <ApprovalAsk key={`ask-${a.id}`} ask={a} />)
+    .map(a => <Appear key={`ask-${a.id}`}><ApprovalAsk ask={a} /></Appear>)
 
   // Where the next reply lands before it exists (your message sent, a turn queued or
   // getting ready): its face and the dots.
   const shownLive = live && visible.some(m => m.id === live.message_id && !m.meta.quiet)
-  const ghost = !!pending || (running && !shownLive)
+  const ghost = (!!pending || running) && !shownLive
+  // the server copy of your message is in: it stands in its place in the same frame. Its
+  // id comes with the send's answer, which the socket often beats: until then, a message of
+  // yours that was not here when you sent is it
+  const before = useRef<{ of: Pending | null; ids: Set<string> }>({ of: null, ids: new Set() })
+  if (pending && before.current.of !== pending && pending.intercomId === undefined) before.current = { of: pending, ids: new Set(messages.map(m => m.id)) }
+  const landed = !!pending && (pending.intercomId !== undefined
+    ? messages.some(m => m.intercom?.id === pending.intercomId)
+    : messages.some(m => !before.current.ids.has(m.id) && m.role === 'user' && m.intercom?.from === 'user' && m.intercom.kind === 'message'))
   const thinkingFirst = running && live?.phase === 'thinking'
   // frozen (the server's): its queued turn waits, it is not writing
   const held = !!frozen && turn?.state === 'queued'
+  // the reply it writes joins the reply above (its last step answered again): it waits there
+  const joins = ghost && !pending && !held && segments.at(-1)?.kind === 'reply'
   const ghostRow = (queued: boolean, key: string) => (
-    <div key={key} className="msg-hers">
-      <Said face={<Portrait size="sm" speaking={!queued} away={queued} />}>
-        {queued ? <Status words={null} queued /> : thinkingFirst ? <EventLine quiet running>Thinking</EventLine> : <Status words={waiting} />}
+    <div key={key} className="msg-hers" data-key={LANDS} ref={watched ? riseIn : undefined}>
+      <Said face={<span className="msg__face" aria-hidden><Portrait size="sm" speaking={!queued} away={queued} /></span>}>
+        {queued ? <Status words={null} queued /> : thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}
       </Said>
     </div>
   )
   // the turns waiting after the one running: "Queued", one line each
   const later = queue.filter(q => q.turn_id !== turn?.id)
-  // a message that lands quietly (a notice with wake off) waits for no answer
-  const unanswered = last?.role === 'user' && last.intercom?.wake !== false
   // what the live region says: what the screen shows
-  const liveWords = held ? 'Queued' : pending || running ? (waiting ?? `${assistant} is writing.`) : endWords(turn, error, unanswered && !closed) ?? ''
+  const liveWords = held ? 'Queued' : pending || running ? (waiting ?? `${assistant} is writing.`) : endWords(turn, error, closed ? null : unanswered) ?? ''
+
+  // Its rows glide to their new places and a row that goes fades where it was (useMove), as
+  // a list's rows do: an edit opens or closes, a message goes, a row comes or goes. A reply
+  // growing as it is written moves nothing; another conversation or another version (a
+  // version, an edit saved, Regenerate) is another list. Where a reply lands never fades:
+  // the reply takes its place.
+  const box = useRef<HTMLDivElement>(null)
+  const shape = [editing, running, ghost, later.length, pending && !landed, banners.length, approvals.length, ...visible.map(m => m.id)].join('|')
+  useMove(box, shape, { leave: true, quiet: `${cidKey}|${swaps}`, keys: STAYS })
 
   return (
-    <div className="transcript__inner is-transcript">
+    <ToolRuns.Provider value={toolRuns}>
+    <KeepPlace.Provider value={keep}>
+    <div ref={box} className="transcript__inner is-transcript" data-cid={cidKey} data-watching={watched || undefined}>
       {segments.map(seg => {
         const ids = seg.kind === 'msg' ? [seg.m.id] : seg.msgs.map(m => m.id)
         return [renderSegment(seg), ...divider(ids), ...noticesAfter(ids), ...bannersAfter(ids), ...asksAfter(ids)]
       })}
 
-      {pending && (
+      {pending && !landed && (
         <div className="msg-yours" ref={riseIn}>
-          <Said mine before={pending.files.length > 0 ? pending.files.map(f => <FileLine key={f} name={f} />) : undefined}>
+          <Said mine before={pending.files.length > 0 ? <Attached list={pending.files} /> : undefined}>
             <div className="msg__text"><Markdown text={pending.text} breaks /></div>
           </Said>
         </div>
       )}
 
-      {ghost && ghostRow(held, 'next')}
+      {ghost && !joins && ghostRow(held, 'next')}
       {running && later.map(q => ghostRow(true, `q-${q.turn_id}`))}
 
       <div className="sr-only" aria-live="polite">{liveWords}</div>
@@ -366,6 +421,8 @@ export function Transcript(
       )}
       {note}
     </div>
+    </KeepPlace.Provider>
+    </ToolRuns.Provider>
   )
 }
 
@@ -395,7 +452,7 @@ function Line({ t, m, steps, calls, writing = false, thoughts = null, sawTitle, 
 }
 
 /* The files on a message: pictures, tracks, and other files to download */
-function Attached({ list }: { list: Attachment[] }) {
+export function Attached({ list }: { list: Attachment[] }) {
   if (!list.length) return null
   return <>
     {list.filter(a => a.kind === 'image').map(a => <YourPicture key={a.id} a={a} />)}
@@ -412,7 +469,7 @@ function Attached({ list }: { list: Attachment[] }) {
 /* A picture on a message: its shape before it loads; a click shows it big, titled by what it
    shows (its description) */
 function YourPicture({ a }: { a: Attachment }) {
-  return <Picture className="msg__picture" src={fileUrl(a)} name={titleOf(a.description)}
+  return <Picture className="msg__picture" src={tileUrl(a, TILE)} full={fileUrl(a)} name={titleOf(a.description)}
                   ratio={a.width && a.height ? `${a.width} / ${a.height}` : '4 / 3'} />
 }
 
@@ -429,8 +486,6 @@ function Described({ attachments }: { attachments: Attachment[] }) {
   )
 }
 
-/* a file on a message: its name, size and Download on one line (only its name while
-   your message is on its way) */
 /* the files it sent you in this reply, each a card to download, under the reply */
 function FileCards({ list }: { list: Attachment[] }) {
   if (!list.length) return null
@@ -450,19 +505,8 @@ function FileCards({ list }: { list: Attachment[] }) {
   )
 }
 
-function FileLine({ name, a }: { name: string; a?: Attachment }) {
-  return (
-    <div className="msg__file">
-      <Paperclip size={ICON.sm} aria-hidden />
-      <span className="msg__file-name">{name}</span>
-      {a && <span className="msg__file-size">{bytes(a.bytes)}</span>}
-      {a && <IconButton icon={Download} label="Download" size="sm" href={fileUrl(a, true)} download />}
-    </div>
-  )
-}
-
 function imageNoticeText(n: ImageNotice): string {
-  return n.describer ? `${n.model} gets the earlier images described in words` : `${n.model} can't see the earlier images`
+  return n.describer ? `${n.model} can't see images, so it gets a description of the earlier ones` : `${n.model} can't see the earlier images`
 }
 
 
@@ -490,8 +534,13 @@ function Editor(
     return () => clearTimeout(t)
   }, [text, key, message.content])
 
+  const keep = useContext(KeepPlace)
+  // focus without moving the transcript: its place is kept (KeepPlace)
+  const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { box.current?.focus({ preventScroll: true }) }, [])
   const save = async () => {
     if (!text.trim() || text === message.content) { onClose(); return }
+    keep(message.id)
     setSaving(true); setError(null)
     try {
       await conversationApi.edit(conversationId, message.id, text)
@@ -502,7 +551,7 @@ function Editor(
 
   return (
     <div className="msg__edit">
-      <TextArea rows={2} max={13} autoFocus value={text} aria-label="Edit the message"
+      <TextArea ref={box} rows={2} max={13} value={text} aria-label="Edit the message"
                 onFocus={e => e.currentTarget.setSelectionRange(text.length, text.length)}
                 onChange={e => setText(e.target.value)}
                 onKeyDown={e => {
@@ -514,6 +563,19 @@ function Editor(
         <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" loading={saving} onClick={() => void save()}>{message.role === 'user' ? 'Save and resend' : 'Save'}</Button>
       </div>
+    </div>
+  )
+}
+
+/* While a conversation loads: its shape, a reply, yours, a reply; shown only after
+   --dur-wait, so a quick load never flickers */
+export function TranscriptLoading() {
+  const face = <span className="msg__face" aria-hidden><Portrait size="sm" /></span>
+  return (
+    <div className="transcript__inner is-transcript transcript-loading" aria-busy>
+      <div className="msg-hers"><Said face={face}><LoadingRow /></Said></div>
+      <div className="msg-yours"><Said mine><LoadingRow inline /></Said></div>
+      <div className="msg-hers"><Said face={face}><LoadingRow /></Said></div>
     </div>
   )
 }

@@ -47,7 +47,7 @@ class Net:
         from celine.turns import title
         if messages[0]["content"] != prompts.text(title.__file__, "title.md"):   # a title asks the chat model too
             last = next(m["content"] for m in reversed(messages) if m["role"] == "user")
-            text = last[0]["text"] if isinstance(last, list) else last   # before the tail
+            text = last.rsplit("\n\nToday is ", 1)[0]     # before the last tail
             self.asked.append(text.split("\n", 1)[-1])
         if self.broke:
             raise http_error("OpenRouter", self.model, 402,

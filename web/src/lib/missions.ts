@@ -12,6 +12,8 @@ export type MissionStatus = 'active' | 'needs_you' | 'done' | 'stopped'
 export type Mission = {
   conversation_id: string
   name: string
+  /** in the list: an approval waits in it or in a sub-agent of it */
+  asked?: boolean
   /** its default terminal's name in this conversation */
   terminal: string
   brief: string
@@ -22,6 +24,8 @@ export type Mission = {
   report_to: string | null
   /** the time limit as a time, null without one */
   until: string | null
+  /** the minimum time as a time: before it she closes it as done only with force */
+  min_until: string | null
   status: MissionStatus
   note: string | null
   /** its plan's steps, each with the model it runs on (null: the mission's own) */
@@ -36,16 +40,21 @@ export type Mission = {
   updated_at: string
 }
 
-export type MissionStep = PlanStep
+/** a step as the server sends it: `model_label` its model's name, the server's (null:
+    the mission's own model) */
+export type MissionStep = PlanStep & { model_label: string | null }
 
 /** GET /missions: the page's numbers, the server's (each status of the list, all of it,
     the Archive and the Trash) */
 type MissionCounts = Record<MissionStatus | 'all' | 'archived' | 'trashed', number>
 
 export const missionsApi = {
-  /** the brief; with no name it names it; `model`: its chat model, else the default */
-  start: (brief: string, name?: string, model?: string | null) =>
-    request<{ conversation_id: string }>('/missions', json('POST', { brief, ...(name ? { name } : {}), ...(model ? { model } : {}) })),
+  /** the brief; with no name it names it; `model`: its chat model, else the default;
+      `minTime` how long it runs at least ("2 h", "08:00") */
+  start: (brief: string, name?: string, model?: string | null, minTime?: string) =>
+    request<{ conversation_id: string }>('/missions', json('POST', {
+      brief, ...(name ? { name } : {}), ...(model ? { model } : {}), ...(minTime ? { min_time: minTime } : {}),
+    })),
   /** the archived or the trashed ones instead */
   list: (which?: 'archived' | 'trashed') =>
     request<{ missions: Mission[]; counts: MissionCounts }>(`/missions${which ? `?${which}=1` : ''}`),
@@ -54,7 +63,9 @@ export const missionsApi = {
     request<{ ok: boolean }>(`/missions/${cid}`, json('PATCH', body)),
   stop: (cid: string) => post<{ ok: boolean }>(`/missions/${cid}/stop`),
   setSteps: (cid: string, steps: MissionStep[]) =>
-    request<Mission>(`/missions/${cid}`, json('PATCH', { steps })),
+    request<Mission>(`/missions/${cid}`, json('PATCH', {
+      steps: steps.map(s => ({ title: s.title, state: s.state, checkpoint: s.checkpoint, model: s.model })),
+    })),
   /** into the Trash with its sub-agents, every message kept */
   trash: (cid: string) => del<{ ok: boolean }>(`/conversations/${cid}`),
   restore: (cid: string) => post<{ ok: boolean }>(`/conversations/${cid}/restore`),
@@ -68,7 +79,7 @@ export const isMissionEvent = (ev: { type: string }) =>
   || ev.type === 'conversation.title' || ev.type === 'conversation.deleted'
   || ev.type === 'conversation.restored' || ev.type === 'conversation.purged'
   || ev.type === 'conversation.archived' || ev.type === 'conversation.unarchived'
-  || ev.type === 'conversation.auto_context'
+  || ev.type === 'conversation.auto_context' || ev.type === 'approvals.changed'
 
 /** how many missions wait for you (the server's count), for the rail's dot */
 export function useMissionsWaiting(): number {

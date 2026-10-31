@@ -16,7 +16,7 @@
 .guard-banner__quiet { display: inline-flex; align-items: center; gap: var(--s-1); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
 .guard-banner:is(:hover, :focus-within, [data-shown]) .guard-banner__quiet { opacity: 1; }
 .guard-banner__thread { padding: var(--s-1) 0 var(--s-1) calc(var(--icon-sm) + var(--s-2)); animation: fade var(--dur) var(--ease); }
-.guard-banner__said { margin: 0; padding: var(--s-0) 0; color: var(--text-secondary); line-height: var(--lh-body); }
+.guard-banner__said { margin: 0; padding: var(--s-0) 0; color: var(--text-secondary); line-height: var(--lh-body); white-space: pre-line; }
 .guard-banner__reply { margin: var(--s-1) 0; animation: fade var(--dur) var(--ease); }
 
 /* on a phone: the whole width, and the buttons (the labels, Reply) under the text */

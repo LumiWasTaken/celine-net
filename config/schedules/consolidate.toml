@@ -1,4 +1,4 @@
-label = "Consolidate"
+label = "Merge notes"
 summary = "Merges the night's notes into the main ones."
 cron = "30 5 * * *"
 after = ["reflection"]

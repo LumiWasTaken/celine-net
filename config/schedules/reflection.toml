@@ -1,5 +1,5 @@
 label = "Reflection"
-summary = "A nightly talk with a mentor persona about the day."
+summary = "Talks about the day with a mentor every night."
 cron = "0 5 * * *"
 after = ["self-review"]
 partner = "mentor.md"

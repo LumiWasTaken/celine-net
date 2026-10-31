@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..errors import CelineError, NotFound
-from .skill import agents_of
+from .skill import agents_of, labelled, tree_of
 
 router = APIRouter(prefix="/api")
 
@@ -19,6 +19,7 @@ class AgentIn(BaseModel):
     folder: str | None = None
     model: str | None = None         # one of its models (settings/her_models.py)
     cli: str | None = None           # an agent CLI in its shellbox (cli.py CLIS)
+    device: str | None = None        # a device it runs on, a drone (drone.py devices)
 
 
 def _skill(request: Request):
@@ -32,26 +33,36 @@ def _skill(request: Request):
 @router.get("/sub-agents")
 async def list_agents(request: Request, conversation: str | None = None) -> dict:
     """The sub-agents of one conversation, or every one not in the archive, newest
-    first: id, parent, name, access, folder, model, cli, working, the step at
+    first: id, parent, name, access, folder, model, cli, device, working, the step at
     work, the latest report, its last words."""
-    store = request.app.state.services.store
-    return {"agents": await store.read(lambda c: agents_of(c, conversation))}
+    services = request.app.state.services
+    rows = await services.store.read(lambda c: agents_of(c, conversation, own=services.store.tool_words))
+    return {"agents": labelled(getattr(services.cfg, "settings", None), rows)}
+
+
+@router.get("/conversations/{cid}/sub-agents")
+async def agent_tree(request: Request, cid: str) -> dict:
+    """The sub-agents under the top of `cid`'s chain, as a tree (skill.tree_of): {top,
+    agents}, each with its depth, state, model (its label), tokens, seconds and link."""
+    services = request.app.state.services
+    out = await services.store.read(lambda c: tree_of(c, cid, services.store.tool_words))
+    if out is None:
+        raise NotFound("conversation")
+    return {**out, "agents": labelled(getattr(services.cfg, "settings", None), out["agents"])}
 
 
 @router.post("/conversations/{cid}/sub-agents")
 async def start_agent(request: Request, cid: str, body: AgentIn) -> dict:
     """Start a sub-agent of conversation `cid` with a brief, like its
-    sub_agents__start: the name of one that is done gives it the brief (resumed). A
-    sub-agent starts none (depth 1)."""
+    sub_agents__start: the name of one that is done gives it the brief (resumed). The
+    deepest sub-agent starts none (skill.MAX_DEPTH)."""
     store = request.app.state.services.store
-    row = await store.read(lambda c: c.execute(
-        "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
-    if row is None:
+    if await store.read(lambda c: c.execute(
+            "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
         raise NotFound("conversation")
-    if row["agent_of"]:
-        raise CelineError("refused", "A sub-agent cannot start sub-agents.", 409)
     sub, refusal, resumed, _ = await _skill(request).begin(
-        store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli)
+        store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli,
+        body.device)
     if refusal:
         raise CelineError("refused", refusal, 409)
     return {"conversation_id": sub, "resumed": resumed}

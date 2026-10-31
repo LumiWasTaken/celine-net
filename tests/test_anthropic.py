@@ -20,7 +20,7 @@ from celine.settings import kinds, thinking
 from celine.settings.files import Invalid
 from celine.settings.registry import Settings, backend_config, validate_provider
 from celine.skills import Registry, ToolResult, tool
-from celine.turns import context, loads, store as turns
+from celine.turns import context, store as turns
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 from chat_fixtures import user_says
@@ -228,6 +228,11 @@ def test_max_tokens_and_the_cache_time_come_from_the_model_options():
     with pytest.raises(Invalid, match="Anthropic option"):
         validate_provider("o", {"kind": "openai", "base_url": "http://h:1",
                                 "models": {"m": {"cache_ttl": "1h"}}})
+    # the most is what the provider states for the model, once it has
+    assert validate_provider("a", {"kind": "anthropic", "models": {
+        "m": {"max_tokens": 200_000}}})["models"]["m"]["max_tokens"] == 200_000
+    from celine.settings import kinds
+    kinds.reported_outputs(URL, {"m": 128_000})
     with pytest.raises(Invalid, match="1 to 128,000"):
         validate_provider("a", {"kind": "anthropic", "models": {"m": {"max_tokens": 200_000}}})
 
@@ -322,7 +327,7 @@ async def test_discovery_pages_through_the_model_list():
                               transport=httpx.MockTransport(lambda r: httpx.Response(400, json={
                                   "type": "error", "error": {"type": "invalid_request_error",
                                   "message": "Your credit balance is too low."}})))
-    assert broke["sentence"] == "Anthropic is out of credits."
+    assert broke["sentence"] == "Anthropic is out of credits. Add credits on its website, then press Check."
 
 
 async def test_thinking_sends_the_effort_and_room_for_it_and_no_temperature(monkeypatch):
@@ -382,7 +387,6 @@ async def thought_and_called(store, monkeypatch):
     registry = Registry()
     registry.add(Echo())
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", ["t"])
     await user_says(store, cid, "echo hi")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), registry)

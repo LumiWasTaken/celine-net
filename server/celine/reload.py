@@ -9,7 +9,7 @@ import watchfiles
 
 from . import boot, config as config_mod
 from .errors import set_secrets
-from .skills import BUILTIN, build as build_registry
+from .skills import build as build_registry, names as skill_names
 from .clock import use_zone
 from .core.event_types import SETTINGS_CHANGED
 
@@ -94,7 +94,7 @@ def apply(app, *, only_if_changed: bool = False) -> bool:
         from .conversations.store import keep_lock
         keep_lock(app.store, cfg)
     built = build_registry(app)
-    for name, _, _ in BUILTIN:
+    for name in skill_names():
         new, old = built.skills.get(name), registry.skills.get(name)
         if new is None:
             registry.remove(name)
@@ -117,9 +117,12 @@ def apply(app, *, only_if_changed: bool = False) -> bool:
 
 async def commit(services, changes: dict) -> dict:
     """Apply `changes` (section -> whole new value) on top of the current settings:
-    validated, written, reloaded in place, published. Hold settings.write.lock()."""
+    validated, written, reloaded in place, published. Hold settings.write.lock(). The
+    features' probes are asked anew after it: a page that reloads on the event reads the
+    states the new settings give."""
     from .settings import write
     written = write.save(services.cfg, changes)
     applied = apply(services)
+    services.feature_probes = None
     write.publish(services, sorted(set(changes) | set(written)))
     return {"applied": applied}

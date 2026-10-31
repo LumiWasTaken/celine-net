@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node --no-warnings --experimental-strip-types src/lib/useReveal.check.mjs && node --no-warnings --experimental-strip-types src/lib/speechText.check.mjs && node --no-warnings --experimental-strip-types src/lib/onboardingModel.check.mjs && npm run lint",
+    "prebuild": "node --no-warnings --experimental-strip-types src/lib/useReveal.check.mjs && node --no-warnings --experimental-strip-types src/lib/useStickToBottom.check.mjs &&node --no-warnings --experimental-strip-types src/lib/speechText.check.mjs && node --no-warnings --experimental-strip-types src/lib/onboardingModel.check.mjs && node --no-warnings --experimental-strip-types src/lib/featureSteps.check.mjs && node --no-warnings --experimental-strip-types src/lib/toolPlaces.check.mjs && npm run lint",
     "lint": "eslint --max-warnings 0",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

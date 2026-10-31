@@ -18,6 +18,21 @@ def zone(cfg) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def day_label(at: str, tz, now_: datetime) -> str:
+    """The day of a stamp in the app's zone, as the Events list names it: Today, Yesterday,
+    the weekday, "9 Oct", "October 2025"."""
+    d = datetime.fromisoformat(at).astimezone(tz).date()
+    today = now_.astimezone(tz).date()
+    days = (today - d).days
+    if days <= 0:
+        return "Today"
+    if days == 1:
+        return "Yesterday"
+    if days < 7:
+        return d.strftime("%A")
+    return f"{d.day} {d:%b}" if d.year == today.year else d.strftime("%B %Y")
+
+
 def use_zone(cfg) -> None:
     """The process clock follows the app's time zone, so the Messages archive (SQLite's
     'localtime', plain datetimes) tells the same time as its other tools."""

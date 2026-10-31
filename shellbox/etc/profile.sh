@@ -10,19 +10,12 @@ if [ -n "$SHELLBOX_TERMINAL" ] && [ -z "$SHELLBOX_GREETED" ]; then
         awk -v b="$1" 'BEGIN { v = sprintf("%.1f", b / 1073741824); sub(/\.0$/, "", v); printf "%s", v }'
     }
     __shellbox_greet() {
-        local os up used size mem_used mem_max quota period cpus owner who notes swatches n
+        local os used size mem_used mem_max quota period cpus owner who notes swatches n
         local version built reset when
         local bold magenta blue green yellow plain
         bold=$(printf '\033[1m') magenta=$(printf '\033[35m') blue=$(printf '\033[34m')
         green=$(printf '\033[32m') yellow=$(printf '\033[33m') plain=$(printf '\033[0m')
         os=$(sed -n 's/^VERSION_ID="\(.*\)"/\1/p' /etc/os-release)
-        # up since this start of the box (the daemon's marker); /proc/uptime is the host's
-        up=$(( $(date +%s) - $(date -d "$(cat /var/lib/shellbox/started)" +%s) ))
-        if [ "$up" -ge 3600 ]; then
-            up="$((up / 3600)) h $((up % 3600 / 60)) min"
-        else
-            up="$((up / 60)) min"
-        fi
         # its home's size and how full it is, from the daemon's measure (SHELLBOX_HOME_GB);
         # without one, the disk its home is on
         if [ -r /var/lib/shellbox/home ]; then
@@ -69,9 +62,9 @@ if [ -n "$SHELLBOX_TERMINAL" ] && [ -z "$SHELLBOX_GREETED" ]; then
             swatches="$swatches$(printf '\033[48;5;%dm  ' "$n")"
         done
         printf '%s%s  .:::.   .:::.  %s   %s\n' "$bold" "$magenta" "$plain" "$who"
-        printf '%s%s :::::::.::::::: %s   %s%s, box %s, built %s, %s, up %s\n' \
+        printf '%s%s :::::::.::::::: %s   %s%s, box %s, built %s, %s\n' \
             "$bold" "$magenta" "$plain" "${blue}Debian $os" "$plain" "${version:-unknown}" \
-            "${built:-unknown}" "${SHELL##*/}" "$up"
+            "${built:-unknown}" "${SHELL##*/}"
         printf '%s%s ::::::::::::::: %s   home %s of %s GB, memory %s of %s GB, %s\n' \
             "$bold" "$magenta" "$plain" "${green}$(__shellbox_gb "$used")${plain}" \
             "$(__shellbox_gb "$size")" "${green}$(__shellbox_gb "$mem_used")${plain}" \

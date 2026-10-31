@@ -1,17 +1,14 @@
-"""A conversation's automatic context and what the user loads into it by hand.
+"""A conversation's automatic context.
 
-`conversations.auto_context` (1: on, Load automatically): with it on, a new message loads
-the skills its words ask for (turns/loads.asked), brings up the graded sections of the
-notes its keys name (`[your memory]`, skills/recall.py) and its mind block
+`conversations.auto_context` (1: on, Load automatically): with it on, a new message
+brings up the graded sections of the notes its keys name (`[your memory]`, skills/recall.py) and its mind block
 (skills/mind.py: the time, its mood, how long since the last message). Off, it carries
-the core skills, the always notes and what it or the user loaded. The switch holds for
+the always notes alone. The switch holds for
 the conversation and its sub-agents.
 
 Routes: GET and PUT /conversations/{cid}/auto-context ({on}), GET
-/conversations/{cid}/messages/{mid}/context (what a reply's message brought up), PUT
-/conversations/{cid}/context/skills/{name} and POST /conversations/{cid}/context/notes
-({path}). Events: `conversation.auto_context` {id, on} for every conversation it
-changed, `context.changed` from the loads (turns/loads.py)."""
+/conversations/{cid}/messages/{mid}/context (what a reply's message brought up). Event:
+`conversation.auto_context` {id, on} for every conversation it changed."""
 from __future__ import annotations
 
 import json
@@ -73,39 +70,10 @@ async def reply_context(request: Request, cid: str, mid: str) -> dict:
             " UNION ALL SELECT m.id, m.parent_id, m.role FROM messages m"
             " JOIN up ON m.id = up.parent_id WHERE up.role != 'user')"
             " SELECT x.text, x.report FROM up JOIN message_context x ON x.message_id = up.id"
-            " WHERE up.role = 'user'", (mid, cid)).fetchone()
+            " WHERE up.role = 'user' AND x.text IS NOT NULL", (mid, cid)).fetchone()
     r = await services_of(request).store.read(fn)
     if r is None:
         raise NotFound("context")
     return {"text": r[0], "report": json.loads(r[1] or "{}")}
 
 
-@router.put("/conversations/{cid}/context/skills/{name}")
-async def load_skill(request: Request, cid: str, name: str) -> dict:
-    """The user loads a skill here by hand: its tools are in its list from its next
-    step, and it stays while it is used (turns/loads.py). 404: not offered here."""
-    from ..turns import loads
-    s = services_of(request)
-    if not await _exists(s.store, cid):
-        raise NotFound("conversation")
-    here = await loads.offered(s.registry, s.store, cid) if s.registry else {}
-    if name not in here:
-        raise NotFound("skill")
-    await loads.touch(s.store, cid, "skill", [name])
-    return {"ok": True}
-
-
-@router.post("/conversations/{cid}/context/notes")
-async def load_note(request: Request, cid: str, body: NotePath) -> dict:
-    """The user loads one of its notes here by hand, in full, while it is used. 404: no
-    such note."""
-    from ..turns import loads
-    s = services_of(request)
-    if not await _exists(s.store, cid):
-        raise NotFound("conversation")
-    path = body.path.strip().lstrip("/")
-    if not await s.store.read(lambda c: c.execute(
-            "SELECT 1 FROM notebook_index WHERE path=?", (path,)).fetchone()):
-        raise NotFound("note")
-    await loads.touch(s.store, cid, "note", [path])
-    return {"ok": True}

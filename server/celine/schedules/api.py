@@ -7,12 +7,12 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Request
 
 from ..core.ids import iso
-from ..errors import NotFound
+from ..errors import CelineError, NotFound
 from ..settings import files, seed
 from ..settings.files import Invalid
 from ..settings.registry import ROLES
 from ..clock import zone
-from . import VARIABLES, fill, night_of, run_date, run_roles, shown
+from . import VARIABLES, fill, night_of, run_date, run_roles, shown, words
 from .runs import STOPPED, results, view as run_view
 
 router = APIRouter(prefix="/api")
@@ -34,14 +34,14 @@ def _tonight(cfg) -> date:
 
 def _view(s, cfg) -> dict:
     """`label` as written (its {{username}} and {{name}} kept, so a save keeps them),
-    `title` the label filled; `every`: "Every day at 02:00", else the next slot ("Next:
-    Mon 09:30") or "Off"; `next_night` the night of the next slot and `next_at` its time
+    `title` the label filled; `every` its cron in words ("Daily at 02:00", schedules.words);
+    `next_night` the night of the next slot and `next_at` its time
     of day."""
     from croniter import croniter
     tz = zone(cfg)
     nxt = croniter(s.cron, datetime.now(tz)).get_next(datetime) if s.on else None
     return {"name": s.name, "label": s.label, "title": shown(s), "summary": s.summary, "cron": s.cron, "time": s.time,
-            "every": f"Every day at {s.time}" if s.time else f"Next: {nxt:%a %H:%M}" if nxt else "Off",
+            "every": words(s.cron),
             "prompt": s.prompt, "after": list(s.after),
             "partner": s.partner, "partner_prompt": s.partner_prompt, "rounds": s.rounds,
             "note": s.note, "role": s.role,
@@ -54,7 +54,10 @@ def _view(s, cfg) -> dict:
 
 
 def _scheduler(request: Request):
-    return request.app.state.services.schedules
+    """The running Scheduler: set while Routines is on."""
+    if (s := request.app.state.services.schedules) is None:
+        raise CelineError("unavailable", "Routines are off.", 409)
+    return s
 
 
 @router.get("/schedules")
@@ -63,7 +66,7 @@ async def list_schedules(request: Request) -> dict:
     partner_prompt, rounds, note, role, on, idle_only, wall_minutes, next,
     next_night, next_at}],
     roles, variables, tonight}: by time of day; `time` "02:00" for a daily one (else
-    null), `every` in words ("Every day at 02:00", "Next: Mon 09:30"), `next` the next
+    null), `every` in words ("Daily at 02:00", "Sundays at 07:00"), `next` the next
     slot (UTC, null while off), `next_night` its night and `next_at` its time of day,
     `roles` the chat roles a schedule can run on,
     `variables` the words a prompt can hold, `tonight` the night the page opens on."""
@@ -159,8 +162,11 @@ async def list_runs(request: Request, night: str | None = None,
     `until` (default and at most tonight), newest first, each {night, runs: [{schedule,
     state}] (a schedule's newest run), late (a run of a night gone by still waits)};
     `attention` running while a run runs, failed while a run of the last two nights
-    failed, else null (the rail's dot)."""
+    failed, else null (the rail's dot). A run's `asked`: an approval waits in it or in a
+    sub-agent of it (approvals.asked)."""
+    from ..approvals import asked
     cfg, store = request.app.state.services.cfg, request.app.state.services.store
+    waits = asked(request.app.state.services)
     tonight = _tonight(cfg)
     which = (_night(night) if night else tonight).isoformat()
     last = min(_night(until), tonight) if until else tonight
@@ -190,6 +196,7 @@ async def list_runs(request: Request, night: str | None = None,
         mine = [{"schedule": k, "state": v} for k, v in newest.items()]
         nights.append({"night": n, "runs": mine, "late": n < tonight.isoformat() and any(
             d["state"] == "waiting" for d in mine)})
+    runs = [{**r, "asked": r["conversation_id"] in waits} for r in runs]
     return {"runs": runs, "nights": nights, "tonight": tonight.isoformat(),
             "attention": attention}
 

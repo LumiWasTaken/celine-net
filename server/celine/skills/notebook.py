@@ -13,12 +13,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from ..turns import ledger
 from ..config import CONFIG_DIR
 from ..turns.compact import one_line
 from . import ToolContext, ToolResult, guide, knob, tool, described
 from . import notebook_index
-from .web import linked
 from .anchors import Edit, EditRefused, apply, is_stamp, lines_of, numbered, plan
 from ..clock import zone
 from ..errors import ToolRefused
@@ -37,7 +35,9 @@ SEEDS = {
     "opinions/README.md": "what goes under opinions/",
     "appearance/README.md": "what goes under appearance/",
 }
-# its own: created empty once, never protected, never re-created once it deletes them
+# its own: created empty once, never protected, never re-created once it deletes them;
+# appearance/ only with images on, made at the first start that has it on (the folder is
+# the mark: its README is a seed, so the folder stays)
 PLACEHOLDERS = {
     "appearance/body.md": "(empty. yours to fill, or leave.)\n",
     "appearance/face.md": "(empty. yours to fill, or leave.)\n",
@@ -123,11 +123,14 @@ class Notebook:
 
     async def seed_one(self, store) -> list[str]:
         """Write the files {{username}} owns if they are missing. Never overwrites."""
+        from ..settings import features
         made = []
         self.root.mkdir(parents=True, exist_ok=True)
+        images = features.on(self.cfg, "images")
+        looks = images and not (self.root / "appearance").exists()
         for rel, summary in SEEDS.items():
             target = self.root / rel
-            if target.exists():
+            if target.exists() or (rel.startswith("appearance/") and not images):
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             # kept as written: {{name}} and {{username}} are filled in when read, so
@@ -137,29 +140,33 @@ class Notebook:
             await notebook_index.upsert(store, rel, self.cfg.substitute(summary),
                                          len(body), body)
             made.append(rel)
+        for rel, body in PLACEHOLDERS.items():
+            if rel.startswith("appearance/") and looks:
+                made.append(await self._placeholder(store, rel, body))
         marker = self.root / ".placeholders"
         first = not marker.exists()
         if first or marker.read_text() == WAITING:
             waiting = False
             for rel, body in PLACEHOLDERS.items():
                 named = "{{username}}" in rel
-                if not first and not named:
+                if rel.startswith("appearance/") or (not first and not named):
                     continue
                 if named and self.cfg.user in UNNAMED:
                     waiting = True          # named after the user, once there is a name
                     continue
                 rel = self.cfg.substitute(rel)
-                target = self.root / rel
-                if target.exists():
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                body = self.cfg.substitute(body or (CONFIG_DIR / "notebook_seed" / rel).read_text())
-                target.write_text(body)
-                await notebook_index.upsert(store, rel, "placeholder, not written yet",
-                                             len(body), body)
-                made.append(rel)
+                if not (self.root / rel).exists():
+                    made.append(await self._placeholder(store, rel, body))
             marker.write_text(WAITING if waiting else "placeholders were created once\n")
         return made
+
+    async def _placeholder(self, store, rel: str, body: str | None) -> str:
+        target = self.root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        body = self.cfg.substitute(body or (CONFIG_DIR / "notebook_seed" / rel).read_text())
+        target.write_text(body)
+        await notebook_index.upsert(store, rel, "placeholder, not written yet", len(body), body)
+        return rel
 
     async def reconcile(self, store) -> dict[str, int]:
         """The files and the index agree at startup. A
@@ -257,13 +264,11 @@ class Notebook:
                 f"{path} is {{{{username}}}}'s, not yours to change. You can read it. "
                 f"Write your own version somewhere else if you want one."), is_error=True)
         p.parent.mkdir(parents=True, exist_ok=True)
-        content = await linked(ctx, content)
         body = stamped(p.read_text() + content if mode == "append" and p.exists()
                        else content, self.cfg)
         keep_version(self.root, p, path)
         p.write_text(body)
         await notebook_index.upsert(ctx.store, path, summary, len(body), body)
-        await _touch(ctx, path)
         return ToolResult(content=f"Saved {path}.",
                           display={"path": path, "bytes": len(body), "mode": mode})
 
@@ -314,11 +319,6 @@ class Notebook:
         if not lines:
             body = "(empty)"
         content = head + body
-        led = ledger.get(ctx.turn_id, ledger.NOTEBOOK)
-        args = {"path": path, "from_line": from_line}
-        led.record("read", led.spec("read", args), content, search=False,
-                   refs=ledger.note_refs("read", args, content))
-        await _touch(ctx, path, read=True)
         return ToolResult(content=content, display={"path": path, "bytes": len(text),
                                                     "owner": self.owner(path),
                                                     "class": class_line(text)})
@@ -354,7 +354,7 @@ class Notebook:
         text = p.read_text(newline="")
         lines, newline, trailing = lines_of(text)
         has_stamp = bool(lines) and is_stamp(lines[0])
-        edits = [{**e, "text": await linked(ctx, _joined(e["text"]))}
+        edits = [{**e, "text": _joined(e["text"])}
                  if isinstance(e, dict) and e.get("text") else e for e in edits]
         try:
             planned = plan(edits, lines, has_stamp)
@@ -372,7 +372,6 @@ class Notebook:
         if not summary:
             summary = await notebook_index.summary(ctx.store, path) or ""
         await notebook_index.upsert(ctx.store, path, summary, len(body), body)
-        await _touch(ctx, path)
         n = len(planned)
         shown = "\n...\n".join("\n".join(numbered(new, a, b)) or "(the note is empty now)"
                                 for a, b in regions)
@@ -385,20 +384,17 @@ class Notebook:
     async def search(
         self,
         ctx: ToolContext,
-        query: Annotated[str, "The words to search for."],
+        query: Annotated[str, 'The words to search for. A note matches when it holds '
+                              'any of them; "quoted words" match as a phrase.'],
         limit: Annotated[int, "The most notes."] = 10,
     ) -> ToolResult:
-        """Search your notes by word search over paths, summaries and text. Search before
-        you write a fact. Search when {{username}} asks what you know. Returns: one line
-        per note with a snippet."""
-        # searches that keep finding no note it has not seen get a note, then are not
-        # run, as in the Messages archive (turns/ledger.py); a read with new text resets it
-        led = ledger.get(ctx.turn_id, ledger.NOTEBOOK)
-        spec = led.spec("search", {"query": query, "limit": limit})
-        if stop := led.blocked(broad=False):
-            led.refuse(spec, broad=False)
-            return ToolResult(content=stop, is_error=True, display={"narrow": True})
-        call = led.begin("search", spec, search=True)
+        """Search your notes by word over paths, summaries and text: a note matches when
+        it holds any word of the query, the notes with the most and rarest of them first;
+        "quoted words" match only as that phrase. Search before you write a fact. Search when {{username}} asks what you
+        know. Returns: per note its path, day, summary and keys, then per section that
+        matches its heading and its matching line with the lines around it, numbered
+        as notebook__read numbers them (`12:` the match, `11-` around it), so you read
+        from there or not at all."""
         folder = await folder_of(ctx)
         if folder:
             hits = [h for h in await notebook_index.search(ctx.store, query,
@@ -413,20 +409,14 @@ class Notebook:
             display["class"] = strictest(class_line(f.read_text()) if f.is_file()
                                          else UNCLASSED for f in files)
         if hits:
-            content = "\n".join(
-                f"{h['path']} - {one_line(h['summary'])}{self.tag(h['path'])}\n"
-                f"  ...{one_line(h['snippet'])}..." for h in hits)
+            tz = zone(self.cfg)
+            content = "\n\n".join(
+                f"{h['path']} ({_day(h['touched_at'], tz)}) - {one_line(h['summary'])}"
+                f"{self.tag(h['path'])}{self._heads(h['path'])}"
+                + "".join(f"\n{x}" for x in self._found(h["path"], h["terms"]))
+                for h in hits)
         else:
-            content = f"{ledger.NO_NOTE} {query!r}."
-        led.finish(call, content, ledger.note_refs("search", {}, content))
-        n, _ = led.dry_streak()
-        if n >= ledger.NUDGE_AFTER:
-            content += (f"\n\n{n} searches of your notes in a row found no note you have "
-                        f"not seen. Other words will not change that. Read the notes you "
-                        f"found with notebook__read, or answer with what you have and say "
-                        f"what is missing. After {ledger.STOP_AFTER} in a row, no search "
-                        f"is run.")
-            display["narrow"] = True
+            content = f"No note contains {query!r}."
         return ToolResult(content=content, display=display)
 
     @tool()
@@ -522,6 +512,44 @@ class Notebook:
                                   f"{'entry' if n == 1 else 'entries'} followed)",
                           display={"src": src, "dst": dst, "entries": n})
 
+    def _found(self, rel: str, terms: list[str]) -> list[str]:
+        """The sections of a note where search terms stand, as the search shows them:
+        heading, then the first matching line with up to SEARCH_CONTEXT lines of that
+        section around it (blank ones left out), at most SEARCH_SECTIONS sections, then
+        the headings of the others. The stamp and the head lines (up to the first blank
+        line) are not searched: the head line of the note says them."""
+        p = self.root / rel
+        if not terms or not p.is_file():
+            return []
+        text = p.read_text(newline="")
+        if self._owned_by_user(rel):
+            text = self.cfg.substitute(text)
+        lines = lines_of(text)[0]
+        body = next((n + 1 for n, x in enumerate(lines, 1) if not x.strip()), 1)
+        word = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, terms)) + r")(?!\w)", re.I)
+        # section start -> (heading, its first line, its first matching line)
+        found: dict[int, tuple[str, int, int]] = {}
+        start, heading = body, ""
+        for n in range(body, len(lines) + 1):
+            line = lines[n - 1]
+            if m := _HEADING.match(line):
+                start, heading = n, m[1]
+            elif start not in found and word.search(line):
+                found[start] = (heading, start + 1 if heading else body, n)
+        out = []
+        shown = list(found.values())
+        for heading, first, n in shown[:SEARCH_SECTIONS]:
+            out.append(f"  ## {heading}" if heading else "  (top of the note)")
+            for k in range(max(first, n - SEARCH_CONTEXT), min(len(lines), n + SEARCH_CONTEXT) + 1):
+                line = lines[k - 1]
+                if k != n and (not line.strip() or _HEADING.match(line)):
+                    continue
+                out.append(f"  {k}{':' if k == n else '-'} {_around(line, word)}")
+        rest = [h or "(top of the note)" for h, _, _ in shown[SEARCH_SECTIONS:]]
+        if rest:
+            out.append(f"  also in: {', '.join(rest)}")
+        return out
+
     def _heads(self, rel: str) -> str:
         """` [keys: a, b] [class]` of one note, ` [no keys]` without keys."""
         keys = keys_of(self.root, rel)
@@ -530,42 +558,35 @@ class Notebook:
         return out + (f" [{cls}]" if cls != UNCLASSED else "")
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        parts = []
         if identity := self.identity():
-            parts.append(self.cfg.substitute(
-                "identity.md, from your notebook ({{username}} wrote it, you read it):\n\n")
-                + identity.strip())
-        folder = await folder_of(ctx)
-        if index := await build_index_fragment(ctx.store, self.cfg, self.tag,
-                                               folder, ctx.loaded_notes):
-            parts.append(index)
-        return "\n\n".join(parts) or None
+            return self.cfg.substitute(
+                "identity.md, from your notebook ({{username}} wrote it, you read it):\n\n"
+            ) + identity.strip()
+        return None
+
+    async def tail_part(self, ctx: ToolContext) -> str | None:
+        """Its notebook's index, for the tail of a turn (turns/prompt.py tail_text): it
+        changes as it writes, so it stays out of the system prompt."""
+        return await build_index_fragment(ctx.store, self.cfg, self.tag,
+                                          await folder_of(ctx), ctx.loaded_notes)
 
 
-async def _touch(ctx: ToolContext, path: str, read: bool = False) -> None:
-    """A note it wrote or edited is loaded in full from its next turn on, and stays
-    while it uses it (turns/loads.py). A note it only
-    `read` stays for its next turn alone: touched as if `idle_turns` less one turns ago,
-    unless a write keeps it longer."""
-    if ctx.store is None:
-        return
-    from ..turns import loads
-    if not read:
-        await loads.touch(ctx.store, ctx.conversation_id, "note", [path])
-        return
-    idle = int(loads.shares(ctx.config)["idle_turns"])
-    cid = ctx.conversation_id
+SEARCH_SECTIONS = 3     # sections of one note a search shows
+SEARCH_CONTEXT = 1      # lines before and after a matching line (ripgrep -C)
+SEARCH_WIDTH = 160      # characters of one shown line
+_HEADING = re.compile(r"^## +(.+?)\s*$")
 
-    def fn(c) -> None:
-        before = loads.rows(c, cid)[1].get(("note", path))
-        loads.touch_sync(c, ctx.store, cid, "note", [path])
-        got = loads.rows(c, cid)[1].get(("note", path))
-        if got is not None:
-            aged = got - idle + 1
-            c.execute("UPDATE context_loaded SET touched=? WHERE conversation_id=? AND "
-                      "kind='note' AND name=?",
-                      (max(aged, before if before is not None else aged), cid, path))
-    await ctx.store.write(fn)
+
+def _around(line: str, word) -> str:
+    """One line as a search shows it: whole when short, else SEARCH_WIDTH characters
+    around its first match, cut ends marked."""
+    line = line.rstrip()
+    if len(line) <= SEARCH_WIDTH:
+        return line
+    m = word.search(line)
+    a = max(0, (m.start() if m else 0) - SEARCH_WIDTH // 3)
+    b = a + SEARCH_WIDTH
+    return ("..." if a else "") + line[a:b] + ("..." if b < len(line) else "")
 
 
 def _day(at: str | None, tz) -> str:
@@ -691,8 +712,8 @@ def head_line(text: str, key: str) -> list[str] | None:
 
 
 def load_line(text: str) -> list[str] | None:
-    """What a note's `load:` line says: ["always"] or ["off"]; None without one (loaded
-    by need, turns/loads.py)."""
+    """What a note's `load:` line says: ["always"] or ["off"]; None without one
+    (turns/loads.py)."""
     return head_line(text, "load")
 
 
@@ -733,7 +754,7 @@ def carried_text(text: str) -> str:
 
 
 def load_of(rel: str, head: str, user: str) -> str | None:
-    """What a note's head says: "always", "off", or None (by need). The notes on the
+    """What a note's head says: "always", "off", or None. The notes on the
     user, `people/<user>.md` and `people/<user>-*.md`, are always loaded (not
     `people/<user>s-<name>.md`)."""
     load = load_line(head)
@@ -759,24 +780,29 @@ def _keys_at(root: Path, rel: str, mtime: int) -> tuple[str, ...]:
     return tuple(keys_line(read_note(root, rel, head=True) or ""))
 
 
-def notes_block(cfg, notes: list[dict], head: bool = True) -> str | None:
-    """The notes it carries in full (turns/loads.py) as one block, by path so the block
-    changes only where a note comes or goes; the ones over the share and the ones the
-    user left out here named in one line each. `head`: the line that says what they are
-    (the system prompt's block; the by-need ones in the tail go without)."""
+def without_load(text: str) -> str:
+    """A note as the notes block shows it: without its `load:` head line, which only says
+    why it is in the block."""
+    lines = text.splitlines()
+    end = next((i for i, x in enumerate(lines) if not x.strip() and i), len(lines))
+    return "\n".join(x for i, x in enumerate(lines)
+                     if i >= end or not re.match(r"\s*load\s*:", x, re.I)).strip()
+
+
+def notes_block(cfg, notes: list[dict]) -> str | None:
+    """The notes it always carries (turns/loads.py) as one block, by path so the block
+    changes only where a note comes or goes, each without its `load:` line; the ones the
+    user left out here named in one line."""
     from ..turns.loads import OFF_HERE
     loaded = sorted((n for n in notes if n["state"] == "included"), key=lambda n: n["path"])
-    over = [n["path"] for n in notes if n["state"] == "left_out"]
     off = [n["path"] for n in notes if n["why"] == OFF_HERE]
-    if not loaded and not over and not off:
+    if not loaded and not off:
         return None
     parts = [cfg.substitute(
-        f"{NOTES_HEAD} loaded now: your notes about {{{{username}}}} always, other notes "
-        "while the talk needs them.") if head else
-        f"{NOTES_HEAD} loaded for now, the talk needs them:"]
-    parts += [f"### {n['path']}\n{n['text']}" for n in loaded]
-    if over:
-        parts.append(f"Not loaded, no room for them now: {', '.join(over)}.")
+        f"{NOTES_HEAD} you always carry: your notes about {{{{username}}}} and the ones "
+        "you set to load always. A keys line in a note names the words that bring it "
+        "back. Read any other note with notebook__read.")]
+    parts += [f"### {n['path']}\n{without_load(n['text'])}" for n in loaded]
     if off:
         parts.append(cfg.substitute(f"Left out by {{{{username}}}} in this conversation: "
                                     f"{', '.join(off)}."))
@@ -818,8 +844,10 @@ async def build_index_fragment(store, cfg, tag=lambda path: "",
 
     hidden = max(0, total - shown)
     where = f"Your notebook, limited to {folder}" if folder else "Your notebook"
+    which = (f"all {total} notes" if shown == total else
+             f"the {shown} notes you changed last, of {total}")
     head = cfg.substitute(
-        f"{where} ({shown} of {total} entries, most recently changed first). Every note "
+        f"{where}: {which}, newest first. Every note "
         f"without a tag is yours, written by you. The tagged notes are "
         f"{{{{username}}}}'s or generated:")
     out = [head, "", *lines, ""]

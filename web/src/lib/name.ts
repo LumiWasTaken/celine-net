@@ -12,6 +12,7 @@ export const PRONOUN = {
   she: { subject: 'she', object: 'her', possessive: 'her', own: 'hers', asks: 'asks' },
   he: { subject: 'he', object: 'him', possessive: 'his', own: 'his', asks: 'asks' },
   they: { subject: 'they', object: 'them', possessive: 'their', own: 'theirs', asks: 'ask' },
+  it: { subject: 'it', object: 'it', possessive: 'its', own: 'its', asks: 'asks' },
 } as const
 export type Pronouns = keyof typeof PRONOUN
 
@@ -19,6 +20,14 @@ export const PronounsContext = createContext<Pronouns>('she')
 
 /** its pronouns from the status, for every sentence that names it by pronoun */
 export const usePronouns = () => PRONOUN[useContext(PronounsContext)] ?? PRONOUN.she
+
+/** whose a thing is, for a label: its name with 's ("Celine's thoughts"), its pronoun
+    while the name is not in yet */
+export function useOwner() {
+  const name = useName()
+  const { possessive } = usePronouns()
+  return name ? `${name}'s` : possessive
+}
 
 /** a pronoun at the start of a sentence */
 export const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)

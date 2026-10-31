@@ -12,7 +12,6 @@ import { BrowserShots } from '../components/ToolRow'
 import { browserApi, browserHistory, isBrowserEvent, type Box, type BrowserCall, type Tab } from '../lib/browser'
 import { clock, count, dayLabel } from '../lib/format'
 import { useNav } from '../lib/nav'
-import { usePronouns } from '../lib/name'
 import { LINK } from '../lib/settingsApi'
 import { backoffMs, keepAlive } from '../lib/socket'
 import { useAction } from '../lib/useAction'
@@ -28,7 +27,7 @@ const XK_CONTROL_L = 0xffe3, XK_V = 0x76     // X's names for the keys of a past
 /* what the place says while there is no screen to show */
 function notUp(b: Box): string | null {
   if (b.state === 'starting') return 'Starting'
-  if (b.state === 'down') return 'Brave could not start'
+  if (b.state === 'down') return 'The browser could not start. Restart it from the More menu.'
   if (b.state === 'unreachable') return LINK.down
   return null
 }
@@ -77,7 +76,7 @@ export function Browser({ active }: { active: boolean }) {
                    onConnect={box.reload} />
         ) : <TabsList box={box} take={take} restart={restart} onOpen={openTab} onClose={t => void onTab.run('close', t.name)} />}
       {restarting && (
-        <ConfirmDialog title="Restart Brave?" confirmLabel="Restart" onClose={() => setRestarting(false)}
+        <ConfirmDialog title="Restart the browser?" confirmLabel="Restart" onClose={() => setRestarting(false)}
                        body={'The tabs reopen at their last addresses. Anything typed into pages is lost.' + (yours ? ' You also return control.' : '')}
                        onConfirm={async () => { await browserApi.control('restart'); setRestarting(false); box.reload() }} />
       )}
@@ -122,7 +121,7 @@ function TabsList({ box, take, restart, onOpen, onClose }: {
                          renderRow={t => (
                            <ListRow icon={Globe} iconAccent={t.name === b.front} title={tabTitle(t)} subtitle={t.url} tooltip={t.url} onClick={() => onOpen(t)}
                                     column={t.conversation ? <span>{t.conversation.title}</span> : ''}
-                                    cell={t.busy ? <Dot tone="running" pulse text="Running" /> : t.name === b.front ? 'On the screen' : ''}
+                                    cell={t.busy ? <Dot tone="running" pulse text="Running" /> : t.name === b.front ? 'Current tab' : ''}
                                     onContextMenu={e => ctx.open(e, menu(t), tabTitle(t))}
                                     trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(t)} size="sm" />} />
                          )} />
@@ -250,7 +249,6 @@ const EXAMPLE: Record<string, string> = {
    its calls is done: the feed's copy of tool.done carries no display), and Tools: one of
    its calls, run as it runs it */
 function Console({ last }: { last: BrowserCall | undefined }) {
-  const { possessive } = usePronouns()
   const latest = last?.display
   const [tool, setTool] = useState('act')
   const [args, setArgs] = useState(EXAMPLE.act!)
@@ -265,7 +263,7 @@ function Console({ last }: { last: BrowserCall | undefined }) {
     <>
       {(steps > 0 || !!latest?.shot) && <Section title="Steps" count={steps || undefined}><BrowserShots display={latest} /></Section>}
       <Section title="Tools">
-        <form className="brw-console" aria-label={`Try ${possessive} calls`} onSubmit={e => { e.preventDefault(); void run.run() }}>
+        <form className="brw-console" aria-label="Run a browser tool" onSubmit={e => { e.preventDefault(); void run.run() }}>
           <Segmented label="Tool" value={tool} options={TOOLS} onChange={t => { setTool(t); setArgs(EXAMPLE[t] ?? '{}') }} />
           <TextArea mono rows={3} max={16} aria-label="Arguments" spellCheck={false} value={args} onChange={e => setArgs(e.target.value)} />
           <div className="brw-console__foot"><Button type="submit" variant="primary" icon={Play} loading={run.busy}>Run</Button></div>

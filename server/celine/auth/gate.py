@@ -2,7 +2,8 @@
 
 Without a valid session cookie every request gets `not_found(path)`, the same answer
 an unknown /api route gives, so nothing tells which routes exist. The only exceptions
-are the login screen (GET /), the login endpoints it calls (routes.open_router), and any /api route or /ws
+are the login screen (GET /), the login endpoints it calls (routes.open_router), a running
+plugin's routes its manifest names `open` (plugins.is_open: they check their own key), and any /api route or /ws
 socket with a named token (intercom/tokens.py, made in Settings) in `Authorization:
 Bearer`: the app is usable through the API alone (a host script, a CLI); while it is
 frozen such a token only reads (GET), any other method is 403 `frozen`. A WebSocket
@@ -28,10 +29,13 @@ from __future__ import annotations
 import json
 import logging
 
+from starlette.datastructures import Headers
 from starlette.requests import cookie_parser
 from starlette.responses import JSONResponse, Response
 
+from .. import plugins
 from ..api.deps import LLM_PROXY
+from ..api.origin import is_loopback
 from ..shares import PREFIX as SHARE
 from ..intercom import tokens
 from . import COOKIE, Auth
@@ -77,13 +81,20 @@ class Gate:
         if path.startswith(SHARE):          # its token is its key, never the cookie
             return await self.app(scope, receive, send)
         store = self.auth.store
+        headers = Headers(scope=scope)
         session = store.session(cookie_value(scope.get("headers") or []))
+        if session is not None and not self.auth.stored() and not is_loopback(
+                headers.get("host", "")):
+            # no address stored yet: a session from anywhere but loopback (allowed_hosts
+            # too) logs in again, and that login stores the address (routes.py _signed_in)
+            session = None
         if session is not None:
             scope.setdefault("state", {})["session"] = session
             # only where the new cookie can be sent, so the browser's copy and the
             # stored expiry move together
             if kind == "http" and store.needs_refresh(session):
-                send = self._with_cookie(send, scope, store.refresh(session))
+                send = self._with_cookie(send, scope, store.refresh(session),
+                                         self.auth.origin_for(headers))
             return await self.app(scope, receive, send)
 
         if kind == "websocket":
@@ -91,9 +102,9 @@ class Gate:
         method = scope.get("method", "GET")
         if method == "GET" and path == "/":
             page = login_page(not store.has_credentials(), store.methods(),
-                              self.auth.settings.origin)
+                              self.auth.origin_for(headers))
             return await page(scope, receive, send)
-        if (method, path) in OPEN:
+        if (method, path) in OPEN or plugins.is_open(method, path):
             body = await _small_body(receive)
             if body is None:
                 return await JSONResponse(
@@ -111,10 +122,11 @@ class Gate:
             return await self.app(scope, receive, send)
         return await not_found(path)(scope, receive, send)
 
-    def _with_cookie(self, send, scope, expires: int):
+    def _with_cookie(self, send, scope, expires: int, origin: str):
         token = cookie_value(scope.get("headers") or [])
         header = Response()
-        header.set_cookie(**self.auth.cookie(token, max(0, expires - self.auth.store.clock())))
+        header.set_cookie(**self.auth.cookie(token, max(0, expires - self.auth.store.clock()),
+                                             origin))
         set_cookie = [(k, v) for k, v in header.raw_headers if k == b"set-cookie"]
 
         async def wrapped(message):

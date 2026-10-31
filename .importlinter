@@ -2,7 +2,7 @@
 # debt: the change that fixes one deletes its line. New lines are never added to make a change pass.
 [importlinter]
 root_package = celine
-include_external_packages = False
+include_external_packages = True
 
 [importlinter:contract:bottom]
 name = The platform's bottom (config, keys, core, errors, clock, db) imports no feature
@@ -15,6 +15,7 @@ source_modules =
     celine.clock
     celine.db
     celine.prompts
+    celine.plugins
 forbidden_modules =
     celine.__main__
     celine.api
@@ -30,6 +31,7 @@ forbidden_modules =
     celine.bugreports
     celine.comfyui
     celine.conversations
+    celine.devices
     celine.events
     celine.guard
     celine.her
@@ -46,7 +48,9 @@ forbidden_modules =
     celine.missions
     celine.ops
     celine.plans
+    celine.push
     celine.reload
+    celine.saves
     celine.schedules
     celine.settings
     celine.shares
@@ -62,3 +66,11 @@ forbidden_modules =
     celine.vision
     celine.work
 allow_indirect_imports = True
+
+[importlinter:contract:plugins]
+name = The core never imports a plugin (celine/plugins.py loads them by path while on)
+type = forbidden
+source_modules =
+    celine
+forbidden_modules =
+    celine_plugins

@@ -1,5 +1,5 @@
 label = "Growth check"
-summary = "A Sunday look back at the week."
+summary = "Looks back at the week every Sunday."
 cron = "0 7 * * 0"
 after = ["tidy"]
 partner = ""

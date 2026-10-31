@@ -124,7 +124,7 @@ export function SendButton({ ready, running = false, onSend, onStop, title, labe
     <IconButton icon={stop ? Square : Send} fill={stop} label={stop ? 'Stop' : label} iconSize={stop ? 'sm' : undefined}
                 variant={stop ? 'danger' : ready ? 'primary' : 'secondary'} className="send-btn"
                 data-keep-focus
-                title={stop ? 'Stop the answer' : title} disabled={!stop && !ready}
+                title={stop ? 'Stop the reply' : title} disabled={!stop && !ready}
                 onClick={() => (stop ? onStop!() : onSend())} />
   )
 }

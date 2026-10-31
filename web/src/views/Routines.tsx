@@ -25,7 +25,7 @@ import { Work } from './Missions'
 import { isSaveKey, isTyping } from '../lib/keys'
 import { format, useNav, type Route } from '../lib/nav'
 import {
-  FINISHED, RUN_TONE, STATE_WORD, isRunEvent, nightWords, routinesApi, type EventTask, type Night, type Run, type Runs, type RunState, type Schedule, type ScheduleBody, type Trigger,
+  ASKED_WORD, FINISHED, RUN_TONE, STATE_WORD, isRunEvent, nightWords, routinesApi, type EventTask, type Night, type Run, type Runs, type RunState, type Schedule, type ScheduleBody, type Trigger,
 } from '../lib/routines'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useName } from '../lib/name'
@@ -312,14 +312,14 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                            const after = !!prev?.schedule && !!n.schedule && n.schedule.after.includes(prev.schedule.name)
                            const reviewer = !!n.schedule?.partner
                            return (
-                             <ListRow density="lg" dot={RUN_TONE[n.state]} title={n.label} tooltip={n.label} depth={after ? 1 : 0}
+                             <ListRow density="lg" dot={n.run?.asked ? 'warn' : RUN_TONE[n.state]} title={n.label} tooltip={n.label} depth={after ? 1 : 0}
                                       muted={n.state === 'planned'}
                                       subtitle={n.state === 'running' && n.run?.conversation_id
                                         ? <LiveStep run={n.run} rounds={reviewer ? n.schedule!.rounds : 0} active={active} />
                                         : n.reason || (n.run?.error ?? (n.run?.result ? n.run.result.split('\n')[0] : n.schedule?.after.length
                                           ? `Runs after ${label(n.schedule.after[0]!)}` : n.schedule?.every))}
                                       column={reviewer ? 'Reviewer' : ''}
-                                      cell={STATE_WORD[n.state]} meta={n.at}
+                                      cell={n.run?.asked ? ASKED_WORD : STATE_WORD[n.state]} meta={n.at}
                                       href={n.run ? format({ section: 'routines', night, run: n.run.id })
                                         : n.schedule ? format({ section: 'routines', night, schedule: n.schedule.name }) : undefined}
                                       onClick={click(() => open(n))} onContextMenu={e => ctx.open(e, menu(n), n.label)}
@@ -411,7 +411,7 @@ function SchedulesList({ list, night, all, go, onChange }: {
 
 function DeleteSchedule({ s, onClose, onDone }: { s: Schedule; onClose: () => void; onDone: () => void }) {
   return (
-    <ConfirmDialog title={`Delete ${s.title}?`} danger confirmLabel="Delete" body="Its runs stay."
+    <ConfirmDialog title={`Delete ${s.title}?`} danger confirmLabel="Delete" body="Its past runs are kept."
                    onClose={onClose}
                    onConfirm={async () => {
                      try { await routinesApi.remove(s.name) } catch (e) { return e instanceof Error ? e.message : String(e) }
@@ -471,9 +471,9 @@ function TriggersList({ list, triggers, tasks, night, go }: {
                                       trailingAlways trailing={<Switch label={r.row.t.label} hideLabel checked={r.row.t.on} disabled={!online || save.busy}
                                                                        title={online ? undefined : OFFLINE_TITLE} onChange={on => void save.run((r.row as { t: { name: string } }).t.name, on)} />} />
                            ) : (
-                             <ListRow density="lg" dot={r.row.b.working ? 'running' : 'ok'} title={taskTitle(r.row.b)}
+                             <ListRow density="lg" dot={r.row.b.asked ? 'warn' : r.row.b.working ? 'running' : 'ok'} title={taskTitle(r.row.b)}
                                       subtitle={r.row.b.last_line || undefined} column={byName(r.row.b.trigger) === taskTitle(r.row.b) ? '' : byName(r.row.b.trigger)}
-                                      cell={r.row.b.working ? STATE_WORD.running : STATE_WORD.done} meta={listTime(r.row.b.updated_at)}
+                                      cell={r.row.b.asked ? ASKED_WORD : r.row.b.working ? STATE_WORD.running : STATE_WORD.done} meta={listTime(r.row.b.updated_at)}
                                       muted={!r.row.b.working}
                                       href={format({ section: 'routines', night, task: r.row.b.id })}
                                       onClick={click(() => go({ task: (r.row as { b: { id: string } }).b.id }))}
@@ -491,6 +491,7 @@ function TriggersList({ list, triggers, tasks, night, go }: {
 /** what changes a row of what the triggers started */
 const isTaskEvent = (ev: { type: string }) => ev.type === 'conversation.created' || ev.type === 'conversation.title'
   || ev.type === 'turn.state' || ev.type === 'conversation.deleted' || ev.type === 'conversation.restored'
+  || ev.type === 'approvals.changed'
 
 /* What a trigger started, or one of its sub-agents: its sub-agents, the talk and a box to
    write in */
@@ -694,7 +695,8 @@ function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKe
               <Field label="Name" error={err('label') ?? err('name')}>
                 <Input value={d.label} onChange={e => put({ label: e.target.value, ...(fresh ? { key: slug(e.target.value) } : {}) })} />
               </Field>
-              <Field label="Schedule" group error={err('time') ?? err('cron')}>
+              <Field label="Schedule" group error={err('time') ?? err('cron')}
+                     hint={d.when === 'cron' && s && d.cron.trim() === s.cron && s.every !== s.cron ? s.every : undefined}>
                 <div className="routines-when">
                   <Segmented label="Schedule" value={d.when} onChange={when => put({ when })}
                              options={[{ value: 'daily', label: 'Every day' }, { value: 'cron', label: 'Cron' }]} />

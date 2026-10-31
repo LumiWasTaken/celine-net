@@ -1,0 +1,16 @@
+[[fields]]
+key = "python"
+label = "Python"
+type = "text"
+default = ""
+
+[[fields]]
+key = "script"
+label = "Script"
+type = "text"
+default = ""
+
+[[fields]]
+key = "token"
+label = "Token"
+type = "secret"

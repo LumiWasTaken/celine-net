@@ -74,29 +74,51 @@ class KBFile:
     def __init__(self, path: Path, migrations: Path):
         self.path = path
         migrate(path, migrations)
+        self._readers: set[sqlite3.Connection] = set()    # every thread's, for close()
+        self._lock = threading.Lock()
 
     def _reader(self) -> sqlite3.Connection:
         """This thread's connection to the file. Reopened when the file on disk is a
         different one than when it was opened (a restored backup, a copied-in
-        knowledge base), so a replaced file is never served from the old inode."""
-        cache: dict[str, tuple[sqlite3.Connection, int]] = getattr(_local, "conns", None) or {}
+        knowledge base), so a replaced file is never served from the old inode, and
+        after close()."""
+        cache: dict[tuple[str, int], tuple[sqlite3.Connection, int]] = \
+            getattr(_local, "conns", None) or {}
         _local.conns = cache
-        key = str(self.path)
+        key = (str(self.path), id(self))
         try:
             ino = os.stat(self.path).st_ino
         except FileNotFoundError:
             ino = -1
         hit = cache.get(key)
-        if hit is not None and hit[1] == ino:
+        with self._lock:
+            mine = hit is not None and hit[0] in self._readers
+        if mine and hit[1] == ino:
             return hit[0]
-        if hit is not None:
+        if mine:
+            with self._lock:
+                self._readers.discard(hit[0])
             try:
                 hit[0].close()
             except sqlite3.Error:
                 pass
         conn = connect(self.path)
+        with self._lock:
+            self._readers.add(conn)
         cache[key] = (conn, os.stat(self.path).st_ino)
         return conn
+
+    def close(self) -> None:
+        """Close every thread's reader (a write connection is closed after each write).
+        A read still running in another thread at that moment fails; a read after it
+        opens a new one. The file stays."""
+        with self._lock:
+            conns, self._readers = self._readers, set()
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
 
     @contextmanager
     def writer(self) -> Iterator[sqlite3.Connection]:

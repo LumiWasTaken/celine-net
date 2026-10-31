@@ -13,8 +13,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .ledger import MSG_REF
-
+MSG_REF = re.compile(r"\[([a-z0-9_-]+):(\d+)\]")    # a message reference in a tool result
 CITE = re.compile(r"\[\[\s*([a-z0-9_-]+):(\d+)\s*(\|[^\]\n]*)?\]\]")
 QUOTE = re.compile(r"[\"“„»«]([^\"“”„»«\n]{3,400})[\"”“«»]")
 VERB = (r"(?:said|says|wrote|writes|asked|asks|replied|answered|joked|meinte|meint|"

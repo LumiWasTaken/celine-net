@@ -1,7 +1,7 @@
 /* Tools: the default for every conversation; each conversation can switch tools in its
    side panel. Where: all of them, or the skills one place offers (its chats, Missions,
    Routines; the server's places), picked in the Toolbar.
-   Three groups: On, Needs setup (shown off until it works), Off, each A to Z (toolOrder,
+   Three groups: On, Not set up (shown off until it works), Off, each A to Z (toolOrder,
    the panel's order too). One block per skill (ToolBlock, as in the panel). On or off,
    nothing asks for approval. */
 import { useState } from 'react'

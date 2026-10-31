@@ -18,12 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Header, Request, Response
 
-from .. import reload
+from .. import reload, saves
 from ..config import build as config_build
 from ..errors import CelineError, NotFound
 from ..settings import features as features_mod, files, general as general_mod, kinds
@@ -31,7 +30,7 @@ from ..settings import mail as mail_mod, services as services_mod
 from ..settings import vault as vault_mod, views, write
 from ..settings import secrets as secrets_mod
 from ..settings.files import Invalid, version
-from ..settings.registry import ROLES, key_state, validate_model, validate_provider
+from ..settings.registry import ROLES, key_state, validate_model
 from .deps import cfg_of, etag, json_body, person_only, services_of, settings_of
 
 router = APIRouter(prefix="/api")
@@ -69,28 +68,11 @@ async def put_provider(request: Request, response: Response, pid: str,
                        if_match: str | None = Header(default=None)) -> dict:
     """Create or replace one provider, models included. Removing a model a role uses
     is refused (400)."""
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("provider", s.providers.get(pid), if_match)
-        body = await json_body(request)
-        if body.get("kind") == "comfyui" and not body.get("models"):
-            # the onboarding's address only: every shipped preset is a model of it
-            from ..comfyui import presets as presets_mod
-            body["models"] = {p.id: {"label": p.label, "caps": [p.role]}
-                              for kind in presets_mod.FOLDERS
-                              for p in presets_mod.of(kind).values()}
-        clean = validate_provider(pid, body, "provider")
-        providers = copy.deepcopy(s.providers)
-        providers[pid] = clean
-        changes: dict[str, Any] = {"providers": providers}
-        filled = views.fill_roles(s, pid, clean)
-        if filled:
-            changes["roles"] = filled
-        out = await reload.commit(services_of(request), changes)
-        s = settings_of(request)
-        view = views.provider(s, pid, views.model_router(services_of(request)))
-        etag(response, view["version"])
-        return {**view, **out}
+    out = await saves.provider(services_of(request), pid, await json_body(request),
+                               if_match)
+    view = views.provider(settings_of(request), pid, views.model_router(services_of(request)))
+    etag(response, view["version"])
+    return {**view, **out}
 
 
 @router.delete("/providers/{pid}")
@@ -146,7 +128,7 @@ async def test_new_provider(request: Request) -> dict:
     body = await json_body(request, allow=("kind", "base_url", "key"))
     kind = body.get("kind") or None
     if kind is not None and kind not in kinds.KINDS:
-        raise Invalid("kind", "The kind must be one of " + ", ".join(kinds.KINDS) + ".")
+        raise Invalid("kind", "The type must be one of " + ", ".join(kinds.KINDS) + ".")
     raw = str(body.get("base_url") or "")
     # as typed for detection (it tries /v1 itself), the kind's one saved form after
     url = kinds.normalize_url(kind, raw) if kind else kinds.address(raw)
@@ -159,8 +141,8 @@ async def test_new_provider(request: Request) -> dict:
         kind, answered, url = await kinds.detect(url, key or None)
         if kind is None:
             if answered:
-                sentence = (f"The app cannot detect the provider at "
-                            f"{urlsplit(url).netloc}.")
+                sentence = (f"A server answered at {urlsplit(url).netloc}, but the app "
+                            f"cannot tell what type it is.")
             else:                       # the check says why: refused, no answer, ...
                 sentence = (await kinds.check("openai", url, key or None,
                                               key_required=False))["sentence"]
@@ -188,8 +170,8 @@ async def available_models(request: Request, pid: str, refresh: bool = False,
     except Exception as e:
         check = await kinds.check(p["kind"], p["base_url"], key, key_required=False)
         raise CelineError("unreachable", check.get("sentence") or
-                          f"The app could not ask {p.get('label', pid)}: "
-                          f"{type(e).__name__}.",
+                          f"{p.get('label', pid)} did not answer ({type(e).__name__}). "
+                          f"Make sure it is running and its address is right.",
                           502) from None
     have = set(p.get("models") or {})
     ql = q.strip().lower()
@@ -207,7 +189,8 @@ async def put_model(request: Request, response: Response, pid: str, model: str,
         if p is None:
             raise NotFound("provider")
         files.check_version("model", (p.get("models") or {}).get(model), if_match)
-        clean = validate_model(p["kind"], model, await json_body(request), "model")
+        clean = validate_model(p["kind"], model, await json_body(request), "model",
+                               p["base_url"])
         providers = copy.deepcopy(s.providers)
         providers[pid].setdefault("models", {})[model] = clean
         out = await reload.commit(services_of(request), {"providers": providers})
@@ -249,16 +232,11 @@ async def list_secrets(request: Request) -> dict:
 @router.put("/secrets/{pid}")
 async def put_secret(request: Request, pid: str) -> dict:
     """{"key": "..."}. Stores it; the answer only says it is set."""
-    s = settings_of(request)
-    if pid not in s.providers:
+    if pid not in settings_of(request).providers:
         raise NotFound("provider")
     body = await json_body(request, need=("key",), allow=("key",))
-    if not isinstance(body["key"], str):
-        raise Invalid("key", "The key must be text.")
+    await saves.provider_key(services_of(request), pid, body["key"])
     root = secrets_mod.secrets_dir(cfg_of(request).data_dir)
-    secrets_mod.set_key(root, pid, body["key"])
-    reload.apply(request.app.state.services)              # backends pick up the key, redaction learns it
-    write.publish(services_of(request), ["secrets"])
     return key_state(pid, settings_of(request).providers[pid], root)
 
 
@@ -291,12 +269,9 @@ async def put_roles(request: Request, response: Response,
     body = await json_body(request, need=("roles",), allow=("roles",))
     if not isinstance(body["roles"], dict):
         raise Invalid("roles", "Roles are an object keyed by role.")
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("roles", s.roles, if_match)
-        out = await reload.commit(services_of(request), {"roles": body["roles"]})
-        s = settings_of(request)
-        return {"roles": views.roles(s), "version": etag(response, version(s.roles)), **out}
+    out = await saves.roles(services_of(request), body["roles"], if_match)
+    s = settings_of(request)
+    return {"roles": views.roles(s), "version": etag(response, version(s.roles)), **out}
 
 
 @router.put("/roles/{role}")
@@ -304,17 +279,10 @@ async def put_role(request: Request, response: Response, role: str,
                    if_match: str | None = Header(default=None)) -> dict:
     """One task: {"chain": ["provider/model", ...]}. An empty chain turns it off."""
     body = await json_body(request, need=("chain",), allow=("chain",))
-    async with write.lock():
-        s = settings_of(request)
-        if role not in ROLES:
-            raise NotFound("role")
-        files.check_version("role", s.roles.get(role), if_match)
-        roles = copy.deepcopy(s.roles)
-        roles[role] = body
-        out = await reload.commit(services_of(request), {"roles": roles})
-        view = views.roles(settings_of(request))[role]
-        etag(response, view["version"])
-        return {"role": role, **view, **out}
+    out = await saves.role(services_of(request), role, body, if_match)
+    view = views.roles(settings_of(request))[role]
+    etag(response, view["version"])
+    return {"role": role, **view, **out}
 
 
 # ---- tools ---------------------------------------------------------------------------
@@ -358,30 +326,21 @@ async def put_tool_default(request: Request, response: Response, target: str,
     body = await json_body(request, need=("default",), allow=("default",))
     if body["default"] not in ("on", "off", None):
         raise Invalid("default", "A default is \"on\", \"off\" or null.")
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("tools", s.tools, if_match)
-        tools = dict(s.tools)
-        if body["default"] is None:
-            tools.pop(target, None)
-        else:
-            tools[target] = body["default"]
-            if "__" not in target:
-                for t in [t for t in tools if t.startswith(target + "__")]:
-                    del tools[t]
-        out = await reload.commit(services_of(request), {"tools": tools})
-        view = views.tools(services_of(request))
-        etag(response, view["version"])
-        return {**view, **out}
+    out = await saves.tools(services_of(request), {target: body["default"]}, if_match)
+    view = views.tools(services_of(request))
+    etag(response, view["version"])
+    return {**view, **out}
 
 
 # ---- general -------------------------------------------------------------------------
 
 @router.get("/settings")
 async def get_general(request: Request, response: Response) -> dict:
+    """`general` holds what was saved, each other key is its field's `default`: a client
+    that sends `general` back with one change saves no default as a choice."""
     s = settings_of(request)
     fields = general_mod.fields()
-    values = {f["key"]: general_mod.value(s.general, f["key"]) for f in fields}
+    values = {f["key"]: s.general[f["key"]] for f in fields if f["key"] in s.general}
     return {"fields": fields, "general": values,
             "version": etag(response, version(s.general)),
             "saved": bool(s.saved.get("general"))}
@@ -392,11 +351,8 @@ async def put_general(request: Request, response: Response,
                       if_match: str | None = Header(default=None)) -> dict:
     """The whole object: {"general": {...}}. A key left out goes back to its default."""
     body = await json_body(request, need=("general",), allow=("general",))
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("general", s.general, if_match)
-        out = await reload.commit(services_of(request), {"general": general_mod.validate(body["general"])})
-        return {**(await get_general(request, response)), **out}
+    out = await saves.general(services_of(request), body["general"], if_match)
+    return {**(await get_general(request, response)), **out}
 
 
 # ---- features ------------------------------------------------------------------------
@@ -411,10 +367,10 @@ async def get_features(request: Request, response: Response) -> dict:
 @router.get("/features/{id}/probe")
 async def probe_feature(request: Request, id: str) -> dict:
     """"Check again": one feature's state now, no cache."""
-    if id not in features_mod.IDS:
-        raise NotFound(f"There is no feature '{id}'.")
+    if id not in features_mod.ids():
+        raise NotFound("feature")
     services = request.app.state.services
-    return await features_mod.probe(services.cfg, services, id)
+    return features_mod.shown(await features_mod.probe(services.cfg, services, id))
 
 
 @router.put("/features")
@@ -427,20 +383,11 @@ async def put_features(request: Request, response: Response,
     body = await json_body(request, need=("features",), allow=("features", "done"))
     if not isinstance(body.get("done", False), bool):
         raise Invalid("done", "This must be true or false.")
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("features", s.features, if_match)
-        new = features_mod.validate(body["features"])
-        if body.get("done") or features_mod.done(s.features):
-            new["done"] = True
-        hit = request.app.state.services.feature_probes
-        probes = hit[1] if hit else await features_mod.probe_all(
-            request.app.state.services.cfg, request.app.state.services)
-        out = await reload.commit(services_of(request), {"features": new})
-        await views.apply_runners(services_of(request))
-        view = await views.features(services_of(request), probes)
-        etag(response, view["version"])
-        return {**view, **out}
+    out, probes = await saves.features(services_of(request), body["features"],
+                                       body.get("done", False), if_match)
+    view = await views.features(services_of(request), probes)
+    etag(response, view["version"])
+    return {**view, **out}
 
 
 # ---- services ------------------------------------------------------------------------
@@ -461,27 +408,43 @@ async def put_services(request: Request, response: Response,
     url left out is empty (searxng: its default). A service whose address changed starts
     again while its feature is on."""
     body = await json_body(request, need=("services",), allow=("services",))
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("services", s.services, if_match)
-        clean = services_mod.validate(body["services"])
-        changed = {sid for sid in services_mod.IDS
-                   if services_mod.value(clean, sid, "url") != services_mod.value(s.services, sid, "url")}
-        out = await reload.commit(services_of(request), {"services": clean})
-        await views.apply_runners(services_of(request), changed)
-        view = views.services_view(services_of(request))
-        etag(response, view["version"])
-        return {**view, **out}
+    out = await saves.addresses(services_of(request), body["services"], if_match)
+    view = views.services_view(services_of(request))
+    etag(response, view["version"])
+    return {**view, **out}
 
 
 @router.post("/services/{id}/test")
 async def test_service(request: Request, id: str) -> dict:
     """The feature's probe, fresh, against the saved address: {state, detail}."""
     if id not in services_mod.IDS:
-        raise NotFound(f"There is no service '{id}'.")
+        raise NotFound("service")
     feature = "web" if id == "searxng" else id
     services = request.app.state.services
-    return await features_mod.probe(services.cfg, services, feature)
+    return features_mod.shown(await features_mod.probe(services.cfg, services, feature))
+
+
+# ---- the app's own address -----------------------------------------------------------
+# Where the browser opens the app (settings/address.py): learned at the setup or the
+# first login, changed here.
+
+def _address(request: Request, response: Response) -> dict:
+    a = settings_of(request).address
+    return {"origin": a.get("origin", ""), "version": etag(response, version(a))}
+
+
+@router.get("/address")
+async def get_address(request: Request, response: Response) -> dict:
+    return _address(request, response)
+
+
+@router.put("/address")
+async def put_address(request: Request, response: Response,
+                      if_match: str | None = Header(default=None)) -> dict:
+    """{"origin": "https://celine.example.net"}; "" forgets it (the next login learns it)."""
+    body = await json_body(request, need=("origin",), allow=("origin",))
+    out = await saves.address(services_of(request), body, if_match)
+    return {**_address(request, response), **out}
 
 
 # ---- email ---------------------------------------------------------------------------
@@ -500,23 +463,11 @@ async def put_email(request: Request, response: Response,
     a key left out goes back to its default. `password` left out keeps the saved one,
     null removes it. The answer says only whether a password is set."""
     body = await json_body(request, need=("email",), allow=("email", "password"))
-    pw = body.get("password")
-    if pw is not None and (not isinstance(pw, str) or not pw.strip()):
-        raise Invalid("password", "The password must be text.")
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("email", s.email, if_match)
-        clean = mail_mod.validate(body["email"])
-        if "password" in body:
-            root = secrets_mod.secrets_dir(cfg_of(request).data_dir)
-            if pw is None:
-                secrets_mod.delete_key(root, mail_mod.SECRET)
-            else:
-                secrets_mod.set_key(root, mail_mod.SECRET, pw)
-        out = await reload.commit(services_of(request), {"email": clean})
-        view = views.email(cfg_of(request))
-        etag(response, view["version"])
-        return {**view, **out}
+    out = await saves.email(services_of(request), body["email"],
+                            body.get("password", saves.KEEP), if_match)
+    view = views.email(cfg_of(request))
+    etag(response, view["version"])
+    return {**view, **out}
 
 
 @router.post("/email/test")
@@ -561,25 +512,8 @@ async def put_vault(request: Request, response: Response,
     The answer says how (status) and whether the secret is set."""
     person_only(request)
     body = await json_body(request, need=("vault",), allow=("vault", "client_secret"))
-    v = body.get("client_secret")
-    if v is not None and (not isinstance(v, str) or not v.strip()):
-        raise Invalid("client_secret", "This must be text.")
-    async with write.lock():
-        s = settings_of(request)
-        files.check_version("vault", s.vault, if_match)
-        clean = vault_mod.validate(body["vault"])
-        before, vault = s.vault or {}, request.app.state.services.vault
-        relogin = ("client_secret" in body or vault.session is None
-                   or any(clean.get(k) != before.get(k) for k in ("url", "client_id")))
-        root = secrets_mod.secrets_dir(cfg_of(request).data_dir)
-        if "client_secret" in body:
-            if v is None:
-                secrets_mod.delete_key(root, vault_mod.CLIENT_SECRET)
-            else:
-                secrets_mod.set_key(root, vault_mod.CLIENT_SECRET, v)
-        out = await reload.commit(services_of(request), {"vault": clean})
-    if relogin:
-        await request.app.state.services.vault.connect()
+    out = await saves.vault(services_of(request), body["vault"],
+                            body.get("client_secret", saves.KEEP), if_match)
     view = views.vault(services_of(request))
     etag(response, view["version"])
     return {**view, **out}
@@ -621,9 +555,10 @@ async def config_status(request: Request) -> dict:
             "user": cfg.user,
             "features": features_mod.effective(cfg.settings.features),
             "setup": features_mod.done(cfg.settings.features),
-            "catalog": [{"id": f.id, "about": f.about, "off_when": f.off_when,
+            "catalog": [{"id": f.id, "label": f.label, "form": f.form,
+                         "about": cfg.substitute(f.about), "off_when": f.off_when,
                          "places": list(f.places), "pages": list(f.pages)}
-                        for f in features_mod.CATALOG],
+                        for f in features_mod.catalog()],
             "problems": [{"file": p.file, "message": p.message, "fatal": p.fatal}
                          for p in cfg.problems],
             "hosts": router.hosts() if router is not None else {},

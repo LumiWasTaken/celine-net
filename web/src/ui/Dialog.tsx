@@ -8,10 +8,14 @@ import { createPortal } from 'react-dom'
 import { Trash2, X } from 'lucide-react'
 import { Button, IconButton } from './Button'
 import { cx } from './cx'
-import { leave, OUT, useLeave } from './motion'
+import { curve, leave, ms, OUT, reduced, useLeave } from './motion'
 import { Checkbox } from './Form'
 import { InlineError } from './Notice'
-import { usePhone } from './phone'
+import { coarse, usePhone } from './phone'
+import { isTyping } from '../lib/keys'
+
+/** a release faster than this (px per ms, downwards) closes a sheet however short the drag */
+const FLING = 0.5
 
 // what Tab reaches: a radio group's other options (tabindex -1) are reached by the arrows
 const FOCUSABLE = ['a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])', 'select:not([disabled])',
@@ -105,12 +109,13 @@ function ModalDialog(props: DialogProps) {
   }, [])
 
   // focus in: an autoFocus child already has it; otherwise the first field or button
-  // in the body, then the actions (never the close X first)
+  // in the body, then the actions (never the close X first). On a touch screen a field
+  // would raise the keyboard before anyone tapped it: the box takes the focus instead
   useEffect(() => {
     const el = box.current
     if (!el || el.contains(document.activeElement)) return
-    const all = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(n => !n.closest('.dialog__head'))
-    ;(all[0] ?? el).focus()
+    const first = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].find(n => !n.closest('.dialog__head'))
+    ;(first && !(coarse() && isTyping(first)) ? first : el).focus({ preventScroll: true })
   }, [])
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -179,28 +184,40 @@ function SheetModal(props: DialogProps) {
     }
   }, [key])
 
-  // drag the grabber down: the sheet follows the finger; far enough and it closes
-  const drag = useRef<{ y: number; el: HTMLElement } | null>(null)
+  // drag the grabber down: the sheet follows the finger; far enough or flung and it
+  // closes from where it is, else it springs back
+  const drag = useRef<{ y: number; el: HTMLElement; lastY: number; lastT: number; v: number } | null>(null)
+  const back = (el: HTMLElement) => {
+    if (reduced() || !el.style.transform) { el.style.transform = ''; return }
+    const a = el.animate([{ transform: 'none' }], { duration: ms('--dur'), easing: curve('--ease-spring') })
+    a.finished.then(() => { el.style.transform = '' }, () => {})
+  }
   const grab = (
     <div className="sheet__grab" aria-hidden
          onPointerDown={e => {
            const el = (e.currentTarget.parentElement as HTMLElement)
-           drag.current = { y: e.clientY, el }
+           el.getAnimations().forEach(a => a.cancel())
+           drag.current = { y: e.clientY, el, lastY: e.clientY, lastT: e.timeStamp, v: 0 }
            e.currentTarget.setPointerCapture(e.pointerId)
          }}
          onPointerMove={e => {
            const d = drag.current
-           if (d) d.el.style.transform = `translateY(${Math.max(0, e.clientY - d.y)}px)`
+           if (!d) return
+           if (e.timeStamp > d.lastT) d.v = (e.clientY - d.lastY) / (e.timeStamp - d.lastT)
+           d.lastY = e.clientY; d.lastT = e.timeStamp
+           d.el.style.transform = `translateY(${Math.max(0, e.clientY - d.y)}px)`
          }}
          onPointerUp={e => {
            const d = drag.current
            drag.current = null
            if (!d) return
            const moved = e.clientY - d.y
-           d.el.style.transform = ''
-           if (moved > d.el.offsetHeight / 4 && canClose.current) closeRef.current()
+           // a finger that rested before letting go flung nothing
+           const v = e.timeStamp - d.lastT < 100 ? d.v : 0
+           if ((moved > d.el.offsetHeight / 4 || (moved > 0 && v > FLING)) && canClose.current) closeRef.current()
+           else back(d.el)
          }}
-         onPointerCancel={() => { if (drag.current) drag.current.el.style.transform = ''; drag.current = null }} />
+         onPointerCancel={() => { if (drag.current) back(drag.current.el); drag.current = null }} />
   )
   return <Dialog {...props} grab={grab} className={cx('sheet', props.className)} />
 }

@@ -1,5 +1,5 @@
 """The prompt of a turn: the system prompt's pieces (system_blocks), the tail of now
-(request_text), the tools a request carries (specs, wire_tools) and the last request as
+(tail_text, stored once on the message the turn answers), the tools a request carries (specs, wire_tools) and the last request as
 it went out (keep_request, last_request: /usage). The turn loop is turns/runner.py; the
 Context tab, /compact, /usage and impersonate read the same assembly from here."""
 from __future__ import annotations
@@ -8,11 +8,11 @@ import json
 
 import anyio
 
-from .. import clock, guard
+from .. import clock, devices, guard, prompts
 from ..plans import flow as plan_flow
-from ..skills import ToolContext
+from ..skills import CORE, ToolContext
 from ..skills.gating import OFF, down_sentence, is_enabled, overrides_for
-from . import context, legend, loads
+from . import legend, loads
 
 def supports_prefill(backend) -> bool:
     """Whether a final assistant message is continued by the server (llama.cpp with
@@ -30,63 +30,40 @@ def supports_prefill(backend) -> bool:
     return hasattr(backend, "for_message") or not bool(kwargs.get("enable_thinking", False))
 
 
-VOICE_MAX = 200          # characters of the voice cue
-
-
-def voice_line(cfg) -> str | None:
-    """The agent's voice cue, "[how you sound] ...": the first line under the first ## heading
-    of its talk (her.talk_text), cut to about VOICE_MAX characters at a sentence or a
-    word. None without such a line."""
-    her = getattr(cfg, "her", None)
-    if her is None:
-        return None
-    lines = [x.strip() for x in her.talk_text.splitlines()]
-    at = next((i for i, x in enumerate(lines) if x.startswith("## ")), None)
-    line = next((x for x in lines[at + 1:] if x and not x.startswith("#")), None) \
-        if at is not None else None
-    if not line:
-        return None
-    line = cfg.substitute(line)
-    if len(line) > VOICE_MAX:
-        cut = line[:VOICE_MAX]
-        end = cut.rfind(". ")
-        line = cut[:end + 1] if end > VOICE_MAX // 2 else cut.rsplit(" ", 1)[0] + " ..."
-    return f"[how you sound] {line}"
-
-
 async def tool_specs(registry, store, cid: str, carried, without=frozenset()
                  ) -> tuple[dict, bool]:
-    """The tools this conversation has, and whether it may only read: the tools the
-    loaded skills offer here (turns/loads.py: a skill with offered_in() offers its tools
+    """The tools this conversation has, and whether it may only read: the tools its
+    skills offer here (turns/loads.py: a skill with offered_in() offers its tools
     only where that says so, missions in a mission's own conversation; it may also name
     the tools it offers there, as a set), in registry order, but those named in
-    `without`; a sub-agent started with read access gets the read-only tools and the
-    intercom (turns/tools.py refuses the rest)."""
+    `without`; a sub-agent started with read access is offered only what it may call
+    (loads.offered; turns/tools.py refuses the rest)."""
     if not registry:
         return {}, False
     here = await loads.offered(registry, store, cid)
-    names = {s.wire_name for n in carried.skills for s in here.get(n, ())} - set(without)
+    names = {s.wire_name for n in [*carried.skills, *carried.others]
+             for s in here.get(n, ())} - set(without)
     tools = {k: s for k, s in registry.tools.items() if k in names}
-    from ..skills.gating import read_mode_has
     from ..sub_agents.skill import reads_only
-    if await reads_only(store, cid):
-        return {k: s for k, s in tools.items() if read_mode_has(s)}, True
-    return tools, False
+    return tools, await reads_only(store, cid)
 
 
 def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
     """The tools it gets in this request: those of `specs` that are on (skills/
-    gating.py) and whose skill is up. A tool that is off or down is not sent at all
-    (an empty stub got called with no arguments in a loop): the skill index says so
-    (unusable), and a call to it is refused with why (turns/tools.py). Descriptions
-    are filled in at registration (skills.Registry.add_specs)."""
-    return [s.as_wire() for s in specs.values()
+    gating.py) and whose skill is up, a core skill's with their parameters, every
+    other by name and one line (skills.ToolSpec.as_name). Loads never change it: only
+    the switches and a skill going down or up do. A tool that is off or down is not
+    sent at all (an empty stub got called with no arguments in a loop): the skill index
+    says so (unusable), and a call to it is refused with why (turns/tools.py).
+    Descriptions are filled in at registration (skills.Registry.add_specs)."""
+    return [s.as_wire() if s.skill in CORE else s.as_name()
+            for s in specs.values()
             if registry.down(s.skill) is None and is_enabled(s, overrides, cfg)]
 
 
 def unusable(specs, registry, overrides, cfg) -> list[str]:
-    """One line per loaded skill that sends no tool now: down with its reason, or off
-    here. Under the skill index."""
+    """One line per skill offered here that sends no tool now: down with its reason, or
+    off. In the tail (tail_text)."""
     out = []
     for skill in dict.fromkeys(s.skill for s in specs.values()):
         mine = [s for s in specs.values() if s.skill == skill]
@@ -99,14 +76,15 @@ def unusable(specs, registry, overrides, cfg) -> list[str]:
 
 async def request_parts(store, cfg, registry, backend, cid: str):
     """The system prompt's pieces, named (system_blocks), the tool list a request of
-    this conversation carries now and what it carries by need (turns/loads.py, nothing
-    saved), built as a turn builds them (for /compact, /usage and what it sees)."""
+    this conversation carries now and what it carries (turns/loads.py), built as a turn
+    builds them (for /compact, /usage and what it sees)."""
     overrides = await overrides_for(store, cid)
     carried = await loads.select(store, cfg, registry, cid, backend)
     specs, _ = await tool_specs(registry, store, cid, carried)
     tools = (wire_tools(specs, registry, overrides, cfg)
              if registry and getattr(backend, "supports_tools", False) else [])
-    blocks = await system_blocks(cfg, registry, store, cid, "", carried)
+    blocks = await system_blocks(cfg, registry, store, cid, "", carried,
+                                 getattr(backend, "role", None))
     return blocks, tools, carried
 
 
@@ -185,33 +163,95 @@ async def _chat_line(store, cid: str) -> str | None:
     return "You are talking with {{username}} in the app right now."
 
 
-async def request_text(store, cfg, registry, backend, cid: str, turn: dict, carried,
-                       tools: list[dict] = (), touch: bool = True,
-                       path: list[dict] | None = None
-                       ) -> tuple[list[str], list[context.Part]]:
-    """(the system prompt's pieces, the tail's parts) of a turn: system_blocks (the
-    notes it always carries in the system prompt) and the notes it carries by need in
-    the tail. `touch` False: a look that changes nothing (the Context tab). `path`: the
-    conversation's path when the turn read it already."""
-    pieces = [t for _, t in await system_blocks(cfg, registry, store, cid, turn["id"],
-                                                carried)]
-    # what changes from turn to turn, in the tail: the time now, where else it works,
-    # its plan, its notes by need. The tail is built once at a turn's start (again only
-    # when a skill load rebuilds the request), so the time of step 0 holds for the
-    # whole turn: good enough, and the steps of one turn share their prefix
+async def tail_text(store, cfg, registry, backend, cid: str, carried,
+                    tid: str = "") -> str:
+    """The tail of turn `tid`: what holds now and changes from turn to turn, stored once
+    on the user message the turn answers (turns/message_context.py put_tail) so it never
+    moves: the date and time now, the model it runs on when that is not the first,
+    where else it works, its own jobs still running, its plan, the skills it cannot use
+    now and the ones it keeps
+    notes on, and the core skills' live state (`tail_part`: the intercom's thread and
+    announcements, a mission's status, a sub-agent's report room, the notebook's
+    index)."""
     from ..conversations import here
+    from ..jobs import store as job_rows
+    parts = [clock.today(cfg), clock.now_line(cfg), await fallback_line(store, backend, cid),
+             await store.read(lambda c: here.busy(c, cid)),
+             await store.read(lambda c: job_rows.running(c, cid, clock.zone(cfg)))]
     plan = plan_flow.block(await plan_flow.current(store, cid))
-    return pieces, [context.Part(t) for t in [
-        clock.now_line(cfg), await store.read(lambda c: here.busy(c, cid)),
-        cfg.substitute(plan) if plan else None, notes_tail(cfg, carried)] if t]
+    parts.append(cfg.substitute(plan) if plan else None)
+    if registry:
+        from ..skills.meta import skill_note_path
+        specs, _ = await tool_specs(registry, store, cid, carried)
+        parts += unusable(specs, registry, await overrides_for(store, cid), cfg)
+        noted = [n for n in [*carried.skills, *carried.others]
+                 if skill_note_path(cfg, n).is_file()]
+        if noted:
+            parts.append(f"Your notes on skills (skills/<name>.md, with skills__read_guide "
+                         f"or skills__load): {', '.join(noted)}.")
+        ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="", store=store,
+                          config=cfg, emit=None,  # type: ignore[arg-type]
+                          loaded_notes=carried.loaded_notes)
+        parts += await registry.tail_parts(ctx, (set(carried.skills) & CORE) | {"sub_agents"})
+    return "\n\n".join(p for p in parts if p)
 
 
-def notes_tail(cfg, carried) -> str | None:
-    """The notes it carries by need, the ones over the share and the ones left out
-    here: what changes between turns, out of the cached system prompt."""
-    from ..skills.notebook import notes_block
-    return notes_block(cfg, [n for n in carried.notes if not n.get("always")],
-                       head=False) if "notebook" in carried.skills else None
+FALLBACK = "You are running in fallback mode. Instead of {first} you are running on {current}."
+
+
+def answered_ref(backend) -> str | None:
+    """The model that answered this turn's last call (backends/llm.py), None before."""
+    return getattr(getattr(getattr(backend, "answered", None), "cfg", None), "id", None)
+
+
+def _last_answered(c, cid: str, role: str) -> str | None:
+    """The model of the conversation's newest `llm.queue` running event of `role`."""
+    r = c.execute(
+        "SELECT json_extract(data, '$.backend') FROM events WHERE conversation_id=? AND "
+        "type='llm.queue' AND json_extract(data, '$.state')='running' AND "
+        "json_extract(data, '$.role')=? ORDER BY seq DESC LIMIT 1", (cid, role)).fetchone()
+    return r[0] if r else None
+
+
+async def fallback_line(store, backend, cid: str) -> str | None:
+    """While the model that answers the turn's role is not its chain's first
+    (backends/llm.py walks the list): the fixed FALLBACK sentence, what the app knows of
+    that model (model_facts), then why each one before it is left out. The model is the
+    one that answered this turn's last call; before the turn's first call, the one that
+    answered the role last in this conversation (its `llm.queue` running event). None on
+    the first choice, before any model answered, and for a turn that runs on the first
+    model alone."""
+    llm = getattr(backend, "llm", None)
+    if llm is None or not getattr(backend, "fallback", False):
+        return None
+    current = answered_ref(backend) or await store.read(
+        lambda c: _last_answered(c, cid, backend.role))
+    if current is None:
+        return None
+    ordered = await llm.router.order(backend.role, conversation_id=cid)
+    passed = ordered.passed_over(current)
+    if not passed:
+        return None
+    return " ".join([FALLBACK.format(first=ordered.chain[0], current=current),
+                     *model_facts(llm.make(current)), passed])
+
+
+def model_facts(backend) -> list[str]:
+    """What the app knows of one model, one plain sentence each: its context window
+    (the live one, or its setting), whether it sees images and whether it calls tools
+    (its caps: what its server states, else its settings; settings/kinds.py caps_of).
+    A fact not known is not said."""
+    from . import tokens
+    if backend is None:
+        return []
+    out = []
+    if (n := tokens.known_window(backend)) is not None:
+        out.append(f"Its context window is {n:,} tokens.")
+    for attr, yes, no in (("supports_images", "It sees images.", "It does not see images."),
+                          ("supports_tools", "It calls tools.", "It does not call tools.")):
+        if (v := getattr(backend, attr, None)) is not None:
+            out.append(yes if v else no)
+    return out
 
 
 def about_user(cfg) -> str:
@@ -220,57 +260,85 @@ def about_user(cfg) -> str:
     return cfg.substitute(f"About {{{{user}}}}:\n{cfg.bio}") if cfg.bio else ""
 
 
-async def system_blocks(cfg, registry, store, cid, tid, carried
+async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | None = None
                         ) -> list[tuple[str, str]]:
     """The system prompt's pieces, each named for what it is (persona, talk, about,
-    notes, tools): its persona, who it is talking to and where, how it talks (it
-    `talk`), what the user wrote about themselves, the notes it always
-    carries (turns/loads.py; the ones by need go in the tail, notes_tail), the skill
-    index, then what each loaded skill adds every turn (the Messages archive's sources, the
-    notebook index), then the date. What changes from turn to turn comes last, so the
-    start of the prompt stays the same for the model server's cache. Who a sub-agent is
-    (the sub_agents fragment) is told in every conversation. Every kind gets all of it:
-    a chat, a mission, a sub-agent and a background run or task alike;
-    what the kind adds (a brief, a trigger's prompt) comes as its messages."""
+    notes, tools), the most stable first: its persona, the legend, who it is talking
+    to, where it is (conversations/here.py where, from ids; `role` its model role), how
+    it talks (its `talk`), what the user wrote about themselves, the skill index, what
+    each core skill adds for the whole conversation (its live state goes in the tail:
+    `tail_part`), and last the notes it always carries (turns/loads.py), the one piece
+    her own writes change. Nothing here changes from turn to turn unless she writes an
+    always note: what does is in the tail (tail_text), so the start of the request stays
+    the same for the model server's cache. A chat, a mission and a background run or
+    task get all of it; what the kind adds (a brief, a trigger's prompt) comes as its
+    messages. A sub-agent gets its own, lean one (agent_blocks)."""
     from ..skills.notebook import notes_block
+    row = await store.read(lambda c: c.execute(
+        "SELECT agent_of, agent_cli FROM conversations WHERE id=?", (cid,)).fetchone())
+    ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="",
+                      store=store, config=cfg, emit=None,  # type: ignore[arg-type]
+                      loaded_notes=carried.loaded_notes)
+    if row is not None and row["agent_of"]:
+        return await agent_blocks(cfg, registry, store, ctx, carried, role,
+                                  bool(row["agent_cli"]))
     her = getattr(cfg, "her", None)
     parts = [("persona", cfg.substitute(her.persona).strip())] \
         if her is not None and her.persona.strip() else []
     # what the app's marks in its context mean (turns/legend.py), right under who it is
-    voiced = voice_line(cfg) is not None
-    parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid), voiced)))
+    parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
+    if cfg.r("ask_before_setup"):
+        parts.append(("persona", cfg.substitute(prompts.text(__file__, "ask_before_setup.md"))))
     line = await _chat_line(store, cid)
     if line:
         parts.append(("talk", cfg.substitute(line)))
     from ..conversations import here
-    where = await store.read(lambda c: here.where(c, cid))
+    where = await store.read(lambda c: here.where(c, cid, role))
     if where:
-        parts.append(("talk", where))
+        parts.append(("talk", cfg.substitute(where)))
+    parts.append(("talk", devices.about(cfg) or ""))
     if her is not None:
         parts.append(("talk", cfg.substitute(her.talk_text)))
     parts.append(("about", about_user(cfg)))
-    ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="",
-                      store=store, config=cfg, emit=None,  # type: ignore[arg-type]
-                      loaded_notes=carried.loaded_notes)
-    if "notebook" in carried.skills:
-        # the notes it always carries; the ones by need go in the tail (notes_tail)
-        parts.append(("notes", notes_block(cfg, [n for n in carried.notes
-                                                 if n.get("always")])))
     if registry:
-        specs, _ = await tool_specs(registry, store, cid, carried)
-        lines = unusable(specs, registry, await overrides_for(store, cid), cfg)
-        parts.append(("tools", "\n".join(x for x in [registry.index(cfg, carried), *lines]
-                                         if x)))
+        parts.append(("tools", registry.index(cfg, carried)))
+        # the core skills' parts; another skill's comes with skills__load
         parts.extend(("tools", f) for f in await registry.prompt_fragments(
-            ctx, set(carried.skills) | {"sub_agents"}))
-    parts.append(("tools", clock.today(cfg)))
+            ctx, set(carried.skills) & CORE))
+    if "notebook" in carried.skills:
+        parts.append(("notes", notes_block(cfg, carried.notes)))
     return [(name, text) for name, text in parts if text]
 
+
+async def agent_blocks(cfg, registry, store, ctx, carried, role, cli: bool
+                       ) -> list[tuple[str, str]]:
+    """A sub-agent's system prompt: its agent template's body when it was started from
+    one (sub_agents/templates.py), who it is and how it reports (the sub_agents
+    fragment), where it is, then the legend and its skills. Not her persona, talk, notes
+    or the user's words about themselves: a template that wants them says so. A CLI or a
+    drone (`cli`) has none of her tools: the template, how it reports and where it is
+    (drone.py hands it to opencode as the system prompt)."""
+    from ..conversations import here
+    from ..sub_agents import templates
+    cid = ctx.conversation_id
+    t = await store.read(lambda c: templates.of(c, cid, cfg))
+    parts = [("persona", cfg.substitute(t.body) if t is not None else "")]
+    if registry:
+        parts.extend(("persona", f) for f in await registry.prompt_fragments(
+            ctx, {"sub_agents"}))
+    where = await store.read(lambda c: here.where(c, cid, role))
+    parts.append(("talk", cfg.substitute(where) if where else ""))
+    parts.append(("talk", devices.about(cfg) or ""))
+    if not cli:
+        parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
+        if registry:
+            parts.append(("tools", registry.index(cfg, carried)))
+    return [(name, text) for name, text in parts if text]
 
 
 async def turn_parts(services, cid: str):
     """The backend, the system prompt's pieces, named (request_parts), the tool list a
-    turn of this conversation would use now and what it carries by need (turns/loads.py),
+    turn of this conversation would use now and what it carries (turns/loads.py),
     for the estimates; /compact keeps only the latest exchange anyway."""
     from ..backends.queue import Priority
     backend = services.dispatcher.bound(cid, role="chat", priority=Priority.INTERACTIVE)

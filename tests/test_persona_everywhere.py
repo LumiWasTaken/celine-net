@@ -1,7 +1,7 @@
-"""All of it in every kind of turn: its persona, the legend, its talk (and the voice cue
-it names) in the system prompt of a chat, a mission, a sub-agent, a
-schedule's run and a trigger's task (prompt.system_blocks, the one assembly), and its
-Banned words on every call of its turns (settings/voice.of)."""
+"""All of it in every kind of her turns: her persona, the legend, her talk in the system
+prompt of a chat, a mission, a schedule's run and a trigger's task (prompt.system_blocks,
+the one assembly), and her Banned words on every call of her turns (settings/voice.of).
+A sub-agent gets its own lean prompt: who it is, the legend, no persona or talk."""
 from __future__ import annotations
 
 import pytest
@@ -35,10 +35,14 @@ async def test_every_kind_gets_her_persona_talk_and_legend(store):
         carried = await loads.select(store, cfg, None, cid, None)
         blocks = await system_blocks(cfg, None, store, cid, "", carried)
         text = "\n\n".join(t for _, t in blocks)
+        if kind == "agent":
+            assert "How the app marks what it adds" in text
+            assert "You have your own taste." not in text
+            assert "how I talk." not in text
+            continue
         assert text.startswith(f"You are {cfg.name}."), kind
         assert "You have your own taste." in text, kind
         assert "How the app marks what it adds" in text, kind
-        assert "[how you sound]" in text, kind
         assert ("talk", "how I talk.\n\n## how I sound\nloud, and emojis when it fits.") \
             in blocks, kind
 

@@ -4,7 +4,7 @@
    and the global feed. The agent's calls carry the same batch as their display. */
 import { del, json, post, request } from './api'
 import type { ServerEvent } from './bus'
-import type { FieldSchema } from './settingsApi'
+import type { FormField } from '../ui'
 
 export type Kind = 'images' | 'music'
 
@@ -76,7 +76,7 @@ export type Preset = {
   /** shipped as it came, a shipped one the user edited, or the user's own upload */
   origin: 'shipped' | 'edited' | 'own'
   /** the editor: its fields and their values (comfyui/presets.py fields, values) */
-  fields: FieldSchema[]
+  fields: FormField[]
   values: Record<string, unknown>
 }
 
@@ -98,6 +98,12 @@ export function batchEvent(ev: ServerEvent, kind?: Kind): Batch | null {
 
 /** an attachment's file under its own name; `download` saves even an image */
 export const fileUrl = (f: { id: string }, download = false) => `/api/attachments/${f.id}/file${download ? '?download=1' : ''}`
+/** the width of a picture on a message or a tool row (.msg__picture, .tool__picture: 18rem) */
+export const TILE = 288
+/** a picture for a tile `px` CSS pixels wide on this screen: the server's smaller copy
+    (it snaps the width to a few); the Viewer and a download take fileUrl, the file itself */
+export const tileUrl = (f: { id: string }, px: number) =>
+  `/api/attachments/${f.id}/file?w=${Math.ceil(px * (window.devicePixelRatio || 1))}`
 
 export const mediaApi = {
   presets: (kind: Kind) => request<{ presets: Preset[] }>(`/generation-presets?kind=${kind}`),

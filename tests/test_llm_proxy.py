@@ -130,11 +130,12 @@ async def test_models_carry_the_sizes_the_app_knows(proxy):
     """context_length is the window its turns budget with (a loaded model's /props over
     the context in Settings); max_output_tokens what the provider's list states; a size
     nobody knows is left out."""
+    from celine.settings import kinds
     from celine.turns import tokens
     s = proxy.cfg.settings
     s.providers["main"]["models"]["small"]["context"] = 65536
     tokens.running_windows("http://main:8080/v1", {"big": 262144})
-    tokens.reported_outputs("http://main:8080/v1", {"big": 32768})
+    kinds.reported_outputs("http://main:8080/v1", {"big": 32768})
     r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {KEY}"})
     sizes = {m["id"]: {k: m[k] for k in ("context_length", "max_output_tokens") if k in m}
              for m in r.json()["data"]}
@@ -176,3 +177,42 @@ async def test_calls_take_the_shellbox_lane_with_no_lock_of_their_own(proxy):
         assert t.endpoint == "http://main:8080/v1" and t.model == "big"
         proxy.up.go.set()
     assert done == [200, 200] and len(proxy.up.seen) == 2 and not sched.running
+
+
+async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_was_approved_for(
+        proxy, store, monkeypatch):
+    from celine import devices
+    from celine.conversations import store as conversations
+    from celine.devices import Device
+    from celine.settings import conversations as conv
+    monkeypatch.setattr(devices, "devices", lambda cfg: {"mac": Device(
+        "mac", "Her Mac", "http://mac:4096", "pw", "dev-key", "", "", None)})
+    monkeypatch.setattr(proxy.cfg.settings, "key_missing", lambda pid: False)
+
+    async def ids(key):
+        r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {key}"})
+        return [m["id"] for m in r.json()["data"]]
+    assert await ids(KEY) == ["main/big", "main/small", "or/x/glm", "default"]
+    assert await ids("dev-key") == ["main/big", "main/small", "default"]
+    refused = await ask(proxy, model="or/x/glm", key="dev-key")
+    assert refused.status_code == 403 and refused.json()["error"]["message"] == \
+        "or/x/glm is a cloud model no drone on Her Mac was approved for."
+    parent = await conversations.create(store)
+    elsewhere = await conversations.create(store, title="pc", agent_of=parent,
+                                           agent_name="pc", access="work",
+                                           agent_cli="opencode", agent_device="pc")
+    await conv.apply(store, elsewhere, {"model": "or/x/glm"})
+    assert await ids("dev-key") == ["main/big", "main/small", "default"], \
+        "approved for a drone on another device"
+    sub = await conversations.create(store, title="arcade", agent_of=parent,
+                                     agent_name="arcade", access="work",
+                                     agent_cli="opencode", agent_device="mac")
+    await conv.apply(store, sub, {"model": "or/x/glm"})
+    # no turn of it is live: opencode's late title call after its turn still gets through
+    assert await ids("dev-key") == ["main/big", "main/small", "or/x/glm", "default"]
+    assert (await ask(proxy, model="or/x/glm", key="dev-key")).status_code == 200
+    # long done: the approval served that drone, not the device for good
+    await store.write(lambda c: c.execute(
+        "UPDATE conversations SET created_at='2020-01-01T00:00:00.000+00:00' WHERE id=?",
+        (sub,)))
+    assert await ids("dev-key") == ["main/big", "main/small", "default"]

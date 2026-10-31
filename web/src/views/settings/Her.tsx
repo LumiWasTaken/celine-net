@@ -1,7 +1,8 @@
 /* Settings, its page (/settings/agent): one column. The agent's picture (a click shows it big; its
    "..." has Upload and Delete), Name, Pronouns, Colour; Persona, Example lines, each a
    long text on a surface that opens in the large editor (HerText below: History and Ask
-   Celine, keys her:persona, her:talk and her:voice; Restore this version saves at once); Banned words with Bias and its switch.
+   Celine, keys her:persona, her:talk and her:voice; Restore this version saves at once); Behaviour (Ask before setting up services, a general
+   setting); Banned words with Bias and its switch.
    Everything saves itself (lib/useAutosave): switches and choices at once, Bias when the
    slider rests, Name when you leave the field, a long text when you leave its editor or
    its box (one History entry per save). Every save sends the version its page was loaded
@@ -22,10 +23,11 @@ import { useResource } from '../../lib/useResource'
 import {
   Button, Choice, EmptyState, Face, Field, InlineError, Input, Loaded, MenuButton, Notice, Section, Slider, Switch, Viewer, type MenuItem,
 } from '../../ui'
+import { GeneralFields } from './General'
 import { Page } from './parts'
 import './settings.css'
 
-export const PRONOUNS = [{ value: 'she', label: 'She' }, { value: 'he', label: 'He' }, { value: 'they', label: 'They' }]
+export const PRONOUNS = [{ value: 'she', label: 'She' }, { value: 'he', label: 'He' }, { value: 'they', label: 'They' }, { value: 'it', label: 'It' }]
 
 const herPage: Route = { section: 'settings', page: 'agent' }
 const editRoute = (key: string, history = false): Route => ({ section: 'settings', page: 'agent', edit: key, ...(history && { history }) })
@@ -74,6 +76,7 @@ export function HerPage() {
         : auto.error && <Section><InlineError compact message={auto.error} onRetry={auto.flush} /></Section>}
       <Who her={her} auto={auto} />
       <Persona her={her} />
+      <Section title="Behaviour"><GeneralFields only={['ask_before_setup']} /></Section>
       <Banned her={her} auto={auto} />
     </Page>
   )
@@ -126,7 +129,7 @@ function Who({ her, auto }: { her: HerView; auto: Autosave<unknown> }) {
              style={{ background: `color-mix(in oklch, ${color} 22%, var(--surface-2))` }} onClick={her.portrait ? () => setBig(true) : pick}
              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (her.portrait) setBig(true); else pick() } }}>
           {her.portrait ? <img className="her-pic__img" src={her.portrait.url} alt={her.name} draggable={false} />
-            : <Face name={her.name} size="lg" still bg={`color-mix(in oklch, ${color} 22%, var(--surface-2))`} fg={color} />}
+            : <Face name={her.name} size="lg" bg={`color-mix(in oklch, ${color} 22%, var(--surface-2))`} fg={color} />}
         </div>
         <span className="her-pic__more"><MenuButton icon={MoreHorizontal} size="sm" label={`More for ${her.name}`} items={menu} /></span>
       </div>
@@ -171,7 +174,7 @@ function Banned({ her, auto }: { her: HerView; auto: Autosave<unknown> }) {
     <Section title="Banned words" count={v.banned.length}
              action={<span title="Banned words and phrases work on tabbyAPI, llama-swap and llama-server models"><Switch hideLabel label="Banned words" checked={on} disabled={!online} onChange={x => auto.set('on', x)} /></span>}>
       <TextPreview mono text={v.banned.map(w => w.trim()).join(', ')} to={editRoute('banned')} empty="Banned words" />
-      <Slider label={<span title="How strongly to avoid them; -100 bans">Bias</span>} value={p.bias ?? v.bias}
+      <Slider label={<span title="How strongly the model avoids these words. At -100 it never uses them.">Bias</span>} value={p.bias ?? v.bias}
               min={-100} max={0} step={1} disabled={!on} onChange={n => auto.set('bias', n, 'soon')} />
     </Section>
   )

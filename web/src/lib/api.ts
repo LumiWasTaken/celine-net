@@ -67,8 +67,11 @@ export type ConversationSummary = {
   mission_status?: string | null
   /** its sub-agents, oldest first (the list has no rows of their own for them) */
   agents: ConversationSummary[]
-  /** GET /conversations: the server's group label for the row ("Running", "Pinned", "Today", "9 Oct") */
+  /** GET /conversations: the server's group label for the row ("Running", "Pinned", "Today",
+      "Previous 7 days", "March", "2025") */
   group?: string
+  /** GET /conversations: its group is a date (not Running or Pinned) */
+  dated?: boolean
   /** GET /conversations: its turn in it, running with the server's step words ('' while it
       writes), waiting for you, or how the last turn ended when it failed or paused */
   state?: { tone: 'running' | 'error' | 'warn'; words: string } | null
@@ -196,7 +199,7 @@ async function settle<T>(status: number, text: string): Promise<T> {
     const e = (body && typeof body === 'object' ? (body as { error?: { code?: string; message?: string; detail?: Record<string, string> } }).error : null) ?? {}
     throw new ApiError(e.code ?? 'http_error', e.message ?? httpMessage(status), status, e.detail ?? {})
   }
-  if (body === BAD) throw new ApiError('bad_response', `The server sent a response that is not JSON (HTTP ${status}).`, status)
+  if (body === BAD) throw new ApiError('bad_response', `The server sent an answer the app cannot read (HTTP ${status}). Try again in a moment.`, status)
   return body as T
 }
 
@@ -207,9 +210,9 @@ function parseBody(text: string): unknown {
 }
 
 function httpMessage(status: number): string {
-  if (status === 502 || status === 503 || status === 504) return `The server didn't answer in time (HTTP ${status}). Retry in a moment.`
+  if (status === 502 || status === 503 || status === 504) return `The server didn't answer in time (HTTP ${status}). Try again in a moment.`
   if (status === 404) return 'Not found (HTTP 404).'
-  return `The server didn't respond as expected (HTTP ${status}).`
+  return `The server returned an error (HTTP ${status}). Try again in a moment.`
 }
 
 /** `login`: passkeys are on (a deployment setting), off for local runs; `methods`: the kinds of
@@ -415,6 +418,11 @@ export type Turn = { id: string; state: TurnState; reason: string | null; reason
   /** a running turn's reply: waiting for a slot, loading the model, thinking, flowing or done */
   live?: Live | null }
 
+/** the user's last message that has no answer while no turn runs (the server's): the
+ *  turn that tried and how it ended (null when none did), why, in a sentence, and whether
+ *  Continue picks up the words its reply said before it failed */
+export type Unanswered = { message_id: string; turn_id: string | null; state: TurnState | null; reason: string; continues: boolean }
+
 /** where the reply being written stands (the snapshot's `turn.live`, then the live events) */
 export type Live = { message_id: string; phase: 'waiting' | 'loading' | 'thinking' | 'flowing' | 'done'
   ahead?: number; running?: number; model?: string
@@ -453,8 +461,8 @@ export type ToolCall = {
   name: string
   arguments: string
   state: 'pending' | 'running' | 'ok' | 'error' | 'gated' | 'cancelled' | 'detached' | 'interrupted'
-  /** the result's payload for the row, per tool. A shell call (shell__run, shell__type,
-   *  shell__stop, shell__read): `terminal` (its name), `terminal_id` (the six characters
+  /** the result's payload for the row, per tool. A shell call (shell__run, shell__wait,
+   *  shell__type, shell__stop, shell__read): `terminal` (its name), `terminal_id` (the six characters
    *  of its address, the link), `owner`, `state` (a run: done, running, waiting, closed,
    *  not_started; a screen: prompt, running, waiting, fullscreen, closed; error),
    *  `program`, `pid`, `exit` (a run's, null until it ended), `seconds` (a run's real
@@ -482,6 +490,12 @@ export type ToolCall = {
  *  tool alone at work ("Reading the note"), `where` the places a search was kept to */
 export type ToolWords = { running: string; settled: string; step: string; where: string | null }
 
+/** calls alike in a row, shown as one row (skills/words.py runs): its calls, its words
+ *  ("Ran 8 commands in terminal main"), how many of them failed */
+export type ToolRun = { ids: string[]; words: string; failed: number }
+/** a turn's runs as a tool event carries them, all of them each time */
+export type TurnRuns = { turn: string; list: ToolRun[] }
+
 /** what a running tool says it is doing */
 type ToolProgress = {
   note: string
@@ -500,6 +514,10 @@ export type Snapshot = {
   conversation: {
     id: string; title: string; seq: number; archived_at: string | null
     agent_of: string | null; agents: SubAgent[]
+    /** a sub-agent's name, null for any other */
+    agent_name?: string | null
+    /** a sub-agent's parent: its name and the path that opens it; null for any other */
+    started_by?: { name: string; link: string | null } | null
     /** what it is: the place that shows it */
     kind?: ConversationSummary['kind']
     /** the app path that shows it: a chat, a mission, a task's or a run's page */
@@ -509,8 +527,12 @@ export type Snapshot = {
   }
   messages: Message[]
   tool_calls: Record<string, ToolCall[]>
+  /** the runs of each turn, by turn id */
+  runs: Record<string, ToolRun[]>
   compactions: Compaction[]
   turn: Turn | null
+  /** what Regenerate answers, null when nothing waits for it */
+  unanswered: Unanswered | null
   /** the live turns in the order they run */
   queue: Queued[]
   switched: Record<string, Switched>
@@ -541,22 +563,16 @@ export type Queued = { turn_id: string }
 export type SentRequest = {
   step: number; model: string; provider: string; created_at: string
   prompt_tokens: number | null; completion_tokens: number | null; estimate: number | null; finish_reason: string | null
+  /** ms from the model's slot to its first token; prompt tokens read from the server's cache */
+  first_token_ms: number | null; cache_read: number | null
   body: { messages?: { role: string; content: unknown; name?: string; tool_name?: string }[]; tools?: { function?: { name?: string } }[] } & Record<string, unknown>
 }
 
-/** GET /conversations/{cid}/context: blocks in order persona, talk, about, notes, tools, history, warning */
+/** GET /conversations/{cid}/context: blocks in order persona, talk, about, notes, tools, history */
 export type ContextView = {
   window: number
-  /** the most notes and tools may take, in tokens */
-  shares: { notes: number; tools: number }
-  blocks: { name: 'persona' | 'talk' | 'about' | 'notes' | 'tools' | 'history' | 'warning'; tokens: number }[]
-  notes: { path: string; tokens: number; state: 'included' | 'left_out' | 'off'; why: string | null }[]
-  /** what it carries, each with the turns since a turn last touched it */
-  loaded: {
-    notes: { path: string; since: number }[]
-    /** a skill's tool schemas in tokens; `core` when it always loads (no Unload) */
-    skills: { name: string; since: number; tokens: number; core: boolean; label: string }[]
-  }
+  blocks: { name: 'persona' | 'talk' | 'about' | 'notes' | 'tools' | 'history'; tokens: number }[]
+  notes: { path: string; tokens: number; state: 'included' | 'off'; why: string | null }[]
   tools: number
   /** the Load automatically switch */
   auto_context: boolean
@@ -659,9 +675,6 @@ export const conversationApi = {
     request<{ requests: SentRequest[] }>(`/conversations/${id}/messages/${message_id}/requests`),
   /** what the next request would hold, measured per block, and its notes with their state */
   context: (id: string) => request<ContextView>(`/conversations/${id}/context`),
-  /** it lets go of a skill it carries here; it loads again by need */
-  unloadSkill: (id: string, name: string) =>
-    del<{ ok: true }>(`/conversations/${id}/context/skills/${encodeURIComponent(name)}`),
   /** the notes left out of this conversation (the whole list) */
   setNotesOff: (id: string, notes_off: string[]) =>
     request<{ ok: true }>(`/conversations/${id}`, json('PATCH', { notes_off })),

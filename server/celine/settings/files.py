@@ -28,7 +28,7 @@ HEADER = ("Written by celine-net Settings. Hand edits are fine. The app reads th
           "file.")
 
 SECTIONS = ("providers", "roles", "tools", "general", "email", "vault", "triggers",
-            "appearance", "guard", "features", "services")
+            "appearance", "guard", "features", "services", "address")
 
 _lock = threading.Lock()
 
@@ -59,7 +59,9 @@ def settings_dir(cfg) -> Path:
 
 
 def path_for(root: Path, section: str) -> Path:
-    if section not in SECTIONS:
+    """A core section's file, or a plugin's with a form (its id)."""
+    from .. import plugins
+    if section not in SECTIONS and section not in {p.id for p in plugins.with_form()}:
         raise ValueError(section)
     return root / f"{section}.toml"
 

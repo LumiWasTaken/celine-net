@@ -3,7 +3,6 @@ name: whatsapp
 description: Live WhatsApp through {{username}}'s linked device: the chats by last
   activity, a chat's newest messages, older messages requested from the phone, a
   contact's or a group's details.
-words: whatsapp
 ---
 These tools read what {{username}}'s WhatsApp linked device has, and can request older
 messages from {{username}}'s own phone. The Messages archive has the same chats, offline and

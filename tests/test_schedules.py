@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+import tomllib
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
@@ -40,6 +42,7 @@ def cfg():
     c = load()
     c.timezone = "UTC"
     c.settings.general.update({"max_concurrent_turns": 2})
+    c.settings.features["done"] = True       # the onboarding is done: routines run
     c.user = "Joe"
     return c
 
@@ -104,8 +107,7 @@ async def test_missed_slots_are_made_oldest_first_and_older_than_a_week_skipped(
     clock = Clock(datetime(2026, 10, 10, 11, tzinfo=UTC))
     sched = Scheduler(_app(store, cfg), clock)
     await sched.make_due()
-    assert [(r["night"], r["state"]) for r in await _runs(store)] == [
-        ("2026-10-10", "waiting")], "the first look makes tonight's passed slots, no more"
+    assert await _runs(store) == [], "the first look makes nothing that passed"
     await store.kv_set(CHECKED, iso(clock.at - timedelta(days=9)))
     await sched.make_due()
     got = [(r["night"], r["state"], r["reason"]) for r in await _runs(store)]
@@ -115,6 +117,66 @@ async def test_missed_slots_are_made_oldest_first_and_older_than_a_week_skipped(
         "a missed slot is finished"
     await sched.make_due()
     assert len(await _runs(store)) == 9, "a slot has one run"
+
+
+async def test_no_routine_runs_before_the_onboarding_is_done(store, cfg):
+    """A fresh install at 18:58 with Radar at 09:00 and 17:00: switching Routines on
+    during the onboarding makes no run, not the 17:00 that passed nor a slot that comes
+    while it goes on; a run made by hand waits. Once done, the next slot runs."""
+    cfg.settings.features.pop("done")
+    cfg.schedules = {"radar": _s("radar", "0 9,17 * * *")}
+    clock = Clock(datetime(2026, 10, 10, 18, 58, tzinfo=UTC))
+    sched = Scheduler(_app(store, cfg), clock)
+    started: list[str] = []
+    sched._start = lambda r: started.append(r["schedule"])
+    await sched.tick()
+    assert await _runs(store) == []
+    clock.at = datetime(2026, 10, 11, 9, 1, tzinfo=UTC)
+    await sched.run_now("radar")
+    await sched.tick()
+    assert [r["slot"] for r in await _runs(store)] == [iso(clock.at.replace(microsecond=0))], \
+        "the 09:00 slot during the onboarding is not made"
+    assert started == [], "nothing starts before the onboarding is done"
+    cfg.settings.features["done"] = True
+    clock.at = datetime(2026, 10, 11, 17, 0, 30, tzinfo=UTC)
+    await sched.tick()
+    assert [r["slot"][11:16] for r in await _runs(store)] == ["09:01", "17:00"]
+    assert started, "once it is done, the waiting runs start"
+
+
+async def test_a_slot_that_passed_while_routines_were_off_is_never_caught_up(store, cfg):
+    """Routines on until 08:00, off over the 09:00 slot, on again at 10:00: nothing is
+    made for 09:00; the 17:00 slot is."""
+    cfg.schedules = {"radar": _s("radar", "0 9,17 * * *")}
+    clock = Clock(datetime(2026, 10, 10, 8, tzinfo=UTC))
+    sched = Scheduler(_app(store, cfg), clock)
+    await sched.make_due()
+    await sched.forget()                  # Routines switched off (core/runners.py)
+    clock.at = datetime(2026, 10, 10, 10, tzinfo=UTC)
+    await sched.make_due()
+    assert await _runs(store) == []
+    clock.at = datetime(2026, 10, 10, 17, 1, tzinfo=UTC)
+    await sched.make_due()
+    assert [r["slot"][11:16] for r in await _runs(store)] == ["17:00"]
+
+
+def test_a_cron_line_reads_in_words_and_any_other_shape_as_itself():
+    from celine.schedules import words
+    assert [words(c) for c in (
+        "0 10-23/2 * * *", "0 9,17 * * *", "0 3 * * 0", "30 4 * * *", "0 8 * * 6,0",
+        "0 9-17 * * 1-5", "0 1,13,20 * * *", "0 */2 * * *", "0 3 1 * *", "*/5 * * * *",
+        "0 3/5 * * *", "0 5/2 * * *", "0 */5 * * *", "0 */7 * * *", "0 */9 * * *",
+        "0 */6 * * *", "0 1-23/2 * * *",
+    )] == [
+        "Every 2 hours from 10:00 to 22:00", "Daily at 09:00 and 17:00", "Sundays at 03:00",
+        "Daily at 04:30", "Weekends at 08:00", "Weekdays, every hour from 09:00 to 17:00",
+        "Daily at 01:00, 13:00 and 20:00", "Every 2 hours", "0 3 1 * *", "*/5 * * * *",
+        "Daily at 03:00, 08:00, 13:00, 18:00 and 23:00", "Every 2 hours from 05:00 to 23:00",
+        "Daily at 00:00, 05:00, 10:00, 15:00 and 20:00", "Daily at 00:00, 07:00, 14:00 and 21:00",
+        "Daily at 00:00, 09:00 and 18:00", "Every 6 hours", "Every 2 hours from 01:00 to 23:00"]
+    for path in (Path(__file__).parents[1] / "config" / "schedules").glob("*.toml"):
+        cron = tomllib.loads(path.read_text())["cron"]
+        assert words(cron) != cron, f"{path.name}: {cron} in words"
 
 
 async def test_slots_past_max_slots_are_made_by_the_next_look(store, cfg, monkeypatch):
@@ -361,16 +423,18 @@ async def test_a_run_is_over_only_once_its_sub_agents_have_reported(store):
 
 
 async def test_a_run_that_was_running_at_the_stop_runs_on_in_its_conversation(store, cfg):
-    """A graceful stop puts its turn down; the next start's sweep queues it again and
-    the scheduler picks the run up where it was: the same conversation, the same turn."""
+    """A graceful stop ends its turn `interrupted`; the next start's scheduler picks the
+    run up where it was and continues that turn: the same conversation, the same turn."""
     class Hang(FakeBackend):
         """Hangs until the restart; answers after it."""
         def __init__(self):
             super().__init__(echo=True)
             self.hang = True
+            self.asked = anyio.Event()
 
         async def stream(self, messages, tools, body=None):
             if self.hang:
+                self.asked.set()
                 await anyio.sleep_forever()
             async for ev in super().stream(messages, tools, body):
                 yield ev
@@ -391,12 +455,13 @@ async def test_a_run_that_was_running_at_the_stop_runs_on_in_its_conversation(st
         run = await sched.run_now("world")
         await sched.tick()
         await until(lambda: _live(store, run["id"]))
+        await backend.asked.wait()                  # its turn runs
         await d.stop(grace=0.2)
         tg.cancel_scope.cancel()
     [row] = await _runs(store)
     cid = row["conversation_id"]
     assert row["state"] == "running" and cid
-    assert (await store.read(lambda c: runs_mod.outcome(c, cid)))[0] == "queued", "put down"
+    assert (await store.read(lambda c: runs_mod.outcome(c, cid)))[0] == "interrupted"
 
     backend.hang = False                            # the next start
     await turns.sweep(store, app.registry)
@@ -414,7 +479,7 @@ async def test_a_run_that_was_running_at_the_stop_runs_on_in_its_conversation(st
         tg.cancel_scope.cancel()
     [row] = await _runs(store)
     assert row["conversation_id"] == cid, "the same conversation, no new one"
-    assert await _turns(store, cid) == 1, "the same turn, resumed"
+    assert await _turns(store, cid) == 1, "the same turn, continued"
     assert "News of 2026-10-09?" in row["result"]
     assert await store.read(lambda c: c.execute(
         "SELECT count(*) FROM conversations WHERE trigger_key LIKE 'run:%'").fetchone()[0]) == 1
@@ -507,7 +572,7 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
         by_name = {s["name"]: s for s in got["schedules"]}
         reflection = by_name["reflection"]
         assert (reflection["time"], reflection["after"]) == ("05:00", ["self-review"])
-        assert reflection["every"] == "Every day at 05:00" and reflection["rounds"] == 8
+        assert reflection["every"] == "Daily at 05:00" and reflection["rounds"] == 8
         assert reflection["next_at"] == "05:00" and reflection["next_night"] >= got["tonight"]
         assert reflection["partner"] == "mentor.md" and "neutral and direct" in \
             reflection["partner_prompt"]
@@ -543,7 +608,7 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
                              )["label"] == "{{username}}'s day", "the placeholder is kept"
         weekly = {k: v for k, v in body.items() if k != "time"} | {"cron": "30 9 * * 1"}
         r = await api.put("/api/schedules/morning", json=weekly)
-        assert r.json()["every"] == "Next: Mon 09:30", "the next time, not the cron line"
+        assert r.json()["every"] == "Mondays at 09:30", "in words, not the cron line"
         r = await api.put("/api/schedules/world", json={**body, "after": ["reflection"]})
         assert r.status_code == 400 and r.json()["error"]["message"] == \
             "Reflection already runs after Morning.", "the circle in words"
@@ -761,3 +826,22 @@ async def test_a_freeze_leaves_the_run_in_flight_waiting_and_the_unfreeze_runs_i
         await until(lambda: _state(store, run["id"], "done"))
     [row] = await _runs(store)
     assert await _turns(store, row["conversation_id"]) == 1, "the cut turn went on"
+
+
+async def test_routines_list_and_read_tell_a_run_in_the_app_zone(store, cfg):
+    from celine.schedules.skill import Routines
+    from celine.skills import ToolContext
+    cfg.timezone = "Europe/Berlin"
+    cfg.schedules = {"world": _s("world")}
+    run_cid = await conversations.create(store, "run")
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
+        "created_at) VALUES('r', 'world', 'World', '2026-10-30T01:00:00.000+00:00', "
+        "'2026-10-30', 'waiting', ?, 'x')", (run_cid,)))
+    skill = Routines(cfg)
+    skill.app = SimpleNamespace(cfg=cfg)
+    ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=store,
+                      config=cfg, emit=None)  # type: ignore[arg-type]
+    listed = (await skill.list(ctx)).content
+    assert listed.endswith(", last run Fri 30 Oct 02:00 waiting"), listed
+    assert "- run:r Fri 30 Oct 02:00 waiting" in (await skill.read(ctx, "world")).content

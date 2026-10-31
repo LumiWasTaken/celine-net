@@ -11,8 +11,8 @@
 wait_seconds            = 0     # a turn's request waits this long for a slot; 0: as long as it takes (Stop ends it)
 background_wait_seconds = 120   # titles and other background calls
 
-# The GPU an image or a song needs is the one the text models run on (Settings, the
-# image provider's "shares GPU with"). Text goes first: an image waits until no text
+# The GPU an image or a song needs is the one the text models run on (the "Shares its GPU with"
+# setting of a text provider in Settings, Models). Text goes first: an image waits until no text
 # request runs or waits on that server, and then gpu_idle_seconds more, so a
 # conversation that is still talking is not interrupted by a model swap. Text that
 # arrives while an image renders waits for it, as long as it takes. After

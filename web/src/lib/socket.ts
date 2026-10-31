@@ -4,6 +4,7 @@
                                                          across reconnects; none the first time
      {"type": "subscribe", "conversation": id, "after": seq}   0: a snapshot first
      {"type": "unsubscribe", "conversation": id}
+     {"type": "focus", "on": bool}                       on open and on every focus change
    A frame with `gid` (the feed's own number) is the feed's and goes to lib/bus (a feed copy of a
    conversation event carries `conversation` and `seq` too). Any other frame with
    `conversation` goes to that conversation's follower (a snapshot carries the row
@@ -26,7 +27,7 @@
    /api/health whether the session ended (lib/health.ts). */
 import { checkSession, reloadIfUpdated, useApiDown } from './health'
 import {
-  api, request, type Attachment, type Compaction, type ImageNotice, type Intercom, type Message, type Plan, type Snapshot, type ToolCall, type ToolWords, type TurnState,
+  api, request, type Attachment, type Compaction, type ImageNotice, type Intercom, type Message, type Plan, type Snapshot, type ToolCall, type ToolWords, type TurnRuns, type TurnState, type Unanswered,
 } from './api'
 import { emit, type ServerEvent } from './bus'
 import type { GuardBanner } from './guard'
@@ -101,19 +102,21 @@ export type Frame =
   | ({ type: 'message.delta' | 'message.reasoning'; message_id: string; text: string } & Of)
   | ({ type: 'message.done' | 'message.rewritten'; message_id: string; text: string } & Of)
   | ({ type: 'conversation.notes_off'; notes_off?: string[] } & Of)
-  | ({ type: 'tool.forming'; message_id: string; index: number; name: string; chars: number; preview: string; words: string } & Of)
+  | ({ type: 'tool.forming'; message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string } & Of)
   | ({ type: 'tool.started'; message_id: string; tool_call_id: string; name: string; arguments: string; words: ToolWords; started_at?: string | null } & Of)
   | ({ type: 'tool.done' | 'tool.gated'; tool_call_id: string; state?: ToolCall['state']; ok?: boolean; display?: ToolCall['display']; words?: ToolWords
-       result?: string | null; job_id?: string | null; finished_at?: string | null } & Of)
+       result?: string | null; job_id?: string | null; finished_at?: string | null; runs?: TurnRuns | null } & Of)
   | ({ type: 'tool.detached'; tool_call_id: string; job_id: string; name: string } & Of)
   | ({ type: 'images.batch' | 'music.batch'; batch: unknown } & Of)
   | ({ type: 'tool.progress'; tool_call_id: string; note: string } & Of)
-  | ({ type: 'tool.reset'; tool_call_id: string } & Of)
+  | ({ type: 'tool.reset'; tool_call_id: string; runs?: TurnRuns | null } & Of)
   | ({ type: 'llm.queue'; message_id?: string | null; state: 'waiting' | 'loading' | 'running' | string; model: string
        fallback?: boolean; instead_of?: string; why?: string | null; ahead?: number; running?: number
        reason?: string | null; message?: string | null; holder?: string | null } & Of)
   | ({ type: 'turn.state'; turn_id: string; state: TurnState; reason?: string | null; reason_code?: string | null; cut?: string | null
-       continues?: number; continuable?: { ok: boolean; label: string | null; reason: string | null } | null } & Of)
+       continues?: number; continuable?: { ok: boolean; label: string | null; reason: string | null } | null
+       /** what Regenerate answers after this change */
+       unanswered?: Unanswered | null } & Of)
   | ({ type: 'context.compacted' } & Compaction & Of)
   | ({ type: 'context.compact_failed'; trigger: string } & Of)
   | ({ type: 'context.compact_skipped'; reason?: string } & Of)
@@ -134,6 +137,11 @@ let feedAfter: number | null = null
 function send(frame: object) {
   if (sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify(frame))
 }
+
+/** whether this page is visible and focused: the server pushes to devices only while no page is
+    (server/celine/push.py) */
+const sendFocus = () => send({ type: 'focus', on: document.visibilityState === 'visible' && document.hasFocus() })
+const FOCUS: [string, EventTarget][] = [['focus', window], ['blur', window], ['visibilitychange', document]]
 
 /** the seq a conversation is followed after: its least advanced follower's */
 const seqOf = (set: Set<Follower>) => Math.min(...[...set].map(f => f.seq()))
@@ -224,6 +232,7 @@ function useSocket(): Connection {
         clearTimeout(grace); grace = undefined
         clearTimeout(gone); gone = undefined
         setState('connected')
+        sendFocus()
         if (opened) {
           // back after a while: an update in between reloads the page instead of a stale app
           void api.configStatus().then(st => reloadIfUpdated(st.build.commit), () => undefined)
@@ -256,11 +265,13 @@ function useSocket(): Connection {
     const onOnline = () => { if (sock && sock.readyState !== WebSocket.OPEN && sock.readyState !== WebSocket.CONNECTING) connect() }
     window.addEventListener('online', onOnline)
     const unping = keepAlive(() => sock)
+    for (const [t, on] of FOCUS) on.addEventListener(t, sendFocus)
 
     return () => {
       closed = true
       clearTimeout(retry); clearTimeout(grace); clearTimeout(gone); unping()
       window.removeEventListener('online', onOnline)
+      for (const [t, on] of FOCUS) on.removeEventListener(t, sendFocus)
       const s = sock
       sock = null
       if (s) { s.onclose = null; s.close() }

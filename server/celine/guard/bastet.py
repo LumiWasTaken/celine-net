@@ -37,8 +37,8 @@ NOTE = "Bastet stopped {tool}: {said}. {why}{done}"
 FROZEN_FOR = "{said}, on {tool}. {why}"       # why it is frozen, to the owner
 DONE = {"stop": "It did not run.",
         "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{them}}."}
-FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{them}} go on."
-FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{them}} go on."
+FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{them}} continue."
+FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{them}} continue."
 PASSED = "Bastet: {{user}} gave you a pass on {rule} {where} until {until}."
 # plain words only: what it did and why it looked wrong; no score, id or bracket
 FINDING = "Looking back at {title} on {when}: {said}. {why}{froze}"

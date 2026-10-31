@@ -16,7 +16,7 @@ import anyio
 from .. import prompts
 from ..backends.base import BackendError, Done, TextDelta
 from . import tokens
-from .ledger import MSG_REF
+from .verify import MSG_REF
 
 log = logging.getLogger("celine.compact")
 
@@ -39,6 +39,39 @@ def _args(arguments: str | None, limit: int = 300) -> str:
     except (json.JSONDecodeError, TypeError):
         text = str(arguments or "")
     return one_line(text, limit)
+
+
+ARG_TOKENS = 300          # a string argument of an aged call over this is shortened
+
+
+def short_arguments(arguments: str | None, call_id: str) -> str | None:
+    """An aged call's arguments as they go on the wire: every string value over about
+    ARG_TOKENS tokens becomes its first line and a mark that says it is shortened and
+    how to read the call back; the JSON stays valid. The arguments as they came when
+    nothing is that long, or they are not JSON. Byte-identical for the same input: the
+    prompt prefix stays cacheable. The stored call never changes."""
+    try:
+        args = json.loads(arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return arguments
+    counter = tokens.Counter()                 # uncalibrated: deterministic
+    changed = False
+
+    def short(v):
+        nonlocal changed
+        if isinstance(v, dict):
+            return {k: short(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [short(x) for x in v]
+        if not isinstance(v, str) or (n := counter.estimate(v, "tool")) <= ARG_TOKENS:
+            return v
+        changed = True
+        first = one_line(v.strip().split("\n", 1)[0], 200)
+        return (f"{first} \u2026 [{len(v.splitlines())} lines, about {n:,} tokens, "
+                f"shortened; the call is kept: {call_id}; read it back with "
+                f"past_conversations__read_tool_call(id=\"{call_id}\")]")
+    out = short(args)
+    return json.dumps(out, ensure_ascii=False) if changed else arguments
 
 
 MAX_CITED_LINES = 12
@@ -198,7 +231,7 @@ async def summarize(backend, cfg, previous: str, items: list[dict], *, window: i
     the conversation's chat model and nothing else (thinking off is the model default).
     Input larger than `input_share` of the window goes in pieces, each folding into the
     summary so far. Raises SummaryFailed with the reason when the model gives nothing
-    usable: its error, or no text within `limit` seconds."""
+    usable: its error, its time limit, or no text."""
     words = max(150, int(cap_tokens * 0.6 / 1.3))
     system = prompts.fill(cfg, __file__, "compact.md", words=words)
     if focus:
@@ -213,7 +246,7 @@ async def summarize(backend, cfg, previous: str, items: list[dict], *, window: i
     except BackendError as e:
         raise SummaryFailed(str(e)) from None
     if not summary:
-        raise SummaryFailed(f"{model} gave no summary within {limit:.0f} seconds.")
+        raise SummaryFailed(f"{model} gave an empty summary.")
     if tokens.estimate(summary) > cap_tokens:
         summary, _, _ = tokens.cut_to(summary, cap_tokens, "prose")
     return summary
@@ -242,21 +275,31 @@ async def fold(backend, system: str, previous: str, lines: list[str], *, window:
 
 async def complete(backend, messages, limit: float, tools=(), token=None,
                    errors: bool = False) -> str | None:
-    """One non-streamed completion; text only, tool calls ignored. None on failure, at
-    `limit` seconds, or when `token` stops it. `errors`: a backend error is raised
+    """One non-streamed completion; text only, tool calls ignored. None on failure,
+    when `limit` seconds of the model's own work run out before the reply ends (never
+    the part written so far; a wait for the model in its queue does not count), or when
+    `token` stops it. `errors`: a backend error, and the time limit as one, is raised
     instead (a work item tells a host that is down from a real error, work.py)."""
+    from ..backends.llm import TOOL_CLOCKS
     parts: list[str] = []
     try:
-        with anyio.move_on_after(limit):
-            # a queued backend frees its model slot as soon as we stop reading
-            async with closing(stoppable(backend, messages, tools, token)) as events:
-                async for ev in events:
-                    if token is not None and token.cancelled:
-                        return None
-                    if isinstance(ev, TextDelta):
-                        parts.append(ev.text)
-                    elif isinstance(ev, Done):
-                        break
+        with anyio.move_on_after(limit) as scope:
+            clocks = TOOL_CLOCKS.set((*TOOL_CLOCKS.get(), scope))
+            try:
+                # a queued backend frees its model slot as soon as we stop reading
+                async with closing(stoppable(backend, messages, tools, token)) as events:
+                    async for ev in events:
+                        if token is not None and token.cancelled:
+                            return None
+                        if isinstance(ev, TextDelta):
+                            parts.append(ev.text)
+                        elif isinstance(ev, Done):
+                            break
+            finally:
+                TOOL_CLOCKS.reset(clocks)
+        if scope.cancelled_caught:
+            raise BackendError(f"{getattr(backend, 'model', None) or 'The model'} did not "
+                               f"finish its reply within {limit:.0f} seconds.")
     except BackendError as e:
         log.warning("completion failed", extra={"event": "llm.complete_failed",
                                                 "error": str(e)[:200]})

@@ -32,6 +32,7 @@ class MissionIn(BaseModel):
     brief: str = ""
     report_to: str | None = None
     time_limit: str | None = None
+    min_time: str | None = None
     check_in: str | None = None
 
 
@@ -52,19 +53,31 @@ class MissionEdit(BaseModel):
     brief: str | None = None
     report_to: str | None = None
     time_limit: str | None = None
+    min_time: str | None = None
     check_in: str | None = None
     steps: list[StepIn] | None = None
 
 
-def _until(time_limit: str | None, tz) -> datetime | None:
-    """The time limit as a time: "08:00" (at) or "2 h" (in). Empty: none."""
+def _until(time_limit: str | None, tz, what: str = "Time limit") -> datetime | None:
+    """A time limit or a minimum time as a time: "08:00" (at) or "2 h" (in). Empty:
+    none."""
     text = (time_limit or "").strip()
     if not text:
         return None
     until = parse_when(text, text, tz, datetime.now(timezone.utc))
     if until is None:
-        raise CelineError("bad_request", 'Time limit is like "2 h" or "08:00".', 400)
+        raise CelineError("bad_request", f'{what} is like "2 h" or "08:00".', 400)
     return until
+
+
+def _minimum(text: str | None, tz, until: str | None) -> str | None:
+    """The minimum time as stored; not after the time limit `until`."""
+    least = _until(text, tz, "Minimum time")
+    if least is None:
+        return None
+    if until and iso(least) > until:
+        raise CelineError("bad_request", "Minimum time is after the time limit.", 400)
+    return iso(least)
 
 
 def _check_in(text: str | None) -> int | None:
@@ -78,10 +91,6 @@ def _check_in(text: str | None) -> int | None:
     if minutes < 1:
         raise CelineError("bad_request", 'Check-in is like "30 min" or "2 h".', 400)
     return minutes
-
-
-async def _time_limit(request: Request, cid: str, until: datetime) -> int:
-    return await book_time_limit(request.app.state.services.intercom, cid, until)
 
 
 async def _conversation_exists(store, cid: str | None) -> None:
@@ -114,24 +123,25 @@ def title_of(brief: str) -> str:
 
 @router.post("/missions")
 async def start_mission(request: Request, body: MissionIn) -> dict:
-    return {"conversation_id": await start(request, body)}
+    return {"conversation_id": await start(request.app.state.services, body)}
 
 
-async def start(request: Request, body: MissionIn) -> str:
-    """A mission from its brief: its conversation (kind mission, of the
-    conversation it reports to, else the user), the row, the time limit, the brief
-    as its first message. -> the conversation."""
-    store, cfg = request.app.state.services.store, request.app.state.services.cfg
+async def start(services, body: MissionIn, by: str | None = None) -> str:
+    """A mission from its brief, the user's (the route) or hers (missions__start, `by`
+    the conversation she started it from): its conversation (kind mission), the row,
+    the time limit, the brief as its first message, from whoever started it. -> the
+    conversation."""
+    store, cfg = services.store, services.cfg
     tz = zone(cfg)
     brief = body.brief.strip()
     if not brief:
         raise CelineError("bad_request", "Brief is required.", 400)
     await _conversation_exists(store, body.report_to)
     from ..settings import conversations as conv_settings
-    services = request.app.state.services
     chosen = conv_settings.validate(cfg.settings, getattr(services, "registry", None),
                                     {"model": body.model}) if body.model else None
     until = _until(body.time_limit, tz)
+    least = _minimum(body.min_time, tz, iso(until) if until else None)
     check_in = _check_in(body.check_in)
     name = " ".join((body.name or "").split())
     title = name or title_of(brief)
@@ -142,17 +152,19 @@ async def start(request: Request, body: MissionIn) -> str:
     await missions.create(store, cid, {
         "name": name or title, "terminal": terminal, "brief": brief,
         "report_to": body.report_to or None, "until": iso(until) if until else None,
-        "check_in": check_in})
+        "min_until": least, "check_in": check_in, "started_by": by})
     if chosen:                          # before the brief: its first turn runs on it
         await conv_settings.apply(store, cid, chosen)
-    await store.write(lambda c: record(c, f"mission:{cid}:brief", brief, "user"))
+    await store.write(lambda c: record(c, f"mission:{cid}:brief", brief,
+                                       "her" if by else "user"))
     if until:
-        await missions.update(store, cid, {"wake_id": await _time_limit(request, cid, until)})
+        await missions.update(store, cid, {
+            "wake_id": await book_time_limit(services.intercom, cid, until)})
     row = await missions.get(store, cid)
     text = "\n".join([head(row), *brief_lines(row, await report_title(store, row), tz)])
-    await request.app.state.services.intercom.send("user", f"agent:{cid}", cfg.substitute(text),
-                                          kind="brief")
-    await _announce(request, cid)
+    await services.intercom.send(f"agent:{by}" if by else "user", f"agent:{cid}",
+                                 cfg.substitute(text), kind="brief")
+    _announce(store, row)
     return cid
 
 
@@ -160,18 +172,29 @@ async def start(request: Request, body: MissionIn) -> str:
 async def list_missions(request: Request, status: str | None = None,
                         trashed: bool = False, archived: bool = False) -> dict:
     """Every mission, newest first, with its conversation's title, its plan (`plan` the
-    text, `steps`, `step` the number of the one doing) and its automatic context switch; with `trashed` only the ones in the
+    text, `steps`, each with its `model_label`, `step` the number of the one doing) and its automatic context switch; with `trashed` only the ones in the
     trash, with `archived` only the archived ones (a mission is archived and deleted as
     its conversation is: POST /conversations/{cid}/archive, DELETE /conversations/{cid}).
-    `counts`: the page's numbers (store.counts), whatever the filters."""
+    `counts`: the page's numbers (store.counts), whatever the filters. `asked`: an
+    approval waits in it or in a sub-agent of it (approvals.asked)."""
+    from ..approvals import asked
     store = request.app.state.services.store
-    return {"missions": await missions.list(store, status, trashed, archived),
+    settings = getattr(request.app.state.services.cfg, "settings", None)
+    waits = asked(request.app.state.services)
+    return {"missions": [{**_labelled(settings, r), "asked": r["conversation_id"] in waits}
+                         for r in await missions.list(store, status, trashed, archived)],
             "counts": await missions.counts(store)}
 
 
-async def _announce(request: Request, cid: str) -> None:
-    store = request.app.state.services.store
-    row = await missions.get(store, cid)
+def _labelled(settings, row: dict) -> dict:
+    """A mission as a client gets it: each step's `model_label` (attachments.label),
+    None for a step on the mission's own model."""
+    from ..attachments import label
+    return {**row, "steps": [{**s, "model_label": label(settings, s.get("model")) or None}
+                             for s in row["steps"]]}
+
+
+def _announce(store, row: dict | None) -> None:
     if row is not None:
         store.emit_global(missions.state_event(row))
 
@@ -211,7 +234,7 @@ async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
             raise CelineError("bad_request", str(e), 400) from None
         plan = await plans.save(store, cid, old["text"], steps, old["waiting"])
         await flow.follow_model(store, cfg, cid, plan)
-        if not ({"name", "brief", "report_to", "time_limit", "check_in"} & given):
+        if not ({"name", "brief", "report_to", "time_limit", "min_time", "check_in"} & given):
             return {"ok": True}
     if "time_limit" in given:
         until = _until(body.time_limit, tz)
@@ -220,7 +243,12 @@ async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
             changes["until"] = new
             if row["wake_id"]:
                 await request.app.state.services.intercom.cancel(int(row["wake_id"]))
-            changes["wake_id"] = await _time_limit(request, cid, until) if until else None
+            changes["wake_id"] = await book_time_limit(
+                request.app.state.services.intercom, cid, until) if until else None
+    if "min_time" in given:
+        least = _minimum(body.min_time, tz, changes.get("until", row["until"]))
+        if least != row["min_until"]:
+            changes["min_until"] = least
     if "check_in" in given and (minutes := _check_in(body.check_in)) != row["check_in"]:
         changes["check_in"] = minutes
     if not changes:
@@ -231,14 +259,14 @@ async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
     row = await missions.get(store, cid)
     changed = {c for c in changes if c not in ("wake_id", "check_in")}   # the app's own
     if not changed:
-        await _announce(request, cid)
+        _announce(store, row)
         return {"ok": True}
     lines = [head(row)] if "name" in changed else []
     lines += brief_lines(row, await report_title(store, row), tz, only=changed)
     await request.app.state.services.intercom.send("user", f"agent:{cid}",
                                           cfg.substitute("\n".join(lines)),
                                           kind="brief", data={"changed": True})
-    await _announce(request, cid)
+    _announce(store, row)
     return {"ok": True}
 
 

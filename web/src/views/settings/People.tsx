@@ -19,7 +19,7 @@ import './settings.css'
 
 /* one line of the table in px; a same person has one more line per account */
 const LINE = 44
-const RENAME_ACCOUNT = 'Rename. The new name shows in every chat.'
+const RENAME_ACCOUNT = 'The new name shows in every chat.'
 
 export function People({ kbs }: { kbs: Kb[] }) {
   const [kbId, setKbId] = useState('')
@@ -187,7 +187,7 @@ export function People({ kbs }: { kbs: Kb[] }) {
         {people.error && <InlineError message={people.error} onRetry={people.reload} />}
         <div className="people__table" role="table" aria-label="People">
           {!people.data && !people.error ? <LoadingRow label="Loading people" /> : list.length === 0 ? (
-            <EmptyState compact>{q ? nothingMatches(q) : 'Nobody yet'}</EmptyState>
+            <EmptyState compact>{q ? nothingMatches(q) : 'No people yet'}</EmptyState>
           ) : (
             <VirtualList items={list} getKey={p => p.key} page renderRow={renderPerson}
                          estimate={i => LINE * (list[i]!.same_person ? list[i]!.accounts.length + 1 : 1)} />

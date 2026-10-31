@@ -100,8 +100,9 @@ _LOAD_FAILED = ("exited prematurely", "failed to start", "unable to load", "out 
 Emit = Callable[[dict[str, Any]], Awaitable[None]]
 
 
-# the time limits of the tool calls running here (turns/tools.py): a wait for a model
-# inside a tool moves them like the turn's clock
+# the time limits of the tool calls (turns/tools.py) and background completions
+# (turns/compact.complete) running here: a wait for a model moves them like the turn's
+# clock
 TOOL_CLOCKS: contextvars.ContextVar[tuple] = contextvars.ContextVar("tool_clocks",
                                                                     default=())
 
@@ -332,7 +333,7 @@ class LLM:
                                                 "complete": not waited.cancelled_caught})
         except (httpx.HTTPError, ValueError) as e:
             log.info("unload failed", extra={"event": "llm.unload_failed", "provider": pid,
-                                             "error": str(e)[:200] or type(e).__name__})
+                                             "error": str(e) or type(e).__name__})
         await self.router.probe(pid, max_age=0)
 
     def wait_timeout(self, priority: Priority) -> float:
@@ -464,6 +465,11 @@ class QueuedBackend:
         """The last call's request as it went out: {provider, model, body}
         (turns/store.record_usage keeps it with the reply)."""
         return self._shared.get("request")
+
+    @property
+    def first_token(self) -> float | None:
+        """Seconds from the last call's slot to its first event, None before one."""
+        return self._shared.get("first_token")
 
     def for_message(self, message_id: str | None,
                     thinking: str | None = None) -> "QueuedBackend":
@@ -691,6 +697,7 @@ class QueuedBackend:
         outcome, usage = "cancelled", None
         try:
             self._shared["answered"] = backend
+            self._shared["first_token"] = None
             if waited or is_fallback or self.emit is not None:
                 head_model = self.llm.router.s.split(head)[1] if is_fallback else None
                 await self._send({"state": "running", "model": model,
@@ -716,8 +723,9 @@ class QueuedBackend:
                     except StopAsyncIteration:
                         break
                     if not yielded:
+                        self._shared["first_token"] = time.monotonic() - watch["t0"]
                         metrics.MODEL_FIRST_TOKEN.labels(self.role, label, model).observe(
-                            time.monotonic() - watch["t0"])
+                            self._shared["first_token"])
                     if not yielded and ref is not None:
                         self.llm.router.note_ok(ref)
                         # a load the watch saw start but not end (the first token came

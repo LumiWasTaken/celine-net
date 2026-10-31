@@ -280,7 +280,7 @@ class Gen:
             "music_generation": {"chain": ["comfy/yue2"]},
             "transcription": {"chain": ["local/whisper"]}, "speech": {"chain": ["local/kokoro"]}})
         if self.done:                   # every feature on, the onboarding finished
-            settings_files.write(root, "features", {**{f.id: True for f in features.CATALOG},
+            settings_files.write(root, "features", {**{f.id: True for f in features.catalog()},
                                                     "done": True})
         settings_files.write(root, "general", {"user_name": USER, "timezone": TZ})
         settings_files.write(root, "guard", {"chain": {"provider": "", "model": ""}})
@@ -793,9 +793,9 @@ class Gen:
                 ("appraisal", "done", None, ids["hike"], 19),
                 ("documents.describe", "failed", "The Titles and descriptions model is not "
                  "reachable.", None, 500)):
-            self.x("INSERT INTO work(kind, state, payload, tries, error, conversation_id, "
-                   "created_at, started_at, finished_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                   (kind, state, "{}", 1, err, cid, self.at(mins), self.at(mins),
+            self.x("INSERT INTO work(kind, state, payload, error, conversation_id, "
+                   "created_at, started_at, finished_at) VALUES(?,?,?,?,?,?,?,?)",
+                   (kind, state, "{}", err, cid, self.at(mins), self.at(mins),
                     self.at(mins - 1)))
         # terminals: hers, the backup one, Glorpi's own with his commands
         box_term = ids["term_backup"]

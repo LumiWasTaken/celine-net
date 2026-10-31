@@ -1,5 +1,8 @@
-"""Numbered SQL migrations, applied in order, each in one transaction. The first file is
-the whole schema (a fresh database applies it); later files apply on top of it.
+"""Numbered migrations, applied in order. The first file is the whole schema (a fresh
+database applies it); later files apply on top of it. A `.sql` step runs in one
+transaction with its version bump. A `.py` step is a module with `up(conn, db_path)`,
+called with no transaction open (so it may ATTACH another file and commit on its own);
+it is idempotent, since a crash between its commit and the version bump runs it again.
 
 Every SQLite file (the main db, log.db beside it, the notebook's index, each knowledge
 base, auth.db) uses this runner with its own directory, and keeps its version in the
@@ -11,6 +14,7 @@ last COPIES_KEPT copies of each file are kept."""
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import logging
 import re
 import sqlite3
@@ -21,17 +25,19 @@ log = logging.getLogger("celine.db")
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 LOG_MIGRATIONS = MIGRATIONS_DIR / "log"
 NOTEBOOK_MIGRATIONS = MIGRATIONS_DIR / "notebook"
-_NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+_NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.(sql|py)$")
 BUSY_MS = 5000          # how long a connection waits for another's lock (core/store.py too)
 COPIES_KEPT = 3         # copies made before a migration, per file
 
 
 def _migrations(directory: Path | None = None) -> list[tuple[int, Path]]:
     out = []
-    for p in sorted((directory or MIGRATIONS_DIR).glob("*.sql")):
+    for p in sorted((directory or MIGRATIONS_DIR).iterdir()):
+        if p.suffix not in (".sql", ".py"):
+            continue
         m = _NAME.match(p.name)
         if not m:
-            raise RuntimeError(f"migration {p.name} is not NNNN_lower_snake.sql")
+            raise RuntimeError(f"migration {p.name} is not NNNN_lower_snake.sql or .py")
         out.append((int(m.group(1)), p))
     versions = [v for v, _ in out]
     if len(set(versions)) != len(versions):
@@ -110,7 +116,7 @@ def migrate(db_path: Path, migrations_dir: Path | None = None) -> int:
         if pending and current > 0:
             _copy(conn, db_path, latest)
         for version, path in pending:
-            _apply(conn, path, version)
+            _apply(conn, path, version, db_path)
         return latest
     finally:
         conn.close()
@@ -139,15 +145,24 @@ def _copy(conn: sqlite3.Connection, db_path: Path, version: int) -> None:
         old.unlink()
 
 
-def _apply(conn: sqlite3.Connection, path: Path, version: int) -> None:
-    """One script and its version bump in one transaction."""
+def _apply(conn: sqlite3.Connection, path: Path, version: int, db_path: Path) -> None:
+    """One script and its version bump in one transaction; a `.py` step's `up` first."""
     # LogRecord reserves name/module/filename as extra keys
     log.info("applying migration", extra={"event": "db.migrate", "version": version,
                                           "migration": path.name})
+    if path.suffix == ".py":
+        spec = importlib.util.spec_from_file_location(f"_migration_{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.up(conn, db_path)
+        if conn.in_transaction:
+            raise RuntimeError(f"migration {path.name} left a transaction open")
+        script = f"BEGIN;\nPRAGMA user_version = {int(version)};\n"
+    else:
+        script = f"BEGIN;\n{path.read_text()}\nPRAGMA user_version = {int(version)};\n"
     # executescript() issues an implicit COMMIT first, so BEGIN goes inside the script;
     # the COMMIT comes after the foreign key check, so a migration that breaks one is
     # rolled back with its version bump
-    script = f"BEGIN;\n{path.read_text()}\nPRAGMA user_version = {int(version)};\n"
     try:
         conn.executescript(script)
         broken = conn.execute("PRAGMA foreign_key_check").fetchall()

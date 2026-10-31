@@ -220,7 +220,7 @@ function TerminalsList() {
 /** when and how it ended, an exit only when it failed (the Trash, where no day head says when) */
 function endedLine(t: TerminalRow): string {
   const at = t.ended_at ? listTime(t.ended_at) : ''
-  return [t.ended_by === 'reset' ? `Ended by the morning reset ${at}` : `Ended ${at}`, t.exit ? `exit ${t.exit}` : ''].filter(Boolean).join(', ')
+  return [t.ended_by === 'reset' ? `Ended when the shellbox was reset ${at}` : `Ended ${at}`, t.exit ? `exit ${t.exit}` : ''].filter(Boolean).join(', ')
 }
 
 /** a row's second line: what runs, where it idles, or how it ended */
@@ -231,7 +231,7 @@ function subtitleOf(t: TerminalRow): string | undefined {
 
 /** how it ended, under its day head: the morning reset, an exit only when it failed */
 function endedHow(t: TerminalRow): string | undefined {
-  return [t.ended_by === 'reset' && 'By the morning reset', t.exit && `exit ${t.exit}`].filter(Boolean).join(', ') || undefined
+  return [t.ended_by === 'reset' && 'Ended when the shellbox was reset', t.exit && `exit ${t.exit}`].filter(Boolean).join(', ') || undefined
 }
 
 /** Close terminal, asked first: the program in it stops */

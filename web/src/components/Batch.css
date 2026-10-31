@@ -14,7 +14,7 @@
 .batch__tile--stopped { opacity: 0.6; }
 
 .batch__words {
-  padding: var(--s-2) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-micro); text-align: center;
+  padding: var(--s-2) var(--s-3); font-size: var(--t-xs); line-height: var(--lh-ui); text-align: center;
   color: var(--text-muted); overflow-wrap: anywhere;
 }
 .batch__tile--running .batch__words { color: var(--running); animation: pulse var(--dur-pulse) linear infinite; }

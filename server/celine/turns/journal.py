@@ -1,26 +1,10 @@
-"""Whether an interrupted turn can be picked up again."""
+"""Which steps in flight may run again when a turn is picked up again."""
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Literal
-
-Verdict = Literal["resumable", "unknown"]
 
 # (wire name) -> (mutating, mode) from the live registry, or None when unknown
 Flags = Callable[[str], "tuple[bool, str] | None"]
-
-
-@dataclass(frozen=True)
-class Resumability:
-    verdict: Verdict
-    reason: str
-    rerun: tuple[str, ...] = ()          # call ids in flight that are safe to run again
-
-    @property
-    def safe(self) -> bool:
-        return self.verdict == "resumable"
 
 
 def safe_to_rerun(state: str, mutating, mode, flags: tuple[bool, str] | None) -> bool:
@@ -44,26 +28,5 @@ def restarted(rows, flags: Flags | None) -> str | None:
         r["state"], r["mutating"], r["mode"], flags(r["name"]) if flags else None)})
     if not unsafe:
         return None
-    return (f"the server restarted while {', '.join(unsafe)} was running. The app does "
+    return (f"The server restarted while {', '.join(unsafe)} was running. The app does "
             f"not know if it finished.")
-
-
-def classify(c: sqlite3.Connection, turn_id: str, flags: Flags | None = None) -> Resumability:
-    """Whether live turn `turn_id` may run on after a restart."""
-    rows = c.execute(
-        "SELECT tc.id, tc.name, tc.state, tc.mutating, tc.mode FROM tool_calls tc "
-        "JOIN messages m ON m.id = tc.message_id "
-        "WHERE m.turn_id = ? AND tc.state IN ('pending','running','detached')",
-        (turn_id,)).fetchall()
-    if why := restarted(rows, flags):
-        return Resumability("unknown", why)
-    rerun = tuple(r["id"] for r in rows)
-
-    settled = c.execute(
-        "SELECT count(*) FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
-        "WHERE m.turn_id = ? AND tc.state NOT IN ('pending','running')",
-        (turn_id,)).fetchone()[0]
-    reason = (f"{settled} completed step(s) on disk" if settled else "no steps had started")
-    if rerun:
-        reason += f"; {len(rerun)} read-only step(s) will run again"
-    return Resumability("resumable", reason, rerun)

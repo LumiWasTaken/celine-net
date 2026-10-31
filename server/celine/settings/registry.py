@@ -81,11 +81,11 @@ OPTIONS: dict[str, dict[str, tuple]] = {
     },
 }
 _PROVIDER_KEYS = {"kind", "label", "base_url", "options", "models"}
-_MODEL_KEYS = {"label", "caps", "context", "slots", "keep_thinking", "params", "llama", "reasoning_effort",
+_MODEL_KEYS = {"label", "caps", "context", "slots", "params", "llama", "reasoning_effort",
                "thinking_levels", "zdr", "provider", "vision_twin", "max_tokens", "cache_ttl"}
-# an Anthropic model's `max_tokens` (the API needs one): unset, and its range
+# an Anthropic model's `max_tokens` (the API needs one) when unset; its most is what the
+# provider states (settings/kinds.py server_output)
 MAX_TOKENS = 8192
-MAX_TOKENS_TOP = 128_000
 CACHE_TTLS = ("5m", "1h")       # an Anthropic model's prompt cache time; 5m when unset
 
 
@@ -103,6 +103,8 @@ class Settings:
     guard: dict[str, Any] = field(default_factory=dict)       # guard/rules.py
     features: dict[str, bool] = field(default_factory=dict)   # settings/features.py
     services: dict[str, dict[str, Any]] = field(default_factory=dict)  # settings/services.py
+    address: dict[str, str] = field(default_factory=dict)     # settings/address.py
+    plugins: dict[str, dict[str, Any]] = field(default_factory=dict)  # id -> its form's values
     saved: dict[str, bool] = field(default_factory=dict)   # section -> var/settings file
     problems: list[Problem] = field(default_factory=list)
     secrets_root: Any = None
@@ -199,7 +201,7 @@ def validate_provider(pid: str, p: Any, path: str = "") -> dict[str, Any]:
             raise Invalid(f"{base}.{k}", f"'{k}' is not a provider setting.")
     kind = p.get("kind")
     if kind not in kinds_mod.KINDS:
-        raise Invalid(f"{base}.kind", "The kind must be one of "
+        raise Invalid(f"{base}.kind", "The type must be one of "
                       + ", ".join(kinds_mod.KINDS) + ".")
     out: dict[str, Any] = {"kind": kind}
     label = p.get("label", pid)
@@ -230,12 +232,13 @@ def validate_provider(pid: str, p: Any, path: str = "") -> dict[str, Any]:
         raise Invalid(f"{base}.models", "Models are an object keyed by the model name.")
     models: dict[str, Any] = {}
     for name, m in models_in.items():
-        models[name] = validate_model(kind, name, m, f"{base}.models.{name}")
+        models[name] = validate_model(kind, name, m, f"{base}.models.{name}", url)
     out["models"] = models
     return out
 
 
-def validate_model(kind: str, name: str, m: Any, path: str) -> dict[str, Any]:
+def validate_model(kind: str, name: str, m: Any, path: str,
+                   base_url: str) -> dict[str, Any]:
     if not MODEL.match(str(name)):
         raise Invalid(path, "A model name has no spaces or quotes.")
     if m is None:
@@ -266,7 +269,7 @@ def validate_model(kind: str, name: str, m: Any, path: str) -> dict[str, Any]:
                                       "image_generation or music_generation, and only "
                                       "ComfyUI has them.")
     out["caps"] = list(dict.fromkeys(caps))
-    for k in ("context", "slots", "keep_thinking"):
+    for k in ("context", "slots"):
         if m.get(k) not in (None, 0):
             out[k] = _typed(f"{path}.{k}", m[k], "int", None)
     for k in ("params", "llama"):
@@ -283,7 +286,7 @@ def validate_model(kind: str, name: str, m: Any, path: str) -> dict[str, Any]:
     if eff not in (None, ""):
         if kind != "openrouter":
             raise Invalid(f"{path}.reasoning_effort", "Reasoning effort is an OpenRouter "
-                                                      "option. For other kinds, set it in "
+                                                      "option. For other types, set it in "
                                                       "params.")
         from .thinking import valid
         if not valid(eff):
@@ -323,10 +326,11 @@ def validate_model(kind: str, name: str, m: Any, path: str) -> dict[str, Any]:
     if m.get("max_tokens") not in (None, 0):
         if kind != "anthropic":
             raise Invalid(f"{path}.max_tokens", "Max tokens is an Anthropic option. For other "
-                                                "kinds, set it in params.")
+                                                "types, set it in params.")
         n = _typed(f"{path}.max_tokens", m["max_tokens"], "int", None)
-        if not 1 <= n <= MAX_TOKENS_TOP:
-            raise Invalid(f"{path}.max_tokens", f"Max tokens is 1 to {MAX_TOKENS_TOP:,}.")
+        top = kinds_mod.server_output(base_url, name)
+        if top is not None and n > top:
+            raise Invalid(f"{path}.max_tokens", f"Max tokens is 1 to {top:,}.")
         out["max_tokens"] = n
     if m.get("cache_ttl") not in (None, ""):
         if kind != "anthropic":
@@ -390,7 +394,7 @@ def validate_role(role: str, r: Any, providers: dict[str, Any],
         if m is None:
             raise Invalid(where, f"{p.get('label', prov)} has no model '{model}'. Add it "
                                  f"to the provider first.")
-        lacks = [c for c in spec["caps"] if c not in (m.get("caps") or [])]
+        lacks = [c for c in spec["caps"] if c not in kinds_mod.caps_of(p, model)]
         if lacks:
             raise Invalid(where, f"{m.get('label', model)} cannot do "
                                  f"{spec['label']}: the model has no "
@@ -469,12 +473,11 @@ def backend_config(s: Settings, ref: str) -> BackendConfig | None:
         return None
     kind = p["kind"]
     opts = p.get("options") or {}
-    caps = m.get("caps") or []
+    caps = kinds_mod.caps_of(p, name)
     raw: dict[str, Any] = {"kind": kinds_mod.KINDS[kind]["backend"], "provider_kind": kind,
                            "images": "vision" in caps, "tools": "tools" in caps}
-    for k in ("context", "keep_thinking"):
-        if m.get(k):
-            raw[k] = m[k]
+    if m.get("context"):
+        raw["context"] = m["context"]
     if opts.get("timeout"):
         raw["timeout"] = float(opts["timeout"])
     params = dict(copy.deepcopy(m.get("params") or {}))

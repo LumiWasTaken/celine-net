@@ -257,6 +257,37 @@ async def test_escape_needs_a_hard_fact(store):
     assert not ask.seen
 
 
+def test_her_devices_are_no_escape_the_rest_of_the_lan_is():
+    from celine import devices
+    from celine.guard import facts
+    own = devices._hosts(["http://192.168.1.30:4096", "", "mac.local:8765"])
+    assert own == {"192.168.1.30", "mac.local"}
+
+    def esc(cmd):
+        return facts.escape({**_shell(cmd), "own": own})
+    for cmd in ("ssh 192.168.1.30 ls", "ssh -p 22 me@mac.local uptime",
+                "scp a.txt me@192.168.1.30:/tmp/", "curl http://192.168.1.30:4096/x"):
+        assert esc(cmd) is None, cmd
+    assert esc("ssh 10.20.30.40") == "the command has ssh 1"
+    assert esc("ssh -J 192.168.1.30 10.20.30.40 ls") is not None
+    # her address inside a longer name is not hers
+    assert esc("curl http://192.168.1.30.evil.com/x") is not None
+    assert esc("ssh mac.local.evil.com") is not None
+    # through her device to elsewhere: every host it names must be hers
+    for cmd in ("ssh -L 8080:db.lan:80 mac.local", "ssh -L8080:db.lan:80 mac.local",
+                "ssh -Jevil.com mac.local", "ssh -vJ evil.com mac.local",
+                "ssh -o ProxyJump=evil.com mac.local", "ssh -o 'ProxyJump evil.com' mac.local",
+                "ssh -o ProxyCommand='nc %h %p' mac.local", "ssh -D 1080 mac.local",
+                "ssh -R 9000 mac.local", "ssh -W db.lan:22 mac.local", "ssh -L 'x mac.local"):
+        assert esc(cmd) is not None, cmd
+    for cmd in ("ssh -L 8080:mac.local:80 mac.local", "ssh -vJ 192.168.1.30 mac.local",
+                "ssh -o ProxyJump=me@192.168.1.30:22 mac.local",
+                "ssh -o ServerAliveInterval=30 mac.local"):
+        assert esc(cmd) is None, cmd
+    assert esc("curl http://10.20.30.40/") == "the command has 10.20.30.40"
+    assert facts.escape(_shell("ssh 192.168.1.30")) is not None, "no devices: as before"
+
+
 async def test_escape_freezes_and_damage_stops_on_a_held_yes(store):
     cfg = _cfg(escape={"does": "freeze"})
     v = await guard.check(TURN, _shell("sudo docker run --privileged x"), [], mode="on",
@@ -403,25 +434,25 @@ async def test_confirm_asks_the_owner_and_his_answer_decides(store):
 
 
 async def test_a_fresh_install_confirms_the_steps_that_reach_out_or_change_her(store):
-    """The seed of the confirm list: a public share, the coding agent, a CLI sub-agent
-    and an edit of herself wait for the owner; a private share or a model sub-agent do
+    """The seed of the confirm list: a public share and an edit of herself wait for the
+    owner; a private share, a sub-agent and the coding agent on her own machines do
     not. The owner's own list replaces the seed."""
     cfg = _cfg()
-    assert rules.current(cfg)["confirm"]["tools"] == [
-        "shell__share:public", "code__start", "sub_agents__start:cli", "me__edit"]
+    assert rules.current(cfg)["confirm"]["tools"] == ["shell__share:public", "me__edit"]
 
     def call(tool, **args):
         return {"id": f"s-{tool}-{sorted(args.items())}", "name": tool,
                 "message_id": None, "read_only": False, "args": args}
     for c in (call("shell__share", title="Snake", port=8000, public=True),
-              call("code__start", dir="site", task="build it", model="main/big"),
-              call("sub_agents__start", brief="tidy up", name="helper", cli="opencode"),
               call("me__edit", what="phrases", add=["you were right"])):
         v = await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
                               ask=FakeAsk(0.0), cfg=cfg)
         assert v is not None and v.decision == "asked" and v.rule == "confirm", c["name"]
     for c in (call("shell__share", title="Snake", port=8000, public=False),
               call("shell__share", title="Snake", port=8000),
+              call("code__start", dir="site", task="build it", model="main/big"),
+              call("sub_agents__start", brief="tidy up", name="helper", cli="opencode"),
+              call("sub_agents__start", brief="tidy up", name="helper", device="mac"),
               call("sub_agents__start", brief="tidy up", name="helper")):
         assert await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
                                  ask=FakeAsk(0.0), cfg=cfg) is None, c["args"]
@@ -552,7 +583,7 @@ async def test_the_routes_freeze_and_answer_and_a_token_is_refused(store):
         assert (await c.get("/api/guard/freeze")).json()["frozen"]["id"] == r["frozen"]["id"]
         assert (await c.delete("/api/guard/freeze")).json()["unfrozen"]["id"] == \
             r["frozen"]["id"]
-        assert (await c.get("/api/approvals")).json() == {"approvals": []}
+        assert (await c.get("/api/approvals")).json() == {"approvals": [], "count": 0}
         assert (await c.post("/api/approvals/x/answer", json={"ok": True})).status_code == 404
         app.state.auth = SimpleNamespace()            # passkeys on, no session: a token
         for method, path, body in (("post", "/api/guard/freeze", {"why": "x"}),
@@ -605,12 +636,10 @@ def _setup(mode):
 
 
 async def _turn(store, cfg, reg, jobs=None):
-    from celine.turns import loads
     backend = Script([_call(0, "notebook__read", {"path": "people/sam.md"}),
                       _call(1, "web__search", {"query": "pizza near 12 Example Road"}),
                       [TextDelta("done"), Done(reason="stop")]])
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", list(reg.skills))
     await user_says(store, cid, "find me pizza")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), reg, jobs)

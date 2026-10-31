@@ -1,0 +1,16 @@
+[[fields]]
+key = "prefix"
+label = "Prefix"
+type = "text"
+default = ""
+max_len = 20
+
+[[fields]]
+key = "token"
+label = "Token"
+type = "secret"
+
+[[actions]]
+id = "check"
+label = "Check"
+run = "api:check"

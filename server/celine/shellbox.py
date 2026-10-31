@@ -9,7 +9,7 @@ import re
 
 import httpx
 
-from .errors import ToolRefused, bad_key, not_set_up
+from .errors import ToolRefused, bad_key, her_bad_key, her_not_set_up
 from .settings import services
 
 CONNECT = 10.0          # seconds to reach the box; how long an answer may take is per call
@@ -27,14 +27,16 @@ def client(cfg, read: float | None = 60.0,
 
 
 def refusal(cfg, r: httpx.Response, user: str = "") -> ToolRefused:
-    """The box said no (a status other than 200 and 404): its sentence. A wrong key says
-    where to fix it, and with `user` who to tell."""
+    """The box said no (a status other than 200 and 404): its sentence. A wrong key: with
+    `user` (a tool's call, she reads it) the fact and who to tell, else (a page) where
+    the user fixes it."""
     try:
         said = str(r.json().get("error") or "").strip()
     except (ValueError, AttributeError):
         said = ""
     if r.status_code in (401, 403):
-        return ToolRefused(bad_key(BOX, url(cfg)) + (f" Tell {user}." if user else ""))
+        return ToolRefused(f"{her_bad_key(BOX, url(cfg))} Tell {user}." if user
+                           else bad_key(BOX, url(cfg)))
     if r.status_code in (400, 409, 502, 503):     # 502: a program behind the box said no
         return ToolRefused(said or "The shellbox refused this call.")
     return ToolRefused(f"The shellbox answered {r.status_code}{': ' + said if said else '.'}")
@@ -47,7 +49,7 @@ async def call(cfg, method: str, path: str, body: dict | None = None, *, read: f
     address is saved or the box said no (refusal); httpx.HTTPError when it did not
     answer."""
     if not url(cfg):
-        raise ToolRefused(not_set_up(BOX))
+        raise ToolRefused(her_not_set_up(BOX))
     async with client(cfg, read, transport) as c:
         r = await c.request(method, url(cfg) + path, json=body)
     if r.status_code not in (200, 404):

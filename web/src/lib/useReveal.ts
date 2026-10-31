@@ -56,6 +56,14 @@ export function common(a: string, b: string): number {
   return i
 }
 
+/** how much of a new text shows at once, `shown` of the old one on screen: a text that goes
+    on from it keeps it; a rewrite while it streams keeps the common prefix and reveals the
+    rest; a rewrite after it ended (citations made into links) shows whole, never typed again */
+export function rebase(shown: number, was: string, text: string, live: boolean): number {
+  if (text.startsWith(was.slice(0, Math.floor(shown)))) return shown
+  return live ? Math.min(shown, common(was, text)) : text.length
+}
+
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** the part of `text` on screen; `live` while tokens may still come */
@@ -63,11 +71,8 @@ export function useReveal(text: string, live: boolean): string {
   const pace = useRef<Pace>({ shown: text.length, rate: 0 })
   const was = useRef(text)
   const [, frame] = useState(0)
-  // a rewrite that does not go on from what shows keeps the common prefix
   if (text !== was.current) {
-    if (!text.startsWith(was.current.slice(0, Math.floor(pace.current.shown)))) {
-      pace.current = { shown: Math.min(pace.current.shown, common(was.current, text)), rate: pace.current.rate }
-    }
+    pace.current = { ...pace.current, shown: rebase(pace.current.shown, was.current, text, live) }
     was.current = text
   }
   const instant = reduced() || (typeof document !== 'undefined' && document.hidden)

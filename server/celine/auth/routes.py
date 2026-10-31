@@ -39,6 +39,7 @@ from webauthn.helpers.structs import (
 from ..api.deps import proven
 from ..errors import CelineError
 from . import CEREMONY_SECONDS, Auth, Ceremony, credentials as cred
+from ..settings import address
 from .store import SESSION_IDLE, Session
 
 log = logging.getLogger("celine.auth")
@@ -82,12 +83,23 @@ def _reject(request: Request, kind: str, reason: str, answer: JSONResponse, *,
     return answer
 
 
-def _signed_in(request: Request, body: dict, passkey: bytes | None = None,
-               credential: int | None = None) -> JSONResponse:
+def _origin(request: Request) -> str:
+    return _auth(request).origin_for(request.headers)
+
+
+async def _signed_in(request: Request, body: dict, passkey: bytes | None = None,
+                     credential: int | None = None) -> JSONResponse:
+    """A new session. While the app has no address stored, the browser's own origin (its
+    Origin naming its Host) becomes it: only a setup or a login that succeeded gets here."""
+    from .. import saves
     auth = _auth(request)
+    if not auth.stored() and (origin := address.same_origin(request.headers)):
+        await saves.address(request.app.state.services, {"origin": origin})
+        log.info("address learned", extra={"event": "auth.address_learned", "origin": origin,
+                                           "client": _client(request)})
     res = JSONResponse(body)
     token = auth.store.new_session(passkey, credential, request.headers.get("user-agent", ""))
-    res.set_cookie(**auth.cookie(token, SESSION_IDLE))
+    res.set_cookie(**auth.cookie(token, SESSION_IDLE, _origin(request)))
     return res
 
 
@@ -195,16 +207,18 @@ async def _after_code(auth: Auth, ref: tuple[str, Any]) -> dict:
 # ---- passkey ceremonies: start, then finish ---------------------------------------------
 
 def _start(request: Request, kind: str, challenge: bytes, options: dict, **c: Any) -> dict:
-    cid = _auth(request).begin(Ceremony(kind, challenge, time.monotonic() + CEREMONY_SECONDS,
+    cid = _auth(request).begin(Ceremony(kind, _origin(request), challenge,
+                                        time.monotonic() + CEREMONY_SECONDS,
                                         _client(request), **c))
     return {"ceremony": cid, "options": options}
 
 
-def _registration_options(auth: Auth) -> tuple[bytes, dict]:
-    s = auth.settings
+def _registration_options(request: Request) -> tuple[bytes, dict]:
+    auth = _auth(request)
+    name = auth.user_name or "owner"
     opts = webauthn.generate_registration_options(
-        rp_id=s.rp_id, rp_name=s.rp_name, user_name=s.user_name,
-        user_display_name=s.user_name, user_id=auth.store.user_handle(),
+        rp_id=auth.party(_origin(request)).rp_id, rp_name=auth.rp_name or "Celine",
+        user_name=name, user_display_name=name, user_id=auth.store.user_handle(),
         timeout=TIMEOUT_MS,
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.REQUIRED,
@@ -223,8 +237,8 @@ def _new_passkey(request: Request, kind: str, c: Ceremony, credential: dict):
     try:
         v = webauthn.verify_registration_response(
             credential=credential, expected_challenge=c.challenge,
-            expected_rp_id=auth.settings.rp_id, expected_origin=auth.settings.origins,
-            require_user_verification=True)
+            expected_rp_id=auth.party(c.origin).rp_id,
+            expected_origin=auth.party(c.origin).origins, require_user_verification=True)
     except Exception as e:                          # py_webauthn raises several kinds
         return _reject(request, kind, "verification failed", _err(
             "register_failed", "The app could not add the passkey. Start again.", 400),
@@ -242,7 +256,7 @@ def _new_passkey(request: Request, kind: str, c: Ceremony, credential: dict):
 
 def _authentication_options(request: Request) -> tuple[bytes, dict]:
     opts = webauthn.generate_authentication_options(
-        rp_id=_auth(request).settings.rp_id, timeout=TIMEOUT_MS,
+        rp_id=_auth(request).party(_origin(request)).rp_id, timeout=TIMEOUT_MS,
         user_verification=UserVerificationRequirement.REQUIRED)
     return opts.challenge, options_to_json_dict(opts)
 
@@ -265,8 +279,8 @@ def _assertion(request: Request, kind: str, body: Finish, session: bytes | None 
     try:
         v = webauthn.verify_authentication_response(
             credential=body.credential, expected_challenge=c.challenge,
-            expected_rp_id=auth.settings.rp_id, expected_origin=auth.settings.origins,
-            credential_public_key=known[0], credential_current_sign_count=known[1],
+            expected_rp_id=auth.party(c.origin).rp_id,
+            expected_origin=auth.party(c.origin).origins, credential_public_key=known[0], credential_current_sign_count=known[1],
             require_user_verification=True)
     except Exception as e:                          # py_webauthn raises several kinds
         return _reject(request, "passkey", "verification failed", fail, login=True,
@@ -296,7 +310,7 @@ async def login_finish(request: Request, body: Finish):
     if isinstance(raw_id, JSONResponse):
         return raw_id
     log.info("logged in", extra={"event": "auth.login", "client": _client(request)})
-    return _signed_in(request, {"ok": True}, passkey=raw_id)
+    return await _signed_in(request, {"ok": True}, passkey=raw_id)
 
 
 @open_router.post("/login", dependencies=[Depends(not_limited)])
@@ -307,7 +321,7 @@ async def login_secret(request: Request, body: LoginIn):
         return rid
     log.info("logged in", extra={"event": "auth.login", "client": _client(request),
                                  "with": body.method})
-    return _signed_in(request, {"ok": True}, credential=rid)
+    return await _signed_in(request, {"ok": True}, credential=rid)
 
 
 # ---- registration with the setup code or a recovery code ------------------------------
@@ -317,7 +331,7 @@ async def register_start(request: Request, body: CodeIn):
     ref = await _take_code(request, body.code)
     if isinstance(ref, JSONResponse):
         return ref
-    return _start(request, "register", *_registration_options(_auth(request)), code=ref)
+    return _start(request, "register", *_registration_options(request), code=ref)
 
 
 @open_router.post("/register/finish")
@@ -330,7 +344,7 @@ async def register_finish(request: Request, body: Finish):
     pid = _new_passkey(request, "register", c, body.credential)
     if isinstance(pid, JSONResponse):
         return pid
-    return _signed_in(request, await _after_code(auth, c.code), passkey=pid)
+    return await _signed_in(request, await _after_code(auth, c.code), passkey=pid)
 
 
 @open_router.post("/register/credential")
@@ -349,7 +363,7 @@ async def register_credential(request: Request, body: RegisterCredentialIn):
                                          body.label)
     log.info("credential added", extra={"event": "auth.credential_added", "kind": body.kind,
                                         "with": ref[0], "client": _client(request)})
-    return _signed_in(request, await _after_code(auth, ref), credential=rid)
+    return await _signed_in(request, await _after_code(auth, ref), credential=rid)
 
 
 # ---- Settings, Security (the gate lets these through only with a session) -------------
@@ -405,6 +419,7 @@ async def remove_credential(request: Request, cid: str):
         auth.store.remove_passkey(base64url_to_bytes(cid))
     else:
         auth.store.remove_credential(int(cid))
+    await _forget_devices(request)         # its sessions ended with it
     log.info("credential removed", extra={"event": "auth.credential_removed",
                                           "kind": this["kind"], "left": len(mine) - 1})
     return {"ok": True, "logged_out": this["this_session"]}
@@ -414,7 +429,7 @@ async def remove_credential(request: Request, cid: str):
 async def add_start(request: Request):
     """Needs a fresh proof; /passkeys/finish takes only a ceremony started here, in this
     session, so it needs none of its own."""
-    return _start(request, "add", *_registration_options(_auth(request)),
+    return _start(request, "add", *_registration_options(request),
                   session=_session(request).token_hash)
 
 
@@ -495,9 +510,9 @@ async def sessions(request: Request) -> dict:
                          for s in _auth(request).store.sessions()]}
 
 
-def _logged_out(auth: Auth, body: dict) -> JSONResponse:
+def _logged_out(request: Request, body: dict) -> JSONResponse:
     res = JSONResponse(body, headers={"clear-site-data": '"cache", "cookies"'})
-    res.set_cookie(**auth.cookie("", 0))
+    res.set_cookie(**_auth(request).cookie("", 0, _origin(request)))
     return res
 
 
@@ -507,9 +522,10 @@ async def end_session(request: Request, sid: int):
     auth = _auth(request)
     if not auth.store.end_session_id(sid):
         return _err("not_found", "That session has ended.", 404)
+    await _forget_devices(request)
     log.info("session ended", extra={"event": "auth.session_ended", "client": _client(request)})
     if sid == _session(request).id:
-        return _logged_out(auth, {"ok": True, "logged_out": True})
+        return _logged_out(request, {"ok": True, "logged_out": True})
     return {"ok": True, "logged_out": False}
 
 
@@ -517,6 +533,7 @@ async def end_session(request: Request, sid: int):
 async def logout_others(request: Request) -> dict:
     """Every session but this one ends; `ended`: how many."""
     ended = _auth(request).store.end_other_sessions(_session(request))
+    await _forget_devices(request)
     log.info("other sessions ended", extra={"event": "auth.sessions_ended", "ended": ended,
                                             "client": _client(request)})
     return {"ok": True, "ended": ended}
@@ -526,4 +543,11 @@ async def logout_others(request: Request) -> dict:
 async def logout(request: Request):
     auth = _auth(request)
     auth.store.end_session(_session(request))
-    return _logged_out(auth, {"ok": True})
+    await _forget_devices(request)
+    return _logged_out(request, {"ok": True})
+
+
+async def _forget_devices(request: Request) -> None:
+    """An ended session's push subscriptions end with it (push.py)."""
+    if (push := request.app.state.services.push) is not None:
+        await push.forget_ended()

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from chat_fixtures import user_says
 
-import json
 
 import anyio
 import pytest
@@ -133,7 +132,7 @@ async def test_lease_is_per_conversation(store, cfg):
     assert await turns.claim(store, "w3") is None, "a busy conversation is not leased twice"
 
 
-async def test_reasoning_is_stored_and_never_replayed_upstream(store, cfg):
+async def test_reasoning_is_stored_and_goes_back_with_its_reply(store, cfg):
     cid = await conversations.create(store)
     await _run(store, cfg, FakeBackend([ReasoningDelta("weighing it up"), TextDelta("Blue"),
                                         Done(reason="stop")]), cid, "think then answer")
@@ -143,4 +142,6 @@ async def test_reasoning_is_stored_and_never_replayed_upstream(store, cfg):
     assert (await view.snapshot(store, cid))["turn"]["state"] == "done"
     backend = FakeBackend([TextDelta("ok"), Done(reason="stop")])
     await _run(store, cfg, backend, cid, "again")
-    assert "weighing it up" not in json.dumps(backend.calls[0])
+    [reply] = [m for m in backend.calls[0] if m["role"] == "assistant"]
+    assert reply["reasoning_content"] == "weighing it up", \
+        "the same bytes as in the turn that wrote it"

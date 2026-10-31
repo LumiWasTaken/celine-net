@@ -4,7 +4,8 @@ plans first, executes with sub-agents, reviews the result against the brief, del
 an artifact and reports on the intercom. The brief sits in its instructions there; its
 plan is the conversation's (plans/: plan__set, plan__step, a step's model);
 missions__update records where it stands and what it delivered. missions__list is
-offered everywhere, the rest only in the mission's own conversation."""
+offered everywhere, missions__start everywhere but in a sub-agent, the rest only in the
+mission's own conversation."""
 from __future__ import annotations
 
 import re
@@ -12,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from .. import prompts
+from ..core import ids
 from ..core.ids import clock, iso, parse_when
 from . import store as missions
 from ..plans.flow import chat_models
@@ -71,7 +73,8 @@ async def report_title(store, row: dict) -> str | None:
 
 def brief_lines(row: dict, title: str | None, tz, only: set[str] | None = None,
                 now_: datetime | None = None) -> list[str]:
-    """The brief, where it reports and the time limit, {{username}} unsubstituted.
+    """The brief, where it reports, the time limit and the minimum time, {{username}}
+    unsubstituted.
     Every one with a value, or with `only` exactly those columns, an empty one as
     "none"."""
     now_ = now_ or datetime.now(timezone.utc)
@@ -86,11 +89,18 @@ def brief_lines(row: dict, title: str | None, tz, only: set[str] | None = None,
             out.append(f"Time limit: {clock(datetime.fromisoformat(row['until']), tz, now_)}.")
         elif only is not None:
             out.append("Time limit: none.")
+    if only is None or "min_until" in only:
+        if row.get("min_until"):
+            out.append("Minimum time: until "
+                       f"{clock(datetime.fromisoformat(row['min_until']), tz, now_)}.")
+        elif only is not None:
+            out.append("Minimum time: none.")
     return out
 
 
 def head(row: dict) -> str:
-    return f"Mission {row['name']}, from {{{{username}}}}."
+    by = "you" if row.get("started_by") else "{{username}}"
+    return f"Mission {row['name']}, from {by}."
 
 
 def model_line(models: list[tuple[str, str]]) -> list[str]:
@@ -111,28 +121,49 @@ class Missions:
     app = None      # the running app (core/services.py), from skills.build
 
     async def offered_in(self, store, cid: str) -> bool | set[str]:
-        """Everything in the mission's own conversation; elsewhere only list (a sub-agent
-        working in a mission is not the mission itself)."""
-        return True if store is not None and await missions.get(store, cid) is not None \
-            else {"list"}
+        """Everything in the mission's own conversation; elsewhere list and start, in a
+        sub-agent only list (a sub-agent working in a mission is not the mission
+        itself)."""
+        if store is None:
+            return {"list", "start"}
+        if await missions.get(store, cid) is not None:
+            return True
+        sub = await store.read(lambda c: c.execute(
+            "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
+        # sub-agents start no missions, only she does
+        return {"list"} if sub and sub[0] else {"list", "start"}
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        """The brief and the models a step can run on, only in the mission's own
-        conversation (its plan is in every turn's tail, plans/flow.block)."""
+        """The brief, where it reports and the models a step can run on, only in the
+        mission's own conversation. Its state goes in the tail (tail_part)."""
         if ctx.store is None:
             return None
         row = await missions.get(ctx.store, ctx.conversation_id)
         if row is None:
             return None
         title = await report_title(ctx.store, row)
-        lines = [head(row), *brief_lines(row, title, self.tz),
-                 f"Status: {WORDS[row['status']]}."]
+        lines = [head(row), *brief_lines(row, title, self.tz, only={"brief"})]
+        if row.get("report_to"):
+            lines += brief_lines(row, title, self.tz, only={"report_to"})
+        lines += model_line(chat_models(getattr(self.cfg, "settings", None)))
+        lines.append(prompts.text(__file__, "steps.md"))
+        return self.cfg.substitute("\n".join(lines))
+
+    async def tail_part(self, ctx: ToolContext) -> str | None:
+        """The mission's state now, for the tail of a turn in its own conversation: its
+        time limit and minimum time, its status, whether it has a plan, what it
+        delivered (its plan is in the tail too, plans/flow.block)."""
+        if ctx.store is None:
+            return None
+        row = await missions.get(ctx.store, ctx.conversation_id)
+        if row is None:
+            return None
+        lines = [*brief_lines(row, None, self.tz)[1:], f"Status: {WORDS[row['status']]}."]
+        lines = [x for x in lines if not x.startswith("Report in:")]
         if not row["steps"]:
             lines.append("No plan yet.")
-        lines += model_line(chat_models(getattr(self.cfg, "settings", None)))
         if row["artifact"]:
             lines.append(f"Delivered: {row['artifact']}.")
-        lines.append(prompts.text(__file__, "steps.md"))
         return self.cfg.substitute("\n".join(lines))
 
     @tool()
@@ -159,6 +190,38 @@ class Missions:
                           display={"missions": len(rows)})
 
     @tool(read_only=False, destructive=False)
+    async def start(
+        self,
+        ctx: ToolContext,
+        brief: Annotated[str, "What the mission is to do and deliver."],
+        name: Annotated[str | None, "Its name; without one it is named from the "
+                                    "brief."] = None,
+        model: Annotated[str | None, "The model it runs on, a ref from models__list; "
+                                     "without one the default."] = None,
+        time_limit: Annotated[str | None, 'When it is due, like "2 h" or "08:00".'] = None,
+        min_time: Annotated[str | None, 'How long it runs at least, like "2 h" or '
+                                        '"08:00".'] = None,
+        check_in: Annotated[str | None, 'How often a line on where it stands goes where it '
+                                        'reports, like "30 min".'] = None,
+        report_to: Annotated[str | None, "The conversation id it reports in; without one "
+                                         "its reports go to {{username}}."] = None,
+    ) -> ToolResult:
+        """Start a mission: it works on the brief in a conversation of its own, with its
+        own plan and sub-agents, until it is done.
+        Returns: its name and its conversation id (an intercom address)."""
+        from ..errors import CelineError
+        from .api import MissionIn, start
+        body = MissionIn(brief=brief, name=name, model=model, time_limit=time_limit,
+                         min_time=min_time, check_in=check_in, report_to=report_to)
+        try:
+            cid = await start(self.app, body, by=ctx.conversation_id)
+        except CelineError as e:
+            return ToolResult(content=e.message, is_error=True)
+        row = await missions.get(ctx.store, cid)
+        return ToolResult(content=f"Started the mission {row['name']} ({cid}).",
+                          display={"mission": cid, "name": row["name"]})
+
+    @tool(read_only=False, destructive=False)
     async def update(
         self,
         ctx: ToolContext,
@@ -167,9 +230,11 @@ class Missions:
         artifact: Annotated[str | None, "With Done: what you delivered, "
                                         "artifact:<id> for a page or documents:<path> "
                                         "for a file in Documents."] = None,
+        force: Annotated[bool, "With Done: close it before its minimum time."] = False,
     ) -> ToolResult:
         """Record where the mission stands: status, a short note, and with Done the
-        artifact you delivered. Your steps are plan__step's."""
+        artifact you delivered. Your steps are plan__step's. Done before the mission's
+        minimum time takes force=true."""
         row = await missions.get(ctx.store, ctx.conversation_id)
         if row is None:
             return ToolResult(content="This conversation is not a mission.", is_error=True)
@@ -186,6 +251,14 @@ class Missions:
             return ToolResult(content=f"Step {', '.join(open_)} of your plan is still open. "
                                       "Do it, or close with a note on why it stays open.",
                               is_error=True)
+        now_ = datetime.fromisoformat(ids.now())
+        if word == "done" and not force and row["min_until"] and \
+                (least := datetime.fromisoformat(row["min_until"])) > now_:
+            from ..events import _took
+            return ToolResult(
+                content=f"The minimum time is until {clock(least, self.tz, now_)}, "
+                        f"{_took(iso(now_), row['min_until'])} from now. Done before it "
+                        "takes force=true.", is_error=True)
         if artifact:
             await missions.update(ctx.store, ctx.conversation_id, {"artifact": artifact})
         await record(self.app, ctx.store, ctx.conversation_id, word, note)

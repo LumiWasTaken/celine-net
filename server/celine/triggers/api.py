@@ -61,6 +61,10 @@ async def background(request: Request) -> dict:
     """{background: [{id, title, kind, trigger, working, last_line, updated_at}]}: the
     background tasks (not the runs, which Routines lists), newest activity first;
     `trigger` the trigger's name, `working` while a turn runs there, `last_line` its
-    newest line (its log line when it ended quietly)."""
+    newest line (its log line when it ended quietly), `asked` while an approval waits in
+    it or in a sub-agent of it (approvals.asked)."""
+    from ..approvals import asked
     from ..conversations.store import background as rows
-    return {"background": await rows(request.app.state.services.store)}
+    waits = asked(request.app.state.services)
+    return {"background": [{**r, "asked": r["id"] in waits}
+                           for r in await rows(request.app.state.services.store)]}

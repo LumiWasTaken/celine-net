@@ -20,6 +20,7 @@ from ..conversations import store as conversations, tree
 from ..core.ids import now
 from ..core.states import LIVE_SQL
 from ..core.event_types import INTERCOM_STATE
+from .store import notice_user
 
 
 def author_of(row) -> str:
@@ -107,8 +108,21 @@ async def deliver_idle(store, cid: str) -> dict | None:
 
 
 async def deliver_due(store) -> list[str]:
-    """Rule 1 for every conversation with something due. -> the turns it queued."""
+    """Rule 1 for every conversation with something due, and a scheduled message to the
+    user at its time: its notice, once (its delivery's delivered_at marks it). -> the
+    turns it queued."""
     def fn(c: sqlite3.Connection) -> list[str]:
+        t = now()
+        for r in c.execute(
+                "UPDATE intercom_deliveries SET delivered_at=? WHERE to_addr='user' AND "
+                "conversation_id IS NULL AND state='pending' AND delivered_at IS NULL AND "
+                "intercom_id IN (SELECT id FROM intercom WHERE due_at <= ? AND "
+                "cancelled_at IS NULL AND from_addr <> 'user' AND kind <> 'job') "
+                "RETURNING intercom_id", (t, t)).fetchall():
+            notice_user(c, store, c.execute("SELECT * FROM intercom WHERE id=?",
+                                            (r[0],)).fetchone())
+            store.global_event(c, INTERCOM_STATE, {"intercom_id": r[0],
+                                                     "conversation_id": None})
         cids = [r[0] for r in c.execute(
             "SELECT DISTINCT d.conversation_id FROM intercom_deliveries d "
             "JOIN intercom i ON i.id = d.intercom_id WHERE d.state='pending' "
@@ -128,8 +142,9 @@ async def next_due(store) -> str | None:
     """The earliest due time still waiting, or None."""
     return await store.read(lambda c: c.execute(
         "SELECT min(i.due_at) FROM intercom_deliveries d JOIN intercom i "
-        "ON i.id = d.intercom_id WHERE d.state='pending' AND d.conversation_id IS NOT NULL "
-        "AND i.cancelled_at IS NULL AND i.due_at > ?", (now(),)).fetchone()[0])
+        "ON i.id = d.intercom_id WHERE d.state='pending' AND (d.conversation_id IS NOT NULL "
+        "OR d.delivered_at IS NULL) AND i.cancelled_at IS NULL AND i.due_at > ?",
+        (now(),)).fetchone()[0])
 
 
 async def take(store, cid: str, turn_id: str, parent: str | None) -> list[dict]:
@@ -144,3 +159,12 @@ async def take(store, cid: str, turn_id: str, parent: str | None) -> list[dict]:
         return out
 
     return await store.write(fn)
+
+
+async def user_waits(store, cid: str) -> bool:
+    """Whether a message from the user waits for `cid` now (one that came after `take`)."""
+    return await store.read(lambda c: c.execute(
+        "SELECT 1 FROM intercom_deliveries d JOIN intercom i ON i.id = d.intercom_id "
+        "WHERE d.conversation_id=? AND d.state='pending' AND i.cancelled_at IS NULL "
+        "AND i.from_addr='user' AND i.kind='message' AND i.due_at IS NULL LIMIT 1", (cid,)).fetchone()
+        is not None)

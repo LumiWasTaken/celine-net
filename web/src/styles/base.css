@@ -8,6 +8,19 @@ html { height: var(--vh, 100dvh); }
 html, body, #root { overflow: clip; }
 body, #root { height: 100%; }
 
+/* a native app's touch: the kit paints its own press (no grey flash), a tap never waits
+   for a double-tap zoom, a pull at a list's top never reloads the page, a pane's bounce
+   stays in the pane, and on a touch screen a long press on the app's chrome is its menu (no
+   magnifier, no callout). Message text and fields stay selectable; a mouse selects
+   anything. */
+html { -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+:is(button, a, label, summary, input, textarea, select, [role='button'], [role='tab'], [role='menuitem'], [role='option']) { touch-action: manipulation; }
+:is(.chat-scroll, .transcript, .dialog, .menu, .ui-drawer__body, .vlist, .page, .place-side__body, .screen__body, .switcher, .rail) { overscroll-behavior: contain; }
+@media (pointer: coarse) {
+  :is(.rail, .place-head, .ui-drawer__head, .dialog__head, .ui-msg--chat, .list-row, .menu__item, .btn) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  :is(.rail, .place-head, .ui-drawer__head, .dialog__head, .ui-msg--chat, .list-row) :is(input, textarea, [contenteditable]) { -webkit-user-select: text; user-select: text; }
+}
+
 body {
   margin: 0;
   background: var(--grain) var(--bg-canvas);
@@ -51,6 +64,9 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
 }
 :focus:not(:focus-visible) { outline: none; }
 
+/* where a section move puts the focus (App.tsx): a place, not a control */
+.view h1:focus { outline: none; }
+
 ::selection { background: var(--accent-wash); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -63,7 +79,7 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
   background-clip: content-box; }
 * { scrollbar-color: var(--scroll-thumb) transparent; scrollbar-width: thin; }
 
-/* a touch screen never zooms into a field (iOS zooms below 16 px) */
+/* a touch screen never zooms into a field (iOS zooms below 16 px), at every text size */
 @media (pointer: coarse) { input, textarea, select { font-size: max(1rem, var(--t-md)); } }
 
 [disabled], [aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
@@ -78,15 +94,14 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
    rise      what arrives in a list while you look: a message, a row, a toast
    grow      from its origin (the pointer, the trigger, the picture): menus, cards, dialogs, the Viewer
    pulse     the one working mark: the typing dots, a running dot, a speaking face's ring
-   push      a phone's list to detail
    sheet-up  a phone sheet from the bottom edge
    spin, skeleton, highlight   a busy button, a loading row, the message you jumped to
-   Exits play on a copy of the element (ui/motion.ts useLeave), never by keyframes here. */
+   Exits play on a copy of the element (ui/motion.ts useLeave), never by keyframes here; a
+   list's glide and a phone's push are ui/motion.ts too (useMove, usePush). */
 @keyframes fade     { from { opacity: 0 } }
 @keyframes rise     { from { opacity: 0; transform: translateY(var(--rise)) } }
 @keyframes grow     { from { opacity: 0; transform: scale(0.96) } }
 @keyframes pulse    { 50% { opacity: 0.4 } }
-@keyframes push     { from { opacity: 0; transform: translateX(var(--push)) } }
 @keyframes sheet-up { from { transform: translateY(100%) } }
 @keyframes spin     { to { transform: rotate(360deg) } }
 @keyframes skeleton { 50% { opacity: 0.5 } }
@@ -100,13 +115,6 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
 /* the copy an exit plays on: still, untouchable, its own enter never replays */
 .ghost { pointer-events: none !important; }
 .ghost, .ghost * { animation: none !important; transition: none !important; }
-
-/* view transitions (a list reorder): only the named rows move, on the tokens; the page
-   itself never crossfades */
-:root { view-transition-name: none; }
-::view-transition { pointer-events: none; }
-::view-transition-group(*) { animation-duration: var(--dur); animation-timing-function: var(--ease); }
-::view-transition-old(*):only-child { animation-duration: var(--dur-fast); animation-timing-function: var(--ease-exit); }
 
 /* Collapsibles open and close by height (a tool row's body, a thinking block, an event
    line): `interpolate-size` lets `auto` transition */

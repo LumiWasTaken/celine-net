@@ -21,6 +21,7 @@ import { cx } from './cx'
 import { SearchField } from './Form'
 import { ICON } from './icons'
 import { coarse } from './phone'
+import { usePush } from './motion'
 import { Menu, MenuButton, useContextMenu, type MenuItem } from './Menu'
 import { usePlace } from './Place'
 import type { Picker } from './Select'
@@ -68,7 +69,8 @@ export function PlaceHead({
   title, count, detail, titleAttr, level = 2, back, crumbs, lead, search, picker, shelf, more = [], actions,
   newLabel, onNew, newHref, newPressed, newDisabled, tools, className,
 }: {
-  title: ReactNode
+  /** left out in a sidebar that is the place's list (Celine's conversations) */
+  title?: ReactNode
   /** the server's number of things in the place (or on the open shelf) */
   count?: number
   /** a state beside the title, muted (a terminal's program, "Deleted") */
@@ -176,15 +178,20 @@ export function PlaceHead({
   const H = level === 1 ? 'h1' : 'h2'
   const place = usePlace()
   const up = crumbs?.at(-1)
+  // a phone: a deeper page pushes in, back reverses it
+  const self = useRef<HTMLElement>(null)
+  usePush(self, (crumbs?.length ?? 0) + (back ? 1 : 0))
   const searchBox = search && (
     <SearchField value={search.value} onChange={search.onChange} placeholder={search.placeholder ?? 'Search'}
                  label={search.label} loading={search.loading} inputRef={search.inputRef} onKeyDown={search.onKeyDown}
                  className="place-head__search" />
   )
   return (
-    <header className={cx('place-head', narrow && 'place-head--narrow', !words && 'place-head--icons', className)}>
+    <header ref={self} className={cx('place-head', narrow && 'place-head--narrow', !words && 'place-head--icons', className)}>
       <div ref={row} className="place-head__row">
-        {place && !back && !up && <IconButton icon={PanelLeft} label={place.title} className="place-head__side" onClick={place.open} />}
+        {place && (place.always || (!back && !up)) && (
+          <IconButton icon={PanelLeft} label={place.label} className={cx('place-head__side', place.always && 'place-head__side--on')} onClick={place.onClick} />
+        )}
         {back && <IconButton icon={ChevronLeft} label={back.label} className="place-head__back" iconSize="lg" onClick={back.onClick} />}
         {up && <IconButton icon={ChevronLeft} label={`Back to ${up.label}`} className="place-head__up" href={up.href} onClick={up.onClick} />}
         {crumbs && crumbs.length > 0 && (
@@ -198,12 +205,14 @@ export function PlaceHead({
           </nav>
         )}
         {lead}
-        <H className={cx('place-head__title', clip && 'place-head__title--clip')} title={titleAttr}>
-          {open && <IconButton icon={ChevronLeft} label="Back to the list" size="sm" iconSize="md" onClick={() => shelf!.onChange('list')} />}
-          <span className="place-head__name">{open ? SHELF[open].label : title}</span>
-          {count != null && <span className="place-head__count">{count}</span>}
-          {detail && <span className="place-head__detail">{detail}</span>}
-        </H>
+        {(title != null || open) && (
+          <H className={cx('place-head__title', clip && 'place-head__title--clip')} title={titleAttr}>
+            {open && <IconButton icon={ChevronLeft} label="Back to the list" size="sm" iconSize="md" onClick={() => shelf!.onChange('list')} />}
+            <span className="place-head__name">{open ? SHELF[open].label : title}</span>
+            {count != null && <span className="place-head__count">{count}</span>}
+            {detail && <span className="place-head__detail">{detail}</span>}
+          </H>
+        )}
         {!narrow && searchBox}
         <div className="place-head__acts">
           {!shelvesInMore && picker && act(ListChecks, 'Select', picker.on, () => (picker.on ? picker.stop() : picker.start()))}

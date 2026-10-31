@@ -60,11 +60,15 @@ def insert(c: sqlite3.Connection, from_addr: str, to: str, kind: str, text: str,
     # lands later): a notice
     if store is not None and to_user and from_addr != "user" and kind != "job" and \
             not (due_at and due_at > now()):
-        from ..events import notice
-        thread = thread or iid
-        notice(store, c, "intercom", name_of(c, from_addr), subject or text,
-               f"/intercom/{thread}", f"intercom:{thread}")
+        notice_user(c, store, c.execute("SELECT * FROM intercom WHERE id=?", (iid,)).fetchone())
     return iid
+
+
+def notice_user(c: sqlite3.Connection, store, row: sqlite3.Row) -> None:
+    """Inside a write: message `row` waits for the user now, as a notice (events.notice)."""
+    from ..events import notice
+    notice(store, c, "intercom", name_of(c, row["from_addr"]), row["subject"] or row["text"],
+           f"/intercom/{row['thread']}", f"intercom:{row['thread']}")
 
 
 def answering(c: sqlite3.Connection, cid: str, turn: str) -> sqlite3.Row | None:
@@ -117,7 +121,7 @@ def recipients(c: sqlite3.Connection) -> list[dict]:
     each followed by its sub-agents. Those after the missions carry `line`, how a
     second step lists them: the conversation's title, a sub-agent as "<name>, in
     <where>"."""
-    out: list[dict] = [{"to": "all", "name": "Everyone working", "line": None}]
+    out: list[dict] = [{"to": "all", "name": "Everyone", "line": None}]
     tops = c.execute(
         "SELECT c.id, c.title, mi.name AS mission FROM conversations c "
         "LEFT JOIN missions "
@@ -193,15 +197,18 @@ def view(c: sqlite3.Connection, iid: int, cid: str | None = None) -> dict | None
     r = c.execute("SELECT * FROM intercom WHERE id=?", (iid,)).fetchone()
     if r is None:
         return None
+    from ..attachments import of_ids       # attachments imports conversations, which import this
+    data = json.loads(r["data"] or "{}")
     return {"id": r["id"], "kind": r["kind"], "from": r["from_addr"], "to": r["to_addr"],
             "subject": r["subject"], "created_at": r["created_at"], "due_at": r["due_at"],
             "until_at": r["until_at"], "wake": bool(r["wake"]),
             "reply_to": r["reply_to"], "thread": r["thread"],
-            "data": json.loads(r["data"] or "{}"), "from_name": name_of(c, r["from_addr"]),
+            "data": data, "from_name": name_of(c, r["from_addr"]),
             # each conversation it went to by name (a team by its first conversation's)
             "to_names": {a: name_of(c, a) for a in r["to_addr"].split(", ")},
             "mine": cid is not None and r["from_addr"] == f"agent:{cid}",
-            "source": source_of(c, r["from_addr"])}
+            "source": source_of(c, r["from_addr"]),
+            "attachments": of_ids(c, data.get("attachments") or [])}
 
 
 def state(c: sqlite3.Connection, r: sqlite3.Row) -> str:
@@ -331,18 +338,17 @@ def threads(c: sqlite3.Connection, addr: str | None, unread: bool = False,
 
     def named(a: str) -> str:
         if a not in names:
-            names[a] = name_of(c, a) or "Everyone working"
+            names[a] = name_of(c, a) or "Everyone"
         return names[a]
 
-    want = (with_ or "").strip().lower()
+    want = with_ or ""
     out = []
     for r in rows:
         others = list(dict.fromkeys(a for a in r["addrs"].split(", ") if a != reader))
         # Bastet's threads have their own tab (with_ GUARD), never Waiting for you
         if unread and GUARD in others:
             continue
-        if want and not any(want in (a.lower(), a.partition(":")[2].lower(),
-                                     named(a).lower()) for a in others):
+        if want and not any(want in (a, a.partition(":")[2], named(a)) for a in others):
             continue
         people = [a for a in others if not a.startswith("system:")] or others
         name = ", ".join(dict.fromkeys(named(a) for a in people)) or \

@@ -3,7 +3,6 @@ name: email
 description: Your own email inbox over IMAP. {{username}} does not read it: you manage it.
   List, search and read messages, get their attachments, mark, move and delete them.
   Your prompt shows the account and the unread count.
-words: email, emails, mail, inbox
 ---
 The inbox is yours. {{username}} does not see it, so keep it the way you like: read what
 comes in, file it, flag what matters, delete what does not.

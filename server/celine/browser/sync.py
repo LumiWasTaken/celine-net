@@ -150,7 +150,8 @@ async def probe(cfg, services) -> dict[str, str]:
     up; Brave down or starting is missing with browserd's reason. No saved address: the
     default one is tried, and an answer comes back with `url`, the address the setup form
     prefills."""
-    from ..errors import bad_key, not_set_up, unreachable_words
+    from ..errors import (bad_key, her_bad_key, her_not_set_up, her_unreachable,
+                          not_set_up, unreachable_words)
     saved = url(cfg)
     at = saved or services_mod.default("browser")
     host = urlsplit(at).netloc
@@ -160,12 +161,16 @@ async def probe(cfg, services) -> dict[str, str]:
             now = _facts(await client.get(at + "/status"))
     except httpx.HTTPError as e:
         if not saved:
-            return {"state": "unset", "detail": not_set_up("the browser")}
-        return {"state": "missing", "detail": unreachable_words("the browser", at, e)}
+            return {"state": "unset", "detail": not_set_up("the browser"),
+                    "why": her_not_set_up("the browser")}
+        return {"state": "missing", "detail": unreachable_words("the browser", at, e),
+                "why": her_unreachable("the browser", at)}
     except BrowserRefused as e:
         if e.status in (401, 403):
-            return {"state": "missing", "detail": bad_key("the browser", at), **found}
-        return {"state": "missing", "detail": f"The browser box at {host} answered {e.status}.",
+            return {"state": "missing", "detail": bad_key("the browser", at),
+                    "why": her_bad_key("the browser", at), "key": True, **found}
+        return {"state": "missing", "detail": f"The browser at {host} answered with error {e.status}. Check the "
+                                               f"address, or restart the browser container.",
                 **found}
     if now.get("state") != "up":
         why = now.get("reason") or f"it is {now.get('state') or 'down'}"

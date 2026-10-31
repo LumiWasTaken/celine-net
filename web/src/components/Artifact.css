@@ -1,8 +1,6 @@
 /* The agent's artifacts: one artifact (the full page and the side panel), its frame, a document,
    and the panel's list. */
 .art { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-/* the place head; in the side panel it starts at the back arrow */
-.drawer .art__head { padding-left: var(--s-2); }
 .art__error { flex: none; padding: var(--s-2) var(--s-5) 0; }
 .art__empty { flex: 1; display: grid; place-items: center; padding: var(--s-6) var(--s-4); }
 

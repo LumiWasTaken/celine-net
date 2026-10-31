@@ -223,11 +223,13 @@ async def test_she_plans_then_records_what_she_delivered(store):
     skill = Missions(cfg)
     ctx = ToolContext(cid, "t", "k", store, cfg, None)
     before = await skill.prompt_fragment(ctx)
-    assert "Brief:\nCompare the three offers." in before and "No plan yet." in before
+    assert "Brief:\nCompare the three offers." in before and "No plan yet." not in before
+    assert "No plan yet." in await skill.tail_part(ctx)
     from celine.plans.skill import Plan
     assert not (await Plan(cfg).set(ctx, steps=[{"title": "Read the offers"},
                                                 {"title": "A table"}])).is_error
-    assert "No plan yet." not in await skill.prompt_fragment(ctx)
+    assert "No plan yet." not in await skill.tail_part(ctx)
+    assert await skill.prompt_fragment(ctx) == before, "its state goes in the tail"
     assert (await skill.update(ctx, status="Done", note="x", artifact="a table")).is_error
     out = await skill.update(ctx, status="Done", note="The table is up.",
                              artifact="documents:offers/compare.md")

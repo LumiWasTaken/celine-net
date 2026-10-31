@@ -50,7 +50,8 @@ SHELL_CALLS = "tc.name LIKE 'shell\\_\\_%' ESCAPE '\\'"
 # name. A shell__read without a terminal lists the terminals: terminal {null, ""}.
 _HERS = f"""
 SELECT tc.id AS id,
-       CASE WHEN tc.name = 'shell__read' THEN 'read' ELSE 'command' END AS kind,
+       CASE WHEN tc.name IN ('shell__read', 'shell__wait') THEN 'read'
+            ELSE 'command' END AS kind,
        coalesce(tc.started_at, a.created_at) AS at,
        coalesce(CASE WHEN json_valid(tc.display)
                      THEN json_extract(tc.display, '$.terminal_id') END,
@@ -269,10 +270,10 @@ async def last_conversation(store, terminal_id: str) -> dict | None:
 
 
 async def default_terminal(store, conversation_id: str) -> str:
-    """Where a shell call with no terminal goes, and a browser call with no tab: the
-    mission's terminal, a sub-agent's own name cut to fit and -<the first 4 characters of
-    its id>, else the conversation's own, c-<the first 6 characters of its id>: two
-    conversations never share one."""
+    """The conversation's own terminal and browser tab, named in the shell and browser
+    skills' fragments: the mission's terminal, a sub-agent's own name cut to fit and
+    -<the first 4 characters of its id>, else the conversation's own, c-<the first 6
+    characters of its id>: two conversations never share one."""
     def fn(c: sqlite3.Connection) -> str:
         r = c.execute(
             "SELECT mi.terminal, c.agent_of, c.agent_name FROM conversations c "

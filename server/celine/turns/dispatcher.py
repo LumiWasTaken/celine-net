@@ -63,6 +63,13 @@ class Dispatcher:
         """Called after anything is enqueued. Never awaits."""
         self._wake.set()
 
+    def user_wrote(self, cid: str) -> None:
+        """A message from the user waits for the live turn of `cid` (it lands at its next
+        step): a call of that turn that only waits ends its wait now."""
+        for tid, c in self._active.items():
+            if c == cid and (token := self.tokens.get(tid)) is not None:
+                token.user_wrote.set()
+
     def on_end(self, fn) -> None:
         """`await fn(cid, turn_id)` after turn `turn_id` of conversation `cid` ended, and
         with `turn_id` None after one of its jobs ended (a sub-agent's report,
@@ -118,9 +125,9 @@ class Dispatcher:
         """Graceful shutdown, before the store closes. Every running turn is cancelled
         with reason "shutdown" (not a Stop): streams end and keep their partial text,
         steps not yet started stay pending. Waits up to `grace` for steps with a side
-        effect to land; read-only steps are not waited for, they run again on the next
-        start. Then every turn still held goes back in the queue (`put_down`); the
-        startup sweep of the next process resumes it."""
+        effect to land; read-only steps are not waited for. Then every turn still held
+        ends `interrupted` with the reason (`interrupt_held`); nothing of it runs again
+        on its own."""
         self._running = False
         self._stopping = True
         self._wake.set()
@@ -135,14 +142,14 @@ class Dispatcher:
                 break
             await anyio.sleep(0.05)
         await self.work.stop()
-        # a turn that returned during the wait wrote nothing terminal: put it down too
+        # a turn that returned during the wait wrote nothing terminal: it ends here too
         try:
-            down = await turns.put_down(self.store, self._workers)
+            down = await turns.interrupt_held(self.store, self._workers, self.registry)
         except Exception:
-            log.exception("put down failed", extra={"event": "shutdown.put_down_failed"})
+            log.exception("interrupt failed", extra={"event": "shutdown.interrupt_failed"})
             down = []
         log.info("shutdown done", extra={"event": "shutdown.done", "turns": len(held),
-                                         "put_down": len(down)})
+                                         "interrupted": len(down)})
 
     async def _waiting_on_side_effect(self) -> bool:
         """True while a held turn is inside a step that is not safe to run again, or
@@ -180,7 +187,10 @@ class Dispatcher:
     async def abort_conversation(self, cid: str) -> str | None:
         """The user's Stop for a whole conversation: its live turn, every job it
         runs, and its sub-agents' conversations the same way. Returns the stopped
-        turn's id, or None when no turn was live."""
+        turn's id, or None when no turn was live. The queued briefs of the whole family
+        go first, so a sub-agent that ends here starts none of its siblings."""
+        from ..sub_agents.skill import drop_queued
+        await self.store.write(lambda c: drop_queued(c, cid))
         tid = await turns.request_abort(self.store, cid)
         if tid:
             self.tokens.cancel(tid)
@@ -260,21 +270,29 @@ class Dispatcher:
 
     async def _cli_backend(self, cid: str, clock):
         """A sub-agent started with an agent CLI runs its turns there
-        (sub_agents/cli.py); None for every other conversation."""
+        (sub_agents/cli.py), on a device as a drone (sub_agents/drone.py); None for every
+        other conversation."""
         app = getattr(self.registry, "app", None)
-        cli = await self.store.read(lambda c: (c.execute(
-            "SELECT agent_cli FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
+        cli, device = await self.store.read(lambda c: c.execute(
+            "SELECT agent_cli, agent_device FROM conversations WHERE id=?",
+            (cid,)).fetchone() or (None, None))
         if not cli or app is None:
             return None
+        if device:              # a drone (sub_agents/drone.py)
+            from ..sub_agents.drone import DroneBackend
+            return DroneBackend(app, cid, cli, device, clock)
         from ..sub_agents.cli import CliBackend
         return CliBackend(app, cid, cli, clock)
 
     async def _held(self) -> None:
-        """While its turns are held (hold.py): until the gateway's state changes."""
-        if self.llm is None:
-            await anyio.sleep(HOLD_RECHECK)
-        else:
-            await self.llm.router.wait_change(HOLD_RECHECK)
+        """While she is paused (hold.py): until the gateway's state changes or a turn
+        is queued (one of an agent whose model answers runs)."""
+        async with anyio.create_task_group() as tg:
+            async def first(wait) -> None:
+                await wait()
+                tg.cancel_scope.cancel()
+            tg.start_soon(first, lambda: self.llm.router.wait_change(HOLD_RECHECK))
+            tg.start_soon(first, self._wait_for_work)
 
     async def _wait_for_work(self) -> None:
         """Until notify(). Every queued turn is announced: the startup sweep runs
@@ -314,15 +332,18 @@ class Dispatcher:
         if hold == "frozen":            # the unfreeze wakes them (notify)
             await self._wait_for_work()
             return True
-        if hold is not None:
-            await self._held()
-            return True
         if self._workers.index(worker_id) >= self._cap():
             await self._wait_for_work()
             return True
-        turn = await turns.claim(self.store, worker_id)
+        # paused: her own turns wait for a host of hers; a sub-agent or drone whose own
+        # model answers goes on
+        turn = await turns.claim(self.store, worker_id,
+                                 None if hold is None else self.llm.router.answering())
         if turn is None:
-            await self._wait_for_work()
+            if hold is None:
+                await self._wait_for_work()
+            else:
+                await self._held()
             return True
         # the token opens before the second look: a freeze after that look finds it
         # live and stops it (freeze._stop_all); the DB column seeds it, covering the
@@ -350,7 +371,7 @@ class Dispatcher:
         try:
             await self._run_one(turn, worker_id, token)
         except Exception:
-            # the store closed under a turn during shutdown: it was put down already
+            # the store closed under a turn during shutdown: it ended interrupted already
             if not self._stopping:
                 raise
             log.info("turn left to the next start", extra={

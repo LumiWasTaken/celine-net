@@ -16,33 +16,22 @@ from ..skills import words
 from ..skills.gating import overrides_for
 from ..intercom import deliver
 from ..plans import flow as plan_flow
-from . import context, ledger, loads, message_context, prompt, reply, tokens, waiting
+from . import context, loads, message_context, prompt, reply, tokens, waiting
 from . import store as turns
 from .compact import SummaryFailed, closing, stoppable
-from .tools import NOT_RUN_ANSWER, run_tool_calls
+from .tools import run_tool_calls
 from ..core.event_types import CONTEXT_EMERGENCY, ERROR, MESSAGE_REASONING, TOOL_FORMING
 
 log = logging.getLogger("celine.turn")
 DELTA_EVERY = 0.075        # seconds between two writes of a streaming reply
 WAIT = "missions__wait"     # ran ok: the turn ends with its step, whatever else is open
 
-# the automatic notes of a step without tools: it answers with what it has
-NOT_RUN_NOTE = ("(Automatic note, not written by {{username}}.) Your last calls were not run: "
-                "they would not find anything new. You have no tools for this step. Answer "
-                "{{username}} now in plain words with what you found, and say what is "
-                "missing.")
-TIME_UP_NOTE = ("(Automatic note, not written by {{username}}.) The time for this turn is up. "
-                "You have no tools for this step. Answer {{username}} now in plain words "
-                "with what you found, and say what is missing.")
-
 
 async def run_turn(turn: dict, store: Store, cfg, backend, bus,
                    token=None, registry=None, jobs=None, clock=None) -> None:
     """`clock.deadline` (anyio time) is when the turn ends for good. The room of
-    `last_step_seconds` before it is kept for one last step without tools, so it
-    answers with what it has when its time is up."""
-    # the ledger is rebuilt from this turn's stored tool calls, so a turn resumed after
-    # a restart or a Continue keeps its counts and its repeat detection
+    `last_step_seconds` before it is the step under way's: once the work time is up no
+    new step starts, and the turn ends `capped` with the reason wall_clock."""
     from .cancel import Token
     tid = turn["id"]
     token = token if token is not None else Token(tid)
@@ -58,7 +47,6 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
     # waits for their answer, its clock held meanwhile
     waits = waiting.TURN.set(waiting.Turn(
         interactive=(turn.get("origin") or "user") == "user", clock=clock, token=token))
-    ledger.open_for(tid, await ledger.records_for(store, tid))
     try:
         await _run_turn(turn, store, cfg, backend, bus, token, registry, jobs, clock)
     except SummaryFailed as e:
@@ -67,7 +55,6 @@ async def run_turn(turn: dict, store: Store, cfg, backend, bus,
         await _failed(store, tid, turn["conversation_id"], "summary_failed",
                       f"The older messages could not be summarised: {e}", True)
     finally:
-        ledger.close(tid)
         waiting.TURN.reset(waits)
 
 
@@ -85,15 +72,14 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         token.cancel()
     await turns.set_backend(store, tid, backend.name, backend.model)
 
-    # the path, read once for the turn's start: what it carries by need, the user
-    # messages it sends first, the tail and the first request
+    # the path, read once for the turn's start: the user messages it sends first, the
+    # tail and the first request
     chain = await store.read(lambda c: tree.path(c, cid))
-    # this conversation's switches (skills/gating.py) and what it carries by need
+    # this conversation's switches (skills/gating.py) and what it carries
     # (turns/loads.py), resolved once per turn: a config reload must not swap tools
-    # under a running turn; only skills__load changes them, between steps
+    # under a running turn, and a load never changes them (its result carries it)
     overrides = await overrides_for(store, cid)
-    carried = await loads.select(store, cfg, registry, cid, backend, when="start",
-                                 turn_id=tid, path=chain)
+    carried = await loads.select(store, cfg, registry, cid, backend)
     specs, read_only = await prompt.tool_specs(registry, store, cid, carried)
     tools_on = bool(registry) and getattr(backend, "supports_tools", False)
     wire_tools = prompt.wire_tools(specs, registry, overrides, cfg) if tools_on else []
@@ -102,9 +88,10 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     win = tokens.window(backend)
     tool_turn = {"id": tid, "conversation_id": cid, "origin": turn.get("origin") or "user",
                  "root_message_id": turn["root_message_id"],
-                 "max_output_tokens": tokens.result_cap(win), "read_only": read_only,
-                 "time_left": time_left, "loaded": frozenset(carried.skills),
-                 "offered": frozenset(specs), "notes": _carried_notes(carried)}
+                 "max_output_tokens": tokens.result_cap(win, cfg), "read_only": read_only,
+                 "time_left": time_left, "carried": carried,
+                 "offered": frozenset(specs), "notes": _carried_notes(carried),
+                 "guides": {}}     # the skills whose guide it reads, tools._with_guide
 
     # where this turn stands: a fresh turn starts at its user message; a resumed or
     # continued one carries on from its own tail with the next free iteration number
@@ -139,24 +126,32 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         parent = await turns.step_tail(store, calls[-1]["message_id"])
         chain = await store.read(lambda c: tree.path(c, cid))
 
-    pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn, carried,
-                                      wire_tools, path=chain)
+    pieces = [t for _, t in await prompt.system_blocks(
+        cfg, registry, store, cid, tid, carried, getattr(backend, "role", None))]
     system = "\n\n".join(pieces)
 
     async def build(mode: str, path: list[dict] | None = None):
-        """The request from the context builder (turns/context.py), with the system,
-        the tools and the tail of now."""
+        """The request from the context builder (turns/context.py), with the system and
+        the tools."""
         return await context.build(store, cfg, backend, cid, system=system,
-                                   tools=wire_tools, mode=mode, tail=tail, path=path)
+                                   tools=wire_tools, mode=mode, path=path)
 
-    # the user messages this turn sends first get their context block, stored once
+    # the user messages this turn sends first get their context block, stored once,
+    # and the message it answers gets the turn's tail, once (a later turn on it, a
+    # Continue or a restart sends the same bytes)
     await message_context.ensure(store, cfg, registry, cid, tid,
                                  message_context.unsent(chain), tool_turn["max_output_tokens"])
+    answers, stored = await message_context.tail_of(store, chain)
+    # a Regenerate answers the user message again from its first step: a tail of now
+    fresh = bool(turn.get("again")) and not reopen and iteration == 0 and \
+        turn["root_message_id"] == answers
+    if answers is not None and (stored is None or fresh):
+        await message_context.put_tail(store, answers, await prompt.tail_text(
+            store, cfg, registry, backend, cid, carried, tid), fresh)
     # the context builder (turns/context.py): old results as stubs and older turns as
     # a summary when the conversation nears the window; decisions are persisted
     built = await build("start", chain)
     messages, hidden = built.messages, built.hidden
-    ledger.view(tid, messages)
     if point.get("complete"):
         # the answer had fully streamed before the server stopped: finish it (the
         # citation check, without asking the model again), never write it a second time
@@ -165,11 +160,17 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                 done_msg["reasoning"], messages, kbs, hidden)
         await turns.transition(store, tid, cid, "done", honor_abort=False)
         return
-    # a reply continued in place: the stored partial reply leaves the history, and what
-    # continues it (the prefill or the note) goes with its one step only
+    # a reply continued in place: the stored partial reply leaves the history, and the
+    # prefill that continues it goes with its one step only. A model without a prefill
+    # cannot continue it: the turn ends with that reason.
     reopen_tail: list[dict] = []
-    if reopen:
-        messages, reopen_tail = _reopen_request(messages, reopen, backend, cfg, cid, tid)
+    if reopen and reopen.get("text"):
+        if not prompt.supports_prefill(backend):
+            await _failed(store, tid, cid, "no_prefill",
+                          f"The reply was cut off, and {backend.model} cannot continue a "
+                          f"reply where it stopped.", False)
+            return
+        messages, reopen_tail = _reopen_request(messages, reopen, cid, tid)
 
     # the instructions and tools alone do not fit the model's context: no request can
     # succeed, and compacting cannot help
@@ -179,17 +180,10 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         return
 
     cap = int(cfg.r("max_tool_iterations"))
-    # its voice cue: its talk is in every turn's prompt (system_blocks)
-    anchor = prompt.voice_line(cfg)
-    # a quiet turn shows only its tool calls: its text is never streamed, and it gets
-    # none of the automatic notes (they ask it to answer the user)
+    # a quiet turn shows only its tool calls: its text is never streamed
     quiet = bool(turn.get("quiet"))
-    noted = not quiet
-    bare = False                   # the next step goes without tools
     grown = False                  # tool results appended since the last build
     emergency = False              # one emergency pass per run
-    note = None                    # a step without tools: (name, the automatic note it gets)
-    time_up = False
     base = int(turn.get("cap_base") or 0)    # a Continue on a capped turn starts here
     while True:
         if cap and iteration - base >= cap:       # 0: only the wall clock
@@ -197,19 +191,20 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                    reason_code="max_tool_iterations")
             return
         if time_left() <= 0:
-            if time_up:
-                # the last step made calls instead of answering: they were not run
-                await turns.transition(store, tid, cid, "capped", reason="wall_clock",
-                                       reason_code="wall_clock")
-                return
-            time_up, bare = True, not noted
-            note = ("time_up", TIME_UP_NOTE) if noted else None
+            await turns.transition(store, tid, cid, "capped", reason="wall_clock",
+                                   reason_code="wall_clock")
+            return
         if not await turns.transition(store, tid, cid, "streaming"):
             return
         # what reached this conversation since the last step joins the request here
         # (intercom/deliver.py); a reply continued in place takes it next step
         if not reopen:
             taken = await deliver.take(store, cid, tid, parent)
+            # what the user wrote is in this step; one sent after the take still ends a
+            # wait (Intercom.send commits before it sets the event)
+            token.user_wrote = anyio.Event()
+            if await deliver.user_waits(store, cid):
+                token.user_wrote.set()
             if taken:
                 await message_context.ensure(store, cfg, registry, cid, tid, taken,
                                              tool_turn["max_output_tokens"])
@@ -223,15 +218,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                                       context.POLICY.turn_at):
             built = await build("turn")
             messages, hidden = built.messages, built.hidden
-            ledger.view(tid, messages)
         grown = False
 
-        step_tools, step = (wire_tools, messages + reopen_tail) if note is None else (
-            [], messages + reopen_tail + [
-                {"role": "user", "content": cfg.substitute(note[1]),
-                 ORIGIN: context.origin(cid, turn=tid, note=note[0])}])
-        if bare:
-            step_tools = []
+        step_tools, step = wire_tools, messages + reopen_tail
         if why := context.malformed(step, cid):
             # a request that breaks the rules is never sent (turns/context.py malformed)
             await _failed(store, tid, cid, "malformed_request",
@@ -264,7 +253,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                 return
             built = await build("emergency")
             messages, hidden = built.messages, built.hidden
-            ledger.view(tid, messages)
             need = counter.request(messages, wire_tools) * ratio
             if not _fits(need, win):
                 await _too_small(store, tid, cid, cfg, backend, int(need), win,
@@ -289,13 +277,16 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         if token.cancelled:
             await _stopped(store, tid, cid, token)
             return
+        if not calls and done is not None and done.reason == "steer":
+            iteration += 1                  # the next step's take lands the message
+            continue
         if not calls:
             cut = "length" if done is not None and done.reason == "length" else None
             await _verify_citations(store, cfg, cid, mid, text, thinking, messages, kbs,
                                     hidden)
             # the answer had fully streamed: a Stop now only cancelled the check
             reason, code = ("cut off at the reply limit", "cut_length") if cut else \
-                ("the time for this turn ran out", "time_up") if time_up else (None, None)
+                (None, None)
             await turns.transition(store, tid, cid, "done", cut=cut, reason=reason,
                                    reason_code=code, honor_abort=False)
             if not token.cancelled:
@@ -332,12 +323,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                 await _all_ok(store, [c["id"] for c in calls])):
             await turns.transition(store, tid, cid, "done")
             return
-        # a model can loop on a refused call for the whole wall clock: the next step
-        # gets no tools, so it answers with what it has
-        if not time_up:
-            refused = all(texts.get(c["id"], "").startswith(NOT_RUN_ANSWER) for c in calls)
-            note = ("not_run", NOT_RUN_NOTE) if refused and noted else None
-            bare = refused and not noted
         # as the context builder sends a stored reply: as stored, with its signed
         # thinking (the next step continues the tool loop)
         messages.append({"role": "assistant", "content": text,
@@ -348,30 +333,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             messages.append({"role": "tool", "tool_call_id": call["id"],
                              "content": texts.get(call["id"], "result unavailable"),
                              ORIGIN: context.origin(cid, turn=tid, call=call["id"])})
-        if anchor and calls:
-            # its voice cue (voice_line), at the end of what it reads last: added to
-            # the request only, after what was sent before, so the cached start holds
-            messages[-1]["content"] += f"\n\n{anchor}"
         parent = await turns.step_tail(store, mid)
         iteration += 1
         grown = True
-        if await loads.touched(store, cid) - tool_turn["loaded"]:
-            # it loaded a skill (skills__load), or a tool did for it (a password field
-            # loads the vault): its tools, its index line and its fragment from the next
-            # step on (the request is built again from the stored path)
-            carried = await loads.select(store, cfg, registry, cid, backend, when="step")
-            specs, read_only = await prompt.tool_specs(registry, store, cid, carried)
-            wire_tools = prompt.wire_tools(specs, registry, overrides, cfg) if tools_on else []
-            tool_turn.update(read_only=read_only, loaded=frozenset(carried.skills),
-                             offered=frozenset(specs), notes=_carried_notes(carried))
-            pieces, tail = await prompt.request_text(store, cfg, registry, backend, cid, turn,
-                                              carried, wire_tools)
-            system = "\n\n".join(pieces)
-            built = await build("turn")
-            messages, hidden = built.messages, built.hidden
-            ledger.view(tid, messages)
-            grown = False
-
 
 
 def _aside(registry, name: str) -> bool:
@@ -393,8 +357,8 @@ async def _all_ok(store, ids: list[str]) -> bool:
 
 async def _stopped(store, tid, cid, token) -> None:
     """The token was cancelled. A Stop ends the turn `aborted` (a freeze's with the
-    reason frozen, guard/freeze.py); a shutdown writes nothing here (the dispatcher puts
-    the turn back in the queue)."""
+    reason frozen, guard/freeze.py); a shutdown writes nothing here (the dispatcher ends
+    the turn `interrupted`)."""
     if getattr(token, "shutdown", False):
         return
     if getattr(token, "reason", None) == "frozen":
@@ -420,41 +384,32 @@ def _with_flags(call: dict, registry) -> dict:
     return {**call, "mutating": bool(spec.mutating), "mode": spec.mode}
 
 
-_NO_SPACE_BEFORE = ".,;:!?)]}'\"\u2019\u201d\u2026"
-
-
-def _reopen_request(messages: list[dict], reopen: dict, backend, cfg, cid: str,
+def _reopen_request(messages: list[dict], reopen: dict, cid: str,
                     tid: str) -> tuple[list[dict], list[dict]]:
     """The request that continues a cut-off reply in the same message: -> (the history
-    with the stored partial reply taken off, what ends the continuing step). With
-    prefill that is the partial reply itself; otherwise a note quoting its end. The end
-    goes with that one step: the reply, once whole, joins the history as stored."""
-    text = reopen.get("text") or ""
-    if not text:
-        return messages, []                   # died before the first token: a new step
+    with the stored partial reply taken off, the partial reply as the prefill that ends
+    the continuing step). The reply, once whole, joins the history as stored."""
     mid = reopen["message_id"]
     out = [m for m in messages if not (m.get("role") == "assistant" and not m.get(
         "tool_calls") and any(o.get("message") == mid for o in m.get(ORIGIN) or ()))]
-    if prompt.supports_prefill(backend):
-        return out, [{"role": "assistant", "content": text,
-                      ORIGIN: context.origin(cid, turn=tid, message=mid)}]
-    tail = text[-200:]
-    return out, [{"role": "user", "content": cfg.substitute(
-        f"(Automatic note, not written by {{{{username}}}}.) Your previous reply was cut "
-        f"off after: \"…{tail}\". Continue it from exactly there, without repeating "
-        f"anything and without a preface."), ORIGIN: context.origin(cid, turn=tid,
-                                                                   note="continue")}]
+    return out, [{"role": "assistant", "content": reopen["text"],
+                  ORIGIN: context.origin(cid, turn=tid, message=mid)}]
 
 
 async def _record_usage(store, cid, tid, iteration, backend, counter, estimate,
                         done, message_id=None) -> None:
+    """One step's numbers: the estimate, the prompt and reply tokens the server counted,
+    what it read from its prompt cache, and the seconds to the first token (the queued
+    backend measures from the model's slot, backends/llm.py)."""
     usage = getattr(done, "usage", None)
     prompt = int(getattr(usage, "input_tokens", 0) or 0)
     if prompt:
         counter.observe(estimate, prompt)
+    first = getattr(backend, "first_token", None)
     await turns.record_usage(store, cid, tid, {
         "message_id": message_id, "iteration": iteration, "estimate": estimate,
         "prompt_tokens": prompt or None,
+        "first_token_ms": round(first * 1000) if first is not None else None,
         "completion_tokens": int(getattr(usage, "output_tokens", 0) or 0) or None,
         "cache_read": int(getattr(usage, "cache_read", 0) or 0) or None,
         "cache_write": int(getattr(usage, "cache_write", 0) or 0) or None,
@@ -487,6 +442,15 @@ def _forming_preview(arguments: str) -> str:
     secret in it."""
     tail = mask(arguments)[-400:]
     return tail.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "  ")[-300:]
+
+
+def _lines(arguments: str) -> int:
+    """The lines of the half-written JSON arguments: its escaped newlines, plus one."""
+    n, i = 1, arguments.find("\\")
+    while i != -1:
+        n += arguments[i + 1:i + 2] == "n"
+        i = arguments.find("\\", i + 2)
+    return n
 
 
 def _fits(need: float, win: int) -> bool:
@@ -524,11 +488,10 @@ async def _failed(store, tid, cid, code: str, why: str, retryable: bool) -> None
     await turns.transition(store, tid, cid, "failed", reason=why, reason_code=code)
 
 
-async def _left(store, cid: str, mid: str, parts, thinking, token) -> str | None:
-    """A step a Stop ended before it said anything leaves no empty reply: it goes
-    (tree.drop_empty). A shutdown keeps it, the turn goes on in it. -> the message id,
-    None when it went."""
-    if "".join(parts) or "".join(thinking) or getattr(token, "shutdown", False):
+async def _left(store, cid: str, mid: str, parts, thinking) -> str | None:
+    """A step a Stop or a shutdown ended before it said anything leaves no empty reply:
+    it goes (tree.drop_empty). -> the message id, None when it went."""
+    if "".join(parts) or "".join(thinking):
         return mid
     return None if await tree.drop_empty(store, cid, mid) else mid
 
@@ -589,8 +552,9 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
         shown[i] = (time.monotonic(), len(slot["arguments"]))
         await store.append_event(cid, TOOL_FORMING, {
             "message_id": mid, "index": i, "name": slot["name"],
-            "chars": len(slot["arguments"]), "preview": _forming_preview(slot["arguments"]),
-            "words": words.forming(slot["name"], slot["arguments"])})
+            "chars": len(slot["arguments"]), "lines": _lines(slot["arguments"]),
+            "preview": _forming_preview(slot["arguments"]),
+            "words": words.forming(slot["name"], slot["arguments"], store.tool_words)})
 
     async def show_last(i: int) -> None:
         if acc[i]["name"] and shown.get(i, (0.0, -1))[1] != len(acc[i]["arguments"]):
@@ -601,10 +565,6 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
     # stream until it is clear whether it repeats the prefix, and drop the repeat
     echo = prefix if (prefix and messages and messages[-1].get("role") == "assistant"
                       and messages[-1].get("content") == prefix) else ""
-    # without a prefill the continuation is a new answer to the note (_reopen_request):
-    # a space between it and the cut-off text, unless either side has one or it starts
-    # with punctuation
-    seam = bool(prefix) and not echo and not prefix[-1].isspace()
     held: list[str] = []
     # text deltas go out together, at most every DELTA_EVERY seconds: one write and one
     # event per flush, with the reply so far on the row
@@ -620,14 +580,9 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
             await tree.append_delta(store, cid, mid, text, "".join(parts), quiet)
 
     async def emit(text: str) -> None:
-        nonlocal seam
         # note: checked as tokens arrive, no timer; a pause in the stream holds
         # the last tokens until the next one or the end
         if text:
-            if seam:
-                seam = False
-                if not text[0].isspace() and text[0] not in _NO_SPACE_BEFORE:
-                    text = " " + text
             parts.append(text)
             pending.append(text)
             if time.monotonic() - flushed_at >= DELTA_EVERY:
@@ -690,7 +645,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
                                             "".join(thinking) or None,
                                             raw=e.raw or {"error": str(e)})
         if token.cancelled:                  # stopped (maybe still in the queue): not a failure
-            return await _left(store, cid, mid, parts, thinking, token), \
+            return await _left(store, cid, mid, parts, thinking), \
                 "".join(parts), "".join(thinking), [], None
         code = getattr(e, "code", None) or ("backend_retryable" if e.retryable
                                             else "backend")
@@ -712,7 +667,7 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
                                         raw=done.raw if done else None,
                                         thinking=done.thinking if done else None)
     if token.cancelled and not any(s["name"] for s in acc.values()):
-        mid = await _left(store, cid, mid, parts, thinking, token)
+        mid = await _left(store, cid, mid, parts, thinking)
     if done and not token.cancelled and not quiet and not "".join(parts) and \
             not thinking and not any(s["name"] for s in acc.values()):
         # (a quiet turn that ends saying nothing has simply done its calls)

@@ -3,7 +3,6 @@ name: chat_archive
 description: {{username}}'s Messages archive (WhatsApp, Discord, every imported chat). Use it for
   any question about what was said, by whom, when, or how often. Start with
   chat_archive__search, or chat_archive__count for numbers.
-words: whatsapp, discord, archive
 ---
 The Messages archive holds {{username}}'s own chats. You do not remember it: every question
 about it starts with a tool call, and the answer comes only from what the tools showed you.
@@ -104,7 +103,7 @@ and make many calls. There is no limit on searches or steps.
    often and when.
 4. **Check the other side.** Search for the opposite, exceptions and changes over time.
    The answer must not rest on one match window.
-5. **Stop** when two new angles bring nothing new (the progress line says so). Then answer
+5. **Stop** when two new angles bring nothing new. Then answer
    with everything you found, with citations.
 
 A closed question (a date, a count, "did I ever say X") needs one or two calls.
@@ -117,12 +116,9 @@ Scroll like {{username}} would on the phone:
 - `chat_archive__scroll(ref="whatsapp:48213", direction="before")`: up to 20 older
   messages.
 - `direction="after"`: up to 20 newer messages. `direction="both"`: each side.
-- You only get messages that are not in your view yet. The messages you have are one line
-  ("12 messages you already have"). To scroll further, call it again with the same
-  reference, or with the reference the result names under "older" or "newer".
-- When the app shortened older results to save room, their messages count as not in
-  view, and `chat_archive__scroll` returns them again.
-- The result ends with the range of the chat you now have. It says when you reached the
+- To scroll further, call it with the reference the result names under "older" or
+  "newer".
+- The result ends with the range of the chat it covers. It says when you reached the
   start of the chat or the newest message.
 
 When to scroll: a match starts in the middle of something ("haha yes exactly", "as I
@@ -208,32 +204,6 @@ they are not what you meant, search again with the right arguments.
 - "Did I ever mention Portugal on Discord?"
   `chat_archive__count(by="total", scope=["discord"], words=["portugal", "portugiesisch"])`:
   a zero answers it in one call. A number tells you to search next.
-
-## Progress and results: narrow down, do not repeat
-
-There is no limit on searches or steps. Depth means exploring what you found, not
-searching everything again with other words. Every Messages archive result ends with a
-progress line (searches so far, messages seen). A repeated call returns "same as call N"
-and does not count as a call. When the last two calls showed nothing new, the progress
-line says you have enough to answer.
-
-Each search uses what the last ones showed you:
-- A chat keeps coming up: search inside it, `scope=["whatsapp:213"]`.
-- A person is involved: `chat_archive__look_up`, then `written_by` or their direct
-  messages as `scope`.
-- A match is close but not it: `chat_archive__scroll(ref=...)`.
-- You know roughly when: `when` on a narrower search, or
-  `chat_archive__read_period(chat=..., when=...)`.
-- The words might never have been typed: `chat_archive__count(by="chat", words=[...])`
-  shows where they occur, or that they do not.
-
-After three searches in a row that find nothing new, the result gets a note with the
-chats and matches you already have. This counts searches inside one chat too: other
-words, other years or the next chat do not help when nothing is there. After six, the app
-does not run a search of the whole archive. After eight, it runs no search at all. A read or a
-scroll that shows new messages starts the count again. Searches that keep finding new
-messages are never stopped. If nothing is left to try, answer with what you found. Say
-plainly what you could not find.
 
 ## Citing, not quoting
 

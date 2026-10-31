@@ -1,6 +1,6 @@
 """The agent's self: me__read and me__edit
 (skills/me.py), its talk and voice in History with a real revert (her.py,
-api/texts.py), the `her` source of Events, the voice cue from its talk (prompt.voice_line), the slop phrases of
+api/texts.py), the `her` source of Events, the slop phrases of
 validation talk and owning up (config/her/voice.toml), and the one marking
 style the legend names (turns/legend.py)."""
 from __future__ import annotations
@@ -21,7 +21,6 @@ from celine.settings.files import Invalid
 from celine.skills import ToolContext
 from celine.skills.me import Me, replaced
 from celine.turns import slop
-from celine.turns.prompt import VOICE_MAX, voice_line
 
 pytestmark = pytest.mark.anyio
 T0 = "2026-10-22T18:00:00.000+00:00"
@@ -124,7 +123,6 @@ async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
     assert not got.is_error and got.content == "Added to your persona. Tell Joe in one line."
     assert cfg.her.persona.rstrip().endswith("I keep a balcony garden.")
     assert [b for b, _ in await _versions(store, "her:persona")] == ["", "her"]
-    assert voice_line(cfg) == "[how you sound] short."
     assert {"type": "her.changed"} in seen
     talk = await _versions(store, "her:talk")
     assert [b for b, _ in talk] == ["", "her", "her"]
@@ -233,17 +231,6 @@ async def test_revert_makes_an_old_version_hers_again_as_a_new_one(store, cfg, c
     assert (await client.post("/api/text-versions/999999/revert")).status_code == 404
 
 
-async def test_the_cue_is_cut_at_a_sentence_or_a_word(cfg):
-    first = "short. lowercase most of the time. " + "x" * 120 + "."
-    cfg.her.talk = f"intro\n\n## shape\n{first} trailing off with dots when done arguing, and more after it.\n"
-    assert voice_line(cfg) == f"[how you sound] {first}"
-    cfg.her.talk = "## shape\n" + "word " * 80
-    got = voice_line(cfg)
-    assert got.endswith("word ...") and len(got) <= len("[how you sound] ") + VOICE_MAX + 4
-    cfg.her.talk = "no heading at all"
-    assert voice_line(cfg) is None
-
-
 # ---- the legend --------------------------------------------------------------------------
 
 async def test_the_legend_names_the_marks_the_code_writes(cfg):
@@ -255,14 +242,81 @@ async def test_the_legend_names_the_marks_the_code_writes(cfg):
     from celine.skills.notebook import NOTES_HEAD
     from celine.turns import compact, legend
     from celine.turns.context import time_line
-    text = legend.legend(cfg, guarded=False, voiced=True)
+    text = legend.legend(cfg, guarded=False)
     stamp = time_line({"created_at": T0}, ZoneInfo("UTC")).strip()
     assert stamp == "[Thu 22 Oct 18:00]"
     iv = {"kind": "report", "from": "agent:x", "from_name": "scout", "id": 4, "data": {}}
-    for mark in (mind.HEAD, recall.HEAD, NOTES_HEAD, compact.STUB_HEAD, "[cut: ", "[the screen from ",
-                 "[how you sound]", "[Report from "):
+    from celine.skills.meta import CALL_HEAD
+    for mark in (mind.HEAD, recall.HEAD, NOTES_HEAD, compact.STUB_HEAD, "[cut: ", "[the screen from ", CALL_HEAD,
+                 "[Report from "):
         assert mark.rstrip() in text, mark
     assert header(iv, "Joe", None) == "[Report from scout (#4)]\n"
-    assert "<outside>" not in text and "<outside>" in legend.legend(cfg, guarded=True, voiced=True)
-    assert "[how you sound]" not in legend.legend(cfg, guarded=False, voiced=False)
+    assert "<outside>" not in text and "<outside>" in legend.legend(cfg, guarded=True)
     assert "Joe" in text and "—" not in text
+
+
+# ---- me__whoami ----------------------------------------------------------------------------
+
+async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_parent(
+        tmp_path, monkeypatch, store, clock):
+    """Every line is read when it is called: the turn's running event and the router
+    for the model, the probes for the devices, the conversation row for where it is."""
+    import httpx
+    from chat_fixtures import user_says
+    from settings_fixtures import scratch
+
+    from celine.backends.llm import LLM
+    from celine.backends.router import Router
+    from celine.conversations import store as conversations
+    from celine.core.event_types import LLM_QUEUE
+    from celine.settings import features
+
+    scratch(tmp_path, monkeypatch, roles={"chat": {"chain": ["main/big", "lan/small"]}})
+    cfg = load()
+    cfg.user = "Joe"
+
+    def reply(request):
+        if request.url.host == "127.0.0.1":           # main is down, lan answers
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json={"running": [], "models": []})
+    llm = LLM(cfg, router=Router(cfg, None, transport=httpx.MockTransport(reply)))
+    probes = {"shellbox": {"state": "missing",
+                           "detail": "The shellbox did not answer at box:8700. Start it, "
+                                     "or fix the address.",
+                           "why": "The shellbox at box:8700 does not answer."},
+              "browser": {"state": "unset", "detail": "Type one below, or leave it off."},
+              "web": {"state": "ready", "detail": "SearXNG answers."},
+              "guard": {"state": "ready", "detail": "Decision model: small."}}
+
+    async def probe_all(cfg, services, *, cache=True):
+        return {f.id: probes.get(f.id, {"state": "none", "detail": ""})
+                for f in features.catalog()}
+    monkeypatch.setattr(features, "probe_all", probe_all)
+    me = Me(cfg)
+    me.app = Services(cfg=cfg, store=store, llm=llm)
+
+    def ctx(cid, tid):
+        return ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="x", store=store,
+                           config=cfg, emit=None)  # type: ignore[arg-type]
+
+    parent = await conversations.create(store, "plans")
+    _, tid, _ = await user_says(store, parent, "hi")
+    await store.append_event(parent, LLM_QUEUE, {
+        "turn_id": tid, "state": "running", "role": "chat", "backend": "lan/small",
+        "model": "small", "endpoint": "gpu-box", "fallback": True, "instead_of": "big",
+        "why": "llama-swap does not answer."})
+    out = (await me.whoami(ctx(parent, tid))).content
+    assert "Model: lan/small for chat, a fallback. main/big: llama-swap does not answer." in out
+    assert f"Where you are: a chat (address {parent})." in out
+    assert "This turn: Joe's message." in out
+    assert "Shellbox: The shellbox at box:8700 does not answer." in out, "her words"
+    assert "Browser: not set up." in out and "below" not in out and "fix" not in out
+    assert "Web search: SearXNG answers." in out and out.count("Guard:") == 1
+    assert "Guard: off." in out
+    assert "[image]" not in out and "—" not in out
+
+    sub = await conversations.create(store, "s", agent_of=parent, agent_name="scout")
+    _, stid, _ = await user_says(store, sub, "go")
+    out = (await me.whoami(ctx(sub, stid))).content
+    assert f"Where you are: the sub-agent scout (address {sub})." in out
+    assert f"You report to: a chat (address {parent})." in out and "Depth: 1 " in out

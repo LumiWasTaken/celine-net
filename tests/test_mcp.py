@@ -101,18 +101,116 @@ async def test_cached_connector_tools_show_while_the_server_starts(store):
     assert "chatlink__read_messages" in reg.tools and "chatlink__send" not in reg.tools
 
 
-async def test_a_server_that_does_not_answer_fails_with_the_plain_sentence(store):
+async def test_an_image_in_a_result_is_kept_as_an_attachment_of_the_call(store):
+    """An image part is saved for the call and its id goes in ToolResult.images, as a
+    browser shot does; the text keeps no placeholder for it."""
+    import base64
+    from mcp.types import CallToolResult, ImageContent, TextContent
+    from chat_fixtures import PNG, user_says
+    from celine import attachments
+    from celine.conversations import store as conversations, tree
+    from celine.turns import store as turns
+
+    class Client:
+        async def call_tool(self, name, args):
+            return CallToolResult(content=[
+                TextContent(type="text", text="the screen"),
+                ImageContent(type="image", data=base64.b64encode(PNG).decode(),
+                             mimeType="image/png")])
+
+    sup = Supervisor(_cfg(), store, Registry())
+    skill = McpSkill(sup.cfg.mcp["echo"])
+    skill.client, skill.status = Client(), "up"
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "look")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "x", "name": "echo__shot",
+                                                    "arguments": "{}"}])
+    out = await sup._call(_ctx(store), skill, "shot", {})
+    assert not out.is_error and out.content.startswith("the screen")
+    assert "[image]" not in out.content and len(out.images) == 1
+    row = await attachments.get(store, out.images[0])
+    assert row["media_type"] == "image/png" and row["filename"] == "shot.png"
+    assert attachments.blob_path(sup.cfg, row["sha256"]).read_bytes() == PNG
+
+
+async def test_a_resource_in_a_result_is_kept_as_a_file_of_the_call(store, monkeypatch):
+    """A blob or text resource is saved for the call (its row shows it) and named to the
+    model, its media type from its name when the server says only octet-stream; one over
+    max_attachment_bytes is named as not kept."""
+    import base64
+    from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource,
+                           TextResourceContents)
+    from chat_fixtures import user_says
+    from celine.conversations import store as conversations, tree
+    from celine.turns import store as turns
+
+    class Client:
+        async def call_tool(self, name, args):
+            return CallToolResult(content=[
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///Users/her/Desktop/my%20notes.zip",
+                    mimeType="application/zip",
+                    blob=base64.b64encode(b"PK\x03\x04zip").decode())),
+                EmbeddedResource(type="resource", resource=TextResourceContents(
+                    uri="file:///tmp/a.txt", text="hello")),
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///tmp/report.pdf", mimeType="application/octet-stream",
+                    blob=base64.b64encode(b"%PDF-1.7").decode())),
+                EmbeddedResource(type="resource", resource=BlobResourceContents(
+                    uri="file:///big.bin", blob=base64.b64encode(b"x" * 64).decode()))])
+
+    sup = Supervisor(_cfg(), store, Registry())
+    real = sup.cfg.r
+    monkeypatch.setattr(sup.cfg, "r",
+                        lambda k: 32 if k == "max_attachment_bytes" else real(k))
+    sup.cfg.user = "Joe"
+    skill = McpSkill(sup.cfg.mcp["echo"])
+    skill.client, skill.status = Client(), "up"
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "fetch")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "x", "name": "echo__get",
+                                                    "arguments": "{}"}])
+    out = await sup._call(_ctx(store), skill, "get", {})
+    assert out.images is None and "[resource]" not in out.content
+    assert "my notes.zip (7 bytes), attached to this conversation for Joe." in out.content
+    assert "big.bin is 0.0 MB. The limit is 0 MB. It was not kept." in out.content
+    rows = await store.read(lambda c: [tuple(r) for r in c.execute(
+        "SELECT a.filename, b.media_type FROM attachments a JOIN blobs b USING (sha256) "
+        "WHERE a.tool_call_id='x' ORDER BY a.rowid")])
+    assert rows == [("my notes.zip", "application/zip"), ("a.txt", "text/plain"),
+                    ("report.pdf", "application/pdf")]
+
+
+async def test_a_url_server_stays_down_with_its_reason_and_comes_back_by_itself(store):
     reg = Registry()
-    cfg = _cfg("dead", transport="http", command=None, args=[], url="http://127.0.0.1:9/mcp",
+    cfg = _cfg("away", transport="http", command=None, args=[], url="http://127.0.0.1:9/mcp",
                startup_timeout_seconds=1, max_restarts=0)
     sup = Supervisor(cfg, store, reg, ping_seconds=0.5)
+    connect = sup._connect
     async with anyio.create_task_group() as tg:
         await sup.start(tg)
-        skill = sup.skills["dead"]
-        await until(lambda: skill.status == "dead")
+        skill = sup.skills["away"]
+        await until(lambda: skill.restarts >= 2)
+        assert skill.status == "down", "past max_restarts a url server is not dead"
+        assert skill.error == "The away server at 127.0.0.1:9 does not answer."
+        here = _cfg().mcp["echo"]                   # its host answers again
+        sup._connect = lambda _cfg: connect(here)
+        skill.kick.set()
+        await until(lambda: skill.status == "up")
+        assert skill.error is None and "away__echo" in reg.tools
         tg.cancel_scope.cancel()
-    assert skill.error == ("The dead server did not answer at 127.0.0.1:9. Start it, or fix "
-                           "the address.")
+
+
+async def test_a_server_the_app_starts_is_dead_past_max_restarts(store):
+    reg = Registry()
+    sup = Supervisor(_cfg("gone", command="/nonexistent/server", max_restarts=0), store, reg,
+                     ping_seconds=0.5)
+    async with anyio.create_task_group() as tg:
+        await sup.start(tg)
+        await until(lambda: sup.skills["gone"].status == "dead")
+        tg.cancel_scope.cancel()
 
 
 def test_an_mcp_argument_named_like_a_python_keyword_keeps_its_name():

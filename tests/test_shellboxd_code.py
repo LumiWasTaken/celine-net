@@ -333,11 +333,11 @@ def test_opencode_errors_come_back_in_its_own_words_with_its_log(box):
     answered("ses_1", "done")
     real = agent._call
 
-    def broken(method, path, body=None, query="", timeout=30):
+    def broken(method, path, body=None, query="", timeout=30, server=None):
         if path.endswith("/diff"):
             raise agent.Problem("opencode answered 500: UnknownError: disk full. Its log: "
                                 f"{agent.LOG}.", 502)
-        return real(method, path, body, query, timeout)
+        return real(method, path, body, query, timeout, server)
     agent._call = broken
     code, res = box.call("GET", "/code/session/ses_1/result")
     assert code == 200 and res["files"] == [] and "disk full" in res["files_error"]

@@ -8,11 +8,15 @@ import builtins
 import json
 import sqlite3
 
-from ..core.ids import now
+from .. import attachments as files
+from ..core.ids import now, when
 from ..intercom.store import insert as intercom_insert
 from ..turns import store as turns
 from ..skills import words
 from ..core.event_types import JOB_STATE, TOOL_DETACHED, TOOL_DONE
+
+
+PROMPT_SHOWN = 120      # characters of a running job's prompt in her tail
 
 
 def prompt_of(arguments: str | None, tool_name: str = "") -> str | None:
@@ -101,7 +105,8 @@ def interrupt_running(c: sqlite3.Connection, store) -> list[tuple[str, str]]:
                          "state": "interrupted", "reason": "the server restarted",
                          "result": result, "display": None,
                          "words": words.words(call["name"], call["arguments"],
-                                              "interrupted", None, result)})
+                                              "interrupted", None, result, store.tool_words),
+                         **turns.runs_field(c, store, [call["id"]])})
         out.append((row["conversation_id"],
                     f"Job {row['id'][:8]} ({row['tool_name']}): {why}"))
     return out
@@ -118,6 +123,24 @@ def _view(r: sqlite3.Row) -> dict:
     # opens the live terminal from it
     d["terminal"] = terminal_of(arguments, d["tool_name"])
     return d
+
+
+def running(c: sqlite3.Connection, cid: str, tz) -> str | None:
+    """This conversation's own jobs still running, for its tail (turns/prompt.py): each
+    one's tool, what it was asked, its terminal and since when; None when none runs."""
+    rows = [_view(r) for r in c.execute(
+        f"{_SELECT} WHERE j.conversation_id=? AND j.state='running' ORDER BY j.created_at",
+        (cid,))]
+    if not rows:
+        return None
+    parts = []
+    for j in rows:
+        what = j["tool_name"] + (f" `{j['prompt'][:PROMPT_SHOWN]}`" if j["prompt"] else "")
+        what += f" in terminal {j['terminal']}" if j["terminal"] else ""
+        parts.append(f"job {j['id'][:8]}, {what}, since "
+                     f"[{when(j['started_at'] or j['created_at'], tz)}]")
+    return ("[your jobs running now] " + "; ".join(parts)
+            + ". Each one's result comes here as a message when it ends.")
 
 
 async def create(store, job_id: str, conversation_id: str, turn_id: str,
@@ -154,7 +177,8 @@ async def finish(store, job_id: str, call: dict, result, call_state: str,
 
     def fn(c: sqlite3.Connection) -> bool:
         ts = now()
-        display = json.dumps(result.display) if result.display else None
+        shown = files.with_files(c, call["id"], result.display)
+        display = json.dumps(shown) if shown else None
         row = c.execute(
             "UPDATE tool_calls SET state=?, display=?, "
             "finished_at=? WHERE id=? RETURNING result_message_id, display",
@@ -173,7 +197,8 @@ async def finish(store, job_id: str, call: dict, result, call_state: str,
                     {"tool_call_id": call["id"], "name": call["name"],
                      "ok": call_state == "ok", "state": call_state, "result": said,
                      "display": shown, "job_id": job_id, "finished_at": ts,
-                     "words": words.of_call(c, call["id"], call_state, shown, said)})
+                     "words": words.of_call(c, call["id"], call_state, shown, said, store.tool_words),
+                     **turns.runs_field(c, store, [call["id"]])})
         store.event(c, cid, JOB_STATE,
                     {"job_id": job_id, "state": job_state, "tool": job["tool_name"]})
         data = {"jobs": [job_id], "tools": [job["tool_name"]]}

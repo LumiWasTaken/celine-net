@@ -257,8 +257,9 @@ async def _probe(cfg, role: str) -> dict[str, str]:
         async with httpx.AsyncClient(timeout=PROBE, headers=provider_headers(s, pid)) as c:
             (await c.get(f"{url}/object_info/CheckpointLoaderSimple")).raise_for_status()
     except httpx.HTTPError as e:
-        from ..errors import unreachable_words
-        return {"state": "missing", "detail": unreachable_words("ComfyUI", url, e)}
+        from ..errors import her_unreachable, unreachable_words
+        return {"state": "missing", "detail": unreachable_words("ComfyUI", url, e),
+                "why": her_unreachable("ComfyUI", url)}
     from ..settings.registry import ROLES
     note = ("" if s.chain(role) else
             f" No preset is picked for {ROLES[role]['label']} yet (Settings, Images "

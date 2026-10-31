@@ -41,9 +41,7 @@ class Box(Painter):
 async def _start(store, cfg, skill, tg):  # noqa: F811
     reg = Registry()
     reg.add(skill)
-    from celine.turns import loads
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", [skill.name])
     await user_says(store, cid, "build it")
     turn = await turns.claim(store, "w")
     jobs = Jobs(store, cfg, lambda: None, tg)
@@ -80,7 +78,23 @@ async def test_the_restart_sweep_settles_every_job_by_its_tool(store, cfg):  # n
     shell, paint = [await _notice(store, cid) for cid in (shell_cid, paint_cid)]
     assert "(shell__run): the app restarted while watching" in shell and "shell__read" in shell
     assert "(painter__draw): the server restarted" in paint
-    assert (await turns.sweep(store))["total"] == 2, "the two queued turns"
+    assert (await turns.sweep(store))["total"] == 0, "the two queued turns wait as they are"
     assert await _notice(store, shell_cid) == shell, "one notice each"
     job = await job_rows.get(store, shell_job)
     assert job["result"] in shell and job["terminal"] == "build", "the jobs row says it too"
+
+
+async def test_her_tail_lists_her_jobs_still_running_here(store, cfg):  # noqa: F811
+    from celine.turns.prompt import tail_text
+    box = Box()
+    async with anyio.create_task_group() as tg:
+        cid, job = await _start(store, cfg, box, tg)
+        tail = await tail_text(store, cfg, None, None, cid, None)
+        assert f"[your jobs running now] job {job[:8]}, shell__run `make` in terminal " \
+               f"build, since [" in tail
+        assert tail.endswith("Each one's result comes here as a message when it ends.")
+        box.release.set()
+        await until(lambda: job_rows.list(store, "done", conversation=cid), 3)
+        assert "[your jobs running now]" not in await tail_text(store, cfg, None, None, cid,
+                                                                None)
+        tg.cancel_scope.cancel()

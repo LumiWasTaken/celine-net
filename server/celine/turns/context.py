@@ -13,8 +13,8 @@ Principles:
 The order of what is sent, most stable first:
   system = persona + skill fragments + ["Earlier in this conversation" summary]
   history after the newest compaction: user/assistant messages verbatim (a user
-  message under its time line), tool results verbatim or (at or before
-  `aged_through`) as stubs.
+  message under its time line, its context block and its turn's tail after it), tool
+  results verbatim or (at or before `aged_through`) as stubs.
 
 Modes (who asks):
 - "start"      turn start: age above 60 %, compact above 75 % (to 40 %).
@@ -27,10 +27,10 @@ Modes (who asks):
 - "manual"     /compact: summarises all but the latest exchange, now.
 - "dry"        /usage: computes, writes nothing, calls no model.
 
-The tail (`tail`, built per turn, never stored) is appended to the last user-role
-message: what holds now, which changes every turn and so stays out of the cached prefix.
-It comes in parts (`Part`). What a request leaves out is in `Built.left_out` (the
-Context tab), never in its request.
+The tail of a turn (turns/prompt.py tail_text: the time now, where else it works, its
+plan, what cannot be used, its notebook's index) is written once on the user message the
+turn answers (`message_context.tail`) and sent after it in every later request: it never
+moves, so every request starts with the bytes of the one before.
 
 Every message of a request says where it came from (`origin`, the app's key, no backend
 sends it): a list of {conversation, turn, message, call, note}, more than one when
@@ -54,7 +54,7 @@ from typing import Any
 import anyio
 
 from .. import attachments, guard
-from ..backends.base import ORIGIN, TAIL
+from ..backends.base import ORIGIN
 from ..core.ids import when
 from ..guard import mark, sources
 from ..intercom.render import header
@@ -81,42 +81,10 @@ class Policy:
     never_age_below: int = 300     # small results are cheap and often load-bearing
     never_age: tuple[str, ...] = ("notebook__",)
     summary_cap: int = 3000        # tokens of the summary
-    warn_at: float = 0.60          # request share of the window from which it is told
-                                   # that a summary is coming
     summary_input_share: float = 0.5   # of the window, per summary request
 
 
 POLICY = Policy()
-
-
-@dataclass(frozen=True)
-class Part:
-    """One piece of a tail. `rank` 0 always goes; the by-need ones go out in rank order
-    when the window is short, the last of a rank first. Consecutive parts with one
-    `head` are written under it once.
-    `name`: what the Context tab calls it when it is left out. A part with `why` was
-    left out before (over its share): never sent, only named, with its `tokens`."""
-    text: str
-    rank: int = 0
-    name: str = ""
-    head: str = ""
-    why: str = ""
-    tokens: int = 0
-
-
-def render(parts: list[Part]) -> str:
-    """The parts as it reads them, a blank line between two."""
-    out: list[str] = []
-    head = ""
-    for p in parts:
-        if not p.text or p.why:
-            continue
-        if p.head and p.head == head:
-            out[-1] += "\n\n" + p.text
-        else:
-            out.append(f"{p.head}\n{p.text}" if p.head else p.text)
-        head = p.head
-    return "\n\n".join(out)
 
 
 def room(backend, system: str, tools: list[dict], win: int | None = None) -> int:
@@ -144,8 +112,6 @@ class Built:
                                                        # verbatim (citation check)
     actions: list[str] = field(default_factory=list)   # what this build changed
     parts: dict[str, Any] = field(default_factory=dict)  # tokens per part (/usage)
-    left_out: list[dict] = field(default_factory=list)   # tail parts with no room:
-                                                         # {name, tokens, why}
 
 
 _locks: weakref.WeakValueDictionary[str, anyio.Lock] = weakref.WeakValueDictionary()
@@ -255,17 +221,16 @@ def malformed(messages: list[dict], cid: str) -> str | None:
 
 # ---- the path as items ----------------------------------------------------------------
 HER_FIRST = "This chat starts with your message."   # history: before a reply that is first
-THINKING_KEPT = 2             # replies of the current exchange that keep their thinking
 
 
 def _thought(it: "_Item") -> dict:
-    """The agent's thinking on a reply, sent back with it when the reply is `current`
-    (_Plan._select): as reasoning_content (a Qwen chat template puts it back inside
-    <think>; llama-server and OpenRouter take it) and, for Anthropic, its own signed
-    thinking blocks (`thinking`, kept in the reply's meta; a tool loop needs them; a
-    reply without a signature has none)."""
-    if not it.current:
-        return {}
+    """The agent's thinking on a reply, sent back with it every time: as
+    reasoning_content (a Qwen chat template puts it back inside <think> for the exchange
+    going on and leaves it out before; llama-server and OpenRouter take it) and, for
+    Anthropic, its own signed thinking blocks (`thinking`, kept in the reply's meta; a
+    tool loop needs them; a reply without a signature has none). A stored reply goes on
+    the wire the same way in every request, so the server's cached prefix holds; which
+    thinking the model reads is its chat template's to say."""
     return {**({"reasoning_content": it.reasoning} if it.reasoning else {}),
             **({"thinking": it.thinking} if it.thinking else {})}
 
@@ -273,7 +238,7 @@ def _thought(it: "_Item") -> dict:
 class _Item:
     """One message as it goes on the wire: user text, or an assistant reply with its
     calls and their results. Tool rows of the tree are carried by their call."""
-    __slots__ = ("idx", "id", "role", "content", "reasoning", "thinking", "current",
+    __slots__ = ("idx", "id", "role", "content", "reasoning", "thinking",
                  "attachments", "calls", "turn", "cid", "_wire", "_cost")
 
     def __init__(self, idx: int, m: dict, calls: list[dict] | None, tz, user: str = "",
@@ -295,9 +260,10 @@ class _Item:
                 + self.content
             if m.get("context"):                # turns/message_context.py
                 self.content += "\n\n" + m["context"]
+            if m.get("tail"):                   # its turn's tail, stored once
+                self.content += "\n\n" + m["tail"]
         self.reasoning = (m.get("reasoning") or None) if self.role == "assistant" else None
         self.thinking = m.get("thinking") if self.role == "assistant" else None
-        self.current = False                # its thinking goes on the wire (see _select)
         self.attachments = m.get("attachments") or []
         self.calls = calls or None
         self._wire: dict[bool, list[dict]] = {}
@@ -308,9 +274,13 @@ class _Item:
                 "attachments": self.attachments, "calls": self.calls}
 
 
+def _kept(call: dict, policy: Policy) -> bool:
+    """A call that never ages (policy.never_age): its arguments and result go whole."""
+    return any((call.get("name") or "").startswith(p) for p in policy.never_age)
+
+
 def _agable(call: dict, policy: Policy, counter) -> bool:
-    name = call.get("name") or ""
-    if any(name.startswith(p) for p in policy.never_age):
+    if _kept(call, policy):
         return False
     if call.get("attachments") or (call.get("display") or {}).get("shot"):
         return True                     # an image goes with its result
@@ -319,12 +289,11 @@ def _agable(call: dict, policy: Policy, counter) -> bool:
 
 class _Plan:
     def __init__(self, view: dict, cfg, backend, counter, policy: Policy, limit: int,
-                 tail: list[Part] = (), cid: str = ""):
+                 cid: str = ""):
         self.cfg, self.backend, self.counter, self.policy = cfg, backend, counter, policy
         self.cid = cid
-        self.view, self.tail = view, list(tail)
+        self.view = view
         self.guarded = guard.enabled(cfg, cid)        # a chat can turn Bastet off
-        self.dropped: set[int] = set()       # tail parts left out for room
         chain = view["chain"]
         self.chain = chain
         self.pos = {m["id"]: i for i, m in enumerate(chain)}
@@ -345,39 +314,16 @@ class _Plan:
         self.mark = self.pos.get(view["aged"] or "", -1)
         self.limit = limit
         self.opening = ""           # what goes before its first message (history)
-        self.warning = 0            # per cent of the window in use, once past warn_at
-        # where it keeps what it must: "report" with read access
-        self.keep_in: str | None = "notebook"
         # the refs it cited in its replies: an aged result keeps those lines whole
         self.cited = frozenset(r for it in items if it.role == "assistant"
                                for r in compact.refs_in(it.content))
         self._select()
 
     def _select(self) -> None:
-        """The items after the newest summary, past `limit` cut at a user message, and
-        which replies keep their thinking (`current`): the last THINKING_KEPT replies of
-        the exchange still going on (measured: the whole exchange's thinking took 44 %
-        of a sub-agent's window, and the live loop sends none for older steps anyway),
-        and a model's `keep_thinking` earlier exchanges whole. Older exchanges go
-        without it, as the templates do."""
+        """The items after the newest summary, past `limit` cut at a user message."""
         items = [it for it in self.all_items if it.idx >= self.start]
         if self.limit and len(items) > self.limit:     # history_messages, at a user
             items = items[self._cut(items):]
-        # an item's age: how many user messages come after it (0: the exchange going on)
-        keep = int((getattr(getattr(self.backend, "cfg", None), "raw", None) or {})
-                   .get("keep_thinking") or 0)
-        age = 0
-        recent = 0                    # replies of the exchange going on, newest first
-        for it in reversed(items):
-            if it.role == "assistant" and age == 0:
-                recent += 1
-            thinks = age <= keep and (age > 0 or recent <= THINKING_KEPT)
-            if it.current != thinks:
-                it.current = thinks
-                it._wire.clear()
-                it._cost.clear()
-            if it.role == "user":
-                age += 1
         self.items = items
 
     def cut_through(self, idx: int) -> None:
@@ -400,9 +346,13 @@ class _Plan:
         if aged in it._wire:
             return it._wire[aged]
         if it.calls:
+            # an aged call's long string arguments go shortened (compact.short_arguments),
+            # whatever the size of its result; never_age keeps a notebook call whole
             out = [{"role": "assistant", "content": it.content, **_thought(it), "tool_calls": [
                 {"id": c["id"], "type": "function",
-                 "function": {"name": c["name"], "arguments": c["arguments"]}}
+                 "function": {"name": c["name"], "arguments":
+                              compact.short_arguments(c["arguments"], c["id"])
+                              if aged and not _kept(c, self.policy) else c["arguments"]}}
                 for c in it.calls], ORIGIN: origin(it.cid, turn=it.turn, message=it.id)}]
             screens = []
             for c in it.calls:
@@ -456,11 +406,7 @@ class _Plan:
             # chat templates want one, with where it came from
             out.insert(0, {"role": "user", "content": self.opening or HER_FIRST,
                            ORIGIN: origin(self.cid, note="opening")})
-        tail = self.tail_text()
-        return _with_tail(out, tail, self.cid) if tail else out
-
-    def tail_text(self) -> str:
-        return render([p for i, p in enumerate(self.tail) if i not in self.dropped])
+        return out
 
     def history_tokens(self) -> int:
         """The history part: the messages after its summary, as they are sent."""
@@ -497,20 +443,7 @@ class _Plan:
                 f"Earlier in this conversation (a summary of {c['covers_messages']} "
                 f"older messages; {{{{username}}}} can still see the messages "
                 f"themselves):\n{c['text']}"))
-        if self.warning:
-            parts.append(self.warning_text())
         return "\n\n".join(parts)
-
-    def warning_text(self) -> str:
-        """The line that tells it a summary is coming; empty below warn_at."""
-        if not self.warning:
-            return ""
-        keep = {"report": " Say what you must keep in your report.",
-                "notebook": " Write what you must keep to your notebook now."}.get(
-                    self.keep_in or "", "")
-        return (f"Context: about {self.warning} % of your window is in use. The older "
-                f"messages of this conversation become a summary soon and their details "
-                f"go out of view.{keep}")
 
     def messages(self, base: str) -> list[dict]:
         sys = self.system(base)
@@ -527,40 +460,21 @@ def wire_message(cfg, it: _Item) -> list[dict]:
     return [{"role": it.role, "content": it.content, **_thought(it), ORIGIN: came}]
 
 
-def _with_tail(out: list[dict], tail: str, cid: str) -> list[dict]:
-    """The history with the tail as its own content block at the end of the last
-    user-role message, or as a user message by itself when its own reply would be last
-    (or there is none). add_user never merges across it: it is a list."""
-    block = {"type": "text", "text": tail, TAIL: True}
-    alone = {"role": "user", "content": [block], ORIGIN: origin(cid, note="tail")}
-    if not out or out[-1]["role"] == "assistant" and not out[-1].get("tool_calls"):
-        return [*out, alone]
-    last = next((i for i in range(len(out) - 1, -1, -1) if out[i]["role"] == "user"), None)
-    if last is None:
-        return [*out, alone]
-    content = out[last]["content"]
-    parts = content if isinstance(content, list) else \
-        [{"type": "text", "text": content}] if content else []
-    return [*out[:last], {**out[last], "content": [*parts, block]}, *out[last + 1:]]
-
-
 # ---- build --------------------------------------------------------------------------------
 async def build(store, cfg, backend, cid: str, *, system: str, tools: list[dict],
                 mode: str = "start", focus: str | None = None,
-                policy: Policy | None = None, tail: list[Part] = (),
-                path: list[dict] | None = None) -> Built:
+                policy: Policy | None = None, path: list[dict] | None = None) -> Built:
     """The request for this conversation, after whatever aging or compaction `mode`
-    calls for (see the module docstring), with the `tail` parts after the last
-    user-role message. `path`: the active path when the turn read it already. A summary
+    calls for (see the module docstring). `path`: the active path when the turn read it already. A summary
     this build needs and does not get raises compact.SummaryFailed, but in the background
     (module docstring)."""
     policy = policy or POLICY
     if mode == "dry":                  # reads only: never waits for a summary
         return await _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
-                            tail, path)
+                            path)
     async with lock(cid):
         return await _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
-                            tail, path)
+                            path)
 
 
 @dataclass
@@ -604,12 +518,12 @@ class Rule:
 
 
 async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
-                 tail=(), path=None) -> Built:
+                 path=None) -> Built:
     counter = tokens.counter(backend)
     win = tokens.window(backend)
     view = await compactions.context_view(store, cid, path)
     plan = _Plan(view, cfg, backend, counter, policy, int(cfg.r("history_messages") or 0),
-                 tail, cid)
+                 cid)
     plan.opening = await store.read(lambda c: (c.execute(
         "SELECT v FROM kv WHERE k=?", (OPENING + cid,)).fetchone() or [""])[0])
     run = _Run(store, cfg, backend, cid, plan, system, tools, mode, focus, policy,
@@ -639,31 +553,17 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
                 "results": n, "tokens_saved": saved, "scope": mode,
                 "tokens_before": now_used})
 
-    # 4. the warning: past warn_at it is told a summary is coming, in steps of 5 %
-    # so the line stays the same between steps
     msgs = plan.messages(system)
     est = counter.request(msgs, tools)
-    if est > policy.warn_at * win:
-        from ..sub_agents.skill import reads_only
-        plan.warning = int(est * 100 / win) // 5 * 5
-        plan.keep_in = "report" if await reads_only(store, cid) else "notebook"
-        msgs = plan.messages(system)
-        est = counter.request(msgs, tools)
 
-    left_out = [{"name": p.name, "why": p.why, "tokens": p.tokens}
-                for p in plan.tail if p.why]
     aged_n = sum(1 for it in plan.items if plan.aged(it)
                  for c in it.calls or [] if _agable(c, policy, counter))
     verb = sum(plan.cost(it) for it in plan.items if not plan.aged(it))
     aged_t = sum(plan.cost(it) for it in plan.items if plan.aged(it))
-    warning = plan.warning_text()
-    warning_t = counter.estimate(warning) if warning else 0
     summary_t = counter.estimate(plan.system(system)) - counter.estimate(system) \
-        - warning_t if plan.compaction else 0
-    tail_t = counter.estimate(plan.tail_text())
+        if plan.compaction else 0
     parts = {"system": counter.estimate(system) + tokens.PER_MESSAGE,
              "summary": max(0, summary_t), "tool_schemas": schema,
-             "warning": warning_t, "tail": tail_t,
              "history_verbatim": verb, "history_aged": aged_t,
              "aged_results": aged_n, "messages_sent": len(msgs),
              "messages_on_version": len(plan.chain),
@@ -672,7 +572,7 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
              "free": win - est - reserve}
     return Built(messages=msgs, estimate=est, window=win, aged=aged_n,
                  compaction=plan.compaction, hidden=plan.hidden(), actions=run.actions,
-                 parts=parts, left_out=left_out)
+                 parts=parts)
 
 
 async def _age(run: _Run) -> None:

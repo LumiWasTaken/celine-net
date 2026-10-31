@@ -9,8 +9,13 @@ on every tool event and snapshot row; the client renders it as it comes.
 `step` the tool alone at work (a sub-agent's or a routine's step, no arguments),
 `where` the places a search was kept to ("All messages"), or None.
 
-One sentence per tool, grouped by the skill that owns it; a tool without one (an MCP
-server's) is "Used <skill> <tool>"."""
+One sentence per tool, grouped by the skill that owns it. An MCP server's tool takes its
+sentence from its server's `[servers.<id>.words]` (mcp.toml or a plugin.toml), else it is
+"Used <skill> <tool>".
+
+A run: RUN or more calls in a row with the same `group` ("Ran {n} commands in terminal
+main"), shown as one row. The server decides the runs of a turn (`runs_of_turn`) and sends
+them with every tool event and in the snapshot; the client only draws them."""
 from __future__ import annotations
 
 import json
@@ -168,7 +173,7 @@ def _site(d: dict, a: Args) -> str:
 
 def _mails(d: dict, a: Args) -> str:
     n = d["messages"] if _num(d.get("messages")) is not None else len(_list(a.get("ids")))
-    return count(n, "mail") if n else "mail"
+    return count(n, "email") if n else "email"
 
 
 # ---- the sentences, by skill ----------------------------------------------------------
@@ -178,14 +183,16 @@ VERB = {
     "skills__load": "Loaded skills",
     "email__list_folders": "Listed the mail folders",
     "appearance__set_portrait": "Set a new portrait", "me__read": "Read the persona",
-    "me__edit": "Changed the Example lines",
-    "image_generator__generate": "Made an image", "image_generator__read": "Looked at an image",
+    "me__edit": "Changed the Example lines", "me__whoami": "Checked its setup",
+    "settings__read": "Read the settings", "settings__propose": "Proposed a settings change",
+    "image_generator__generate": "Made an image", "image_generator__read": "Checked the images",
     "image_generator__stop": "Stopped the images",
-    "music_generator__generate": "Made music", "music_generator__read": "Listened to a track",
+    "music_generator__generate": "Made music", "music_generator__read": "Checked the tracks",
     "music_generator__stop": "Stopped the music",
     "missions__update": "Updated the mission", "intercom__send": "Sent a message",
-    "intercom__cancel": "Cancelled a message",
+    "intercom__cancel": "Cancelled a message", "voice__send": "Sent a voice note",
     "missions__list": "Listed the missions", "missions__wait": "Paused the mission",
+    "missions__start": "Started a mission",
     "models__list": "Listed the models", "routines__list": "Listed the routines",
     "artifacts__list": "Listed the pages",
     "shell__list_shares": "Listed the shares", "shell__unshare": "Ended a share",
@@ -244,7 +251,7 @@ CHAT_ARCHIVE: dict[str, Sentence] = {
         (f"[[{_str(a.get('ref'))}]]" if _str(a.get("ref")) else "a message"),
     "read_period": _read_period,
     "scroll": _scroll,
-    "get_messages": lambda a, d, r: "Read in Messages",
+    "get_messages": lambda a, d, r: "Read saved messages",
     "look_up": lambda a, d, r: f"Looked up {quote(_str(a.get('name')) or '')}",
     "mark_same_person": lambda a, d, r:
         f"Marked accounts as the same person: {quote(_str(a.get('name')) or '')}",
@@ -280,7 +287,7 @@ NOTEBOOK: dict[str, Sentence] = {
     "edit": lambda a, d, r: f"Edited the note {_path(a)}".strip(),
     "search": lambda a, d, r: f"Searched the notebook for {quote(_str(a.get('query')) or '')}",
     "list": lambda a, d, r: "Listed the notebook",
-    "delete": lambda a, d, r: f"Moved the note {_path(a)} to the trash",
+    "delete": lambda a, d, r: f"Moved the note {_path(a)} to Trash",
     "move": lambda a, d, r: f"Moved the note {_path(a, 'src')} to {_path(a, 'dst')}",
 }
 
@@ -298,8 +305,9 @@ def _agent_start(a, d, r):
     folder = _str(d.get("folder")) or _str(a.get("folder"))
     access = _str(d.get("access")) or _str(a.get("access")) or ("work" if folder else "read")
     name = _str(d.get("name")) or _str(a.get("name")) or ""
-    return f"{'Resumed' if d.get('resumed') is True else 'Started'} sub-agent {quote(name)}, " \
-           f"{access}{f', limited to {folder}' if folder else ''}"
+    can = "can edit" if access == "work" else "read-only"
+    return f"{'Resumed' if d.get('resumed') is True else 'Started'} sub-agent {quote(name)} " \
+           f"({can}{f', only in {folder}' if folder else ''})"
 
 
 SUB_AGENTS: dict[str, Sentence] = {
@@ -311,7 +319,7 @@ SUB_AGENTS: dict[str, Sentence] = {
 
 INTERCOM: dict[str, Sentence] = {
     "read": lambda a, d, r: f"Read thread #{_js(a['thread'])}"
-        if _num(a.get("thread")) is not None else "Read the intercom threads",
+        if _num(a.get("thread")) is not None else "Read the Intercom threads",
     "start_chat": lambda a, d, r: "Started a chat" +
         (f" {quote(_str(a.get('title')))}" if _str(a.get("title")) else ""),
 }
@@ -361,15 +369,48 @@ def _share_words(a, d, r):
     return f"Shared {quote(title)}" if title else "Shared from the shellbox"
 
 
+def _in_terminal(a: Args, d: dict) -> str:
+    term = _terminal(a, d)
+    return f" in terminal {term}" if term else ""
+
+
+def _shell_run(a, d, r):
+    # the command's first line, cut; the whole command is in the call's arguments
+    cmd = _first_line(_str(a.get("command")) or "")
+    return f"Ran {cmd or 'a command'}{_in_terminal(a, d)}"
+
+
+def _shell_type(a, d, r):
+    text = _first_line(_str(d.get("text")) or _str(a.get("text")) or "")
+    keys = _str(d.get("keys")) or " ".join(_list(a.get("keys")))
+    said = f'Typed "{text}" and pressed {keys}' if text and keys else \
+        f'Typed "{text}"' if text else f"Pressed {keys}" if keys else "Typed"
+    return f"{said}{_in_terminal(a, d) or ' in a terminal'}"
+
+
+def _shell_read(a, d, r):
+    term = _terminal(a, d)
+    if not term:
+        return "Listed the terminals"
+    return f"Read the log of terminal {term}" if _num(a.get("from")) is not None else \
+        f"Read terminal {term}"
+
+
+def _shell_wait(a, d, r):
+    # what it waited for: the command at work there, its first line
+    what = _first_line(_str(d.get("text")) or "")
+    term = _terminal(a, d)
+    return f"Waited for {what}{_in_terminal(a, d)}" if what else \
+        f"Waited for terminal {term}" if term else "Waited for a terminal"
+
+
 SHELL: dict[str, Sentence] = {
-    "run": lambda a, d, r: f"Ran a command in terminal {_terminal(a, d)}"
-        if _terminal(a, d) else "Ran a command",
-    "type": lambda a, d, r: f"Typed in terminal {_terminal(a, d)}"
-        if _terminal(a, d) else "Typed in a terminal",
+    "run": _shell_run,
+    "type": _shell_type,
     "stop": lambda a, d, r: f"Stopped the program in terminal {_terminal(a, d)}"
         if _terminal(a, d) else "Stopped a program",
-    "read": lambda a, d, r: f"Read terminal {_terminal(a, d)}"
-        if _terminal(a, d) else "Listed the terminals",
+    "read": _shell_read,
+    "wait": _shell_wait,
     "share": _share_words,
     "send": lambda a, d, r: f"Sent you {_files(a)}",
     "look": lambda a, d, r: f"Looked at {_files(a)}",
@@ -396,6 +437,8 @@ def _read_page(a, d, r):
     if title:
         return f"Read {quote(title)}"
     url = _str(d.get("url")) or _str(a.get("url"))
+    if a.get("save") is True:
+        return f"Saved a file from {_page_where(url) if url else 'the web'}"
     n = re.match(r"^\[*\s*web:(\d+)\s*\]*$", url) if url else None
     if n:
         return f"Read search result {n.group(1)}"
@@ -459,7 +502,7 @@ def _mail_read(a, d, r):
     # the sender's name from the headers the result starts with
     m = re.search(r"^From: (.+)$", r or "", re.M)
     sender = re.sub(r'^"|"$', "", re.sub(r"\s*<[^>]*>\s*$", "", m.group(1))).strip() if m else ""
-    return f"Read the mail from {sender}" if sender else "Read a mail"
+    return f"Read the email from {sender}" if sender else "Read an email"
 
 
 EMAIL: dict[str, Sentence] = {
@@ -469,7 +512,7 @@ EMAIL: dict[str, Sentence] = {
     "get_attachment": lambda a, d, r: f"Opened the attachment {_path(a, 'name')}".strip(),
     "mark": lambda a, d, r: f"Marked {_mails(d, a)} {_path(a, 'state')}".strip(),
     "move": lambda a, d, r: f"Moved {_mails(d, a)} to {_str(a.get('folder')) or 'a folder'}",
-    "delete": lambda a, d, r: f"Moved {_mails(d, a)} to the trash",
+    "delete": lambda a, d, r: f"Moved {_mails(d, a)} to Trash",
 }
 
 VAULT: dict[str, Sentence] = {
@@ -552,8 +595,8 @@ BROWSER: dict[str, Sentence] = {
 
 def _plan_step(a, d, r):
     n, state = _num(a.get("step")), _str(a.get("state"))
-    text = f"Marked step {'' if n is None else _js(n)} " \
-           f"{'to do' if state == 'todo' else state or ''}"
+    as_ = {"todo": "as to do", "doing": "as in progress", "done": "as done"}.get(state or "", state or "")
+    text = f"Marked step {'' if n is None else _js(n)} {as_}"
     return re.sub(r" +", " ", text).strip()
 
 
@@ -566,7 +609,7 @@ PLAN: dict[str, Sentence] = {
 MIND: dict[str, Sentence] = {
     "feel": lambda a, d, r: "Changed the mood" +
         (f" to {_str(a.get('emotion'))}" if _str(a.get("emotion")) else ""),
-    "set_status": lambda a, d, r: "Set the emojis by the name" +
+    "set_status": lambda a, d, r: "Set the status" +
         (f" to {_str(a.get('text'))}" if _str(a.get("text")) else ""),
 }
 
@@ -595,7 +638,32 @@ SENTENCES: dict[str, dict[str, Sentence]] = {
 }
 
 
-def sentence(name: str, a: Args, d: dict, result: str = "") -> str:
+# every MCP server's own sentences and groups, by server and tool: Config.tool_words
+# (mcp.row_words), handed to each function here that says a call as `own`
+Own = dict[str, dict[str, dict[str, str]]]
+
+
+def _own(own: Own | None, kind: str, skill: str, tool: str) -> str | None:
+    return (own or {}).get(skill, {}).get(kind, {}).get(tool)
+
+
+# a hole in such a sentence: {argument} or {argument|what it says without one}; quotes
+# around a hole leave with it when the argument is missing
+_HOLE = re.compile(r'("?)\{(\w+)(?:\|([^}]*))?\}("?)')
+
+
+def fill(template: str, a: Args) -> str:
+    """`template` with each hole the call's argument: its first line, cut to 60."""
+    def one(m: re.Match) -> str:
+        v = a.get(m.group(2))
+        text = _first_line(", ".join(_list(v)) if isinstance(v, list) else
+                           "" if v is None or isinstance(v, dict) else _js(v), 60)
+        # a hole that says nothing leaves a mark: the spaces around it close up, and only those
+        return f"{m.group(1)}{text}{m.group(4)}" if text else m.group(3) or "\0"
+    return re.sub(r" *\0 *", " ", _HOLE.sub(one, template)).strip()
+
+
+def sentence(name: str, a: Args, d: dict, result: str = "", own: Own | None = None) -> str:
     """What it did (and where), in one plain sentence, past tense."""
     skill, _, tool = name.partition("__")
     fn = SENTENCES.get(skill, {}).get(tool)
@@ -603,6 +671,9 @@ def sentence(name: str, a: Args, d: dict, result: str = "") -> str:
         return fn(a, d, result)
     if name in VERB:
         return VERB[name]
+    template = _own(own, "words", skill, tool)
+    if template:
+        return fill(template, a)
     # a tool without its own sentence: a tool from an MCP server
     parts = name.split("__")
     skill, tool = parts[0], parts[1] if len(parts) > 1 else ""
@@ -620,7 +691,7 @@ VERBS = {
     "Got": ("Getting", "get"), "Looked": ("Looking", "look"), "Marked": ("Marking", "mark"),
     "Listed": ("Listing", "list"), "Wrote": ("Writing", "write"), "Edited": ("Editing", "edit"),
     "Deleted": ("Deleting", "delete"), "Moved": ("Moving", "move"),
-    "Started": ("Starting", "start"), "Ran": ("Running", "run"), "Checked": ("Checking", "check"),
+    "Started": ("Starting", "start"), "Proposed": ("Proposing", "propose"), "Ran": ("Running", "run"), "Checked": ("Checking", "check"),
     "Asked": ("Asking", "ask"), "Stopped": ("Stopping", "stop"), "Sent": ("Sending", "send"),
     "Used": ("Using", "use"), "Loaded": ("Loading", "load"), "Opened": ("Opening", "open"),
     "Closed": ("Closing", "close"), "Continued": ("Continuing", "continue"),
@@ -630,6 +701,13 @@ VERBS = {
     "Waited": ("Waiting", "wait"), "Set": ("Setting", "set"), "Clicked": ("Clicking", "click"),
     "Filed": ("Filing", "file"), "Paused": ("Pausing", "pause"), "Pressed": ("Pressing", "press"),
     "Chose": ("Choosing", "choose"), "Answered": ("Answering", "answer"),
+    "Saved": ("Saving", "save"), "Took": ("Taking", "take"), "Filled": ("Filling", "fill"),
+    "Went": ("Going", "go"), "Pointed": ("Pointing", "point"), "Dragged": ("Dragging", "drag"),
+    "Uploaded": ("Uploading", "upload"), "Resized": ("Resizing", "resize"),
+    "Recorded": ("Recording", "record"),
+    "Pasted": ("Pasting", "paste"), "Dropped": ("Dropping", "drop"),
+    "Selected": ("Selecting", "select"), "Switched": ("Switching", "switch"),
+    "Hovered": ("Hovering", "hover"), "Created": ("Creating", "create"),
 }
 
 
@@ -650,11 +728,9 @@ def _first_sentence(s: str) -> str:
 
 
 def not_run(state: str, d: dict) -> bool:
-    """A call that did not run: on purpose (a search after many that found nothing, the
-    same call again, the turn's time up), or gated (its skill down, not loaded or off)."""
-    return state == "gated" or (state == "error" and (
-        d.get("narrow") is True or _num(d.get("repeated")) is not None
-        or d.get("time_up") is True))
+    """A call that did not run: the turn's time was up, or gated (its skill down, not
+    loaded or off)."""
+    return state == "gated" or (state == "error" and d.get("time_up") is True)
 
 
 def _state_words(said: str, state: str, d: dict, result: str) -> str:
@@ -669,57 +745,135 @@ def _state_words(said: str, state: str, d: dict, result: str) -> str:
     return could_not(said) if state == "error" else said
 
 
-def _shell_command(name: str, a: Args, d: dict) -> str:
-    """A shell call's command as the row says it: the command run, the first line typed,
-    the keys, or `read`."""
-    if name == "shell__read":
-        start = _num(a.get("from"))
-        return f"read the log from byte {_js(start)}" if start is not None else "read the screen"
-    if name == "shell__stop":
-        return "Ctrl-C"
-    text = _first_line(_str(d.get("text")) or _str(a.get("command")) or _str(a.get("text")) or "",
-                       400)
-    keys = _str(d.get("keys")) or " ".join(_list(a.get("keys")))
-    said = f"keys: {keys}  text: {text}" if keys and text else f"keys: {keys}" if keys else text
-    return said or "watch"
-
-
-TERMINAL_TOOLS = ("shell__run", "shell__type", "shell__stop", "shell__read")
 MEDIA = ("image_generator", "music_generator")
 
 
-def row(name: str, a: Args, d: dict, result: str, state: str) -> str:
+def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = None) -> str:
     """The row's words in `state`: what it did, is doing, could not do or did not run."""
-    said = sentence(name, a, d, result)
+    said = sentence(name, a, d, result, own)
     skill, _, tool = name.partition("__")
     tool = tool.split("__")[0]
-    if name in TERMINAL_TOOLS:
-        term = _terminal(a, d)
-        if name == "shell__read" and not term:
-            return ongoing("Listed the terminals") if state in BUSY else "Listed the terminals"
-        if state in ("error", "gated"):
-            return f"Could not run {_shell_command(name, a, d)}" \
-                if name == "shell__run" and not not_run(state, d) else \
-                _state_words(said, state, d, result)
-        return " ".join(x for x in (term, _shell_command(name, a, d)) if x)
     if name == "intercom__cancel":
-        return f"{'Cancelled' if state == 'ok' else 'Cancel'} #{'' if a.get('id') is None else _js(a['id'])}"
+        said = f"Cancelled message #{'' if a.get('id') is None else _js(a['id'])}"
+        return _state_words(said, state, d, result)
     if name == "missions__update":
         status = _str(d.get("status")) or _str(a.get("status"))
         note = _str(d.get("note")) or _str(a.get("note")) or ""
         return f"Mission {status.replace('_', ' ') if status else 'update'}" \
                f"{f': {note}' if note else ''}"
     if skill in MEDIA and (_batch(d) or tool in ("generate", "read", "stop")):
-        b = _batch(d)
         items = a.get("items")
         first = _dict(items[0]) if isinstance(items, list) and items else {}
-        ref = ((b or {}).get("id") or _str(a.get("batch")) or "")[:8]
         made = tool not in ("read", "stop")
         label = ("Music" if skill == "music_generator" else "Images") if made else \
-            f"Looked at batch {ref}" if tool == "read" else f"Stopped batch {ref}"
+            ("Checked the " if tool == "read" else "Stopped the ") + \
+            ("tracks" if skill == "music_generator" else "images")
         prompt = (_str(first.get("prompt")) or _str(first.get("style"))) if made else None
         return " ".join(x for x in (label, prompt) if x)
     return _state_words(said, state, d, result)
+
+
+def group(name: str, a: Args, own: Own | None = None) -> str | None:
+    """The words of a run of calls like this one, {n} their count; None: it stands alone.
+    From the arguments only, so a call is in the same run when it starts and once it ran."""
+    if name == "shell__run":
+        term = _str(a.get("terminal"))
+        return f"Ran {{n}} commands in terminal {term}" if term else "Ran {n} commands"
+    skill, _, tool = name.partition("__")
+    return _own(own, "groups", skill, tool)
+
+
+# ---- runs: calls like each other in a row, one row ------------------------------------
+
+RUN = 3                                         # the fewest calls a run has
+PLUMBING = ("skills__load", "skills__read_guide")   # never shown beside other calls
+
+
+def failed(state: str, exit_: Any) -> bool:
+    """A call that failed: an error, or a command that exited non-zero."""
+    return state == "error" or bool(_num(exit_))
+
+
+def _alone(state: str, time_up: Any) -> bool:
+    """A call that is never folded into a run: one at work (its line, a job's Stop), gated
+    or not run. You see it, or act on it, as itself; it joins its run once it ran."""
+    return state in BUSY or state == "gated" or (state == "error" and bool(time_up))
+
+
+def runs(blocks: list[list[dict]], own: Own | None = None) -> list[dict]:
+    """The runs among `blocks`, each the calls between two texts of a reply, in order
+    (each {id, name, arguments, state, exit, time_up}): RUN or more calls in a row with the
+    same group. Plumbing sits between them unseen and breaks nothing.
+    -> [{ids, words, failed}]"""
+    out: list[dict] = []
+    for block in blocks:
+        cur: list[dict] = []
+        key = None
+
+        def close() -> None:
+            if len(cur) >= RUN:
+                out.append({"ids": [c["id"] for c in cur],
+                            "words": key.replace("{n}", f"{len(cur):,}"),
+                            "failed": sum(failed(c["state"], c.get("exit")) for c in cur)})
+
+        for call in block:
+            name = call["name"]
+            if name in PLUMBING:
+                continue
+            # only the box's run reads its arguments (its terminal)
+            g = None if _alone(call["state"], call.get("time_up")) else \
+                group(name, _args(call["arguments"]) if name == "shell__run" else {}, own)
+            if g is not None and g == key:
+                cur.append(call)
+                continue
+            close()
+            cur, key = ([call], g) if g is not None else ([], None)
+        close()
+    return out
+
+
+def _blocks(c, turn_id: str) -> list[list[dict]]:
+    """A turn's calls in order, cut where a step of its reply has text."""
+    blocks: list[list[dict]] = []
+    last = None
+    for r in c.execute(
+            "SELECT m.id AS mid, m.content != '' AND trim(m.content) != '' AS said, "
+            "tc.id, tc.name, tc.arguments, tc.state, "
+            "json_extract(tc.display, '$.exit') AS exit, "
+            "json_extract(tc.display, '$.time_up') AS time_up "
+            "FROM messages m LEFT JOIN tool_calls tc ON tc.message_id = m.id "
+            "WHERE m.turn_id=? AND m.role='assistant' "
+            "ORDER BY m.created_at, m.rowid, tc.rowid", (turn_id,)):
+        if r["mid"] != last and (not blocks or r["said"]):
+            blocks.append([])
+        last = r["mid"]
+        if r["id"] is not None:
+            blocks[-1].append(dict(r))
+    return blocks
+
+
+def runs_of_turn(c, turn_id: str, own: Own | None = None) -> list[dict]:
+    """runs() of a turn's calls: a reply's text between two calls ends a run."""
+    return runs(_blocks(c, turn_id), own)
+
+
+def runs_after(c, call_ids: list[str], own: Own | None = None, *,
+               reset: bool = False) -> dict | None:
+    """For the event of calls that just settled (or, `reset`, were set pending again): their
+    turn's runs, {turn, list}; None outside a turn, or when the runs are the same as with
+    those calls still at work, and the event goes without (the client keeps the last)."""
+    r = c.execute("SELECT m.turn_id FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
+                  "WHERE tc.id=?", (call_ids[0],)).fetchone() if call_ids else None
+    if not r or not r["turn_id"]:
+        return None
+    blocks = _blocks(c, r["turn_id"])
+    now_ = runs(blocks, own)
+    if not reset:
+        ids = set(call_ids)
+        if now_ == runs([[{**x, "state": "pending"} if x["id"] in ids else x for x in b]
+                         for b in blocks], own):
+            return None
+    return {"turn": r["turn_id"], "list": now_}
 
 
 def _args(arguments: Any) -> Args:
@@ -732,36 +886,36 @@ def _args(arguments: Any) -> Args:
     return v if isinstance(v, dict) else {}
 
 
-def step(name: str) -> str:
+def step(name: str, own: Own | None = None) -> str:
     """The tool alone at work: "Reading the note"."""
-    return ongoing(VERB.get(name) or sentence(name, {}, {}))
+    return ongoing(VERB.get(name) or sentence(name, {}, {}, "", own))
 
 
 def words(name: str, arguments: Any, state: str, display: Any = None,
-          result: str | None = None) -> dict:
+          result: str | None = None, own: Own | None = None) -> dict:
     """The row's words: {running, settled, step, where} (the module's docstring)."""
     a, d, r = _args(arguments), _dict(display), result or ""
     where = scope_words(d, a)
-    return {"running": row(name, a, d, r, "running"),
-            "settled": row(name, a, d, r, "interrupted" if state in BUSY else state),
-            "step": step(name),
+    return {"running": row(name, a, d, r, "running", own),
+            "settled": row(name, a, d, r, "interrupted" if state in BUSY else state, own),
+            "step": step(name, own),
             "where": where[:1].upper() + where[1:] if where else None}
 
 
 def of_call(c, call_id: str, state: str, display: Any = None,
-            result: str | None = None) -> dict:
+            result: str | None = None, own: Own | None = None) -> dict:
     """words() of a stored call, by its id (its name and arguments from its row)."""
     r = c.execute("SELECT name, arguments FROM tool_calls WHERE id=?", (call_id,)).fetchone()
-    return words(r["name"], r["arguments"], state, display, result) if r else \
-        words("", "{}", state, display, result)
+    return words(r["name"], r["arguments"], state, display, result, own) if r else \
+        words("", "{}", state, display, result, own)
 
 
 _FIELD = {k: re.compile(rf'"{k}"\s*:\s*"((?:[^"\\]|\\.)*)"')
           for k in ("path", "name", "title", "query", "url", "terminal", "command", "to",
-                    "folder")}
+                    "folder", "text", "file_path", "input", "element", "key")}
 
 
-def forming(name: str, partial: str) -> str:
+def forming(name: str, partial: str, own: Own | None = None) -> str:
     """A call it is still writing, from the arguments so far: what it is about to do
     ("Reading the note ml/muon.md")."""
     a = {}
@@ -769,4 +923,4 @@ def forming(name: str, partial: str) -> str:
         m = rx.search(partial)
         if m:
             a[k] = re.sub(r"\\(.)", r"\1", m.group(1))
-    return ongoing(sentence(name, a, {}))
+    return ongoing(sentence(name, a, {}, "", own))

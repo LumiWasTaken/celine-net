@@ -129,8 +129,7 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
         try:
             qvecs = embed([s.query_prefix + q for q in dense_q])
         except Exception as e:                       # semantic topic search is a bonus
-            res.notes.append(f"Semantic topic search unavailable ({str(e)[:120]}). "
-                             f"Word search only.")
+            res.notes.append(f"Semantic topic search unavailable ({e}). Word search only.")
     elif targets and embed is None and embed_why:
         res.notes.append(f"Semantic topic search unavailable ({embed_why}). Word search only.")
     elif targets and all(v == "message" for v in kinds.values()):
@@ -148,11 +147,16 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
 
     for kb in targets:
         fast = kb.search_ready
+        if not fast and getattr(kb, "search_error", None):
+            res.notes.append(f"The instant index of {kb.id} failed ({kb.search_error}); "
+                             f"searched its plain word index.")
         if fast:
             try:
                 kb.ix_catch_up()        # what an import just wrote is findable
-            except Exception:
+            except Exception as e:
                 fast = False
+                res.notes.append(f"Indexing new messages of {kb.id} failed ({e}); searched "
+                                 f"its plain word index.")
         units = Units(kb.id, kinds[kb.id], instant=fast)
         units_of[kb.id] = units
 
@@ -266,7 +270,7 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
         except Exception as e:                       # never fail a search on it
             log.warning("rerank skipped", extra={"event": "kb.rerank_skipped",
                                                  "error": str(e)[:200]})
-            res.notes.append(f"Reranker unavailable ({str(e)[:120]}). Ranked by fusion.")
+            res.notes.append(f"Reranker unavailable ({e}). Ranked by fusion.")
     if not scores:
         fused_score = dict(rrf(lists, k=s.rrf_k, weights=weights))
         scores = {k: fused_score.get(k, 0.0) for k in cand}

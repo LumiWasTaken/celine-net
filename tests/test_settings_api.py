@@ -46,6 +46,11 @@ async def test_providers_round_trip_idempotent_versioned_and_config_untouched(ap
                       if p.is_file()}, "config/ is never written"
 
 
+async def test_a_key_for_no_provider_is_404_before_its_body_is_read(api):
+    r = await api.put("/api/secrets/nope", content=b"{not json")
+    assert r.status_code == 404
+
+
 async def test_bad_writes_are_refused_with_a_field_and_change_nothing(api):
     before = (api.var / "settings" / "providers.toml").read_bytes()
     r = await api.put("/api/providers/new", json={
@@ -207,6 +212,15 @@ async def test_an_advanced_value_is_saved_checked_and_read_at_once(api):
         r = await api.put("/api/settings", json={"general": bad})
         assert r.status_code == 400 and r.json()["error"]["detail"]["field"] == field, bad
     assert api.cfg.r("max_concurrent_turns") == 2, "a refused save changes nothing"
+
+
+async def test_general_holds_what_was_saved_and_the_fields_the_defaults(api):
+    """A fresh install has no name: the field's default is the placeholder, not a value."""
+    r = (await api.get("/api/settings")).json()
+    assert "user_name" not in r["general"]
+    assert next(f for f in r["fields"] if f["key"] == "user_name")["default"] == "User"
+    await api.put("/api/settings", json={"general": {"user_name": "Sam"}})
+    assert (await api.get("/api/settings")).json()["general"] == {"user_name": "Sam"}
 
 
 async def test_status_links_the_source_of_this_build(api, monkeypatch):

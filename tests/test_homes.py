@@ -60,7 +60,7 @@ async def test_lists_and_senders_carry_the_same_link(store):
         ("missions", f"/mission/{ids['mission']}")
     agent = rows[ids["chat"]]["agents"][0]
     assert (agent["home"], agent["link"]) == ("her", f"/chat/{ids['chat-agent']}")
-    every = {a["id"]: a for a in await store.read(lambda c: agents_of(c))}
+    every = {a["id"]: a for a in await store.read(lambda c: agents_of(c, own={}))}
     assert every[ids["run-agent"]]["link"] == f"/routines/2026-10-22/task/{ids['run-agent']}"
     for k, v in ids.items():
         src = await store.read(lambda c, v=v: source_of(c, f"agent:{v}"))
@@ -113,3 +113,16 @@ def test_place_of_each_kind(tmp_path):
     assert offered("notebook", "chat") and offered("notebook", "mission")
     assert offered("appearance", "chat") and not offered("appearance", "mission")
     assert offered("some_mcp_server", "mission") and offered("some_mcp_server", "chat")
+
+
+async def test_a_sub_agents_snapshot_names_the_one_that_started_it(store):
+    from celine.conversations import view
+    chat = await conversations.create(store, "plans")
+    scout = await conversations.create(store, "scout", agent_of=chat, agent_name="scout")
+    deeper = await conversations.create(store, "counter", agent_of=scout, agent_name="counter")
+    assert (await view.snapshot(store, chat))["conversation"]["started_by"] is None
+    got = (await view.snapshot(store, scout))["conversation"]
+    assert (got["agent_name"], got["started_by"]) == ("scout", {"name": "plans",
+                                                               "link": f"/chat/{chat}"})
+    assert (await view.snapshot(store, deeper))["conversation"]["started_by"] == {
+        "name": "scout", "link": f"/chat/{scout}"}

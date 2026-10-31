@@ -53,24 +53,46 @@ def cfg(tmp_path):
     return load()
 
 
-async def test_an_upload_lands_in_uploads_never_over_another(home, tmp_path):
+async def test_an_upload_lands_in_uploads_once_per_bytes(home, tmp_path):
     src = tmp_path / "game.zip"
     src.write_bytes(os.urandom(3 * 1024 * 1024 + 7))
+    sha = hashlib.sha256(src.read_bytes()).hexdigest()[:12]
     first = await box_files.copy_upload(load(), src, "game.zip")
-    second = await box_files.copy_upload(load(), src, "game.zip")
-    assert first == str(home / "uploads" / "game.zip")
-    assert second == str(home / "uploads" / "game (2).zip")
-    assert (home / "uploads" / "game.zip").read_bytes() == src.read_bytes()
-    assert os.getxattr(home / "uploads" / "game.zip", "user.celine.origin") == b"upload:game.zip"
-    assert (home / "uploads" / "game (2).zip").stat().st_mode & 0o777 == 0o644
+    assert first == f"~/uploads/{sha}/game.zip"
+    landed = home / "uploads" / sha / "game.zip"
+    assert landed.read_bytes() == src.read_bytes()
+    assert os.getxattr(landed, "user.celine.origin") == b"upload:game.zip"
+    assert landed.stat().st_mode & 0o777 == 0o644
+    # the same bytes again: the file there stays as it is, her edits too
+    landed.write_bytes(b"her edit")
+    assert await box_files.copy_upload(load(), src, "game.zip") == first
+    assert landed.read_bytes() == b"her edit"
+    assert [p.name for p in (home / "uploads").iterdir()] == [sha]
+    assert [p.name for p in (home / "uploads" / sha).iterdir()] == ["game.zip"]
+    # other bytes under the same name land beside it, never over it
+    src.write_bytes(b"other")
+    other = await box_files.copy_upload(load(), src, "game.zip")
+    assert other != first and landed.read_bytes() == b"her edit"
+
+
+async def test_no_copy_while_the_shellbox_is_off(home, tmp_path, monkeypatch):
+    from celine.settings import features
+    cfg = load()
+    monkeypatch.setattr(features, "on", lambda cfg, f: f != "shellbox")
+    src = tmp_path / "x"
+    src.write_bytes(b"x")
+    box_files.copy_later(cfg, src, "x")
+    assert not box_files._tasks
 
 
 async def test_nasty_names_land_as_plain_files_in_uploads(home, tmp_path):
     src = tmp_path / "x"
     src.write_bytes(b"x")
-    assert await box_files.copy_upload(load(), src, "../../etc/x") == str(home / "uploads" / "x")
-    assert await box_files.copy_upload(load(), src, ".bashrc") == str(home / "uploads" / "bashrc")
-    assert await box_files.copy_upload(load(), src, "a\x1b\nb") == str(home / "uploads" / "ab")
+    up = home / "uploads" / hashlib.sha256(b"x").hexdigest()[:12]
+    for name, plain in (("../../etc/x", "x"), (".bashrc", "bashrc"), ("a\x1b\nb", "ab")):
+        assert await box_files.copy_upload(load(), src, name) == \
+            f"~/uploads/{up.name}/{plain}"
+        assert (up / plain).read_bytes() == b"x"
     assert not (home / ".bashrc").exists()
 
 
@@ -108,8 +130,9 @@ async def test_send_attaches_her_file_to_the_conversation(home, cfg, store):
     ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="c1", store=store,
                       config=cfg, emit=None)
     out = await sh.send(ctx, path=["~/out/report.md"])
-    assert not out.is_error and out.content == "Sent Joe report.md (2.0 MB)."
     row = await attachments.get(store, out.display["attachments"][0]["id"])
+    assert not out.is_error and out.content == \
+        f"Sent Joe report.md (2.0 MB), short id {row['id'][:8]}."
     assert row["message_id"] == mid
     assert attachments.blob_path(cfg, row["sha256"]).read_bytes() == data
     # its message holds it from now on, and the open conversation is told so
@@ -123,6 +146,26 @@ async def test_send_attaches_her_file_to_the_conversation(home, cfg, store):
     assert missing.is_error and missing.content == "No file nope.txt in the shellbox home."
     many = await sh.send(ctx, path=[f"f{n}" for n in range(6)])
     assert many.is_error and "zip -r ~/out/files.zip" in many.content
+
+
+async def test_send_keeps_to_the_attachment_limit(home, cfg, store, monkeypatch):
+    (home / "big.bin").write_bytes(b"x" * 3_000_000)
+    real = cfg.r
+    monkeypatch.setattr(cfg, "r", lambda k: 2_000_000 if k == "max_attachment_bytes"
+                        else real(k))
+    cid = await conversations.create(store)
+    _, tid, _ = await user_says(store, cid, "send it")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [{"id": "c1", "name": "shell__send",
+                                                     "arguments": "{}"}])
+    ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="c1", store=store,
+                      config=cfg, emit=None)
+    out = await Shell(cfg).send(ctx, path="big.bin")
+    # the size it names is what had come when the stream was cut
+    assert out.is_error and out.content.startswith("big.bin is ") and out.content.endswith(
+        "The limit is 2 MB. Share it instead (shell__share), or zip it smaller.")
+    assert await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM attachments").fetchone()[0]) == 0
 
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
@@ -146,9 +189,37 @@ async def test_look_hands_the_image_to_a_model_that_sees(home, cfg, store, monke
         return True
     monkeypatch.setattr(attachments, "turn_sees_images", sees)
     out = await Shell(cfg).look(await _look_ctx(store), path="shot.png")
-    assert not out.is_error and out.images == [out.display["attachments"][0]["id"]]
+    assert not out.is_error and len(out.images) == 1
     row = await attachments.get(store, out.images[0])
     assert attachments.blob_path(cfg, row["sha256"]).read_bytes() == PNG
+
+
+async def test_a_file_kept_with_the_call_is_a_files_block(home, cfg, store, monkeypatch):
+    from celine.skills import ToolResult
+
+    async def sees(cfg, ctx):
+        return True
+    monkeypatch.setattr(attachments, "turn_sees_images", sees)
+    (home / "shot.png").write_bytes(PNG)
+    ctx = await _look_ctx(store)
+    out = await Shell(cfg).look(ctx, path="shot.png")
+    # a file the display names already (a browser shot) stays out of the block
+    named = await attachments.save_generated(cfg, store, b"x" * 8, "named.png", "image/png",
+                                             "c2", in_message=False)
+    mid = await store.read(lambda c: c.execute(
+        "SELECT message_id FROM tool_calls WHERE id='c2'").fetchone()[0])
+    await turns.finish_tool_call(store, ctx.conversation_id, mid, "c2", "shell__look",
+                                 ToolResult(content=out.content, images=out.images,
+                                            display={**out.display, "shot": named}),
+                                 "ok")
+    display = await store.read(lambda c: json.loads(c.execute(
+        "SELECT display FROM tool_calls WHERE id='c2'").fetchone()[0]))
+    [block] = display["blocks"]
+    assert block["type"] == "files" and block["where"] == "under"
+    assert [(f["id"], f["filename"], f["kind"]) for f in block["files"]] == \
+        [(out.images[0], "shot.png", "image")]
+    # a display that has its block already (a job's, settled again) keeps it as it is
+    assert await store.read(lambda c: attachments.with_files(c, "c2", display)) == display
 
 
 async def test_look_describes_it_for_a_model_that_does_not(home, cfg, store, monkeypatch):

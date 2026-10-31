@@ -15,6 +15,7 @@ from ..backends.base import BackendError
 from ..backends.queue import Priority
 from ..settings import her_models
 from ..turns.compact import complete
+from ..turns.prompt import model_facts
 from . import ToolContext, ToolResult, guide, tool, described
 
 
@@ -56,14 +57,28 @@ class Models:
     @tool(read_only=True)
     async def list(self, ctx: ToolContext) -> ToolResult:
         """The models you may use: in models__ask, as a sub-agent's model, and in your
-        shellbox's agent CLIs. Returns one line per model: its name to use, then what
-        it is."""
+        shellbox's agent CLIs. Returns one line per model: its name to use, what it is,
+        its context window, whether it sees images and calls tools, whether its server
+        answers and whether the model is loaded, each as its server last said."""
         s = self.cfg.settings
         refs = her_models.allowed(s)
         if not refs:
             return ToolResult(content="No models are open to you right now.")
-        return ToolResult(content="\n".join(f"{r}: {her_models.label(s, r)}" for r in refs),
-                          display={"models": refs})
+        llm = self.app.llm if self.app is not None else None
+        if llm is None:
+            return ToolResult(content="\n".join(f"{r}: {her_models.label(s, r)}."
+                                                for r in refs), display={"models": refs})
+        hosts = llm.router.hosts()
+        loaded = {m["ref"]: m["loaded"] for m in llm.router.loaded_view()["models"]}
+        up = {"up": "Its server answers.", "down": "Its server does not answer."}
+
+        def line(r: str) -> str:
+            facts = [f"{r}: {her_models.label(s, r)}.", *model_facts(llm.make(r)),
+                     up.get((hosts.get(s.split(r)[0]) or {}).get("state"), "")]
+            if r in loaded:
+                facts.append("It is loaded." if loaded[r] else "It is not loaded.")
+            return " ".join(f for f in facts if f)
+        return ToolResult(content="\n".join(line(r) for r in refs), display={"models": refs})
 
     @tool()
     async def ask(
@@ -76,7 +91,7 @@ class Models:
         temperature: Annotated[float | None, "0 to 2. Without it, the model's own."] = None,
     ) -> ToolResult:
         """Ask one of your models directly: your messages go in, its answer comes back as
-        text. Example: models__ask(model="llama/my-model", messages=[{"role": "user",
+        text. Example: models__ask(model="local/my-model", messages=[{"role": "user",
         "content": "Three names for a grey cat."}])
         Returns: the answer alone."""
         s = self.cfg.settings
@@ -98,9 +113,9 @@ class Models:
                       conversation_id=ctx.conversation_id, turn_id=ctx.turn_id,
                       label=f"models__ask {model}", fallback=False)
         try:
-            text = (await complete(qb, wire, math.inf, errors=True) or "").strip()
+            text = await complete(qb, wire, math.inf, errors=True) or ""
         except BackendError as e:
-            return ToolResult(content=f"{model} failed: {str(e)[:300]}", is_error=True)
-        if not text:
+            return ToolResult(content=f"{model} failed: {e}", is_error=True)
+        if not text.strip():
             return ToolResult(content=f"{model} answered nothing.", is_error=True)
         return ToolResult(content=text, display={"model": model, "chars": len(text)})

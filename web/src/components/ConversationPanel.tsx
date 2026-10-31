@@ -8,6 +8,9 @@
      Pages    its pages and documents (ArtifactPanel)
      Context  what the next request holds, per block; its notes, each with a switch (PATCH
               notes_off); the tools it has loaded, each with its x; Add loads one by hand
+     Sub-agents  while the conversation's chain has any: the tree under its top (GET
+              /conversations/{id}/sub-agents), each with its state, model, tokens and
+              time; a row opens its conversation
 
    Celine.tsx holds the tab and the page on screen, so a chip, a card or its first write of
    a page can open them. For a new conversation (/new_chat) the same panel holds the
@@ -15,11 +18,12 @@
 
    `ModelRow` is the model alone with a button that opens the chooser, for the heads of
    places that talk without this panel (a mission). */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeftRight, Plus, X } from 'lucide-react'
-import { conversationApi, notebookApi, type ContextView, type Job, type NewConversationSettings, type NotebookNode } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeftRight } from 'lucide-react'
+import { conversationApi, type ContextView, type Job, type NewConversationSettings } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
-import { errorText, num } from '../lib/format'
+import { duration, errorText, num } from '../lib/format'
+import { agentsApi, type TreeAgent } from '../lib/agents'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useFeatureOn } from '../lib/features'
 import { format } from '../lib/nav'
@@ -29,8 +33,8 @@ import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useConversationSettings } from '../lib/useConversationSettings'
 import {
-  Button, Choice, cx, Dialog, Drawer, EmptyState, IconButton, InlineError, ListRow, ListSection, Loaded, LoadingRow, Progress, SearchField,
-  Switch, Tabs, VirtualList,
+  Button, Choice, cx, Drawer, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Switch, Tabs,
+  type DotTone,
 } from '../ui'
 import { ModelChooser, findModel, modelName } from './ModelChooser'
 import { ToolList } from './ToolList'
@@ -38,9 +42,10 @@ import { Jobs } from './Jobs'
 import { ArtifactPanel } from './ArtifactPanel'
 import './Composer.css'
 
-export type PanelTab = 'model' | 'tools' | 'pages' | 'context'
+export type PanelTab = 'model' | 'tools' | 'pages' | 'context' | 'agents'
 const ALL_TABS: { value: PanelTab; label: string }[] = [
   { value: 'model', label: 'Model' }, { value: 'tools', label: 'Tools' }, { value: 'pages', label: 'Pages' }, { value: 'context', label: 'Context' },
+  { value: 'agents', label: 'Sub-agents' },
 ]
 const PANEL = 'Model, Tools, Pages, Context'
 
@@ -69,7 +74,10 @@ export function ConversationPanel({
   assistant: string
 }) {
   const guardOn = useFeatureOn('guard')
-  const tabs = conversationId ? ALL_TABS : ALL_TABS.filter(t => t.value !== 'context')
+  const tree = useResource(() => (conversationId ? agentsApi.tree(conversationId) : Promise.resolve(null)), [conversationId],
+    { enabled: open, events: ev => ev.type === 'agent.state', resetOnChange: true })
+  const agents = tree.data?.agents ?? []
+  const tabs = ALL_TABS.filter(t => (t.value !== 'context' || conversationId) && (t.value !== 'agents' || agents.length))
   const tab = tabs.some(t => t.value === wanted) ? wanted : 'model'
   return (
     <Drawer open={open} label={PANEL} onClose={onClose} fill={tab === 'pages'}
@@ -91,7 +99,30 @@ export function ConversationPanel({
         <ArtifactPanel conversationId={conversationId} artifact={artifact} onPick={onArtifact} assistant={assistant} active={open} />
       )}
       {tab === 'context' && conversationId && <ContextTab key={conversationId} cid={conversationId} notesOff={notesOff} turnKey={turnKey} enabled={open} />}
+      {tab === 'agents' && <AgentsTab agents={agents} here={conversationId} />}
     </Drawer>
+  )
+}
+
+/* ── the sub-agents under the top of the chain, each under the one that started it ── */
+const AGENT_WORD: Record<TreeAgent['state'], string> = {
+  queued: 'Queued', working: 'Running', done: 'Done', stopped: 'Stopped', failed: 'Failed', paused: 'Paused',
+}
+const AGENT_DOT: Record<TreeAgent['state'], DotTone> = {
+  queued: 'running', working: 'running', done: 'ok', stopped: 'muted', failed: 'error', paused: 'warn',
+}
+
+function AgentsTab({ agents, here }: { agents: TreeAgent[]; here: string | null }) {
+  return (
+    <div className="chat-panel" role="list" aria-label="Sub-agents">
+      {agents.map(a => (
+        <ListRow key={a.id} density="md" depth={a.depth - 1} dot={AGENT_DOT[a.state]} title={a.name}
+                 subtitle={a.state === 'working' ? a.step_words ?? AGENT_WORD.working : AGENT_WORD[a.state]}
+                 meta={duration(a.seconds * 1000)} aside={a.model ?? undefined}
+                 detail={`${num(a.prompt_tokens)} in, ${num(a.completion_tokens)} out`}
+                 muted={a.state !== 'working' && a.state !== 'queued'} selected={a.id === here} href={a.link} />
+      ))}
+    </div>
   )
 }
 
@@ -168,7 +199,7 @@ function GuardRow({ cid, enabled, live }: { cid: string; enabled: boolean; live:
   const global = res.data.effective.guard
   return <>
     <BastetSwitch checked={global && res.data.guard} disabled={!global || !online || patch.busy}
-                  title={!global ? 'Bastet is off in Settings' : online ? undefined : OFFLINE_TITLE}
+                  title={!global ? 'Bastet is off. Turn her on in Settings, Features.' : online ? undefined : OFFLINE_TITLE}
                   onChange={guard => void patch.run({ guard })} />
     {patch.error && <InlineError compact message={patch.error} />}
   </>
@@ -232,12 +263,11 @@ export function ModelRow({ cid, enabled = true, live, head = false }: {
 }
 
 /* ── Context: the tokens of the window in use, per block; its notes, each with its state
-   and a switch that leaves it out of this conversation (PATCH notes_off, the whole list);
-   the tools it has loaded, each with its x. Measured again after every turn state, every
-   change of the list and every `context.changed` of this conversation. Tokens only. ── */
+   and a switch that leaves it out of this conversation (PATCH notes_off, the whole list).
+   Measured again after every turn state and every change of the list. Tokens only. ── */
 type Block = ContextView['blocks'][number]['name']
 const BLOCK: Record<Exclude<Block, 'persona' | 'talk'>, string> = {
-  about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Conversation', warning: 'Summary',
+  about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Conversation',
 }
 /** a block's name, the ones about it in its pronouns ("Who he is", "How they talk") */
 function blockWord(b: Block, subject: string): string {
@@ -247,15 +277,9 @@ function blockWord(b: Block, subject: string): string {
   return BLOCK[b]
 }
 
-/** the tokens, and how many turns ago a turn last used it (nothing for this turn) */
-const carriedWords = (tokens: number, since: number | undefined) =>
-  `${num(tokens)} tokens${since ? `, used ${since} ${since === 1 ? 'turn' : 'turns'} ago` : ''}`
-
-function noteWord(n: ContextView['notes'][number], off: boolean, since: number | undefined): string {
-  if (off) return 'Left out here'
-  if (n.state === 'included') return carriedWords(n.tokens, since)
-  if (n.state === 'left_out') return `Left out, ${n.why || 'over the share'}`
-  return `Off, ${n.why || 'by its own line'}`
+function noteWord(n: ContextView['notes'][number], off: boolean): string {
+  if (off) return 'Off in this conversation'
+  return `${num(n.tokens)} tokens`
 }
 
 function ContextTab({ cid, notesOff, turnKey, enabled }: {
@@ -263,19 +287,15 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
 }) {
   const { subject } = usePronouns()
   const ctx = useResource(() => conversationApi.context(cid), [cid, turnKey, notesOff.join('\n')],
-    { enabled, events: ev => (ev.type === 'context.changed' && ev.conversation === cid)
-      || (ev.type === 'conversation.auto_context' && ev.id === cid) })
+    { enabled, events: ev => ev.type === 'conversation.auto_context' && ev.id === cid })
   const [error, setError] = useState<string | null>(null)
   // the list sent last: two quick switches both count before the server's event comes back
   const sent = useRef(notesOff)
   useEffect(() => { sent.current = notesOff }, [notesOff])
-  const unload = useAction(async (name: string) => { await conversationApi.unloadSkill(cid, name); ctx.reload() })
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(cid, on); ctx.reload() })
-  const [loading, setLoading] = useState<'skill' | 'note' | null>(null)
   const c = ctx.data
   if (!c) return <Loaded res={ctx} compact inline />
   const used = c.blocks.reduce((n, b) => n + b.tokens, 0)
-  const since = new Map(c.loaded.notes.map(n => [n.path, n.since]))
   const toggle = async (path: string, on: boolean) => {
     setError(null)
     const next = on ? sent.current.filter(p => p !== path) : [...sent.current.filter(p => p !== path), path]
@@ -303,65 +323,13 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
           // a note off by its own load line stays off whatever the switch says
           const own = n.state === 'off' && !off
           return (
-            <ListRow key={n.path} density="sm" title={n.path.replace(/\.md$/, '')} tooltip={n.path} subtitle={noteWord(n, off, since.get(n.path))}
+            <ListRow key={n.path} density="sm" title={n.path.replace(/\.md$/, '')} tooltip={n.path} subtitle={noteWord(n, off)}
                      muted={off || n.state !== 'included'} trailingAlways
                      trailing={<Switch hideLabel checked={!off} disabled={own} label={n.path} onChange={on => void toggle(n.path, on)} />} />
           )
         })}
-        <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add a note" onClick={() => setLoading('note')}>Add</Button>
       </div>
-      <div className="chat-ctx__list" role="list" aria-label="Tools">
-        <ListSection label="Tools" />
-        {unload.error && <InlineError compact message={unload.error} />}
-        {c.loaded.skills.map(k => (
-          <ListRow key={k.name} density="sm" title={k.label} subtitle={carriedWords(k.tokens, k.since)} trailingAlways
-                   trailing={!k.core && <IconButton icon={X} size="sm" label={`Remove ${k.label}`} loading={unload.busy}
-                                                    onClick={() => void unload.run(k.name)} />} />
-        ))}
-        <Button variant="ghost" className="chat-ctx__add" icon={Plus} title="Add tools" onClick={() => setLoading('skill')}>Add</Button>
-      </div>
-      {loading && (
-        <LoadDialog cid={cid} what={loading} skip={loading === 'skill' ? c.loaded.skills.map(k => k.name) : c.loaded.notes.map(n => n.path)}
-                    onDone={() => { setLoading(null); ctx.reload() }} onClose={() => setLoading(null)} />
-      )}
     </div>
   )
 }
 
-/* loading by hand: every skill of this conversation, or every note of its notebook, with a
-   search; one click loads it for its next step */
-function LoadDialog({ cid, what, skip, onDone, onClose }: {
-  cid: string; what: 'skill' | 'note'; skip: string[]; onDone: () => void; onClose: () => void
-}) {
-  const [q, setQ] = useState('')
-  const items = useResource<{ key: string; title: string; detail: string }[]>(async () => {
-    if (what === 'skill') {
-      const r = await conversationApi.skills(cid)
-      return r.skills.filter(k => k.status === 'up').map(k => ({ key: k.name, title: k.label, detail: k.summary }))
-    }
-    const files: { key: string; title: string; detail: string }[] = []
-    const walk = (ns: NotebookNode[]) => ns.forEach(n => (n.kind === 'dir' ? walk(n.children ?? [])
-      : files.push({ key: n.path, title: n.path.replace(/\.md$/, ''), detail: '' })))
-    walk((await notebookApi.tree()).tree)
-    return files
-  }, [cid, what])
-  const load = useAction(async (key: string) => {
-    await (what === 'skill' ? contextApi.loadSkill(cid, key) : contextApi.loadNote(cid, key))
-    onDone()
-  })
-  const shown = useMemo(() => {
-    const f = q.trim().toLowerCase()
-    return (items.data ?? []).filter(i => !skip.includes(i.key) && (!f || i.title.toLowerCase().includes(f) || i.key.toLowerCase().includes(f)))
-  }, [items.data, q, skip])
-  return (
-    <Dialog title={what === 'skill' ? 'Add tools' : 'Add a note'} onClose={onClose} size="md">
-      <SearchField value={q} onChange={setQ} placeholder="Search" autoFocus />
-      {load.error && <InlineError compact message={load.error} />}
-      {items.error ? <InlineError compact message={items.error} onRetry={items.reload} />
-        : !items.data ? <LoadingRow />
-        : shown.length === 0 ? <EmptyState compact title={q ? 'Nothing matches' : 'Everything is loaded'} />
-        : <VirtualList items={shown} getKey={i => i.key} estimate={() => 44} label={what === 'skill' ? 'Tools' : 'Notebook'}
-                       renderRow={i => <ListRow title={i.title} subtitle={i.detail || undefined} onClick={() => void load.run(i.key)} />} />}
-    </Dialog>
-  )
-}

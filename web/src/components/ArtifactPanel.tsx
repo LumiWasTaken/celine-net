@@ -11,7 +11,7 @@ import { draftToCeline } from '../lib/ask'
 import { artifactEvent, artifactsApi, type ArtifactRow } from '../lib/artifacts'
 import { shareEvent, sharesApi } from '../lib/shares'
 import { stamp } from '../lib/format'
-import { usePronouns } from '../lib/name'
+import { useOwner } from '../lib/name'
 import { format } from '../lib/nav'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
@@ -47,7 +47,7 @@ function ArtifactList({ conversationId, onPick, active }: {
   conversationId: string | null; onPick: (id: string) => void; active: boolean
 }) {
   const [chosen, setScope] = useState<Scope>('here')
-  const { possessive } = usePronouns()
+  const owner = useOwner()
   const scope = !conversationId && chosen === 'here' ? 'all' : chosen
   const [trashed, setTrashed] = useState(false)
   const ctx = useContextMenu()
@@ -93,7 +93,7 @@ function ArtifactList({ conversationId, onPick, active }: {
                        trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(r)} size="sm" />} />
             )
           })}
-          {shares.length > 0 && <ListSection label={`Shared from ${possessive} box`} />}
+          {shares.length > 0 && <ListSection label={`Shared from ${owner} box`} />}
           <ShareCards cards={shares} />
         </div>
       )}

@@ -65,7 +65,7 @@ async def test_one_lands_at_its_time_and_a_past_due_one_at_start(db_path, clock)
         await store.aclose()
 
 
-async def test_the_timer_tries_again_after_a_failure(store, monkeypatch):
+async def test_the_timer_tries_once_and_runs_again_on_the_next_message(store):
     from celine.intercom import service
     calls = []
 
@@ -74,12 +74,16 @@ async def test_the_timer_tries_again_after_a_failure(store, monkeypatch):
         if len(calls) == 1:
             raise RuntimeError("database is locked")
         return []
-    monkeypatch.setattr(service, "RETRY", 0)
-    monkeypatch.setattr(deliver, "deliver_due", due)
-    async with anyio.create_task_group() as tg:
-        await Intercom(store).run(tg)
-        await until(lambda: len(calls) >= 2, 2)
-        tg.cancel_scope.cancel()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(deliver, "deliver_due", due)
+        async with anyio.create_task_group() as tg:
+            ic = Intercom(store)
+            await ic.run(tg)
+            await until(lambda: len(calls) == 1, 2)
+            assert not hasattr(service, "RETRY")
+            ic._wake.set()                   # a message with a due time
+            await until(lambda: len(calls) >= 2, 2)
+            tg.cancel_scope.cancel()
 
 
 async def test_one_due_during_a_turn_joins_it_at_the_next_step(store, clock):
@@ -110,13 +114,29 @@ async def test_a_cancelled_one_never_lands_and_stays_listed(store, clock):
     assert (await skill.send(ctx, to="me", text="x", in_="soon")).is_error
     out = await skill.send(ctx, to="me", text="look at the build", in_="30 min")
     iid = out.display["id"]
-    assert f"#{iid}" in await skill.prompt_fragment(ctx)
+    assert f"#{iid}" in await skill.tail_part(ctx)
     assert not (await skill.cancel(ctx, id=iid)).is_error
     assert (await skill.cancel(ctx, id=iid)).is_error, "once"
-    assert await skill.prompt_fragment(ctx) is None
+    assert await skill.tail_part(ctx) is None
     await store.write(lambda c: c.execute("UPDATE intercom SET due_at=? WHERE id=?",
                                           (clock.iso(-1), iid)))
     assert await deliver.deliver_due(store) == []
     assert (await view.snapshot(store, cid))["messages"] == [], "it never lands"
     [row] = await store.read(lambda c: rows.listed(c, to=f"agent:{cid}", scheduled=True))
     assert (row["id"], row["state"], row["text"]) == (iid, "cancelled", "look at the build")
+
+
+async def test_one_to_the_user_gives_its_notice_at_its_time_once(store, clock):
+    async def notices() -> int:
+        return await store.read(lambda c: c.execute(
+            "SELECT count(*) FROM global_events WHERE type='notice'").fetchone()[0])
+    await store.write(lambda c: rows.insert(c, "agent:x", "user", "message", "stretch",
+                                            due_at=clock.iso(60), store=store))
+    assert await deliver.next_due(store) == clock.iso(60)
+    await deliver.deliver_due(store)
+    assert await notices() == 0, "not before its time"
+    clock.advance(60)
+    await deliver.deliver_due(store)
+    await deliver.deliver_due(store)
+    assert await notices() == 1
+    assert await deliver.next_due(store) is None

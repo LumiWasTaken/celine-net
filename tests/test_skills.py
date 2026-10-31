@@ -107,75 +107,26 @@ def _registry(cfg):
     return reg
 
 
-async def test_tools_load_by_need_and_a_load_counts_from_the_next_step(store, cfg):
-    """A chat starts with the core skills; a picture in the message loads the images; a
-    call to a skill that is not loaded is refused with the way to load it; skills__load
-    puts its tools in the next step's list. Descriptions are filled in once."""
+async def test_every_tool_is_offered_and_a_named_one_runs_without_a_load(store, cfg):
+    """A chat has every tool offered there: the core skills' with their parameters, the
+    rest by name; a call by name runs. Descriptions are filled in once."""
     from celine.skills import CORE
     reg = _registry(cfg)
     chat = await conversations.create(store)
-    b, _ = await _turn(store, cfg, reg, chat, [[TextDelta("hi"), Done(reason="stop")]])
-    assert set(b.offered[0]) == {"skills__read_guide", "skills__load"}
-    assert "shell" not in CORE
-
-    await user_says(store, chat, "draw me a picture of the sea")
     b, results = await _turn(store, cfg, reg, chat, [
-        _call("shell__type", {"text": "ls"}),
-        _call("skills__load", {"name": "shell"}),
-        [TextDelta("ok"), Done(reason="stop")]])
-    assert "image_generator__generate_image" in b.offered[0]
-    assert "shell__type" not in b.offered[1] and "shell__type" in b.offered[2]
-    assert "User's terminal" in b.offered[2]["shell__type"]["description"]
-    assert results[-2] == {"name": "shell__type", "state": "gated",
-                           "content": "shell is not loaded. skills__load(name=\"shell\") "
-                                      "loads it for your next step."}
-    assert results[-1]["content"] == ("Loaded shell. Its tools are in your list from "
-                                      "your next step.")
-
-
-async def test_a_skill_a_tool_touched_loads_from_the_next_step(store, cfg, monkeypatch):
-    """A tool that touches a skill (the browser at a password field touches the vault):
-    its tools from its next step. A skill that stays out (every tool off) leaves its rows
-    at that rebuild, so the steps after it do not rebuild the request again."""
-    from celine.turns import loads
-
-    class Toucher:
-        name, description = "toucher", "Touches."
-
-        @tool()
-        async def touch(self, ctx, name: str) -> ToolResult:
-            """Touch a skill."""
-            await loads.touch(ctx.store, ctx.conversation_id, "skill", [name])
-            return ToolResult("touched")
-
-    reg = _registry(cfg)
-    reg.add(Toucher())
-    cfg.settings.tools = {**cfg.settings.tools, "image_generator__generate_image": "off"}
-    cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", ["toucher"])
-    steps = []
-    select = loads.select
-
-    async def counted(*a, **kw):
-        steps.append(kw.get("when"))
-        return await select(*a, **kw)
-    monkeypatch.setattr(loads, "select", counted)
-    b, _ = await _turn(store, cfg, reg, cid, [
-        _call("toucher__touch", {"name": "shell"}),
-        _call("toucher__touch", {"name": "image_generator"}),
-        _call("toucher__touch", {"name": "toucher"}),
-        _call("toucher__touch", {"name": "toucher"}),
-        [TextDelta("ok"), Done(reason="stop")]])
-    assert "shell__type" not in b.offered[0] and "shell__type" in b.offered[1]
-    assert "image_generator__generate_image" not in b.offered[2]
-    assert steps.count("step") == 2
+        _call("shell__type", {"text": "ls"}), [TextDelta("ok"), Done(reason="stop")]])
+    assert set(b.offered[0]) == {"skills__read_guide", "skills__load", "shell__type",
+                                 "shell__read", "image_generator__generate_image"}
+    assert "shell" not in CORE
+    assert b.offered[0]["shell__type"] == {"name": "shell__type", "description":
+                                           "Type it into User's terminal.",
+                                           "parameters": {"type": "object"}}
+    assert results[-1] == {"name": "shell__type", "state": "ok", "content": "typed ls"}
 
 
 async def test_a_tool_that_is_off_or_down_is_not_sent_and_refused(store, cfg):
-    from celine.turns import loads
     reg = _registry(cfg)
     cid = await conversations.create(store)
-    await loads.touch(store, cid, "skill", ["shell"])
     await set_override(store, cid, "shell__type", False, 1)
     b, results = await _turn(store, cfg, reg, cid, [
         _call("shell__type", {"text": "ls"}), [TextDelta("ok"), Done(reason="stop")]])
@@ -201,9 +152,10 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
     ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
                       config=cfg, emit=None)
     (cfg.her.notebook / "skills").mkdir(parents=True)
-    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night")
+    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night\n" * 500)
     out = await meta.read_guide(ctx, name="web")
     assert out.content.startswith("# web\n\n") and "searx is slow at night" in out.content
+    assert out.content.endswith(("searx is slow at night\n" * 500).strip()), "the whole note"
     assert reg.skills["web"].guide.body[:40] in out.content
     mission = await conversations.create(store, kind="mission")
     out = await meta.read_guide(ToolContext(conversation_id=mission, turn_id="t",
@@ -211,9 +163,15 @@ async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg
                                             emit=None), name="appearance")
     assert out.is_error and out.content.startswith("No skill called 'appearance' here")
     carried = await loads.select(store, cfg, reg, cid, None)
-    assert "[notes]" in reg.index(cfg, carried).split("- web")[1].split("\n")[0]
+    from celine.turns.prompt import tail_text
+    assert "Your notes on skills (skills/<name>.md, with skills__read_guide or " \
+        "skills__load): web." in (await tail_text(store, cfg, reg, None, cid, carried))
     out = await meta.read_guide(ctx, name="skills")
     assert not out.is_error and out.content == reg.index(cfg, carried)
+    for near in ("Web", " web", "web__search"):
+        out = await meta.read_guide(ctx, name=near)
+        assert out.is_error and out.content.startswith(f"No skill called {near!r} here"), near
+    assert (await meta.load(ctx, names=["Web"])).is_error
 
 
 async def test_read_guide_brings_the_live_presets_and_the_guide_names_none(store, cfg,
@@ -251,3 +209,23 @@ def test_a_source_without_its_account_is_not_connected():
     assert status_of(services, "whatsapp", up) == "up"
     assert status_of(services, "whatsapp", NS(status="dead")) == "dead"
     assert status_of(services, "shell", up) == "up"
+
+
+async def test_a_failed_prompt_part_or_message_context_reaches_her(cfg):
+    class Broken:
+        name = "broken"
+
+        async def prompt_fragment(self, ctx):
+            raise RuntimeError("its notes file is gone")
+
+        async def message_context(self, ctx, message):
+            raise RuntimeError("its index is locked")
+    reg = Registry(cfg=cfg)
+    reg.skills["broken"] = Broken()
+    ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=None,
+                      config=cfg, emit=None)
+    assert await reg.prompt_fragments(ctx, {"broken"}) == [
+        "The broken skill's part of this prompt failed: its notes file is gone"]
+    text, report = await reg.message_context(ctx, {})
+    assert text == "The broken skill's context for this message failed: its index is locked"
+    assert report == {"broken": {"error": "its index is locked"}}

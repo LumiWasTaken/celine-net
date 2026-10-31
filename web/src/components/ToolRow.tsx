@@ -8,26 +8,29 @@
    be cancelled while it waits. A page it wrote is a card under its reply (ArtifactCards),
    one per page whatever the number of versions it wrote in that reply; so is a share of
    its box (ShareCards), with the server's dot. */
-import { useContext, useState, type ReactNode } from 'react'
+import { Appear } from './Appear'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { TextWithRefs } from './Markdown'
 import {
-  AlertTriangle, AppWindow, Bell, BookOpen, Bot, CircleSlash, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
-  Music, NotebookPen, PanelRight, ScreenShare, Search, Square, Terminal, UserRound, Wrench, type LucideIcon,
+  AlertTriangle, AppWindow, ArrowLeft, Bell, BookOpen, Bot, CircleSlash, Download, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
+  Music, NotebookPen, PanelRight, Paperclip, ScreenShare, Search, Square, Terminal, UserRound, Wrench, type LucideIcon,
 } from 'lucide-react'
-import { api, type ToolCall } from '../lib/api'
+import { api, type ToolCall, type ToolRun } from '../lib/api'
 import { AgentsContext, agentsApi } from '../lib/agents'
 import { useServerEvents } from '../lib/bus'
 import { artifactOf, kindWord, ShowArtifact, type ArtifactCardData } from '../lib/artifacts'
 import { SHARE_DOT, shareEvent, shareOf, sharesApi, type ShareCardData } from '../lib/shares'
 import { useResource } from '../lib/useResource'
-import { duration, errorText, stamp } from '../lib/format'
-import { asBatch, fileUrl, type MediaFile } from '../lib/media'
+import { bytes, count, duration, errorText, stamp } from '../lib/format'
+import { titleOf } from '../lib/pictures'
+import { TILE, asBatch, fileUrl, tileUrl, type MediaFile } from '../lib/media'
 import { format, refHref } from '../lib/nav'
 import { intercomApi } from '../lib/intercom'
 import { ConversationReminders } from '../lib/reminders'
 import { useAction } from '../lib/useAction'
-import { usePronouns } from '../lib/name'
+import { useOwner } from '../lib/name'
 import { useNow } from '../lib/useNow'
+import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
 import { Button, Dot, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
 import { BatchGallery, GalleryContext, StopBatch, doneWords, type Made } from './Batch'
 import './ToolRow.css'
@@ -59,11 +62,10 @@ const firstLine = (s: string, max = 80) => {
 type ScopeChat = { ref: string; name?: string; kind?: string; platform?: string; missing?: boolean }
 /** the chats a search was kept to (`display.scope_chats`) */
 const scopeChats = (d: Record<string, unknown> | null): ScopeChat[] => (Array.isArray(d?.scope_chats) ? d.scope_chats as ScopeChat[] : [])
-/* a call that did not run: on purpose (a search after many that found nothing, the
-   same call again, the turn's time up: not a failure), gated (its skill down, not
-   loaded or off) */
+/* a call that did not run: the turn's time was up (not a failure), or gated (its
+   skill down, not loaded or off) */
 const notRun = (call: ToolCall) => call.state === 'gated' || (call.state === 'error' &&
-  (call.display?.narrow === true || typeof call.display?.repeated === 'number' || call.display?.time_up === true))
+  call.display?.time_up === true)
 
 /** the row's words, by its state, as the server says them (skills/words.py) */
 const rowWords = (call: ToolCall): string => (busy(call) ? call.words.running : call.words.settled)
@@ -120,10 +122,10 @@ export function Elapsed({ since, until }: { since: string; until?: string | null
    duration or count; a call at work has the running dot, a failed one says "Could not", one
    not run or off is muted. A click opens everything about it in a Sheet: the call by its
    name, the arguments, where it looked and the complete result, nothing cut. Its own
-   buttons (Stop, Open, Cancel) sit at its end. Nothing folds. ── */
+   buttons (Stop, Open, Cancel) sit at its end. Nothing folds: a run of calls alike
+   (RunRow) opens its rows in its Sheet. ── */
 type Tone = 'running' | 'error' | 'muted' | null
 
-const busy = (call: ToolCall) => call.state === 'pending' || call.state === 'running' || call.state === 'detached'
 
 function toneOf(call: ToolCall): Tone {
   if (busy(call)) return 'running'
@@ -140,13 +142,12 @@ function took(call: ToolCall): ReactNode {
   return Number.isNaN(ms) ? null : duration(Math.max(ms, 1000))
 }
 
-/** next to the sentence only what the sentence does not say: a repeat, an ambiguous
-   name, a failed exit. Counts and sizes stay in the opened call. */
+/** next to the sentence only what the sentence does not say: an ambiguous name, a
+   failed exit. Counts and sizes stay in the opened call. */
 function outcome(call: ToolCall): string | null {
   const d = call.display
   if (!d) return null
-  if (typeof d.same_as === 'number') return 'same as before'
-  if (d.ambiguous === true) return 'the name matches more than one'
+  if (d.ambiguous === true) return 'More than one match for this name'
   if (typeof d.exit === 'number' && d.exit !== 0) return `exit ${d.exit}`
   return null
 }
@@ -197,13 +198,14 @@ function useView(call: ToolCall): View {
   if (call.name.startsWith('shell__')) {
     const name = str(d?.terminal) ?? str(a?.terminal)
     const id = str(d?.terminal_id)
-    const exit = call.name === 'shell__run' && call.state === 'ok' ? num(d?.exit) : null
-    const seconds = call.name === 'shell__run' && call.state === 'ok' ? num(d?.seconds) : null
+    const ran = (call.name === 'shell__run' || call.name === 'shell__wait') && call.state === 'ok'
+    const exit = ran ? num(d?.exit) : null
+    const seconds = ran ? num(d?.seconds) : null
     const log = str(d?.log)
     return {
       icon: Terminal, tone: exit ? 'error' : toneOf(call), words: rowWords(call),
       meta: exit ? `exit ${exit}` : seconds !== null ? duration(seconds * 1000) : took(call),
-      under: <BoxFiles call={call} />,
+      under: <Files call={call} />,
       detail: <>
         {log && <Part label="Log"><code className="tool__log">{log}</code></Part>}
         {id && <span><Button size="sm" icon={ExternalLink} href={format({ section: 'terminals', terminal: id })}
@@ -288,35 +290,25 @@ function useView(call: ToolCall): View {
     </>,
     under: <>
       {report && <div className="tool__report">{report}</div>}
-      <BoxFiles call={call} />
+      <Files call={call} />
       {stopError && <InlineError message={stopError} compact />}
     </>,
   }
 }
 
-/* one call in a list: a click opens it whole */
-function CallRow({ call }: { call: ToolCall }) {
+/* one call in a list: a click opens it whole (the list's Sheet, onOpen) */
+function CallRow({ call, onOpen }: { call: ToolCall; onOpen: () => void }) {
   const v = useView(call)
-  const [open, setOpen] = useState(false)
-  const words = plainWords(v.words)
   return (
     <div className="tool">
       {/* a failed row keeps its icon (its sentence says "Could not"), so every row's text
           starts at one edge; only a call at work trades it for the running dot */}
       <ListRow density="sm" icon={v.tone === 'running' ? undefined : v.icon}
                dot={v.tone === 'running' ? 'running' : undefined}
-               title={<TextWithRefs text={v.words} />} tooltip={words}
-               meta={v.meta} muted={v.tone === 'muted'} onClick={() => setOpen(true)}
+               title={<TextWithRefs text={v.words} />} tooltip={plainWords(v.words)}
+               meta={v.meta} muted={v.tone === 'muted'} onClick={onOpen}
                trailing={v.actions} trailingAlways={!!v.actions} />
       {v.under}
-      {open && (
-        <Sheet title={words} size="md" onClose={() => setOpen(false)}>
-          <div className="tool__body">
-            <ToolDetail call={call} />
-            {v.detail}
-          </div>
-        </Sheet>
-      )}
     </div>
   )
 }
@@ -327,26 +319,141 @@ function CallRow({ call }: { call: ToolCall }) {
 export function ToolGroup({ calls }: { calls: ToolCall[] }) {
   const shown = calls.some(c => !PLUMBING.has(c.name)) ? calls.filter(c => !PLUMBING.has(c.name)) : calls
   if (shown.length === 0) return null
-  return <div className="tool-list" role="list" aria-label="Activity">{shown.map(c => <CallRow key={c.id} call={c} />)}</div>
+  return <ToolSheets calls={shown}><div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div></ToolSheets>
 }
 
-/* loading a skill or reading its guide: plumbing, named only when it is all there is */
-const PLUMBING = new Set(['skills__load', 'skills__read_guide'])
+/* The runs the server made of each turn's calls (skills/words.py runs): calls alike in a
+   row, one row with the server's words and failed count. The Transcript gives them, with
+   every call of the conversation, since a run can span the steps of a reply; elsewhere
+   each call is its own row. */
+type RunsValue = { runOf: (id: string) => ToolRun | undefined; callOf: (id: string) => ToolCall | undefined }
+export const ToolRuns = createContext<RunsValue>({ runOf: () => undefined, callOf: () => undefined })
+
+export function useToolRuns(toolCalls: Record<string, ToolCall[]>, runs: Record<string, ToolRun[]>): RunsValue {
+  return useMemo(() => {
+    const run = new Map<string, ToolRun>()
+    for (const list of Object.values(runs)) for (const r of list) for (const id of r.ids) run.set(id, r)
+    const call = new Map<string, ToolCall>()
+    for (const list of Object.values(toolCalls)) for (const c of list) call.set(c.id, c)
+    return { runOf: id => run.get(id), callOf: id => call.get(id) }
+  }, [toolCalls, runs])
+}
+
+/* what the Sheet shows: a call, a run (by its first call), or a call of a run */
+type Opened = { call?: string; run?: string }
+type Sheets = {
+  open: (o: Opened) => void
+  /** a call by its id: of these calls, else of the conversation */
+  find: (id: string) => ToolCall | undefined
+  /** where a run shows here: its first call among these calls */
+  here: (r: ToolRun) => string | undefined
+}
+const SheetsContext = createContext<Sheets | null>(null)
+
+/** The one Sheet of a reply's rows (its steps' lists, or its Activity), and what is open
+    in it, by id. It lives above the lists, so no change of a row (a call that joins a run,
+    a step's list that empties) ever closes it. `calls`: the reply's. */
+export function ToolSheets({ calls, children }: { calls: ToolCall[]; children: ReactNode }) {
+  const { runOf, callOf } = useContext(ToolRuns)
+  const [opened, setOpened] = useState<Opened | null>(null)
+  const value = useMemo<Sheets>(() => {
+    const byId = new Map(calls.map(c => [c.id, c]))
+    return { open: setOpened, find: id => byId.get(id) ?? callOf(id), here: r => r.ids.find(id => byId.has(id)) }
+  }, [calls, callOf])
+  const run = opened?.run ? runOf(opened.run) : undefined
+  const members = run ? run.ids.map(value.find).filter((x): x is ToolCall => !!x) : []
+  const call = opened?.call ? value.find(opened.call) : undefined
+  const shown = call ?? members[0]
+  return (
+    <SheetsContext.Provider value={value}>
+      {children}
+      {opened && shown && (
+        <CallsSheet call={call} run={run} members={members} shown={shown}
+                    onPick={id => setOpened({ run: opened.run, call: id })}
+                    onBack={run && call ? () => setOpened({ run: opened.run }) : undefined}
+                    onClose={() => setOpened(null)} />
+      )}
+    </SheetsContext.Provider>
+  )
+}
+
+/* The rows of a list: a run where its first call in this reply is, its other calls left
+   out. Inside a ToolSheets (the Transcript's replies, ToolGroup). */
+function Rows({ calls }: { calls: ToolCall[] }) {
+  const { runOf } = useContext(ToolRuns)
+  const sheets = useContext(SheetsContext)!
+  return <>{calls.flatMap(c => {
+    const r = runOf(c.id)
+    if (!r) return [<CallRow key={c.id} call={c} onOpen={() => sheets.open({ call: c.id })} />]
+    if (sheets.here(r) !== c.id) return []
+    const members = r.ids.map(sheets.find).filter((x): x is ToolCall => !!x)
+    return [<RunRow key={c.id} run={r} calls={members} onOpen={() => sheets.open({ run: r.ids[0] })} />]
+  })}</>
+}
+
+/* a run as one row: the server's words, its failed calls counted (a call at work is never
+   in a run), the time from its first call to its last */
+function RunRow({ run, calls, onOpen }: { run: ToolRun; calls: ToolCall[]; onOpen: () => void }) {
+  const first = calls[0]!
+  const last = calls[calls.length - 1]!
+  const v = useView(first)
+  return (
+    <div className="tool">
+      <ListRow density="sm" icon={run.failed ? AlertTriangle : v.icon} title={run.words} tooltip={run.words}
+               meta={run.failed ? `${run.failed} failed` : first.started_at &&
+                 <Elapsed since={first.started_at} until={last.finished_at ?? last.started_at} />}
+               onClick={onOpen} />
+    </div>
+  )
+}
+
+/* One Sheet for a list: a call whole, or a run's rows, each opening in the same Sheet with
+   Back to the run. Never a Sheet on a Sheet. */
+function CallsSheet({ call, run, members, shown, onPick, onBack, onClose }: {
+  call: ToolCall | undefined; run: ToolRun | undefined; members: ToolCall[]; shown: ToolCall
+  onPick: (id: string) => void; onBack?: () => void; onClose: () => void
+}) {
+  const v = useView(shown)
+  return (
+    <Sheet title={call ? plainWords(v.words) : run?.words ?? ''} size="md" onClose={onClose}>
+      <div className="tool__body">
+        {onBack && <span><Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Back</Button></span>}
+        {call ? <>
+          <ToolDetail call={call} />
+          {v.detail}
+        </> : (
+          <div className="tool-list" role="list">
+            {members.map(c => <CallRow key={c.id} call={c} onOpen={() => onPick(c.id)} />)}
+          </div>
+        )}
+      </div>
+    </Sheet>
+  )
+}
 
 /** In the stream, under its words: a call at work as one shimmering line (with its Stop or
     Open), a message it set for later while it waits (with Cancel), and the pictures and
     music it makes, each one block from start to end.
     `inline` (the chat): the calls that settled stay under its words as
-    their rows, the same rows the Activity list has, each opening its result. */
+    their rows, the same rows the Activity list has, each opening its result.
+    One call is in one place at a time (lib/toolPlaces.ts placeCalls). */
 export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline?: boolean }) {
   // a settled batch or page has its block under its words already (the gallery, the card):
   // no row for it too. read and stop name a batch again to show it: they get their row.
-  const rows = calls.filter(c => !busy(c) && !PLUMBING.has(c.name)
-    && !(/__(read|stop)$/.test(c.name) ? null : asBatch(c.display) || artifactOf(c.display)))
+  // A run shows where its first call in this reply is, in that step: its other calls
+  // leave theirs, and a step left with none draws no list.
+  const { runOf } = useContext(ToolRuns)
+  const sheets = useContext(SheetsContext)
+  const { lines, rows } = placeCalls(calls, inline,
+    c => !/__(read|stop)$/.test(c.name) && !!(asBatch(c.display) || artifactOf(c.display)),
+    c => {
+      const r = runOf(c.id)
+      return r ? (sheets?.here(r) ?? r.ids[0]) === c.id : null
+    })
   return <>
-    {calls.map(c => <ToolLine key={c.id} call={c} />)}
-    {inline && rows.length > 0 && (
-      <div className="tool-list">{rows.map(c => <CallRow key={c.id} call={c} />)}</div>
+    {lines.map(c => <ToolLine key={c.id} call={c} />)}
+    {rows.length > 0 && (
+      <Appear className="tool-list"><Rows calls={rows} /></Appear>
     )}
   </>
 }
@@ -361,24 +468,46 @@ function ToolLine({ call }: { call: ToolCall }) {
   if (PLUMBING.has(call.name) && !reminder) return null
   return (
     <>
-      <EventLine quiet running={!reminder} icon={v.icon}
-                 meta={<span className="tool__meta">{v.meta}{v.actions}</span>}>
-        <TextWithRefs text={v.words} />
-      </EventLine>
+      <Appear>
+        <EventLine quiet running={!reminder} icon={v.icon}
+                   meta={<span className="tool__meta">{v.meta}{v.actions}</span>}>
+          <TextWithRefs text={v.words} />
+        </EventLine>
+      </Appear>
       {v.under}
     </>
   )
 }
 
-/* the images shell__look showed (they are the call's alone); what shell__send sent is on
-   its message */
-function BoxFiles({ call }: { call: ToolCall }) {
-  if (call.name !== 'shell__look') return null
-  const files = (Array.isArray(call.display?.attachments) ? call.display.attachments : []) as MediaFile[]
+type CallFile = MediaFile & { kind: string }
+
+/* the files kept with a call alone, whatever the tool (the server's `files` block):
+   pictures as tiles that open in the Viewer, other files to download. What shell__send
+   sent is on its message. */
+function Files({ call }: { call: ToolCall }) {
+  const blocks = Array.isArray(call.display?.blocks) ? call.display.blocks as { type?: string; files?: CallFile[] }[] : []
+  const files = blocks.find(b => b.type === 'files')?.files ?? []
   if (!files.length) return null
   return (
     <div className="tool__files">
-      {files.map(f => <img key={f.id} className="tool__file-image" alt={f.filename} src={fileUrl(f)} />)}
+      {files.filter(f => f.kind === 'image').map(f => (
+        <Picture key={f.id} className="tool__picture" src={tileUrl(f, TILE)} full={fileUrl(f)} name={titleOf(null)}
+                 ratio={f.width && f.height ? `${f.width} / ${f.height}` : '4 / 3'} />
+      ))}
+      {files.filter(f => f.kind !== 'image').map(f => <FileLine key={f.id} name={f.filename} a={f} />)}
+    </div>
+  )
+}
+
+/* a file to download: its name, size and Download on one line (only its name while
+   your message is on its way) */
+export function FileLine({ name, a }: { name: string; a?: { id: string; bytes: number } }) {
+  return (
+    <div className="msg__file">
+      <Paperclip size={ICON.sm} aria-hidden />
+      <span className="msg__file-name">{name}</span>
+      {a && <span className="msg__file-size">{bytes(a.bytes)}</span>}
+      {a && <IconButton icon={Download} label="Download" size="sm" href={fileUrl(a, true)} download />}
     </div>
   )
 }
@@ -451,6 +580,7 @@ function withRefs(text: string, kbs: Set<string>): ReactNode[] {
 }
 
 type Step = { step?: string; effect?: string; shot?: unknown }
+const SHOT = 240      // a shot's width in the strip (.tool__step)
 /** an effect that means the step did nothing */
 const IDLE = /^(nothing changed on the page|the view did not move)|is not on this page|did not appear within/
 
@@ -473,7 +603,7 @@ export function BrowserShots({ display }: { display: Record<string, unknown> | n
         <figure key={i} className={cx('tool__step', it.effect && IDLE.test(it.effect) && 'is-idle')}>
           {it.img && (
             <div className="tool__shot">
-              <Picture src={fileUrl(it.img)} name={it.step ?? 'Browser'} ratio={`${it.img.width || 16} / ${it.img.height || 10}`}
+              <Picture src={tileUrl(it.img, SHOT)} full={fileUrl(it.img)} name={it.step ?? 'Browser'} ratio={`${it.img.width || 16} / ${it.img.height || 10}`}
                        onOpen={gallery ? () => gallery.openImage(it.img!.id || it.img!.sha256, it.img!) : undefined} />
               {it.point && it.img.width && it.img.height && (
                 <span className="tool__point" aria-hidden
@@ -491,18 +621,21 @@ export function BrowserShots({ display }: { display: Record<string, unknown> | n
 }
 
 /* A call it is still writing, under its message: what it is about to do, in the present
-   ("Reading the note ml/muon.md", "Writing Dana Holm"), as one shimmering line; the text so
-   far behind it once it is long enough to be worth watching (never for a draft, whose text
-   becomes a card). */
+   ("Reading the note ml/muon.md", "Writing Dana Holm"), as one shimmering line; once it is
+   long enough to be worth watching, how much it has written (its lines, or its size while it
+   is one line) and the text so far behind it (never for a draft, whose text becomes a card). */
 const PREVIEW_FROM = 200
 
-export function FormingRow({ name, chars, preview, words }: { name: string; chars: number; preview: string; words: string }) {
+export function FormingRow({ name, chars, lines, preview, words }: { name: string; chars: number; lines: number; preview: string; words: string }) {
   const Icon = ICONS[name.split('__')[0] ?? ''] ?? Wrench
+  const long = chars >= PREVIEW_FROM
   return (
-    <EventLine quiet running icon={Icon}
-               detail={chars >= PREVIEW_FROM && preview ? <pre className="tool__forming">{preview}</pre> : undefined}>
-      {words}
-    </EventLine>
+    <Appear>
+      <EventLine quiet running icon={Icon} meta={long ? (lines > 1 ? count(lines, 'line') : bytes(chars)) : undefined}
+                 detail={long && preview ? <pre className="tool__forming">{preview}</pre> : undefined}>
+        {words}
+      </EventLine>
+    </Appear>
   )
 }
 
@@ -563,7 +696,7 @@ export function ShareCards({ cards }: { cards: ShareCardData[] }) {
 }
 
 function ShareCard({ card }: { card: ShareCardData }) {
-  const { possessive } = usePronouns()
+  const owner = useOwner()
   const res = useResource(signal => sharesApi.get(card.token, signal), [card.token], { events: shareEvent(card.token) })
   const s = res.data
   const now = useNow(!!s && s.state !== 'ended')
@@ -580,7 +713,7 @@ function ShareCard({ card }: { card: ShareCardData }) {
         <span className="artcard__main">
           <span className="artcard__title">{card.title}</span>
           <span className="artcard__sub">
-            {dot ? <Dot tone={dot.tone} text={ended ? dot.label : `${dot.label}, ${duration(left)} left`} /> : `Shared from ${possessive} box`}
+            {dot ? <Dot tone={dot.tone} text={ended ? dot.label : `${dot.label}, ${duration(left)} left`} /> : `Shared from ${owner} box`}
           </span>
         </span>
         {s?.public && <span className="artcard__open" title="Public" role="img" aria-label="Public"><Globe size={ICON.sm} aria-hidden /></span>}

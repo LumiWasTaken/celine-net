@@ -169,9 +169,9 @@ async def test_a_box_that_drops_the_call_or_has_no_address_says_so(code, box, mo
         "Look with code__list.")
     monkeypatch.delenv("CELINE_SHELL_URL", raising=False)
     skill = Code(load())
-    assert skill.status == "down" and "has no address yet" in skill.error
+    assert skill.status == "down" and "is not set up" in skill.error
     out = await skill.list(ctx())
-    assert out.is_error and "has no address yet" in out.content
+    assert out.is_error and "is not set up" in out.content
 
 
 async def test_the_session_terminal_is_listed_under_the_conversation_and_websearch_is_sent(

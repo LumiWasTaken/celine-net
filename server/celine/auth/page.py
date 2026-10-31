@@ -56,11 +56,11 @@ _PAGE = r"""<!doctype html>
   --font-sans:  'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono:  'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
   --text-scale: 1;
-  --t-xs:  calc(clamp(0.75rem, 0.731rem + 0.082vw, 0.8125rem) * var(--text-scale));
-  --t-md:  calc(clamp(0.9063rem, 0.887rem + 0.082vw, 0.9688rem) * var(--text-scale));
-  --t-xl:  calc(clamp(1.125rem, 1.086rem + 0.164vw, 1.25rem) * var(--text-scale));
+  --t-xs:  calc(clamp(0.78125rem, 0.7582rem + 0.0974vw, 0.875rem) * var(--text-scale));
+  --t-md:  calc(clamp(0.875rem, 0.8442rem + 0.1299vw, 1rem) * var(--text-scale));
+  --t-xl:  calc(clamp(1.25rem, 1.2115rem + 0.1623vw, 1.40625rem) * var(--text-scale));
   --lh-ui:    1.4;
-  --lh-body:  1.55;
+  --lh-body:  1.5;
   --fw-regular: 450;
   --fw-medium:  580;
   --fw-bold:    700;
@@ -103,9 +103,10 @@ input{display:block;width:100%;height:var(--h-md);margin:0 0 var(--s-4);padding:
   border:1px solid var(--border-strong);border-radius:var(--r-md);background:var(--surface-2);
   color:var(--text-primary);font:inherit}
 input:focus{outline:2px solid var(--accent);outline-offset:1px}
+@media (pointer:coarse){input{font-size:max(1rem,var(--t-md))}}
 #code{font-family:var(--font-mono);letter-spacing:.04em}
 button{display:inline-flex;align-items:center;justify-content:center;height:var(--h-lg);padding:0 var(--s-5);
-  border:0;border-radius:var(--r-md);font:var(--fw-medium) var(--t-md)/1 var(--font-sans);cursor:pointer}
+  border:0;border-radius:var(--r-md);font:var(--fw-medium) var(--t-md)/var(--lh-ui) var(--font-sans);cursor:pointer}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button:disabled{opacity:.6;cursor:progress}
 .primary{width:100%;background:var(--accent);color:var(--text-on-accent)}
@@ -132,7 +133,7 @@ form.method{width:100%;margin-top:var(--s-5)}
 .card small{font-size:var(--t-xs);font-weight:var(--fw-regular);color:var(--accent)}
 .pin{display:flex;gap:var(--s-2);margin:0 0 var(--s-4)}
 .pin input{flex:1;min-width:0;height:var(--h-lg);margin:0;padding:0;text-align:center;
-  font:var(--fw-medium) var(--t-xl)/1 var(--font-mono)}
+  font:var(--fw-medium) var(--t-xl)/var(--lh-ui) var(--font-mono)}
 ol{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4) var(--s-3) var(--s-7);background:var(--surface-2);
   border-radius:var(--r-md);font:var(--t-md)/var(--lh-body) var(--font-mono);color:var(--text-primary);
   white-space:nowrap}
@@ -190,7 +191,7 @@ ol{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4) var(--s-3) var(--s-7);bac
 
   <section id="v-codes" hidden>
     <h2>Recovery codes</h2>
-    <p>Each code works once. The app does not show them again.</p>
+    <p>Save these codes somewhere safe. Each one works once, and the app does not show them again.</p>
     <ol id="codes"></ol>
     <div class="row">
       <button id="copy" class="secondary" type="button">Copy</button>
@@ -235,12 +236,12 @@ async function post(path, body) {
   try {
     r = await fetch('/api/auth/' + path, { method: 'POST', headers: { 'content-type': 'application/json' },
                                            body: JSON.stringify(body || {}) })
-  } catch { throw new Error('The server did not answer.') }
+  } catch { throw new Error('The server did not answer. Check your connection and try again.') }
   const j = await r.json().catch(() => ({}))
   if (!r.ok) {
     const e = j.error || {}
     if (e.code === 'locked' && e.locked_until)
-      throw new Error('Too many wrong tries. Try again after ' + new Date(e.locked_until * 1000).toLocaleString() + '.')
+      throw new Error('Too many failed attempts. Try again after ' + new Date(e.locked_until * 1000).toLocaleString() + '.')
     throw new Error(e.message || 'The request failed (HTTP ' + r.status + ').')
   }
   return j
@@ -249,7 +250,7 @@ async function post(path, body) {
 function explain(e) {
   if (e && e.name === 'NotAllowedError') return 'You closed the passkey prompt, or it timed out.'
   if (e && e.name === 'InvalidStateError') return 'This passkey is already registered here.'
-  if (e && e.name === 'SecurityError') return 'Passkeys work only at ' + ORIGIN + '.'
+  if (e && e.name === 'SecurityError') return 'Passkeys work only at ' + ORIGIN + '. Open the app there to use one.'
   return (e && e.message) || 'The request failed.'
 }
 
@@ -305,7 +306,7 @@ function pick(k) {
 
 function codeView(recovery) {
   $('code-hint').textContent = recovery ? 'Enter a recovery code. Then add a new way to log in.'
-                                        : 'Enter the setup code from the server log or <data>/setup-code.txt. Then pick how you log in.'
+                                        : 'Enter the setup code from setup-code.txt in the data folder. Then pick how you log in.'
   $('code-label').textContent = recovery ? 'Recovery code' : 'Setup code'
   $('back').hidden = !recovery
   pick('passkey')

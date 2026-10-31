@@ -13,8 +13,9 @@ is not locked (conversations/store.locked), its plan (plans/) decides:
 - every step is done, or no line follows: Needs you, the note NOTE.
 A turn a freeze cut (guard/freeze.py) is no Stop: with Continue missions after Unfreeze
 (Settings, Advanced, on by default) the mission stays active, and after the unfreeze
-that turn goes on (`thaw`, looked at every LOOK seconds; a turn that cannot be
-continued gets KEEP_GOING). Switched off, it is a Stop as above.
+that turn goes on (`go_on`, looked at every LOOK seconds; a turn that cannot be
+continued gets KEEP_GOING). Switched off, it is a Stop as above. A turn a restart cut
+(turns/store.py, reason `restart`) goes on the same way, with no switch.
 A move to Needs you is reported as its own status change is (missions/skill.record).
 A turn the user started ends a Needs you: the mission is active again, and the rule above
 goes on from there.
@@ -22,6 +23,10 @@ goes on from there.
 The ceiling: the Mission time limit (Settings, Advanced; 0 none) counts from its start;
 past it an active mission is stopped, its note why (`ceilings`, looked at every LOOK
 seconds), as a routine past its own.
+
+The house's hold (hold.py: frozen, or paused with no model answering) is no time of a
+mission's: when a hold ends, every mission still open gets its length (`credit`): its
+ceiling counts it off, and its time limit and minimum time move later by it.
 
 Check-ins: every `check_in` minutes while a mission is active, a short line on where it
 stands (the step of its plan, its note) goes where it reports, else to the user
@@ -47,8 +52,8 @@ NOTE = "The mission stopped without saying whether it is done."
 PAST = "The time limit passed before the mission was closed."
 WAITING = "A question for you at step {n}: {title}."
 KEEP_GOING = ("The mission is still active and nothing is set to wake you. Do the next "
-              "step, missions__wait until a time when you wait on something, or close it "
-              "with missions__update(status=\"Done\").")
+              "step; when you wait on something, missions__wait until the time to look "
+              "again; or close it with missions__update(status=\"Done\").")
 OVER = ("The time limit has passed. Deliver what you have, report, and close the mission "
         "with missions__update(status=\"Done\") and a note on what is still open.")
 
@@ -63,9 +68,13 @@ def stuck(c: sqlite3.Connection, cid: str) -> bool:
     return all(quiet(c, one, limit if one == cid else None) for one in family(c, cid))
 
 
-def _cut_by_freeze(c: sqlite3.Connection, turn_id: str | None) -> bool:
+def _cut(c: sqlite3.Connection, turn_id: str | None) -> str | None:
+    """"frozen" or "restart" when turn `turn_id` ended cut by a freeze or a restart."""
     r = c.execute("SELECT state, reason_code FROM turns WHERE id=?", (turn_id,)).fetchone()
-    return r is not None and r["state"] == "aborted" and r["reason_code"] == "frozen"
+    if r is None:
+        return None
+    return {("aborted", "frozen"): "frozen", ("interrupted", "restart"): "restart"}.get(
+        (r["state"], r["reason_code"]))
 
 
 def _may_go_on(c: sqlite3.Connection, turn_id: str) -> bool:
@@ -97,9 +106,9 @@ async def check(app, cid: str, turn_id: str | None) -> str | None:
     if row is None or row["status"] != "active" or \
             not await app.store.read(lambda c: stuck(c, cid)):
         return None
-    if await app.store.read(lambda c: _cut_by_freeze(c, turn_id)) and \
-            app.cfg.r("missions_resume_after_unfreeze"):
-        return None                  # thaw takes it on after the unfreeze
+    cut = await app.store.read(lambda c: _cut(c, turn_id))
+    if cut == "restart" or (cut == "frozen" and app.cfg.r("missions_resume_after_unfreeze")):
+        return None                  # go_on takes it on
     plan = await plans.get(app.store, cid)
     if plan is not None and plan["waiting"]:
         n = max((i for i, s in enumerate(plan["steps"], 1) if s["state"] == "done"
@@ -167,14 +176,16 @@ def _over(hours: int) -> str:
 
 
 async def ceilings(app, at: datetime) -> list[str]:
-    """Every active mission that started more than the Mission time limit before `at`
-    stops, its note why. -> the missions stopped."""
+    """Every active mission that started more than the Mission time limit before `at`,
+    the time the house held it aside, stops, its note why. -> the missions stopped."""
     hours = app.cfg.r("mission_max_hours")
     if not hours:
         return []
     out = []
     for row in await missions.list(app.store, "active"):
-        if at - datetime.fromisoformat(row["created_at"]) > timedelta(hours=hours):
+        ran = at - datetime.fromisoformat(row["created_at"]) - \
+            timedelta(seconds=row["held_seconds"])
+        if ran > timedelta(hours=hours):
             await stop(app, row["conversation_id"], _over(hours))
             log.info("mission over its ceiling", extra={
                 "event": "missions.ceiling", "conversation": row["conversation_id"]})
@@ -182,22 +193,58 @@ async def ceilings(app, at: datetime) -> list[str]:
     return out
 
 
-async def thaw(app) -> list[str]:
-    """After an unfreeze (Continue missions after Unfreeze on): every active mission that is
-    stuck with its latest turn cut by the freeze goes on in that turn, or with KEEP_GOING
-    when it cannot be continued. -> the missions that did."""
+async def credit(app, seconds: int) -> list[str]:
+    """The house held every mission `seconds` (hold.py): each one active or needing the
+    user gets them; its time limit and minimum time move later by them, the time
+    limit's notice with it. -> the missions credited."""
+    out = []
+    for status in ("active", "needs_you"):
+        for row in await missions.list(app.store, status):
+            cid, later = row["conversation_id"], timedelta(seconds=seconds)
+            changes = {"held_seconds": row["held_seconds"] + seconds}
+            for key in ("until", "min_until"):
+                if row[key]:
+                    changes[key] = ids.iso(datetime.fromisoformat(row[key]) + later)
+            if row["until"]:
+                # the old notice goes when it has not landed; the new limit gets its own
+                if row["wake_id"]:
+                    await app.intercom.cancel(int(row["wake_id"]))
+                changes["wake_id"] = await missions.book_time_limit(
+                    app.intercom, cid, datetime.fromisoformat(changes["until"]))
+            await missions.update(app.store, cid, changes)
+            out.append(cid)
+    return out
+
+
+async def held(app, at: datetime, since: datetime | None) -> datetime | None:
+    """A look at the house's hold at `at`: -> when the hold standing now began, None
+    when none stands. A hold that ended (`since` given, none now) is credited."""
+    from ..hold import her_hold
+    if await her_hold(app.store, getattr(app, "llm", None)):
+        return since or at
+    if since is not None:
+        await credit(app, round((at - since).total_seconds()))
+    return None
+
+
+async def go_on(app) -> list[str]:
+    """Every active mission that is stuck with its latest turn cut by a restart, or by a
+    freeze after the unfreeze (Continue missions after Unfreeze on), goes on in that
+    turn, or with KEEP_GOING when it cannot be continued. Nothing while frozen. -> the
+    missions that did."""
     from ..conversations import tree
     from ..guard.freeze import frozen
     from ..turns import store as turns
-    if not app.cfg.r("missions_resume_after_unfreeze") or await frozen(app.store):
+    if await frozen(app.store):
         return []
+    cuts = {"restart"} | ({"frozen"} if app.cfg.r("missions_resume_after_unfreeze") else set())
     out = []
     for row in await missions.list(app.store, "active"):
         cid = row["conversation_id"]
         last = await app.store.read(lambda c: (c.execute(
             "SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC LIMIT 1",
             (cid,)).fetchone() or [None])[0])
-        if not await app.store.read(lambda c: _cut_by_freeze(c, last) and stuck(c, cid)):
+        if not await app.store.read(lambda c: _cut(c, last) in cuts and stuck(c, cid)):
             continue
         try:
             await turns.continue_turn(app.store, cid, last, app.registry)
@@ -206,21 +253,33 @@ async def thaw(app) -> list[str]:
                                     data={"mission": cid, "keep_going": True})
         else:
             app.dispatcher.notify()
-        log.info("mission goes on after the unfreeze",
-                 extra={"event": "missions.thawed", "conversation": cid})
+        log.info("mission goes on after its cut",
+                 extra={"event": "missions.go_on", "conversation": cid})
         out.append(cid)
     return out
 
 
 async def run(app) -> None:
-    """The app's loop: every LOOK seconds a look for due check-ins, for missions past
-    their ceiling and for missions a freeze cut."""
-    async def thawed(app, _at) -> None:
-        await thaw(app)
+    """The app's loop: every LOOK seconds a look for due check-ins, for the house's hold
+    (no ceiling counts while it stands), for missions past their ceiling and for
+    missions a restart or a freeze cut."""
+    since = None
+
+    async def hold(app, at) -> None:
+        nonlocal since
+        # the hold's start is kept in memory, a restart during one credits none
+        since = await held(app, at, since)
+
+    async def ceiling(app, at) -> None:
+        if since is None:
+            await ceilings(app, at)
+
+    async def cut(app, _at) -> None:
+        await go_on(app)
     while True:
         at = datetime.now(timezone.utc)
-        for look, what in ((check_ins, "check_in"), (ceilings, "ceiling"),
-                           (thawed, "thaw")):
+        for look, what in ((check_ins, "check_in"), (hold, "hold"), (ceiling, "ceiling"),
+                           (cut, "go_on")):
             try:
                 await look(app, at)
             except Exception:
@@ -232,7 +291,11 @@ async def run(app) -> None:
 def start(app) -> None:
     """Hooks the rule onto the dispatcher's turn ends (app.dispatcher.on_end). Called
     once at startup, before the workers start."""
+    from ..settings import features
+
     async def on_end(cid: str, turn_id: str | None) -> None:
+        if not features.on(app.cfg, "missions"):
+            return
         # a sub-agent's end can be what leaves its mission quiet: look at the mission,
         # after its own latest turn
         parent = await app.store.read(lambda c: (c.execute(

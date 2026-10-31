@@ -6,12 +6,15 @@ description: Messages to {{username}}, to yourself, to your sub-agents or parent
 intercom__send(text, to) writes a message. `to` is one or more of, comma separated:
 - "user": {{username}}.
 - "me": yourself.
-- "parent": in a sub-agent, the conversation that started it.
-- "team": a conversation and its sub-agents, without you.
+- "parent": in a sub-agent, the conversation that started it, for a question or a note
+  while you work. Your result goes in your final answer: that is your report, and it
+  goes up by itself.
+- "team": your own sub-agents.
 - "all": every conversation working right now (a turn or a job running) and every
   active mission, without you.
 - "bastet": Bastet, the guard of the house.
 - a sub-agent's or mission's name, or a conversation id.
+A sub-agent writes to "parent", its own sub-agents and "me".
 
 Bastet guards the house: when she stops a step, your result says so in her words, with
 why. If you disagree, or want to talk, write to her; she answers in the thread.
@@ -39,7 +42,10 @@ answer it. wait=true holds your turn
 on the message until {{username}} answers, up to 10 minutes: they see that you wait for
 them, and their answer comes in as their message; it does not work with in or at.
 
-in="30 min" or at="02:00" makes a message land later. To "me" that is a reminder: at
+attachments=["f5ef648c"] sends files along by their short ids: one on your own message
+(a voice note, a file you sent, an image you made) or one {{username}} attached here.
+
+in="30 min", at="02:00" or at="2026-11-02 09:00" makes a message land later. To "me" that is a reminder: at
 its time it arrives here and starts your turn, or joins the turn you are in at its next
 step. Use it for servers, slow things and later checks.
 
@@ -59,7 +65,6 @@ cancelled.
 In a background task or a mission, intercom__start_chat(title, text) starts a chat for
 {{username}}: the text is your first message there and waits for them on the intercom;
 when they answer, you go on there with them. Check intercom__read first: when they have
-it already, add to that thread. When they got something from the same place in the last
-24 h (a bug report still open, a thread), start_chat does not start yet and lists each
-with what it says and whether they answered: judge it, and add to that thread, or call
-again with different=true when yours is another matter. The title is the topic in 2 to 4 plain words.
+it already, add to that thread. The result lists what they got from the same place in
+the last 24 h (a bug report still open, a thread), with what it says and whether they
+answered. The title is the topic in 2 to 4 plain words.

@@ -13,7 +13,7 @@ import pytest
 from celine import boot
 from celine.conversations import store as conversations, view
 from celine.core.services import Services
-from celine.backends.base import Done, TextDelta, ToolCallDelta
+from celine.backends.base import Done, ReasoningDelta, TextDelta, ToolCallDelta
 from fake_backend import FakeBackend
 from celine.core.bus import EventBus
 from celine.intercom import Intercom
@@ -85,6 +85,37 @@ async def test_a_message_during_a_turn_joins_it_at_the_next_step(store, cfg):
     ).fetchone()[:]) == ("delivered", turn["id"])
 
 
+class Steered(FakeBackend):
+    """A drone (sub_agents/drone.py): a message comes while it works, it ends its step
+    with "steer", and the next step of the same turn sees the message."""
+
+    async def stream(self, messages, tools):
+        self.calls.append(messages)
+        if len(self.calls) == 1:
+            yield ReasoningDelta("working\n")
+            await user_says(self.store, self.cid, "use canvas")
+            yield Done(reason="steer")
+        else:
+            yield TextDelta("done, on canvas")
+            yield Done(reason="stop")
+
+
+async def test_a_steer_step_lands_the_message_and_the_turn_goes_on(store, cfg):
+    cid = await conversations.create(store)
+    await user_says(store, cid, "make pac-man")
+    turn = await turns.claim(store, "w")
+    backend = Steered()
+    backend.store, backend.cid = store, cid
+    await run_turn(turn, store, cfg, backend, EventBus(), Token(turn["id"]), Registry())
+    msgs = (await view.snapshot(store, cid))["messages"]
+    assert [(m["role"], m["content"]) for m in msgs] == [
+        ("user", "make pac-man"), ("assistant", ""), ("user", "use canvas"),
+        ("assistant", "done, on canvas")]
+    assert msgs[2]["turn_id"] == turn["id"]
+    assert backend.calls[1][-1]["content"].endswith("use canvas")
+    assert await _turns(store, cid) == [("user", "done")], "one turn"
+
+
 async def _family(store):
     parent = await conversations.create(store)
     subs = [await conversations.create(store, title=n, agent_of=parent, agent_name=n,
@@ -137,13 +168,13 @@ async def test_the_users_reply_marks_the_thread_read(store):
     assert other["intercom_id"] not in changed
 
 
-async def test_an_announcement_shows_in_a_turn_that_starts_after_it(store, cfg):
+async def test_an_announcement_shows_in_the_tail_of_a_turn_that_starts_after_it(store, cfg):
     from datetime import datetime, timedelta, timezone
 
     from celine.core.ids import iso
     from celine.intercom import Intercom
     from celine.intercom.skill import IntercomSkill
-    from celine.turns.prompt import system_blocks
+    from celine.turns.prompt import system_blocks, tail_text
     working = await conversations.create(store)
     await user_says(store, working, "busy")          # a queued turn: working
     until = iso(datetime.now(timezone.utc) + timedelta(hours=1))
@@ -154,9 +185,11 @@ async def test_an_announcement_shows_in_a_turn_that_starts_after_it(store, cfg):
     reg.add(IntercomSkill(cfg))
     from celine.turns import loads
     carried = await loads.select(store, cfg, reg, later, None)
+    tail = await tail_text(store, cfg, reg, None, later, carried)
+    assert "Announcements to everyone working: #" in tail
+    assert "from updater, until" in tail and "the server restarts soon." in tail
     system = "\n\n".join(t for _, t in await system_blocks(cfg, reg, store, later, "", carried))
-    assert "Announcements to everyone working: #" in system
-    assert "from updater, until" in system and "the server restarts soon." in system
+    assert "the server restarts soon." not in system, "live state stays out of the prefix"
 
 
 async def test_the_stream_replays_from_after_and_then_follows_a_new_message(store):
@@ -334,7 +367,7 @@ async def test_her_threads_group_by_who_and_chat_and_job_results_are_no_threads(
     assert len((await skill.read(ctx, with_="scout one")).content.splitlines()) == 5
     jobs = (await skill.read(ctx, kind="job")).content
     assert jobs.count("made it") == 2 and "job results" not in jobs
-    assert "wait for you" not in (await skill.prompt_fragment(ctx) or "")
+    assert "wait for you" not in (await skill.tail_part(ctx) or "")
 
     app = FastAPI()
     app.state.services = Services()

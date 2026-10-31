@@ -24,8 +24,8 @@ GPU). Every other service except `celine` is optional too: see Profiles.
 | `wa-link` | `celine-wa-link` | Owns the WhatsApp linked device, keeps a journal, serves Celine's WhatsApp read tools. |
 | `searxng` | `searxng/searxng` | A private metasearch engine for Celine's web skill. |
 | `reranker` | `ggml-org/llama.cpp:server` | bge-reranker-v2-m3 on llama-server, for the Reranking task. Only with the profile `reranker`. |
-| `shellbox` | `celine-shellbox` | Celine's own Debian computer, where its terminals run. |
-| `browser` | `celine-browser` | Celine's own Brave on a screen of its own, with its home. |
+| `shellbox` | `celine-shellbox` | Celine's own Debian computer, where her terminals run. |
+| `browser` | `celine-browser` | Celine's own Brave on a screen of its own, with her home. |
 
 ## Profiles
 
@@ -59,21 +59,22 @@ at its start and before it reports healthy, writes the volume's `app/keys/` once
 `shell.hash` and `browser.hash` (the sha256 the boxes check), `connector-clients` (the
 connectors' list of clients, `live:<key>:owner`) and `searxng-settings.yml`
 (`config/searxng/settings.yml` with `server.secret_key` filled). An existing key is
-kept; delete one and the next start makes a new one and its derived file. Without a
-profile you start fewer services, never fewer keys.
+kept; if you delete one, the next start creates a new one and its derived file. Leaving a
+profile out starts fewer services, but the app still creates every key.
 
 Add your passkey (see Login): open http://localhost:8766 (not 127.0.0.1, which passkeys
-do not accept), enter the setup code (`docker compose exec celine cat /data/app/setup-code.txt`) and add the
-passkey. A new install has no models, no accounts and an empty archive. Set it up in
-the app, in this order:
+do not accept), enter the setup code (`docker compose exec -u celine celine cat /data/app/setup-code.txt`) and add the
+passkey. A new install has no models, no accounts and an empty archive. After you log in, Setup
+walks you through it: naming her, telling her about you, connecting a model and turning
+features on. Everything can be changed later in Settings:
 
 1. **Settings, General.** Your name (what Celine calls you; `{{username}}` in its
    instructions) and your time zone (set `TZ` in `.env` to the same zone).
 2. **Settings, Models.** Add the server your models run on (llama-swap, Ollama,
    llama-server, or a cloud provider with its key), then pick models for the roles
-   (Chat, Titles and descriptions, Topic Search, Reranking, Photo descriptions). A role
+   (Chat, Titles and descriptions, Topic search, Reranking, Photo descriptions). A role
    may list models on several servers: the first that answers does the work. Until a
-   chat model is set, a message waits in the queue with one line saying so.
+   chat model is set, a message you send waits, and the chat says why.
 3. **Settings, Discord.** "Log in with QR code", then scan the code in the Discord app
    on your phone (Settings, Scan QR Code). Pick the DMs and servers to keep.
    Logging in with a user account may break Discord's terms; use it at your own risk.
@@ -82,8 +83,8 @@ the app, in this order:
    It is an unofficial client, which WhatsApp does not allow and may ban the number
    for; use it at your own risk.
 
-A connector with no internet access is a normal state: the source page says so, and
-"Sync now" catches up by hand once it is back.
+When a connector loses its internet access, its page in Settings says so. Once it is
+back, press Sync now to catch up.
 
 ### Images from a registry
 
@@ -122,8 +123,8 @@ in the app go to `app/settings/` and `app/secrets/`.
 
 The app keeps its own nightly backups at the start of each night's first Routine run
 (`server/celine/schedules/backups.py`): its notebook as `backups/notebook/<night>.tar.xz`
-and the database as `backups/db/<night>.db.xz` in the data volume. It keeps the last 7
-nights.
+and the database as `backups/db/<night>.db.xz` in the data volume. It keeps them for the days set in
+Settings, Advanced, Backups kept (default 7).
 
 For a full copy, stop the stack (the databases are SQLite in WAL mode), archive the
 volume, start again:
@@ -163,9 +164,9 @@ The volume is kept. Migrations run at startup. The connectors keep their logins.
 
 ### Announcing a restart
 
-A host script can tell everyone working that the app restarts, on the intercom. Make a
-named token (Settings, Security, Tokens; shown once); a message sent with it comes from
-`system:<name>`.
+A script on the host can post a restart notice on the Intercom so every running agent
+sees it. Create a token in Settings, Security, API tokens (it is shown once); a message
+sent with it comes from `system:<name>`.
 
 ```sh
 curl -fsS -X POST https://celine.example.net/api/intercom -H "Authorization: Bearer $CELINE_TOKEN" -H "Content-Type: application/json" -d '{"to": "all", "text": "The app restarts for an update now.", "until": "15 min"}'
@@ -181,8 +182,7 @@ turn that starts before then sees it.
 | `celine` mounts the whole volume | At its start, as root, the app creates the folders the other services mount (Docker mounts only a folder that exists) and gives `shellbox/` to its uid, then runs as `celine` with no capabilities, its data in `app/`. It makes the stack's keys (see First start) before it reports healthy. |
 | `depends_on: celine: service_healthy` | Every other service that mounts a folder or a key file of the volume starts once the app is healthy, a few seconds after it starts. `docker compose ps -a` shows only running services. |
 | key files from a volume subpath | The boxes, the connectors and SearXNG mount one derived file each, read-only, from `app/keys/`. |
-| `CELINE_PUBLISH` | Where the app's port is published. Default `127.0.0.1:8766`, this machine only. `8766` or `<address>:8766` opens it to the network; then set `CELINE_PUBLIC_ORIGIN` too. |
-| `CELINE_PUBLIC_ORIGIN` | The URL the browser uses, default `http://localhost:8766`. Passkeys are bound to its host name. |
+| `CELINE_PUBLISH` | Where the app's port is published. Default `127.0.0.1:8766`, this machine only. `8766` or `<address>:8766` opens it to the network. |
 | `CELINE_TRUSTED_PROXIES` | The reverse proxy's addresses or networks, comma separated. Only these may forward the client's address. Default: none. |
 | `CELINE_LOGIN=on`, `CELINE_HEALTH_PORT=8765` (in the image) | The login is always on in the container. The health check asks port 8765 on the container's loopback, which nothing outside can reach. |
 | `CELINE_METRICS_PORT=8772` (in the image) | Prometheus numbers at `GET /metrics` on their own port, loopback only. See Monitoring. |
@@ -196,10 +196,11 @@ turn that starts before then sees it.
 Celine's terminals live in `shellbox`, a Debian container that is its own to play in. It
 is the user `celine` with passwordless sudo, so it can install anything with apt. The agent's
 uid and gid, 1000, are named once, `x-her-uid` in docker-compose.yml: both boxes are
-built with it and the app gives its home to it at its start. A home that is still not its own (a
-home disk, a restored folder) is given to it at the box's start, said in its log.
-`shellbox/shellboxd.py` runs as root (nothing it does stops it), writes in its home as
-it (nothing in it is root's), keeps its terminals as tmux sessions that run as it,
+built with it and the app gives its home to it at its start. If her home belongs to another user (a
+home disk, a restored folder), the box makes her its owner when it starts and writes that
+in its log. `shellbox/shellboxd.py` runs as root, so nothing she does can stop it. It
+writes in her home as her user (so no file there belongs to root), keeps her terminals as
+tmux sessions that run as her user,
 and gives the app a small API with `keys/shell.key` as the bearer token. The box gets
 only the key's sha256, `/etc/shellbox/key.hash`, mounted read-only from the volume: it
 has sudo, and root reads every environment and file in there, so the key itself never
@@ -238,8 +239,8 @@ with a prompt that says so.
   a 2 GB tmpfs that counts against its memory.
 - Its own network: the app reaches it; the connectors and the search engine do not. The internet and your LAN are open to it.
   If it can do without them, `internal: true` is the recommended setting: uncomment it under `networks: shellbox` (and
-  `browser`) in the compose file: the box then reaches only the app, so something that
-  talked it into a command cannot reach your LAN or the internet from there. It can no
+  `browser`) in the compose file: the box then reaches only the app, so a web page or message
+  that tricked her into running a command cannot reach your LAN or the internet from there. It can no
   longer install packages or fetch pages from the box then.
 
 Every morning the shellbox goes back to a fresh image: recreating the container throws
@@ -258,7 +259,7 @@ The agent's home's size: `SHELLBOX_HOME_GB` gives it a hard cap (default 50 GB),
 `SHELLBOX_HOME_SOFT_GB` a soft one (default 90% of the hard cap). The box measures its home every 10 minutes;
 past either cap, its next result says so and asks it to clean up or ask for more room,
 and past the hard cap the box takes no more uploads. What the agent writes from its own
-shell does not pass through the box's daemon: only the disk below stops that.
+shell does not pass through the box's daemon: only the disk image described in the next paragraph stops that.
 
 A hard limit, optionally: with `SHELLBOX_HOME` (a host folder) as well, its home can be an ext4 disk image of that size (`$SHELLBOX_HOME.img`, mounted by `/etc/fstab`). Replace the shellbox's home volume in the compose file with `- ${SHELLBOX_HOME}:/home/celine`, then, as root in the stack folder, `docker compose stop shellbox`, `shellbox/home-disk.sh` (makes the disk, moves the files in, adds the fstab line), `docker compose up -d shellbox`. Run it again after raising `SHELLBOX_HOME_GB`: the disk grows in place; shrinking is by hand. The folder under the disk is made immutable (`chattr +i`): if the disk ever fails to mount, its box refuses to start (shellboxd cannot write its home) instead of writing onto the host's disk; the rest of the stack keeps running.
 
@@ -273,9 +274,9 @@ shellboxd puts `OPENAI_BASE_URL` and `OPENAI_API_KEY`
 into its terminals from `SHELLBOX_LLM_URL` and `/etc/shellbox/llm.key`. The proxy opens every
 model in Settings that can chat and has its key (`settings/her_models.py`), and holds the
 provider keys itself. Every call takes its slot in the app's model queue in the
-`shellbox` lane at background priority. The key opens only /llm/v1: on /api it is no
-token, so the box reaches no guard or approval route; while it is frozen the proxy
-answers 403.
+`shellbox` lane at background priority. The key works only on /llm/v1; /api does not
+accept it, so the box cannot reach the guard or approval routes. While she is frozen, the
+proxy answers 403.
 
 ### Environment
 
@@ -287,7 +288,7 @@ The two boxes read these; the compose file sets the ones it names, `.env` the on
 | `BROWSER_KEY_HASH_FILE` | `/etc/browser/key.hash` | the sha256 of the app's `keys/browser.key`; the browser box accepts only a call with that key |
 | `BROWSER_PORT` | `8771` | the port browserd listens on |
 | `SHELLBOX_LLM_URL` | none | the app's model proxy its terminals call (`OPENAI_BASE_URL`) |
-| `SHELLBOX_HOME_GB` | `50` | its home's hard cap in GB: past it no upload lands |
+| `SHELLBOX_HOME_GB` | `50` | her home's hard size limit in GB: above it uploads are refused |
 | `SHELLBOX_HOME_SOFT_GB` | 90% of the hard cap | past it the agent is told to clean up |
 | `SHELLBOX_RESET_AT` | `04:00` | the hour of the morning reset, HH:MM in `TZ` |
 | `SHELLBOX_SNAPSHOT_KEEP_DAYS` | `7` | days its home's snapshots are kept (shellbox-manager); 0 keeps every one |
@@ -300,7 +301,7 @@ Celine's browser lives in `browser`, a Debian box with Brave. `browser/run.sh` k
 loopback, and gives the app a small API with `keys/browser.key` as the bearer token. The
 box holds only its sha256, `/etc/browser/key.hash`.
 
-Calls: `POST /do` (one action in a named tab, or a restart), `POST /control` (take over, give back, restart), `GET /status`, `GET /health` (no key).
+Calls: `POST /do` (one action in a named tab, or a restart), `POST /control` (Take control, Return control, restart), `GET /status`, `GET /health` (no key).
 
 - Everything runs as celine (`x-her-uid`, as in its shellbox) with its home, the
   volume's `shellbox/` folder: the profile is `~/.browser`, downloads land in `~/Downloads`, where its shellbox sees
@@ -335,8 +336,9 @@ reads json), `limiter: false` (one client), no image proxy, 4 s per engine. The 
 runs with `FORCE_OWNERSHIP: "false"` and `cap_drop: [ALL]`.
 
 The app reaches it as `http://searxng:8080` (`CELINE_SEARXNG_URL`, the seed of the
-address in Settings, Features, Web search). Without it the address is
-`http://127.0.0.1:8888` until you save one.
+address in Settings, Features, Web search). Without `CELINE_SEARXNG_URL` the
+address starts as `http://127.0.0.1:8888` until you save another one in Settings, Features,
+Web search.
 
 **Privacy.** What leaves the stack depends on where your models run. With local
 models only, web search is the one feature that sends something out. With a cloud
@@ -345,14 +347,14 @@ its notes, archive excerpts (other people's messages too), mail, shell output an
 screenshots; for the other roles, the text or image each one is given. OpenRouter
 requests carry `data_collection: "deny"` unless you change it, and each OpenRouter model
 can ask for zero data retention (Settings, Models). Keep archive content local by
-giving Chat and Topic Search local models.
+giving Chat and Topic search local models.
 
 A search query goes (through SearXNG) to the public engines, and `web__read_page` gets
 the page from its server with a User-Agent that names Celine as a self-hosted personal
 assistant. Celine is told
 never to put names, numbers or message text from the chat archive, Documents or its
-notebook into a query or URL unless you asked it to. Turn the skill off with `[web]
-enabled = false`, or per conversation in its Skills panel. `web__read_page` refuses
+notebook into a query or URL unless you asked it to. Turn it off in Settings, Features
+(Web search), or for one conversation in the side panel's Tools tab. `web__read_page` refuses
 anything but public http(s): `file://`, loopback, private LAN ranges, link-local, CGNAT
 and `.local`-style names are refused, redirects are checked hop by hop, and the address
 actually connected to is checked again (DNS rebinding). Limits: 20 s per fetch, 5 MB of
@@ -372,8 +374,8 @@ bge-reranker-v2-m3, served by llama.cpp's `llama-server --reranking`, which spea
   `docker compose ps` shows "starting" meanwhile. To use another file of the model, set
   `RERANKER_MODEL` in `.env` (for example `gpustack/bge-reranker-v2-m3-GGUF:Q4_0`,
   faster on a CPU, slightly less exact) and delete the old file from the folder.
-- **In the app.** Settings, Models: add a server of kind llama-server at
-  `reranker:8080`, then put `bge-reranker-v2-m3` in the Reranking role. With the role
+- **In the app.** Settings, Models: add a provider of type llama-server at
+  `http://reranker:8080`, then put `bge-reranker-v2-m3` in the Reranking role. With the role
   empty, or the reranker down, search still works and keeps the order of the word search
   and the semantic topic search.
 - **CPU or GPU.** The service runs on the CPU. With an NVIDIA GPU and the NVIDIA
@@ -401,11 +403,21 @@ route: the API, the WebSockets, the app's pages and files. The only exceptions a
 login screen at `/` and the six login calls it makes.
 
 **First start.** With no way to log in yet, the app writes a one-time setup code to
-`<data>/setup-code.txt` (mode 600; in the stack `docker compose exec celine cat
+`<data>/setup-code.txt` (mode 600; in the stack `docker compose exec -u celine celine cat
 /data/app/setup-code.txt`). The log only says that the code is there, never the code. Open the app, enter the code and pick
 a method: add a passkey, set a password (at least 10 characters) or a PIN (exactly 8
 digits). Then the screen shows ten recovery codes once: save them. Every restart without
 a login writes a new setup code, and the old one stops working.
+
+**The app's address.** The app keeps the address of the browser the setup code was
+entered in (`var/settings/address.toml`); Settings, General, Network changes it. Logins, share
+links, push and her Mac's setup command use it, and requests from any other address but
+localhost are refused. If no address is saved yet, the app saves it at the next login. Until
+then, other addresses can open only the login and setup pages.
+
+**On your network without a domain.** Put `CELINE_PUBLISH=8766` in `.env`, run
+`docker compose up -d` again, open `http://<the machine's LAN address>:8766` and enter the
+setup code there. Log in with a password or a PIN: passkeys need https or localhost.
 
 **Local development** runs with the login off. To try the login locally, set
 `CELINE_LOGIN=on` and open http://localhost:8766. Use `localhost`, not 127.0.0.1.
@@ -419,16 +431,15 @@ way to log in, new recovery codes and a new API token ask you to confirm it is y
 counts. It also lists the browsers logged in, each with when it logged in and when it
 was last seen, and logs out one or every other.
 
-**Stored** (`auth.db`, mode 600): the passkeys' public keys, the passwords and PINs as scrypt hashes, a SHA-256 of each session token with its browser's user agent (trimmed), and the recovery and setup codes as scrypt hashes. **Sessions** end 30 days after last use and 90 days after login; the cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on https. **Limits:** two locks, each on its own: after 5 wrong setup or recovery codes, code entry locks for everyone for 6 hours, and after 5 wrong passwords or PINs from one client address, logging in with them from that address does (so nobody can lock you out from elsewhere); each further wrong one doubles that lock up to 30 days. A locked kind refuses even the right one, while the other kind still works. Failed logins of any kind are also limited to 10 per client address in 15 minutes.
+**Stored** (`auth.db`, mode 600): the passkeys' public keys, the passwords and PINs as scrypt hashes, a SHA-256 of each session token with its browser's user agent (trimmed), and the recovery and setup codes as scrypt hashes. **Sessions** end 30 days after last use and 90 days after login; the cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` on https. **Limits.** There are two separate locks. After 5 wrong setup or recovery codes, code entry is locked for everyone for 6 hours. After 5 wrong passwords or PINs from one client address, password and PIN login is locked for that address only, so nobody can lock you out from somewhere else; each further wrong one doubles that lock up to 30 days. A locked kind refuses even the right one, while the other kind still works. Failed logins of any kind are also limited to 10 per client address in 15 minutes.
 
 ## Behind a reverse proxy (https)
 
-Passkeys belong to the public address, so name it; it is never guessed from request
-headers:
+Open the app at `https://celine.example.net` and enter the setup code there: the app keeps
+that address (Settings, General, Network), and passkeys belong to it.
 
 ```sh
 # .env
-CELINE_PUBLIC_ORIGIN=https://celine.example.net
 CELINE_PUBLISH=192.168.1.5:8766         # where the proxy reaches the app
 CELINE_TRUSTED_PROXIES=192.168.1.2      # the proxy's address (or network, 192.168.1.0/24)
 ```

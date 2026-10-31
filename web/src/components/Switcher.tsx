@@ -30,7 +30,7 @@ async function others(): Promise<Item[]> {
   }) as Item), none)
   const schedules = routinesApi.schedules().then(r => r.schedules.map(s => ({
     key: `s:${s.name}`, id: s.name, route: { section: 'routines', night: r.tonight, schedule: s.name }, title: s.title,
-    detail: `Schedule, ${s.every}`, icon: CalendarClock, at: 0,
+    detail: `Schedule, ${s.on ? s.every : 'Off'}`, icon: CalendarClock, at: 0,
   }) as Item), none)
   const nights = routinesApi.runs().then(r => r.nights.map(n => ({
     key: `n:${n.night}`, id: n.night, route: { section: 'routines', night: n.night },
@@ -87,7 +87,7 @@ export function Switcher({ onClose }: { onClose: () => void }) {
 
   return (
     <Sheet title="Go to" onClose={onClose}>
-      <SearchField autoFocus className="switcher__field" value={q} onChange={setQ} placeholder="Conversations, documents, intercom, routines"
+      <SearchField autoFocus className="switcher__field" value={q} onChange={setQ} placeholder="Search"
                    listbox={{ id: 'switcher-list', active: items[at] ? `sw-${items[at]!.key}` : undefined }}
                    onKeyDown={e => {
                      if (e.key === 'ArrowDown') { e.preventDefault(); setAt(n => Math.min(items.length - 1, n + 1)) }
@@ -117,15 +117,15 @@ export function Switcher({ onClose }: { onClose: () => void }) {
 const KEYS: [string, string][] = [
   ['Ctrl K', 'Go to a conversation, a document, a thread, a schedule or a day of Routines'],
   ['Ctrl Shift O', 'New conversation here'],
-  ['Alt Up, Alt Down', 'The conversation above or below'],
+  ['Alt Up, Alt Down', 'Go to the conversation above or below'],
   ['Enter', 'Send'],
   ['Shift Enter', 'New line'],
-  ['Esc', 'Stop the answer (with nothing typed), close a run or a schedule'],
+  ['Esc', 'Stop the reply when the message box is empty, or close an open run or schedule'],
   ['Ctrl Enter, Ctrl S', 'Save a schedule, start a mission'],
-  ['Left, Right', 'Routines: the day before or after'],
-  ['Up, Down', 'Routines: the run above or below'],
-  ['N', 'Routines: a new schedule'],
-  ['?', 'These shortcuts'],
+  ['Left, Right', 'Routines: go to the day before or after'],
+  ['Up, Down', 'Routines: go to the run above or below'],
+  ['N', 'Routines: new schedule'],
+  ['?', 'Show keyboard shortcuts'],
 ]
 
 export function Shortcuts({ onClose }: { onClose: () => void }) {

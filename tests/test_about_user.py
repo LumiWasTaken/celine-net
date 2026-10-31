@@ -61,3 +61,14 @@ async def test_the_context_payload_carries_the_switch(tmp_path, monkeypatch, sto
         r = await api.put(f"/api/conversations/{cid}/auto-context", json={"on": False})
         assert r.json() == {"on": False}
         assert (await api.get(f"/api/conversations/{cid}/context")).json()["auto_context"] is False
+
+
+async def test_ask_before_setup_puts_its_line_in_the_prompt_while_on(tmp_path, monkeypatch,
+                                                                    store):
+    for on in (True, False):
+        scratch(tmp_path, monkeypatch, general={"user_name": "Joe", "ask_before_setup": on})
+        cfg = boot.load()
+        cid = await conversations.create(store)
+        carried = await loads.select(store, cfg, None, cid, None)
+        got = "\n".join(t for _, t in await system_blocks(cfg, None, store, cid, "", carried))
+        assert ("wait for their go" in got and "also when Joe asked" in got) is on

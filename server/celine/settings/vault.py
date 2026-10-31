@@ -11,20 +11,23 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
+from . import form
 from .files import Invalid
 
 CLIENT_SECRET = "vault-api"     # var/secrets/vault-api.key
 
 FIELDS: list[dict[str, Any]] = [
     {"key": "url", "label": "Server", "type": "text",
-     "help": "The Vaultwarden address, such as https://vault.example.com.", "default": ""},
-    {"key": "client_id", "label": "Client id", "type": "text",
-     "help": "From the web vault: Settings, Security, Keys, View API key.", "default": ""},
+     "help": "The Vaultwarden address, such as https://vault.example.com.", "default": "",
+     "word": True},
+    {"key": "client_id", "label": "Client ID", "type": "text",
+     "help": "From the web vault: Settings, Security, Keys, View API key.", "default": "",
+     "word": True},
     {"key": "collection", "label": "Collection", "type": "text",
-     "help": "An organization collection the agent shares with you, by name (or by id when "
-             "two have the same name): the agent's entries go there and it sees only that one. "
-             "Required: without it the vault takes nothing.",
-     "default": ""},
+     "help": "The name of the organization collection you share with the agent (its ID if "
+             "two have the same name). The agent sees and saves logins only in this "
+             "collection.",
+     "default": "", "word": True},
 ]
 _BY_KEY = {f["key"]: f for f in FIELDS}
 
@@ -34,23 +37,12 @@ def value(vault: dict[str, Any], key: str) -> Any:
 
 
 def validate(data: Any) -> dict[str, Any]:
-    if not isinstance(data, dict):
-        raise Invalid("vault", "The vault settings are an object.")
-    out: dict[str, Any] = {}
-    for k, v in data.items():
-        path = f"vault.{k}"
-        if k not in _BY_KEY:
-            raise Invalid(path, f"'{k}' is not a vault setting.")
-        if v is None or v == "":
-            continue
-        if not isinstance(v, str) or any(c.isspace() for c in v.strip()):
-            raise Invalid(path, "This must be text without spaces.")
-        v = v.strip()
-        if k == "url" and (urlsplit(v).scheme != "https" or not urlsplit(v).netloc):
-            # bw takes no other: "Insecure URL not allowed"
-            raise Invalid(path, "This must be an https address, such as "
-                                "https://vault.example.com.")
-        out[k] = v
+    out = form.validate("vault", FIELDS, data)
+    if "url" in out and (urlsplit(out["url"]).scheme != "https"
+                         or not urlsplit(out["url"]).netloc):
+        # bw takes no other: "Insecure URL not allowed"
+        raise Invalid("vault.url", "This must be an https address, such as "
+                                   "https://vault.example.com.")
     return out
 
 

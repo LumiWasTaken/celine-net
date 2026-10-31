@@ -35,12 +35,14 @@ async def create(store, title: str = "", trigger_key: str | None = None,
                  agent_of: str | None = None, agent_name: str | None = None,
                  notebook_folder: str | None = None, access: str | None = None,
                  auto: bool = False, kind: str = "chat",
-                 agent_cli: str | None = None) -> str:
+                 agent_cli: str | None = None, agent_device: str | None = None,
+                 agent_template: str | None = None) -> str:
     """`kind` is what it is (chat, mission, background; a sub-agent's is always
     `agent`), fixed from here on. A sub-agent's conversation (sub_agents/skill.py)
     carries the conversation that started it, its name, the notebook folder it is
     limited to, its access (read or work), and the agent CLI that runs its briefs, when
-    one does (sub_agents/cli.py)."""
+    one does (sub_agents/cli.py), with the device it runs on (sub_agents/drone.py), and the
+    agent template it was started from (sub_agents/templates.py)."""
     cid = new_id()
     kind = "agent" if agent_of else kind
 
@@ -48,10 +50,10 @@ async def create(store, title: str = "", trigger_key: str | None = None,
         ts = now()
         c.execute(
             "INSERT INTO conversations(id, title, trigger_key, agent_of, agent_name, "
-            "notebook_folder, access, agent_cli, title_auto, kind, created_at, "
-            "updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "notebook_folder, access, agent_cli, agent_device, agent_template, title_auto, "
+            "kind, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (cid, title, trigger_key, agent_of, agent_name, notebook_folder,
-             access, agent_cli, int(auto), kind, ts, ts),
+             access, agent_cli, agent_device, agent_template, int(auto), kind, ts, ts),
         )
         announce(store, c, cid)
         return cid
@@ -99,8 +101,8 @@ async def for_trigger(store, trigger_key: str, title: str,
 async def update(store, cid: str, title: str | None = None,
                  pinned: bool | None = None, auto: bool = False,
                  notes_off: list[str] | None = None) -> bool:
-    """`auto`: the title is the app's (after the first reply), not the user's. A
-    changed `notes_off` (the notes left out here) is a `conversation.notes_off` event
+    """`auto`: the title is the model's (after the first reply, turns/title.py), stored as
+    it wrote it; the user's is stripped (its length is checked by the API). A changed `notes_off` (the notes left out here) is a `conversation.notes_off` event
     on the conversation's log."""
     def fn(c: sqlite3.Connection) -> bool:
         sets, args = [], []
@@ -113,7 +115,7 @@ async def update(store, cid: str, title: str | None = None,
                 store.event(c, cid, CONVERSATION_NOTES_OFF, {"notes_off": notes_off})
         if title is not None:
             sets.append("title=?, title_auto=?")
-            args += [title.strip()[:200], int(auto)]
+            args += [title if auto else title.strip(), int(auto)]
         if pinned is not None:
             sets.append("pinned=?")
             args.append(1 if pinned else 0)
@@ -124,7 +126,8 @@ async def update(store, cid: str, title: str | None = None,
         ok = c.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id=?",
                        args).rowcount == 1
         if ok and title is not None:
-            store.event(c, cid, CONVERSATION_TITLE, {"title": title.strip()[:200]})
+            store.event(c, cid, CONVERSATION_TITLE,
+                        {"title": title if auto else title.strip()})
         if ok and pinned is not None:
             store.global_event(c, CONVERSATION_PINNED, {"id": cid,
                                                          "pinned": bool(pinned)})
@@ -432,13 +435,16 @@ def locked(c: sqlite3.Connection, cid: str) -> str | None:
     return ARCHIVED if r["archived_at"] and lock_archived(c) else None
 
 
-def top_of(c: sqlite3.Connection, cid: str) -> str:
-    """The conversation a sub-agent's `cid` belongs to, all the way up; `cid` itself
-    for any other."""
+def depth(c: sqlite3.Connection, cid: str) -> int:
+    """How many levels `cid` is below the top of its agent_of chain: 0 for a
+    conversation that is not a sub-agent."""
+    n, seen = 0, {cid}
     while (r := c.execute("SELECT agent_of FROM conversations WHERE id=?",
-                          (cid,)).fetchone()) and r["agent_of"]:
+                          (cid,)).fetchone()) and r["agent_of"] and r["agent_of"] not in seen:
         cid = r["agent_of"]
-    return cid
+        seen.add(cid)
+        n += 1
+    return n
 
 
 def set_archived(c: sqlite3.Connection, store, cid: str, archived: bool) -> bool:
@@ -448,7 +454,7 @@ def set_archived(c: sqlite3.Connection, store, cid: str, archived: bool) -> bool
     works; with Lock archived chats only while a turn of the user's is live, and what
     waits to land there from anyone else is dropped (its running work is stopped by the
     caller, conversations/api.py). -> whether anything changed."""
-    top = top_of(c, cid)
+    top = (homes.root(c, cid) or {"id": cid})["id"]
     row = c.execute("SELECT archived_at FROM conversations WHERE id=?", (top,)).fetchone()
     if row is None or (row["archived_at"] is not None) == archived:
         return False
@@ -490,7 +496,7 @@ async def ensure_writable(store, cid: str) -> None:
         "SELECT trashed_at FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
     if trashed:
         from ..errors import CelineError
-        raise CelineError("deleted", "This conversation is deleted. Restore it to go on.",
+        raise CelineError("deleted", "This conversation is deleted. Restore it to continue.",
                           409)
     await archive(store, cid, False)
 
@@ -529,19 +535,20 @@ _SUMMARY = (
 # a turn that waits in the queue while Bastet holds her frozen (guard/freeze.py) does
 # not run: its conversation is not under Running and its row has no step
 _HELD = "EXISTS (SELECT 1 FROM kv WHERE k = 'frozen')"
-# Running first (a live turn in it or in one of its sub-agents), then pinned, then the rest
-_RANK = (f"CASE WHEN EXISTS (SELECT 1 FROM turns t JOIN conversations k "
-         f"ON k.id = t.conversation_id WHERE (k.id = c.id OR k.agent_of = c.id) "
-         f"AND t.state IN {LIVE_SQL} AND NOT (t.state = 'queued' AND {_HELD})) "
+# Running first (a live turn in it or in a sub-agent under it), then pinned, then the rest
+_RANK = (f"CASE WHEN EXISTS (WITH RECURSIVE fam(id) AS (SELECT c.id UNION ALL SELECT "
+         f"s.id FROM conversations s JOIN fam ON s.agent_of = fam.id) SELECT 1 FROM turns t "
+         f"JOIN fam ON fam.id = t.conversation_id WHERE t.state IN {LIVE_SQL} "
+         f"AND NOT (t.state = 'queued' AND {_HELD})) "
          f"THEN 2 WHEN c.pinned THEN 1 ELSE 0 END")
 # the step words of a live turn ('' : the dots); a running tool says its label
 _STEP = {"queued": "", "preparing": "Thinking", "streaming": ""}
 
 
 def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
-    """The list's group label of a row: Running, Pinned, then the day it was last
-    active in the app's time zone (Today, Yesterday, the weekday, "9 Oct", "October
-    2025")."""
+    """The list's group label of a row: Running, Pinned, then when it was last active in
+    the app's time zone: Today, Yesterday, Previous 7 days, Previous 30 days, the month
+    ("September") this year, the year ("2025") before."""
     if rank == 2:
         return "Running"
     if rank == 1:
@@ -553,16 +560,21 @@ def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
         return "Today"
     if days == 1:
         return "Yesterday"
-    if days < 7:
-        return d.strftime("%A")
-    return f"{d.day} {d:%b}" if d.year == today.year else d.strftime("%B %Y")
+    if days <= 7:
+        return "Previous 7 days"
+    if days <= 30:
+        return "Previous 30 days"
+    return d.strftime("%B") if d.year == today.year else str(d.year)
 
 
-def state_of(c: sqlite3.Connection, row: dict) -> dict | None:
-    """How its turn in it stands, in the server's words: running with its step (not
-    while frozen), waiting for you (a mission), or how the last turn ended when it
-    failed or paused."""
+def state_of(c: sqlite3.Connection, row: dict, asked: frozenset[str] = frozenset()
+             ) -> dict | None:
+    """How its turn in it stands, in the server's words: waiting for you (a request in
+    it, `asked`: approvals.py; a mission), running with its step (not while frozen), or
+    how the last turn ended when it failed or paused."""
     from ..settings.tools_meta import TOOLS, humanize
+    if row["id"] in asked:
+        return {"tone": "warn", "words": "Waiting for you"}
     held = row["active_state"] == "queued" and c.execute(f"SELECT {_HELD}").fetchone()[0]
     if row["active_state"] and not held:
         words = _STEP.get(row["active_state"])
@@ -588,14 +600,16 @@ def state_of(c: sqlite3.Connection, row: dict) -> dict | None:
 async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                after: tuple[int, str, str] | None = None,
                archived: bool = False, trashed: bool = False, *, place: str | None = None,
-               tz=timezone.utc, now_: datetime | None = None) -> list[dict]:
+               tz=timezone.utc, now_: datetime | None = None,
+               asked: frozenset[str] = frozenset()) -> list[dict]:
     """Running first (a live turn in it or a sub-agent of it), then pinned, then the most
     recently updated. `after`: the (rank, updated_at, id) of the last row of the
     previous page. `archived`: only the archived ones, else only the others;
     `trashed`: only the deleted ones (archived or not). `place` "celine": only its
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
-    (last_line above), `group` (group_of), `state` (state_of), `home` and `link`
+    (last_line above), `group` (group_of) and `dated` (its group is a date), `state` (state_of; `asked`: the conversations a
+    request waits in), `home` and `link`
     (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
     1 pinned, 0)."""
@@ -618,12 +632,13 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
             r["agents"] = [{**dict(s), "agents": []} for s in c.execute(
                 _SUMMARY + "WHERE c.agent_of = ? ORDER BY c.created_at, c.id", (r["id"],))]
             r["group"] = group_of(r["rank"], r["updated_at"], tz, now_)
+            r["dated"] = r["rank"] == 0
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
-                one["state"] = state_of(c, one)
+                one["state"] = state_of(c, one, asked)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
-                a["group"] = r["group"]
+                a["group"], a["dated"] = r["group"], r["dated"]
         return rows
 
     return await store.read(fn)

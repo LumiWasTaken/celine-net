@@ -79,7 +79,7 @@ class AuthStore:
             os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
         os.chmod(path, 0o600)
         self._lock = threading.Lock()
-        # ponytail: in memory, a restart forgets it; a table if that is ever abused
+        # in memory, a restart forgets it; a table if that is ever abused
         self._pin_fails: list[int] = []
         self._pin_until = 0
         migrate(path, MIGRATIONS)

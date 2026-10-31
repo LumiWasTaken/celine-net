@@ -96,7 +96,7 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
   const start = async () => {
     cancel(); setError(null)
     if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
-      setError('The microphone needs HTTPS or localhost.'); return
+      setError('Your browser only allows the microphone on an https address or on localhost. Open the app that way to dictate.'); return
     }
     const controller = new AbortController()
     task.current = controller; setState('permission')
@@ -151,7 +151,7 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
     {speech.resume && <IconButton icon={Volume2} label="Play audio" onClick={speech.resume} />}
     <IconButton icon={Settings2} label="Speech options" pressed={open} onClick={() => setOpen(v => !v)} />
     {(busy || speech.playing || error || speech.error) && <div className="speech-controls__status" role="status">
-      {error || speech.error || (state === 'recording' ? 'Recording' : state === 'permission' ? 'Waiting for microphone' : state === 'transcribing' ? 'Transcribing' : speech.resume ? 'Tap Play audio' : 'Reading aloud')}
+      {error || speech.error || (state === 'recording' ? 'Recording' : state === 'permission' ? 'Allow the microphone in your browser' : state === 'transcribing' ? 'Transcribing' : speech.resume ? 'Press Play audio to listen' : 'Reading aloud')}
     </div>}
     {open && <Dialog title="Speech options" onClose={() => setOpen(false)}>
       {speech.input && <>

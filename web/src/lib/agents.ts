@@ -29,8 +29,25 @@ export type Agent = {
   link: string
 }
 
+/** one sub-agent in the tree under a conversation's top (GET /api/conversations/{id}/sub-agents) */
+export type TreeAgent = {
+  id: string
+  parent: string
+  /** 1: started by the top conversation, 3 at most */
+  depth: number
+  name: string
+  state: 'queued' | 'working' | 'done' | 'stopped' | 'failed' | 'paused'
+  step_words: string | null
+  model: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  seconds: number
+  link: string
+}
+
 export const agentsApi = {
   list: () => request<{ agents: Agent[] }>('/sub-agents').then(r => r.agents),
+  tree: (cid: string) => request<{ top: string; agents: TreeAgent[] }>(`/conversations/${encodeURIComponent(cid)}/sub-agents`),
   stop: (id: string) => post<{ stopped: boolean }>(`/sub-agents/${encodeURIComponent(id)}/stop`),
 }
 

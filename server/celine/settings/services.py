@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from .. import keys
+from . import form
 from .files import Invalid
 from .kinds import valid_url
 
@@ -32,14 +33,14 @@ DEFAULTS = {"shellbox": "http://127.0.0.1:8770", "browser": "http://127.0.0.1:87
 
 FIELDS: dict[str, list[dict[str, Any]]] = {
     "shellbox": [{"key": "url", "label": "Address", "type": "text",
-                  "help": "Where the shellbox answers, such as http://shellbox:8770.",
-                  "default": ""}],
+                  "help": "The shellbox's address, such as http://shellbox:8770.",
+                  "default": "", "word": True}],
     "browser": [{"key": "url", "label": "Address", "type": "text",
-                 "help": "Where the browser box answers, such as http://browser:8771.",
-                 "default": ""}],
+                 "help": "The browser's address, such as http://browser:8771.",
+                 "default": "", "word": True}],
     "searxng": [{"key": "url", "label": "Address", "type": "text",
-                 "help": "Where SearXNG answers, such as http://searxng:8080.",
-                 "default": DEFAULTS["searxng"]}],
+                 "help": "SearXNG's address, such as http://searxng:8080.",
+                 "default": DEFAULTS["searxng"], "word": True}],
 }
 
 def url(cfg, sid: str) -> str:
@@ -80,21 +81,12 @@ def validate(data: Any) -> dict[str, dict[str, Any]]:
     for sid, block in data.items():
         if sid not in IDS:
             raise Invalid(f"services.{sid}", f"'{sid}' is not a service.")
-        if not isinstance(block, dict):
-            raise Invalid(f"services.{sid}", "This is a table of keys.")
-        clean: dict[str, Any] = {}
-        for k, v in block.items():
-            path = f"services.{sid}.{k}"
-            if k != "url":
-                raise Invalid(path, f"'{k}' is not a setting of {sid}.")
-            if v is None or v == "":
-                continue
-            if not isinstance(v, str):
-                raise Invalid(path, "This must be text.")
-            v = v.strip().rstrip("/")
-            if not valid_url(v):
-                raise Invalid(path, "This must be an address, such as http://shellbox:8770.")
-            clean[k] = v
+        clean = form.validate(f"services.{sid}", FIELDS[sid], block)
+        if "url" in clean:
+            clean["url"] = clean["url"].rstrip("/")
+            if not valid_url(clean["url"]):
+                raise Invalid(f"services.{sid}.url",
+                              "This must be an address, such as http://shellbox:8770.")
         out[sid] = clean
     return out
 

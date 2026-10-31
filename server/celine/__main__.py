@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import logging
 import os
 import socket
@@ -21,13 +22,13 @@ from .api import kb as kb_api
 from .api import connectors as connectors_api
 from .api import identity as identity_api
 from .api import llm as llm_api
-from .api import settings as settings_api
+from .api import forms as forms_api, settings as settings_api
 from .api import her as her_api
 from .api import commands as commands_api
 from .api import attachments as attachments_api, ws
 from .api import notebook as notebook_api
 from .api import skills as skills_api
-from .conversations import api as conversations_api, store as conversations
+from .conversations import api as conversations_api, store as conversations, tree
 from . import attachments, boot, keys, reload
 from .backends import llm as llm_mod
 from .core.services import Services
@@ -119,14 +120,7 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
         log.info("keys made", extra={"event": "keys.made", "files": made,
                                      "dir": str(cfg.data_dir / "keys")})
     from .settings import files as settings_files, seed
-    seed.seed(settings_files.settings_dir(cfg))    # context shares, schedules: copied once
-    moved = seed.skill_knobs(settings_files.settings_dir(cfg), config_mod.CONFIG_DIR / "skills.toml")
-    if moved:
-        log.info("skill numbers moved", extra={"event": "settings.knobs_moved", "keys": moved})
-    from .settings.secrets import secrets_dir
-    spoken = seed.speech_roles(settings_files.settings_dir(cfg), secrets_dir(cfg.data_dir))
-    if spoken:
-        log.info("speech moved to roles", extra={"event": "settings.speech_moved", "roles": spoken})
+    seed.seed(settings_files.settings_dir(cfg))    # the context shares: copied once
     version = migrate_all(cfg.db_path)
     cfg = _load_config()                            # everything, its row too
     cfg.server.update(reload.CLI_SERVER)
@@ -148,7 +142,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
         async with anyio.create_task_group() as tg:
             services = app.state.services
             bus = services.bus = EventBus()
-            store = services.store = Store(cfg.db_path, bus=bus)
+            store = services.store = Store(cfg.db_path, bus=bus, cfg=cfg)
             await store.start(tg)
             from .conversations.store import keep_lock
             keep_lock(store, cfg)               # Lock archived chats, where its SQL reads it
@@ -175,11 +169,6 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             tg.start_soon(_semantic.run_scheduler, cfg, kbs)
             from .kb import media as _media           # image captions (Settings, General)
             tg.start_soon(_media.run_scheduler, cfg, kbs)
-            documents = kbs.documents()
-            if documents is not None:
-                scanned = await anyio.to_thread.run_sync(documents.rescan)
-                log.info("documents scanned", extra={"event": "documents.scanned", **scanned})
-                tg.start_soon(_watch_documents, documents, store)
             log.info("knowledge bases ready", extra={"event": "kb.ready",
                                                      "kbs": sorted(kbs.all)})
 
@@ -239,14 +228,14 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                     try:
                         async with anyio.create_task_group() as g:
                             for sid in f.mcp:
-                                g.start_soon(mcp.run_one, sid)
+                                g.start_soon(mcp.run_one, cfg.mcp.get(sid))
                     finally:
                         for sid in f.mcp:
                             connectors.close(sid)
                         for kid in f.kbs:
                             kbs.close(kid)
                 return Runner(tg, run)
-            for f in features.CATALOG:
+            for f in features.BASE:          # a plugin's servers run under its own runner
                 if f.mcp:
                     runners[f.id] = connector_runner(f)
                     if on[f.id]:
@@ -257,33 +246,62 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             if on["images"] or on["music"]:
                 tg.start_soon(comfy_server.free_shared, cfg, llm)
             tg.start_soon(llm.router.watch)     # the host ping; paused without one
-            await comfy_batches.sweep(store)
-            services.batches = comfy_batches.Batches(services, tg)
+
+            async def media_run() -> None:     # images and music: the batches
+                await comfy_batches.sweep(store)
+                async with anyio.create_task_group() as g:
+                    services.batches = comfy_batches.Batches(services, g)
+                    try:
+                        await anyio.sleep_forever()
+                    finally:
+                        services.batches = None
+            runners["media"] = Runner(tg, media_run, features=("images", "music"))
+            if on["images"] or on["music"]:
+                await runners["media"].start()
             await attachments.gc(cfg, store)
             await conversations.prune_events(store, keep=int(cfg.r("events_keep")),
                                              requests_days=int(cfg.r("requests_keep")))
             tg.start_soon(conversations.keep_pruned, store, cfg)    # and every so often
             swept = await turns.sweep(store, registry)
-            from .guard import store as guard_rows
-            await guard_rows.close_asked(store)     # Bastet's asks of the last run
             from .approvals import close_left
             await close_left(store)                 # the chats' requests of the last run
             if swept["total"]:
                 log.info("swept orphans", extra={"event": "startup.swept",
                                                  "count": swept["total"],
-                                                 "resumable": swept["resumable"]})
+                                                 "interrupted": swept["interrupted"]})
             dispatcher = services.dispatcher = Dispatcher(store, cfg, bus, None,
                                                           registry, llm=llm)
             dispatcher.ready = services.vault.ready
+            tree.prefills = lambda cid: conversations_api.prefills(services, cid)
 
             async def describe_again(p: dict) -> None:   # kb/documents_describe.py
                 if (kb := kbs.get(p["kb"])) is not None:
                     await anyio.to_thread.run_sync(kb.kick_describe)
-            dispatcher.work.handle("documents.describe", ("small",), describe_again)
-            if documents is not None:
-                documents.work = dispatcher.work
+
+            async def documents_run() -> None:   # Documents: the folder, its index, its watcher
+                for kid in features.get("documents").kbs:
+                    await anyio.to_thread.run_sync(kbs.open, kid)
+                try:
+                    dispatcher.work.handle("documents.describe", ("small",), describe_again)
+                    dispatcher.work.notify()
+                    if (documents := kbs.documents()) is not None:
+                        documents.work = dispatcher.work
+                        scanned = await anyio.to_thread.run_sync(documents.rescan)
+                        log.info("documents scanned",
+                                 extra={"event": "documents.scanned", **scanned})
+                        await _watch_documents(documents, store)
+                    await anyio.sleep_forever()
+                finally:
+                    for kid in features.get("documents").kbs:
+                        kbs.close(kid)
+            runners["documents"] = Runner(tg, documents_run)
+            if on["documents"]:
+                await runners["documents"].start()
+            from .push import Push              # the notices to devices without a focused page
+            push = services.push = Push(cfg, store, bus, app.state.auth)
+            tg.start_soon(push.run)
             from .intercom import Intercom      # messages between everyone, and their timer
-            intercom = services.intercom = Intercom(store, dispatcher.notify)
+            intercom = services.intercom = Intercom(store, dispatcher.notify, dispatcher.user_wrote)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules
             # every on_end before the workers start: a turn resumed at start that ends
             # while the awaits below run still reports and answers its pair
@@ -297,20 +315,40 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             mission_watch.start(services)
             from .skills import mind                 # its mood: the appraisal after a turn
             mind.start(services)
-            from .guard import talk                  # Bastet answers her on the Intercom
-            talk.start(services)
             await dispatcher.start(tg)
             await intercom.run(tg)
             from .sub_agents.skill import release_all     # queued before a restart
             await release_all(services)
-            triggers = services.triggers = Triggers(services)   # the skills' triggers
-            await triggers.run(tg)
-            from .guard import patrol
-            tg.start_soon(patrol.run, services)
-            tg.start_soon(mission_watch.run, services)     # the missions' check-ins
             from .schedules.runs import Scheduler   # the schedules' runs
-            schedules = services.schedules = Scheduler(services)
-            await schedules.run(tg)
+            scheduler = Scheduler(services)          # made once: its turn-end hook
+
+            async def routines_run() -> None:       # the skills' triggers, the schedules
+                try:
+                    async with anyio.create_task_group() as g:
+                        services.triggers = Triggers(services)
+                        await services.triggers.run(g)
+                        services.schedules = scheduler
+                        await scheduler.run(g)
+                        await anyio.sleep_forever()
+                finally:
+                    services.triggers = services.schedules = None
+
+            async def guard_run() -> None:          # Bastet: its answers, its patrol
+                from .guard import patrol, store as guard_rows, talk
+                await guard_rows.close_asked(store)     # its asks of the last run
+                talk.start(services)                    # it answers her on the Intercom
+                dispatcher.work.notify()
+                try:
+                    await patrol.run(services)
+                finally:
+                    for kind in (talk.KIND, talk.NOTE):
+                        dispatcher.work.handlers.pop(kind, None)
+            runners["routines"] = Runner(tg, routines_run, on_stop=scheduler.forget)
+            runners["guard"] = Runner(tg, guard_run)
+            runners["missions"] = Runner(tg, lambda: mission_watch.run(services))  # check-ins
+            for fid in ("routines", "guard", "missions"):
+                if on[fid]:
+                    await runners[fid].start()
             # its terminals, for the pages: the routes always have the sync, its loop
             # follows the shellbox only when there is one
             from .terminals.sync import TerminalSync
@@ -322,6 +360,13 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             for fid in ("shellbox", "browser"):
                 if on[fid]:
                     await runners[fid].start()
+            from . import plugins                # each plugin's runner, by its switch
+            from .api import plugins as plugins_api
+            for p in plugins.all():
+                runners[p.id] = Runner(tg, functools.partial(
+                    plugins_api.run, services, app.state.plugin_routes, p))
+                if on[p.id]:
+                    await runners[p.id].start()
             tg.start_soon(reload.watch, services)
 
             auth = app.state.auth
@@ -353,8 +398,10 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from . import auth as auth_mod
     from .auth.gate import not_found
     from .auth.install import install as install_login
+    from .settings import address
     origin_mod.install(app, cfg.port, dev, log, server=cfg.server,
-                       login_on=auth_mod.mode(cfg.server) == "on")
+                       login_on=auth_mod.mode(cfg.server) == "on",
+                       stored=lambda: address.get(cfg))
     install_login(app, cfg, dev)             # the session gate
     from .api.headers import SecurityHeaders
     app.add_middleware(SecurityHeaders)      # outermost: covers the gate's answers too
@@ -373,6 +420,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from .api import llm_proxy
     app.include_router(llm_proxy.router)
     app.include_router(settings_api.router)
+    app.include_router(forms_api.router)
     from .api import speech as speech_api
     app.include_router(speech_api.router)
     app.include_router(her_api.router)
@@ -401,6 +449,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     app.include_router(artifacts_api.router)
     from . import shares as shares_api
     app.include_router(shares_api.router)
+    from . import push as push_api
+    app.include_router(push_api.router)
     from .comfyui import api as comfyui_api
     app.include_router(comfyui_api.router)
     from .api import presets as presets_api
@@ -417,6 +467,11 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from . import events as events_api
     app.include_router(events_api.router)
     app.include_router(ws.router)
+
+    # the plugins' routes, appended and removed by their runners (api/plugins.py)
+    from .api import plugins as plugins_api
+    plugins_mount, app.state.plugin_routes = plugins_api.mount()
+    app.router.routes.append(plugins_mount)
 
     @app.get("/api/health", include_in_schema=False)
     async def _health() -> dict:
@@ -459,14 +514,12 @@ _ROOT_FILES = {".webmanifest", ".png", ".svg", ".ico", ".js"}
 
 
 async def _announce_shutdown(store, intercom) -> None:
-    """Every conversation at work hears that the app restarts, before its turn is put
-    down: a turn that resumes reads it at its first step, an idle one with a job finds
-    it in its next turn. What the restart cuts comes after the start (the sweep)."""
-    from .core.states import LIVE_SQL
+    """Every conversation with a job at work hears that the app restarts: it finds it in
+    its next turn. What the restart cuts comes after the start (the sweep); a turn it
+    cuts ends `interrupted` and waits for the user's Regenerate."""
     try:
         cids = await store.read(lambda c: [r[0] for r in c.execute(
-            f"SELECT conversation_id FROM turns WHERE state IN {LIVE_SQL} UNION "
-            "SELECT conversation_id FROM jobs WHERE state='running'")])
+            "SELECT DISTINCT conversation_id FROM jobs WHERE state='running'")])
         for cid in cids:
             await intercom.send("system:app", f"agent:{cid}", "The app is restarting now.",
                                 kind="notice", wake=False)

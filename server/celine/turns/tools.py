@@ -13,12 +13,10 @@ from .. import guard, metrics
 from ..errors import mask, mask_all
 from ..guard import calls as bastet_calls, facts as guard_facts, mark
 from ..guard import page as guard_page, passes as guard_passes, sources
-from ..skills import ToolContext, ToolResult
+from ..skills import CORE, META, ToolContext, ToolResult
 from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
                              read_mode_has)
 from .cancel import until_stop
-from .ledger import STOPPED, Ledger, records_for
-from . import loads
 from . import store as turns
 
 log = logging.getLogger("celine.tools")
@@ -30,25 +28,21 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
 
     The calls of one reply run concurrently when each is read-only and blocking, or
     hands work that only adds (not destructive) to a job, like several sub-agents
-    started at once. Results are written in call order either way. A call identical to
-    one before it in the same reply runs once; the others get SAME_STEP. Each call's
-    arguments are parsed once, here (`args`: the object, or None when they are not one)."""
+    started at once. Results are written in call order either way. Every call runs.
+    Each call's arguments are parsed once, here (`args`: the object, or None when they
+    are not one)."""
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
     texts: dict[str, str] = {}
-    # answered without running: a repeat in the same reply
-    early: dict[str, tuple] = {c["id"]: ("ok", ToolResult(content=SAME_STEP), None)
-                               for c in calls if c["id"] in _dupes(calls, registry)}
-    # a skill it uses stays loaded (turns/loads.py)
-    await loads.touch(store, cid, "skill", [c["name"].split("__")[0] for c in calls
-                                            if c["name"] in turn.get("offered", ())])
-
     guarded = guard.enabled(cfg, cid)
 
     async def write(call, out) -> None:
         state, result, withheld = out
         result = await checked(received(result, turn, call, guarded, registry), turn,
                                call, store, cfg, getattr(registry, "app", None))
+        if state not in ("gated", "detached", "cancelled"):
+            result = await _with_guide(result, turn, call, store, cfg, registry,
+                                       marked(result, guarded))
         withheld = mask(withheld or "") or None
         await turns.finish_tool_call(store, cid, call["message_id"], call["id"],
                                      call["name"], result, state, withheld)
@@ -58,24 +52,22 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         metrics.TOOL_CALLS.labels(call["name"] if known else "unknown", state).inc()
         log.info("tool done", extra={"event": "tool.done", "turn": tid,
                                      "tool": call["name"], "state": state})
-    run = [c for c in calls if c["id"] not in early]
-    if _concurrent(run, registry):
-        done: dict[str, tuple] = dict(early)
+    if _concurrent(calls, registry):
+        done: dict[str, tuple] = {}
 
         async def one(call):
             done[call["id"]] = await _resolve(
                 turn, call, store, cfg, registry, overrides, token, jobs)
         async with anyio.create_task_group() as tg:
-            for call in run:
+            for call in calls:
                 tg.start_soon(one, call)
         for call in calls:
             if done.get(call["id"]) is not None:     # None: shutdown before it started
                 await write(call, done[call["id"]])
         return texts
     for call in calls:
-        out = early.get(call["id"]) or await _resolve(
-            turn, call, store, cfg, registry, overrides, token, jobs)
-        if out is None:                            # shutdown: left pending, runs on resume
+        out = await _resolve(turn, call, store, cfg, registry, overrides, token, jobs)
+        if out is None:                            # shutdown: left pending, settled interrupted
             break
         await write(call, out)
     return texts
@@ -98,6 +90,40 @@ def _seen(registry, cid: str, name: str) -> None:
         approvals.seen(cid, name)
 
 
+async def _with_guide(result: ToolResult, turn, call: dict, store, cfg, registry,
+                      shown: str) -> ToolResult:
+    """A call that reached its tool, of a skill whose guide is not in what it reads
+    (skills/meta.py had): the skill's load comes with it (Skills.with_call), in display
+    "guide", after the result as it reads it (mark.shown, outside any wrapper), in the
+    room the result (`shown`) left of the cap, so one tool message stays inside it.
+    `turn["guides"]` holds what it has for the whole turn ({"had": skills}), read once."""
+    from . import tokens
+    from ..skills.meta import had
+    meta = registry.skills.get(META) if registry is not None else None
+    spec = registry.get(call["name"]) if meta is not None else None
+    if spec is None or not meta.comes_with_calls(spec.skill):
+        return result
+    cid = turn["conversation_id"]
+    cache = turn["guides"]
+    if "had" not in cache:
+        cache["had"] = await store.read(lambda c: had(c, cid))
+    if spec.skill in cache["had"]:
+        return result
+    cap = turn.get("max_output_tokens")
+    room = int(cap) - tokens.estimate(shown + "\n\n", "tool") if cap else None
+
+    async def quiet(note: str, **data) -> None:
+        pass
+    ctx = ToolContext(conversation_id=cid, turn_id=turn["id"], tool_call_id=call["id"],
+                      store=store, config=cfg, emit=quiet, max_output_tokens=room)
+    text = await meta.with_call(ctx, spec.skill)
+    if text is None:
+        return result
+    cache["had"].add(spec.skill)
+    return replace(result, display={**(result.display or {}),
+                                    "guide": {"skill": spec.skill, "text": text}})
+
+
 def received(result: ToolResult, turn, call: dict, guarded: bool,
              registry=None) -> ToolResult:
     """A result as the runner receives it, from its turn or a job: no known secret in
@@ -118,7 +144,8 @@ def received(result: ToolResult, turn, call: dict, guarded: bool,
         return result
     if (result.display or {}).get("raised"):
         return result
-    label = sources.label(call["name"], call.get("args") or {}, result)
+    label = sources.label(call["name"], call.get("args") or {}, result,
+                          guard_facts.mcp_of(registry, call["name"]))
     if label is None:
         return result
     return replace(result, display={**(result.display or {}), "outside": label})
@@ -142,16 +169,19 @@ def marked(result: ToolResult, guarded: bool) -> str:
 
 def _capped(result: ToolResult, turn) -> ToolResult:
     """The backstop for tools that ignore ctx.max_output_tokens (MCP, shell): one result
-    never takes more than its share of the window."""
+    never takes more than the cap (tokens.result_cap). Its start and its end are kept,
+    the cut line between them says how much is left out and how to get it."""
     cap = turn.get("max_output_tokens")
     if not cap or not result.content:
         return result
     from . import tokens
-    head, shown, total = tokens.cut_to(result.content, int(cap))
-    if shown >= total:
+    head, tail, shown, total = tokens.cut_middle(result.content, int(cap))
+    if not tail:
         return result
-    return replace(result, content=f"{head}\n\n[cut: {shown:,} of {total:,} tokens shown. "
-                                   f"Narrow the request, or read a specific part.]")
+    return replace(result, content=f"{head}\n\n[cut: {total - shown:,} of {total:,} tokens "
+                                   f"left out here, between the start and the end. Page "
+                                   f"through it, or read the part you need from its "
+                                   f"file.]\n\n{tail}")
 
 
 def _concurrent(calls, registry) -> bool:
@@ -169,68 +199,20 @@ def _concurrent(calls, registry) -> bool:
     return True
 
 
-REPEAT_LIMIT = 2      # the same call with the same result: the next one is not run
-REPEAT_SEEN = 40      # the turn's latest calls the repeat rule reads
 BACKGROUND_AFTER = 5  # seconds a call it asked into the background runs before it
                       # detaches: a quick one, or one that fails at once, still answers
                       # directly. Nothing detaches unasked: a call runs in its turn to
                       # its end or its time.
-REPEATED = "Not run: you made this exact call"
-SAME_STEP = "same as the call above in this step."
 TIME_UP = "Not run: the time for this turn is up."
-# refusals that end its search: when every call of a step gets one, the next step has
-# no tools and it answers (turns/runner.py)
-NOT_RUN_ANSWER = (REPEATED, STOPPED)
-
-
-def _spec(spec, name: str, args: dict) -> str:
-    """What makes two calls the same call, for the repeat rule: the loose spec of the
-    archive tools (ledger.Ledger.spec), or the exact arguments of a tool whose skill
-    says exact_args (skills.ToolSpec)."""
-    if spec is not None and spec.exact_args:
-        return json.dumps(args, sort_keys=True, ensure_ascii=False)
-    return Ledger.spec(name, args)
-
-
-def _dupes(calls, registry) -> set[str]:
-    """Ids of calls identical to an earlier call of the same reply (same tool, same
-    arguments). Tools with exact arguments are left out: a key pressed twice is two
-    presses."""
-    seen, out = set(), set()
-    for call in calls:
-        spec = registry.get(call["name"]) if registry is not None else None
-        if call["args"] is None or (spec is not None and spec.exact_args):
-            continue
-        key = _spec(spec, call["name"], call["args"])
-        if key in seen:
-            out.add(call["id"])
-        seen.add(key)
-    return out
-
-
-async def _repeats(store, turn_id: str, spec, name: str, args: dict) -> int:
-    """How often this turn already ran this exact call (same tool, same arguments), when
-    its last REPEAT_LIMIT runs gave the same result; else 0 (a command run again after a
-    change is fine). A model can loop on one call for the whole wall clock."""
-    key = _spec(spec, name, args)
-    results = []
-    for tool, arguments, content, _ in await records_for(store, turn_id, last=REPEAT_SEEN):
-        if tool != name or content is None or content.startswith((REPEATED, SAME_STEP)):
-            continue
-        earlier = parsed(arguments)
-        if earlier is not None and _spec(spec, tool, earlier) == key:
-            results.append(content)
-    last = results[-REPEAT_LIMIT:]
-    return len(results) if len(last) == REPEAT_LIMIT and len(set(last)) == 1 else 0
 
 
 # Every path returns a result: an unanswered tool_call makes the conversation
 # unusable on the next request.
 async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     """-> (state, ToolResult, withheld_output), or None when the server is shutting
-    down and the step has not started (it stays pending and runs on resume). Never
-    raises. The steps, in order: stopped, replayed, frozen (the house refuses), offered,
-    valid, her default terminal, repeated, Bastet, then the call itself."""
+    down and the step has not started (it stays pending until its turn ends
+    interrupted). Never raises. The steps, in order: stopped, replayed, frozen (the
+    house refuses), offered, valid, Bastet, then the call itself."""
     if token.cancelled:
         return None if token.shutdown else ("cancelled", ToolResult(content="cancelled"),
                                             None)
@@ -239,18 +221,18 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if (shut := await bastet_calls.frozen(store, cfg, call["name"])) is not None:
         return (*shut, None)
     spec = registry.get(call["name"])
-    if (no := _not_offered(turn, call["name"], spec, registry, overrides, cfg)) is not None:
+    offered = await _offered(turn, spec, registry, store)
+    if (no := _not_offered(offered, turn, call["name"], spec, registry, overrides,
+                           cfg)) is not None:
         return no
     args = call["args"]
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
-        return "error", ToolResult(content=f"invalid arguments: {wrong}", is_error=True), \
-            None
-    resolved = await _default_terminal(store, turn["conversation_id"], spec, args)
-    if (n := await _repeats(store, turn["id"], spec, call["name"], args)) >= REPEAT_LIMIT:
-        return "error", ToolResult(
-            content=f"{REPEATED} {n} times in this turn, and the last {REPEAT_LIMIT} gave "
-                    f"the same result. Answer with what you have, or try a different call.",
-            is_error=True, display={"repeated": n}), None
+        # a tool sent by name: its name and parameters with the error, not its description
+        fn = spec.as_wire()["function"]
+        full = "" if spec.skill in CORE else "\nThe tool: " + json.dumps(
+            {"name": fn["name"], "parameters": fn.get("parameters")}, ensure_ascii=False)
+        return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
+                                   is_error=True), None
 
     async def progress(note: str) -> None:
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
@@ -263,7 +245,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return None
     if gate.refusal is not None:
         return (*gate.refusal, None)
-    out = await _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs)
+    out = await _run_call(turn, call, spec, args, store, cfg, token, jobs)
     if out is None:
         await guard_passes.retell(store, gate.told)   # shutdown: its next result tells them
         return out
@@ -283,16 +265,29 @@ async def _replayed(store, turn, call):
         return None
     log.info("replayed from journal", extra={"event": "tool.replayed",
                                              "turn": turn["id"], "tool": call["name"]})
-    return done["state"], ToolResult(content=done["content"]), None
+    # its display too: what came after its result (mark.shown) comes again
+    return done["state"], ToolResult(content=done["content"], display=done["display"]), None
 
 
-def _not_offered(turn, name: str, spec, registry, overrides, cfg):
-    """The refusal of a call to a tool this step does not have: made up, of a skill not
-    loaded, outside a read-only sub-agent's tools, of a skill that is down, or off.
-    None when it has it."""
-    offered, loaded = turn["offered"], turn["loaded"]
+async def _offered(turn, spec, registry, store) -> frozenset[str]:
+    """The tools this step has: the turn's, and those of `spec`'s skill when it is
+    offered here now but was not at the turn's start (a feature switched on by an
+    approval mid-turn): called by name at once, its parameters from skills__load. The
+    tools array stays as the turn started (turns/prompt.py wire_tools)."""
+    have = turn["offered"]
+    if spec is None or spec.wire_name in have:
+        return have
+    from .loads import offered
+    now = await offered(registry, store, turn["conversation_id"], turn["id"])
+    return have | {s.wire_name for s in now.get(spec.skill, ())}
+
+
+def _not_offered(offered, turn, name: str, spec, registry, overrides, cfg):
+    """The refusal of a call to a tool this step does not have (`offered`, _offered):
+    made up, not offered here, outside a read-only sub-agent's tools, of a skill that is
+    down or off. None when it has it."""
     skill = name.split("__")[0]
-    if spec is None and not (skill in registry.skills and skill not in loaded):
+    if spec is None:
         # a made-up tool of a real skill: name the ones it has
         real = sorted(t for t in offered if t.startswith(skill + "__"))
         return "error", ToolResult(content=(
@@ -301,10 +296,7 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
             if real else f"There is no tool {name}."), is_error=True), None
     if name not in offered:
         here = ", ".join(sorted(t for t in offered if t.startswith(skill + "__")))
-        if skill not in loaded:
-            text = (f"{skill} is not loaded. skills__load(name=\"{skill}\") loads it for "
-                    f"your next step.")
-        elif turn.get("read_only") and not read_mode_has(spec):
+        if turn.get("read_only") and not read_mode_has(spec):
             text = READ_ONLY_REFUSAL.format(skill=skill, reads=here or "none")
         else:
             text = (f"{name} is not in this conversation; its {skill} tools are: {here}."
@@ -323,9 +315,9 @@ def _not_offered(turn, name: str, spec, registry, overrides, cfg):
 
 
 def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
-    """What is wrong with the arguments for `spec`'s schema (coerced in place where a
-    model sent the other plain form of a value); None when they fit. `arguments`: as
-    it sent them, read again only to say why they are not an object."""
+    """What is wrong with the arguments for `spec`'s schema; None when they fit. Nothing
+    is changed: a value of the wrong type fails the call. `arguments`: as it sent them,
+    read again only to say why they are not an object."""
     if args is None:
         try:
             json.loads(arguments or "{}")
@@ -345,20 +337,7 @@ def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
         if unknown:
             parts.append(f"unexpected {', '.join(sorted(unknown))}")
         return "; ".join(parts)
-    return coerce(args, spec.schema)
-
-
-async def _default_terminal(store, cid: str, spec, args: dict) -> str | None:
-    """The agent's default terminal (or its browser tab by the same name) where the tool's
-    terminal_arg is left out, set in `args` once: the row's arguments, the event, the
-    jobs list and the placeholder all carry the name. -> the arguments as stored now,
-    None when nothing was filled in."""
-    where = spec.terminal_arg
-    if not where or args.get(where):
-        return None
-    from ..terminals import store as terminals
-    args[where] = await terminals.default_terminal(store, cid)
-    return json.dumps(args)
+    return mistyped(args, spec.schema)
 
 
 # lists and objects are left to the tools: several read a string as one (a comma list,
@@ -376,39 +355,20 @@ def _kind(prop: dict) -> str | None:
     return kinds[0] if len(kinds) == 1 else None
 
 
-def coerce(args: dict, schema: dict) -> str | None:
-    """Each argument in place as its schema's type, where a model sent the other plain
-    form of it: a number for a string (an int stays exact, a Discord id too), a digit
-    string for an integer, "true"/"false" for a boolean; nothing else. -> what still
-    does not fit ("find is a string", a value outside its enum), or None. A null for a
-    parameter that is not required stays null (its default)."""
+def mistyped(args: dict, schema: dict) -> str | None:
+    """The arguments whose value is not of their schema's plain type or not in its
+    enum ("find is a string", "what is one of view, locate"), or None. Nothing is
+    converted. A null for a parameter that is not required is its default."""
     props, required = schema.get("properties", {}), set(schema.get("required", ()))
     wrong = []
     for key, v in args.items():
         kind = _kind(props.get(key) or {})
         if kind not in _FITS or (v is None and key not in required):
             continue
-        if kind == "string" and isinstance(v, (int, float)) and not isinstance(v, bool):
-            v = str(v)
-        elif kind == "integer" and isinstance(v, str) and v.strip().lstrip("-").isdigit():
-            v = int(v)
-        elif kind == "boolean" and isinstance(v, str) and v.strip().lower() in ("true",
-                                                                               "false"):
-            v = v.strip().lower() == "true"
-        elif kind == "integer" and isinstance(v, float) and v.is_integer():
-            v = int(v)
-        elif kind == "number" and isinstance(v, str):
-            try:
-                v = float(v)
-            except ValueError:
-                pass
         if not isinstance(v, _FITS[kind]) or (isinstance(v, bool) and kind != "boolean"):
             wrong.append(f"{key} is {_WORD[kind]}")
-            continue
-        if (opts := (props.get(key) or {}).get("enum")) and v not in opts:
+        elif (opts := (props.get(key) or {}).get("enum")) and v not in opts:
             wrong.append(f"{key} is one of {', '.join(map(str, opts))}")
-            continue
-        args[key] = v
     return "; ".join(wrong) or None
 
 
@@ -417,7 +377,7 @@ def _takes_any(fn) -> bool:
                for p in inspect.signature(fn).parameters.values())
 
 
-async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
+async def _run_call(turn, call, spec, args, store, cfg, token, jobs):
     """The call itself, after every check: the turn's time, then the tool, in its turn
     or handed to a job."""
     cid, tid, name = turn["conversation_id"], turn["id"], call["name"]
@@ -428,7 +388,7 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
                                    display={"time_up": True}), None
 
     # a parameter named like a Python keyword is `in` on the wire and `in_` in the
-    # coroutine (skills.derive_schema); the schema and repeat checks above saw the
+    # coroutine (skills.derive_schema); the schema check above saw the
     # wire form, the call below gets the Python one. A tool that takes **args (MCP)
     # passes them on as they came.
     wire = args
@@ -443,12 +403,14 @@ async def _run_call(turn, call, spec, args, resolved, store, cfg, token, jobs):
                       max_output_tokens=turn.get("max_output_tokens"), time_left=left)
 
     asked = bool(spec.background and args.get(spec.background) is True)
+    if not asked:
+        ctx = replace(ctx, user_wrote=getattr(token, "user_wrote", None))
     timeout = float(spec.timeout or cfg.r("tool_timeout_seconds"))
     expired = f"timed out after {timeout:.0f}s"
     if left is not None and left < timeout:
         timeout, expired = left, "Stopped: the time for this turn is up."
     handoff = spec.mode if jobs is not None else "blocking"
-    await turns.tool_started(store, cid, call["id"], arguments=resolved)
+    await turns.tool_started(store, cid, call["id"])
 
     if handoff == "blocking":
         with metrics.TOOL_SECONDS.labels(name).time():

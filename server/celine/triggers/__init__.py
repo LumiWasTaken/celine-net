@@ -169,7 +169,7 @@ class Triggers:
             except Exception as e:                      # noqa: BLE001 - asked again later
                 log.warning("trigger source failed", extra={
                     "event": "trigger.source_failed", "trigger": t.name,
-                    "error": type(e).__name__})
+                    "error": f"{type(e).__name__}: {e}"})
                 continue
             for ev in events:
                 parts = [str(ev[k]) for k in t.outside if ev.get(k)]

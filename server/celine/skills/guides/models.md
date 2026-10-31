@@ -2,10 +2,10 @@
 name: models
 description: Your own model access. Lists the models you may use and asks one of them
   directly, for a second opinion, a draft, a quick translation or a test of a prompt.
-words: llm
 ---
-`models__list()` names the models you may use, one per line: the name to use, then
-what it is. The same names work in `models__ask`, as a sub-agent's `model`, and in the
+`models__list()` names the models you may use, one per line: the name to use, what
+it is, its context window, whether it sees images and calls tools, whether its server
+answers and whether it is loaded. The same names work in `models__ask`, as a sub-agent's `model`, and in the
 agent CLIs in your shellbox. {{username}} sets which ones are open to you.
 
 `models__ask(model, messages, system, temperature)` sends one request and gives you its
@@ -23,5 +23,5 @@ request waits in the model queue with your other calls and runs on exactly the m
 name. When that model fails, the call fails and says why.
 
 Example:
-models__ask(model="llama/my-model", system="Answer in one line.", messages=[{"role":
+models__ask(model="local/my-model", system="Answer in one line.", messages=[{"role":
 "user", "content": "What rhymes with orange?"}])

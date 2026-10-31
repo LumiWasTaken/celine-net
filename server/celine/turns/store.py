@@ -10,15 +10,17 @@ import json
 import sqlite3
 import zlib
 
+from .. import attachments as files
 from ..conversations import tree, view
 from ..core.ids import new_id, now
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER, TERMINAL
 from ..errors import mask_all
+from ..guard import mark
 from ..skills import words
 from .. import homes
 from ..intercom.store import NAMES, insert as intercom_insert
 from ..plans import store as plans
-from .journal import classify, safe_to_rerun
+from .journal import restarted, safe_to_rerun
 from ..core.event_types import (
     CONTEXT_USAGE,
     MESSAGE_CREATED,
@@ -34,6 +36,13 @@ from ..core.event_types import (
 _SETTLE_WHY = {"aborted": "stopped", "failed": "the turn failed",
                "capped": "the turn hit its limit", "done": "the turn ended",
                "interrupted": "the server restarted"}
+
+
+def runs_field(c: sqlite3.Connection, store, call_ids: list[str], reset: bool = False) -> dict:
+    """`runs` for the event of calls whose state changed, when their turn's runs changed
+    (skills/words.py runs_after); nothing otherwise, and the client keeps the last."""
+    r = words.runs_after(c, call_ids, store.tool_words, reset=reset)
+    return {"runs": r} if r else {}
 
 
 def tool_flags(registry):
@@ -85,7 +94,10 @@ def settle_open_calls(c: sqlite3.Connection, store, cid: str, turn_id: str,
                     {"tool_call_id": r["id"], "name": r["name"], "ok": False,
                      "state": "interrupted", "reason": why, "result": text,
                      "display": None, "withheld": False,
-                     "words": words.of_call(c, r["id"], "interrupted", None, text)})
+                     "words": words.of_call(c, r["id"], "interrupted", None, text,
+                                            store.tool_words),
+                     # the turn's runs once, with the last: every call above has settled
+                     **(runs_field(c, store, [x["id"] for x in rows]) if r is rows[-1] else {})})
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": r["message_id"], "role": "tool",
                      "content": text, "tool_call_id": r["id"], "meta": meta})
@@ -137,26 +149,31 @@ def _reply_notice(c: sqlite3.Connection, store, cid: str, turn_id: str) -> None:
         notice(store, c, "reply", NAMES["her"], r[0], homes.of(c, cid)["link"], f"reply:{cid}")
 
 
-async def claim(store, worker_id: str) -> dict | None:
+async def claim(store, worker_id: str, models: set[str] | None = None) -> dict | None:
     """Take the next queued turn whose conversation is not already busy, in QUEUE_ORDER. A turn queued without a root answers the active leaf of now, so
     turns queued together answer one after the other on one path. A turn of
     a locked conversation (conversations/store.locked) ends aborted with the reason:
     nothing of its own starts or goes on there; a turn the user started still runs.
-    Nothing while it is frozen (guard/freeze.py): the house leases its no turn."""
+    Nothing while it is frozen (guard/freeze.py): the house leases its no turn.
+    `models` (while she is paused, hold.py): only a sub-agent's or a drone's turn whose
+    own model is one of them; every other turn waits in the queue."""
     def fn(c: sqlite3.Connection) -> dict | None:
         from ..conversations.store import locked
         from ..guard.store import open_freeze
         if open_freeze(c) is not None:
             return None
         queued = c.execute(
-            "SELECT t.id, t.conversation_id, t.origin FROM turns t WHERE t.state='queued' "
+            "SELECT t.id, t.conversation_id, t.origin, c.agent_of, c.model_id FROM turns t "
+            "JOIN conversations c ON c.id = t.conversation_id WHERE t.state='queued' "
             "  AND t.conversation_id NOT IN (SELECT conversation_id FROM turns "
             "    WHERE state IN ('preparing','streaming','tools')) "
             f"ORDER BY {QUEUE_ORDER}").fetchall()
         tid, busy = None, set()
         for r in queued:
             if r["conversation_id"] in busy:
-                busy.add(r["conversation_id"])     # its turns run in their order
+                continue                           # its turns run in their order
+            if models is not None and not (r["agent_of"] and r["model_id"] in models):
+                busy.add(r["conversation_id"])
                 continue
             if r["origin"] != "user" and (why := locked(c, r["conversation_id"])):
                 set_state(c, store, r["conversation_id"], r["id"], "aborted", why, "locked")
@@ -213,11 +230,10 @@ async def fail_if_active(store, turn_id: str, cid: str, reason: str,
     return await store.write(fn)
 
 
-async def put_down(store, worker_ids: list[str], reason: str = "the server restarted",
-                   code: str = "restart") -> list[str]:
-    """Shutdown: the turns these workers hold go back in the queue, unfinished,
-    instead of dying against a closed store. The next start resumes them (steps in
-    flight are judged by the startup sweep)."""
+async def put_down(store, worker_ids: list[str], reason: str | None = None,
+                   code: str | None = None) -> list[str]:
+    """Turns these workers claimed but did not run (a freeze, the shutdown before the
+    run began) go back in the queue."""
     if not worker_ids:
         return []
 
@@ -235,40 +251,48 @@ async def put_down(store, worker_ids: list[str], reason: str = "the server resta
     return await store.write(fn)
 
 
-async def sweep(store, registry=None) -> dict:
-    """At startup, before the workers start: turns left non-terminal by a crash or a
-    restart. Resumable if no step was in flight, or only read-only blocking steps (they
-    run again); a side effect or a detached step in flight is left for the user.
-    Running jobs end `interrupted`. Every conversation the restart cut something in
-    gets one notice, and a turn for it."""
+def _cut(c: sqlite3.Connection, store, rows, registry) -> None:
+    """Live turns the server stopped under ends `interrupted` with the reason; its steps
+    in flight with them. Nothing runs again on its own: Regenerate is the user's."""
     flags = tool_flags(registry)
+    for row in rows:
+        open_calls = c.execute(
+            "SELECT tc.name, tc.state, tc.mutating, tc.mode FROM tool_calls tc "
+            "JOIN messages m ON m.id = tc.message_id WHERE m.turn_id = ? AND "
+            "tc.state IN ('pending','running','detached')", (row["id"],)).fetchall()
+        why = restarted(open_calls, flags) or "The server restarted during the reply."
+        c.execute("UPDATE turns SET worker_id=NULL WHERE id=?", (row["id"],))
+        set_state(c, store, row["conversation_id"], row["id"], "interrupted", why, "restart")
 
+
+async def interrupt_held(store, worker_ids: list[str], registry=None) -> list[str]:
+    """Shutdown: the turns these workers run end `interrupted` (_cut)."""
+    if not worker_ids:
+        return []
+
+    def fn(c: sqlite3.Connection) -> list[str]:
+        marks = ",".join("?" * len(worker_ids))
+        rows = c.execute(
+            f"SELECT id, conversation_id FROM turns WHERE worker_id IN ({marks}) AND "
+            f"state IN ('preparing','streaming','tools')", worker_ids).fetchall()
+        _cut(c, store, rows, registry)
+        return [r["id"] for r in rows]
+
+    return await store.write(fn)
+
+
+async def sweep(store, registry=None) -> dict:
+    """At startup, before the workers start: turns a crash left running end
+    `interrupted` (_cut); queued ones wait for a worker as before. Running jobs end
+    `interrupted`, and a conversation one of them was cut in gets one notice."""
     def fn(c: sqlite3.Connection) -> dict:
-        live = c.execute("SELECT id, conversation_id, state FROM turns WHERE state IN "
-                         f"{LIVE_SQL}").fetchall()
-        resumable = 0
-        cut: dict[str, list[str]] = {}     # conversation -> what the restart cut
-        for row in live:
-            verdict = classify(c, row["id"], flags)
-            if verdict.safe:
-                if row["state"] != "queued" or verdict.rerun:
-                    c.execute("UPDATE turns SET state='queued', worker_id=NULL WHERE id=?",
-                              (row["id"],))
-                    tree.turn_state(c, store, row["conversation_id"], row["id"], "queued",
-                                    reason="resumed from the journal")
-                resumable += 1
-            else:
-                c.execute("UPDATE turns SET state='interrupted', reason=?, "
-                          "reason_code='restart', finished_at=?, worker_id=NULL WHERE id=?",
-                          (verdict.reason, now(), row["id"]))
-                settle_open_calls(c, store, row["conversation_id"], row["id"],
-                                  "the server restarted")
-                cut.setdefault(row["conversation_id"], []).append(
-                    f"Your reply was cut off: {verdict.reason}")
-                tree.turn_state(c, store, row["conversation_id"], row["id"], "interrupted",
-                                reason=verdict.reason, reason_code="restart")
+        live = c.execute("SELECT id, conversation_id FROM turns WHERE state IN "
+                         "('preparing','streaming','tools')").fetchall()
+        _cut(c, store, live, registry)
+        c.execute("UPDATE turns SET worker_id=NULL WHERE state='queued'")
         from ..jobs.store import interrupt_running
         jobs = interrupt_running(c, store)
+        cut: dict[str, list[str]] = {}
         for cid, line in jobs:
             cut.setdefault(cid, []).append(line)
         from ..intercom.deliver import deliver_idle_sync
@@ -278,8 +302,8 @@ async def sweep(store, registry=None) -> dict:
                                 "The app restarted and cut what was running:\n"
                                 + "\n".join(lines))
                 deliver_idle_sync(c, store, cid)
-        return {"total": len(live) + len(jobs), "resumable": resumable,
-                "interrupted": len(live) - resumable, "jobs": len(jobs)}
+        return {"total": len(live) + len(jobs), "interrupted": len(live),
+                "jobs": len(jobs)}
 
     return await store.write(fn)
 
@@ -305,10 +329,12 @@ async def request_abort(store, cid: str) -> str | None:
 
 
 async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
-                        wait: bool = False) -> tuple[str, int]:
+                        wait: bool = False, prefill: bool = True) -> tuple[str, int]:
     """Put a finished-but-unfinished turn back in the queue, as the same turn.
     `wait`: Keep waiting, its queued reason `keep_waiting`: a busy provider is waited
-    for (backends/llm.py).
+    for (backends/llm.py). `prefill`: whether its model takes one; a turn whose tail is
+    a cut reply is refused before anything is written when it does not (the runner
+    ends such a turn with no_prefill for a caller that does not ask first).
     Read-only calls it left interrupted or cancelled run again with the same call
     id; a mutating one keeps its `interrupted` result, never re-run silently.
     Raises KeyError (no such turn), tree.Busy, or ValueError(reason)."""
@@ -328,6 +354,13 @@ async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
         # the tail reply's interrupted/cancelled read-only calls run again
         tail = tree.turn_tail(c, turn_id, turn["root_message_id"], tree.leaf(c, cid)) or []
         asst = next((m for m in tail if m["role"] == "assistant"), None)
+        # a cut reply continues in place (resume_point reopen): only with a prefill
+        last = tail[0] if tail else None
+        if not prefill and last is not None and last["role"] == "assistant" \
+                and last["content"] and last["finish_reason"] != "stop" \
+                and c.execute("SELECT 1 FROM tool_calls WHERE message_id=?",
+                              (last["id"],)).fetchone() is None:
+            raise ValueError(tree.NO_PREFILL)
         reran: list[str] = []
         if asst is not None:
             for r in c.execute(
@@ -365,8 +398,11 @@ async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
         c.execute("UPDATE turns SET state='queued', reason=?, reason_code=NULL,"
                   " abort_requested=0, finished_at=NULL, worker_id=NULL, continues=?,"
                   " cut=NULL, cap_base=? WHERE id=?", (why, continues, base, turn_id))
-        for call_id in reran:
-            store.event(c, cid, TOOL_RESET, {"tool_call_id": call_id, "state": "pending"})
+        # the turn's runs once, with the last of them: these calls are at work again
+        for i, call_id in enumerate(reran):
+            store.event(c, cid, TOOL_RESET, {
+                "tool_call_id": call_id, "state": "pending",
+                **(runs_field(c, store, reran, reset=True) if i == len(reran) - 1 else {})})
         seq = tree.turn_state(c, store, cid, turn_id, "queued", reason=why,
                               continues=continues)
         return turn_id, seq
@@ -454,13 +490,15 @@ async def record_usage(store, cid: str, turn_id: str, data: dict,
             c.execute(
                 "INSERT OR REPLACE INTO requests(message_id, step, turn_id, provider, "
                 "model, body, estimate, prompt_tokens, completion_tokens, window, "
-                "finish_reason, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "finish_reason, first_token_ms, cache_read, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (data["message_id"], int(data.get("iteration") or 0), turn_id,
                  request.get("provider", ""), request.get("model", ""),
                  pack_body(c, request.get("body")),
                  data.get("estimate"), data.get("prompt_tokens"),
                  data.get("completion_tokens"), data.get("window"),
-                 data.get("finish_reason"), now()))
+                 data.get("finish_reason"), data.get("first_token_ms"),
+                 data.get("cache_read"), now()))
 
     await store.write(fn)
 
@@ -541,28 +579,27 @@ async def record_tool_calls(store, cid: str, message_id: str, calls: list[dict])
                         {"tool_call_id": call["id"], "message_id": message_id,
                          "name": call["name"], "arguments": call["arguments"],
                          "started_at": started,
-                         "words": words.words(call["name"], call["arguments"], "running")})
+                         "words": words.words(call["name"], call["arguments"], "running",
+                                              own=store.tool_words)})
 
     await store.write(fn)
 
 
-async def tool_started(store, cid: str, call_id: str, arguments: str | None = None) -> None:
+async def tool_started(store, cid: str, call_id: str) -> None:
     """The step runs now: in a sequential batch the second call waits for the
-    first, so its clock starts here, not when the batch was recorded. With
-    `arguments`, the row's arguments are replaced and the event carries the new
-    ones (a shell call with its default terminal resolved)."""
+    first, so its clock starts here, not when the batch was recorded."""
     def fn(c: sqlite3.Connection) -> None:
         ts = now()
-        row = c.execute("UPDATE tool_calls SET started_at=?, "
-                        "arguments=coalesce(?, arguments) WHERE id=? AND "
+        row = c.execute("UPDATE tool_calls SET started_at=? WHERE id=? AND "
                         "state='pending' RETURNING name, arguments, message_id",
-                        (ts, arguments, call_id)).fetchone()
+                        (ts, call_id)).fetchone()
         if row is not None:
             store.event(c, cid, TOOL_STARTED,
                         {"tool_call_id": call_id, "message_id": row["message_id"],
                          "name": row["name"], "arguments": row["arguments"],
                          "started_at": ts,
-                         "words": words.words(row["name"], row["arguments"], "running")})
+                         "words": words.words(row["name"], row["arguments"], "running",
+                                              own=store.tool_words)})
 
     await store.write(fn)
 
@@ -605,6 +642,7 @@ async def finish_tool_call(store, cid: str, parent_message_id: str, call_id: str
         for aid in getattr(result, "images", None) or ():
             c.execute("UPDATE attachments SET message_id=? WHERE id=? AND tool_call_id=?",
                       (mid, aid, call_id))
+        display = files.with_files(c, call_id, display)
         ts = now()
         c.execute(
             "UPDATE tool_calls SET state=?, display=?, withheld_output=?, "
@@ -614,9 +652,10 @@ async def finish_tool_call(store, cid: str, parent_message_id: str, call_id: str
         store.event(
             c, cid, TOOL_GATED if verdict == "gated" else TOOL_DONE,
             {"tool_call_id": call_id, "name": name, "ok": verdict == "ok",
-             "state": verdict, "result": content_, "display": display,
+             "state": verdict, "result": content_, "display": mark.for_client(display),
              "withheld": bool(withheld), "finished_at": ts,
-             "words": words.of_call(c, call_id, verdict, display, content_)})
+             "words": words.of_call(c, call_id, verdict, display, content_, store.tool_words),
+             **runs_field(c, store, [call_id])})
         store.event(c, cid, MESSAGE_CREATED,
                     {"message_id": mid, "parent_id": parent_message_id, "role": "tool",
                      "content": content_, "tool_call_id": call_id, "meta": meta})
@@ -638,12 +677,13 @@ async def existing_tool_result(store, call_id: str) -> dict | None:
     """A settled journal entry for this exact step, if there is one."""
     def fn(c: sqlite3.Connection) -> dict | None:
         row = c.execute(
-            "SELECT tc.state, m.content FROM tool_calls tc "
+            "SELECT tc.state, tc.display, m.content FROM tool_calls tc "
             "LEFT JOIN messages m ON m.id = tc.result_message_id "
             "WHERE tc.id = ? AND tc.state NOT IN ('pending','running')",
             (call_id,)).fetchone()
         if row is None or row["content"] is None:
             return None
-        return {"state": row["state"], "content": row["content"]}
+        return {"state": row["state"], "content": row["content"],
+                "display": json.loads(row["display"]) if row["display"] else None}
 
     return await store.read(fn)

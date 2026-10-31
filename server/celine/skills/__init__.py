@@ -1,19 +1,21 @@
 """Skills and tools.
 
 A skill is a Python class with `@tool` coroutines plus a guide, `guides/<skill>.md`
-(SKILL.md style: frontmatter `name`, `description`, optional `words`, then the body).
-What it has in context every turn: the skill index (the loaded skills, and one line per
-other skill, from the frontmatter) and every tool of the loaded skills (turns/loads.py
-decides which, from CORE below and each guide's `words:`). A tool that is off or a skill
-that is down stays in the list as a stub that says so (turns/prompt.py).
+(SKILL.md style: frontmatter `name` and `description`, then the body).
+What it has in context every turn: the skill index (one line per skill offered here,
+from the frontmatter) and every tool offered here, a core skill's (CORE below) with its
+parameters, another's by name and one line (turns/prompt.py wire_tools). A tool that is
+off or a skill that is down is not sent; the index says so.
 `skills__read_guide(name)` returns a skill's guide and its notes on it,
-`skills__load(name)` loads a skill.
+`skills__load(names)` returns the parameters of skills and tools and a skill's part of
+the prompt as its result (skills/meta.py).
 """
 from __future__ import annotations
 
 import inspect
 import keyword
 import logging
+import re
 import types
 from pathlib import Path
 import typing
@@ -21,6 +23,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Literal, get_args, get_origin
 
+from .. import plugins
+from ..config import Problem
 from ..settings import features
 
 log = logging.getLogger("celine.skills")
@@ -28,6 +32,7 @@ log = logging.getLogger("celine.skills")
 SEP = "__"          # skill__tool. Double, so split("__", 1) round-trips.
 META = "skills"     # the skill that shows the guides: skills__read_guide
 BODY = {"shell", "code", "browser"}     # the skills that run on its body (ToolSpec.runs)
+LINE_MAX = 200      # characters of a tool's line in its name entry (ToolSpec.as_name)
 
 
 @dataclass
@@ -49,7 +54,7 @@ class ToolContext:
     config: Any
     # emit(note, **data): a progress line for the call's row (event tool.progress)
     emit: Callable[..., Awaitable[None]]
-    # the most one result may take, in tokens (~30% of the model's window); a tool
+    # the most one result may take, in tokens (turns/tokens.result_cap); a tool
     # that can cut at a natural boundary should, and say what it left out
     max_output_tokens: int | None = None
     # seconds left of the turn's work time, None when the turn has no clock; a tool
@@ -58,6 +63,10 @@ class ToolContext:
     # the notes loaded in full in this request (turns/loads.py): a prompt fragment
     # leaves them out of the notebook index
     loaded_notes: frozenset[str] = frozenset()
+    # an anyio.Event, set when a message from the user waits for the turn's next step
+    # (turns/cancel.Token.user_wrote); a call that only waits ends its wait then
+    # (turns/cancel.until_set). None in a job and a call asked into the background.
+    user_wrote: Any = None
 
 
 @dataclass(frozen=True)
@@ -102,12 +111,6 @@ class ToolSpec:
     annotations: Annotations = Annotations()
     background: str | None = None   # a detach tool's bool parameter: hand off at once
     timeout: float | None = None    # seconds, instead of tool_timeout_seconds
-    # the parameter that names its terminal (or its browser tab, by the same name): left
-    # out, it is its default terminal, resolved once for the row, the event and the job
-    terminal_arg: str | None = None
-    # the repeat rule compares its arguments exactly: in a terminal or a page "a" is not
-    # "A", and Enter is not Space; a key pressed twice in one reply is two presses
-    exact_args: bool = False
     # what it reads while a job has the call: {job} and the call's arguments filled in,
     # with `detached_display` on its row
     detached: str | None = None
@@ -138,13 +141,33 @@ class ToolSpec:
                              "description": self.description,
                              "parameters": self.schema}}
 
+    @property
+    def line(self) -> str:
+        """Its description's first sentence, at most LINE_MAX characters."""
+        first = re.split(r"(?<=[.!?])\s|\n", self.description.strip(), maxsplit=1)[0]
+        return first if len(first) <= LINE_MAX else first[:LINE_MAX].rsplit(" ", 1)[0]
+
+    @property
+    def bare(self) -> bool:
+        """It takes no parameters: its name form is its full form, with no load step."""
+        return not self.schema.get("properties")
+
+    def as_name(self) -> dict[str, Any]:
+        """Its name entry: the name, one line, open parameters (turns/tools.py checks a
+        call against the real schema); a bare tool in full."""
+        if self.bare:
+            return self.as_wire()
+        return {"type": "function",
+                "function": {"name": self.wire_name, "description": self.line,
+                             "parameters": {"type": "object"}}}
+
 
 Mode = Literal["blocking", "detach"]
 
 
 def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
          destructive: bool | None = None, open_world: bool = False, background: str | None = None,
-         timeout: float | None = None, terminal_arg: str | None = None,
+         timeout: float | None = None,
          detached: str | None = None, detached_display: dict[str, Any] | None = None,
          needs_answer: bool = True):
     """Marks a coroutine as a tool. The docstring is the model-facing description:
@@ -152,11 +175,10 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
     A tool that changes anything says `read_only=False`. `background` names a bool
     parameter of a detach tool: true hands the call to a background job after
     BACKGROUND_AFTER seconds instead of the detach window (turns/tools.py). `timeout`
-    replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec.
-    A skill whose tools compare their arguments exactly says `exact_args = True`."""
+    replaces tool_timeout_seconds for a tool that is slow by nature. The rest: ToolSpec."""
     def deco(fn):
         fn.__celine_tool__ = {"mode": mode, "background": background, "timeout": timeout,
-                              "terminal_arg": terminal_arg, "detached": detached,
+                              "detached": detached,
                               "detached_display": detached_display,
                               "needs_answer": needs_answer,
                               "annotations": Annotations.of(
@@ -170,26 +192,26 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
 
 
 class Guide:
-    """guides/<name>.md: `---` frontmatter (name, description, and `words`: what a new
-    user message says when it needs the skill, turns/loads.asked), then the body, with
+    """guides/<name>.md: `---` frontmatter (name, description), then the body, with
     {{key}} filled from `fill` (a number the code owns, like browser's MAX_TABS). Read
-    when asked: `body`, `description` and `words` follow the file."""
+    when asked: `body` and `description` follow the file."""
 
     def __init__(self, name: str, description: str | None = None, body: str = "",
-                 words: tuple[str, ...] = (), fill: dict[str, Any] | None = None):
-        """With a `description`: a guide made of these words, no file (tests, a stub)."""
+                 fill: dict[str, Any] | None = None, file: str = __file__, rel: str = ""):
+        """With a `description`: a guide made of these words, no file (tests, a stub).
+        `rel` beside `file`: where it is read (a plugin's guide.md); else guides/<name>.md."""
         self.name = name
+        self._file, self._rel = file, rel or f"guides/{name}.md"
         self._fill = fill or {}
         self._parsed: tuple[str, dict[str, str], str] | None = None
         if description is not None:
-            self._parsed = (None, {"description": description, "words": ", ".join(words)},
-                            body)
+            self._parsed = (None, {"description": description}, body)
 
     def _parse(self) -> tuple[dict[str, str], str]:
         if self._parsed is not None and self._parsed[0] is None:    # fixed words
             return self._parsed[1], self._parsed[2]
         from .. import prompts
-        text = prompts.text(__file__, f"guides/{self.name}.md")
+        text = prompts.text(self._file, self._rel)
         if self._parsed is not None and self._parsed[0] == text:
             return self._parsed[1], self._parsed[2]
         filled = text
@@ -208,7 +230,7 @@ class Guide:
                     key = key.strip()
                     meta[key] = value.strip()
         if meta.get("name") != self.name:
-            raise ValueError(f"guides/{self.name}.md: name must be {self.name!r}")
+            raise ValueError(f"{self._rel}: name must be {self.name!r}")
         self._parsed = (text, meta, body.strip())
         return meta, body.strip()
 
@@ -219,11 +241,6 @@ class Guide:
     @property
     def body(self) -> str:
         return self._parse()[1]
-
-    @property
-    def words(self) -> tuple[str, ...]:
-        return tuple(w.strip().lower() for w in self._parse()[0].get("words", "").split(",")
-                     if w.strip())
 
 
 class described:
@@ -238,11 +255,14 @@ GUIDES: list[Guide] = []        # every guide a skill declared, checked in prefl
 GUIDES_DIR = Path(__file__).parent / "guides"
 
 
-def guide(name: str, **fill: Any) -> Guide:
+def guide(name: str, *, file: str = __file__, rel: str = "", **fill: Any) -> Guide:
     """A skill's guide. Read lazily: the config dir is checked first (preflight), then
-    check_guides parses every one, so a missing or misnamed guide refuses the start."""
-    g = Guide(name, fill=fill)
-    GUIDES.append(g)
+    check_guides parses every one, so a missing or misnamed guide refuses the start. A
+    plugin's skill names its own: `guide(name, file=__file__, rel="guide.md")`, checked
+    when `build` makes the skill (a bad one keeps that plugin out, not the app)."""
+    g = Guide(name, fill=fill, file=file, rel=rel)
+    if file == __file__:
+        GUIDES.append(g)
     return g
 
 
@@ -252,7 +272,7 @@ def check_guides() -> str | None:
         try:
             g._parse()
         except (OSError, ValueError) as e:
-            return f"guides/{g.name}.md: {e}"
+            return f"{g._rel}: {e}"
     return None
 
 
@@ -363,8 +383,7 @@ def collect(skill: Any) -> list[ToolSpec]:
         if name.endswith("_"):      # continue_ is continue, status_ is status (the skill's
             name = name[:-1]        # own `status` says whether it is up)
         out.append(ToolSpec(skill=skill.name, name=name, description=doc.strip(),
-                            schema=derive_schema(fn), fn=fn,
-                            exact_args=bool(getattr(skill, "exact_args", False)), **meta))
+                            schema=derive_schema(fn), fn=fn, **meta))
     return sorted(out, key=lambda t: t.name)
 
 
@@ -411,44 +430,30 @@ class Registry:
         return " ".join(str(getattr(skill, "error", None) or f"it is {status}").split())[:200]
 
     def index(self, cfg, carried) -> str | None:
-        """The skill index for the system prompt (turns/loads.py decides `carried`): the
-        loaded skills by name, then one line per skill that is not loaded, what it is
-        for."""
-        from .meta import skill_note_path
-        from ..turns.loads import shares
-        idle = int(shares(cfg)["idle_turns"])
-
+        """The skill index for the system prompt: one line per skill offered here, what
+        it is for, a core one marked. What changes is said in the tail (turns/prompt.py
+        tail_text): what is down or off now, and which skills have its notes."""
         def line(name: str) -> str:
             desc = " ".join(cfg.substitute(str(getattr(self.skills[name], "description",
                                                        ""))).split())
-            if why := self.down(name):
-                desc += f" (down: {cfg.substitute(why)})"
-            elif carried.others.get(name) == "off":
-                desc += " (off in Settings, Tools: it cannot load)"
-            elif carried.others.get(name) == "off here":
-                desc += " (off in this conversation: it cannot load)"
-            elif carried.others.get(name) == "no room":
-                desc += " (no room for its tools now)"
-            mark = " [notes]" if skill_note_path(cfg, name).is_file() else ""
-            return f"- {name}{mark}: {desc}"
-        loaded = [n for n in carried.skills if n != META]
-        others = [line(n) for n in self.skills if n in carried.others]
-        if not loaded and not others:
+            return f"- {name}{' [core]' if name in CORE else ''}: {desc}"
+        names = [n for n in self.skills if n != META and
+                 (n in carried.skills or n in carried.others)]
+        if not names:
             return None
         if META in carried.skills:
-            head = (f"Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
-                    f"loaded skills are in your list. `skills__load` loads another one for "
-                    f"your next step; a skill you do not use for {idle} turns unloads. "
-                    f"`skills__read_guide` shows a skill's guide, with examples, and your "
-                    f"notes on a skill marked [notes] (skills/<name>.md).")
-        else:       # its tools leave out the skills skill: they load by need only
-            head = (f"Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
-                    f"loaded skills are in your list; another one loads when the talk "
-                    f"needs it, and a skill you do not use for {idle} turns unloads.")
-        out = [head, f"Loaded: {', '.join(loaded)}."]
-        if others:
-            out += ["Not loaded:", *others]
-        return "\n".join(out)
+            head = ("Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
+                    "skills marked [core] are in your list with their parameters; every "
+                    "other tool is there by name and one line. `skills__load` returns the "
+                    "parameters of skills or tools and a skill's own instructions. "
+                    "`skills__read_guide` shows a skill's guide, with examples, and your "
+                    "notes on it (skills/<name>.md).")
+        else:       # its tools leave out the skills skill
+            head = ("Your skills. Each tool's name is `<skill>__<verb>`. The tools of the "
+                    "skills marked [core] are in your list with their parameters; every "
+                    "other tool is there by name and one line, and a call with arguments "
+                    "that do not fit says what it takes.")
+        return "\n".join([head, *map(line, names)])
 
     def by_skill(self) -> dict[str, list[ToolSpec]]:
         out: dict[str, list[ToolSpec]] = {s: [] for s in self.skills}
@@ -457,19 +462,28 @@ class Registry:
         return out
 
     async def prompt_fragments(self, ctx: ToolContext, names) -> list[str]:
-        """What the skills named in `names` add to the system prompt every turn."""
+        """What the skills named in `names` add to the system prompt: what holds for the
+        whole conversation (`prompt_fragment`), never live state."""
+        return await self._parts(ctx, names, "prompt_fragment")
+
+    async def tail_parts(self, ctx: ToolContext, names) -> list[str]:
+        """What the skills named in `names` add to the tail of a turn (turns/prompt.py
+        tail_text): their live state now (`tail_part`)."""
+        return await self._parts(ctx, names, "tail_part")
+
+    async def _parts(self, ctx: ToolContext, names, attr: str) -> list[str]:
         out = []
         for skill in self.skills.values():
-            frag = getattr(skill, "prompt_fragment", None) if skill.name in names else None
-            if frag is None:
+            part = getattr(skill, attr, None) if skill.name in names else None
+            if part is None:
                 continue
             try:
-                text = await frag(ctx)
-            except Exception:
-                log.exception("prompt fragment failed",
+                text = await part(ctx)
+            except Exception as e:
+                log.exception("prompt part failed",
                               extra={"event": "skill.fragment_failed",
-                                     "skill": skill.name})
-                continue
+                                     "skill": skill.name, "part": attr})
+                text = f"The {skill.name} skill's part of this prompt failed: {e}"
             if text:
                 out.append(text)
         return out
@@ -487,11 +501,12 @@ class Registry:
                 continue
             try:
                 got = await hook(ctx, message)
-            except Exception:
+            except Exception as e:
                 log.exception("message context failed",
                               extra={"event": "skill.message_context_failed",
                                      "skill": skill.name})
-                continue
+                got = (f"The {skill.name} skill's context for this message failed: {e}",
+                       {"error": str(e)})
             if got and (got[0] or got[1]):     # a report alone: what it decided
                 if got[0]:
                     texts.append(got[0])
@@ -527,13 +542,15 @@ BUILTIN = (
     ("writer", "writer", "Writer"),
     ("models", "models", "Models"),
     ("appearance", "appearance", "Appearance"),
+    ("voice", "voice", "Voice"),
     ("me", "me", "Me"),
+    ("settings", "settings", "Settings"),
     ("bugreport", ".bugreports.skill", "BugReport"),
 )
 
-# What it carries by need (turns/loads.py). The core skills are loaded wherever they
-# are offered; every other skill loads when it asks for it (skills__load), uses it, or
-# a new user message says a word of its guide's `words:` line.
+# The core skills: their tools go with their parameters and their part of the prompt is
+# in the system prompt, wherever they are offered; every other skill's tools go by name
+# (turns/prompt.py wire_tools) and its part comes with skills__load (skills/meta.py).
 CORE = {META, "notebook", "intercom", "sub_agents", "past_conversations",
         "missions", "mind", "plan", "bugreport"}
 
@@ -553,10 +570,34 @@ def build(app) -> Registry:
         skill = cls(cfg)
         skill.app = app
         reg.add(skill)
+    for p in plugins.all():          # imported only while its switch is on
+        try:
+            built = []
+            for name, spec in p.skills.items():
+                if cfg.skill_enabled(name):
+                    skill = p.attr(spec["class"])(cfg, p)
+                    if (g := getattr(type(skill), "guide", None)) is not None:
+                        g._parse()          # a missing or misnamed guide.md
+                    skill.app = app
+                    built.append(skill)
+        except Exception as e:      # a broken plugin: its skills stay out, the app runs
+            log.exception("plugin skills failed", extra={"event": "plugin.build_failed",
+                                                         "plugin": p.id})
+            problem = Problem(f"plugin {p.id}", f"{type(e).__name__}: {e}")
+            if problem not in cfg.problems:
+                cfg.problems.append(problem)
+            continue
+        for skill in built:
+            reg.add(skill)
     meta = Skills(reg, cfg)
     meta.app = app
     reg.add(meta)
     return reg
+
+
+def names() -> list[str]:
+    """Every skill `build` may make but `skills`: BUILTIN's, then the plugins'."""
+    return [n for n, _, _ in BUILTIN] + [s for p in plugins.all() for s in p.skills]
 
 
 def module(name: str) -> types.ModuleType | None:

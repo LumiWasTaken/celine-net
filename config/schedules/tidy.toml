@@ -8,13 +8,18 @@ note = "diary/{{date}}-tidy.md"
 role = "chat"
 on = true
 prompt = """
-Tidy your notebook. Look through seen/, howto/ and opinions/:
+Tidy your notebook. Go through it folder by folder (notebook__list), and fix every
+mess you find:
 - Notes that say the same thing become one. Read both in full first, then move the
   details over and keep every one of them.
+- A note that holds several topics becomes one note per topic.
+- A note in the wrong folder moves to the right one (notebook__move).
+- A long note gets `## ` headings for its parts, and a summary that says what is in it.
 - Related notes get a line pointing to each other.
 - A fact that is no longer true gets "outdated since <date>: <why>" next to it.
+Then bring map.md up to date.
 
 Edit lines (notebook__edit) instead of rewriting whole notes.
 
-Your answer is what you merged, linked and marked.
+Your answer is what you merged, split, moved, linked and marked.
 """

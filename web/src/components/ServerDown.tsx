@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Unplug } from 'lucide-react'
 import { useServerDown } from '../lib/socket'
 import { Dots, EmptyState } from '../ui'
 
@@ -20,8 +19,8 @@ export function ServerDown() {
   if (!down) return null
   return createPortal(
     <div ref={box} className="server-down" role="alertdialog" aria-modal="true" aria-labelledby="server-down-title" tabIndex={-1}>
-      <EmptyState icon={Unplug} title={<h1 id="server-down-title" className="server-down__title">No connection to the server.</h1>}>
-        The app tries again every few seconds<Dots className="server-down__dots" />
+      <EmptyState title={<h1 id="server-down-title" className="server-down__title">No connection to the server</h1>}>
+        Reconnecting<Dots className="server-down__dots" />
       </EmptyState>
     </div>,
     document.body,

@@ -6,7 +6,7 @@ label = "Qwen 2.1"
 family = "Qwen Image"
 task = "generate"
 workflow = "qwen2.1-smart.json"
-good_at = "Prose prompts with exact layout, legible text in the image, several people in one scene, high resolution. Turbo for quick drafts, raw for the final; anime with an anime LoRA."
+good_at = "Prose prompts with exact layout, legible text in the image, several people in one scene, high resolution. Use Turbo for quick drafts and the full model for the final image. For anime, add an anime LoRA."
 prompting = """
 Qwen reads natural English through a vision-language encoder: write one or two paragraphs
 of prose in this order: medium and framing, subject and action, clothing and textures,

@@ -11,6 +11,9 @@
   .is-transcript { max-width: none; width: min(100cqi - 2 * var(--s-4), var(--chat-col)); padding-inline: 0; margin-inline: auto; }
 }
 .msg-hers, .msg-yours { position: relative; }
+/* positioned: a row that goes fades where it was, inside the scroll (useMove); clipped at
+   its bottom, so a fading row never lengthens the scroll */
+.is-transcript { position: relative; overflow-y: clip; }
 .msg-yours + .msg-yours { margin-top: calc(-1 * var(--s-1)); }
 .msg__face { display: inline-flex; }
 
@@ -34,13 +37,10 @@
 .msg__text a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .msg__text blockquote { margin-left: 0; padding-left: var(--s-3); border-left: 2px solid var(--bubble-meta); }
 .msg__picture { width: min(100%, 18rem); }
-.msg__file, .msg__audio {
+.msg__audio {
   display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md);
   background: var(--surface-2);
 }
-.msg__file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
-.step > .msg__file { width: min(100%, 26rem); }
-.msg__file-size { flex: none; font-size: var(--t-xs); color: var(--text-muted); }
 .msg__audio { flex-direction: column; align-items: stretch; gap: var(--s-1); width: min(30rem, 100%); }
 .msg__audio-title { font-weight: var(--fw-medium); }
 .msg__audio audio { width: 100%; height: var(--h-md); }
@@ -57,11 +57,11 @@
 .msg__prose h1, .msg__prose h2, .msg__prose h3, .msg__prose h4 {
   margin: var(--s-5) 0 var(--s-2); line-height: var(--lh-title); letter-spacing: var(--tracking-title); color: var(--text-primary);
 }
-.msg__prose h1 { font-size: var(--t-2xl); }
+.msg__prose h1 { font-size: var(--t-2xl); letter-spacing: var(--tracking-display); }
 .msg__prose h2 { font-size: var(--t-xl); }
 .msg__prose h3 { font-size: var(--t-lg); }
 .msg__prose h4 { font-size: var(--t-lg); font-weight: var(--fw-medium); color: var(--text-secondary); }
-.msg__prose strong { font-weight: var(--fw-strong); }
+.msg__prose strong { font-weight: var(--fw-bold); }
 .msg__prose a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim);
   text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .msg__prose a:hover { text-decoration-color: var(--accent); }
@@ -85,6 +85,8 @@
   font-size: var(--t-md); line-height: var(--lh-ui); color: var(--text-muted); }
 .status__dots { display: inline-flex; align-items: center; padding: 0 var(--s-1); cursor: default; }
 .status--queued { color: var(--text-muted); }
+/* "Thinking" between the dots and the text: the same height, so nothing moves as they swap */
+.thinking .event-line__head { min-height: calc(var(--t-lg) * var(--lh-body)); }
 
 /* where the answer would be when it did not come: soft words and one way on */
 .turn-end {
@@ -112,7 +114,7 @@
 
 /* "What it saw": each step's request and raw answer, each in its own box */
 .dialog.sheet.saw { width: min(45rem, 100%); }
-.saw__label { flex: none; font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); }
+.saw__label { flex: none; font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); letter-spacing: var(--tracking-meta); }
 .saw__step { display: grid; gap: var(--s-1); }
 .saw__head { display: flex; gap: var(--s-2); margin: var(--s-2) 0 0; font-size: var(--t-xs); color: var(--text-muted); }
 .saw__head b { font-weight: var(--fw-medium); color: var(--text-secondary); }
@@ -145,3 +147,5 @@
   .msg-quiet { padding-left: 0; }
 }
 
+/* while a conversation loads: its shape, after --dur-wait */
+.transcript-loading { animation: fade var(--dur) var(--ease) var(--dur-wait) both; }

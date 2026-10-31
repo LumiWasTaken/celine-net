@@ -52,16 +52,17 @@ async def context_view(store, cid: str, path: list[dict] | None = None) -> dict:
         st = c.execute("SELECT aged_through FROM context_state WHERE conversation_id=?",
                        (cid,)).fetchone()
         aged = st[0] if st else None
-        # each user message's block (turns/message_context.py) and each reply's signed
-        # thinking (meta `thinking`), in one query each
+        # each user message's block and its turn's tail (turns/message_context.py) and
+        # each reply's signed thinking (meta `thinking`), in one query each
         marks = ",".join("?" * len(ids))
-        context = dict(c.execute(f"SELECT message_id, text FROM message_context WHERE "
-                                 f"message_id IN ({marks})", ids).fetchall()) if ids else {}
+        context = {r[0]: (r[1], r[2]) for r in c.execute(
+            f"SELECT message_id, text, tail FROM message_context WHERE "
+            f"message_id IN ({marks})", ids)} if ids else {}
         signed = dict(c.execute(f"SELECT id, json_extract(meta, '$.thinking') FROM "
                                 f"messages WHERE id IN ({marks}) AND role='assistant'",
                                 ids).fetchall()) if ids else {}
         for m in chain:
-            m["context"] = context.get(m["id"])
+            m["context"], m["tail"] = context.get(m["id"], (None, None))
             if m["role"] == "assistant":
                 m["thinking"] = json.loads(signed[m["id"]]) if signed.get(m["id"]) else None
         on_path = set(ids)

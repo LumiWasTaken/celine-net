@@ -36,7 +36,7 @@ def calls_of(tool: str) -> float:
 def test_metrics_answer_only_requests_that_no_proxy_forwarded():
     ok = metrics.answer(b"GET /metrics HTTP/1.1\r\nHost: celine:8772\r\n\r\n")
     assert ok.startswith(b"HTTP/1.1 200") and b"celine_turns_total" in ok
-    for header in (b"X-Forwarded-For: 10.50.0.3", b"Forwarded: for=1.2.3.4",
+    for header in (b"X-Forwarded-For: 192.0.2.7", b"Forwarded: for=1.2.3.4",
                    b"x-real-ip: 1.2.3.4"):
         refused = metrics.answer(b"GET /metrics HTTP/1.1\r\n" + header + b"\r\n\r\n")
         assert refused.startswith(b"HTTP/1.1 403"), header
@@ -137,8 +137,6 @@ async def test_a_turn_counts_its_origin_outcome_and_tool_calls(store):
     pongs = calls_of("ping__pong")
     made_up = value("celine_tool_calls_total", tool="unknown", state="error")
     cid = await conversations.create(store)
-    from celine.turns import loads
-    await loads.touch(store, cid, "skill", ["ping"])
     await user_says(store, cid, "ping twice")
     async with anyio.create_task_group() as tg:
         cfg = load()

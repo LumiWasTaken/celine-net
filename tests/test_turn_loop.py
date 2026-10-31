@@ -117,9 +117,7 @@ async def test_an_answer_with_a_note_written_ends_the_turn_in_one_step(store, cf
     assert state == "done" and texts == ["Sure, noted."]
 
 
-async def test_a_tool_that_fails_the_same_way_stays_usable(store, cfg, monkeypatch):
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE | {"web"})
+async def test_a_tool_that_fails_the_same_way_stays_usable(store, cfg):
     reg = _registry(cfg, Web())
     cid = await conversations.create(store)
     b = Replies([_calls(("web__search", {"query": "cats"})),
@@ -142,9 +140,7 @@ async def test_a_step_runs_every_call(store, cfg):
     assert [r[1] for r in rows] == ["ok"] * 30
 
 
-async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg, monkeypatch):
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE | {"browser"})
+async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg):
     reg = _registry(cfg, Browser(), Notebook())
     cid = await conversations.create(store)
     b = Replies([_calls(("browser__open", {})), [TextDelta("ok"), Done(reason="stop")]])
@@ -154,8 +150,10 @@ async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg, monkeypatch):
     assert all(t["parameters"].get("properties") for t in sent)
     rows = await _results(store)
     assert rows[0][2] == "browser is down: Not set up: see Settings, Tools. Work without it."
-    system = b.calls[0][0]["content"]
-    assert "browser is down: Not set up: see Settings, Tools. Work without it." in system
+    tail = b.calls[0][-1]["content"]
+    assert "browser is down: Not set up: see Settings, Tools. Work without it." in tail, \
+        "said in the tail, the system prompt stays as it was"
+    assert "browser is down" not in b.calls[0][0]["content"]
 
 
 async def test_load_refuses_a_down_skill(store, cfg):
@@ -164,7 +162,7 @@ async def test_load_refuses_a_down_skill(store, cfg):
     cid = await conversations.create(store)
     ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
                       config=cfg, emit=None)
-    out = await reg.skills["skills"].load(ctx, name="browser")
+    out = await reg.skills["skills"].load(ctx, names=["browser"])
     assert out.is_error and out.content == (
         "browser is down: Not set up: see Settings, Tools. Its tools stay out.")
 
@@ -186,7 +184,7 @@ async def test_continue_on_a_capped_turn_gets_a_fresh_step_budget(store, cfg):
     assert len(b.calls) == 4               # two more steps, not none
 
 
-async def test_her_voice_line_closes_the_newest_tool_result(store, cfg):
+async def test_tool_results_reach_her_as_the_tool_made_them(store, cfg):
     cfg.her.talk = "a chat.\n\n## how I sound\n\nshort and dry, a little formal\nmore\n"
     reg = _registry(cfg, Notebook())
     cid = await conversations.create(store)
@@ -195,12 +193,7 @@ async def test_her_voice_line_closes_the_newest_tool_result(store, cfg):
                  [TextDelta("done"), Done(reason="stop")]])
     await _run(store, cfg, reg, cid, b)
     tools = [m for m in b.calls[1] if m["role"] == "tool"]
-    assert tools[-1]["content"] == \
-        "wrote b.md\n\n[how you sound] short and dry, a little formal"
-    assert tools[0]["content"] == "wrote a.md"
-    stored = await store.read(lambda c: [r[0] for r in c.execute(
-        "SELECT content FROM messages WHERE role='tool'")])
-    assert "how you sound" not in "".join(stored), "the request only"
+    assert [t["content"] for t in tools] == ["wrote a.md", "wrote b.md"]
 
 
 async def test_a_stop_before_any_word_leaves_no_empty_reply(store, cfg):

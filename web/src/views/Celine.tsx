@@ -1,25 +1,25 @@
 /* The agent's place: the chats. The kit's Place: the conversation list in
-   its sidebar with its own head (Search, Select, Archive, Trash, More, New; a drawer from
-   the left on a phone), the chat beside it: the head with its face, its name and its mood,
+   its sidebar with its own head (Close sidebar, Search, Select, Archive, Trash, More, New; a
+   drawer from the left on a phone), the chat beside it: the head with its face, its name and its mood,
    the transcript in the reading column, the composer as the one raised object, and the side
    panel (Model, Tools, Pages, Context). It is one section of the app and stays mounted
    while you are elsewhere, so a running reply and a draft survive switching. The server
    sends every group, count, row state and its mood; the page draws them. */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { ArrowDown, Archive, Bell, Compass, Download, Images, LoaderCircle, PanelRight, Pencil, Pin, PinOff, Plus, RotateCcw, Trash2, TriangleAlert, X } from 'lucide-react'
+import { Archive, Bell, Compass, Download, Images, LoaderCircle, PanelRight, Pencil, Pin, PinOff, Plus, RotateCcw, Trash2, TriangleAlert, X } from 'lucide-react'
 import {
   api, conversationApi,
-  type ConfigStatus, type ConversationSummary, type Message, type NewConversationSettings, type Job,
+  type Attachment, type ConfigStatus, type ConversationSummary, type Message, type NewConversationSettings, type Job,
 } from '../lib/api'
 import { emit, useServerEvents } from '../lib/bus'
 import { ShowArtifact } from '../lib/artifacts'
-import { chatApi, useMood, type ChatHit } from '../lib/chat'
+import { chatApi, useMood, type ChatHit, type Mood } from '../lib/chat'
 import { ConversationList, rowState, type RowState, type Work } from '../components/ConversationList'
 import { ConversationPanel, type PanelTab } from '../components/ConversationPanel'
 import { ReminderLines, Reminders, pendingOf } from '../components/Reminders'
 import { HerFace, MoodText } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
-import { useHer } from '../lib/her'
+import { useHer, type Her } from '../lib/her'
 import { count, errorText } from '../lib/format'
 import { useNav } from '../lib/nav'
 import { setPageName } from '../lib/title'
@@ -31,16 +31,16 @@ import { ConversationReminders, remindersApi } from '../lib/reminders'
 import { snapshotAgain, useOnline, OFFLINE_TITLE } from '../lib/socket'
 import { useConversation } from '../lib/useConversation'
 import { useResource } from '../lib/useResource'
-import { useStickToBottom } from '../lib/useStickToBottom'
-import { Transcript, type Pending } from '../components/Transcript'
+import { KeepPlace, useStickToBottom } from '../lib/useStickToBottom'
+import { Transcript, TranscriptLoading, type Pending } from '../components/Transcript'
 import { SideHost } from '../components/MessageActions'
-import { Composer, type ComposerHandle, type Note } from '../components/Composer'
+import { Composer, NewMessages, type ComposerHandle, type Note } from '../components/Composer'
 import { waitWords } from '../components/Status'
 import { PhotoViewer } from '../components/PhotoViewer'
 import { GalleryContext, collectGeneratedImages, madeDetails, type Made } from '../components/Batch'
 import {
   Button, ConfirmDialog, EmptyState, IconButton, InlineEdit, InlineError, LoadingRow, Notice, Place, PlaceHead, SelectBar,
-  coarse, isNarrow, StatusLine, cx, usePicker, type Shelf,
+  coarse, isNarrow, StatusLine, cx, leave, OUT, useLeave, usePicker, type Shelf,
 } from '../ui'
 import { usePref } from '../lib/prefs'
 import { bulkActions, useArchiveOlder } from '../components/Bulk'
@@ -48,10 +48,23 @@ import { bulkActions, useArchiveOlder } from '../components/Bulk'
 /** the events that move a conversation in or out of a shelf, or change its row */
 const LIST_EVENTS = new Set(['conversation.title', 'conversation.created', 'conversation.deleted',
   'conversation.restored', 'conversation.purged', 'conversation.pinned', 'conversation.archived', 'conversation.unarchived',
-  'version.changed', 'message.purged', 'mission.state', 'frozen.changed'])
+  'version.changed', 'message.purged', 'mission.state', 'frozen.changed', 'approvals.changed'])
 
 const place = 'celine' as const
 const chatsNoun = (n: number) => count(n, 'conversation')
+
+/** a new conversation's face, name and mood; the first message sent, it fades where it was */
+function Greeting({ who, name, mood }: { who: Her | null; name: string; mood: Mood | null }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLeave(ref, g => leave(g, OUT.fade, '--dur'))
+  return (
+    <div ref={ref} className="chat-greeting">
+      <HerFace who={who} size="lg" />
+      <div className="chat-greeting__name">{name}</div>
+      <MoodText mood={mood} />
+    </div>
+  )
+}
 const exportUrl = (id: string) => `/api/conversations/${encodeURIComponent(id)}/export`
 
 export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
@@ -212,7 +225,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
       const done = (Array.isArray(ev.jobs) ? ev.jobs : []) as { state: string }[]
       const ok = done.filter(j => j.state === 'done').length
       const bad = done.filter(j => j.state !== 'done' && j.state !== 'cancelled').length
-      if (ok || bad) setAway(`While you were away: ${ok} finished${bad ? `, ${bad} failed` : ''}`)
+      if (ok || bad) setAway(`While you were away, ${ok} background ${ok === 1 ? 'job' : 'jobs'} finished${bad ? ` and ${bad} failed` : ''}.`)
     }
     // its first write of a new page in the open conversation shows it beside the chat
     if (ev.type === 'artifact.updated' && ev.n === 1 && !ev.yours && ev.conversation === selected && typeof ev.id === 'string') {
@@ -257,9 +270,9 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
 
   // your message, on screen at once with the dots; the requests follow. A message not sent
   // says why, and the Composer puts back what you typed
-  const post = useCallback(async (text: string, ready: string[], names: string[]) => {
+  const post = useCallback(async (text: string, ready: string[], files: Attachment[]) => {
     setNote(null)
-    setPending({ cid: selected, text, files: names })
+    setPending({ cid: selected, text, files })
     jumpRef.current({ smooth: false })
     try {
       const id = selected ?? await createConversation()
@@ -349,10 +362,11 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const missing = !!selected && !!list.data && !current && !shownPending && !convo.conversation
   const empty = !selected && !shownPending
   const drawn = !!(current || shownPending || (selected && convo.conversation))
-  const lastMessage = convo.messages.at(-1)
-  const { onScroll: onTranscriptScroll, unseen, jump: jumpToLatest } = useStickToBottom(
-    transcript, [lastMessage?.content, lastMessage?.reasoning, lastMessage?.id, convo.toolCalls, pendingReminders.length],
-    [selected], [selected, convo.messages.length > 0, drawn])
+  // the snapshot is not in yet: the transcript's shape stands in (TranscriptLoading)
+  const snapshotDue = !!selected && !convo.conversation && !shownPending
+  const { onScroll: onTranscriptScroll, unseen, jump: jumpToLatest, keep } = useStickToBottom(
+    transcript, [convo.messages.length, convo.live?.message_id, pendingReminders.length],
+    [selected], [selected, convo.messages.length > 0, drawn, snapshotDue])
   jumpRef.current = jumpToLatest
 
   const noteLine = note && (
@@ -363,6 +377,9 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   )
   const open = (id: string) => { setSelected(id); onSidebar(false) }
   const conversationTitle = current?.title || convo.conversation?.title || ''
+  const startedBy = convo.conversation?.started_by ?? null
+  // whom the composer writes to: the sub-agent in its conversation, her in her own
+  const writingTo = startedBy ? convo.conversation?.agent_name ?? conversationTitle : name
   const isArchived = current ? !!current.archived_at : !!convo.conversation?.archived_at
   const headMore = current ? [
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(current.id) },
@@ -379,8 +396,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const headActs = 1 + (current ? 1 : 0) + (runningJobs > 0 ? 1 : 0) + (isArchived && current ? 1 : 0) + (convo.plan?.steps.length ? 1 : 0)
 
   const listHead = <>
-    <PlaceHead title={placeName} count={shown.data?.count}
-               search={{ value: query, onChange: setQuery, label: 'Search conversations', loading: !!q && found.loading }}
+    <PlaceHead search={{ value: query, onChange: setQuery, label: 'Search conversations', loading: !!q && found.loading }}
                picker={picker} shelf={{ archive: true, trash: true, value: shelf, onChange: setShelf }}
                more={[older.item, { label: 'Go to', icon: Compass, onSelect: () => emit({ type: 'ui.goto' }) }]}
                newLabel="New conversation" onNew={newConversation} />
@@ -408,7 +424,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   return (
     <ShowArtifact.Provider value={showArtifact}>
     <AgentsContext.Provider value={agents}>
-    <Place title={placeName} label="Conversations" open={sidebarOpen} onOpen={onSidebar} head={listHead} side={listBody}>
+    <Place title={placeName} label="Conversations" open={sidebarOpen} onOpen={onSidebar} fold="celine" head={listHead} side={listBody}>
       <div className="chat">
         <main className={cx('chat-main', dragging && 'chat-main--drop')} style={{ '--acts': headActs } as CSSProperties}
               onDragOver={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); setDragging(true) }}
@@ -419,8 +435,14 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                 e.preventDefault(); composer.current?.addFiles(e.dataTransfer.files)
               }}>
           <PlaceHead level={1}
-                     lead={<HerFace who={who} size="sm" speaking={convo.running} mood={mood} />}
-                     title={
+                     {...(startedBy ? {
+                       /* a sub-agent's conversation: its name under the one that started it */
+                       crumbs: [{ label: startedBy.name, href: startedBy.link ?? undefined,
+                                  onClick: startedBy.link ? (e: { preventDefault(): void }) => { e.preventDefault(); nav.goPath(startedBy.link!) } : undefined }],
+                       title: writingTo,
+                     } : {
+                     lead: <HerFace who={who} size="sm" speaking={convo.running} />,
+                     title:
                        <span className="chat-who">
                          {name}<MoodText mood={mood} />
                          {renaming === current?.id ? (
@@ -429,8 +451,8 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                          ) : (
                            conversationTitle && <span className="chat-head__title">{conversationTitle}</span>
                          )}
-                       </span>
-                     }
+                       </span>,
+                     })}
                      titleAttr={conversationTitle || undefined}
                      actions={<>
                        <PlanButton plan={convo.plan} />
@@ -455,23 +477,27 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
               <GalleryContext.Provider value={{ images: galleryImages, openImage }}>
                 <SideHost.Provider value={{ host: side, active: activeSide, setActive: handleSetActiveSide }}>
                 <ConversationReminders.Provider value={conversationReminders}>
-                  <Transcript conversationId={selected}
+                <KeepPlace.Provider value={keep}>
+                  {snapshotDue ? <TranscriptLoading /> : <Transcript conversationId={selected}
                               messages={convo.messages}
-                              toolCalls={convo.toolCalls} turn={convo.turn}
+                              toolCalls={convo.toolCalls} runs={convo.runs} turn={convo.turn} unanswered={convo.unanswered}
                               running={convo.running} error={convo.error}
                               pending={shownPending} compactions={convo.compactions} onRetry={regenerate}
                               live={convo.live} switched={convo.switched}
                               imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
-                              waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue}
+                              waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue} swaps={convo.swaps}
                               note={null} assistant={name}
-                              user={status?.user ?? ''} />
+                              user={status?.user ?? ''} />}
+                </KeepPlace.Provider>
                 </ConversationReminders.Provider>
                 </SideHost.Provider>
               </GalleryContext.Provider>
               <ReminderLines list={pendingReminders} />
             </div>
           ) : loading ? (
-            <div className="chat-scroll">{list.error && <EmptyState><InlineError message={list.error} onRetry={list.reload} /></EmptyState>}</div>
+            <div className="chat-scroll">
+              {list.error ? <EmptyState><InlineError message={list.error} onRetry={list.reload} /></EmptyState> : <TranscriptLoading />}
+            </div>
           ) : missing ? (
             <div className="chat-scroll chat-scroll--empty">
               <EmptyState icon={TriangleAlert} title="Not found"
@@ -479,16 +505,12 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
             </div>
           ) : (
             <div className="chat-scroll chat-scroll--empty">
-              <div className="chat-greeting">
-                <HerFace who={who} size="lg" mood={mood} />
-                <div className="chat-greeting__name">{name}</div>
-                <MoodText mood={mood} />
-              </div>
+              <Greeting who={who} name={name} mood={mood} />
               <FirstRun />
             </div>
           )}
 
-          <Composer handle={composer} conversationId={selected} exists={!!current} active={active && !drawerOpen} name={name}
+          <Composer handle={composer} conversationId={selected} exists={!!current} active={active && !drawerOpen} name={writingTo}
                     running={convo.running} offline={offline} sending={!!pending} pending={!!shownPending}
                     empty={empty} hidden={missing} closed={null} settings={convo.settings}
                     draftSettings={newSettings} onDraftSettings={setNewSettings} onModelPanel={() => openPanel('model')}
@@ -496,7 +518,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                     toNew={toNew} attempt={attempt} onReminders={current ? () => setRemindersOpen(true) : undefined}
                     notices={noteLine}
                     setup={current && <FirstRun />}
-                    jump={unseen && <Button size="sm" icon={ArrowDown} onClick={jumpToLatest}>New messages</Button>} />
+                    jump={unseen && <NewMessages onClick={jumpToLatest} />} />
         </main>
 
         <div ref={setSide} className="chat-side" />
@@ -514,7 +536,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
       )}
       {confirmTrash && (
         <ConfirmDialog title="Move to Trash?" danger confirmLabel="Move to Trash"
-                       body={<>"{every.find(c => c.id === confirmTrash)?.title || 'Untitled'}" goes to Trash, where Restore brings it back.</>}
+                       body={<>"{every.find(c => c.id === confirmTrash)?.title || 'Untitled'}" moves to the Trash. You can restore it from there.</>}
                        onClose={() => setConfirmTrash(null)} onConfirm={() => toTrash(confirmTrash)} />
       )}
       {standalonePhoto && (

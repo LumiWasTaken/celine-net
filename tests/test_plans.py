@@ -127,19 +127,13 @@ async def test_an_ask_checkpoint_ends_the_turn_and_your_answer_goes_on(store):
     assert not (await plans.get(store, cid))["waiting"], "your answer lifts the wait"
 
 
-async def test_where_she_works_names_the_place_and_its_address(store):
+async def test_her_other_conversations_working_now_are_named(store):
     chat = await conversations.create(store, "Groceries")
     mission = await conversations.create(store, "m", kind="mission")
     await store.write(lambda c: c.execute(
         "INSERT INTO missions(conversation_id, name, terminal, status, created_at, "
         "updated_at) VALUES(?, 'Prices', 't', 'active', '2026-10-22T00:00:00+00:00', "
         "'2026-10-22T00:00:00+00:00')", (mission,)))
-    sub = await conversations.create(store, "scout", agent_of=mission, agent_name="scout")
-    assert await store.read(lambda c: here.where(c, chat)) == \
-        f"You are working in the chat \"Groceries\" (address {chat})."
-    assert await store.read(lambda c: here.where(c, sub)) == (
-        f"You are working in the sub-agent scout (address {sub}). It reports to the "
-        f"mission Prices (address {mission}).")
     assert await store.read(lambda c: here.busy(c, chat)) is None
     await user_says(store, mission, "go")
     assert "the mission Prices" in await store.read(lambda c: here.busy(c, chat))

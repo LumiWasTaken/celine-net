@@ -51,6 +51,10 @@ def provider(s, pid: str, router) -> dict[str, Any]:
                        # the context the server says it runs with: turns budget with
                        # it over `context` (turns/tokens.py); null when no server says
                        "server_context": router.server_context(pid, name, m.get("context")),
+                       # the caps the server states (its tools and vision count over
+                       # `caps`, settings/kinds.py caps_of); null when it states none
+                       "server_caps": kinds.server_caps(p["base_url"], name),
+                       "caps_now": kinds.caps_of(p, name),
                        "thinking_offered": levels(p, m),
                        "used_by": _task_labels(used.get(name, [])),
                        # a provider without its key offers nothing to choose from
@@ -173,6 +177,7 @@ def tools(services) -> dict[str, Any]:
     cfg = services.cfg
     s = cfg.settings
     reg = services.registry
+    mcp_skills = getattr(services.mcp, "skills", None) or {}
     skills = []
     if reg is not None:
         for name, skill in reg.skills.items():
@@ -190,7 +195,7 @@ def tools(services) -> dict[str, Any]:
             states = {x["default"] for x in rows}
             down = getattr(skill, "search_down", None)     # web: SearXNG does not answer
             skills.append({"name": name, **meta,
-                           "source": "mcp" if name in (cfg.mcp or {}) else "built-in",
+                           "source": "mcp" if name in mcp_skills else "built-in",
                            "status": "down" if down else status_of(services, name, skill),
                            "error": down or getattr(skill, "error", None),
                            "default": states.pop() if len(states) == 1 else "mixed",
@@ -212,10 +217,19 @@ async def features(services, probes: dict | None = None) -> dict[str, Any]:
     s = services.cfg.settings
     if probes is None:
         probes = await features_mod.probe_all(services.cfg, services)
+    cfg = services.cfg
+    catalog = features_mod.catalog()
     return {"features": features_mod.effective(s.features),
-            "catalog": [{**features_mod.view(f), **probes[f.id],
-                         "card": features_mod.card_now(services.cfg, f, probes[f.id])}
-                        for f in features_mod.CATALOG],
+            "catalog": [{**features_mod.view(f, cfg.substitute),
+                         **{k: v for k, v in features_mod.shown(probes[f.id]).items()
+                            if k != "why"},
+                         "group_label": cfg.substitute(features_mod.GROUPS.get(f.group, ""))}
+                        for f in catalog],
+            # the tiers in order, each with a row; the core's rows have no switch
+            "tiers": [{"id": t, "label": label} for t, label in features_mod.TIERS.items()
+                      if t == "core" or any(f.tier == t for f in catalog)],
+            "core": [{"id": i, "label": label, "about": cfg.substitute(about)}
+                     for i, label, about in features_mod.CORE],
             "saved": bool(s.saved.get("features")), "done": features_mod.done(s.features),
             "version": version(s.features)}
 

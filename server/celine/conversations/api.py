@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import attachments as attachments_mod
+from .. import attachments as attachments_mod, homes
 from ..api.cursor import page_cursor, read_cursor
 from ..api.deps import cfg_of, json_body, settings_of, store_of
 from ..settings import conversations as conv
@@ -31,8 +31,10 @@ async def list_conversations(request: Request, limit: int = 200,
     cursor of the following page, null on the last one."""
     from ..clock import zone
     limit = max(1, min(limit, 500))
+    from ..approvals import asked
     rows = await store.list(store_of(request), limit + 1, read_cursor(cursor), archived,
-                            trashed, place=place, tz=zone(cfg_of(request)))
+                            trashed, place=place, tz=zone(cfg_of(request)),
+                            asked=asked(request.app.state.services))
     more = len(rows) > limit
     rows = rows[:limit]
     last = rows[-1] if rows else None
@@ -79,38 +81,33 @@ class NewMessage(BaseModel):
 async def conversation(request: Request, cid: str) -> dict:
     """The snapshot as every client gets it (view.snapshot, the socket's too)."""
     try:
-        return await view.snapshot(store_of(request), cid)
+        snap = await view.snapshot(store_of(request), cid)
     except KeyError:
         raise NotFound("conversation") from None
+    return view.for_client(snap, getattr(cfg_of(request), "settings", None))
 
 
 async def writable(request: Request, cid: str) -> None:
     await store.ensure_writable(store_of(request), cid)
 
 
-BLOCKS = ("persona", "talk", "about", "notes", "tools", "history", "warning")
+BLOCKS = ("persona", "talk", "about", "notes", "tools", "history")
 
 
 @router.get("/conversations/{cid}/context")
 async def what_she_sees(request: Request, cid: str) -> dict:
     """The next request of this conversation as a turn would build it now, measured in
     tokens, without a model call (turns/context.py, mode "dry", the same estimate
-    /usage uses), with its tail: {window, shares: {notes, tools} (the most each may
-    take, in tokens, turns/loads.py), blocks: [{name, tokens}] (persona, talk: the line
-    about where it is and how it talks, about: what the user wrote about themselves,
-    notes: the notes block, tools: the skill index, the skills' fragments and the tool
-    schemas, history: the rest of the request estimate (the messages sent, the summary
-    and its tail), so the blocks add up to the estimate the compaction check uses,
-    warning: the line that a summary is coming), notes: [{path, tokens, state, why}] (the notes it
-    carries or would: included, left_out or off), loaded: {notes: [{path, since}],
-    skills: [{name, since, tokens, core}]} (what it carries, each with the turns since
-    a turn touched it; a skill's tool schemas in tokens, `core` when it always loads,
-    `label` its name), tools: how many, auto_context: the Load automatically switch
+    /usage uses): {window, blocks: [{name, tokens}] (persona, talk: the lines about
+    where it is and how it talks, about: what the user wrote about themselves, notes:
+    the notes block, tools: the skill index, the skills' fragments and the tool schemas,
+    history: the rest of the request estimate (the messages sent with their stored
+    tails, and the summary), so the blocks add up to the estimate the compaction check
+    uses), notes: [{path, tokens, state, why}] (the notes it always carries: included,
+    or off here), tools: how many, auto_context: the Load automatically switch
     (api/context.py)}."""
     from ..turns.prompt import turn_parts
-    from ..settings.tools_meta import skill_meta
-    from ..turns import context, loads, tokens
-    from ..turns.prompt import notes_tail, request_text
+    from ..turns import context, tokens
     db, cfg = store_of(request), cfg_of(request)
 
     def who(c):
@@ -121,56 +118,24 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     auto = await db.read(who)
     backend, blocks, tools, carried = await turn_parts(request.app.state.services, cid)
     system = "\n\n".join(t for _, t in blocks)
-    reg = request.app.state.services.registry
-    _, tail = await request_text(db, cfg, reg, backend, cid,
-                                 {"id": None, "root_message_id": None}, carried, tools,
-                                 touch=False)
     built = await context.build(db, cfg, backend, cid, system=system, tools=tools,
-                                mode="dry", tail=tail)
+                                mode="dry")
     counter, p = tokens.counter(backend), built.parts
     out = {name: {"name": name, "tokens": 0} for name in BLOCKS}
     for name, text in blocks:
         out.setdefault(name, {"name": name, "tokens": 0})["tokens"] += counter.estimate(text)
     out["tools"]["tokens"] += int(p.get("tool_schemas") or 0)
-    # the notes it carries by need ride in the tail: they count as notes, not history
-    carried_notes = counter.estimate(notes_tail(cfg, carried) or "")
-    out["notes"]["tokens"] += carried_notes
-    out["warning"]["tokens"] = int(p.get("warning") or 0)
     # history is the rest of the request estimate the compaction check uses, so the
     # blocks add up to exactly that number (the per-block estimates of the system text
     # and the request's count differ by the message overhead and rounding)
     out["history"]["tokens"] = max(0, int(p.get("estimate") or 0) - sum(
         b["tokens"] for n, b in out.items() if n != "history"))
-    labels = {n: skill_meta(n, getattr(reg.skills.get(n) if reg else None,
-                                       "description", ""), cfg.substitute)["label"]
-              for n in carried.skills}
-    return {"window": built.window, "shares": carried.budgets,
-            "blocks": list(out.values()),
+    return {"window": built.window, "blocks": list(out.values()),
             "notes": [{k: n[k] for k in ("path", "tokens", "state", "why")}
-                      for n in carried.notes] + [
-                {"path": x["name"], "tokens": x["tokens"], "state": "left_out",
-                 "why": x["why"]} for x in built.left_out],
-            "loaded": {"notes": [{"path": p, "since": s} for (k, p), s in
-                                 sorted(carried.since.items()) if k == "note"],
-                       "skills": [{"name": n, "since": carried.since[("skill", n)],
-                                   "tokens": carried.costs.get(n, 0), "core": n in loads.CORE,
-                                   "label": labels[n]}
-                                  for n in carried.skills]},
+                      for n in carried.notes],
             "tools": len(tools), "auto_context": auto}
 
 
-@router.delete("/conversations/{cid}/context/skills/{name}")
-async def unload_skill(request: Request, cid: str, name: str) -> dict:
-    """The agent lets go of a skill it carries here (the Context tab's Unload): its tools leave
-    its list until it loads it again or a message needs it. A core skill always loads:
-    400."""
-    from ..settings.files import Invalid
-    from ..turns import loads
-    if name in loads.CORE:
-        raise Invalid("name", "This skill always loads.")
-    if not await loads.unload(store_of(request), cid, "skill", name):
-        raise NotFound("conversation")
-    return {"ok": True}
 
 
 @router.get("/conversations/{cid}/messages/{mid}/raw")
@@ -269,7 +234,7 @@ async def archive_conversation(request: Request, cid: str) -> dict:
     if dispatcher is not None and await store_of(request).read(store.lock_archived):
         # its work there stops
         await dispatcher.abort_conversation(
-            await store_of(request).read(lambda c: store.top_of(c, cid)))
+            await store_of(request).read(lambda c: homes.root(c, cid)["id"]))
     return out
 
 
@@ -299,7 +264,6 @@ async def search(request: Request, q: str = "", limit: int = 30, place: str | No
         return {"hits": [], "titles": titles}
     kinds = ("chat",) if place == "celine" else ("chat", "mission", "agent")
     hits = await store.search(store_of(request), q, None, limit, 24, kinds)
-    from .. import homes
 
     def links(c):
         for h in hits:
@@ -420,7 +384,8 @@ async def continue_turn(request: Request, cid: str, tid: str,
     registry = request.app.state.services.registry
     try:
         tid, seq = await turns.continue_turn(store_of(request), cid, tid, registry,
-                                             wait=bool(body and body.wait))
+                                             wait=bool(body and body.wait),
+                                             prefill=_prefills(request, cid))
     except KeyError:
         raise NotFound("turn") from None
     except ValueError as e:
@@ -428,6 +393,33 @@ async def continue_turn(request: Request, cid: str, tid: str,
                           {"reason": str(e)}) from None
     request.app.state.services.dispatcher.notify()
     return {"turn_id": tid, "seq": seq}
+
+
+def _chat_backend(request: Request, cid: str, **kw):
+    return chat_backend(request.app.state.services, cid, **kw)
+
+
+def chat_backend(services, cid: str, **kw):
+    """The conversation's chat model as a turn binds it (its first model up front); the
+    fixed backend alone without a model queue (tests)."""
+    from ..backends.queue import Priority
+    factory = services.dispatcher.backend_factory
+    fixed = factory() if factory is not None else None
+    llm = services.llm
+    if llm is None:
+        return fixed
+    return llm.bind(fixed, role="chat", conversation_id=cid,
+                    **{"priority": Priority.INTERACTIVE, **kw})
+
+
+def _prefills(request: Request, cid: str) -> bool:
+    return prefills(request.app.state.services, cid)
+
+
+def prefills(services, cid: str) -> bool:
+    """Whether the conversation's chat model continues a reply in place."""
+    from ..turns.prompt import supports_prefill
+    return supports_prefill(chat_backend(services, cid))
 
 
 @router.post("/conversations/{cid}/stop")
@@ -481,7 +473,8 @@ async def continue_message(request: Request, cid: str, mid: str) -> dict:
     is appended. -> {message_id, turn_id, seq}, or {refused: the sentence why}."""
     await writable(request, cid)
     try:
-        new, tid, seq = await tree.continue_message(store_of(request), cid, mid)
+        new, tid, seq = await tree.continue_message(store_of(request), cid, mid,
+                                                    prefill=_prefills(request, cid))
     except KeyError:
         raise NotFound("message") from None
     except ValueError as e:
@@ -527,12 +520,8 @@ async def impersonate(request: Request, cid: str,
             "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
         raise NotFound("conversation")
     await writable(request, cid)
-    factory = request.app.state.services.dispatcher.backend_factory
-    fixed = factory() if factory is not None else None
-    llm = request.app.state.services.llm
-    backend = llm.bind(fixed, role="chat", priority=Priority.INTERACTIVE,
-                       conversation_id=cid, thinking="off", voice=False,
-                       fallback=False) if llm is not None else fixed
+    backend = _chat_backend(request, cid, priority=Priority.INTERACTIVE, thinking="off",
+                            voice=False, fallback=False)
     if backend is None:
         raise CelineError("unavailable", "No chat model is set up.", 503)
     try:

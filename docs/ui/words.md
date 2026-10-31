@@ -24,11 +24,11 @@ block at the end of this file lists the words no UI string uses.
 | Missions | long tasks it works on | |
 | Routines | its schedules and their runs | Google Home, Alexa "Routines" |
 | Notebook | its own notes | ChatGPT "Memory" for the same job |
-| Intercom | messages between it, missions and sub-agents | |
+| Intercom | messages between it, missions and sub-agents; Everyone is the recipient that reaches every running agent | |
 | Documents | your files | Google Docs, Apple Files |
 | Messages | the WhatsApp and Discord archive ("chat" means a chat with it). Inside it a WhatsApp or Discord chat keeps its app's word, chat (Search chats, Choose chats) | Apple "Messages", Google "Messages" |
 | Terminals | its terminals | macOS Terminal |
-| Browser | its browser | |
+| Browser | its browser (never the engine's name); Current tab is the tab on its screen | Chrome "Current tab" |
 | Events | everything it did and everything that ran, one list | GitHub "Events", Google Cloud "Events"; Discord "Audit Log" for the same job |
 | Search | the archive search, and every search box | ChatGPT "Search chats", Claude "Search" |
 | Settings | settings | everyone |
@@ -51,13 +51,13 @@ block at the end of this file lists the words no UI string uses.
 | Select, Select all, Done | selecting many | Apple Photos, Mail |
 | Archive, Archive older than | move out of the list, kept | ChatGPT "Archive", Gmail |
 | Restore | back from the Archive or the Trash | Google Drive, Windows |
-| Trash, Move to Trash | the bin and moving there | macOS, Gmail, Google Drive |
+| Trash, Move to Trash, You can restore it from the Trash. | the bin and moving there; the body of every Move to Trash? confirm | macOS, Gmail, Google Drive |
 | Delete permanently | only inside the Trash | Google Drive "Delete forever", Outlook "Permanently delete" |
 | Delete | a message, a note version (menus) | everyone |
 | Open | open the item | everyone |
-| Open Settings, Open Setup, Open conversation, Open terminal | a link that leaves names where it goes (Open Setup: the feature's own Setup card) | VS Code "Open Settings", "Open in Terminal" |
-| Back to Settings | the way out of Setup once it was finished before | Gmail "Back to Inbox" |
-| Undo | take back a reversible action from its toast (Archive one item); never a delete or a move to Trash, those ask first | Gmail "Undo", everyone |
+| Open Settings, Open Setup, Open conversation, Open terminal | a link that leaves names where it goes (Open Setup: the feature's own Setup step while it is on) | VS Code "Open Settings", "Open in Terminal" |
+| Back to Settings | the way out of Setup run again from Settings, never on the first run | Gmail "Back to Inbox" |
+| Undo | take back a reversible action from its toast (Archive one item), or the composer's text a command replaced; never a delete or a move to Trash, those ask first | Gmail "Undo", everyone |
 | Unsaved, Unsaved changes | an edit not saved yet, in an editor with Save (a note, a document); Settings save themselves | Google Docs, VS Code "Unsaved changes" |
 | Rename, Edit, Duplicate, Copy | | ChatGPT, Claude, Finder |
 | Pin, Unpin | keep at the top | Slack, Discord, ChatGPT |
@@ -90,25 +90,30 @@ block at the end of this file lists the words no UI string uses.
 | Keep waiting | a reply that failed because its provider is busy: send it again and wait for the model until Stop | Windows "Keep waiting" (an app that does not respond) |
 | Waiting for <model>. | the reply's status while Keep waiting waits for a busy provider | plain |
 | Try again | the same, inside a sentence ("Try again later") | ChatGPT |
-| Stop | stop the reply | ChatGPT, Claude |
+| Press (a button) | a step inside a sentence names its button with Press ("then press Check"), never Select, Tap or Click | Apple Support "press Return" |
+| Stop, Stop the reply | stop the reply; Stop the reply is the Stop button's tooltip | ChatGPT, Claude |
+| Reply | its message in a chat; status lines say reply, never answer (The reply failed., The reply took too long and was stopped.) | Gmail, Slack "Reply" |
 | Send | send | everyone |
+| Message (its name) | the composer's placeholder: its name in its chats, a sub-agent's name in that sub-agent's conversation | ChatGPT "Message ChatGPT", Slack "Message #channel" |
 | Branch, Branch from here | a new chat from this message | ChatGPT "Branch in new chat" |
 | Impersonate | it writes your next message as a draft | plain |
 | Copy, Edit, Delete | on a message | everyone |
 | New messages | the jump to the newest messages | Slack, Discord |
 | Activity | the tool calls of one reply, from its "..." | ChatGPT (agent and deep research "Activity") |
+| Ran 8 commands in terminal main, 2 failed, Back | a run of three or more calls alike in a row, one row whose Sheet lists its rows (the words, the run and the failed count from the server, skills/words.py `runs`; a non-zero exit counts as failed); a row there opens its call in the same Sheet, Back returns to the run | GitHub Actions "3 failed" |
 | What (its name) saw | what one reply saw (its requests) | |
-| Plan, Asks you, Waiting for you, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
+| Plan, Asks you, Waiting for you, In progress, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
+| Daily at 04:00, Sundays at 03:00, Weekdays, Weekends, Every 2 hours from 10:00 to 22:00 | when a Routine's schedule runs, 24h times, from the server (schedules.words); a shape it cannot say stays the cron line | Google Calendar "Daily", "Weekly on Sunday" |
 | Started by | a Routine run you or it started by hand, in Events | GitHub Actions "Triggered by" for the same job |
 | (Its possessive pronoun) thoughts, Collapse thinking by default | its reasoning, and how its fold starts | Claude "Thinking", ChatGPT "Thought for" |
-| Thinking | the line while it thinks | Claude, ChatGPT |
+| Thinking, Writing, Using a tool, Waiting for the model | the line while it thinks; a turn's step in lists (lib/format.ts) | Claude, ChatGPT |
 | Compacted | the conversation's older part was summarised | Claude Code "Compacted" |
 | Attach | add a file to a message | ChatGPT, Claude |
 | Reminders | messages it sends later in this conversation | Apple, Google "Reminders" |
 | Model, Tools, Pages, Context | the tabs of Celine's side panel; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
 | Model | which model answers | everyone |
 | load: | a note's head line, as the note writes it, in the Context tab's why ("load: off") | Obsidian properties |
-| Load automatically, Tools and notes that match each message | the Context tab's switch and its tooltip: each new message loads the tools its words ask for and brings up the sections of its notes it matches | |
+| Load automatically, Notes that match each message | the Context tab's switch and its tooltip: each new message brings up the sections of its notes it matches | |
 | Waiting for the GPU. | an image batch waits for its GPU (the lease) | ComfyUI, Stable Diffusion WebUI "Waiting" |
 | Paused., The reply failed. | soft status words where the next line appears | |
 
@@ -139,33 +144,40 @@ block at the end of this file lists the words no UI string uses.
 | Confirm access, Use passkey, Confirm | the dialog adding a way to log in, Reset codes or Create token opens first unless you proved it in the last 5 minutes: your passkey, password or PIN | GitHub sudo mode "Confirm access", "Use passkey", "Confirm" |
 | Source code | General: the link to the code this build runs, its commit on the link | GitHub "Source code"; the AGPL's offer of the source |
 | Features | the Settings page of what it has, one switch each; also the onboarding's step | Windows "Optional features", Discord "Features" |
+| Core, Base modules, User modules | the three headings of Features (Settings and Setup): what it is made of (on, no switch), what ships with it, the plugins you add | Drupal "Core", "Modules"; plain |
+| Chat, Notebook, Mind, Plan, Intercom, Past conversations, Bug reports, Skills | the Core rows of Features, each with its one line | plain; as their places and skills |
 | Next, Back, Skip | the onboarding's steps: on, back one, leave this one as it is | Apple setup, Android setup "Next", "Back", "Skip" |
-| Step 4 of 16 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
-| Decision model, Second look model | Bastet's two models on the guard's onboarding card: the small one that decides (the Titles and descriptions role), the one that looks again | First look and Second look in Events |
-| Address, Check | a service's address and the button that saves and tests it (the Vault card too) | plain; Check as in Check provider |
+| Step 4 of 7 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
+| Decision model, Second look model | Bastet's two models on the Guard Setup step and Settings, Guard: the small one that decides (the Titles and descriptions role), the one that looks again | First look and Second look in Events |
+| Address, Check | a service's address and the button that saves and tests it (its Setup step, Settings, Features, Edit; the Vault form too); its help is "The shellbox's address, such as http://shellbox:8770."; an error about it ends with what to do, then press Check | plain; Check as in Check provider |
 | Connect a model | the Setup step that saves the first provider and picks its chat model | ChatGPT desktop "Connect", LM Studio "Connect to server" |
-| Type, Auto-detect | a provider's kind, the first row of its form (Setup, Add a provider, a provider's edit dialog); Auto-detect, first and chosen at the start, lets the server say what answers at the address | Windows "Type"; printers, Wi-Fi "Auto-detect" |
+| Type, Auto-detect | a provider's type (never kind, also in errors: "The type must be one of"), the first row of its form (Setup, Add a provider, a provider's edit dialog); Auto-detect, first and chosen at the start, lets the server say what answers at the address | Windows "Type"; printers, Wi-Fi "Auto-detect" |
 | Pick the type if you know it. | the tail of the sentence after a Check with Auto-detect found no known kind | plain |
 | http://192.168.1.20:11434, sk-..., Key, Home server | a provider form's placeholders: a value each, never "For example"; sk-... for a hosted kind's key, Key for a local one | everyone's forms |
-| Key hash, Put this in the box's key.hash file | the read-only sha256 of the app's key for a box (the shellbox, the browser), with Copy, and its tooltip | GitHub "SHA256 fingerprint"; plain |
+| Key hash, Copy this into /etc/shellbox/key.hash on the shellbox, then restart it. | the read-only sha256 of the app's key for a box (the shellbox, the browser), with Copy, and its tooltip | GitHub "SHA256 fingerprint"; plain |
 | Turns on once the shellbox answers. | the line under a feature switch that cannot be on yet, the service named (the server's `needs`); a click on the switch shows it as a toast | plain |
 | Turns on once the shellbox is on., The shellbox is on., The shellbox is off. | the Shares switch: its `needs` while the Shellbox feature is off, and its probe's state line | plain |
-| Turn on Shares?, Turn on | the confirm a feature with a warning (Shares) asks before its switch goes on (Settings, Features and its Setup card); off needs no confirm | macOS, Windows "Turn on" |
+| Turn on Shares?, Turn on | the confirm a feature with a warning (Shares) asks before its switch goes on (Settings, Features and the Features Setup step); off needs no confirm | macOS, Windows "Turn on" |
 | The link of a share is its key. A page opens only for you while you are logged in, but anyone who gets a link can reach what it shares with a script until it ends (24 hours, or what you set) or you stop it. A public share opens for anyone. | the body of Turn on Shares? (the server's `warn`): the warning, the exception to "no explainer text" (AGENT.md rule 7) | plain |
 | Shares | the feature of what it shares from its shellbox (Settings, Features, Setup) | Google Drive "Shared"; plain |
-| Later, Turn on later in Settings | the Setup card of the features that got no card, and the line under each of its greyed switches | Apple Reminders "Later"; plain |
-| Import, Importing, Done. 1,234 messages in the archive. | a Discord or WhatsApp Setup card once the account is linked: the first import, its line while it runs (the archive's message count, from the server) and its end; beside it the Messages switch | Google Photos, Apple Photos "Import" |
-| Logging in with a user account may break Discord's terms; use it at your own risk. | under Log in with QR code (Settings, Discord and its Setup card) | plain |
-| An embedding model lets Search find messages by topic, not only by their words, and a reranker model puts the best matches first. Any OpenAI-compatible server can run them, for example Ollama: run ollama pull nomic-embed-text on the server from Connect a model and it shows up here. You can also pick them later in Settings, Models, under Topic search and Reranking. | the Messages setup form (the Setup card, Settings, Features, Edit) above its Topic search and Reranking pickers: the one paragraph, the exception to "no explainer text" (AGENT.md rule 7) | plain |
-| Same ComfyUI as Images | the Music card once Images has a ComfyUI address: no second address field | plain |
+| Import, Importing, Done. 1,234 messages in the archive. | a Discord or WhatsApp Setup step once the account is linked: the first import, its line while it runs (the archive's message count, from the server) and its end; beside it the Messages switch | Google Photos, Apple Photos "Import" |
+| Logging in with a user account may break Discord's terms; use it at your own risk. | under Log in with QR code (Settings, Discord and its Setup step) | plain |
+| An embedding model lets Search find messages by topic, not only by exact words. A reranker model puts the best matches first. Any OpenAI-compatible server can run them. With Ollama, run ollama pull nomic-embed-text on the server you added in Connect a model, then pick it here. You can change this later in Settings, Models. | the Messages setup form (its Setup step, Settings, Features, Edit) above its Topic search and Reranking pickers: the one paragraph, the exception to "no explainer text" (AGENT.md rule 7) | plain |
+| Music uses the same ComfyUI as Images. | the Music Setup step and form once Images has a ComfyUI address: no second address field | plain |
+| Her computer, Container, Own computer | the Setup step of where she works, her possessive pronoun in its title, once Shellbox or Her Mac is on in Features; Container and Own computer head each one's fields | plain |
+| Ready, Not set up, Not connected | a setup step's state at its top (and each card of Her computer): Ready in the accent with a check, the card framed in the accent; the other two plain, with the reason under them | plain |
+| Her Mac, Run in Terminal on the Mac, Run in a terminal in the Celine folder on this computer, Coding agent, Copy the command above, paste it into Terminal on the Mac and press Return. This page updates when the Mac is connected., Connected: {about}., Set up again, Check | the Own computer form (the Her computer Setup step, its Settings page): the setup command (never setup line) with Copy and the waiting line until the Mac reports back, then Connected with the Mac's user, home, chip, memory, macOS and network as the script posted them; Set up again shows the command again; Check. What the Mac reports (its addresses, its token) is never a field to type | Apple "About This Mac", Bluetooth "Connected", Apple "Set Up Again" |
+| The Mac cannot open localhost. First run the command below in a terminal, in the Celine folder on this computer. Then enter this computer's network address, for example http://192.168.1.20:8766, and press Check. The command for the Mac then appears here. | the Own computer form while the app's address is localhost, with the Address field under it | plain |
+| The Mac is not connected yet., Not connected yet. Run the command above in Terminal on the Mac. | what Her Mac lacks until the Mac reports back: Features, All set, Check's lines, her settings | plain |
+| Screen: 26 tools, Shell: Starting, Accessibility is off: she cannot click or type. Turn on Celine in System Settings, Privacy & Security, Accessibility. | Check's lines on the Mac's form, one Dot each: each server's tool count or what kept it down, and each macOS permission the screen server lacks with what it gives her and its pane (also after Connected in the form's note) | plain; System Settings' own pane names |
 | Anything worth knowing about you | the placeholder of About you | plain |
-| All set. {name} is ready., On:, Off:, Off (did not answer), You can change all of this later in Settings. | the last Setup card: done, then the features on, the ones whose service did not answer, and the rest off, as muted lines, then that Settings changes all of it | Apple setup "All set", Google "All set"; plain |
+| All set, {name} is ready., On:, Off:, Off because they did not answer: {features}. Check their addresses in Settings, Features., Not set up: {feature}. {why}, You can change all of this later in Settings. | the last Setup step: its title, then the features on, the ones switched on whose service did not answer, one line per one switched on that is not set up with what is missing, and the rest off, as muted lines, then that Settings changes all of it | Apple setup "All set", Google "All set"; plain |
 | Guard mode, Watch, On | Settings, Guard: how Bastet acts while her feature is on (off is the feature switch) | Watch and On as in Events |
-| Watch: every step runs at once, and Bastet writes down in Events what she would have done. On: Bastet checks a risky step before it runs, and stops it, freezes {her name} or asks you first, as her rules say. Off, the switch above: Bastet does not run at all. No checks, no notes, no looking back. | Settings, Guard, under Guard mode: one line per mode (guard/switch.py, calls.py) | plain |
-| Decides quickly whether a risky step needs a check (it is also the Titles and descriptions model). Without one, Watch lets every step run, and On holds a risky step until one answers. | under the Decision model (Settings, Guard and the Guard Setup card): what it does and what Bastet does without it (guard/flow.py `_until`) | plain |
-| A stronger model looks again at what the decision model stopped, before you are told: if it disagrees, you are not told and any freeze from it is lifted. With None, or when it does not answer, the first decision stands, and your note says why. | under the Second look model, the same places (guard/chain.py) | plain |
+| Watch: every step runs at once, and Bastet writes down in Events what she would have done. On: Bastet checks a risky step before it runs, and stops it, freezes {her name} or asks you first, as her rules say. Off (the switch above): Bastet does not run. Nothing is checked and nothing is written to Events. | Settings, Guard, under Guard mode: one line per mode (guard/switch.py, calls.py) | plain |
+| A small, fast model that decides whether a risky step needs a check. It also writes titles and descriptions. Without it, Watch lets every step run, and On holds risky steps until this model answers. | under the Decision model (Settings, Guard and the Guard Setup step): what it does and what Bastet does without it (guard/flow.py `_until`) | plain |
+| A stronger model checks again what the decision model stopped, before Bastet writes you a note. If it disagrees, you get no note and any freeze is lifted. With None, or when it does not answer, the first decision stands and her note says why. | under the Second look model, the same places (guard/chain.py) | plain |
 | No chat model yet. Bastet needs one to decide., Connect a model, Open Models | the Guard form when no saved provider offers a chat model: the line and the way to one (the Setup step in the onboarding, Settings, Models elsewhere) | plain, as Open Guard |
-| {provider}: Connected, Not connected, Not checked, Not set up; Not on its provider any more. | the state under a picked Decision or Second look model: its provider's, as on Models, or that the model is gone | as on Models |
+| {provider}: Connected, Not connected, Not checked, Not set up; This model is no longer on its provider. Pick another one. | the state under a picked Decision or Second look model: its provider's, as on Models, or that the model is gone | as on Models |
 | Persona, Replies to {her name}, Notes to you | Settings, Guard: Bastet's three long texts (who she is, how she answers {her name} on the Intercom, how she writes her notes to you), each with Edit, History, Ask Celine and Use the default | Persona as on her page; plain |
 | Make her warmer, Make her replies shorter, Make her notes plainer | what to ask Celine in the editor of Bastet's texts | as the hints of her own texts |
 | Open Guard | the Features row's link to the Guard page, where Bastet is set up | plain |
@@ -176,9 +188,12 @@ block at the end of this file lists the words no UI string uses.
 | Reset codes | new recovery codes, the old ones stop working | Google "Get new codes" said plainly |
 | API tokens | named tokens for scripts that call the API | GitHub "Personal access tokens" |
 | You | the section of your name, time zone and about you (General, the onboarding) | Apple "You" in Contacts and Health |
+| Network, Address | General: the section of the app's own address (logins, share links and her Mac's setup command use it) | macOS System Settings "Network"; Address as for a service |
+| Behaviour | the section of her page for how the agent works (Ask before setting up services) | Discord, Firefox "Behaviour" sections |
 | Show notifications, Replies, Intercom, Missions, Routines, Approvals | Notifications: the switch for all of them, one per kind (her replies in a chat, an Intercom message to you, a mission waiting for you, a failed run, a Vault or Bastet request) | Chrome "Show notifications"; Slack notification preferences |
+| Push, Push to this device, This device, Remove | Notifications: this device's switch for pushes while no page of the app is open and focused, the list of every device that takes them (named by the server like Sessions), This device on this one, Remove on a row | Web Push; Chrome "Push notifications"; Security "This session" |
 | Allowed, Blocked | the browser's notification permission (Notifications) | Chrome site settings "Allowed", "Blocked" |
-| Blocked in this browser, Allow them in this site's settings in your browser., Notifications need https., This browser has no notifications. | Notifications: a permission revoked (the toast and the page), a page on plain http, a browser without them | plain |
+| Blocked in this browser, Open Settings, Allow them in this site's settings in your browser., Notifications only work when the app opens over https., This browser does not support notifications. | Notifications: a permission revoked (the toast and the page), a page on plain http, a browser without them | plain |
 | Accent colour, Text size | Appearance | macOS "Accent color", iOS "Text Size" |
 | Colour, Background, Chat | the three sections of Appearance: the colours, the canvas behind everything, how the chat reads | Windows "Personalisation: Colours, Background"; plain |
 | Tint, How much the accent colours the background and surfaces | Appearance, Colour: how strongly the accent hue colours the greys (0 % plain grey), and its tooltip | macOS "wallpaper tinting"; photo editors "Tint" |
@@ -186,11 +201,13 @@ block at the end of this file lists the words no UI string uses.
 | Grain, Fine, Coarse, Paper, None, Opacity | Appearance, Background: the canvas's grain pattern (None: a plain canvas) and how much of it shows | Photoshop "Grain", "Opacity"; Procreate "Grain" |
 | Reset to defaults, Reset the appearance? | Appearance: every choice back to the server's default, and its confirm | macOS, Windows, VS Code "Reset to defaults" |
 | Rose, Peach, Sage, Teal, Sky, Violet, Miku | the colours: Accent colour (Appearance) and its Colour; Miku is a bright teal blue | macOS accent colour names; Miku after Hatsune Miku's hair |
-| Loaded, Not loaded | model memory | Ollama "loaded" |
+| Loaded, Not loaded, Not loaded, loads in about 12 s | model memory | Ollama "loaded" |
 | Context size, Server: {n}, differs from the server | a model's written context and what its server says it runs with (the server's number counts) | LM Studio "Context Length"; Open WebUI "Context Length"; plain |
 | Unload after | how long an idle model stays loaded | plain; Ollama says `keep_alive`, Open WebUI "Keep Alive" |
 | Read-only, Can edit | sub-agent access | Google Docs "Can edit" |
+| Device | where a drone runs: one of her devices (mac), next to Agent CLI on a sub-agent | Apple, Google "Device" |
 | Instructions | a mission's task text | ChatGPT and Claude Projects "Instructions" |
+| Minimum time, Runs at least until | how long a mission runs at least before it may close as done, in its form and on its page | plain |
 | Result, Results | what a mission or sub-agent sends back | Apple Shortcuts "Show Result", Google "Results" |
 | Trigger, Triggers | what starts a run (Watch, Event) | Zapier, GitHub Actions |
 | Schedule, Runs after, Reviewer, Turns | Routines | GitHub Actions "schedule" |
@@ -199,13 +216,15 @@ block at the end of this file lists the words no UI string uses.
 | Take control | you take its browser | OpenAI Operator "Take control" |
 | Return control | you give its browser back | plain; Operator names only "Take control" |
 | Extract text | read a document's text again | |
-| Running, Waiting for you, Failed, Done | states | GitHub Actions, everyone |
+| Running, Waiting for you, Failed, Done, Scheduled, Not set up | states; Scheduled for a Routine that runs later; Not set up for a tool group or a feature that lacks its setup | GitHub Actions, everyone |
 | Invalid | a citation in its reply that failed the check, shown with its id | everyone |
 | Dismiss, Dismiss all | an Intercom thread leaves the waiting list | Android notifications |
 | Continue in a chat | an Intercom thread goes on as a new chat with it, its messages carried over | plain |
-| Go to | the Ctrl+K switcher | VS Code "Go to File" |
+| Go to, Show keyboard shortcuts | the Ctrl+K switcher (its field says Search); the ? key | VS Code "Go to File", Gmail "Keyboard shortcuts" |
 | Guides | its skill guides in the Notebook | |
 | Save, Cancel, Close, Add | | everyone |
+| No connection to the server, Reconnecting | the block over the app while the server is gone | Slack "Reconnecting" |
+| Transcript, Available voices | the speech test: what dictation heard, the voices its server lists | YouTube "Transcript" |
 | Shared from (its possessive pronoun) box | the Pages tab's heading over what it shares from its shellbox (a server it runs, a file or folder of its home), and a share card's line until its state is known | plain; Google Drive "Shared with me" |
 | Running, Not running, Ended | a share's state by its dot: its server answers, nothing answers, it ended (its time ran out, it or you ended it, or its box was reset) | Docker Desktop "Running", "Not running"; plain |
 | 3h 12m left | a running share's time until it ends, beside its state | Google Meet "2 min left"; plain |
@@ -234,19 +253,22 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Plan | its plan, from the button in the chat's head | as above |
 | Routines | its schedules and their runs | the Routines place |
 | Web | it searches the web and reads pages | ChatGPT, Claude "Web search" |
-| Email | its inbox | everyone |
+| Email | its inbox; one message is an email, several are emails (never a mail, mails) | everyone |
 | Browser | its browser | the Browser place |
 | Vault | its passwords | Bitwarden "Vault" |
-| Pages | its pages | as above |
+| Pages | its pages; also the feature's name in Features (its id stays artifacts) | as above |
 | Image generation, Music generation | it makes images and tracks with ComfyUI | Midjourney, Suno |
 | Models | the models it may ask | as above |
 | Writing | it writes a post or a message in its own voice | Grammarly, Notion AI "Writing" |
 | Skills | it loads a skill's tools and reads its guide | Claude "Skills" |
 | Bugs | the problems with the app it files for you | as in Events |
 | Portrait | its profile picture | as in "Use as portrait" |
+| Voice notes | its voice notes to you, spoken by the Read aloud model | WhatsApp, Telegram "voice message" for the same job |
 | Persona | its description of itself | as above |
-| Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name, the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
-| Sub-agents | the helpers it gives instructions to | Claude Code "Sub-agents" |
+| Settings | it reads every setting and proposes changes you approve | the Settings place |
+| Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name (Set the status), the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
+| Sub-agents | the helpers it gives instructions to; also the side panel's tab with every sub-agent of the chain, each under the one that started it | Claude Code "Sub-agents" |
+| Cloud model | the approval card of a sub-agent that would run on a model of a cloud provider (OpenRouter, Anthropic): its name, the model and the start of its Instructions | OpenRouter, Anthropic: cloud providers |
 | Discord, WhatsApp | read live from your accounts | their own names |
 
 ### Events
@@ -283,29 +305,33 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Apply | use the picked settings or filter | everyone |
 | Change, Change model | pick another value or model | ChatGPT "Change model" |
 | Default, <model> | the model chooser's first row, and the Model row while none is picked: the model a conversation (or a mission) comes to without its own | ChatGPT "Default" model; macOS "Default" |
-| Check and add, Check email, Check provider | test a connection (and add it when it works) | Thunderbird "Check mail", Open WebUI "Verify connection" |
+| Check and add, Check email, Check provider, Checking | test a connection (and add it when it works); Checking while it runs | Thunderbird "Check mail", Open WebUI "Verify connection" |
 | Check again | ask a feature's probe anew (the Features page, the onboarding); read the browser's notification permission anew (Notifications) | Chrome "Check again" (connectivity), macOS Software Update "Check Again" |
 | Choose channels, Choose chats | pick what the connection reads (WhatsApp and Discord chats: their apps' word stays) | WhatsApp "Choose chats" |
 | Clear recent searches | empty the recent searches | Google, YouTube |
 | Close tab, Close terminal | close one of its tabs or terminals | Chrome "Close tab", VS Code "Close terminal" |
 | Copy link, Copy message link, Copy prompt | copy one of these | Slack "Copy link", Discord "Copy Message Link" |
 | Custom range | a date range you pick | Google Analytics, Gmail |
-| Approve, Deny | say yes or no to a request (the Vault, a gate, Bastet's banner of an ask) | macOS, Android permissions |
+| Approve, Deny | say yes or no to a request (the Vault, a gate, Bastet's banner of an ask, a change of Settings) | macOS, Android permissions |
+| Settings, Change {target}., Default, Empty, On, Off, Saved, Not set, New value, Removed | her request to change Settings in the chat: the kind's name, its line, then each field's before and after (a secret by its state only) | macOS "Change Settings"; Bitwarden "Saved" |
 | Edit prompt | change a picture's prompt | Midjourney, Leonardo |
 | Freeze, Unfreeze, Frozen | stop everything she does until you let her go on (the guard, or you by hand); Frozen in the rail and Unfreeze on Bastet's banner | Revolut, Monzo "Freeze card" |
 | Go to the original message | jump to the message a reply or result came from | Slack, Discord "Jump to message" |
-| Lock, Unlock | the Vault | Bitwarden "Lock", "Unlock" |
+| Lock, Unlock, Client ID | the Vault; the API key's Client ID in its form | Bitwarden "Lock", "Unlock", "client_id" |
 | Log in with QR code | link WhatsApp or Discord with the phone | Discord "Log in with QR Code" |
 | Mark as read, Mark as unread, Mark all as read | notifications and messages | Gmail, Slack |
 | Move up, Move down | the order of a list (models) | Google Docs, Word |
 | Move ended terminals to Trash | the ended terminals in one go | built on Move to Trash |
 | Ended today, Ended yesterday, Ended 12 Mar | the heads that group ended terminals by day | Slack "Today", "Yesterday"; Gmail |
+| Today, Yesterday, Previous 7 days, Previous 30 days, March, 2025 | the heads that group conversations by their last activity: the month this year, the year before | ChatGPT's chat history |
+| Close sidebar, Open sidebar | fold the conversation list away to the left and bring it back | ChatGPT "Close sidebar", "Open sidebar" |
 | Open, Act, Scroll, Read, Close | the names of its browser tools, in the History's filter and the manual call (Read is what it did when it looked at the page) | automation "open", "click", "scroll"; browser "Reader" |
 | 1 screenshot, 3 screenshots | the pictures a browser call took | macOS, Windows "Screenshot" |
 | Conversation | the title of a mission's or a sub-agent's conversation page (the Open conversation link opens it) | ChatGPT, Claude: the chat is a conversation |
 | New conversation, New recovery codes, New token | the New X of these | Claude "New conversation", GitHub "Generate new token" |
 | Open Browser, Open Gallery, Open in Studio, Open mission, Open Notebook, Open Studio | a link that names where it goes | VS Code "Open Settings" |
 | Remove key, Remove current Discord token | take a stored key or token out | Bitwarden "Remove" |
+| Saved, Remove | a stored secret in a form: it is there, never shown; take it out | Bitwarden "Remove"; Chrome passwords "Saved" |
 | Save key | keep a stored value | GitHub "Save" |
 | Set new Discord token | put in a new token | GitHub "Regenerate token" |
 | Reply, Reply to Bastet | answer a message; answer Bastet in her banner's thread | Gmail, Slack; built on Reply like Intercom's "Reply to" a sender |
@@ -342,7 +368,10 @@ string as a whole word (any case), so "Filter conversations" fails while "Filter
 | Brief, Briefs | word | Instructions | ChatGPT and Claude Projects |
 | Report, Reports | word | Result, Results | plain |
 | Started by events | word | Triggers | Zapier, GitHub Actions |
-| Working | label | Running | one word for the state; GitHub Actions |
+| Working, Busy | label | Running | one word for the state; GitHub Actions |
+| Needs setup | word | Not set up | one word for the state |
+| Everyone working | word | Everyone | the Intercom recipient, plain |
+| Artifacts | word | Pages | the side panel's word |
 | Needs you | word | Waiting for you | plain |
 | Follows | label | Runs after | plain |
 | Partner, Partner prompt | word | Reviewer, Reviewer prompt | plain |
@@ -394,6 +423,10 @@ word Reports => Results
 word Report => Result
 word Started by events => Triggers
 label Working => Running
+label Busy => Running
+word Needs setup => Not set up
+word Everyone working => Everyone
+word Artifacts => Pages
 word Needs you => Waiting for you
 label Try => Attempt
 label Tries => Attempts

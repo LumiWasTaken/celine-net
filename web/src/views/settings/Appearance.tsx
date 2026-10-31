@@ -18,7 +18,7 @@ import {
   Button, Choice, ComposerBox, ConfirmDialog, Face, Field, Fold, IconButton, InlineError, ListRow, Message, Section, Segmented, Slider, Switch, Thoughts,
   type Option,
 } from '../../ui'
-import { ToolLines } from '../../components/ToolRow'
+import { ToolLines, ToolSheets } from '../../components/ToolRow'
 import type { ToolCall } from '../../lib/api'
 import { Page } from './parts'
 import '../../components/Transcript.css'
@@ -121,7 +121,7 @@ function Preview({ hideThinking, hideTools, collapseThinking }: { hideThinking: 
   const thoughtsTitle = `${capital(words.possessive)} thoughts`
   const [draft, setDraft] = useState('what did she knock over?')
   const face = (name: string, hue: string) => (
-    <Face name={name} size="sm" bg={`color-mix(in oklch, var(--char-${hue}) 22%, var(--surface-2))`} fg={`var(--char-${hue})`} still />
+    <Face name={name} size="sm" bg={`color-mix(in oklch, var(--char-${hue}) 22%, var(--surface-2))`} fg={`var(--char-${hue})`} />
   )
   return (
     <div className="appearance__preview" inert>
@@ -145,7 +145,7 @@ function Preview({ hideThinking, hideTools, collapseThinking }: { hideThinking: 
               </Fold>
             )}
             <div className="msg__prose">{REPLY}</div>
-            <ToolLines calls={[SAMPLE_CALL]} inline={!hideTools} />
+            <ToolSheets calls={[SAMPLE_CALL]}><ToolLines calls={[SAMPLE_CALL]} inline={!hideTools} /></ToolSheets>
           </div>
         </Message>
         <ComposerBox value={draft} onChange={setDraft} onSend={() => setDraft('')} placeholder={`Message ${name}`}

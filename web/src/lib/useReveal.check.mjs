@@ -1,6 +1,6 @@
 // node --experimental-strip-types src/lib/useReveal.check.mjs (runs before every build)
 import assert from 'node:assert/strict'
-import { blocks, closeOpen, common, cutAt, step } from './useReveal.ts'
+import { blocks, closeOpen, common, cutAt, rebase, step } from './useReveal.ts'
 
 // the pace: a burst of 600 characters drains over about LAG seconds, never in one frame
 let p = { shown: 0, rate: 0 }
@@ -71,3 +71,10 @@ assert.equal(closeOpen('~~gone'), '~~gone~~')
 assert.equal(closeOpen('done **here** and *there*'), 'done **here** and *there*')
 
 console.log('useReveal: ok')
+
+// a rewrite: going on keeps what shows; while it streams the common prefix stays; after the
+// reply ended the new text shows whole at once (a citation near the top never re-types the tail)
+assert.equal(rebase(5, 'Hello world', 'Hello world, more', true), 5)
+assert.equal(rebase(11, 'Hello world', 'Hello there', true), 6)
+assert.equal(rebase(11, 'See [[kb:1]] here', 'See [doc](x) here', false), 'See [doc](x) here'.length)
+assert.equal(rebase(3, 'abc', 'abcd', false), 3)

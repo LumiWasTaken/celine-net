@@ -1,8 +1,8 @@
 """The agent's mind.
 
 - The agent's own block: the `message_context` hook adds to the end of a new user message, once
-  (the cache prefix never changes), its mood, the gap since the last talk, a new model
-  and what is down. The time is not in it: the message's own stamp says when it was
+  (the cache prefix never changes), its mood, its status and when it was set (so it sees
+  one gone stale), the gap since the last talk, a new model and what is down. The time is not in it: the message's own stamp says when it was
   sent and the tail says now (clock.now_line). The block only when something in it
   changed since the last whole block on this branch that it still sees (its report's
   `state` in `message_context`, so it holds across a restart; a compaction or the
@@ -16,7 +16,9 @@
   finished chat turn the `small` role appraises the exchange; `mind__feel` in that turn
   wins over it.
 - The agent's mood on screen: `mind__set_status(text)` sets the 1 to 24 emojis or the kaomoji next
-  to its name in the chat head (kv `mood`, GET /api/agent/mood, global event `mood`).
+  to its name in the chat head (kv `mood`, GET /api/agent/mood, global event `mood`). One
+  set outside a chat goes when that conversation's turn ends, one in a routine's run when
+  the run ends (clear_after, run_ended).
 - The agent's thoughts: `mind__think(text)` appends "- HH:MM text" to thoughts/<date>.md in its
   notebook.
 """
@@ -31,8 +33,6 @@ import sqlite3
 import tomllib
 from datetime import datetime, timezone
 from typing import Annotated, Literal
-
-import regex   # dateparser's dependency: grapheme clusters, emoji properties
 
 from .. import prompts
 from ..core.ids import clock, now
@@ -168,38 +168,14 @@ async def feel(store, emotion: str, strength: float, why: str, by: str,
     """One mood row (never deleted)."""
     await store.write(lambda c: c.execute(
         "INSERT INTO moods(at, emotion, strength, why, by, message_id) VALUES(?,?,?,?,?,?)",
-        (now(), emotion, min(1.0, max(0.0, float(strength))), why.strip()[:300], by,
+        (now(), emotion, min(1.0, max(0.0, float(strength))), why, by,
          message_id)))
 
 
-MOOD_MAX = 24        # emojis next to its name, at most
-# one emoji grapheme cluster starts with a pictograph, a flag letter or a keycap
-_EMOJI = regex.compile(
-    r"(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[#*0-9]\uFE0F?\u20E3)", regex.V1)
-
-
-def mood_refusal(text: str) -> str | None:
-    """Why `text` cannot be its mood on screen, or None: it is 1 to MOOD_MAX emojis
-    (grapheme clusters), or a kaomoji (one line with a symbol in it and no Latin word of
-    four letters or more), of any length."""
-    t = text.strip()
-    if not t:
-        return "Your mood needs 1 to 24 emojis or a kaomoji."
-    clusters = [g for g in regex.findall(r"\X", t) if not g.isspace()]
-    if all(_EMOJI.match(g) for g in clusters):
-        if len(clusters) > MOOD_MAX:
-            return f"That is {len(clusters)} emojis; at most {MOOD_MAX}."
-        return None
-    if "\n" in t:
-        return "A kaomoji is one line."
-    if regex.search(r"\p{Latin}{4,}", t) or not regex.search(r"[\p{P}\p{S}]", t):
-        return "That is words, not emojis or a kaomoji."
-    return None
-
-
-async def store_mood(store, text: str) -> dict:
-    """The agent's mood on screen, stored (kv `mood`) and sent as the global event `mood`."""
-    mood = {"text": text.strip(), "set_at": now()}
+async def store_mood(store, text: str, conversation: str | None = None) -> dict:
+    """The agent's mood on screen, stored (kv `mood`) and sent as the global event `mood`;
+    `conversation`: the one it was set in (clear_after, run_ended)."""
+    mood = {"text": text, "set_at": now(), "conversation": conversation}
 
     def fn(c: sqlite3.Connection) -> None:
         c.execute("INSERT INTO kv(k, v) VALUES('mood', ?) "
@@ -208,6 +184,43 @@ async def store_mood(store, text: str) -> dict:
 
     await store.write(fn)
     return mood
+
+
+def _drop(c: sqlite3.Connection, store, goes) -> bool:
+    """Inside a write: the mood on screen goes when `goes(the conversation it was set
+    in)` holds. -> whether it went."""
+    raw = c.execute("SELECT v FROM kv WHERE k='mood'").fetchone()
+    at = json.loads(raw[0]).get("conversation") if raw else None
+    if not at or not goes(at):
+        return False
+    c.execute("DELETE FROM kv WHERE k='mood'")
+    store.global_event(c, MOOD, {"mood": None})
+    return True
+
+
+async def clear_after(store, cid: str) -> bool:
+    """A turn of `cid` ended: a mood on screen set in it goes when `cid` is not a chat
+    (a trigger's work, a mission), so background work leaves no status behind. One set
+    in a routine's run (or a sub-agent of it) stays while that run is waiting or running:
+    it goes when the run ends (run_ended). A mood set since elsewhere stays."""
+    from .. import homes
+    from .places import place_of
+
+    def goes(c: sqlite3.Connection, at: str) -> bool:
+        if at != cid or place_of(c, at) == "chat":
+            return False
+        key = (homes.root(c, at) or {"trigger_key": None})["trigger_key"] or ""
+        return not (key.startswith("run:") and c.execute(
+            "SELECT 1 FROM runs WHERE id=? AND state IN ('waiting', 'running')",
+            (key[4:],)).fetchone())
+    return await store.write(lambda c: _drop(c, store, lambda at: goes(c, at)))
+
+
+def run_ended(c: sqlite3.Connection, store, cid: str) -> bool:
+    """Inside a write: the run in conversation `cid` ended; a mood on screen set in it or
+    in a sub-agent of it goes."""
+    from .. import homes
+    return _drop(c, store, lambda at: (homes.root(c, at) or {"id": None})["id"] == cid)
 
 
 async def get_mood(store) -> dict | None:
@@ -220,10 +233,14 @@ def start(app) -> None:
     (work.py, `appraisal`)."""
     if "mind" in app.registry.skills:
         app.dispatcher.on_end(lambda cid, turn_id: _ended(app, cid, turn_id))
+        app.dispatcher.on_end(lambda cid, _turn: clear_after(app.store, cid))
         app.dispatcher.work.handle("appraisal", ("small",), lambda p: _appraise_item(app, p))
 
 
 def _ago(seconds: float) -> str:
+    if seconds < 3600:
+        n = max(1, round(seconds / 60))
+        return f"{n} minute{'s' if n != 1 else ''} ago"
     h = seconds / 3600
     if h < 48:
         n = max(1, round(h))
@@ -281,7 +298,8 @@ class Mind:
         self.app = None
 
     async def prompt_fragment(self, ctx: ToolContext) -> str:
-        """The places in its app, as the user sees them (skills/mind_places.md)."""
+        """The places in its app, as the user sees them, and its status next to its name
+        (skills/mind_places.md)."""
         return prompts.fill(self.cfg, __file__, "mind_places.md")
 
     async def message_context(self, ctx: ToolContext, message: dict):
@@ -299,6 +317,10 @@ class Mind:
         mood = await _mood_now(store, cfg, now_)
         if mood:
             lines.append(mood)
+        shown = await get_mood(store)
+        status_h = (now_ - _at(shown["set_at"])).total_seconds() / 3600 if shown else None
+        lines.append(f"your status: {shown['text']}, set {_ago(status_h * 3600)}"
+                     if shown else "your status: none set")
         gap = []
         here_h = (now_ - _at(f["here"])).total_seconds() / 3600 if f["here"] else None
         anywhere_h = (now_ - _at(f["anywhere"])).total_seconds() / 3600 \
@@ -322,7 +344,8 @@ class Mind:
         # the block only when something in it changed since the last whole one it sees
         # (a pause here is always news); else nothing, the report alone
         state = {"mood": mood, "gap": _gap_bucket(anywhere_h), "model": model,
-                 "down": down, "bastet": bastet}
+                 "down": down, "bastet": bastet,
+                 "status": [shown["text"] if shown else None, _gap_bucket(status_h)]}
         full = state != f["last"] or bool(unfrozen) or (
             here_h is not None and here_h > GAP_HERE_H)
         if not full:
@@ -378,13 +401,11 @@ class Mind:
 
     @tool(read_only=False, destructive=False)
     async def set_status(self, ctx: ToolContext,
-                     text: Annotated[str, "1 to 24 emojis, or a kaomoji."]) -> ToolResult:
-        """Set the emojis or the kaomoji shown next to your name. Example:
+                     text: Annotated[str, "Emojis or a kaomoji."]) -> ToolResult:
+        """Set the emojis or the kaomoji shown next to your name, whenever your mood or
+        what you are doing changes, during a reply too. Example:
         mind__set_status(text="\U0001f319\u2615\u2728")."""
-        why = mood_refusal(text)
-        if why:
-            return ToolResult(content=why, is_error=True)
-        mood = await store_mood(ctx.store, text)
+        mood = await store_mood(ctx.store, text, ctx.conversation_id)
         return ToolResult(content=f"Shown: {mood['text']}", display={"text": mood["text"]})
 
     @tool(read_only=False, destructive=False, needs_answer=False)
@@ -434,7 +455,7 @@ def _turn_facts(c: sqlite3.Connection, cid: str, tid: str) -> dict | None:
 def appraisal_prompt(cfg, mood: str, said: str, reply: str) -> tuple[str, str]:
     system = prompts.fill(cfg, __file__, "mind_appraisal.md", emotions=", ".join(PAD))
     user = cfg.substitute(f"{{{{name}}}}'s mood before: {mood or 'none yet'}\n\n"
-                          f"{{{{username}}}}: {said[:2000]}\n\n{{{{name}}}}: {reply[:2000]}")
+                          f"{{{{username}}}}: {said}\n\n{{{{name}}}}: {reply}")
     return system, user
 
 
@@ -453,7 +474,7 @@ def parse_appraisal(text: str | None) -> dict | None:
     if isinstance(s, bool) or not isinstance(s, (int, float)):
         return None
     return {"emotion": got["emotion"], "strength": min(1.0, max(0.0, float(s))),
-            "why": str(got.get("why") or "")[:300]}
+            "why": str(got.get("why") or "")}
 
 
 async def appraise(app, cid: str, tid: str, backend=None) -> dict | None:
@@ -486,7 +507,7 @@ async def appraise(app, cid: str, tid: str, backend=None) -> dict | None:
     if text is None:
         log.info("feeling skipped", extra={"event": "mind.appraisal_skipped",
                                            "conversation": cid, "turn": tid,
-                                           "why": "the small model did not answer in 30 s"})
+                                           "why": "the small model wrote nothing"})
         return None
     got = parse_appraisal(text)
     if got is not None:

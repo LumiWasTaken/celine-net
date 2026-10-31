@@ -1,6 +1,7 @@
 /* A place's conversations, as one virtual list:
 
-     Running, Pinned, Today, Yesterday, ...   the server's group of each row (`group`);
+     Running, Pinned, Today, Yesterday, ...   the server's group of each row (`group`); a
+                    date group (`dated`) folds by its head, kept on this device;
                     each row a real link with the title, its last line, a bare time, a
                     dot for a failure or a wait (the server's `state`); a running row
                     shows the server's step words (the dots while it writes) and Stop
@@ -8,8 +9,7 @@
      Found in messages   on a search: the titles the server ranked first, then the
                     messages with their snippet and the matched words marked
 
-   A list without the server's groups groups by day, and may put
-   what runs on top (`working`). On a shelf (Archive or Trash) the list is that shelf's
+   A list may put what runs on top (`working`). On a shelf (Archive or Trash) the list is that shelf's
    rows, each with Restore and Move to Trash, or Restore and Delete permanently. With a
    `picker` the rows can be selected (ui/Select); a sub-agent goes with its parent. The
    row menu opens from "..." and on right-click; on touch the row has no "...", a long
@@ -21,7 +21,8 @@ import {
 } from 'lucide-react'
 import { api, type ConversationSummary } from '../lib/api'
 import type { ChatHit } from '../lib/chat'
-import { groupByDate, listTime } from '../lib/format'
+import { listTime } from '../lib/format'
+import { usePref } from '../lib/prefs'
 import {
   Button, coarse, Dot, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet,
   VirtualList, useContextMenu, type DotTone, type MenuItem, type Picker, type Shelf,
@@ -60,7 +61,7 @@ const STATE: Record<string, RowState> = { running: 'running', error: 'failed', w
 export const rowState = (c: ConversationSummary): RowState | null => (c.state ? STATE[c.state.tone] ?? null : null)
 
 type Row =
-  | { type: 'group'; key: string; label: string }
+  | { type: 'group'; key: string; label: string; fold?: number }
   | { type: 'head'; key: string; node: ReactNode }
   | { type: 'work'; key: string; w: WorkItem }
   | { type: 'away'; key: string; text: string }
@@ -126,6 +127,8 @@ export function ConversationList({
   label?: string
 }) {
   const q = query.trim().toLowerCase()
+  // the date groups folded on this device, by label
+  const [folded, setFolded] = usePref<string[]>('conversations:folded', [])
   const rows = useMemo<Row[]>(() => {
     const ranked = (list: ConversationSummary[]) => {
       if (!q) return list
@@ -162,12 +165,14 @@ export function ConversationList({
         g.items.forEach(push)
       }
     } else {
-      const byServer = listed.every(c => c.group)
-      const days = byServer ? null : groupByDate(listed)
       let last = ''
-      for (const c of days ? days.flatMap(g => g.items.map(i => ({ ...i, group: g.label }))) : listed) {
-        if (c.group !== last) { last = c.group!; out.push({ type: 'group', key: `g:${last}`, label: last }) }
-        push(c)
+      for (const c of listed) {
+        if (c.group !== last) {
+          last = c.group ?? ''
+          out.push({ type: 'group', key: `g:${last}`, label: last,
+                     fold: c.dated ? listed.filter(x => x.group === last).length : undefined })
+        }
+        if (!c.dated || !folded.includes(last)) push(c)
       }
     }
     if (q && hits.length) {
@@ -175,7 +180,7 @@ export function ConversationList({
       hits.forEach(h => out.push({ type: 'hit', key: `h:${h.message_id}`, h }))
     }
     return out
-  }, [conversations, archived, deleted, shelf, hits, titles, q, working, away, groups, matches, deletedHeads])
+  }, [conversations, archived, deleted, shelf, hits, titles, q, working, away, groups, matches, deletedHeads, folded])
   if (picker) {
     picker.keys.current = rows.flatMap(r => (r.type === 'gone' || (r.type === 'conversation' && !r.sub) ? [r.c.id] : []))
   }
@@ -222,7 +227,12 @@ export function ConversationList({
     <>
       <VirtualList items={rows} getKey={r => r.key} estimate={i => HEIGHT[rows[i]!.type]} inset={8} label={label}
                    renderRow={r => {
-                     if (r.type === 'group') return <ListSection label={r.label} />
+                     if (r.type === 'group') {
+                       if (r.fold == null) return <ListSection label={r.label} />
+                       const open = !folded.includes(r.label)
+                       return <ListSection label={r.label} open={open} count={r.fold}
+                                           onToggle={() => setFolded(open ? [...folded, r.label] : folded.filter(l => l !== r.label))} />
+                     }
                      if (r.type === 'head') return r.node
                      if (r.type === 'away') return <ListRow density="sm" title={r.text} tooltip={r.text} onClick={onAway} />
                      if (r.type === 'work') {

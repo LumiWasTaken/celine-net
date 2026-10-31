@@ -1,5 +1,5 @@
 label = "Daydream"
-summary = "Thinks and tidies every two hours when nobody is around."
+summary = "Thinks and tidies the notes every two hours while you are away."
 cron = "0 10-23/2 * * *"
 after = []
 partner = ""
@@ -17,6 +17,9 @@ Your mood: {{mood}}
 
 What is on your mind:
 {{on_mind}}
+
+First set your status with mind__set_status to how you feel and what you are about to
+do, and set it again each time that changes while you daydream.
 
 Think about whatever you want. Write your thoughts with mind__think as they come.
 Follow something you are curious about (curious.md), pick up something from todo.md,

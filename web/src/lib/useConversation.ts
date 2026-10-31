@@ -7,7 +7,7 @@ import { asBatch } from './media'
 import { follow, isDown, snapshotAgain, useConnection, type Frame } from './socket'
 import type { ChatApproval, ConversationSettings } from './settingsApi'
 import type { GuardBanner } from './guard'
-import type { Plan } from './api'
+import type { Plan, ToolRun, Unanswered } from './api'
 
 /** a hidden tab runs no frames: the gathered text is applied this often there */
 const HIDDEN_FLUSH_MS = 250
@@ -49,8 +49,12 @@ type State = {
   /** the active path */
   messages: Message[]
   toolCalls: Record<string, ToolCall[]>
+  /** the runs of each turn, by turn id, as the server last sent them */
+  runs: Record<string, ToolRun[]>
   /** the one running or next; while turns wait behind it, never the one that just ended */
   turn: Turn | null
+  /** what Regenerate answers (the snapshot's, then turn.state) */
+  unanswered: Unanswered | null
   /** the live turns in the order they run (the snapshot's, then turn.state) */
   queue: Queued[]
   error: { message: string; retryable: boolean } | null
@@ -75,11 +79,13 @@ type State = {
   forming: Forming[]
   /** its plan here (event plan.state) */
   plan: Plan | null
+  /** how many snapshots brought another version (version.changed): a new list, not this one changing */
+  swaps: number
 }
 
-export interface Forming { message_id: string; index: number; name: string; chars: number; preview: string; words: string }
+export interface Forming { message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string }
 
-const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, turn: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
+const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, runs: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null, swaps: 0 }
 
 export function useConversation(conversationId: string | null) {
   const [state, setState] = useState<State>(EMPTY)
@@ -88,15 +94,20 @@ export function useConversation(conversationId: string | null) {
 
   // one subscription on the app's socket (lib/socket.ts) while the conversation is open;
   // seq only grows and may skip, so a frame at or below it is one already applied.
-  // The text of a reply (message.delta, message.reasoning) is gathered and applied once a
-  // frame (every 250 ms in a hidden tab, where frames do not run); any other event first
-  // applies what was gathered, so the order holds and the end of a turn is never late.
+  // Events are gathered and applied once a frame (every 250 ms in a hidden tab, where
+  // frames do not run), in their order, the text of a reply joined: what one change on the
+  // server sent shows in one render. A version moved or a message went: what was gathered
+  // and what follows wait for the server's snapshot, which holds all of it, so the old
+  // path and the new never show together.
   useEffect(() => {
     seq.current = 0
     setState({ ...EMPTY, cid: conversationId })
     if (!conversationId) return
     const cid = conversationId
-    let held: TextFrame[] = []
+    let held: Frame[] = []
+    // waiting for a snapshot as new as `stale` (the seq that asked for it); `swap`: it brings
+    // another version
+    let stale = 0, swap = false
     // a frame id and a timeout id are separate counters: each is cancelled only as itself
     let frame = 0, timeout = 0
     const cancel = () => {
@@ -117,21 +128,29 @@ export function useConversation(conversationId: string | null) {
       else frame = requestAnimationFrame(flush)
     }
     const stop = follow(cid, {
-      seq: () => seq.current,
+      // waiting, a subscription again (a reconnect) asks for the snapshot too
+      seq: () => (stale ? 0 : seq.current),
       onFrame: ev => {
         if (ev.type === 'resync') { held = []; seq.current = 0; snapshotAgain(cid); return }
-        if (ev.type === 'snapshot') { held = []; seq.current = ev.seq; setState(s => apply(s, ev)); return }
+        if (ev.type === 'snapshot') {
+          // one asked for before the version moved: the one asked for after it follows
+          if (stale && ev.seq < stale) return
+          cancel(); held = []; seq.current = ev.seq
+          const swapped = swap
+          stale = 0; swap = false
+          setState(s => ({ ...apply(s, ev), swaps: s.swaps + (swapped ? 1 : 0) }))
+          return
+        }
         if (typeof ev.seq === 'number') {
-          if (ev.seq <= seq.current) return
+          if (stale || ev.seq <= seq.current) return
           seq.current = ev.seq
         }
-        if (ev.type === 'message.delta' || ev.type === 'message.reasoning') { held.push(ev); later(); return }
-        flush()
         // the version moved or a message went: the server's snapshot, never a guess
         if (ev.type === 'version.changed' || ev.type === 'message.purged') {
+          cancel(); held = []; stale = Math.max(1, ev.seq ?? seq.current); swap ||= ev.type === 'version.changed'
           snapshotAgain(cid); return
         }
-        setState(s => apply(s, ev))
+        held.push(ev); later()
       },
     })
     return () => { cancel(); stop() }
@@ -158,24 +177,29 @@ export function useConversation(conversationId: string | null) {
 }
 
 /** text events in a row for the same message and kind joined into one */
-type TextFrame = Extract<Frame, { type: 'message.delta' | 'message.reasoning' }>
-function joinText(evs: TextFrame[]): TextFrame[] {
-  const out: TextFrame[] = []
+const isText = (ev: Frame): ev is Extract<Frame, { type: 'message.delta' | 'message.reasoning' }> =>
+  ev.type === 'message.delta' || ev.type === 'message.reasoning'
+function joinText(evs: Frame[]): Frame[] {
+  const out: Frame[] = []
   for (const ev of evs) {
     const prev = out.at(-1)
-    if (prev && prev.type === ev.type && prev.message_id === ev.message_id) out[out.length - 1] = { ...prev, text: prev.text + ev.text }
+    if (prev && isText(prev) && isText(ev) && prev.type === ev.type && prev.message_id === ev.message_id) out[out.length - 1] = { ...prev, text: prev.text + ev.text }
     else out.push(ev)
   }
   return out
 }
 
 function fromSnapshot(s: State, snap: Snapshot): State {
-  return { ...s, conversation: snap.conversation, forming: [], messages: snap.messages, toolCalls: snap.tool_calls, compactions: snap.compactions,
-           turn: snap.turn, queue: snap.queue, live: snap.turn?.live ?? null, switched: snap.switched,
+  return { ...s, conversation: snap.conversation, forming: [], messages: snap.messages, toolCalls: snap.tool_calls, runs: snap.runs, compactions: snap.compactions,
+           turn: snap.turn, unanswered: snap.unanswered, queue: snap.queue, live: snap.turn?.live ?? null, switched: snap.switched,
            imageNotices: snap.image_notices, banners: snap.guard, approvals: snap.approvals, plan: snap.plan }
 }
 
 function apply(s: State, ev: Frame): State {
+  // a tool event whose calls changed its turn's runs carries them, all of them
+  if ((ev.type === 'tool.done' || ev.type === 'tool.gated' || ev.type === 'tool.reset') && ev.runs) {
+    s = { ...s, runs: { ...s.runs, [ev.runs.turn]: ev.runs.list } }
+  }
   switch (ev.type) {
     case 'snapshot':
       return { ...fromSnapshot(s, ev), error: null }
@@ -243,7 +267,7 @@ function apply(s: State, ev: Frame): State {
     case 'conversation.notes_off':
       return s.conversation ? { ...s, conversation: { ...s.conversation, notes_off: ev.notes_off ?? [] } } : s
     case 'tool.forming': {
-      const f: Forming = { message_id: ev.message_id, index: ev.index, name: ev.name, chars: ev.chars, preview: ev.preview, words: ev.words }
+      const f: Forming = { message_id: ev.message_id, index: ev.index, name: ev.name, chars: ev.chars, lines: ev.lines, preview: ev.preview, words: ev.words }
       return { ...s, forming: [...s.forming.filter(x => !(x.message_id === f.message_id && x.index === f.index)), f] }
     }
     case 'tool.started': {
@@ -311,7 +335,7 @@ function apply(s: State, ev: Frame): State {
       const turn: Turn = !first || first.turn_id === ev.turn_id ? told
         : s.turn && s.turn.id === first.turn_id ? s.turn
         : { id: first.turn_id, state: 'queued', reason: null }
-      return { ...s, toolCalls, queue, turn, error: terminal ? s.error : null, live: terminal ? null : s.live,
+      return { ...s, toolCalls, queue, turn, unanswered: ev.unanswered ?? null, error: terminal ? s.error : null, live: terminal ? null : s.live,
                stopping: terminal ? null : s.stopping, forming: terminal ? [] : s.forming }
     }
     case 'tool.reset':

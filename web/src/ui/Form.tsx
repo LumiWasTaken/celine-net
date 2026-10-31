@@ -1,17 +1,20 @@
 /* Form controls: Field (label + hint + error around one control), Input, TextArea,
-   SearchField, Choice, Checkbox, Switch. No dropdowns anywhere: a choice is a segmented
-   row or a list. */
+   SearchField, Choice, Checkbox, Switch, and Form (a whole form drawn from the server's
+   field schema, server/celine/settings/form.py). No dropdowns anywhere: a choice is a
+   segmented row or a list. */
 import {
-  forwardRef, useEffect, useLayoutEffect, useRef, type CSSProperties, type InputHTMLAttributes, type ReactNode, type Ref,
+  forwardRef, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type InputHTMLAttributes, type ReactNode, type Ref,
   type TextareaHTMLAttributes,
 } from 'react'
-import { Check, LoaderCircle, Search, X, type LucideIcon } from 'lucide-react'
+import { Check, Copy, LoaderCircle, Search, X, type LucideIcon } from 'lucide-react'
+import { num } from '../lib/format'
 import { Button, IconButton } from './Button'
 import { Filters, Segmented, moveRadio } from './Bits'
 import { cx } from './cx'
 import { coarse } from './phone'
 import { ICON } from './icons'
 import { InlineError } from './Notice'
+import { copied } from './Toast'
 
 /* ── Field ── */
 export function Field({ label, hint, error, children, className, group = false }: {
@@ -447,5 +450,152 @@ export function InlineEdit({ value, label, placeholder, onSave, onCancel, classN
              if (e.key === 'Enter') { e.preventDefault(); const t = e.currentTarget.value.trim(); finish(() => onSave(t)) }
              if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(onCancel) }
            }} />
+  )
+}
+
+/* ── Form: the fields of one form schema (server/celine/settings/form.py), one column,
+   each field its label above its control, a switch its label beside it. Switches and
+   choices change at once; numbers, text and lists when you leave the field or press
+   Enter. A secret is write-only: "Saved" with Remove once stored (onChange(key, null)),
+   else a password field (onChange(key, text)). A copy is read-only with Copy. `config`
+   fields are read-only. A field's help is its tooltip. `plain`: a number is laid out like
+   every other field (the onboarding's cards), not as the NumberField with its label at
+   the left. ── */
+export type FormField = {
+  key: string
+  label: string
+  type: 'bool' | 'choice' | 'number' | 'duration' | 'text' | 'list' | 'secret' | 'copy'
+  help?: string
+  default?: unknown
+  choices?: [string, string][]
+  unit?: string | null
+  min?: number | null
+  max?: number | null
+  step?: number
+  where?: 'state' | 'config'
+  editable?: boolean
+  /** on the Advanced page (general settings) */
+  advanced?: boolean
+  /** an Advanced field's skill, by its label: a section of its own */
+  group?: string
+  /** a text of several lines: a text box */
+  long?: boolean
+  mono?: boolean
+  placeholder?: string
+  /** a copy field's text, filled by the server */
+  value?: string
+}
+export type SecretState = { state: 'set' | 'not set'; set_at: string | null }
+
+export function Form({ fields, values, secrets = {}, onChange, disabled = false, plain = false }: {
+  fields: FormField[]
+  values: Record<string, unknown>
+  secrets?: Record<string, SecretState>
+  onChange: (key: string, value: unknown) => void
+  disabled?: boolean
+  plain?: boolean
+}) {
+  return (
+    <div className="form">
+      {fields.map(f => <FormRow key={f.key} f={f} value={values[f.key] ?? f.default} secret={secrets[f.key]}
+                                onChange={onChange} disabled={disabled} plain={plain} />)}
+    </div>
+  )
+}
+
+function FormRow({ f, value, secret, onChange, disabled, plain }: {
+  f: FormField; value: unknown; secret?: SecretState; onChange: (key: string, value: unknown) => void; disabled: boolean; plain: boolean
+}) {
+  const readOnly = f.where === 'config'
+  const help = f.help || undefined
+  if (f.type === 'bool') {
+    return <Switch label={f.label} title={help} checked={!!value} disabled={disabled || readOnly}
+                   onChange={v => onChange(f.key, v)} />
+  }
+  if (f.type === 'choice') {
+    return (
+      <Field label={f.label} group>
+        <Choice label={f.label} value={String(value ?? '')} disabled={disabled || readOnly} title={help}
+                options={(f.choices ?? []).map(([v, l]) => ({ value: v, label: l }))} onChange={v => onChange(f.key, v)} />
+      </Field>
+    )
+  }
+  if (f.type === 'copy') {
+    return (
+      <Field label={f.label}>
+        <span className="form__copy">
+          <Input value={f.value ?? ''} readOnly mono spellCheck={false} title={help} />
+          <Button icon={Copy} title={help} onClick={() => copied(f.value ?? '')}>Copy</Button>
+        </span>
+      </Field>
+    )
+  }
+  if (f.type === 'secret' && secret?.state === 'set') {
+    return (
+      <Field label={f.label} group>
+        <span className="form__control">
+          <span className="form__saved" title={help}>Saved</span>
+          <Button variant="ghost" size="sm" disabled={disabled || readOnly} onClick={() => onChange(f.key, null)}>Remove</Button>
+        </span>
+      </Field>
+    )
+  }
+  return <TextRow f={f} value={value} help={help} disabled={disabled || readOnly} plain={plain} onChange={onChange} />
+}
+
+const shown = (f: FormField, value: unknown) =>
+  value == null ? '' : f.type === 'list' && Array.isArray(value) ? value.join('\n') : String(value)
+
+function TextRow({ f, value, help, disabled, plain, onChange }: {
+  f: FormField; value: unknown; help?: string; disabled: boolean; plain: boolean; onChange: (key: string, value: unknown) => void
+}) {
+  const numeric = f.type === 'number' || f.type === 'duration'
+  const text = shown(f, value)
+  const [draft, setDraft] = useState(text)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { setDraft(text) }, [text])
+  const commit = () => {
+    if (draft === text) return
+    if (numeric) {
+      const n = Number(draft)
+      if (!draft.trim() || !Number.isFinite(n)) { setError('Enter a number.'); return }
+      if (f.min != null && n < f.min) { setError(`At least ${num(f.min)}${f.unit ? ` ${f.unit}` : ''}.`); return }
+      if (f.max != null && n > f.max) { setError(`At most ${num(f.max)}${f.unit ? ` ${f.unit}` : ''}.`); return }
+      setError(null); onChange(f.key, n)
+    } else if (f.type === 'list') {
+      setError(null); onChange(f.key, draft.split('\n').map(l => l.trim()).filter(Boolean))
+    } else if (f.type === 'secret') {
+      if (draft.trim()) onChange(f.key, draft.trim())
+    } else { setError(null); onChange(f.key, draft) }
+  }
+  // a number: the one number field, its label on the left
+  if (numeric && !plain) {
+    return (
+      <div>
+        <NumberField label={f.label} value={draft} disabled={disabled} unit={f.unit ?? undefined} step={f.step} invalid={!!error}
+                     onChange={setDraft} onBlur={commit} />
+        {error && <InlineError compact message={error} />}
+      </div>
+    )
+  }
+  if ((f.long && !numeric) || f.type === 'list') {
+    return (
+      <Field label={f.label} error={error}>
+        <TextArea rows={3} value={draft} disabled={disabled} title={help} mono={f.mono} placeholder={f.placeholder}
+                  onChange={e => setDraft(e.target.value)} onBlur={commit} />
+      </Field>
+    )
+  }
+  const secret = f.type === 'secret'
+  return (
+    <Field label={f.label} error={error}>
+      <span className="form__control">
+        <Input value={draft} disabled={disabled} title={help} invalid={!!error} mono={f.mono} placeholder={f.placeholder}
+               {...(secret ? { type: 'password', autoComplete: 'off', spellCheck: false } : {})}
+               onChange={e => setDraft(e.target.value)} onBlur={commit}
+               onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setDraft(text) }} />
+        {f.unit && <span className="form__unit">{f.unit}</span>}
+      </span>
+    </Field>
   )
 }

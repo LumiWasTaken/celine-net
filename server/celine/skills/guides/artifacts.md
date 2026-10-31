@@ -3,7 +3,6 @@ name: artifacts
 description: Pages {{username}} opens beside the chat: apps, games, charts, tables,
   dashboards, diagrams, documents. Use it whenever they want something made to look at or
   use. Never paste HTML or SVG into your reply.
-words: artifact, artifacts
 ---
 An artifact is one page you hand {{username}}: something to look at, use or play. It
 opens beside the chat or as a page of its own, and every change you make is a new
@@ -48,6 +47,10 @@ version, so nothing is ever lost.
 - It runs on its own, sandboxed: no network, no cookies, no `localStorage`, no
   `alert`, `confirm` or `prompt`, no popups, no new tabs, no downloads. `fetch` reaches
   nothing: put the data into the page. Build dialogs, menus and messages in the page.
+- `localStorage`, `sessionStorage`, `indexedDB` and `document.cookie` throw a
+  `SecurityError` when touched, and an uncaught one stops the script; state lives in
+  variables and is gone on reload. `requestFullscreen`, `requestPointerLock`, the
+  clipboard, the camera and the microphone are refused.
 - Libraries load only from https://cdnjs.cloudflare.com/, https://cdn.jsdelivr.net/npm/,
   https://unpkg.com/, https://cdn.tailwindcss.com/ and https://code.jquery.com/; fonts
   from Google Fonts. Pin the version in the address, as below. Images: inline SVG, a

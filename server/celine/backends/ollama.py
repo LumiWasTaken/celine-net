@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from .base import Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage
+from .base import BackendError, Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage
 from .openai import OpenAIBackend, RawReply, cap, http_error, read_chunk
 
 # request fields that are top-level in /api/chat; every other field is a model option
@@ -133,7 +133,7 @@ def wire_messages(messages: list[dict]) -> list[dict]:
                 fn = c.get("function") or {}
                 names[c.get("id") or ""] = fn.get("name") or ""
                 calls.append({"function": {"name": fn.get("name") or "",
-                                           "arguments": _arguments(fn.get("arguments"))}})
+                                           "arguments": _arguments(fn)}})
             msg["tool_calls"] = calls
         if role == "tool":
             msg["tool_name"] = names.get(m.get("tool_call_id") or "", "")
@@ -141,13 +141,20 @@ def wire_messages(messages: list[dict]) -> list[dict]:
     return out
 
 
-def _arguments(raw: Any) -> dict:
-    """Ollama takes the arguments as an object. Arguments the model wrote that are not
-    a JSON object were already refused as a tool error; they go back as none."""
+def _arguments(fn: dict) -> dict:
+    """A stored call's arguments as the object Ollama and Anthropic take. Arguments the
+    model wrote that are not a JSON object cannot go back as it wrote them: the request
+    fails with that reason."""
+    raw = fn.get("arguments")
     if isinstance(raw, dict):
         return raw
     try:
         value = json.loads(raw or "{}")
     except (json.JSONDecodeError, TypeError):
-        return {}
-    return value if isinstance(value, dict) else {}
+        value = None
+    if not isinstance(value, dict):
+        raise BackendError(f"An earlier call to {fn.get('name') or 'a tool'} in this "
+                           f"conversation has arguments that are not a JSON object, and "
+                           f"this model's API takes only an object: {str(raw)[:200]}",
+                           retryable=False)
+    return value

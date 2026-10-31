@@ -14,8 +14,9 @@ Everything here comes from the servers' own APIs, nothing from guesses or timers
   GET /api/status (`hosts`), in `models.state` and in the metrics
   (celine_host_up).
 - **Paused**: while the ping sees every model of the chat and tasks roles on a host
-  that is down, it is paused (`paused_since`, event `her.hold`, celine_paused): no
-  turn is claimed (hold.py) until a host is back.
+  that is down, it is paused (`paused_since`, event `her.hold`, celine_paused): none
+  of her turns is claimed (hold.py) until a host is back; a sub-agent's or a drone's
+  whose own model answers still is (`answering`).
 - **Model state**: ok, or failed with `kind` could_not_load (the server could not
   start it) or error (it answered with an error), a sentence, when, and `loaded_then`:
   what the server had loaded when the load was asked for.
@@ -117,6 +118,15 @@ class Ordered:
         first = self.chain[:1]
         return Ordered(self.role, [r for r in self.refs if r in first], first,
                        [(r, why) for r, why in self.skipped if r in first])
+
+    def passed_over(self, ref: str) -> str | None:
+        """The models of the chain before `ref`, each with why it is left out now
+        (`ref` answers in their place); None while `ref` is the chain's first."""
+        if ref not in self.chain or self.chain[0] == ref:
+            return None
+        why = dict(self.skipped)
+        return " ".join(f"{r}: {why[r]}" if r in why else f"{r}: left out."
+                        for r in self.chain[:self.chain.index(ref)])
 
     def sentence(self) -> str:
         from ..settings.registry import ROLES
@@ -232,15 +242,16 @@ class Router:
 
     def loaded_view(self) -> dict[str, Any]:
         """What GET /api/loaded-models and the `model.loaded` event say, from the last
-        probes: every model of a llama-swap provider with `loaded` (it, or its vision
-        twin, is loaded now) and `load_seconds` (its last load, measured; null before
-        one). A new chat never starts on another model for it: the chooser shows it."""
+        probes: every model of a provider whose server says what it has loaded, with
+        `loaded` (it, or its vision twin, is loaded now) and `load_seconds` (its last
+        load, measured; null before one). A new chat never starts on another model for
+        it: the chooser shows it."""
         s = self.s
         models: list[dict[str, Any]] = []
         for pid, p in (s.providers.items() if s is not None else ()):
-            if p.get("kind") not in SWAPS:
+            now = self.provider_state(pid).loaded
+            if now is None:
                 continue
-            now = self.provider_state(pid).loaded or frozenset()
             for name, m in (p.get("models") or {}).items():
                 ref = f"{pid}/{name}"
                 models.append({"ref": ref, "loaded": name in now or m.get("vision_twin") in now,
@@ -353,8 +364,13 @@ class Router:
             return frozenset(str(m.get("name") or m.get("model"))
                              for m in (data or {}).get("models") or []), frozenset(), None
         if listed == "models":
-            return frozenset(str(m.get("id")) for m in (data or {}).get("data") or []), \
-                frozenset(), None
+            # llama-server's router mode states each model's status (loaded, sleeping,
+            # unloaded, loading); a single-model server lists the one it serves, with none
+            rows = [m for m in (data or {}).get("data") or [] if isinstance(m, dict)]
+            status = {str(m.get("id")): (m.get("status") or {}).get("value")
+                      if isinstance(m.get("status"), dict) else "loaded" for m in rows}
+            return frozenset(m for m, v in status.items() if v == "loaded"), \
+                frozenset(m for m, v in status.items() if v == "loading"), None
         return None, frozenset(), None
 
     def _unreachable_sentence(self, pid: str, e: Exception) -> str:
@@ -393,6 +409,7 @@ class Router:
                 if (props := self._props(pid, url, loaded)) is not None:
                     self._windows(pid, {m: n for m, u in props.items() if (
                         n := _n_ctx(_json(await c.get(u, headers=headers))))})
+                self._ps_windows(pid, r.status_code, _json(r))
             return self._apply(pid, loaded, starting, error, fresh=max_age == 0)
         except httpx.HTTPError as e:
             return self._failed(pid, e)
@@ -412,6 +429,7 @@ class Router:
                 if (props := self._props(pid, url, loaded)) is not None:
                     self._windows(pid, {m: n for m, u in props.items() if (
                         n := _n_ctx(_json(c.get(u, headers=headers))))})
+                self._ps_windows(pid, r.status_code, _json(r))
             return self._apply(pid, loaded, starting, error, fresh=max_age == 0)
         except httpx.HTTPError as e:
             return self._failed(pid, e)
@@ -423,14 +441,24 @@ class Router:
             return None
         return {m: f"{url[:-len('/running')]}/upstream/{m}/props" for m in loaded}
 
+    def _ps_windows(self, pid: str, status: int, data: Any) -> None:
+        """The context each model Ollama has loaded runs with (/api/ps
+        `context_length`), the same way as a llama-swap model's /props."""
+        if (self.provider(pid) or {}).get("kind") != "ollama" or status >= 400:
+            return
+        self._windows(pid, {str(m.get("name") or m.get("model")): m["context_length"]
+                            for m in (data or {}).get("models") or []
+                            if isinstance(m, dict) and isinstance(m.get("context_length"), int)
+                            and m["context_length"] > 0})
+
     def _swap(self, pid: str) -> bool:
         return (self.provider(pid) or {}).get("kind") in SWAPS
 
     def _windows(self, pid: str, windows: dict[str, int]) -> None:
-        """The context each loaded llama-swap model runs with, from its /props. Asked
-        only for a model /running lists as loaded: /props of an unloaded one would load
-        it. A --fit load sizes its context by the VRAM free at the time, so
-        only the server itself can say (turns/tokens.py)."""
+        """The context each loaded model runs with: a llama-swap model's /props, asked
+        only for a model /running lists as loaded (/props of an unloaded one would load
+        it), Ollama's /api/ps. A --fit load sizes its context by the VRAM free at the
+        time, so only the server itself can say (turns/tokens.py)."""
         from ..turns import tokens
         tokens.running_windows(str((self.provider(pid) or {}).get("base_url", "")).rstrip("/"),
                                windows)
@@ -477,6 +505,16 @@ class Router:
         pids = {p for p in pids if not s.key_missing(p)}
         return bool(pids) and all(self._down(p) for p in pids)
 
+    def answering(self) -> set[str]:
+        """Every model (its ref) with its key whose provider is not seen down: what a
+        turn may still run on while she is paused (turns/dispatcher.py)."""
+        s = self.s
+        if s is None:
+            return set()
+        return {f"{pid}/{name}" for pid, p in s.providers.items()
+                if not s.key_missing(pid) and not self._down(pid)
+                for name in (p.get("models") or {})}
+
     async def ping_once(self) -> None:
         """Every provider probed once, side by side; then the pause looked at."""
         from .. import metrics
@@ -503,10 +541,13 @@ class Router:
 
     async def discover(self, pid: str, *, force: bool = False) -> list[dict[str, Any]] | None:
         """The provider's own model list (settings/kinds.py), at most every
-        `discover_every` seconds of its kind (settings/kinds.py) unless forced ("Check provider"). The context it states
-        for each model is the window turns budget with (turns/tokens.py), over the
-        number in Settings. Not Ollama's (Settings is its num_ctx, the list says the
-        model's most) nor ComfyUI's. None when not asked or it did not answer."""
+        `discover_every` seconds of its kind (settings/kinds.py) unless forced ("Check
+        provider"). The context it states for each model is the window turns budget
+        with (turns/tokens.py), over the number in Settings; not Ollama's (Settings is
+        its num_ctx, the list says the model's most: /api/ps says what a loaded one
+        runs with). The caps it states are the model's tools and vision
+        (settings/kinds.py caps_of), over the saved ones. None when not asked or it did
+        not answer."""
         from ..settings import kinds
         from ..settings.registry import provider_key
         from ..turns import tokens
@@ -524,11 +565,17 @@ class Router:
         except (httpx.HTTPError, ValueError):
             return None
         mine = p.get("models") or {}
-        tokens.reported_outputs(p["base_url"], {m["id"]: m["output"] for m in found
+        twins = {m.get("vision_twin") for m in mine.values()} - {None}
+        kinds.reported_outputs(p["base_url"], {m["id"]: m["output"] for m in found
                                                 if m["id"] in mine and m.get("output")})
-        if tokens.reported_windows(p["base_url"], {m["id"]: m["context"] for m in found
-                                                   if m["id"] in mine and m.get("context")}):
-            self._changed()                 # Settings, Models shows the new number
+        windows = tokens.reported_windows(p["base_url"], {
+            m["id"]: m["context"] for m in found
+            if m["id"] in mine and m.get("context") and p["kind"] != "ollama"})
+        caps = kinds.stated_caps(p["base_url"], {m["id"]: m["caps"] for m in found
+                                                 if m["id"] in set(mine) | twins
+                                                 and not m.get("guessed")})
+        if windows or caps:
+            self._changed()                 # Settings, Models shows the new facts
         return found
 
     async def watch(self) -> None:
@@ -593,7 +640,7 @@ class Router:
             log.info("model state cleared", extra={"event": "router.model_ok", "ref": ref})
         if changed or cleared:
             self._changed()
-        if old.loaded != loaded and self._swap(pid):
+        if old.loaded != loaded:
             self._loaded_changed()
         return st
 
@@ -624,7 +671,7 @@ class Router:
                                                         "provider": pid,
                                                         "error": sentence})
             self._changed()
-        if old.loaded and self._swap(pid):
+        if old.loaded is not None:
             self._loaded_changed()
         return st
 
@@ -651,7 +698,7 @@ class Router:
 
     def note_failed(self, ref: str, kind: str, message: str,
                     loaded_then: frozenset[str] | None = None) -> None:
-        m = ModelState(kind=kind, message=message[:300], at=now_ms(),
+        m = ModelState(kind=kind, message=message, at=now_ms(),
                        loaded_then=loaded_then, sig=self._sig(ref))
         with self._lock:
             old = self._models.get(ref)

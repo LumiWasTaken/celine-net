@@ -16,7 +16,6 @@ from notes_fixtures import notes_cfg, select_turn, write_notes
 from celine.conversations import store as conversations, tree
 from celine.kb.embed import SemanticError
 from celine.skills import recall
-from celine.turns import loads
 
 pytestmark = pytest.mark.anyio
 
@@ -116,15 +115,17 @@ async def test_never_carried_off_left_out_outside_the_folder_or_with_auto_off(
     await write_notes(store, cfg, {
         "people/noor.md": NOOR, "people/joe.md": "keys: noor\n\nJoe climbs.",
         "lore/tower.md": "keys: noor\nload: off\n\nThe climb.",
-        "agents/scout/noor.md": "keys: noor\n\nThe scout climbs."})
+        "agents/scout/noor.md": "keys: noor\n\nThe scout climbs.",
+        "skills/web.md": "keys: noor\n\nSearch noor on the web."})
     cid = await conversations.create(store)
     _, report = await _say(store, cfg, cid, "noor climbing")
     assert {c["id"].split("#")[0] for c in report["candidates"]} == {
-        "people/noor.md", "agents/scout/noor.md"}, "joe's note is always loaded; load: off"
-    await loads.touch(store, cid, "note", ["people/noor.md"])
+        "people/noor.md", "agents/scout/noor.md"}, \
+        "joe's note is always loaded; load: off; a skill's note comes with its load"
     await store.write(lambda c: c.execute("UPDATE conversations SET notes_off=? WHERE id=?",
-                                          (json.dumps(["agents/scout/noor.md"]), cid)))
-    assert await _say(store, cfg, cid, "noor climbing") is None, "in full; left out"
+                                          (json.dumps(["agents/scout/noor.md",
+                                                       "people/noor.md"]), cid)))
+    assert await _say(store, cfg, cid, "noor climbing") is None, "left out"
     sub = await conversations.create(store, agent_of=cid, agent_name="scout",
                                      notebook_folder="agents/scout")
     _, report = await _say(store, cfg, sub, "noor climbing")

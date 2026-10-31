@@ -1,7 +1,7 @@
-# MCP servers. Each becomes a skill in the Skills tab, named after its key here,
+# MCP servers. Each becomes a skill in Settings, Tools and the side panel's Tools tab, named after its key here,
 # with one tool per tool the server advertises.
 #
-# A server that fails to start is reported in the Skills tab and its tools are
+# A server that fails to start shows its error in Settings, Tools, and its tools are
 # not offered that session. It does not take the rest of Celine down.
 #
 # Celine is only ever a client. Two servers here are connectors: they own the Discord
@@ -13,9 +13,11 @@
 # CONNECTOR_CLIENTS_FILE its keys/connector-clients ("name:key:owner" or "name:key:reader",
 # one per line or comma separated); an environment variable of the same name wins.
 #
-# Bastet (server/celine/guard/facts.py) reads two keys per server: `class`, who may see
-# its results (public, informal, nsfw, sensitive; default sensitive), and `sends`, where
-# its writing tools send (public, people, house; default public).
+# Bastet (server/celine/guard/facts.py) reads three keys per server: `class`, who may see
+# its results (public, informal, nsfw, sensitive; default sensitive), `sends`, where
+# its writing tools send (public, people, house; default public), and `outside`, when
+# its results are outside text (always, the default, or "shell": only when the command
+# reaches the network or the text is aimed at an AI, as her box's shell).
 
 [servers.discord]
 enabled   = true

@@ -37,6 +37,7 @@ def cfg():
     c = load()
     c.timezone = "UTC"
     c.user = "Joe"
+    c.settings.features["done"] = True       # the onboarding is done: routines run
     return c
 
 

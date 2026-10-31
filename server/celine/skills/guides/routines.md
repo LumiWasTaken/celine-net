@@ -1,7 +1,6 @@
 ---
 name: routines
 description: The Routines: what runs on its own at a time, read, change and start them.
-words: routine, routines
 ---
 A Routine is a prompt that runs on its own at a time of day (or a cron line), in a
 conversation of its own; {{username}} sees them on the Routines page.

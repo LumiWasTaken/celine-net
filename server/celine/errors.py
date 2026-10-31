@@ -125,7 +125,7 @@ class UnresolvedToolCalls(CelineError):
         joined = ", ".join(names)
         super().__init__(
             "unresolved_tool_calls",
-            f"{joined} still runs. Stop the tool call first, then edit or regenerate.",
+            f"{joined} is still running. Stop it first, then edit or regenerate.",
             409,
             {"tools": joined},
         )
@@ -142,7 +142,8 @@ class TooLarge(CelineError):
 
 class ForbiddenOrigin(CelineError):
     def __init__(self, origin: str):
-        super().__init__("forbidden_origin", f"origin {origin!r} is not allowed", 403)
+        super().__init__("forbidden_origin", f"This page's address ({origin}) cannot use the app. "
+                                             "Open the app at its own address.", 403)
 
 
 async def _as_hers(request: Request, text: str) -> str:
@@ -185,7 +186,7 @@ def install_error_handler(app) -> None:
         where = ".".join(str(x) for x in first.get("loc", ()) if x != "body") or "body"
         what = first.get("msg") or "not valid"
         return JSONResponse({"error": {"code": "bad_request",
-                                       "message": f"{where}: {what}."[:200],
+                                       "message": f"{where}: {what}.",
                                        "detail": {"field": where}}},
                             status_code=400)
 
@@ -203,7 +204,7 @@ def install_error_handler(app) -> None:
         log.error("unhandled error", exc_info=exc,
                   extra={"event": "http.unhandled", "path": request.url.path})
         return JSONResponse({"error": {"code": "internal", "message": redact(
-            f"The server failed: {type(exc).__name__}: {exc}"[:300])}}, status_code=500)
+            f"The server failed: {type(exc).__name__}: {exc}")}}, status_code=500)
 
     # JSON nested deeper than Python's recursion limit
     @app.exception_handler(RecursionError)
@@ -215,8 +216,9 @@ def install_error_handler(app) -> None:
 
 # ---- a box that is not there ----------------------------------------------------------------
 # The shellbox, the browser, SearXNG and ComfyUI are services the app runs without. When one
-# has no address, does not answer or does not take the app's key, every page, probe and tool
-# result says so in the same plain sentence: the service and its address.
+# has no address, does not answer or does not take the app's key, a page or probe says so in
+# the same plain sentence: the service, its address and what the user does about it. What
+# she reads (a tool result, the tail, me__whoami) is the her_ sentence: the fact alone.
 
 def _name(what: str) -> str:
     return f"{what[0].upper()}{what[1:]}"
@@ -232,14 +234,39 @@ def not_set_up(what: str) -> str:
     return f"{_name(what)} has no address yet. Type one below, or leave it off."
 
 
+# a compose service's host name -> the profile in .env that starts it (docker-compose.yml)
+PROFILES = {"shellbox": "shellbox", "browser": "browser", "searxng": "web"}
+
+
 def unreachable_words(what: str, url: str, e: Exception) -> str:
-    """No answer from the box at `url`: refused, too slow or cut off."""
+    """No answer from the box at `url`: refused, too slow or cut off. At a compose service's
+    own address, the way to start that container."""
     if not url:
         return not_set_up(what)
-    return f"{_name(what)} did not answer at {_host(url)}. Start it, or fix the address."
+    from urllib.parse import urlsplit
+    profile = PROFILES.get(urlsplit(url).hostname or "")
+    if profile:
+        return (f"{_name(what)} is not running. In the Celine folder, put {profile} in "
+                f"COMPOSE_PROFILES in .env and run docker compose up -d.")
+    return (f"{_name(what)} did not answer at {_host(url)}. Make sure it is running and the "
+            f"address is right, then press Check.")
+
+
+def her_not_set_up(what: str) -> str:
+    return f"{_name(what)} is not set up."
+
+
+def her_unreachable(what: str, url: str) -> str:
+    if not url:
+        return her_not_set_up(what)
+    return f"{_name(what)} at {_host(url)} does not answer."
+
+
+def her_bad_key(what: str, url: str) -> str:
+    return f"{_name(what)} at {_host(url)} does not take the app's key."
 
 
 def bad_key(what: str, url: str) -> str:
     """The box answered 401 or 403: its key.hash is not the hash of the app's key."""
-    return (f"{_name(what)} at {_host(url)} does not accept this app's key. Put the key "
-            f"hash below into the box's key.hash file.")
+    return (f"{_name(what)} at {_host(url)} does not accept this app's key. Copy the key "
+            f"hash below into its key.hash file, then press Check.")

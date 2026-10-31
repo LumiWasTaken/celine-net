@@ -41,8 +41,7 @@ class KBs:
     def __init__(self, cfg, publish, llm=None) -> None:
         self.cfg = cfg
         self.llm = llm          # the app's LLM layer, for descriptions and captions
-        self.dir: Path = cfg.data_dir / "kb"
-        self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir: Path = cfg.data_dir / "kb"     # made by the first file's migrate
         self.all: dict[str, ChatKB | DocumentsKB] = {}
         self.tasks = Tasks(publish)
         from ..settings import features
@@ -309,7 +308,7 @@ TABLES = {
                    "passage_overlap": "int", "embed_header": "bool"},
     # kb/media.py Settings.read
     "media": {"types": "list", "rate_per_minute": "num", "batch": "int",
-              "max_attempts": "int", "max_mb": "num", "poll_minutes": "num",
+              "max_mb": "num", "poll_minutes": "num",
               "msgstore": "str", "wa_download": "bool", "wa_media_retry": "bool",
               "wa_retry_per_run": "int", "wa_retry_interval_seconds": "num",
               "wa_retry_wait_seconds": "num"},
@@ -350,12 +349,13 @@ async def probe(cfg, services) -> dict[str, str]:
         chats = [str(b.get("title") or kid) for kid, b in cfg.kb.items()
                  if b.get("kind") == "chat" and features.allows_connector(cfg, kid)]
     if not chats:
-        return {"state": "unset", "detail": "No source connected yet."}
+        return {"state": "unset", "detail": "Connect Discord or WhatsApp first."}
     from .retrieve.rerank import reranker_available
     from .semantic import embeddings_available
     notes = [f"Sources: {', '.join(chats)}."]
     if not embeddings_available(cfg):
-        notes.append("Word search only: no topic search model.")
+        notes.append("Search finds messages only by their words. Pick a Topic search "
+                     "model in Settings, Models to search by topic too.")
     if not reranker_available(cfg):
-        notes.append("No reranking model.")
+        notes.append("Pick a Reranking model in Settings, Models to put the best matches first.")
     return {"state": "ready", "detail": " ".join(notes)}

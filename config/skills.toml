@@ -1,5 +1,5 @@
-# Built-in skills. `enabled` here is the global default; the Skills tab in a
-# conversation overrides it for that conversation only.
+# Built-in skills. `enabled` here is the default for every conversation; the Tools tab of a
+# conversation's side panel changes it for that conversation only.
 #
 # Turning a tool off does not hide it from Celine. It still sees it listed and
 # is told you turned it off, so it can say so instead of pretending it never
@@ -11,9 +11,8 @@
 [notebook]
 enabled = true
 # The agent's notes. Real files in var/notebook, in whatever format it picks.
-# An index it maintains is injected into every system prompt, capped both ways
-# (Settings, Advanced). Notes loaded in full (by need, var/settings/context.toml,
-# turns/loads.py) are left out of the index.
+# An index it maintains goes at the end of the message each turn answers, capped both
+# ways (Settings, Advanced). The notes it always carries are left out of the index.
 # Files it can read and never write or delete: identity.md is yours, it goes into
 # every system prompt in full, so editing it is how you edit who it is; the two
 # READMEs keep opinions/ and appearance/ in place and tell it what goes there.
@@ -48,13 +47,23 @@ enabled = true
 
 [me]
 enabled = true
-# Self (skills/me.py): it reads its persona, talk and slop list, and changes its talk
-# and slop list; every change is in its History (Settings, the agent's page) and in Events.
+# Self (skills/me.py): it reads its Persona, Example lines and Banned words, and changes its
+# Example lines and Banned words; every change is in its History (Settings, the agent's page) and in Events.
+
+[settings]
+enabled = true
+# Settings (skills/settings.py): it reads every setting you see in Settings, and proposes
+# a change; each one waits for your Approve and is saved as Settings saves it.
 
 [appearance]
 enabled = true
 # The agent's portrait, set by it from one of its images or a document image
 # (skills/appearance.py); you set it in Settings too.
+
+[voice]
+enabled = true
+# The agent's voice notes to you (skills/voice.py): its text spoken by the Read aloud
+# model, an audio file on its message. With Read aloud off the tool fails and says so.
 
 [intercom]
 enabled = true
@@ -63,7 +72,7 @@ enabled = true
 
 [missions]
 enabled = true
-# Your briefs, each in a conversation of its own; missions__update records where it
+# Your missions, each with its Instructions in a conversation of its own; missions__update records where it
 # stands, missions__wait pauses one until a time. missions__list lists them from anywhere.
 
 [plan]
@@ -73,7 +82,7 @@ enabled = true
 
 [routines]
 enabled = true
-# The agent's hand on the Routines (server/celine/schedules/skill.py): list, read, write and run
+# The agent's access to Routines (server/celine/schedules/skill.py): list, read, write and run
 # them, with the same checks as the Routines page; its changes show as its own.
 
 [past_conversations]
@@ -82,7 +91,7 @@ enabled = true
 
 [sub_agents]
 enabled = true
-# The agent's sub-agents (sub_agents/skill.py): a brief in a new conversation of its own.
+# The agent's sub-agents (sub_agents/skill.py): each gets its Instructions in a new conversation of its own.
 
 [chat_archive]
 enabled = true
@@ -90,13 +99,13 @@ enabled = true
 # search (semantic topic search + word search, reranked, match windows), count,
 # read_session, read_period, scroll, get_messages, look_up, mark_same_person.
 # Which tools are on by default: Settings, Tools (var/settings/tools.toml).
-# Retrieval (kb/retrieve): query embeddings (the Topic Search role's query model), then
+# Retrieval (kb/retrieve): query embeddings (the Topic search model), then
 # a cross-encoder reranker (the Reranking role; empty turns reranking off). Both are
 # chosen in Settings, Models.
 
 [user_documents]
 enabled = true
-# {{username}}'s Documents (kind = "documents" in kb.toml), the drawer they share: list
+# {{username}}'s Documents (kind = "documents" in kb.toml), the files you both use: list
 # a folder (title, their description, the AI description, the mode), search, read, and
 # write a text file into it. Not its notebook.
 

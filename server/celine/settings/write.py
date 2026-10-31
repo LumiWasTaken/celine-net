@@ -8,7 +8,9 @@ import copy
 import logging
 from typing import Any
 
-from . import features as features_mod, files, general as general_mod
+from .. import plugins
+from . import address as address_mod, features as features_mod, files, form
+from . import general as general_mod
 from . import mail as mail_mod, section_to_file, services as services_mod
 from . import vault as vault_mod
 from .registry import validate_providers, validate_role, validate_tools, validate_triggers
@@ -31,7 +33,9 @@ def _current(s) -> dict[str, Any]:
             "tools": dict(s.tools), "general": dict(s.general), "email": dict(s.email),
             "vault": dict(s.vault), "triggers": copy.deepcopy(s.triggers),
             "features": dict(s.features),
-            "guard": copy.deepcopy(s.guard), "services": copy.deepcopy(s.services)}
+            "guard": copy.deepcopy(s.guard), "services": copy.deepcopy(s.services),
+            "address": dict(s.address),
+            **{p.id: dict(s.plugins.get(p.id, {})) for p in plugins.with_form()}}
 
 
 def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
@@ -47,19 +51,28 @@ def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
             "triggers": validate_triggers(new["triggers"]),
             "features": features_mod.validate(new["features"]),
             "guard": guard_rules.validate(new["guard"]),
-            "services": services_mod.validate(new["services"])}
+            "services": services_mod.validate(new["services"]),
+            "address": address_mod.validate(new["address"]),
+            **{p.id: form.validate(p.id, p.form["fields"], new[p.id])
+               for p in plugins.with_form()}}
+
+
+def check(cfg, changes: dict[str, Any]) -> dict[str, Any]:
+    """Validate `changes` (section -> whole new value) on top of the current settings,
+    as a save does, writing nothing. Raises Invalid; -> every section, clean."""
+    new = _current(cfg.settings)
+    new.update(changes)
+    return _validate_all(new)
 
 
 def save(cfg, changes: dict[str, Any]) -> list[str]:
     """Validate `changes` (section -> whole new value) on top of the current settings
     and write the sections they change. Raises Invalid; -> the sections written. The
     caller reloads (reload.commit)."""
-    new = _current(cfg.settings)
-    new.update(changes)
-    clean = _validate_all(new)
+    clean = check(cfg, changes)
     root = files.settings_dir(cfg)
     written = []
-    for section in files.SECTIONS:
+    for section in (*files.SECTIONS, *(p.id for p in plugins.with_form())):
         if section in changes:
             files.write(root, section, section_to_file(section, clean[section]))
             written.append(section)

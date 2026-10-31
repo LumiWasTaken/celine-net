@@ -46,7 +46,7 @@ async def test_trigger_get_or_create_cannot_fork(store):
     assert [(e["id"], e["trigger_key"]) for e in created] == [(ids[0], "morning")]
 
 
-async def test_orphans_resume_only_without_a_step_in_flight(store):
+async def test_orphans_end_interrupted_with_their_reason(store):
     cid = await conversations.create(store, "x")
 
     def make(c):
@@ -62,11 +62,12 @@ async def test_orphans_resume_only_without_a_step_in_flight(store):
 
     clean, busy = await store.write(make)
     out = await turns.sweep(store)
-    assert out == {"total": 2, "resumable": 1, "interrupted": 1, "jobs": 0}
+    assert out == {"total": 2, "interrupted": 2, "jobs": 0}
     state = lambda tid: store.read(lambda c: c.execute(  # noqa: E731
         "SELECT state, worker_id, reason FROM turns WHERE id=?", (tid,)).fetchone())
     row = await state(clean)
-    assert row["state"] == "queued" and row["worker_id"] is None
+    assert row["state"] == "interrupted" and row["worker_id"] is None
+    assert row["reason"] == "The server restarted during the reply."
     row = await state(busy)
     assert row["state"] == "interrupted" and "shell__run_command" in row["reason"]
 

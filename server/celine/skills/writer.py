@@ -85,13 +85,13 @@ class Writer:
                       conversation_id=ctx.conversation_id, turn_id=ctx.turn_id,
                       thinking=OFF, fallback=False)
         try:
-            text = (await complete(qb, messages(self.cfg, brief, kind, context), math.inf,
-                                   errors=True) or "").strip()
+            text = await complete(qb, messages(self.cfg, brief, kind, context), math.inf,
+                                  errors=True) or ""
         except BackendError as e:
-            return ToolResult(content=f"The Writing model failed: {str(e)[:300]}",
+            return ToolResult(content=f"The Writing model failed: {e}",
                               is_error=True)
         model = getattr(qb.answered, "model", "")
-        if not text:
+        if not text.strip():
             return ToolResult(content=f"The Writing model ({model}) answered nothing.",
                               is_error=True)
         return ToolResult(content=text, display={"kind": kind, "model": model,

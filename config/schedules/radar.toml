@@ -1,5 +1,5 @@
-label = "Radar"
-summary = "Reads the followed sites twice a day and keeps notes."
+label = "Followed sites"
+summary = "Reads the sites on the follow list twice a day and keeps notes."
 cron = "0 9,17 * * *"
 after = []
 partner = ""

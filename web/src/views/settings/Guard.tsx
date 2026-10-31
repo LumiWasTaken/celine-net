@@ -69,7 +69,7 @@ export function Guard() {
           <GeneralFields only={['guard']} />
           <span className="feature-about">Watch: every step runs at once, and Bastet writes down in Events what she would have done.</span>
           <span className="feature-about">On: Bastet checks a risky step before it runs, and stops it, freezes {name} or asks you first, as her rules say.</span>
-          <span className="feature-about">Off, the switch above: Bastet does not run at all. No checks, no notes, no looking back.</span>
+          <span className="feature-about">Off (the switch above): Bastet does not run. Nothing is checked and nothing is written to Events.</span>
         </div>
       </Section>
       {feature && (

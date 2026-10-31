@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { conversationApi, type Message, type SentRequest } from '../lib/api'
 import { contextApi, type OnHerMind } from '../lib/context'
-import { usePronouns } from '../lib/name'
+import { useOwner } from '../lib/name'
 import { errorText, num } from '../lib/format'
 import { Button, InlineError, LoadingRow, Sheet, StatusLine, useCopied } from '../ui'
 import './Transcript.css'
@@ -60,7 +60,7 @@ export function WhatSheSaw({ conversationId, steps, title, onClose }: {
       {mind && <MindView mind={mind} />}
       {error ? <InlineError compact message={error} />
         : !kept ? <LoadingRow />
-        : !kept.length ? <StatusLine>Not kept</StatusLine>
+        : !kept.length ? <StatusLine>Nothing was saved for this reply.</StatusLine>
         : kept.map(({ st, i }) => <StepView key={steps[i]!.id} n={data!.length > 1 ? i + 1 : null} step={st} />)}
     </Sheet>
   )
@@ -68,14 +68,14 @@ export function WhatSheSaw({ conversationId, steps, title, onClose }: {
 
 /* its mood, the gap */
 function MindView({ mind }: { mind: OnHerMind }) {
-  const { possessive } = usePronouns()
+  const owner = useOwner()
   const lines = [
     // the server's line already starts with "mood:"
     ...(mind.mood ? [mind.mood.charAt(0).toUpperCase() + mind.mood.slice(1)] : []),
     ...(mind.gap ? [mind.gap] : []),
   ]
   if (!lines.length) return null
-  return <Block label={`On ${possessive} mind`}>{lines.join('\n')}</Block>
+  return <Block label={`On ${owner} mind`}>{lines.join('\n')}</Block>
 }
 
 function StepView({ n, step }: { n: number | null; step: Step }) {
@@ -85,7 +85,9 @@ function StepView({ n, step }: { n: number | null; step: Step }) {
   const talk = msgs.filter(m => m.role !== 'system')
   const tools = req?.body.tools ?? []
   const facts = req && [req.model, req.prompt_tokens != null && `${num(req.prompt_tokens)} in`,
+    req.cache_read != null && `${num(req.cache_read)} cached`,
     req.completion_tokens != null && `${num(req.completion_tokens)} out`,
+    req.first_token_ms != null && `first token ${(req.first_token_ms / 1000).toFixed(1)} s`,
     req.finish_reason && req.finish_reason !== 'stop' && req.finish_reason].filter(Boolean).join(', ')
   return (
     <section className="saw__step">

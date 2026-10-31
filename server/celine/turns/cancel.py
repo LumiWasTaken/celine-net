@@ -14,6 +14,10 @@ class Token:
     # why: None (the user's Stop, or the wall clock) or "shutdown" (the server is
     # restarting: the turn is put back in the queue, not ended)
     reason: str | None = None
+    # set when a message from the user waits for this turn's next step; a new one
+    # before each step takes the messages (runner). A call that only waits ends then
+    # (ToolContext.user_wrote).
+    user_wrote: anyio.Event = field(default_factory=anyio.Event)
 
     @property
     def cancelled(self) -> bool:
@@ -59,6 +63,32 @@ class Registry:
 
     def live(self) -> list[Token]:
         return list(self._tokens.values())
+
+    def get(self, turn_id: str) -> Token | None:
+        return self._tokens.get(turn_id)
+
+
+async def until_set(fn, event: anyio.Event | None):
+    """Runs `fn()`, a wait; `event` set ends it at once (None: nothing ends it). -> (ended,
+    what fn returned, None when it was ended). What fn raised is raised."""
+    if event is None:
+        return False, await fn()
+    ended, out, raised = False, None, None
+    async with anyio.create_task_group() as tg:
+        async def on_set() -> None:
+            nonlocal ended
+            await event.wait()
+            ended = True
+            tg.cancel_scope.cancel()
+        tg.start_soon(on_set)
+        try:
+            out = await fn()
+        except Exception as e:
+            raised = e
+        tg.cancel_scope.cancel()
+    if raised is not None:
+        raise raised
+    return ended, out
 
 
 async def until_stop(fn, token: Token, *, shutdown_stops: bool = True):

@@ -15,17 +15,27 @@ Three things a server block can add:
   account reference for `user_id` and `from_user`. A connector only reads: a tool of
   its that is not read-only is not offered to Celine.
 - `guides/<server>.md` (skills/guides): the skill's description and guide.
+- `[servers.<id>.words]` and `[servers.<id>.groups]`: its tools' rows, by tool
+  (skills/words.py `fill`): `start_process = "Ran {command|a command} on the Mac"`, and
+  the words of a run of them, `{n}` their count.
+
+A plugin's `[servers.<id>]` blocks (plugin.toml, the same keys) run under its runner
+(api/plugins.py) while it is on: `plugin_servers` fills each `${KEY}` from its form, and
+its `guides/<server>.md` is that skill's guide.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
 import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import anyio
 import httpx
@@ -33,20 +43,23 @@ from mcp.client.client import Client
 from mcp.client.stdio import StdioServerParameters, get_default_environment
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
+from . import attachments
 from .config import ROOT, Problem, checked
 from .core.ids import now
 from .kb.identity import REF
-from .errors import unreachable_words
+from .errors import TooLarge, her_unreachable
 from .skills import BUILTIN, GUIDES_DIR, META, Annotations, ToolContext, ToolResult, ToolSpec, guide
 
 log = logging.getLogger("celine.mcp")
 
 CLASSES = ("public", "informal", "nsfw", "sensitive")
 SENDS = ("public", "people", "house")
+OUTSIDE = ("always", "shell")
 KEYS = {                    # mcp.toml [servers.<id>]: McpServerConfig
     "enabled": "bool", "transport": "str", "command": "str", "args": "list", "env": "dict",
     "url": "str", "headers": "dict", "startup_timeout_seconds": "num", "max_restarts": "int",
-    "kb": "str", "class": CLASSES, "sends": SENDS,
+    "kb": "str", "class": CLASSES, "sends": SENDS, "outside": OUTSIDE,
+    "words": "dict", "groups": "dict",
 }
 
 
@@ -66,9 +79,16 @@ class McpServerConfig:
     # feed are written to (kb/feed.py)
     kb: str | None = None
     # Bastet (guard/facts.py): who may see its results (`class`: public, informal,
-    # nsfw, sensitive) and where its writing tools send (public, people, house)
+    # nsfw, sensitive) and where its writing tools send (public, people, house);
+    # guard/sources.py: when its results are outside text (`outside`: always, or
+    # "shell", only when plain code finds a reason, as the box shell's)
     cls: str = "sensitive"
     sends: str = "public"
+    outside: str = "always"
+    # its tools' rows (skills/words.py): a sentence per tool ("Ran {command} on the Mac")
+    # and the words of a run of them ("Used the shell on the Mac {n} times")
+    words: dict[str, str] = field(default_factory=dict)
+    groups: dict[str, str] = field(default_factory=dict)
 
 
 _ENV_REF = re.compile(r"\$\{(\w+)(?:(:?)-([^}]*))?\}")
@@ -116,16 +136,77 @@ def read_servers(file: str, raw: dict[str, Any], problems: list[Problem],
     return out
 
 
+def row_words(cfg, plugins) -> dict[str, dict[str, dict[str, str]]]:
+    """Every server's `words` and `groups` (mcp.toml's and the plugins', on or off), their
+    texts only: {server: {"words": {tool: text}, "groups": {tool: text}}}, Config.tool_words
+    (skills/words.py)."""
+    raw = {sid: {"words": s.words, "groups": s.groups} for sid, s in cfg.mcp.items()}
+    for p in plugins:
+        servers = p.manifest.get("servers")
+        raw |= {sid: s for sid, s in (servers if isinstance(servers, dict) else {}).items()
+                if isinstance(s, dict)}
+
+    def texts(v) -> dict[str, str]:
+        return {k: t for k, t in v.items() if isinstance(t, str)} if isinstance(v, dict) else {}
+    return {sid: {"words": texts(s.get("words")), "groups": texts(s.get("groups"))}
+            for sid, s in raw.items()}
+
+
+def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:
+    """Plugin `p`'s [servers.<id>] blocks, each `${KEY}` filled from its form
+    (settings/form.fill). -> (the servers to start, the sentence why each other one is
+    not started: a value it needs is empty, its block is wrong, or its id is taken)."""
+    from .settings import form
+    fields = (p.form or {}).get("fields", [])
+    taken = {META, *(name for name, _, _ in BUILTIN), *cfg.mcp}
+    out: dict[str, McpServerConfig] = {}
+    why: dict[str, str] = {}
+    for sid, raw in (p.manifest.get("servers") or {}).items():
+        problems: list[Problem] = []
+        s = checked(f"plugins/{p.id}/plugin.toml", f"servers.{sid}", raw, KEYS, problems)
+        empty: list[str] = []
+
+        def one(text) -> str:
+            return form.fill(cfg, p.id, fields, str(text), empty)
+
+        if "class" in s:
+            s["cls"] = s.pop("class")
+        for k in ("command", "url"):
+            if k in s:
+                s[k] = one(s[k])
+        if "args" in s:
+            s["args"] = [one(a) for a in s["args"]]
+        for k in ("env", "headers"):
+            if k in s:
+                s[k] = {str(n): one(v) for n, v in s[k].items()}
+        if sid in taken:
+            why[sid] = f"{sid} is the name of another skill or server."
+        elif problems:
+            why[sid] = f"{problems[0].message}."
+        elif empty:
+            why[sid] = f"{'; '.join(dict.fromkeys(empty))}."
+        elif not s.get("enabled"):
+            why[sid] = f"[servers.{sid}] is not enabled."
+        else:
+            out[sid] = McpServerConfig(id=sid, **s)
+    return out, why
+
+
 class McpSkill:
-    def __init__(self, cfg: McpServerConfig):
+    def __init__(self, cfg: McpServerConfig, guides: Path | None = None):
+        """`guides`: its plugin's folder of guides; else the skills' guides/."""
         self.cfg = cfg
         self.name = cfg.id
-        self.guide = guide(cfg.id) if (GUIDES_DIR / f"{cfg.id}.md").is_file() else None
+        if guides is None:
+            self.guide = guide(cfg.id) if (GUIDES_DIR / f"{cfg.id}.md").is_file() else None
+        else:
+            self.guide = guide(cfg.id, file=str(guides / "_"), rel=f"{cfg.id}.md") \
+                if (guides / f"{cfg.id}.md").is_file() else None
         self.description = (self.guide.description if self.guide
                             else f"Tools of the MCP server {cfg.id}.")
         self.status = "starting"        # starting | up | down (retrying) | dead
         self.error: str | None = None
-        self.restarts = 0               # failures in a row; over max_restarts: dead
+        self.restarts = 0               # failures in a row (_supervise)
         self.ups = 0                    # times it came up
         self.client: Client | None = None
         self.kick = anyio.Event()       # set to force a reconnect
@@ -162,31 +243,33 @@ class Supervisor:
         self.skills: dict[str, McpSkill] = {}
 
     async def start(self, tg: anyio.abc.TaskGroup) -> None:
-        """Every enabled server that no feature owns; a feature's (features.CONNECTORS)
+        """Every enabled server that no feature owns; a feature's (features.connector_owners)
         runs through `run_one` under its runner (core/runners.py)."""
         from .settings import features
+        owned = features.connector_owners()
         for scfg in self.cfg.mcp.values():
-            if not scfg.enabled or scfg.id in features.CONNECTORS:
+            if scfg.id in owned:
                 continue
-            skill = await self._open(scfg.id)
+            skill = await self._open(scfg)
             if skill is not None:
                 tg.start_soon(self._run, skill)
 
-    async def run_one(self, sid: str) -> None:
-        """One server, supervised until cancelled; its tools leave with it."""
-        skill = await self._open(sid)
+    async def run_one(self, scfg: McpServerConfig | None, guides: Path | None = None) -> None:
+        """One server, supervised until cancelled; its tools leave with it. `guides`: its
+        plugin's guides folder."""
+        skill = await self._open(scfg, guides)
         if skill is not None:
             await self._run(skill)
 
-    async def _open(self, sid: str) -> McpSkill | None:
-        """The skill registered with its cached tools, None when it runs already or
-        the config has no such enabled server."""
-        scfg = self.cfg.mcp.get(sid)
-        if scfg is None or not scfg.enabled or sid in self.skills:
+    async def _open(self, scfg: McpServerConfig | None,
+                    guides: Path | None = None) -> McpSkill | None:
+        """The skill registered with its cached tools; None when it runs already, or the
+        server is not there or not enabled."""
+        if scfg is None or not scfg.enabled or scfg.id in self.skills:
             return None
-        skill = McpSkill(scfg)
-        self.skills[sid] = skill
-        self._register(skill, await cached_tools(self.store, sid))
+        skill = McpSkill(scfg, guides)
+        self.skills[scfg.id] = skill
+        self._register(skill, await cached_tools(self.store, scfg.id))
         return skill
 
     async def _run(self, skill: McpSkill) -> None:
@@ -279,8 +362,8 @@ class Supervisor:
             except Exception as e:
                 # a server of ours that quit says so; anything else is the server at its
                 # address not answering (a connect error, a timeout, an ExceptionGroup)
-                skill.error = str(e)[:300] if isinstance(e, RuntimeError) else \
-                    unreachable_words(f"the {skill.name} server", skill.cfg.url, e)
+                skill.error = str(e) if isinstance(e, RuntimeError) else \
+                    her_unreachable(f"the {skill.name} server", skill.cfg.url)
                 log.warning("mcp server failed", extra={"event": "mcp.failed",
                                                         "server": skill.name,
                                                         "error": skill.error})
@@ -288,7 +371,9 @@ class Supervisor:
                 skill.client = None
 
             skill.restarts += 1
-            if skill.restarts > skill.cfg.max_restarts:
+            # a server this app starts a process for is dead past max_restarts; one at a
+            # url alone comes back with its host, so it keeps reconnecting at the backoff
+            if skill.cfg.command and skill.restarts > skill.cfg.max_restarts:
                 skill.status = "dead"
                 log.warning("mcp server dead", extra={"event": "mcp.dead",
                                                       "server": skill.name})
@@ -338,7 +423,7 @@ class Supervisor:
         name = t["name"]
 
         async def fn(ctx: ToolContext, **args) -> ToolResult:
-            return await self._call(skill, name, args)
+            return await self._call(ctx, skill, name, args)
 
         schema = dict(t.get("schema") or {"type": "object", "properties": {}})
         schema.setdefault("type", "object")
@@ -348,7 +433,8 @@ class Supervisor:
         return ToolSpec(skill=skill.name, name=name, description=t.get("description", ""),
                         schema=schema, fn=fn, annotations=_hints(t))
 
-    async def _call(self, skill: McpSkill, name: str, args: dict) -> ToolResult:
+    async def _call(self, ctx: ToolContext, skill: McpSkill, name: str,
+                    args: dict) -> ToolResult:
         client = skill.client
         if client is None or skill.status != "up":
             return ToolResult(content=f"{skill.name} is {skill.status} right now.",
@@ -371,6 +457,27 @@ class Supervisor:
                                       f"its address).",
                               is_error=True)
         text = _text(res)
+        # a file part (an image, audio, a resource) is kept for the call, as a browser
+        # shot is (skills/browser.py _keep), and its row shows it; the model gets an
+        # image with the result (turns/context.py), any other file as a line
+        images = []
+        limit = int(self.cfg.r("max_attachment_bytes"))
+        for c in getattr(res, "content", None) or []:
+            got = _file(c, name)
+            if got is None:
+                continue
+            data, filename, media = got
+            if len(data) > limit:
+                text += f"\n{TooLarge(filename, len(data), limit).message} It was not kept."
+                continue
+            row = await attachments.save_generated(
+                self.cfg, ctx.store, data, filename, media, ctx.tool_call_id or None,
+                in_message=False)
+            text += f"\n{row['filename']} ({attachments.size(row['bytes'])})"
+            if row["kind"] == "image":
+                images.append(row["id"])
+            else:
+                text += f", attached to this conversation for {self.cfg.user}."
         structured = getattr(res, "structured_content", None)
         display: dict[str, Any] = {"server": skill.name, "tool": name}
         is_error = bool(getattr(res, "is_error", False))
@@ -384,7 +491,8 @@ class Supervisor:
                 render, kb, skill.name, structured, self.cfg.user)
         elif not text and structured is not None:
             text = json.dumps(structured)
-        return ToolResult(content=text or "[no content]", is_error=is_error, display=display)
+        return ToolResult(content=text.strip() or "[no content]", is_error=is_error,
+                          display=display, images=images or None)
 
     def _kb(self, skill: McpSkill):
         if not skill.cfg.kb or self.kbs is None:
@@ -392,12 +500,32 @@ class Supervisor:
         return self.kbs.get(skill.cfg.kb)
 
 
+_FILES = ("image", "audio", "resource")      # the parts that carry a file (_file)
+
+
 def _text(res) -> str:
     parts = []
     for c in getattr(res, "content", None) or []:
         kind = getattr(c, "type", "")
-        parts.append(c.text if kind == "text" else f"[{kind}]")
+        if kind not in _FILES:
+            parts.append(c.text if kind == "text" else f"[{kind}]")
     return "\n".join(parts)
+
+
+def _file(c, tool: str) -> tuple[bytes, str, str | None] | None:
+    """A result part that carries a file: (its bytes, its file name, its media type or
+    None to guess it); None for any other part."""
+    kind = getattr(c, "type", "")
+    if kind in ("image", "audio"):
+        return (base64.b64decode(c.data),
+                tool + (mimetypes.guess_extension(c.mime_type) or ""), c.mime_type)
+    if kind != "resource":
+        return None
+    r = c.resource
+    blob = getattr(r, "blob", None)
+    data = base64.b64decode(blob) if blob is not None else r.text.encode()
+    filename = unquote(urlsplit(str(r.uri)).path.rsplit("/", 1)[-1]) or tool
+    return data, filename, r.mime_type
 
 
 # ---- a connector's results as archive lines ------------------------------------------------
@@ -573,11 +701,13 @@ async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
                                               f"{server} to COMPOSE_PROFILES in .env and run "
                                               f"docker compose up -d."}
     if r.status_code in (401, 403):
-        return {"state": "missing", "detail": f"A {label} connector answers at {host} but it "
-                                              f"is not this app's."}
+        return {"state": "missing", "detail": f"The {label} connector at {host} does not "
+                                              f"accept this app's key. Give it the same key "
+                                              f"as this app, then press Check."}
     if r.status_code != 200:
-        return {"state": "missing", "detail": f"{label}'s connector at {host} answered "
-                                              f"{r.status_code}."}
+        return {"state": "missing", "detail": f"The {label} connector at {host} answered "
+                                              f"with error {r.status_code}. Restart it and "
+                                              f"press Check."}
     try:
         state = (r.json().get("connection") or {}).get("state") or "running"
     except ValueError:

@@ -21,9 +21,9 @@ The map of the code and the rules it follows.
 
 | Module | What |
 |---|---|
-| `__main__.py`, `config.py`, `boot.py`, `reload.py` | preflight and lifespan; celine.toml into a Config and the readers' helpers; the whole load (every config file, var/settings, its row), which writes nothing; config reloaded in place |
+| `__main__.py`, `config.py`, `boot.py`, `reload.py`, `saves.py` | preflight and lifespan; celine.toml into a Config and the readers' helpers; the whole load (every config file, var/settings, its row), which writes nothing; config reloaded in place; the Settings saves, one function each, for the routes and her `settings` skill |
 | `core/` | the single writer and event append, EventBus, ids and times, Services |
-| `db/` | `migrations/0001_schema.sql` and the chains for `log/` and `notebook/`; `migrate.py` applies them |
+| `db/` | `migrations/0001_schema.sql`, the later `NNNN_*.sql` and `NNNN_*.py` (a `.py` one moves stored data), and the chains for `log/` and `notebook/`; `migrate.py` applies them |
 | `conversations/` | conversation rows, the message tree, snapshot and replay, routes |
 | `turns/` | one turn: dispatcher, runner, tool chokepoint, context, compaction, titles; `reply.py` the one place that touches a stored reply (citation tokens only) |
 | `backends/` | model APIs (openai, anthropic), router, queue, the test model is `tests/fake_backend.py` |
@@ -31,20 +31,24 @@ The map of the code and the rules it follows.
 | `kb/` | knowledge bases: the chat archive, documents, instant and semantic search, the connectors' feed |
 | `settings/` | `var/settings` and `var/secrets`: shapes, validation, `registry.py` (every setting), `features.py` (the feature catalog and probes), `services.py` (box addresses) |
 | `her.py`, `prompts.py` | the agent's row: name, pronouns, persona, talk, voice, portrait; `text(__file__, name)` reads a `.md` beside the module that sends it |
-| `missions/`, `sub_agents/` | missions and sub-agents |
+| `missions/`, `sub_agents/` | missions and sub-agents: `sub_agents/skill.py` the tool, `report.py` the report up, `cli.py` an agent CLI in the box, `drone.py` opencode on a device, `api.py` the routes |
+| `devices.py`, `plugins.py` | her devices (plugins with a `[drones]` block); plugins, base and user |
 | `plans/` | the plan, one per conversation |
 | `schedules/`, `triggers/` | routines: schedules and their runs (one try, no retries); watch and event triggers |
 | `intercom/` | messages between everyone: rows, delivery, threads |
 | `guard/` | the guard: one switch, one module per concern, prompts in `config/guard/` |
 | `bugreports/` | bug reports the agent files, each an intercom thread |
-| `homes.py` | where a conversation lives and the link that opens it; the client never works it out |
+| `homes.py` | where a conversation lives and the link that opens it, and the one walk up the agent chain (`root`); the client never works it out |
+| `push.py` | web push: the VAPID key, the devices that take pushes, every notice to them while no page is focused |
 | `jobs/` | steps that outlive their turn |
-| `work.py`, `hold.py`, `leftovers.py` | the queue of background model jobs; why no turn may start now; what a done mission leaves open |
+| `work.py`, `hold.py`, `leftovers.py` | the queue of background model jobs; why her turns may not start now; what a done mission leaves open |
 | `events.py`, `texts.py`, `approvals.py`, `metrics.py` | the events list; every long text's history; approvals before something runs; Prometheus numbers |
 | `attachments.py`, `box_files.py` | files on a message; files between the app and the box |
 | `comfyui/`, `image_catalog.py`, `vision.py` | images and music; the model catalog; one question about one image |
 | `terminals/`, `browser/`, `vault/`, `artifacts/`, `shares.py` | terminals, browser, vault (bw), pages, and shares of its box at /share/<token>/ |
 | `mcp.py` | MCP servers as skills |
+| `shellbox.py`, `speech.py` | the app's client for its shellbox; the speech HTTP client |
+| `commands/` | slash commands the composer runs |
 | `auth/` | login: passkey, password, PIN |
 | `api/` | HTTP routes and the WebSocket |
 | `clock.py`, `errors.py`, `logs.py`, `ops.py`, `keys.py` | time zone; errors; logging; `celine doctor/export/purge/keys` |

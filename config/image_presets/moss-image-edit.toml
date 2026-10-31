@@ -10,7 +10,7 @@ label = "MOSS-Image edit"
 family = "MOSS-Image"
 task = "edit"
 workflow = "moss-image-edit.json"
-good_at = "Edits from up to four images: colors, outfits, objects, light, season, style; a person from one image in the outfit or place of another."
+good_at = "Edits from up to four images: colours, outfits, objects, light, season, style. It can put a person from one image into the outfit or place of another."
 prompting = """
 One instruction in plain English (Chinese works too): say the change, then what stays.
 "Change the background to a sunny beach, preserving the person." "Make it winter, snow

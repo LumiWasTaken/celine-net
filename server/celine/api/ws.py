@@ -7,6 +7,7 @@ The client says what it follows, at any time:
   {"type": "unsubscribe", "conversation": id}
   {"type": "global", "after": gid}                           no after: from now
   {"type": "ping"}                                           answered {"type": "pong"}
+  {"type": "focus", "on": bool}                              the page is visible and focused
 Every frame of a conversation carries `conversation` (its id; a snapshot carries the
 row there, with `id`), every frame of the global feed its `gid`. A cursor below what is
 kept gets {"type": "resync", "conversation": id} or {"type": "resync", "feed":
@@ -45,6 +46,7 @@ async def socket(ws: WebSocket) -> None:
         return
     await ws.accept()
     lock = anyio.Lock()
+    push = ws.app.state.services.push     # push.py: no push while a page is focused
 
     async def send(frame: dict) -> None:
         async with lock:
@@ -52,48 +54,54 @@ async def socket(ws: WebSocket) -> None:
 
     follows: dict[str | None, anyio.CancelScope] = {}    # None: the global feed
 
-    async with anyio.create_task_group() as tg:
-        def follow(key: str | None, fn, *args) -> None:
-            if key in follows:
-                follows.pop(key).cancel()
-            scope = follows[key] = anyio.CancelScope()
+    try:
+        async with anyio.create_task_group() as tg:
+            def follow(key: str | None, fn, *args) -> None:
+                if key in follows:
+                    follows.pop(key).cancel()
+                scope = follows[key] = anyio.CancelScope()
 
-            async def run() -> None:
-                with scope:
-                    try:
-                        await fn(ws.app.state.services, send, *args)
-                    except GONE:                 # the client left mid-send
-                        log.debug("socket closed while sending", exc_info=True)
-                        tg.cancel_scope.cancel()
-                    except Exception:            # a bug: seen, and the page reconnects
-                        log.exception("socket feed failed", extra={"event": "ws.feed_failed"})
-                        tg.cancel_scope.cancel()
-                if follows.get(key) is scope:
-                    del follows[key]
-            tg.start_soon(run)
+                async def run() -> None:
+                    with scope:
+                        try:
+                            await fn(ws.app.state.services, send, *args)
+                        except GONE:                 # the client left mid-send
+                            log.debug("socket closed while sending", exc_info=True)
+                            tg.cancel_scope.cancel()
+                        except Exception:            # a bug: seen, and the page reconnects
+                            log.exception("socket feed failed", extra={"event": "ws.feed_failed"})
+                            tg.cancel_scope.cancel()
+                    if follows.get(key) is scope:
+                        del follows[key]
+                tg.start_soon(run)
 
-        while True:
-            msg = await ws.receive()
-            if msg["type"] == "websocket.disconnect":
-                break
-            try:
-                data = json.loads(msg.get("text") or "")
-            except ValueError:
-                data = None
-            if not isinstance(data, dict):       # a client's bug, visible on its side
-                await send({"type": "error", "code": "bad_frame",
-                            "message": "A frame is one JSON object."})
-                continue
-            kind, cid = data.get("type"), data.get("conversation")
-            if kind == "ping":
-                await send({"type": "pong"})
-            elif kind == "subscribe" and isinstance(cid, str):
-                follow(cid, _conversation, cid, _int(data.get("after")) or 0)
-            elif kind == "unsubscribe" and isinstance(cid, str) and cid in follows:
-                follows.pop(cid).cancel()
-            elif kind == "global":
-                follow(None, _global, _int(data.get("after")))
-        tg.cancel_scope.cancel()
+            while True:
+                msg = await ws.receive()
+                if msg["type"] == "websocket.disconnect":
+                    break
+                try:
+                    data = json.loads(msg.get("text") or "")
+                except ValueError:
+                    data = None
+                if not isinstance(data, dict):       # a client's bug, visible on its side
+                    await send({"type": "error", "code": "bad_frame",
+                                "message": "A frame is one JSON object."})
+                    continue
+                kind, cid = data.get("type"), data.get("conversation")
+                if kind == "ping":
+                    await send({"type": "pong"})
+                elif kind == "subscribe" and isinstance(cid, str):
+                    follow(cid, _conversation, cid, _int(data.get("after")) or 0)
+                elif kind == "unsubscribe" and isinstance(cid, str) and cid in follows:
+                    follows.pop(cid).cancel()
+                elif kind == "global":
+                    follow(None, _global, _int(data.get("after")))
+                elif kind == "focus" and push is not None:
+                    push.focus(ws, data.get("on") is True)
+            tg.cancel_scope.cancel()
+    finally:
+        if push is not None:
+            push.focus(ws, False)
     try:
         await ws.close()
     except GONE:                                 # the client left first
@@ -119,7 +127,8 @@ async def _conversation(state, send, cid: str, after: int) -> None:
                 await send({"type": "error", "conversation": cid, "code": "not_found"})
                 return
             if last == 0:
-                await send({"type": "snapshot", **got})
+                await send({"type": "snapshot",
+                            **view.for_client(got, getattr(state.cfg, "settings", None))})
             elif "resync" in got:
                 await send({"type": "resync", "conversation": cid, "reason": got["resync"]})
                 return
@@ -220,5 +229,6 @@ async def changes(request: Request, since: int | None = None,
         cid, _, seq = part.strip().partition(":")
         if cid:
             known[cid] = int(seq) if seq.isdigit() else 0
-    return await request.app.state.services.store.read(
-        lambda c: changes_mod.catch_up(c, since, known))
+    services = request.app.state.services
+    settings = getattr(services.cfg, "settings", None)
+    return await services.store.read(lambda c: changes_mod.catch_up(c, since, known, services.store.tool_words, settings))

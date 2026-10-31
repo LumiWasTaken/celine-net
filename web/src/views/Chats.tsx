@@ -201,7 +201,7 @@ function ChatList({ kbs, kbId, active }: { kbs: Kb[]; kbId?: string; active: boo
       {ctx.menu}
       {renaming && <RenameChat c={renaming} onClose={() => setRenaming(null)} onDone={() => setVersion(v => v + 1)} />}
       {trashing && (
-        <ConfirmDialog title={`Move ${trashing.name} to Trash?`} danger confirmLabel="Move to Trash" body="Restore brings it back."
+        <ConfirmDialog title={`Move ${trashing.name} to Trash?`} danger confirmLabel="Move to Trash" body="You can restore it from the Trash."
                        onClose={() => setTrashing(null)}
                        onConfirm={async () => {
                          try { await kbApi.patchChat(trashing.kb, trashing.id, { trashed: true }) } catch (e) { return errorText(e) }
@@ -423,7 +423,7 @@ function Thread({ kb, chatId, jump }: { kb: Kb; chatId: number; jump?: number })
       )}
       {renaming && chat && <RenameChat c={chat} onClose={() => setRenaming(false)} onDone={setChat} />}
       {trashing && chat && (
-        <ConfirmDialog title={`Move ${chat.name} to Trash?`} danger confirmLabel="Move to Trash" body="Restore brings it back."
+        <ConfirmDialog title={`Move ${chat.name} to Trash?`} danger confirmLabel="Move to Trash" body="You can restore it from the Trash."
                        onClose={() => setTrashing(false)} onConfirm={async () => { await setTrashed(true); setTrashing(false) }} />
       )}
       {deleting && chat && (

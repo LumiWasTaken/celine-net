@@ -2,7 +2,6 @@
 name: web
 description: Search the public web and read web pages and PDFs: current events, facts,
   documentation, links {{username}} gives you. Queries and URLs leave this machine.
-words: url, web, website, internet, google
 ---
 Search finds, the browser reads. `web__search` asks a self-hosted SearXNG (no account,
 no tracking) and lists results: it finds sites and quick facts. `web__read_page` gets one
@@ -26,7 +25,7 @@ How:
 1. Search with a few specific words, like a search engine, not a sentence. Use
    `time_range` for news, `site:docs.python.org` in the query for one site's docs,
    `language` for results in another language.
-   Example: web__search(query="llama.cpp speculative decoding", time_range="month")
+   Example: web__search(query="sqlite json functions", time_range="month")
 2. Snippets are short and may be old. Read the one to three best results before you
    state details: web__read_page(url="web:2") for the text. A long page comes in parts.
    The result ends with `later: web__read_page(url="web:2", part=2)`. Open the page in
@@ -40,11 +39,18 @@ How:
    sources or links at the end. A link goes in only when the link itself is what
    {{username}} asked for, like a download or a page to keep.
 
-When search is down or flaky, search somewhere else: open Google or DuckDuckGo in your
-browser, or read https://html.duckduckgo.com/html/?q=<words> with web__read_page.
+To hand {{username}} a file you found on the web (a picture, a PDF, a zip), use
+web__read_page(url="...", save=true): the file itself is attached to this conversation
+and {{username}} sees it under your call. It is not read as text.
+
+web__read_page fetches any URL itself and does not need web__search: it works while
+search is down. Your browser searches with its own engine. When search is down or flaky,
+search somewhere else: open Google or DuckDuckGo in your browser, or read
+https://html.duckduckgo.com/html/?q=<words> with web__read_page.
 
 Reddit: www.reddit.com/r/<sub>/search/?q=... in the browser, logged in with the account
 in the vault. Logged out, Reddit shows a login page (browser guide, Reddit).
 
 Only public http(s) addresses can be read. The app refuses local and private network
-addresses. HTML, PDF (with a text layer) and plain text work.
+addresses. HTML, PDF (with a text layer) and plain text can be read; save takes any
+file up to the size limit for attachments.

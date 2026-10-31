@@ -45,7 +45,7 @@ async def test_her_answer_to_the_users_reply_lands_in_the_thread(store):
     msgs = await store.read(lambda c: rows.thread(c, first))
     assert [(m["from"], m["to"], m["text"]) for m in msgs] == [
         (f"agent:{cid}", "user", "the download stopped"), ("user", f"agent:{cid}", "why?"),
-        (f"agent:{cid}", "user", "i killed it, sorry")]
+        (f"agent:{cid}", "user", "i killed it, sorry [[web:2]]")], "as she wrote it"
     assert msgs[2]["reply_to"] == reply["intercom_id"] and msgs[2]["subject"] == "videos"
 
 
@@ -75,7 +75,7 @@ async def test_only_her_final_answer_goes_in_and_a_later_one_of_hers_does_not_co
     await _answers(store, cid, turn, "the disk was full [web:2]【1†a】, fixed")
     await answer.on_end(services, cid, turn)
     assert (await store.read(lambda c: rows.thread(c, first)))[-1]["text"] == \
-        "the disk was full, fixed"
+        "the disk was full [web:2]【1†a】, fixed"
 
 
 async def test_a_message_she_sends_from_that_turn_answers_in_the_thread(store, cfg):
@@ -89,7 +89,7 @@ async def test_a_message_she_sends_from_that_turn_answers_in_the_thread(store, c
     first, reply = await _replied(store, ic, cid)
     turn = reply["turn_id"]
     ctx = ToolContext(cid, turn, "x", store, cfg, None)  # type: ignore[arg-type]
-    said = await IntercomSkill(cfg).prompt_fragment(ctx)
+    said = await IntercomSkill(cfg).tail_part(ctx)
     assert f'You are in thread #{first} "videos": this turn answers #{reply["intercom_id"]}' \
         in said and 'intercom__send(to="user") answers there by itself' in said
     sent = await ic.send(f"agent:{cid}", "user", "relaunched it", turn=turn)

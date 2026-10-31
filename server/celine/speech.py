@@ -56,16 +56,18 @@ async def call(cfg, direction: str, path: str, *, limit: int, **kw) -> tuple[byt
             async with c.stream(kw.pop("method", "POST"), base + path, headers=headers, **kw) as r:
                 # Never forward error bodies or follow redirects: either can expose a key.
                 if not 200 <= r.status_code < 300:
-                    raise CelineError("speech_provider", f"Speech provider returned HTTP {r.status_code}.", 502)
+                    raise CelineError("speech_provider", f"The speech model's server answered with error {r.status_code}. "
+                                      f"Check it in Settings, Providers.", 502)
                 chunks, size = [], 0
                 async for chunk in r.aiter_bytes():
                     size += len(chunk)
                     if size > limit:
-                        raise CelineError("speech_provider", "Speech provider response is too large.", 502)
+                        raise CelineError("speech_provider", "The speech model's server sent too much data.", 502)
                     chunks.append(chunk)
                 return b"".join(chunks), r.headers.get("content-type", "").split(";")[0].strip().lower()
     except httpx.HTTPError:
-        raise CelineError("speech_provider", "The speech provider could not be reached.", 502) from None
+        raise CelineError("speech_provider", "The speech model's server did not answer. Make sure it is "
+                          "running, and check its address in Settings, Providers.", 502) from None
 
 
 async def transcribe(cfg, audio: bytes, mime: str, language: str) -> dict:
@@ -74,7 +76,7 @@ async def transcribe(cfg, audio: bytes, mime: str, language: str) -> dict:
                   "audio/wav": "wav", "audio/mpeg": "mp3"}
     mime = mime.split(";")[0].strip().lower()
     if mime not in extensions or not audio or len(audio) > MAX_RECORDING:
-        raise CelineError("bad_request", "Use a nonempty audio recording smaller than 12 MB.", 400)
+        raise CelineError("bad_request", "The recording is empty or larger than 12 MB. Record it again.", 400)
     fields = {"model": model, "response_format": "json"}
     if language:
         fields["language"] = language
@@ -85,7 +87,7 @@ async def transcribe(cfg, audio: bytes, mime: str, language: str) -> dict:
     except (ValueError, UnicodeError):
         result = None
     if not isinstance(result, dict) or not isinstance(result.get("text"), str):
-        raise CelineError("speech_provider", "Speech provider returned no transcript.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent no transcript. Check it in Settings, Providers.", 502)
     return {"text": result["text"].strip()}
 
 
@@ -95,7 +97,7 @@ async def synthesize(cfg, text: str, voice: str) -> tuple[bytes, str]:
                             json={"model": model, "input": text, "voice": voice.strip() or "alloy",
                                   "response_format": "wav"})
     if not body or not mime.startswith("audio/"):
-        raise CelineError("speech_provider", "Speech provider returned no audio.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent no audio. Check it in Settings, Providers.", 502)
     return body, mime
 
 
@@ -107,8 +109,8 @@ async def voices(cfg) -> dict:
         result = None
     raw = result.get("voices") if isinstance(result, dict) else None
     if not isinstance(raw, list):
-        raise CelineError("speech_provider", "Speech provider returned no voice list.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent no voice list. Check it in Settings, Providers.", 502)
     ids = [v if isinstance(v, str) else v.get("id") if isinstance(v, dict) else None for v in raw]
     if any(not isinstance(v, str) or not v or len(v) > 200 for v in ids):
-        raise CelineError("speech_provider", "Speech provider returned an invalid voice list.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent a voice list the app cannot read.", 502)
     return {"voices": list(dict.fromkeys(ids))}

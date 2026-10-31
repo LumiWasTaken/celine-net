@@ -19,7 +19,6 @@ from celine.conversations import api as conversations_api, store as conversation
 from celine.core.bus import EventBus
 from celine.core.services import Services
 from celine.errors import install_error_handler
-from celine.skills.mind import mood_refusal
 from celine.turns import store as turns
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
@@ -54,16 +53,21 @@ async def at(store, cid: str, when: str) -> None:
         "UPDATE conversations SET updated_at=? WHERE id=?", (when, cid)))
 
 
-def test_the_group_of_a_row_is_running_pinned_or_its_day_in_the_app_zone():
+def test_the_group_of_a_row_is_running_pinned_or_when_it_was_active_in_the_app_zone():
     g = lambda rank, iso: conversations.group_of(rank, iso, BERLIN, NOW)  # noqa: E731
     assert g(2, "2026-01-01T00:00:00+00:00") == "Running"
     assert g(1, "2026-01-01T00:00:00+00:00") == "Pinned"
     # 23:30 UTC on the 15th is 01:30 on the 16th in Berlin
     assert g(0, "2026-01-15T23:30:00+00:00") == "Today"
     assert g(0, "2026-01-15T12:00:00+00:00") == "Yesterday"
-    assert g(0, "2026-01-13T12:00:00+00:00") == "Tuesday"
-    assert g(0, "2026-01-09T12:00:00+00:00") == "9 Jan"
-    assert g(0, "2025-10-09T12:00:00+00:00") == "October 2025"
+    assert g(0, "2026-01-09T12:00:00+00:00") == "Previous 7 days"
+    assert g(0, "2026-01-08T12:00:00+00:00") == "Previous 30 days"
+    assert g(0, "2025-12-17T12:00:00+00:00") == "Previous 30 days"
+    assert g(0, "2025-12-16T12:00:00+00:00") == "2025"
+    assert g(0, "2024-10-09T12:00:00+00:00") == "2024"
+    # a month of this year
+    assert conversations.group_of(0, "2026-03-02T12:00:00+00:00", BERLIN,
+                                  datetime(2026, 10, 31, 12, tzinfo=BERLIN)) == "March"
 
 
 async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, store):
@@ -88,7 +92,8 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     assert rows[running]["state"] == {"tone": "running", "words": ""}
     assert rows[pinned]["group"] == "Pinned" and rows[pinned]["state"] is None
     assert rows[failed]["state"] == {"tone": "error", "words": "The reply failed."}
-    assert rows[old]["group"] == "October 2025"
+    assert rows[old]["group"] == "2025" and rows[old]["dated"]
+    assert not rows[pinned]["dated"] and not rows[running]["dated"]
     assert "rank" not in rows[old]
 
     # frozen (guard/freeze.py): the queued turn waits, nothing runs
@@ -96,6 +101,18 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     rows = {r["id"]: r for r in (await c.get("/api/conversations",
                                              params={"place": "celine"})).json()["conversations"]}
     assert rows[running]["group"] != "Running" and rows[running]["state"] is None
+
+
+async def test_a_sub_agent_working_three_levels_down_runs_its_chat_first(c, store):
+    top = await conversations.create(store, "top")
+    await conversations.create(store, "quiet")
+    deep = top
+    for n in ("one", "two", "three"):
+        deep = await conversations.create(store, n, agent_of=deep, agent_name=n)
+    await user_says(store, deep, "work")                   # queued: live
+    body = (await c.get("/api/conversations", params={"place": "celine"})).json()
+    assert body["conversations"][0]["id"] == top
+    assert body["conversations"][0]["group"] == "Running"
 
 
 async def test_the_list_pages_by_rank_and_counts_each_shelf(c, store):
@@ -180,17 +197,6 @@ async def test_export_is_the_path_as_markdown(c, store):
     assert (await c.get("/api/conversations/nope/export")).status_code == 404
 
 
-@pytest.mark.parametrize("text", ["\U0001f44d\U0001f3fd" * 24, "\U0001f468‍\U0001f469‍\U0001f467",
-                                  "^_^"])
-def test_a_mood_is_1_to_24_emojis_or_a_kaomoji(text):
-    assert mood_refusal(text) is None
-
-
-@pytest.mark.parametrize("text", ["\U0001f319" * 25, "(^_^)\n(^_^)"])
-def test_anything_else_is_refused(text):
-    assert mood_refusal(text)
-
-
 async def test_she_sets_her_mood_and_it_is_stored_sent_and_served(c, store):
     from types import SimpleNamespace
     from celine.skills import ToolContext
@@ -203,10 +209,10 @@ async def test_she_sets_her_mood_and_it_is_stored_sent_and_served(c, store):
     skill = mind.Mind(cfg)
     skill.app = SimpleNamespace(store=store, cfg=cfg, llm=None, registry=None)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
-    bad = await skill.set_status(ctx, "feeling great")
-    assert bad.is_error and bad.content == "That is words, not emojis or a kaomoji."
-    assert not (await skill.set_status(ctx, " \U0001f319✨ ")).is_error
+    assert not (await skill.set_status(ctx, "feeling great")).is_error, "her words stand"
+    feed.receive_nowait()
+    assert not (await skill.set_status(ctx, " \U0001f319✨ " * 30)).is_error
     got = (await c.get("/api/agent/mood")).json()["mood"]
-    assert got["text"] == "\U0001f319✨" and got["set_at"]
+    assert got["text"] == " \U0001f319✨ " * 30 and got["set_at"]
     ev = feed.receive_nowait()
     assert ev["type"] == "mood" and ev["mood"] == got

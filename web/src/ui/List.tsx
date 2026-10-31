@@ -1,13 +1,14 @@
 /* Lists: ListRow (the one row), ListSection (a label above a group), VirtualList
    (owns its scroll box and fills its parent, so no page computes 100vh - Npx). */
 import {
-  useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode, type Ref,
+  useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Key, type ReactNode, type Ref,
 } from 'react'
 import { measureElement, useVirtualizer } from '@tanstack/react-virtual'
 import { Check, type LucideIcon } from 'lucide-react'
-import { Dot, Progress, type DotTone } from './Bits'
+import { DisclosureArrow, Dot, Progress, type DotTone } from './Bits'
 import { cx } from './cx'
 import { ICON } from './icons'
+import { useMove } from './motion'
 import type { PickProps } from './Select'
 import type { useContextMenu } from './Menu'
 
@@ -142,14 +143,26 @@ export function ListRow({
   )
 }
 
-/* ── ListSection ── */
-export function ListSection({ label, className }: {
+/* ── ListSection: with `onToggle` its label is a button that folds the group under it
+   (Celine's date groups); folded, it says how many are in it ── */
+export function ListSection({ label, open, onToggle, count, className }: {
   label: ReactNode
+  /** the group is shown; with `onToggle` */
+  open?: boolean
+  onToggle?: () => void
+  /** how many the group holds, shown while it is folded */
+  count?: number
   className?: string
 }) {
   return (
     <div className={cx('list-section', className)}>
-      <span>{label}</span>
+      {onToggle ? (
+        <button type="button" className="list-section__fold" aria-expanded={!!open} onClick={onToggle}>
+          <DisclosureArrow />
+          <span>{label}</span>
+          {!open && count != null && <span className="list-section__count">{count}</span>}
+        </button>
+      ) : <span>{label}</span>}
     </div>
   )
 }
@@ -190,6 +203,15 @@ export function VirtualList<T>({
   page?: boolean
 }) {
   const scroller = useRef<HTMLDivElement>(null)
+  // rows glide when the items change (a conversation to the top), rise when they arrive and
+  // fade where they were when they go; a scroll changes no items and a new filter is another list, so neither moves anything
+  const spacer = useRef<HTMLDivElement>(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the keys change with the items, getKey is a new function each render
+  const keys = useMemo(() => new Set(items.map((it, i) => String(getKey(it, i)))), [items])
+  // the list a new `resetOn` names is the one whose items come next (a fetch lands later)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- taken when the items change, not when resetOn does
+  const listed = useMemo(() => resetOn, [items])
+  useMove(spacer, items, { enter: true, leave: true, quiet: listed, keys })
   const firstReset = useRef(true)
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [margin, setMargin] = useState(0)
@@ -240,9 +262,9 @@ export function VirtualList<T>({
   return (
     <div ref={scroller} className={cx('vlist', page && 'vlist--page', className)} style={style} role={label ? 'list' : undefined} aria-label={label}>
       {before}
-      <div className="vlist__spacer" style={{ height: virt.getTotalSize() }}>
+      <div ref={spacer} className="vlist__spacer" style={{ height: virt.getTotalSize() }}>
         {rows.map(v => (
-          <div key={v.key} data-index={v.index} ref={virt.measureElement}
+          <div key={v.key} data-index={v.index} data-key={String(v.key)} ref={virt.measureElement}
                className="vlist__row" role={label ? 'listitem' : undefined}
                style={{ transform: `translateY(${v.start - (page ? margin : 0)}px)`,
                         left: inset || undefined, right: inset || undefined }}>

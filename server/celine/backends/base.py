@@ -7,7 +7,6 @@ from typing import Literal
 
 # the app's mark on the tail's content block (turns/context.py): the Anthropic backend
 # puts a cache breakpoint on it, the others leave it out of what they send
-TAIL = "tail"
 # where a request message came from (turns/context.py origin): the app's own key, no
 # backend sends it
 ORIGIN = "origin"
@@ -41,7 +40,9 @@ class Usage:
 
 @dataclass(frozen=True, slots=True)
 class Done:
-    reason: Literal["stop", "length", "tool_calls", "content_filter"]
+    # steer: a drone stops its step for a message that came while it works
+    # (sub_agents/drone.py); the runner lands it and the next step hands it over
+    reason: Literal["stop", "length", "tool_calls", "content_filter", "steer"]
     usage: Usage | None = None
     # the reply as the server reported it (backends/openai.py raw_reply), for the
     # transcript's raw response view

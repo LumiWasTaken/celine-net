@@ -1,25 +1,25 @@
 """The agent's intercom tools: write to {{username}}, itself, its parent, its team, everyone
 working, or a conversation, now or later; read its threads; cancel what it scheduled.
 A message to itself with a time is a reminder. The agent's instructions list what waits for
-it, the announcements standing now, what it scheduled, and its team."""
+it, the announcements standing now, what it scheduled, and its sub-agents."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from .. import homes
+from ..attachments import draft_of, her_file
 from ..core.ids import clock, iso, parse_when, when
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
 from . import store as rows
-from .addresses import GUARD, GUARD_NAMES, Refused, members
+from .addresses import GUARD, GUARD_NAMES, Refused
 from .render import header, who
 
 TEXT_MAX = 60       # characters of a scheduled message's text in its instructions
 LISTED = 5          # scheduled messages listed there, the rest a count
 PER_COUNTERPART = 3  # threads intercom__read lists per counterpart, the rest a count
 AWAY = ("background", "mission")     # kinds where start_chat is offered
-TITLE_WORDS = 4     # a chat's title names its topic in 2 to 4 words (turns/title.py)
 COVERS = timedelta(hours=24)    # a thread to the user from the same source this recent
 ACTIONS = 6         # the source's last tool calls the new chat's opening names
 WAIT_MAX = 600      # seconds send(wait=true) holds its turn for the user's answer at most
@@ -49,11 +49,11 @@ class IntercomSkill:
                                                      scheduled=True))
         return [r for r in out if r["state"] == "pending"]
 
-    async def prompt_fragment(self, ctx: ToolContext) -> str | None:
-        """Each only when there is any: the announcements standing now, what it
-        scheduled from here, and its team. (What
-        waits for it is in the request itself already: the runner takes it at every
-        step.)"""
+    async def tail_part(self, ctx: ToolContext) -> str | None:
+        """For the tail of a turn, each only when there is any: the thread the turn
+        answers, the announcements standing now, what it scheduled from here, and its
+        own sub-agents. (What waits for it is in the request itself already: the runner
+        takes it at every step.)"""
         if ctx.store is None:
             return None
         cid = ctx.conversation_id
@@ -85,11 +85,13 @@ class IntercomSkill:
 
         team = await ctx.store.read(lambda c: _team_of(c, cid))
         if team:
-            shown = [f"{t['name']} ({'working' if t['working'] else 'done'})"
+            shown = [f"{t['name']} ({'working' if t['working'] else 'done'}"
+                     f"{', on ' + t['device'] if t['device'] else ''}"
+                     f"{', now ' + t['step'] if t['working'] and t['step'] else ''})"
                      for t in team[:LISTED]]
             if len(team) > LISTED:
                 shown.append(f"and {len(team) - LISTED} more")
-            parts.append("Your team: " + ", ".join(shown) + ".")
+            parts.append("Your sub-agents: " + ", ".join(shown) + ".")
         return "\n".join(parts) or None
 
     def _here_line(self, here: dict) -> str:
@@ -100,6 +102,8 @@ class IntercomSkill:
                 f"#{here['id']} from {sender}.")
         if here["from"] == "user" and not here["sub_agent"]:     # intercom/answer.py
             line += f" Your answer goes into that thread for {self.cfg.user}."
+        if here["sub_agent"] and not here["from"].startswith("agent:"):
+            return line         # it writes up its chain only (addresses._reach)
         to = "user" if here["from"] == "user" else here["from"]
         return line + (f' intercom__send(to="{to}") answers there by itself; '
                        "new_thread=true starts a new thread.")
@@ -121,14 +125,18 @@ class IntercomSkill:
         reply_to: Annotated[int | None, "The number of the message this answers."] = None,
         new_thread: Annotated[bool, "Start a new thread, not the one you are in."] = False,
         in_: Annotated[str | None, 'Lands later, like "30 min" or "1 h 30 min".'] = None,
-        at: Annotated[str | None, 'Lands at a time today, like "02:00". Tomorrow once it '
-                                  'has passed.'] = None,
+        at: Annotated[str | None, 'Lands at a time today, like "02:00", tomorrow once it '
+                                  'has passed; or on a day, like "2026-11-02 09:00".'] = None,
         until: Annotated[str | None, 'To "all": an announcement that stands until then, '
                                      'like "05:00" or "2 h". Everyone who starts work '
                                      'before then sees it.'] = None,
         wait: Annotated[bool, 'To "user": your turn holds here until {{username}} '
                               'answers, up to 10 minutes; the answer comes in as their '
                               'message. Not with in or at.'] = False,
+        attachments: Annotated[list[str] | None, "Files it carries, by their short ids: "
+                                                 "one on your own message (a voice note, a "
+                                                 "file you sent) or one {{username}} "
+                                                 "attached here."] = None,
     ) -> ToolResult:
         """Write to {{username}}, yourself, your parent, your team, everyone working,
         Bastet, or a sub-agent or mission by name. It answers in the thread you are in (the one
@@ -136,9 +144,7 @@ class IntercomSkill:
         new_thread starts one. With in or at it lands
         later; to "me" that is a reminder that starts your turn then, or joins the one
         running."""
-        from ..skills.web import uncite
-        text = uncite(text).strip()
-        if not text:
+        if not text.strip():
             return ToolResult(content="text is the message.", is_error=True)
         if not to.strip() and reply_to is None:
             return ToolResult(content="to says who it goes to, or reply_to answers a "
@@ -149,21 +155,29 @@ class IntercomSkill:
             due = parse_when(in_, at, self.tz, now_)
             if due is None:
                 return ToolResult(content='in is like "30 min" or "1 h 30 min", or give '
-                                          'at="02:00".', is_error=True)
+                                          'at="02:00" or at="2026-11-02 09:00" still ahead.',
+                                  is_error=True)
         if until:
             until_at = parse_when(until, until, self.tz, now_)
             if until_at is None:
                 return ToolResult(content='until is like "05:00" or "2 h".', is_error=True)
         from .. import guard
         if not guard.enabled(self.cfg) and any(
-                w.strip().casefold() in GUARD_NAMES for w in to.split(",")):
+                w.strip() in GUARD_NAMES for w in to.split(",")):
             return ToolResult(content="Bastet is off; nobody reads this.", is_error=True)
+        files = []
+        for ref in attachments or []:
+            row = await her_file(ctx.store, ref.strip(), ctx.conversation_id, self.cfg.user)
+            if isinstance(row, str):
+                return ToolResult(content=row, is_error=True)
+            files.append(row["id"])
+        drafts = [await draft_of(ctx.store, aid) for aid in files]
         try:
             out = await self.app.intercom.send(
                 f"agent:{ctx.conversation_id}", to, text, subject=subject,
                 reply_to=reply_to, due_at=iso(due) if due else None,
                 until_at=iso(until_at) if until_at else None,
-                turn=None if new_thread else ctx.turn_id)
+                turn=None if new_thread else ctx.turn_id, attachments=drafts or None)
         except KeyError as e:
             return ToolResult(content=f"No conversation or message {e.args[0]}.",
                               is_error=True)
@@ -298,31 +312,17 @@ class IntercomSkill:
                               "a headline."],
         text: Annotated[str, "What {{username}} reads first: what happened and what it "
                              "needs from them, short and complete."],
-        different: Annotated[bool, "True when start_chat listed what came from here "
-                                   "in the last 24 h and yours is another matter."] = False,
     ) -> ToolResult:
         """Start a chat for {{username}} about something they need to act on or know now.
         Check intercom__read first: when they have it already (a thread, an open bug
         report), add to that thread instead. Your text is your first message in the new
         chat and waits for them on the intercom; when they answer, you go on there."""
         from ..conversations import store as conversations, tree
-        title, text = " ".join(title.split()), text.strip()
-        if not title or not text:
+        if not title.strip() or not text.strip():
             return ToolResult(content="title and text are both needed.", is_error=True)
-        if len(title.split()) > TITLE_WORDS:
-            return ToolResult(content=f"\"{title}\" is a sentence. The title names the "
-                                      "topic in 2 to 4 plain words, like \"Shell wedge\".",
-                              is_error=True)
         src = ctx.conversation_id
         since = iso(datetime.now(timezone.utc) - COVERS)
         has = await ctx.store.read(lambda c: covered(c, src, since, self.tz))
-        if has and not different:
-            return ToolResult(content=f"Not started yet. In the last 24 h {self.cfg.user} "
-                                      "got this from here:\n- " + "\n- ".join(has) +
-                                      "\nWhen one of them is this matter, add to it with "
-                                      "intercom__send(reply_to=<number>). When yours is "
-                                      "another matter, call start_chat again with "
-                                      "different=true.", is_error=True)
         new = await conversations.create(ctx.store, title=title)
 
         def first(c):
@@ -334,8 +334,10 @@ class IntercomSkill:
         # from the new chat, so the user's answer lands there
         out = await self.app.intercom.send(f"agent:{new}", "user", text, subject=title,
                                            data={"chat": new, "from": src})
+        listed = (f"\nIn the last 24 h {self.cfg.user} also got this from here:\n- "
+                  + "\n- ".join(has)) if has else ""
         return ToolResult(content=f"Started the chat \"{title}\" (/chat/{new}); it waits "
-                                  f"for {self.cfg.user} as #{out['intercom_id']}.",
+                                  f"for {self.cfg.user} as #{out['intercom_id']}.{listed}",
                           display={"chat": new, "id": out["intercom_id"]})
 
     @tool(read_only=False, destructive=True)
@@ -362,21 +364,13 @@ def _here(c, cid: str, turn: str | None) -> dict | None:
 
 
 def _team_of(c, cid: str) -> list[dict]:
-    """The other sub-agents of this conversation's team (its own, or its siblings), newest
-    first, and whether each is working (not quiet: sub_agents/report.py, the one
-    definition)."""
-    r = c.execute("SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone()
-    if r is None:
-        return []
-    root = r["agent_of"] or cid
-    out = []
-    for sub in reversed(members(c, root)[1:]):
-        if sub == cid:
-            continue
-        from ..sub_agents.report import quiet
-        row = c.execute("SELECT agent_name FROM conversations WHERE id=?", (sub,)).fetchone()
-        out.append({"name": row["agent_name"], "working": not quiet(c, sub)})
-    return out
+    """This conversation's own sub-agents, newest first, whether each is working (not
+    quiet: sub_agents/report.py, the one definition), and a drone's device and step."""
+    from ..sub_agents.report import quiet
+    return [{"name": r["agent_name"], "working": not quiet(c, r["id"]),
+             "device": r["agent_device"], "step": r["agent_step"]} for r in c.execute(
+        "SELECT id, agent_name, agent_device, agent_step FROM conversations "
+        "WHERE agent_of=? ORDER BY created_at DESC", (cid,)).fetchall()]
 
 
 def _sources(c, cid: str) -> set[str]:

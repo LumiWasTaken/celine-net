@@ -30,14 +30,16 @@ ROLES = {"chat": {"chain": ["main/big"]}, "small": {"chain": ["main/small"]}}
 
 
 class Box:
-    """The agent's shellbox's /file, /run, /read and /stop: keeps files, answers each run with
-    `states` in turn (each a run's end), and keeps every call."""
+    """The agent's shellbox's /file, /run, /wait and /stop: keeps files, answers each run
+    and wait with `states` in turn (each a run's end), and keeps every call. With `hang`
+    a /wait never answers."""
 
     def __init__(self):
         self.files: dict[str, bytes] = {}
         self.calls: list[tuple[str, dict]] = []
         self.states = [{"state": "done", "exit": 0}]
         self.answer: bytes | None = b"three bugs fixed\n"
+        self.hang = False
 
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -52,8 +54,10 @@ class Box:
         self.calls.append((path, body))
         if path == "/stop":
             return httpx.Response(200, json={"state": "done"})
+        if path == "/wait" and self.hang:
+            await anyio.sleep_forever()
         res = {"terminal": body["terminal"], "tail": "the last lines", **self.states.pop(0)}
-        if path == "/run":
+        if path in ("/run", "/wait"):
             return httpx.Response(200, content=b'{"progress": "working"}\n'
                                   + json.dumps(res).encode() + b"\n")
         return httpx.Response(200, json=res)
@@ -63,7 +67,6 @@ class Box:
 def cfg(tmp_path, monkeypatch):
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles=ROLES)
     monkeypatch.setenv("CELINE_SHELL_URL", "http://box")
-    monkeypatch.setattr(cli_mod, "POLL", 0)
     return boot.load()
 
 
@@ -129,14 +132,13 @@ async def test_a_long_run_is_followed_and_its_end_says_how_it_went(cfg, store, b
     assert b.model == "default", "no model of its own: the proxy's default"
     text = await _reply(b)
     assert text == "opencode ran out of its 120 minutes.\n\nthe last lines"
-    assert [p for p, _ in box.calls] == ["/run", "/read", "/read"]
+    assert [p for p, _ in box.calls] == ["/run", "/wait", "/wait"]
 
 
 async def test_a_stop_presses_ctrl_c_in_its_terminal(cfg, store, box, monkeypatch):
     app = _services(cfg, store, box)
     sub = await _sub(store)
-    box.states = [{"state": "running"}] * 1000
-    monkeypatch.setattr(cli_mod, "POLL", 0.01)
+    box.states, box.hang = [{"state": "running"}], True
     with anyio.move_on_after(0.3):
         await _reply(cli_mod.CliBackend(app, sub, "opencode"))
     assert box.calls[-1][0] == "/stop"
@@ -166,4 +168,5 @@ async def test_start_takes_one_of_her_models_and_a_cli(cfg, store, box):
         (ok.display["conversation_id"],)).fetchone())
     assert tuple(row) == ("main/small", "opencode")
     plain = await agents.start(ctx, brief="go", name="plain one")
-    assert plain.display["model"] is None and plain.display["cli"] is None, "as today"
+    assert plain.display["model"] == "main/big" and plain.display["cli"] is None, \
+        "no model given: the one it runs on, kept"

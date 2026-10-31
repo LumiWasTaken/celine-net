@@ -33,28 +33,31 @@
   --font-story: 'Lora Variable', Georgia, serif;     /* the writing surface of the large editor: soft, smooth, made for long reading */
   --font-serif: 'Literata Variable', Georgia, serif; /* initials on portraits */
 
-  /* ── type: ONE scale, five steps, fluid from a 380 to a 1600 px viewport, times the
-     Appearance text size. UI text is --t-md everywhere; smaller is only for meta, larger
-     only for prose and titles. Unitless line heights. ── */
+  /* ── type: ONE scale, ratio 1.125 (major second), base 16 px prose. Five steps at
+     powers -2, -1, 0, +2, +5, fluid from a 380 px phone to a 1920 px desktop and flat
+     beyond, times the Appearance text size. UI text is --t-md everywhere (on a touch
+     screen it is --t-lg, one size for the whole UI); smaller is only for meta, larger
+     only for prose and titles. Docs: docs/ui/components.md, Typography. ── */
   --text-scale: 1;
-  --t-xs:  calc(clamp(0.75rem,   0.731rem + 0.082vw, 0.8125rem) * var(--text-scale));  /* 12 to 13: meta only */
-  --t-md:  calc(clamp(0.9063rem, 0.887rem + 0.082vw, 0.9688rem) * var(--text-scale));  /* 14.5 to 15.5: every piece of UI text */
-  --t-lg:  calc(clamp(1rem,      0.981rem + 0.082vw, 1.0625rem) * var(--text-scale));  /* 16 to 17: prose, composer, section titles */
-  --t-xl:  calc(clamp(1.125rem,  1.086rem + 0.164vw, 1.25rem)   * var(--text-scale));  /* 18 to 20: place, page and dialog titles */
-  --t-2xl: calc(clamp(1.5rem,    1.383rem + 0.492vw, 1.875rem)  * var(--text-scale));  /* 24 to 30: display */
+  --t-xs:  calc(clamp(0.78125rem, 0.7582rem + 0.0974vw, 0.875rem)   * var(--text-scale));  /* 12.5 to 14: meta, times, labels, mono tool bodies */
+  --t-md:  calc(clamp(0.875rem,   0.8442rem + 0.1299vw, 1rem)       * var(--text-scale));  /* 14 to 16: every piece of UI text */
+  --t-lg:  calc(clamp(1rem,       0.9692rem + 0.1299vw, 1.125rem)   * var(--text-scale));  /* 16 to 18: prose, bubbles, the composer, card titles */
+  --t-xl:  calc(clamp(1.25rem,    1.2115rem + 0.1623vw, 1.40625rem) * var(--text-scale));  /* 20 to 22.5: place, section and dialog titles */
+  --t-2xl: calc(clamp(1.75rem,    1.6883rem + 0.2597vw, 2rem)       * var(--text-scale));  /* 28 to 32: display */
+  --t-code: 0.9em;    /* inline code in a sentence: mono runs wider than the sans */
 
-  --lh-micro: 1.35;   /* meta, one line */
-  --lh-ui:    1.4;    /* one-line UI text: rows, buttons, fields */
-  --lh-body:  1.55;   /* wrapping text: bubbles, prose, descriptions */
+  --lh-ui:    1.4;    /* one-line UI text and meta: rows, buttons, fields, labels */
+  --lh-body:  1.5;    /* wrapping text: bubbles, prose, descriptions; 24 px at 16 px */
   --lh-title: 1.2;    /* xl and 2xl */
   --lh-story: 1.7;    /* the writing surface, at --t-lg in --font-story */
 
   --fw-regular: 450;  /* body */
-  --fw-medium:  580;  /* labels, names, rows, titles */
-  --fw-strong:  600;  /* place titles */
+  --fw-medium:  580;  /* labels, names, rows, titles, buttons */
   --fw-bold:    700;  /* strong text, a display h1 */
 
-  --tracking-title: -0.005em;
+  --tracking-display: -0.02em;  /* 2xl */
+  --tracking-title:   -0.01em;  /* xl, and lg as a title */
+  --tracking-meta:     0.01em;  /* xs muted labels: list sections, menu headings, groups */
 
   /* ── space: ONE scale, static. s-3 between a row's parts, s-4 page padding on a
      phone, s-5 between groups. ── */
@@ -82,9 +85,11 @@
   --rail-w:    clamp(88px, 56px + 2vw, 96px);
   --sidebar-w: clamp(300px, 26vw - 50px, 420px);
   --drawer-w:  clamp(380px, 220px + 10vw, 420px);
-  --measure:        clamp(36rem, 34rem + 8vw, 45rem);    /* the chat column */
+  /* reading widths in em of the prose size, so a line holds about 66 characters at every
+     text size; forms and card grids are not reading widths and stay in rem */
+  --measure:        calc(32 * var(--t-lg) + 2 * var(--s-4));   /* the chat column: her bubble, its padding outside the 32 em */
   --chat-col:       calc(var(--measure) + var(--s-6) + var(--s-3)); /* the chat column and its face: the box's width */
-  --measure-prose:  clamp(40rem, 38rem + 6vw, 47.5rem);  /* notes, documents, the large editor */
+  --measure-prose:  calc(32 * var(--t-lg));                   /* notes, documents, the large editor */
   --measure-form:   35rem;                               /* settings forms */
   --bleed:          55rem;                               /* a transcript with its tool rows */
   --measure-wide:   75rem;                               /* a page of cards */
@@ -107,6 +112,7 @@
   --dur-highlight: 2400ms;  /* the highlight after a jump */
   --dur-shimmer: 3s;        /* one sweep of a running line's shimmer */
   --delay-hover: 150ms;     /* a hover that reveals something */
+  --dur-wait: 300ms;        /* a busy mark waits this long before it shows: a quick load never flickers */
   --ease:      cubic-bezier(0.32, 0.72, 0, 1);    /* enter and move */
   --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);   /* leave */
   --ease-spring: linear(0, .077, .247, .443, .625, .775, .886, .961, 1.006, 1.03, 1.038, 1.037, 1.031, 1.024, 1.017, 1.01, 1);  /* transforms only */
@@ -233,41 +239,17 @@
 :root[data-accent='sky']    { --accent: var(--char-sky); }
 :root[data-accent='violet'] { --accent: var(--char-violet); }
 :root[data-accent='miku']   { --accent: var(--char-miku); }
-:root[data-text-size='sm'] { --text-scale: 0.9; }
-:root[data-text-size='lg'] { --text-scale: 1.1; }
-:root[data-text-size='xl'] { --text-scale: 1.25; }
+:root[data-text-size='sm'] { --text-scale: 0.889; }   /* one step down the scale (1 / 1.125) */
+:root[data-text-size='lg'] { --text-scale: 1.125; }   /* one step up */
+:root[data-text-size='xl'] { --text-scale: 1.266; }   /* two steps up (1.125 squared) */
 
 @media (min-width: 768px) { :root { --pad-section: var(--s-5); --gutter: var(--s-5); } }
 
-/* Wide screens (1600 to 2560 px): type, measures and control sizes grow about 18 %
-   more, so nothing is small and far away on a 2560 px monitor. */
-@media (min-width: 1600px) {
-  :root {
-    --t-xs:  calc(clamp(0.8125rem, 0.5594rem + 0.253vw, 0.9645rem) * var(--text-scale));
-    --t-md:  calc(clamp(0.9688rem, 0.6668rem + 0.302vw, 1.1500rem) * var(--text-scale));
-    --t-lg:  calc(clamp(1.0625rem, 0.7313rem + 0.331vw, 1.2613rem) * var(--text-scale));
-    --t-xl:  calc(clamp(1.2500rem, 0.8600rem + 0.390vw, 1.4838rem) * var(--text-scale));
-    --t-2xl: calc(clamp(1.8750rem, 1.2917rem + 0.583vw, 2.2250rem) * var(--text-scale));
-    --measure:       clamp(720px, 280px + 28vw, 1000px);
-    --measure-prose: clamp(760px, 517px + 15.2vw, 851px);
-    --measure-form:  clamp(560px, 240px + 20vw, 752px);
-    --bleed:         clamp(880px, 420px + 28.75vw, 1156px);
-    --measure-wide:  clamp(75rem, 40rem + 30vw, 88rem);
-    --row-cell:      8.5rem;
-    --h-sm: clamp(32px, 18px + 0.9vw, 36px);
-    --h-md: clamp(40px, 22px + 1.12vw, 45px);
-    --h-lg: clamp(44px, 24px + 1.23vw, 49px);
-    --row-sm: clamp(32px, 18px + 0.9vw, 36px);
-    --row-md: clamp(44px, 24px + 1.23vw, 49px);
-    --row-lg: clamp(68px, 39px + 1.8vw, 76px);
-    --header-h: clamp(56px, 31px + 1.56vw, 63px);
-  }
-}
-
-/* Touch screens: every target 44 px; a mouse keeps the desktop density. */
+/* Touch screens: every target 44 px and one UI text size, the 16 px step (a field never
+   zooms on iOS, labels and buttons beside it match); a mouse keeps the desktop density. */
 @media (pointer: coarse) {
-  :root { --h-sm: var(--h-lg); --h-md: var(--h-lg); --row-sm: var(--row-md); }
+  :root { --h-sm: var(--h-lg); --h-md: var(--h-lg); --row-sm: var(--row-md); --t-md: var(--t-lg); }
 }
 
 /* Breakpoints (CSS variables cannot be used in @media, so they are listed here):
-   767 phone (one pane, the bottom bar), 1023 laptop, 1279 desktop, 1600 wide. */
+   767 phone (one pane, the bottom bar), 1023 laptop, 1279 desktop. */

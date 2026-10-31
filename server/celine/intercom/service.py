@@ -15,7 +15,6 @@ from .store import insert, read
 from ..core.event_types import INTERCOM_STATE
 
 log = logging.getLogger("celine.intercom")
-RETRY = 30.0        # seconds before the timer tries again after it failed
 
 
 async def send(store, from_addr: str, to: str, text: str, *, kind: str = "message",
@@ -84,9 +83,11 @@ class Intercom:
     """The app's intercom: `send` as above, plus the dispatcher's notify for the turn it
     queues, and the timer for messages with a due time."""
 
-    def __init__(self, store, notify=None):
+    def __init__(self, store, notify=None, user_wrote=None):
         self.store = store
         self.notify = notify or (lambda: None)
+        # fn(cid): the user's message waits for a live turn there (Dispatcher.user_wrote)
+        self.user_wrote = user_wrote or (lambda cid: None)
         self._wake = anyio.Event()
         self._sent = anyio.Event()      # set and replaced after every send
 
@@ -98,6 +99,9 @@ class Intercom:
             await self._time_limit(row)
         if out["turn_id"]:
             self.notify()
+        if from_addr == "user" and out["message_id"] is None and to.startswith("agent:") \
+                and kw.get("kind", "message") == "message" and not kw.get("due_at"):
+            self.user_wrote(to.removeprefix("agent:"))
         if kw.get("due_at"):
             self._wake.set()
         self._sent.set()
@@ -186,7 +190,7 @@ class Intercom:
     async def _timer(self) -> None:
         """Delivers what is due (at start: what came due while the app was down), then
         sleeps until the next due time or a new message with one; after a failure it
-        tries again in RETRY seconds."""
+        logs the reason and waits for the next new message."""
         while True:
             try:
                 if await deliver.deliver_due(self.store):
@@ -197,7 +201,7 @@ class Intercom:
                 ).total_seconds())
             except Exception:
                 log.exception("intercom timer failed", extra={"event": "intercom.failed"})
-                delay = RETRY
+                delay = None
             with anyio.move_on_after(delay):
                 await self._wake.wait()
             self._wake = anyio.Event()

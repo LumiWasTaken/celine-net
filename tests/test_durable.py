@@ -10,7 +10,7 @@ import threading
 import anyio
 import pytest
 
-from celine.conversations import store as conversations, view
+from celine.conversations import store as conversations, tree, view
 from celine.backends.base import Done
 from celine.boot import load
 from celine.core.store import Store
@@ -203,16 +203,15 @@ async def test_wall_clock_releases_a_wedged_turn(store, cfg):
     assert (await turns.claim(store, "w2"))["conversation_id"] == cid
 
 
-async def test_a_restart_during_a_read_only_find_resumes_it(db_path, cfg):
+async def test_a_restart_during_a_read_only_find_ends_it_for_regenerate(db_path, cfg):
+    """The turn ends `interrupted` with its reason at the stop; nothing resumes it on the
+    next start; the snapshot names the message Regenerate answers, and Regenerate does."""
     arch = Arch(block=True)
     reg = Registry()
     reg.add(arch)
 
     async def state(store):
         return await store.read(lambda c: c.execute("SELECT state FROM turns").fetchone()[0])
-
-    async def over(store):
-        return await state(store) in ("done", "failed", "interrupted", "aborted")
 
     # first process: the turn is inside `find` when the server shuts down; nothing raises
     async with anyio.create_task_group() as outer:
@@ -232,21 +231,33 @@ async def test_a_restart_during_a_read_only_find_resumes_it(db_path, cfg):
             arch.release.set()          # the thread finishes after the close
         outer.cancel_scope.cancel()
 
-    # second process: the read-only step is safe to run again, so the turn is resumed
+    # second process: the turn stays as the stop left it until the user's Regenerate
     async with anyio.create_task_group() as outer:
         store = Store(db_path)
         await store.start(outer)
-        assert (await turns.sweep(store, registry=reg))["resumable"] == 1
+        assert (await turns.sweep(store, registry=reg))["total"] == 0
+        assert await state(store) == "interrupted"
+        snap = await view.snapshot(store, cid)
+        assert snap["turn"]["reason_code"] == "restart"
+        mine = [m for m in snap["messages"] if m["role"] == "user"][-1]
+        assert snap["unanswered"] == {
+            "message_id": mine["id"], "turn_id": snap["turn"]["id"], "state": "interrupted",
+            "reason": "The server restarted during the reply.", "continues": False}
         arch.block = False
         async with anyio.create_task_group() as tg:
             d = Dispatcher(store, cfg, EventBus(), lambda: Scripted(["arch__find"]), reg)
             await d.start(tg)
+            tid, _ = await tree.regenerate(store, cid)
             d.notify()
-            await until(lambda: over(store), 5)
+
+            async def answered():
+                return await store.read(lambda c: c.execute(
+                    "SELECT state FROM turns WHERE id=?", (tid,)).fetchone()[0]) == "done"
+            await until(answered, 5)
             await d.stop()
             tg.cancel_scope.cancel()
-        assert await state(store) == "done"
         assert (await _branch(store, cid))[-1] == "the answer"
+        assert (await view.snapshot(store, cid))["unanswered"] is None
         await store.aclose()
         outer.cancel_scope.cancel()
 
@@ -261,8 +272,8 @@ async def test_a_resumed_turn_keeps_its_branch_and_call_ids(store, cfg):
         await run_turn(turn, store, cfg, Scripted(["arch__who", "arch__find"], crash_on_reply=2),
                        EventBus(), Token(turn["id"]), reg, None)
     assert arch.who_runs == 1
-    assert (await turns.sweep(store, registry=reg))["resumable"] == 1
-
+    assert (await turns.sweep(store, registry=reg))["interrupted"] == 1
+    await turns.continue_turn(store, cid, turn["id"], reg)     # the user's Continue
     again = await turns.claim(store, "w2")
     assert again is not None and again["id"] == turn["id"]
     backend = Scripted(["arch__who", "arch__find"])

@@ -5,10 +5,14 @@ working), `system:guard` (Bastet, the guard: she answers her, guard/talk.py),
 address or its token's name, reaches the user).
 
 `to` takes several, comma separated. The agent's words: `me` (the sender's own conversation),
-`parent` (the conversation that started a sub-agent), `team`, `all`, `user`, `bastet`,
+`parent` (the conversation that started a sub-agent), `team` (the sender's own
+sub-agents), `all`, `user`, `bastet`,
 a conversation id, the name of a sub-agent or mission, `run:<id>` (a Routine's run) or
 `routine:<name>` (its newest run with a conversation). `team` and `all` are expanded
-into recipients when the message is sent, the sender left out."""
+into recipients when the message is sent, the sender left out.
+
+A sub-agent writes up and down its own chain only: to itself, its parent and its own
+sub-agents (`_reach`); the user and Bastet hear from it through its parent."""
 from __future__ import annotations
 
 import sqlite3
@@ -46,6 +50,20 @@ def _locked(c: sqlite3.Connection, cid: str, sender: str) -> None:
         raise Refused(why)
 
 
+REACH = ('A sub-agent writes to "parent", its own sub-agents (by name, or "team" for '
+         'all of them) and "me".')
+
+
+def _reach(c: sqlite3.Connection, cid: str, me: sqlite3.Row | None) -> None:
+    """Refused: sub-agent `me` writing to a conversation other than itself, its parent
+    and its own sub-agents."""
+    if me is None or not me["agent_of"] or cid in (me["id"], me["agent_of"]):
+        return
+    if c.execute("SELECT 1 FROM conversations WHERE id=? AND agent_of=?",
+                 (cid, me["id"])).fetchone() is None:
+        raise Refused(REACH)
+
+
 def _working(c: sqlite3.Connection) -> list[str]:
     """Every conversation with a live turn or a running job, and every active mission;
     nothing locked."""
@@ -58,16 +76,12 @@ def _working(c: sqlite3.Connection) -> list[str]:
 
 
 def _by_name(c: sqlite3.Connection, name: str, me: sqlite3.Row | None) -> str | None:
-    """A sub-agent of the sender, a sibling, or a mission, by name (any case)."""
-    if me is not None:
-        family = [me["id"]] + ([me["agent_of"]] if me["agent_of"] else [])
-        marks = ",".join("?" * len(family))
-        r = c.execute(f"SELECT id FROM conversations WHERE agent_of IN ({marks}) AND "
-                      "lower(agent_name)=lower(?) ORDER BY created_at DESC",
-                      (*family, name)).fetchone()
-        if r:
-            return r[0]
-    r = c.execute("SELECT conversation_id FROM missions WHERE lower(name)=lower(?)",
+    """A sub-agent of the sender's own, or a mission, by name."""
+    if me is not None and (r := c.execute(
+            "SELECT id FROM conversations WHERE agent_of=? AND agent_name=?",
+            (me["id"], name)).fetchone()):
+        return r[0]
+    r = c.execute("SELECT conversation_id FROM missions WHERE name=?",
                   (name,)).fetchone()
     return r[0] if r else None
 
@@ -99,6 +113,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
     out: list[tuple[str, str | None]] = []
 
     def add(cid: str) -> None:
+        _reach(c, cid, me)
         _locked(c, cid, sender)
         if f"agent:{cid}" != sender and (f"agent:{cid}", cid) not in out:
             out.append((f"agent:{cid}", cid))
@@ -116,16 +131,20 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
                 raise ValueError("`parent` is for a sub-agent: this conversation has none")
             addr = f"agent:{me['agent_of']}"
         elif addr == "team":
-            addr = f"team:{me['agent_of'] or me['id']}"
-        elif addr.casefold() in GUARD_NAMES and sender.startswith("agent:"):
+            addr = f"team:{me['id']}"
+        elif addr in GUARD_NAMES and sender.startswith("agent:"):
             addr = GUARD                 # she talks to Bastet; anyone else's reply is the user's
         elif addr.startswith("system:") or c.execute(
                 "SELECT 1 FROM intercom_tokens WHERE name=?", (addr,)).fetchone():
             addr = "user"
         if addr in ("user", GUARD):
+            if me is not None and me["agent_of"]:
+                raise Refused(REACH)
             if (addr, None) not in out:
                 out.append((addr, None))
         elif addr == "all":
+            if me is not None and me["agent_of"]:
+                raise Refused(REACH)
             for cid in _working(c):
                 add(cid)
         elif addr.startswith("team:"):
@@ -142,6 +161,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
                     if addr.startswith("agent:"):
                         raise KeyError(addr[6:])
                     raise ValueError(f"{addr!r} is not an address")
+            _reach(c, cid, me)
             _locked(c, cid, sender)
             addr = f"agent:{cid}"
             # to yourself is a reminder: the sender is not left out here

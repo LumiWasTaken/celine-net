@@ -9,6 +9,7 @@ import { del, json, post, request } from './api'
 import { LOCALE } from './format'
 import type { Her } from './her'
 import type { ServerEvent } from './bus'
+import type { FormField } from '../ui'
 
 const enc = encodeURIComponent
 
@@ -84,6 +85,10 @@ export type ProviderModel = ModelConfig & {
   state: ModelState
   /** the context the server says it runs with; turns budget with it over `context` */
   server_context: number | null
+  /** the caps the server states; its tools and vision count over `caps`. null when it states none */
+  server_caps: Cap[] | null
+  /** its caps now: the server's tools and vision where it states them, else the saved ones */
+  caps_now: Cap[]
 }
 
 export type ProviderView = {
@@ -140,28 +145,8 @@ export type SkillView = {
 }
 
 /* ── general and sources: rendered from a field schema ── */
-export type FieldSchema = {
-  key: string
-  label: string
-  type: 'bool' | 'choice' | 'number' | 'duration' | 'text'
-  help?: string
-  default?: unknown
-  choices?: [string, string][]
-  unit?: string | null
-  min?: number | null
-  max?: number | null
-  where?: 'state' | 'config'
-  editable?: boolean
-  /** on the Advanced page (general settings) */
-  advanced?: boolean
-  /** an Advanced field's skill, by its label: a section of its own */
-  group?: string
-  /** a text of several lines: a text box */
-  long?: boolean
-}
-
 type EmailView = {
-  fields: FieldSchema[]
+  fields: FormField[]
   email: Record<string, unknown>
   password: { state: 'set' | 'not set'; set_at: string | null }
   version: string
@@ -169,11 +154,12 @@ type EmailView = {
 
 type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 
-type AskKind = 'vault' | 'gate' | 'her' | 'share'
+type AskKind = 'vault' | 'gate' | 'her' | 'share' | 'settings' | 'model'
 
 /** one request waiting for you (server/celine/approvals.py): `vault` a tap, `gate` a
-    tool Bastet asks you about, `her` an edit of herself, `share` a public share; every
-    word is the server's, built from fixed sentences and the call's own data */
+    tool Bastet asks you about, `her` an edit of herself, `share` a public share,
+    `settings` a change of Settings, `model` a sub-agent on a cloud model; every word is
+    the server's, built from fixed sentences and the call's own data */
 export type VaultAsk = {
   id: string
   kind: AskKind
@@ -185,6 +171,17 @@ export type VaultAsk = {
   read: string | null
   /** null: it waits for you (your own turn), until you answer or Stop */
   expires_in: number | null
+  /** where its conversation lives (server/celine/homes.py), and the link that opens it */
+  home: Home | null
+  link: string | null
+}
+
+export type Home = 'her' | 'missions' | 'routines'
+
+/** GET /approvals: what waits, and how many wait in a conversation that is there */
+export type Asks = {
+  approvals: VaultAsk[]
+  count: number
 }
 
 /** a request as its chat shows it, after the message that made the call (the snapshot's
@@ -198,10 +195,14 @@ export type ChatApproval = {
   line: string
   tool_call_id: string | null
   message_id: string | null
+  /** settings: each field's label, before and after (a secret: its state) */
+  changes?: { label: string; before?: string; after: string }[]
+  /** settings: her reason, in her words */
+  why?: string
 }
 
 type VaultView = {
-  fields: FieldSchema[]
+  fields: FormField[]
   vault: Record<string, unknown>
   client_secret: SecretState
   /** the master password is stored nowhere: this says whether it was typed since the
@@ -254,26 +255,43 @@ export type Feature = {
   off_when: string
   /** the onboarding's setup form for it, or "" */
   setup: string
-  /** the onboarding's card: "detect" when the service answered or has an address and did
-      not, "always" (shares, the guard, routines, the connectors), "" never (email, vault: the Later
-      card and Settings) */
-  card: '' | 'detect' | 'always'
+  /** its form at /api/forms/<id> (a plugin's settings.toml), or "": its Settings page and its card's body */
+  form: string
+  /** the onboarding gives it a setup step while it is on (a form, or a connection) */
+  step: boolean
+  /** its tier (FeaturesView `tiers`): the core has no feature, only rows */
+  tier: 'base' | 'user'
   /** the archives it fills (Discord, WhatsApp: its source id) */
   kbs: string[]
-  /** the feature of that archive ("messages"): its card offers the switch and the first import */
+  /** the feature of that archive ("messages"): its step offers the switch and the first import */
   archive: string
   /** what switching it on asks first (shares), or "" */
   warn: string
+  /** on only while this feature is on: off and greyed while that switch is off */
+  after: string
+  /** the onboarding step it shares with the rest of its group, that step's title and its
+      sub-heading there; "" for a step of its own */
+  group: string
+  group_label: string
+  choice: string
   /** what the probe found; "none": nothing to detect */
   state: FeatureState
   detail: string
+  /** its switch cannot be on now (missing or unset, but a plugin waiting for its own form) */
+  blocks: boolean
   /** the address the probe found the service at while none is saved: the form prefills it */
   url?: string
+  /** the box answers but refuses the app's key: the form shows the key hash to put there */
+  key?: boolean
 }
-type Probe = { state: FeatureState; detail: string; url?: string }
+type Probe = { state: FeatureState; detail: string; blocks: boolean; url?: string }
 export type FeaturesView = {
   features: Record<string, boolean>
+  /** the catalog in the server's order: by tier, a group together */
   catalog: Feature[]
+  /** the tiers in order, each with a row; the core's rows (`core`) have no switch */
+  tiers: { id: 'core' | 'base' | 'user'; label: string }[]
+  core: { id: string; label: string; about: string }[]
   saved: boolean
   /** the onboarding finished */
   done: boolean
@@ -285,6 +303,7 @@ export const STATE_TONE: Record<FeatureState, 'ok' | 'error' | 'muted' | null> =
 /* ── Bastet's rules and her services ── */
 type GuardRules = { chain: { provider: string; model: string } & Record<string, unknown> } & Record<string, unknown>
 type ServiceView = { url: string }
+type AddressView = { origin: string; version: string }
 /** `keys`: the sha256 of each box's key, what its key.hash file holds */
 type ServicesView = { services: Record<string, ServiceView>; keys: Record<string, { hash: string }>; version: string }
 
@@ -329,6 +348,11 @@ export const settingsApi = {
   guardRules: () => request<GuardRules>('/guard/rules'),
   putGuardRules: (rules: Partial<GuardRules>) => request<GuardRules>('/guard/rules', json('PUT', rules)),
 
+  /** the app's own address: where the setup or the first login happened, "" while none */
+  address: () => request<AddressView>('/address'),
+  putAddress: (version: string, origin: string) =>
+    request<AddressView>('/address', { ...json('PUT', { origin }), headers: { 'If-Match': version } }),
+
   /** its services (the shellbox, its browser, SearXNG): their addresses and the boxes' key hashes */
   services: () => request<ServicesView>('/services'),
   /** whole object: every service's url */
@@ -342,8 +366,8 @@ export const settingsApi = {
   putTool: (target: string, value: ToolDefault | null) =>
     request<{ skills: SkillView[] }>(`/tool-defaults/${enc(target)}`, json('PUT', { default: value })),
 
-  /** `saved`: the general settings were saved at least once */
-  general: () => request<{ fields: FieldSchema[]; general: Record<string, unknown>; version: string; saved: boolean }>('/settings'),
+  /** `general`: what was saved, a key not there is its field's `default`; `saved`: saved at least once */
+  general: () => request<{ fields: FormField[]; general: Record<string, unknown>; version: string; saved: boolean }>('/settings'),
   /** the whole object; a key left out goes back to its default */
   putGeneral: (general: Record<string, unknown>) =>
     request<{ general: Record<string, unknown> }>('/settings', json('PUT', { general })),
@@ -364,6 +388,7 @@ export const settingsApi = {
   unlockVault: (master_password: string) =>
     request<VaultView>('/vault/unlock', json('POST', { master_password })),
   lockVault: () => post<VaultView>('/vault/lock'),
+  approvals: () => request<Asks>('/approvals'),
   /** POST /approvals/{id}/answer: the answer to one request, from Settings or its chat */
   answerApproval: (id: string, ok: boolean) =>
     request<{ approvals: VaultAsk[] }>(`/approvals/${enc(id)}/answer`, json('POST', { ok })),
@@ -414,9 +439,9 @@ export const SKILL_WORD: Record<SkillView['status'], string | null> = {
   up: null, starting: null, down: LINK.down, dead: 'Stopped', unset: LINK.unset, unconnected: LINK.down,
 }
 
-/* Settings → Tools and a conversation's panel group skills the same way: On, Needs setup
+/* Settings → Tools and a conversation's panel group skills the same way: On, Not set up
    (shown off until it works), Off */
-export const TOOL_GROUPS = [['on', 'On'], ['setup', 'Needs setup'], ['off', 'Off']] as const
+export const TOOL_GROUPS = [['on', 'On'], ['setup', 'Not set up'], ['off', 'Off']] as const
 export const toolGroup = (status: SkillView['status'], anyOn: boolean) =>
   SKILL_WORD[status] ? 'setup' : anyOn ? 'on' : 'off'
 

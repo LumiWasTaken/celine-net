@@ -4,7 +4,7 @@
   position: relative; flex: none; display: inline-grid; place-items: center;
   width: var(--face-md); height: var(--face-md); border-radius: var(--r-full);
   background: var(--face-bg); color: var(--face-fg); user-select: none;
-  font-family: var(--font-sans); font-weight: var(--fw-medium); font-size: var(--t-lg); line-height: 1;
+  font-family: var(--font-sans); font-weight: var(--fw-medium); font-size: var(--t-lg); line-height: var(--lh-ui);
 }
 .face--sm { width: var(--face-sm); height: var(--face-sm); font-size: var(--t-md); }
 .face--lg { width: var(--face-lg); height: var(--face-lg); font-size: var(--t-2xl); }
@@ -17,19 +17,3 @@
   content: ''; position: absolute; inset: -4px; border-radius: inherit; pointer-events: none;
   box-shadow: 0 0 0 2px var(--face-fg); animation: pulse var(--dur-pulse) linear infinite;
 }
-.face--open { cursor: pointer; }
-.face--open:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
-
-
-/* the card a face opens */
-.face-card {
-  position: fixed; z-index: var(--z-menu); display: grid; justify-items: center; gap: var(--s-1);
-  min-width: 12rem; max-width: 18rem; padding: var(--s-4); border-radius: var(--r-lg);
-  background: var(--surface-2); box-shadow: var(--e-float); text-align: center; outline: none;
-  animation: grow var(--dur) var(--ease);
-}
-.face-card__face { border-radius: var(--r-full); cursor: zoom-in; }
-.face-card__face:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
-.face-card__name { margin-top: var(--s-2); font-size: var(--t-lg); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
-.face-card__line { font-size: var(--t-xs); line-height: var(--lh-micro); color: var(--text-muted); }
-.face-card__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin-top: var(--s-3); }

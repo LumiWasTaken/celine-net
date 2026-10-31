@@ -180,11 +180,25 @@ async def test_aged_results_keep_cited_lines_and_a_full_window_warns(store, cfg)
     texts = paired(built.messages)
     stubs = [t for t in texts if t.startswith(compact.STUB_HEAD)]
     assert any("Lines you cited, kept whole:\n[wa:1003]" in t for t in stubs), stubs[0]
-    assert "Context: about" in built.messages[0]["content"] or built.estimate <= 0.6 * 20_000
-    tight = context.Policy(age_at=0.99, compact_at=0.99, warn_at=0.10)
-    built = await context.build(store, cfg, b, cid, system="sys", tools=[], policy=tight)
-    assert "Context: about" in built.messages[0]["content"]
-    assert built.messages[0]["content"].endswith("to your notebook now.")
+    assert built.messages[0]["content"] == "sys", "the system prompt as given, no warning"
+
+
+async def test_a_completion_past_its_time_is_a_failure_never_the_part_so_far():
+    import anyio
+
+    from celine.backends.base import BackendError, TextDelta
+
+    class Slow:
+        model = "slow-model"
+
+        async def stream(self, messages, tools):
+            yield TextDelta("half a ")
+            await anyio.Event().wait()           # never ends: the limit does
+            yield TextDelta("never")
+    asked = [{"role": "user", "content": "go"}]
+    assert await compact.complete(Slow(), asked, 0) is None
+    with pytest.raises(BackendError, match="slow-model did not finish its reply within 0"):
+        await compact.complete(Slow(), asked, 0, errors=True)
 
 
 async def test_a_chat_past_history_messages_keeps_the_last_ones(store, cfg):
@@ -198,3 +212,25 @@ async def test_a_chat_past_history_messages_keeps_the_last_ones(store, cfg):
     built = await context.build(store, cfg, Model(window=100_000), cid, system="s", tools=[])
     asked = [m["content"] for m in built.messages if m["role"] == "user"]
     assert "question 7" in asked[0] and "question 6" not in json.dumps(built.messages)
+
+
+async def test_a_background_completion_does_not_count_its_wait_in_the_queue():
+    """complete's limit runs while the model works on the request: a queued backend's
+    wait for its slot (backends/llm.paused) holds it, as it holds a turn's clock."""
+    import math
+    from celine.backends.base import Done, TextDelta
+    from celine.backends.llm import TOOL_CLOCKS, paused
+    seen = []
+
+    class Queued:
+        model = "m"
+
+        async def stream(self, messages, tools):
+            with paused(None):                       # waiting for the slot
+                seen.append([c.deadline for c in TOOL_CLOCKS.get()])
+            seen.append([c.deadline for c in TOOL_CLOCKS.get()])
+            yield TextDelta("a title")
+            yield Done(reason="stop")
+    assert await compact.complete(Queued(), [], 30) == "a title"
+    assert seen[0] == [math.inf], "its limit holds while it waits"
+    assert seen[1][0] != math.inf, "and runs again once the model works"

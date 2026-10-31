@@ -17,6 +17,7 @@ import { conversationApi, type Message, type Siblings, type ToolCall, type Turn 
 import { chatApi } from '../lib/chat'
 import { errorText } from '../lib/format'
 import { useNav } from '../lib/nav'
+import { KeepPlace } from '../lib/useStickToBottom'
 import { ConfirmDialog, Drawer, IconButton, InlineError, Thoughts, useCopied, type MenuItem } from '../ui'
 import { ToolGroup } from './ToolRow'
 import { WhatSheSaw } from './WhatSheSaw'
@@ -65,6 +66,8 @@ export function useMessageActions(
   const [copied, copyIt] = useCopied()
   // Activity or Thoughts: with a SideHost one at a time across the page, else this message's own
   const host = useContext(SideHost)
+  // a version or Regenerate keeps this message where it is on screen
+  const keep = useContext(KeepPlace)
   const [own, setOwn] = useState<Panel | null>(null)
   const panel: Panel | null = !host ? own
     : host.active === `${message.id}:thoughts` ? 'thoughts' : host.active === `${message.id}:activity` ? 'activity' : null
@@ -97,7 +100,7 @@ export function useMessageActions(
 
   const go = (dir: -1 | 1) => {
     const next = sib?.siblings[sib.index + dir]
-    if (next && !running) tryIt(() => conversationApi.version(conversationId, next.id))
+    if (next && !running) { keep(message.id); tryIt(() => conversationApi.version(conversationId, next.id)) }
   }
   const copy = () => copyIt(message.content)
   const branch = () => tryIt(async () => {
@@ -111,11 +114,11 @@ export function useMessageActions(
   // the server makes a new version beside a message under another; its first message (a
   // chat it started) has none to answer
   const regen = hers && !closed && !running && message.parent_id !== null
-  const regenerate = () => tryIt(() => conversationApi.retry(conversationId, message.id))
+  const regenerate = () => { keep(message.id); tryIt(() => conversationApi.retry(conversationId, message.id)) }
   // a turn that stopped or was cut off picks up where it ended
   const canContinue = hers && !closed && last && !running && !!turn?.continuable?.ok
   const lovable = hers && !!message.content.trim()
-  const work = calls.filter(c => c.name !== 'skills__load' && c.name !== 'skills__read_guide').length > 0 ? calls : []
+  const work = calls.filter(c => !c.name.startsWith('skills__')).length > 0 ? calls : []
 
   const all: MenuItem[] = [
     ...(regen ? [{ label: 'Regenerate', icon: RefreshCw, onSelect: regenerate }] : []),
@@ -158,8 +161,8 @@ export function useMessageActions(
         <ToolGroup calls={work} />
       </Side>}
       {confirming && (
-        <ConfirmDialog title="Delete the message?" danger confirmLabel="Delete"
-                       body="It goes for good, with every message after it."
+        <ConfirmDialog title="Delete this message?" danger confirmLabel="Delete"
+                       body="This deletes the message and every message after it. You can't undo this."
                        onClose={() => setConfirming(false)}
                        onConfirm={async () => {
                          await conversationApi.remove(conversationId, message.id)

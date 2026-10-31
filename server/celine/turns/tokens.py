@@ -27,7 +27,7 @@ log = logging.getLogger("celine.tokens")
 RATIO = {"tool": 2.2, "prose": 3.0, "schema": 3.8}
 PER_MESSAGE = 6                  # chat-template overhead per message
 FALLBACK_WINDOW = 32_768
-RESULT_SHARE = 0.30              # one tool result may take this much of the window
+RESULT_SHARE = 0.15              # one tool result takes at most this much of the window
 MARGIN = 0.05                    # estimate error below the exact band
 
 
@@ -92,7 +92,6 @@ _counters: dict[str, Counter] = {}
 _windows: dict[tuple[str, str], tuple[int, int | None]] = {}   # n_ctx, Settings then
 _running: dict[tuple[str, str], int] = {}   # n_ctx of a loaded model, from /props
 _reported: dict[tuple[str, str], int] = {}  # the context its provider's model list states
-_outputs: dict[tuple[str, str], int] = {}   # the most one answer may take, the same list says
 _current = Counter()
 
 
@@ -122,7 +121,6 @@ def reset() -> None:
     _windows.clear()
     _running.clear()
     _reported.clear()
-    _outputs.clear()
     _current = Counter()
 
 
@@ -186,19 +184,6 @@ def reported_windows(base_url: str, windows: dict[str, int]) -> bool:
     return old != windows
 
 
-def reported_outputs(base_url: str, outputs: dict[str, int]) -> None:
-    """The most one answer may take, as one provider's model list states it per model
-    ({model: n}, the router's discovery), replacing what it said before."""
-    base_url = base_url.rstrip("/")
-    for key in [k for k in _outputs if k[0] == base_url]:
-        del _outputs[key]
-    _outputs.update({(base_url, m): n for m, n in outputs.items()})
-
-
-def server_output(base_url: str, model: str) -> int | None:
-    return _outputs.get((base_url.rstrip("/"), model))
-
-
 def running_windows(base_url: str, windows: dict[str, int]) -> None:
     """What the models loaded on one server run with now ({model: n_ctx}, from each
     loaded model's /props, read by every router probe). A model that is not loaded
@@ -238,9 +223,29 @@ def reserve(backend) -> int:
     return max_output(backend) + int(window(backend) * MARGIN)
 
 
-def result_cap(win: int) -> int:
-    """The most one tool result may take, in tokens."""
-    return max(1000, int(win * RESULT_SHARE))
+def result_cap(win: int, cfg=None) -> int:
+    """The most one tool result may take, in tokens: `result_tokens` of context.toml
+    (turns/loads.py, 10,000 by default) or RESULT_SHARE of the live window, the smaller,
+    as coding agents cap theirs (an absolute number, not a share alone)."""
+    from .loads import shares
+    return max(1000, min(int(shares(cfg)["result_tokens"]), int(win * RESULT_SHARE)))
+
+
+def cut_middle(text: str, max_tokens: int, kind: str = "tool"
+               ) -> tuple[str, str, int, int]:
+    """(its head, its tail, tokens shown, tokens total): about max_tokens of `text`, half
+    from its start and half from its end, each cut at a line; the tail empty when it
+    fits whole."""
+    total = estimate(text, kind)
+    if total <= max_tokens:
+        return text, "", total, total
+    half = int(len(text) * max_tokens / total) // 2
+    head, tail = text[:half], text[len(text) - half:]
+    if (nl := head.rfind("\n")) > half // 2:
+        head = head[:nl]
+    if 0 <= (nl := tail.find("\n")) < half // 2:
+        tail = tail[nl + 1:]
+    return head, tail, estimate(head, kind) + estimate(tail, kind), total
 
 
 def cut_to(text: str, max_tokens: int, kind: str = "tool") -> tuple[str, int, int]:

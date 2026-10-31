@@ -1,5 +1,6 @@
-"""The work queue (work.py) and its pause (hold.py): leases, tries, deferral until a
-host is back, and no turn claimed while no chat host answers. Fixed clocks, fake
+"""The work queue (work.py) and its pause (hold.py): leases, one try, deferral until a
+host is back, and none of her turns claimed while no chat host answers (an agent's
+whose own model answers is). Fixed clocks, fake
 servers."""
 from __future__ import annotations
 
@@ -42,7 +43,7 @@ def s(n: float) -> timedelta:
 
 async def _row(store, wid: int) -> dict:
     return await store.read(lambda c: dict(c.execute(
-        "SELECT state, tries, error, lease_worker FROM work WHERE id=?", (wid,)).fetchone()))
+        "SELECT state, error, lease_worker FROM work WHERE id=?", (wid,)).fetchone()))
 
 
 def _gateway(tmp_path, monkeypatch, roles, events=None):
@@ -92,7 +93,7 @@ async def test_a_lease_that_runs_out_puts_the_item_back(store):
     assert (await _row(store, wid))["state"] == "done"
 
 
-async def test_a_real_error_fails_after_three_tries_with_its_reason(store):
+async def test_a_real_error_fails_at_once_with_its_reason(store):
     now = [T0]
     pool = work.Pool(store, clock=lambda: now[0])
 
@@ -100,17 +101,12 @@ async def test_a_real_error_fails_after_three_tries_with_its_reason(store):
         raise RuntimeError("the answer was not JSON")
     pool.handle("x", (), boom)
     wid = await pool.put("x", {})
-    states = []
-    for _ in range(work.MAX_TRIES):
-        item = await work.claim(store, "w", ["x"], now=now[0])
-        states.append(await pool.run_one(item, "w"))
-        assert await work.claim(store, "w", ["x"], now=now[0] + s(1)) is None, "not at once"
-        now[0] += s(work.RETRY_SECONDS)
-    assert states == ["queued", "queued", "failed"]
+    item = await work.claim(store, "w", ["x"], now=now[0])
+    assert await pool.run_one(item, "w") == "failed"
     row = await _row(store, wid)
-    assert (row["state"], row["tries"]) == ("failed", 3)
+    assert row["state"] == "failed"
     assert row["error"] == "RuntimeError: the answer was not JSON"
-    assert await work.claim(store, "w", ["x"], now=now[0]) is None
+    assert await work.claim(store, "w", ["x"], now=now[0] + s(3600)) is None
 
 
 async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
@@ -129,7 +125,6 @@ async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
         wid = await pool.put("title", {"conversation_id": "c1"})
         await until(async_state(store, wid, "deferred"))
         assert ran == [], "no call to a host that is down"
-        assert (await _row(store, wid))["tries"] == 0, "waiting spends no try"
         up["lan"] = True
         await ping()
         await until(async_state(store, wid, "done"))
@@ -177,6 +172,47 @@ async def test_with_no_chat_host_she_pauses_and_resumes_by_herself(
         assert await her_hold(store, llm) is None
         assert [e["hold"] for e in events if e["type"] == "her.hold"][-1] is None
         await until(lambda: _done(store, cid))
+        await d.stop()
+        tg.cancel_scope.cancel()
+
+
+async def test_while_she_is_paused_an_agent_whose_model_answers_runs_and_her_turn_waits(
+        store, tmp_path, monkeypatch):
+    """Her roles' host is down, an agent's own model's host is up: the agent's turn
+    runs, its report to her waits in the queue and lands when her host is back. An
+    agent on her down host waits with her."""
+    from celine.intercom import send
+    from celine.settings import conversations as conv
+    cfg, llm, up, ping = _gateway(tmp_path, monkeypatch, {
+        "chat": {"chain": ["gpu/big"]}, "tasks": {"chain": ["gpu/big"]}}, [])
+    up["lan"] = True
+    await ping()
+    assert await her_hold(store, llm) == "paused"
+    assert llm.router.answering() == {"lan/small"}
+    monkeypatch.setattr(dispatcher_mod, "HOLD_RECHECK", 0.02)
+    d = dispatcher_mod.Dispatcher(store, cfg, EventBus(), FakeBackend, None, llm=llm)
+    her = await conversations.create(store)
+    agent = await conversations.create(store, title="a", agent_of=her, agent_name="a")
+    await conv.apply(store, agent, {"model": "lan/small"})
+    stuck = await conversations.create(store, title="b", agent_of=her, agent_name="b")
+    await conv.apply(store, stuck, {"model": "gpu/big"})
+
+    async def state(cid):
+        return await store.read(lambda c: c.execute(
+            "SELECT state FROM turns WHERE conversation_id=?", (cid,)).fetchone()[0])
+    async with anyio.create_task_group() as tg:
+        await d.start(tg)
+        await user_says(store, agent, "build it")
+        await user_says(store, stuck, "build that")
+        d.notify()
+        await until(lambda: _done(store, agent))
+        assert (await send(store, f"agent:{agent}", f"agent:{her}", "[a, done]"))["turn_id"]
+        d.notify()
+        assert await state(her) == "queued" and await state(stuck) == "queued"
+        up["gpu"] = True
+        await ping()
+        await until(lambda: _done(store, her))
+        await until(lambda: _done(store, stuck))
         await d.stop()
         tg.cancel_scope.cancel()
 
@@ -258,7 +294,7 @@ def _titler(store, by_role):
     return dispatcher_mod.Dispatcher(store, load(), EventBus(), None, None, llm=llm)
 
 
-async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_error(
+async def test_a_title_waits_for_a_host_and_stays_empty_on_an_error(
         store, tmp_path, monkeypatch):
     from celine.backends.base import BackendError, Done, TextDelta
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles={})
@@ -266,23 +302,20 @@ async def test_a_title_waits_for_a_host_and_falls_back_to_the_first_line_on_an_e
     cid = await _exchange(store, 1)
     d = _titler(store, {"small": _Raises(none), "chat": _Raises(none)})
     d.work.clock = lambda: T0
-    wid = await d.work.put("title", {"conversation_id": cid})
+    await d.work.put("title", {"conversation_id": cid})
     item = await work.claim(store, "w", ["title"], now=T0)
     assert await d.work.run_one(item, "w") == "deferred", "no host answered: it waits"
     assert not await conversations.title(store, cid)
-    assert (await _row(store, wid))["tries"] == 0
 
-    d = _titler(store, {"small": _Raises(none),
-                        "chat": FakeBackend([TextDelta(""), Done(reason="stop")])})
+    d = _titler(store, {"small": FakeBackend([TextDelta(""), Done(reason="stop")])})
     await d._title(cid)
-    assert await conversations.title(store, cid) == "where did noor go", \
-        "a model answered with nothing: the first line, not another wait"
+    assert not await conversations.title(store, cid), "a model answered with nothing"
 
     cid = await _exchange(store, 2)
     bad = BackendError("bad request", retryable=False)
-    d = _titler(store, {"small": _Raises(bad), "chat": _Raises(bad)})
+    d = _titler(store, {"small": _Raises(bad)})
     await d._title(cid)
-    assert await conversations.title(store, cid) == "where did noor go"
+    assert not await conversations.title(store, cid), "a failure leaves no title"
 
 
 async def test_her_appraisal_is_a_work_item_and_a_stale_one_makes_no_call(

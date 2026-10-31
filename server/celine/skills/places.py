@@ -42,6 +42,7 @@ PLACES: dict[str, frozenset[str]] = {
     "appearance": frozenset({"chat"}),
     "routines": _WORK,
     "me": _WORK,
+    "settings": _WORK,
     # missions__list everywhere, the rest in a mission (Missions.offered_in)
     "missions": _WORK,
 }

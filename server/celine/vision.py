@@ -17,8 +17,11 @@ waiting for one (the queue's fallback loop waits for a model without end).
 from __future__ import annotations
 
 import base64
+import io
 import re
 from dataclasses import dataclass
+
+from PIL import Image
 
 from . import prompts
 from .backends.base import BackendError, Done, TextDelta
@@ -43,7 +46,6 @@ ID = re.compile(r"e?(\d+)", re.I)
 # bare [x1, y1, x2, y2]; its four numbers follow
 BOX = re.compile(r"bbox_2d|<box>|<\|box_start\|>|(?=\[\s*-?\d)")
 NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
-SAID = 120          # characters of the model's own words kept with a none
 
 
 def box(said: str) -> tuple[int, int, int, int] | None:
@@ -67,20 +69,29 @@ class Unavailable(Exception):
 @dataclass
 class Answer:
     value: str | None   # the id (e14), the box ("x1,y1,x2,y2" on 0 to 1000) or the text; None: none
-    said: str           # the model's own words, at most SAID characters
+    said: str           # the model's own words, as it said them
     model: str          # the model that answered
 
 
-def messages(png: bytes, question: str, answer_as: str) -> list[dict]:
+def media_type(image: bytes) -> str:
+    """The image's type by its bytes (Pillow); image/png for bytes Pillow does not know."""
+    try:
+        with Image.open(io.BytesIO(image)) as im:
+            return Image.MIME.get(im.format or "", "image/png")
+    except Exception:            # a broken file: Pillow raises many kinds
+        return "image/png"
+
+
+def messages(image: bytes, question: str, answer_as: str) -> list[dict]:
     text = f"{prompts.text(__file__, 'vision.md').rstrip()}\n\nQuestion: {question}\n{FORM[answer_as]}"
-    url = f"data:image/png;base64,{base64.b64encode(png).decode()}"
+    url = f"data:{media_type(image)};base64,{base64.b64encode(image).decode()}"
     return [{"role": "user", "content": [{"type": "text", "text": text},
                                          {"type": "image_url", "image_url": {"url": url}}]}]
 
 
-async def ask(llm, png: bytes, question: str, answer_as: str, *, conversation_id: str,
+async def ask(llm, image: bytes, question: str, answer_as: str, *, conversation_id: str,
               turn_id: str, role: str = "screen") -> Answer:
-    """The answer to `question` about the PNG, as `answer_as` (id, box or text), from
+    """The answer to `question` about the image, as `answer_as` (id, box or text), from
     the app's LLM layer (`llm`, None when it is not running), by a model of `role`."""
     if llm is None:
         raise Unavailable("the app's model layer is not running.")
@@ -94,7 +105,7 @@ async def ask(llm, png: bytes, question: str, answer_as: str, *, conversation_id
                   fallback=False)
     parts: list[str] = []
     try:
-        events = qb.stream(messages(png, question, answer_as), [])
+        events = qb.stream(messages(image, question, answer_as), [])
         try:
             async for ev in events:
                 if isinstance(ev, TextDelta):
@@ -104,26 +115,23 @@ async def ask(llm, png: bytes, question: str, answer_as: str, *, conversation_id
         finally:
             await events.aclose()
     except BackendError as e:
-        raise Unavailable(str(e)[:300]) from None
+        raise Unavailable(str(e)) from None
     raw = "".join(parts)
-    said = " ".join(raw.split())
-    word = said.strip(" .*\"'`")
+    word = raw.strip().strip(" .*\"'`")       # read for the id; she gets raw
     if answer_as == "text":
         value = raw if raw.strip() else None        # the words as the model said them
     elif answer_as == "box":
-        value = ",".join(map(str, b)) if (b := box(said)) else None
+        value = ",".join(map(str, b)) if (b := box(raw)) else None
     else:
         m = ID.fullmatch(word)
         value = "e" + m[1] if m else None
-    return Answer(value, said[:SAID], getattr(qb.answered, "model", ""))
+    return Answer(value, raw, getattr(qb.answered, "model", ""))
 
 
 async def describe(llm, data: bytes, conversation_id: str, turn_id: str,
                    question: str | None = None) -> str:
     """An image in words, by the vision role (the shell's and the email's images)."""
     try:
-        # note: vision sends every image as image/png; servers that check the
-        # type would need a PNG conversion first
         got = await ask(llm, data, str(question or "") or
                         "Describe this image, and quote any text in it.",
                         "text", conversation_id=conversation_id, turn_id=turn_id,

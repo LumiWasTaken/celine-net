@@ -131,16 +131,16 @@ async def test_turns_at_once_follows_a_save(store):
         tg.cancel_scope.cancel()
 
 
-async def test_a_reload_keeps_the_shell_wedge_count(store, monkeypatch):
+async def test_a_reload_keeps_what_the_shell_was_told(store, monkeypatch):
     cfg = load()
     app = Services(cfg=cfg, store=store)
     app.registry = build_registry(app)
-    app.registry.skills["shell"].wedges["c1"] = 3
+    app.registry.skills["shell"].told.add(("c1", "k3x9ab"))
     fresh = load()
     fresh.settings.general.update({"max_tool_iterations": 4})
     monkeypatch.setattr(reload.boot, "load", lambda: fresh)
     assert reload.apply(app)
-    assert app.registry.skills["shell"].wedges == {"c1": 3}
+    assert app.registry.skills["shell"].told == {("c1", "k3x9ab")}
 
 
 async def test_a_hand_edit_of_the_features_file_stops_the_runner(store, monkeypatch):

@@ -15,16 +15,14 @@ import {
 import { count, countdown, errorText, nothingMatches } from '../../lib/format'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { connectionState, lostWhen, type Source } from '../../lib/sources'
-import type { FieldSchema } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useNow } from '../../lib/useNow'
 import { useResource, type Resource } from '../../lib/useResource'
 import {
-  Avatar, Button, Checkbox, Chip, ConfirmDialog, Dialog, EmptyState, Field, InlineError, Input, LoadingRow,
-  SearchField, Section, Switch, VirtualList,
+  Avatar, Button, Checkbox, Chip, ConfirmDialog, Dialog, EmptyState, Field, Form, type FormField, InlineError, Input, LoadingRow, SearchField, Section, Switch, VirtualList,
 } from '../../ui'
 import { useConnector } from './Connector'
-import { Page, SchemaForm, StatusDot, TaskLine } from './parts'
+import { Page, StatusDot, TaskLine } from './parts'
 import { Problem, StateLine, StateNotice, ToFix, failedLines, scheduleProblems, useSchedules, useTasks } from './SourcePage'
 import './settings.css'
 
@@ -261,7 +259,7 @@ function Servers({ kid, guilds, subs, first }: {
 
 /* A server's settings, as a schema for the generic form (discord-link's policy.DEFAULTS
    without the channels, which the list above them chooses). */
-const SERVER_OPTIONS: FieldSchema[] = [
+const SERVER_OPTIONS: FormField[] = [
   { key: 'backfill', label: 'Past messages to sync', type: 'choice',
     choices: [['none', 'None'], ['30d', 'Last 30 days'], ['all', 'All']] },
   { key: 'include_attachments', label: 'Sync attachments', type: 'bool' },
@@ -346,8 +344,8 @@ function ChannelsDialog({ kid, guild, on, initial, onClose, onConfirm }: {
                            }} />
             )}
         </div>
-        <SchemaForm schema={SERVER_OPTIONS} values={values as unknown as Record<string, unknown>} disabled={save.busy}
-                    onChange={(k, v) => setValues(s => ({ ...s, [k]: v }))} />
+        <Form fields={SERVER_OPTIONS} values={values as unknown as Record<string, unknown>} disabled={save.busy}
+              onChange={(k, v) => setValues(s => ({ ...s, [k]: v }))} />
         {save.error && <InlineError compact message={save.error} />}
       </div>
     </Dialog>
@@ -386,7 +384,7 @@ export function LoginProblem({ kid, st, onChanged }: { kid: string; st: Connecto
              detail={st.connection.error ?? undefined}
              action={online ? { label: failed ? 'Get a new code' : 'Log in with QR code', icon: QrCode, onClick: () => void start.run(), busy: start.busy } : undefined}>
       <div className="muted">Logging in with a user account may break Discord's terms; use it at your own risk.</div>
-      {failed && <InlineError compact message={session.error ?? (session.state === 'expired' ? 'The code expired before you scanned it.' : 'Discord ended the login without a reason.')} />}
+      {failed && <InlineError compact message={session.error ?? (session.state === 'expired' ? 'The code expired before you scanned it.' : 'Discord ended the login. Get a new code and try again.')} />}
       {start.error && <InlineError compact message={start.error} />}
     </Problem>
   )

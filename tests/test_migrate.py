@@ -17,13 +17,13 @@ EXPECTED_TABLES = {
     "identities", "identity_members", "terminals",
     "missions", "messages_fts", "artifacts", "artifact_versions",
     "artifact_errors", "artifact_data", "shares", "intercom", "intercom_deliveries",
-    "message_context", "media_batches", "context_loaded", "context_state", "runs", "moods",
+    "message_context", "media_batches", "context_state", "runs", "moods",
     "guard_decisions", "her", "text_versions", "compactions", "freezes", "guard_passes", "work",
-    "tabs", "bugreports", "plans",
+    "tabs", "bugreports", "plans", "push_subscriptions",
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 5
+LATEST = 19
 
 
 def _version(db) -> int:
@@ -51,8 +51,8 @@ def test_a_fresh_database_gets_every_table_and_its_words_are_searchable(tmp_path
     assert LOG_TABLES <= logs and not (EXPECTED_TABLES | NOTEBOOK_TABLES) & logs
     notes = _tables(notebook_db(db))
     assert NOTEBOOK_TABLES <= notes and not (EXPECTED_TABLES | LOG_TABLES) & notes
-    for f in (log_path(db), notebook_db(db)):
-        assert sqlite3.connect(f).execute("PRAGMA user_version").fetchone() == (1,)
+    for f, n in ((log_path(db), 2), (notebook_db(db), 1)):
+        assert sqlite3.connect(f).execute("PRAGMA user_version").fetchone() == (n,)
     c = sqlite3.connect(db)
     c.execute("INSERT INTO conversations(id, title, next_seq, created_at, updated_at) "
               "VALUES('c1', 't', 1, 'x', 'x')")
@@ -127,6 +127,7 @@ def test_a_run_has_one_try(tmp_path):
     c = sqlite3.connect(db)
     cols = {r[1] for r in c.execute("PRAGMA table_info(runs)")}
     assert not cols & {"attempt", "attempts", "not_before"}
+    assert "tries" not in {r[1] for r in c.execute("PRAGMA table_info(work)")}
     assert {"conversation_id", "started_at", "finished_at"} <= cols
     c.close()
 
@@ -281,3 +282,139 @@ def test_0005_makes_the_bridged_chats_plain_chats_and_drops_what_only_the_bridge
     assert json.loads(c.execute("SELECT items FROM media_batches").fetchone()[0]) == \
         [{"state": "done"}, {"state": "failed"}]
     c.close()
+
+
+def test_a_python_step_runs_up_with_no_transaction_open_once(tmp_path):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("CREATE TABLE old(a TEXT);\nINSERT INTO old VALUES ('x');\n")
+    (d / "0002_move.py").write_text(
+        "def up(conn, db_path):\n"
+        "    assert not conn.in_transaction\n"
+        "    other = db_path.with_name('other.db')\n"
+        "    conn.execute('ATTACH ? AS o', (str(other),))\n"
+        "    if conn.execute(\"SELECT 1 FROM main.sqlite_master WHERE name = 'old'\").fetchone():\n"
+        "        conn.execute('BEGIN')\n"
+        "        conn.execute('CREATE TABLE IF NOT EXISTS o.moved(a TEXT)')\n"
+        "        conn.execute('INSERT INTO o.moved SELECT a FROM main.old')\n"
+        "        conn.execute('DROP TABLE main.old')\n"
+        "        conn.execute('COMMIT')\n"
+        "    conn.execute('DETACH o')\n")
+    db = tmp_path / "x.db"
+    assert migrate(db, d) == 2 and _version(db) == 2
+    assert "old" not in _tables(db)
+    c = sqlite3.connect(tmp_path / "other.db")
+    assert c.execute("SELECT a FROM moved").fetchall() == [("x",)]
+    c.close()
+    # a crash between its commit and the bump runs it again: nothing moves twice
+    c = sqlite3.connect(db)
+    c.execute("PRAGMA user_version = 1")
+    c.commit()
+    c.close()
+    assert migrate(db, d) == 2 and _version(db) == 2
+    c = sqlite3.connect(tmp_path / "other.db")
+    assert c.execute("SELECT count(*) FROM moved").fetchone() == (1,)
+    c.close()
+
+
+def test_0006_gives_each_call_with_its_own_files_a_files_block(tmp_path, monkeypatch):
+    """Old rows read like new ones: a shell look's files leave display.attachments for
+    the block; a browser shot its display names stays out of it; a call without files
+    of its own is not touched. Run twice, the same."""
+    import json
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.glob("000[1-5]_*.sql")):
+        shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate(db) == 5
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO conversations(id, kind, created_at, updated_at) "
+              "VALUES('c', 'chat', 'x', 'x')")
+    c.execute("INSERT INTO messages(id, conversation_id, role, created_at) "
+              "VALUES('m', 'c', 'assistant', 'x')")
+    look = {"paths": ["a.png"], "attachments": [{"id": "a1", "filename": "a.png"}]}
+    shot = {"tab": "main", "shot": {"id": "a2"}}
+    for cid, name, display in (("look", "shell__look", look), ("shot", "browser__look", shot),
+                               ("send", "shell__send", {"attachments": [{"id": "a3"}]})):
+        c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state, display) "
+                  "VALUES(?, 'm', ?, '{}', 'ok', ?)", (cid, name, json.dumps(display)))
+    c.execute("INSERT INTO blobs(sha256, bytes, media_type, width, height, created_at) "
+              "VALUES('s1', 5, 'image/png', 4, 3, 'x')")
+    for aid, call, mid in (("a1", "look", None), ("a2", "shot", None), ("a3", None, "m")):
+        c.execute("INSERT INTO attachments(id, message_id, tool_call_id, sha256, filename, "
+                  "kind, state, created_at) VALUES(?, ?, ?, 's1', 'a.png', 'image', 'ready', "
+                  "'x')", (aid, mid, call))
+    c.commit()
+    c.close()
+    shutil.copy(next(MIGRATIONS_DIR.glob("0006_*.py")), d)
+    for _ in range(2):
+        assert migrate(db) == 6
+        c = sqlite3.connect(db)
+        shown = {r[0]: json.loads(r[1]) for r in c.execute("SELECT id, display FROM tool_calls")}
+        c.execute("PRAGMA user_version = 5")
+        c.commit()
+        c.close()
+        assert shown["look"] == {"paths": ["a.png"], "blocks": [{
+            "type": "files", "where": "under", "files": [{
+                "id": "a1", "filename": "a.png", "kind": "image", "sha256": "s1", "bytes": 5,
+                "media_type": "image/png", "width": 4, "height": 3}]}]}
+        assert shown["shot"] == shot
+        assert shown["send"] == {"attachments": [{"id": "a3"}]}
+
+
+def test_0015_takes_keep_thinking_out_of_the_saved_models_once(tmp_path):
+    import importlib.util
+    import tomllib
+    spec = importlib.util.spec_from_file_location(
+        "m0015", MIGRATIONS_DIR / "0015_no_keep_thinking.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    db = tmp_path / "celine.db"
+    step.up(None, db)                                  # no settings: nothing to do
+    assert not (tmp_path / "settings").exists()
+    path = tmp_path / "settings" / "providers.toml"
+    path.parent.mkdir()
+    path.write_text('[providers.gpu]\nkind = "llama-server"\n\n'
+                    '[providers.gpu.models.big]\ncontext = 32768\nkeep_thinking = 1\n\n'
+                    '[providers.gpu.models.small]\ncontext = 8192\n')
+    step.up(None, db)
+    got = tomllib.loads(path.read_text())
+    assert got["providers"]["gpu"]["models"] == {"big": {"context": 32768},
+                                                 "small": {"context": 8192}}
+    before = path.read_bytes()
+    step.up(None, db)
+    assert path.read_bytes() == before, "run again, it writes nothing"
+    assert not list(path.parent.glob("*.tmp")), "written atomically, no temp file left"
+    migrate_all(db)
+    assert path.read_bytes() == before, "the runner applies it to a fresh database too"
+
+
+def test_her_stored_persona_gets_the_lines_the_shipped_one_has():
+    import importlib.util
+
+    from celine.her import BASE, base_persona
+    spec = importlib.util.spec_from_file_location(
+        "m0017", MIGRATIONS_DIR / "0017_persona_lines.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    shipped = (BASE / "persona.md").read_text()
+    old = shipped.replace(step.ADDED, "").rstrip() + step.DUPLICATE + "\n\n" + \
+        (BASE / "owner.md").read_text()
+    assert step.changed(old) == base_persona()
+    assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
+
+
+def test_her_stored_persona_gets_the_training_line_once():
+    import importlib.util
+
+    from celine.her import base_persona
+    spec = importlib.util.spec_from_file_location(
+        "m0019", MIGRATIONS_DIR / "0019_persona_training_line.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    old = base_persona().replace(step.ADDED, "")
+    assert step.changed(old) == base_persona()
+    assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
+    assert step.changed("my own persona") == "my own persona"

@@ -4,7 +4,6 @@ description: {{username}}'s Documents, the drawer you share with them. Files of 
   in folders: stories, exports, notes, PDFs, books, images, audio, anything they or you
   put there. Use it when one of those files may answer a question, and to put a text
   file there for them.
-words: document, documents, pdf
 ---
 Documents is {{username}}'s drawer, and theirs to share with you. It holds folders and
 files of any kind. Find your way with `user_documents__list(folder=…)`: a folder's

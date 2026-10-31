@@ -7,7 +7,7 @@ import sqlite3
 
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER
 from .. import approvals
-from ..guard import store as guard_rows
+from ..guard import mark, store as guard_rows
 from ..plans import store as plans
 from ..skills import words
 from ..turns import compactions as comps
@@ -21,6 +21,18 @@ from ..core.event_types import (
     MESSAGE_REOPENED,
     TURN_STATE,
 )
+
+
+def _started_by(c: sqlite3.Connection, parent: str | None) -> dict | None:
+    """A sub-agent's parent as its head names it: {name, link}; None for any other."""
+    if not parent:
+        return None
+    r = c.execute("SELECT agent_name, title FROM conversations WHERE id=?",
+                  (parent,)).fetchone()
+    if r is None:
+        return None
+    from .. import homes
+    return {"name": r["agent_name"] or r["title"] or "", "link": homes.of(c, parent)["link"]}
 
 
 async def snapshot(store, cid: str) -> dict:
@@ -37,7 +49,7 @@ async def snapshot(store, cid: str) -> dict:
                             "conversation_id=?", (cid,)).fetchone()
         from ..intercom.store import source_of
         from ..sub_agents.skill import agents_of
-        agents = agents_of(c, cid)
+        agents = agents_of(c, cid, own=store.tool_words)
         messages = tree.path(c, cid)
         # the live turns in the order they run (the first is the one running or next);
         # the snapshot's turn is the first, else the newest
@@ -49,6 +61,7 @@ async def snapshot(store, cid: str) -> dict:
             f"SELECT {cols} ORDER BY t.created_at DESC, t.rowid DESC LIMIT 1",
             (cid,)).fetchone()
         calls: dict[str, list[dict]] = {}
+        runs: dict[str, list[dict]] = {}       # by turn: its runs (skills/words.py)
         for m in messages:
             if m["role"] == "assistant":         # "Love this" (conversations/samples.py)
                 m["sample"] = c.execute("SELECT 1 FROM kv WHERE k=?",
@@ -60,7 +73,9 @@ async def snapshot(store, cid: str) -> dict:
                 "LEFT JOIN messages r ON r.id = tc.result_message_id "
                 "WHERE tc.message_id=? ORDER BY tc.rowid", (m["id"],)).fetchall()
             if rows:
-                calls[m["id"]] = [_call(r) for r in rows]
+                calls[m["id"]] = [_call(r, store.tool_words) for r in rows]
+                if m.get("turn_id") and m["turn_id"] not in runs:
+                    runs[m["turn_id"]] = words.runs_of_turn(c, m["turn_id"], store.tool_words)
         # a call still at work (here or as a job) shows its latest progress line
         working = {tc["id"]: tc for tcs in calls.values() for tc in tcs
                    if tc["state"] in ("pending", "running", "detached")}
@@ -105,10 +120,11 @@ async def snapshot(store, cid: str) -> dict:
                                  "mission": dict(mission) if mission else None,
                                  "agents": agents,
                                  # the app path that shows it (intercom source_of)
-                                 "link": (source_of(c, f"agent:{cid}") or {}).get("link")},
+                                 "link": (source_of(c, f"agent:{cid}") or {}).get("link"),
+                                 "started_by": _started_by(c, conv["agent_of"])},
                 "messages": messages,
-                "tool_calls": calls, "compactions": compactions,
-                "turn": tdict, "switched": switched, "image_notices": image_notices,
+                "tool_calls": calls, "runs": runs, "compactions": compactions,
+                "turn": tdict, "unanswered": tree.unanswered(c, cid), "switched": switched, "image_notices": image_notices,
                 "guard": guard, "plan": plans.get_sync(c, cid),
                 "approvals": [a for a in approvals.open_in(c, cid)
                               if a["message_id"] in on_path],
@@ -116,6 +132,14 @@ async def snapshot(store, cid: str) -> dict:
                 "seq": int(conv["seq"])}
 
     return await store.read(fn)
+
+def for_client(snap: dict, settings) -> dict:
+    """A snapshot as a client gets it: its sub-agents' models as labels
+    (sub_agents/skill.labelled)."""
+    from ..sub_agents.skill import labelled
+    conv = snap["conversation"]
+    return {**snap, "conversation": {**conv, "agents": labelled(settings, conv["agents"])}}
+
 
 async def resume(store, cid: str, after_seq: int) -> dict:
     """Snapshot-or-replay, in ONE deferred read transaction."""
@@ -199,14 +223,14 @@ def continuable(c: sqlite3.Connection, cid: str, turn) -> dict:
         return {"ok": False, "label": label, "reason": reason}
 
     if state in LIVE:
-        return no("The answer is still being written.")
+        return no("The reply is still being written.")
     latest = c.execute("SELECT id FROM turns WHERE conversation_id=? "
                        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
                        (cid,)).fetchone()
     if latest is None or latest["id"] != turn["id"]:
         return no("A newer turn follows this one.")
     if state == "done" and not cut:
-        return no("The answer is complete. Regenerate the answer, or write a new "
+        return no("The reply is complete. Regenerate it, or write a new "
                   "message.")
     if state == "failed":
         retryable = code in ("backend_retryable", "crash", "wall_clock", "no_model", "busy")
@@ -220,9 +244,9 @@ def continuable(c: sqlite3.Connection, cid: str, turn) -> dict:
     return {"ok": True, "label": label, "reason": None}
 
 
-def _call(r: sqlite3.Row) -> dict:
+def _call(r: sqlite3.Row, own: dict) -> dict:
     """One tool call as the transcript shows it, its row in words (skills/words.py)."""
     display = json.loads(r["display"]) if r["display"] else None
-    return {**dict(r), "display": display,
-            "words": words.words(r["name"], r["arguments"], r["state"], display, r["result"])}
+    return {**dict(r), "display": mark.for_client(display),
+            "words": words.words(r["name"], r["arguments"], r["state"], display, r["result"], own)}
 

@@ -117,7 +117,7 @@ def shown_path(path: Path) -> str:
 # dropped, so the reader's default counts. Each owner keeps the table of its own file
 # (mcp.py, kb/__init__.py, skills/__init__.py, backends/llm.py); boot.py reads them.
 SERVER_KEYS = {             # __main__.py, auth/__init__.py, api/origin.py
-    "host": "str", "port": "int", "login": "str", "public_origin": "str",
+    "host": "str", "port": "int", "login": "str",
     "allowed_hosts": "list", "trusted_proxies": "list", "health_port": "int",
     "metrics_port": "int",
 }
@@ -127,7 +127,6 @@ _TYPES = {"int": "a whole number", "num": "a number", "str": "text", "bool": "tr
 # environment overrides for [server], so a container can bind 0.0.0.0 and turn the login
 # on while config/ stays a read-only copy of the files you run locally
 _SERVER_ENV = {"CELINE_HOST": "host", "CELINE_PORT": "port", "CELINE_LOGIN": "login",
-               "CELINE_PUBLIC_ORIGIN": "public_origin",
                "CELINE_TRUSTED_PROXIES": "trusted_proxies",
                "CELINE_HEALTH_PORT": "health_port",
                "CELINE_METRICS_PORT": "metrics_port"}
@@ -168,6 +167,8 @@ class Config:
     kb: dict[str, dict[str, Any]] = field(default_factory=dict)
     embeddings: dict[str, Any] = field(default_factory=dict)
     mcp: dict[str, Any] = field(default_factory=dict)    # id -> mcp.McpServerConfig
+    # every MCP server's rows, mcp.toml's and the plugins' (mcp.row_words, skills/words.py)
+    tool_words: dict[str, Any] = field(default_factory=dict)
     llm: dict[str, Any] = field(default_factory=dict)   # config/llm.toml: [queue]
     media: dict[str, Any] = field(default_factory=dict)  # kb.toml [media]: kb/media.py
     # config/image_presets and music_presets, as read (comfyui/presets.py `load`): kept
@@ -250,7 +251,7 @@ class Config:
 # it, it (possessive), itself, them (the object) for each choice of a character's
 # pronouns
 PRONOUNS = {"she": ("she", "her", "herself", "her"), "he": ("he", "his", "himself", "him"),
-            "they": ("they", "their", "themselves", "them")}
+            "they": ("they", "their", "themselves", "them"), "it": ("it", "its", "itself", "it")}
 
 
 def _is(v: Any, t: Any) -> bool:

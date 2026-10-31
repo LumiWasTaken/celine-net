@@ -8,10 +8,14 @@ what it writes in its home, it writes as it. It types into its terminals, reads 
 facts; the app (server/celine/skills/shell.py) words them.
 
     POST /run   {"terminal", "command", "timeout"?, "chars"?, "owner"?}
-                -> lines of JSON: {"progress": line} when the command's last output line
+                -> lines of JSON: {"started": cmd id} once the command is typed,
+                   {"progress": line} when the command's last output line
                    changed (at most once a second), then exactly one result; a run's
                    result (also from /stop and /read) carries "outside" and
                    "outside_from", see outside()
+    POST /wait  {"terminal", "timeout"?, "chars"?} -> as /run, for the run already going
+                   in that terminal: watched until it ends or the timeout; its result
+                   at once when it ended already
     POST /type  {"terminal", "text"?, "keys"?, "enter"?, "owner"?} -> the screen
     POST /stop  {"terminal", "chars"?}           -> Ctrl-C; the run it ended, or the screen;
                    "survived": the programs still in front after it; the next /stop
@@ -31,10 +35,9 @@ facts; the app (server/celine/skills/shell.py) words them.
     GET  /view?terminal=main                     -> the terminal's bytes, live, read-only
     GET  /log?id=<terminal id>&from=<offset>     -> the terminal's raw log from that byte
                    on, at most LOG_CHUNK bytes; X-Log-Size says the log's whole size
-    PUT  /file?path=<in its home>[&unique=1][&origin=<url>] -> the raw body as its file
+    PUT  /file?path=<in its home>[&origin=<url>] -> the raw body as its file
                    (Content-Length needed, at most what its disk has left), via a temp
-                   name; unique: never over an existing file, "name (2).ext" instead;
-                   origin: tagged with it; {"path", "bytes"}
+                   name; origin: tagged with it; {"path", "bytes"}
     GET  /file?path=<in its home>               -> its file, streamed; one byte range of it
                    with Range: bytes=a-b (206, 416 past its end); 404 when missing, 400
                    with "folder": true for a folder
@@ -174,7 +177,7 @@ STOP_WAIT = 5.0                     # /stop waits this long for the run it stopp
 KILL_WAIT = 2.0                     # a second /stop: seconds between SIGTERM and SIGKILL
 RUN_MAX = 3000                      # seconds one /run waits at most
 # the syscalls a program blocks in while it waits for the terminal (/proc/<pid>/syscall)
-READS = {"x86_64": {0, 17, 19}, "aarch64": {63, 65, 67}}                  # read, pread, readv
+READS = {"x86_64": {0, 17, 19, 275}, "aarch64": {63, 65, 67, 76}}    # read, pread, readv, splice
 POLLS = {"x86_64": {7, 23, 232, 270, 271, 281, 441},                      # poll, select, epoll
          "aarch64": {22, 72, 73, 441}}
 HEAD, TAIL = 2000, 6000             # characters of a long output kept from its start and end
@@ -1394,8 +1397,31 @@ def run_call(body: dict, progress, conn) -> dict:
         t.cmd = {"id": cid, "command": command}
         start_echo(t, name, cid, p["pid"])
         deliver(name, [], f" __shellbox_run {cid} {shlex.quote(command)}", True, False)
+    progress({"started": cid})
     state = watch_run(t, name, p["pid"], cid, timeout, progress, conn)
     res = run_answer(t, name, cid, state, notes, opened, chars)
+    if state == "closed":
+        remove_terminal(name)
+    return res
+
+
+def wait_call(body: dict, progress, conn) -> dict:
+    """The latest run in a terminal, watched as /run watches its own."""
+    name = check_name(body.get("terminal"))
+    timeout = body.get("timeout", RUN_MAX)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise Problem("timeout is a number of seconds.")
+    timeout, chars = min(float(timeout), RUN_MAX), check_chars(body.get("chars"))
+    notes: list[str] = []
+    t = existing(name, notes)
+    p = pane(name)
+    refresh(t, name, p, notes)
+    if not t.cmd:
+        return {**screen_answer(t, name, notes), "no_run": True}
+    cid = t.cmd["id"]
+    state = "done" if ended(cid) else "closed" if p["dead"] else \
+        watch_run(t, name, p["pid"], cid, timeout, progress, conn)
+    res = run_answer(t, name, cid, state, notes, chars=chars)
     if state == "closed":
         remove_terminal(name)
     return res
@@ -1437,7 +1463,7 @@ def watch_run(t: Terminal, name: str, shell_pid: int, cid: str, timeout: float,
             line = last_output_line(cid)
             if line and line != last_line:
                 last_line = line
-                progress(line)
+                progress({"progress": line})
 
 
 def back(t: Terminal, tty: str, shell_pid: int) -> None:
@@ -1983,17 +2009,8 @@ def her_path(rel: str) -> Path:
     return p
 
 
-def free_name(p: Path) -> Path:
-    """p, or "name (2).ext", "name (3).ext"... when p is taken."""
-    n = 2
-    while p.exists() or p.is_symlink():
-        p = p.with_name(f"{Path(p.name).stem.removesuffix(f' ({n - 1})')} ({n}){p.suffix}")
-        n += 1
-    return p
-
-
-def put_file(rel: str, body, length: int, unique: bool = False, origin: str = "") -> dict:
-    """`length` bytes of `body` as its file at `rel` (unique: never over an existing one):
+def put_file(rel: str, body, length: int, origin: str = "") -> dict:
+    """`length` bytes of `body` as its file at `rel`:
     to a temp name, then renamed, so a broken upload never leaves half a file. Its own (it
     writes it, write_hers), mode 0644, parent folders made. With `origin`, tagged with
     where it came from (ORIGIN)."""
@@ -2008,8 +2025,6 @@ def put_file(rel: str, body, length: int, unique: bool = False, origin: str = ""
         d = d.parent
     if not d.is_dir():
         raise Problem(f"{d.relative_to(HOME)} is a file, not a folder.")
-    if unique:
-        p = free_name(p)
     if p.is_dir():
         raise Problem(f"{rel} is a folder.")
     tmp = p.with_name(f".{p.name}.part-{secrets.token_hex(3)}")
@@ -2126,7 +2141,10 @@ class Handler(BaseHTTPRequestHandler):
                  "/control": control_call, "/keys": keys_call}
         try:
             if self.path == "/run":
-                return self.run(body)
+                return self.run(body, run_call)
+            if self.path == "/wait":
+                existing(check_name(body.get("terminal")), [])     # a 404 before the stream
+                return self.run(body, wait_call)
             if self.path.startswith("/code/"):
                 return self.code(self.path, body)
             if self.path not in calls:
@@ -2155,7 +2173,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "A file upload needs its Content-Length."}, 411)
         try:
             res = put_file(q.get("path", [""])[0], self.rfile, int(length),
-                           unique=q.get("unique", [""])[0] == "1",
                            origin=q.get("origin", [""])[0])
         except Problem as e:
             self.close_connection = True      # the rest of the body is never read
@@ -2253,15 +2270,15 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             splice(self.connection, up)
 
-    def run(self, body: dict) -> None:
+    def run(self, body: dict, fn) -> None:
+        """/run and /wait: progress lines, then the result."""
         name = check_name(body.get("terminal") or "main")   # a 400 here, nothing typed
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Connection", "close")
         self.end_headers()
         try:
-            res = run_call(body, lambda line: self.send_line({"progress": line}),
-                           self.connection)
+            res = fn(body, self.send_line, self.connection)
         except (HungUp, BrokenPipeError, ConnectionResetError):
             raise
         except Exception as e:            # the stream has started: say it in the stream

@@ -10,7 +10,7 @@ import httpx
 
 from ..config import BackendConfig
 from .base import (
-    ORIGIN, TAIL, BackendError, Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage,
+    ORIGIN, BackendError, Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage,
 )
 
 
@@ -108,7 +108,7 @@ class OpenAIBackend:
             # what they do not fill in (usage counts, choices, a call's index)
             if u := chunk.get("usage"):
                 usage = Usage(int(u.get("prompt_tokens") or 0),
-                              int(u.get("completion_tokens") or 0))
+                              int(u.get("completion_tokens") or 0), cached(chunk))
             for choice in chunk.get("choices") or []:
                 delta = choice.get("delta") or {}
                 # llama.cpp --reasoning-format deepseek uses reasoning_content, OpenRouter uses reasoning
@@ -161,10 +161,10 @@ RAW_CAP = 256 * 1024
 def plain_parts(parts: list[dict]):
     """A message's content parts as an OpenAI-shaped server takes them: text only is one
     string (the parts a blank line apart: a local chat template reads plain text), else
-    the parts without the app's own marks (the tail's, turns/context.py)."""
+    the parts."""
     if all(p.get("type") == "text" for p in parts):
         return "\n\n".join(p.get("text") or "" for p in parts if p.get("text"))
-    return [{k: v for k, v in p.items() if k != TAIL} for p in parts]
+    return parts
 
 
 def wire_messages(messages: list[dict]) -> list[dict]:
@@ -238,6 +238,14 @@ def cap(raw: dict) -> dict:
         return raw
     return {"note": f"cut to {RAW_CAP // 1024} KB of {len(text) // 1024} KB",
             "text": text[:RAW_CAP]}
+
+
+def cached(chunk: dict) -> int:
+    """The prompt tokens the server read from its prompt cache, where it says so: the
+    OpenAI field (OpenRouter, vLLM) or llama.cpp's `timings.cache_n`; 0 otherwise."""
+    details = (chunk.get("usage") or {}).get("prompt_tokens_details") or {}
+    return int(details.get("cached_tokens") or (chunk.get("timings") or {}).get("cache_n")
+               or 0)
 
 
 def read_chunk(label: str, text: str) -> dict:

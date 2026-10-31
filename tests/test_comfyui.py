@@ -472,6 +472,15 @@ async def test_her_guide_gets_the_presets_from_their_files(app):
     assert "YuE2" in MusicGenerator(app.cfg).docs["presets"]
 
 
+async def test_an_unknown_preset_errors_and_lists_the_presets(app):
+    gen = ImageGenerator(app.cfg)
+    gen.app = app
+    ctx = ToolContext("c", "t", "x", app.store, None, None)  # type: ignore[arg-type]
+    for name in ("nope", "KREA2-TURBO"):
+        out = await gen.list_presets(ctx, kind="lora", preset=name)
+        assert out.is_error and "krea2-turbo" in out.content, name
+
+
 async def test_her_item_is_taken_as_given_and_what_does_not_fit_fails(app):
     b = await app.batches.create("images", [
         "a cat on a roof",
@@ -677,3 +686,15 @@ async def test_a_shipped_preset_is_edited_and_reset_to_shipped(app):
         assert presets.of("images")["krea2-turbo"].default("mode") == "direct"
         r = await c.delete("/api/generation-presets/krea2-turbo")
         assert r.status_code == 400, "a shipped preset is reset, never deleted"
+
+
+async def test_a_batch_call_while_the_batches_are_down_is_an_error_result():
+    from types import SimpleNamespace as NS
+
+    from celine.skills.images import batch_generate, batch_stop
+    app, ctx = NS(batches=None), NS(conversation_id="c", tool_call_id="t", time_left=None)
+    got = await batch_generate(app, ctx, "images", [{"prompt": "a cat"}], 1, False,
+                               lambda b, started: "")
+    assert (got.is_error, got.content) == (True, "Images are off.")
+    got = await batch_stop(app, ctx, "music", "b1", lambda b, started: "")
+    assert (got.is_error, got.content) == (True, "Music is off.")

@@ -14,7 +14,8 @@ it happened. GET /api/events merges the sources newest first; the global event
 conversation events, `added` here for the rest).
 
 `notice` is the other global event here: one item the user hears about while the app's
-tab is hidden (a system notification, web/src/lib/notify.ts): its finished reply in a
+tab is hidden (a system notification, web/src/lib/notify.ts; a push to a device while no page
+is focused, push.py): its finished reply in a
 chat, an Intercom message to the user, a mission that waits for them, a failed run, an
 approval that waits. {kind, title, body, link, tag}: `link` the app path that opens it,
 `tag` the item, so a burst of one item replaces its notification."""
@@ -33,7 +34,7 @@ from fastapi import APIRouter, Request
 from . import homes
 from .core.ids import iso
 from .api.cursor import page_cursor
-from .clock import zone
+from .clock import day_label, zone
 from .core.bus import NOTEBOOK_TOOLS
 from .errors import CelineError
 from .core.event_types import EVENTS_ADDED, NOTICE
@@ -358,14 +359,13 @@ def _before(cursor: str | None) -> tuple[str, str] | None:
 
 
 def days(tz, now_: datetime) -> list[dict]:
-    """The Date filter: the last DAYS days in the app's zone, as the lists name them."""
-    from .conversations.store import group_of
+    """The Date filter: the last DAYS days in the app's zone, as the list names them."""
     today = now_.astimezone(tz).date()
     out = []
     for n in range(DAYS):
         d = today - timedelta(days=n)
         noon = datetime.combine(d, time(12), tz).isoformat()
-        out.append({"value": d.isoformat(), "label": group_of(0, noon, tz, now_)})
+        out.append({"value": d.isoformat(), "label": day_label(noon, tz, now_)})
     return out
 
 
@@ -452,7 +452,6 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
                 + UNDECIDED, count_args).fetchone()[0]
     rows.sort(key=lambda x: (x[1]["at"], x[1]["id"]), reverse=True)
     page, cache = rows[:limit], {}
-    from .conversations.store import group_of
     tz, now_ = zone(cfg), _now()
     events = []
     for s, r in page:
@@ -460,7 +459,7 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
         v = s.view(r, cfg)
         events.append({"id": r["id"], "at": r["at"], "kind": s.kind, "title": v["title"],
                        "outcome": v["outcome"], "tone": v["tone"], "failed": bool(r["failed"]),
-                       "day": group_of(0, r["at"], tz, now_),
+                       "day": day_label(r["at"], tz, now_),
                        "where": title, "detail": v["detail"], "guard": v.get("guard"),
                        "links": {"conversation": r["cid"], "message": r["mid"], "turn": r["tid"],
                                  "open": v.get("open", path) or path}})

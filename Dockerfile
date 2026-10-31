@@ -69,6 +69,9 @@ ENTRYPOINT ["docker-entrypoint"]
 # the code last: a --link layer after a changed one makes a builder fetch the layers below
 COPY --link config/ ./config/
 COPY --link server/ ./server/
+COPY --link plugins/ ./plugins/
+# the one opencode client: the box's, and the app's for its drones (sub_agents/drone.py)
+COPY --link shellbox/agents/opencode.py ./shellbox/agents/opencode.py
 
 # Data lives on a volume. The server binds all interfaces, so the passkey login is on
 # (with it off, startup refuses any address but loopback). The health check asks the

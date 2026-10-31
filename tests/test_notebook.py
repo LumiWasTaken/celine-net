@@ -134,6 +134,21 @@ async def test_a_stale_anchor_is_refused_and_fresh_ones_apply(store, cfg):
                              "- pineapple: fine\n- olives: fine\n\n## drinks\n- coffee: yes\n")
 
 
+async def test_the_appearance_is_seeded_only_with_images_on(store, cfg):
+    nb = Notebook(cfg)
+    cfg.settings.features = {**cfg.settings.features, "images": False}
+    made = await nb.seed(store)
+    assert "identity.md" in made and "curious.md" in made
+    assert not any(p.startswith("appearance/") for p in made)
+    assert not (cfg.her.notebook / "appearance").exists()
+    cfg.settings.features = {**cfg.settings.features, "images": True}
+    assert sorted(await nb.seed(store)) == [
+        "appearance/README.md", "appearance/body.md", "appearance/clothes.md",
+        "appearance/face.md", "appearance/hair.md"], "turned on later: made at the next start"
+    (cfg.her.notebook / "appearance/body.md").unlink()
+    assert await nb.seed(store) == [], "a placeholder it deleted stays deleted"
+
+
 async def test_the_seed_waits_for_the_names(store, cfg):
     nb = Notebook(cfg)
     cfg.user = "User"                                   # the default, before the first run
@@ -192,6 +207,57 @@ async def test_search_takes_plain_words_with_punctuation(store, cfg):
         assert "people/noor.md" in (await nb.search(ctx, q)).content, q
 
 
+async def test_a_search_matches_any_word_best_first_and_quotes_a_phrase(store, cfg):
+    """The live miss: "climbing bouldering hike hiking" found nothing while each word
+    alone found notes."""
+    nb = Notebook(cfg)
+    await nb.seed(store)
+    ctx = _ctx("c", store, cfg)
+    await nb.write(ctx, "people/noor.md", "Noor goes climbing and bouldering, then hiking.", "noor")
+    await nb.write(ctx, "trips/alps.md", "A long hike in the Alps.", "alps")
+    await nb.write(ctx, "food.md", "Rock and sushi, then climbing gear.", "food")
+    out = (await nb.search(ctx, "climbing bouldering hike hiking")).content
+    paths = re.findall(r"^(\S+\.md) ", out, re.M)
+    assert set(paths) == {"people/noor.md", "trips/alps.md", "food.md"}, out
+    assert paths[0] == "people/noor.md", "the note with the most of the words ranks first"
+    out = (await nb.search(ctx, '"climbing and bouldering"')).content
+    assert re.findall(r"^(\S+\.md) ", out, re.M) == ["people/noor.md"], out
+    assert "No note contains" in (await nb.search(ctx, "OR")).content
+
+
+async def test_a_search_shows_each_matching_section_with_its_lines_to_read_from(store, cfg):
+    nb = Notebook(cfg)
+    await nb.seed(store)
+    ctx = _ctx("c", store, cfg)
+    body = "\n".join([
+        "keys: noor, climbing", "", "Noor, a friend from the gym.",
+        "## Weekends", "Saturdays are long.", "Noor climbs every weekend at the hall.",
+        "She wants outdoor routes.",
+        "## Food", "Sushi on Fridays.",
+        "## Trips", "A climbing trip to Arco in May.", "", "Tents and ropes.",
+        "## Gear", "Her shoes are worn from climbing.",
+        "## Plans", "Climbing in Fontainebleau next spring."])
+    await nb.write(ctx, "people/noor.md", body, "Noor, a climbing friend")
+    out = (await nb.search(ctx, "climbing")).content
+    head, *found = out.splitlines()
+    assert re.fullmatch(r"people/noor\.md \(\d+ \w+\) - Noor, a climbing friend "
+                        r"\[keys: noor, climbing\]", head), head
+    assert found == [
+        "  ## Weekends",
+        "  6- Saturdays are long.",
+        "  7: Noor climbs every weekend at the hall.",
+        "  8- She wants outdoor routes.",
+        "  ## Trips",
+        "  12: A climbing trip to Arco in May.",
+        "  ## Gear",
+        "  16: Her shoes are worn from climbing.",
+        "  also in: Plans",
+    ], "per section its heading and its match between its neighbours, numbered as "\
+       "notebook__read numbers them; the stemmed word found too; the head lines not"
+    read = (await nb.read(ctx, "people/noor.md", from_line=7)).content
+    assert read.splitlines()[0].startswith("7:") and "Noor climbs" in read.splitlines()[0]
+
+
 async def test_the_stamp_has_no_anchor_and_text_as_a_list_is_joined(store, cfg):
     """The agent's real edits: 27 failed trying to edit line 1 (the stamp), and a text sent as a
     list of lines crashed. Line 1 shows plain, and a list joins instead of crashing."""
@@ -221,33 +287,14 @@ async def test_a_write_says_where_it_saved_and_the_list_has_dates(store, cfg):
     assert "diary/x.md (16 Oct) - my day" in listed
 
 
-async def test_a_web_citation_she_writes_down_is_taken_out(store, cfg):
-    """A note holds the facts in its words: no citation marks, no source links."""
+async def test_a_web_citation_she_writes_down_is_stored_as_written(store, cfg):
     nb = Notebook(cfg)
     cid = await conversations.create(store)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
     await nb.write(ctx, "research/mail.md", "prices [[web:3]] and [web:9]【2†source】.\n"
                    "download: https://example.com/a.zip", "mail")
     text = (cfg.her.notebook / "research/mail.md").read_text()
-    assert "prices and.\ndownload: https://example.com/a.zip" in text
-    from celine.skills.web import uncite
-    assert uncite("日本語【注意】これは大事【3†source】") == "日本語【注意】これは大事"
-    assert uncite("see [web:3](https://a.b/c) ok") == "see https://a.b/c ok"
-
-
-async def test_a_note_she_only_read_ages_out_after_one_turn(store, cfg):
-    nb = Notebook(cfg)
-    cid = await conversations.create(store)
-    ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
-    await nb.write(ctx, "a.md", "written", "a")
-    (cfg.her.notebook / "b.md").write_text("only read\n")
-    await nb.read(ctx, "b.md")
-    await nb.read(ctx, "a.md")          # a read never shortens a write
-    got = dict(await store.read(lambda c: c.execute(
-        "SELECT name, touched FROM context_loaded WHERE conversation_id=?",
-        (cid,)).fetchall()))
-    idle = int(cfg.context.get("idle_turns", 6))
-    assert got == {"a.md": 0, "b.md": 0 - idle + 1}
+    assert "prices [[web:3]] and [web:9]【2†source】.\ndownload: https://example.com/a.zip" in text
 
 
 async def test_the_apps_own_files_are_not_notes(store, cfg):

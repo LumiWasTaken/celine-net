@@ -90,15 +90,20 @@ def _probe_reply(request):
     return httpx.Response(200, json={"data": []})
 
 
-# the skills tests make up for their turns: always loaded, as the core skills are
-# (turns/loads.py loads the real ones by need)
+# the skills tests make up for their turns: core, sent with their parameters (the real
+# ones but the core go by name, turns/prompt.py wire_tools)
 TEST_SKILLS = {"arch", "painter", "slow", "t", "door", "echo", "chatlink", "slowpoke"}
 
 
 @pytest.fixture(autouse=True)
-def _test_skills_always_loaded(monkeypatch):
-    from celine.turns import loads
-    monkeypatch.setattr(loads, "CORE", loads.CORE | TEST_SKILLS)
+def _test_skills_core():
+    """-> skills.CORE as shipped, before the test skills are added"""
+    from celine.skills import CORE
+    added = TEST_SKILLS - CORE
+    shipped = frozenset(CORE)
+    CORE.update(added)
+    yield shipped
+    CORE.difference_update(added)
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +134,7 @@ def _scratch_data_dir(tmp_path, monkeypatch, _template_db):
     from celine.settings import seed
     keys.ensure(tmp_path / "var")
     seed.seed(tmp_path / "var" / "settings")
+    seed.schedules(tmp_path / "var" / "settings")     # the Scheduler's start
 
 
 @pytest.fixture
@@ -172,7 +178,7 @@ def _offline_router(monkeypatch):
     from celine.settings import kinds   # discovery too (the ping, "Check provider")
     monkeypatch.setattr(kinds, "_client", lambda transport=None, timeout=8.0: client(
         httpx.AsyncClient)(timeout=timeout, transport=transport))
-    kinds._cache.clear()
+    kinds.reset()
     router_mod._standalone.clear()
     embed_mod.forget_fingerprints()
     tokens.reset()

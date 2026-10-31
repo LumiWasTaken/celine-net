@@ -105,7 +105,7 @@ async def download_workflow(pid: str) -> Response:
 async def reset_preset(request: Request, pid: str) -> dict:
     p = _preset(pid)
     if p.origin != "edited":
-        raise CelineError("bad_request", f"{p.label} is as shipped.", 400)
+        raise CelineError("bad_request", f"{p.label} has no changes to reset.", 400)
     presets_mod.forget(p.kind, p.id)
     return await _saved(request, p)
 
@@ -114,8 +114,8 @@ async def reset_preset(request: Request, pid: str) -> dict:
 async def delete_preset(request: Request, pid: str) -> dict:
     p = _preset(pid)
     if p.origin != "own":
-        raise CelineError("bad_request", f"{p.label} is shipped: Reset to defaults "
-                          f"undoes its changes.", 400)
+        raise CelineError("bad_request", f"{p.label} comes with the app and cannot be deleted. "
+                          f"Use Reset to defaults to undo your changes.", 400)
     async with write.lock():
         s = request.app.state.services.cfg.settings
         presets_mod.forget(p.kind, p.id)

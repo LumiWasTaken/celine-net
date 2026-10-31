@@ -178,6 +178,18 @@ def test_a_timeout_returns_what_it_has_and_the_command_keeps_running(box):
     assert box.run("echo free")["output"] == "free"
 
 
+def test_wait_watches_the_run_already_going_to_its_end(box):
+    r = box.run("echo one; sleep 1; echo two", timeout=0.3)
+    assert r["state"] == "running"
+    code, w = box.call("/wait", {"terminal": "t", "timeout": 0.2})
+    assert code == 200 and (w["state"], w["cmd"]) == ("running", r["cmd"])
+    code, w = box.call("/wait", {"terminal": "t"})
+    assert (w["state"], w["exit"], w["output"]) == ("done", 0, "one\ntwo")
+    code, again = box.call("/wait", {"terminal": "t"})     # ended already: at once
+    assert (again["state"], again["cmd"]) == ("done", r["cmd"])
+    assert box.call("/wait", {"terminal": "nope"})[0] == 404
+
+
 def test_stop_is_ctrl_c_and_the_shell_carries_on(box):
     box.run("cat")
     code, stopped = box.call("/stop", {"terminal": "t"})
@@ -189,6 +201,12 @@ def test_stop_is_ctrl_c_and_the_shell_carries_on(box):
     assert stopped["killed"] is None, "a new program gets Ctrl-C first"
     again = box.run("echo ok")
     assert (again["exit"], again["output"]) == (0, "ok"), "the shell's output is its own again"
+
+
+def test_a_program_that_splices_from_the_terminal_is_waiting(box):
+    """uutils' cat (Ubuntu 26) reads its input with splice, not read."""
+    r = box.run("python3 -c 'import os; r, w = os.pipe(); os.splice(0, w, 1)'")
+    assert r["state"] == "waiting"
 
 
 def test_a_question_comes_back_as_waiting_and_type_answers_it(box):

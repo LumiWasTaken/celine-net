@@ -202,7 +202,8 @@ async def test_a_resumed_turn_whose_answer_was_complete_is_finished_not_rewritte
                            EventBus(), Token(turn["id"]))
     finally:
         runner._verify_citations = orig
-    assert (await turns.sweep(store))["resumable"] == 1
+    assert (await turns.sweep(store))["interrupted"] == 1
+    await turns.continue_turn(store, cid, turn["id"])          # the user's Continue
     again = await turns.claim(store, "w2")
     assert again["id"] == turn["id"]
     second = FakeBackend([TextDelta("written again"), Done(reason="stop")])

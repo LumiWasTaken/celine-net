@@ -34,7 +34,7 @@ import { ArtifactChip, Markdown } from '../components/Markdown'
 import { Talk } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
 import { ModelPick, ModelRow } from '../components/ConversationPanel'
-import { ModelChooser, findModel, modelName } from '../components/ModelChooser'
+import { ModelChooser } from '../components/ModelChooser'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
   Button, ComposerBox, ConfirmDialog, Dialog, Dot, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input, ListRow,
@@ -48,7 +48,7 @@ const missionsNoun = (n: number) => count(n, 'mission')
 const agentsNoun = (n: number) => count(n, 'sub-agent')
 
 /** a sub-agent as GET /agents sends it: its model and agent CLI too */
-type AgentRow = Agent & { model?: string | null; cli?: string | null; last?: string }
+type AgentRow = Agent & { model?: string | null; cli?: string | null; device?: string | null; last?: string }
 
 type Show = 'all' | MissionStatus
 const SHOW: { value: Show; label: string }[] = [
@@ -108,7 +108,7 @@ export function Missions({ active }: { active: boolean }) {
                                active={active} onChange={reload} />
           : agent && ids.has(agent.parent) ? <AgentPage key={agent.id} a={agent} mission={every.find(m => m.conversation_id === agent.parent)!}
                                                        active={active} />
-          : loaded && !agent ? <ShelvedAgent key={selected} cid={selected} active={active} />
+          : loaded ? <ShelvedAgent key={selected} cid={selected} active={active} />
           : <LoadingRow label="Loading the mission" />
       ) : view === 'agents' ? <AgentsList agents={theirs} missions={every} />
         : <MissionsList shelf={shelf} setShelf={setShelf} lists={{ list: missions, archive: archived, trash: trashed }}
@@ -218,11 +218,11 @@ function MissionsList({ shelf, setShelf, lists, agents, onNew, onChange }: {
                                        onTrash={() => setTrashing(r.m)}
                                        onDelete={() => act.run(() => missionsApi.remove(r.m.conversation_id))} />
                            ) : (
-                             <ListRow density="lg" dot={stateTone(r.m.status)} title={r.m.name} tooltip={r.m.name}
+                             <ListRow density="lg" dot={r.m.asked ? 'warn' : stateTone(r.m.status)} title={r.m.name} tooltip={r.m.name}
                                       subtitle={r.m.note || firstLine(r.m.brief)} muted={r.m.status === 'done' || r.m.status === 'stopped'}
                                       column={<span className="missions-column">{kids.get(r.m.conversation_id) ? agentsNoun(kids.get(r.m.conversation_id)!) : ''}
                                         {r.m.artifact && <FileText size={ICON.sm} aria-label="Result" />}</span>}
-                                      cell={STATE_WORD[r.m.status]} meta={<time dateTime={r.m.updated_at}>{listTime(r.m.updated_at)}</time>}
+                                      cell={r.m.asked ? STATE_WORD.needs_you : STATE_WORD[r.m.status]} meta={<time dateTime={r.m.updated_at}>{listTime(r.m.updated_at)}</time>}
                                       href={format({ section: 'missions', conversation: r.m.conversation_id })} onClick={click(() => open(r.m))}
                                       pick={picker.row(r.m.conversation_id)} onContextMenu={e => ctx.open(e, menu(r.m), r.m.name)}
                                       trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={menu(r.m)} size="sm" />} />
@@ -255,7 +255,7 @@ function Rename({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDon
 
 function StopMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDone: () => void }) {
   return (
-    <ConfirmDialog title={`Stop ${m.name}?`} danger confirmLabel="Stop" body="Its conversation, plan and terminals stay."
+    <ConfirmDialog title={`Stop ${m.name}?`} danger confirmLabel="Stop" body="Its conversation, plan and terminals are kept."
                    onClose={onClose}
                    onConfirm={async () => { try { await missionsApi.stop(m.conversation_id) } catch (e) { return errorText(e) } onDone(); onClose() }} />
   )
@@ -264,7 +264,7 @@ function StopMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; 
 function TrashMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDone: () => void }) {
   const nav = useNav()
   return (
-    <ConfirmDialog title={`Move ${m.name} to Trash?`} danger confirmLabel="Move to Trash" body="Restore brings it back."
+    <ConfirmDialog title={`Move ${m.name} to Trash?`} danger confirmLabel="Move to Trash" body="You can restore it from the Trash."
                    onClose={onClose}
                    onConfirm={async () => {
                      try { await missionsApi.trash(m.conversation_id) } catch (e) { return errorText(e) }
@@ -279,8 +279,9 @@ function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (c
   const [text, setText] = useState('')
   const [name, setName] = useState('')
   const [model, setModel] = useState<string | null>(null)
+  const [minTime, setMinTime] = useState('')
   const start = useAction(async () => {
-    const r = await missionsApi.start(text.trim(), name.trim() || undefined, model)
+    const r = await missionsApi.start(text.trim(), name.trim() || undefined, model, minTime.trim() || undefined)
     onStarted(r.conversation_id)
   })
   return (
@@ -293,6 +294,7 @@ function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (c
         <Field label="Model" group>
           <ModelPick name={model ?? 'Default'} current={model} fallback={null} disabled={start.busy} onModel={setModel} />
         </Field>
+        <Field label="Minimum time"><Input value={minTime} placeholder="Optional" onChange={e => setMinTime(e.target.value)} /></Field>
       </div>
       {start.error && <InlineError compact message={start.error} />}
     </Dialog>
@@ -421,11 +423,7 @@ function Steps({ m }: { m: Mission }) {
   const own = useResource(() => settingsApi.conversationSettings(m.conversation_id), [m.conversation_id], { events: SETTINGS_EVENTS })
   const save = useAction((steps: MissionStep[]) => missionsApi.setSteps(m.conversation_id, steps))
   const mine = own.data?.effective.label ?? own.data?.effective.model ?? null
-  const nameOf = (ref: string | null) => {
-    if (!ref) return mine ? `Default, ${mine}` : 'Default'
-    const f = findModel(ref, providers.data ?? [])
-    return f ? modelName(f.model) : ref
-  }
+  const nameOf = (s: MissionStep) => s.model_label ?? (mine ? `Default, ${mine}` : 'Default')
   const pick = (i: number, model: string | null) => {
     setChoosing(null)
     if (m.steps[i]!.model !== model) void save.run(m.steps.map((s, k) => (k === i ? { ...s, model } : s)))
@@ -436,7 +434,7 @@ function Steps({ m }: { m: Mission }) {
       <div className="missions-rows">
         {m.steps.map((s, i) => (
           <ListRow key={i} density="lg" dot={tone(i)} title={s.title} tooltip={s.title} muted={tone(i) === 'ok'}
-                   subtitle={nameOf(s.model)} aside={tone(i) === 'ok' ? STATE_WORD.done : tone(i) === 'running' ? STATE_WORD.active : undefined}
+                   subtitle={nameOf(s)} aside={tone(i) === 'ok' ? STATE_WORD.done : tone(i) === 'running' ? STATE_WORD.active : undefined}
                    trailing={<IconButton icon={ArrowLeftRight} size="sm" label="Change model" disabled={!online || save.busy || !!m.trashed_at}
                                          onClick={() => setChoosing(i)} />} />
         ))}
@@ -465,7 +463,7 @@ function AgentLine({ a }: { a: AgentRow }) {
   ]
   return (
     <ListRow density="lg" dot={a.working ? 'running' : 'ok'} title={a.name} subtitle={agentLine(a)} aside={a.model ?? undefined}
-             detail={a.cli ?? undefined} meta={agentWord(a)} muted={!a.working}
+             detail={[a.cli, a.device].filter(Boolean).join(', ') || undefined} meta={agentWord(a)} muted={!a.working}
              href={format({ section: 'missions', conversation: a.id })} onClick={click(() => nav.go({ section: 'missions', conversation: a.id }))}
              tooltip={stop.error ?? undefined}
              trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
@@ -496,6 +494,7 @@ function Settings({ m, live, agents, onChange }: {
       <div className="missions-model"><ModelRow cid={m.conversation_id} live={live} /></div>
       <Facts grid items={[
         ...(m.until ? [{ label: 'Runs until', value: stamp(m.until) }] : []),
+        ...(m.min_until ? [{ label: 'Runs at least until', value: stamp(m.min_until) }] : []),
         { label: 'Started', value: stamp(m.created_at) },
         ...(agents ? [{ label: 'Sub-agents', value: agentsNoun(agents) }] : []),
       ]} />
@@ -504,8 +503,8 @@ function Settings({ m, live, agents, onChange }: {
 }
 
 /* one sub-agent of a mission: its conversation; its result and details are a page under it */
-/* a sub-agent in the Archive or the Trash: the sub-agents list leaves it out, its
-   conversation is still there; any other id is no mission */
+/* a sub-agent another sub-agent started, or one in the Archive or the Trash (the
+   sub-agents list leaves it out): its conversation; any other id is no mission */
 function ShelvedAgent({ cid, active }: { cid: string; active: boolean }) {
   const convo = useConversation(cid)
   const row = useResource(() => request<{ conversation: { title: string; agent_of: string | null } }>(`/conversations/${cid}`), [cid])
@@ -550,6 +549,7 @@ function AgentPage({ a, mission, active }: { a: AgentRow; mission: Mission; acti
             <Facts grid items={[
               { label: 'Model', value: a.model ?? 'Default' },
               ...(a.cli ? [{ label: 'Agent CLI', value: a.cli }] : []),
+              ...(a.device ? [{ label: 'Device', value: a.device }] : []),
               { label: 'Access', value: a.access === 'read' ? 'Read-only' : 'Can edit' },
               ...(a.folder ? [{ label: 'Folder', value: a.folder }] : []),
               { label: 'Started', value: stamp(a.created_at) },
@@ -608,7 +608,7 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
             <VirtualList items={list} estimate={84} getKey={a => a.id} label="Sub-agents" resetOn={`${show}|${of}`}
                          renderRow={a => (
                            <ListRow density="lg" icon={Bot} title={a.name} subtitle={agentLine(a)} detail={name.get(a.parent)}
-                                    column={<span>{[a.model, a.cli].filter(Boolean).join(', ')}</span>} cell={agentWord(a)}
+                                    column={<span>{[a.model, a.cli, a.device].filter(Boolean).join(', ')}</span>} cell={agentWord(a)}
                                     meta={listTime(a.updated_at)} muted={!a.working}
                                     href={format({ section: 'missions', conversation: a.id })} onClick={click(() => nav.go({ section: 'missions', conversation: a.id }))}
                                     onContextMenu={e => ctx.open(e, menu(a), a.name)}
@@ -624,10 +624,12 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
 /* The conversation and the box to write in: a word to it where it works (Routines shows
    what an event started with it too) */
 export function Work({ cid, convo, active, closed }: { cid: string; convo: ReturnType<typeof useConversation>; active: boolean; closed: boolean }) {
-  const name = useName()
+  const her = useName()
+  // a sub-agent's conversation writes to the sub-agent
+  const name = convo.conversation?.agent_name ?? her
   return (
     <Talk cid={cid} convo={convo} active={active} name={name} user=""
           send={(text, attachments) => conversationApi.send(cid, text, attachments)}
-          closed={closed ? 'It is in the Trash. Restore it to go on.' : null} />
+          closed={closed ? 'It is in the Trash. Restore it to continue.' : null} />
   )
 }

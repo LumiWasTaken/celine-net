@@ -1,6 +1,6 @@
-/* What llama-swap has loaded now (GET /api/loaded-models, then each `model.loaded`
-   event): every model of a llama-swap provider with `loaded` and the seconds its last
-   load took, measured by the server. Models of other providers are not in it. */
+/* What the model servers have loaded now (GET /api/loaded-models, then each
+   `model.loaded` event): every model of a provider whose server says what it has
+   loaded, with `loaded` and the seconds its last load took, measured by the server. */
 import { request } from './api'
 import { useServerEvents } from './bus'
 import { SETTINGS_EVENTS } from './settingsApi'

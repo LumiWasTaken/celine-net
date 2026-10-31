@@ -22,10 +22,10 @@
 }
 .chat-mood {
   flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--t-lg); font-weight: var(--fw-regular); letter-spacing: 0.02em; cursor: default;
+  font-size: var(--t-lg); font-weight: var(--fw-regular); letter-spacing: normal; cursor: default;
 }
 .chat-head__title { flex: 0 100 auto; min-width: 4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--t-md); font-weight: var(--fw-regular); letter-spacing: 0; color: var(--text-muted); }
+  font-size: var(--t-md); font-weight: var(--fw-regular); letter-spacing: normal; color: var(--text-muted); }
 .chat-jobs { color: var(--text-secondary); }
 .chat-notice { flex: none; padding: 0 var(--s-4) var(--s-2); }
 
@@ -34,6 +34,8 @@
   flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; position: relative; scrollbar-gutter: stable both-edges;
   mask-image: linear-gradient(to bottom, transparent 0, var(--opaque) var(--s-5), var(--opaque) calc(100% - var(--s-4)), transparent 100%);
 }
+/* unpinned (useStickToBottom), the browser keeps your reading place when something above grows */
+.chat-scroll[data-unpinned] { overflow-anchor: auto; }
 .chat-col { width: min(100% - 2 * var(--s-4), var(--chat-col)); margin: 0 auto; }
 /* the lines of its life after the messages: every reminder of this conversation, one line
    each, in from the edge like the transcript's quiet lines */
@@ -44,7 +46,7 @@
 /* a new conversation: its face, its name and its mood above the box */
 .chat-scroll--empty { display: flex; flex-direction: column; justify-content: flex-end; }
 .chat-greeting { display: grid; justify-items: center; gap: var(--s-2); padding: 0 var(--s-4) var(--s-5); text-align: center; }
-.chat-greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title); font-weight: var(--fw-medium); }
+.chat-greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title); font-weight: var(--fw-medium); letter-spacing: var(--tracking-display); }
 .chat-greeting .chat-mood { font-size: var(--t-xl); max-width: 100%; }
 
 /* ── the composer ── */
@@ -58,7 +60,7 @@
 }
 .chat-composer__float > * { pointer-events: auto; box-shadow: var(--e-overlay); animation: rise var(--dur) var(--ease); }
 .chat-composer__float--start { justify-content: flex-start; }
-.chat-composer__float > [role='menu'] { width: 100%; max-width: none; max-height: 50vh; overflow-y: auto; }
+.chat-composer__float > [role='menu'] { width: 100%; max-width: none; max-height: calc(0.5 * var(--vh, 100dvh)); overflow-y: auto; }
 /* a command's outcome above the box, with Dismiss */
 .chat-note { display: flex; align-items: center; gap: var(--s-2); padding-inline: var(--s-2); }
 /* a quoted message or a page in the box, with its x */

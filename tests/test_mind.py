@@ -61,9 +61,27 @@ async def test_the_block_has_her_mood_and_no_comes_to_mind_line(store):
     user = [m["content"] for m in built.messages if m["role"] == "user"][0]
     assert "[your mind]\nmood: " in user and "\nnow: " not in user
     assert "comes to mind" not in user
+    assert "\nyour status: none set" in user
     report = json.loads(await store.read(lambda c: c.execute(
         "SELECT report FROM message_context").fetchone()[0]))
     assert set(report["mind"]) == {"mood", "gap", "state"}
+
+
+async def test_the_block_shows_her_status_and_when_she_set_it(store):
+    cfg = load()
+    _, reg = await _her(store, cfg)
+    cid = await conversations.create(store)
+    await mind.store_mood(store, "\U0001f50d\U0001f4da")
+    await store.write(lambda c: c.execute("UPDATE kv SET v=json_set(v, '$.set_at', ?) "
+                                          "WHERE k='mood'", ("2026-10-16T01:12:00+00:00",)))
+    mid, tid, _ = await user_says(store, cid, "hello")
+    await store.write(lambda c: c.execute(
+        "UPDATE messages SET created_at=? WHERE id=?", (T0.isoformat(), mid)))
+    chain = await store.read(lambda c: tree.path(c, cid))
+    await message_context.ensure(store, cfg, reg, cid, tid, message_context.unsent(chain))
+    built = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[])
+    user = [m["content"] for m in built.messages if m["role"] == "user"][0]
+    assert "\nyour status: \U0001f50d\U0001f4da, set 6 hours ago" in user
 
 
 async def test_no_block_with_automatic_context_off(store):
@@ -149,6 +167,9 @@ async def test_the_appraisal_after_a_chat_turn_sets_her_mood(store):
     assert "jealous" in system and "—" not in system
     assert mind.parse_appraisal('ok {"emotion": "sad", "strength": 2, "why": "x"}') == \
         {"emotion": "sad", "strength": 1.0, "why": "x"}
+    long = "because " * 100
+    assert mind.parse_appraisal(json.dumps({"emotion": "sad", "strength": 0.5,
+                                            "why": long}))["why"] == long, "taken whole"
     for bad in ('{"emotion": null}', '{"emotion": "meh", "strength": 0.5}', "no json"):
         assert mind.parse_appraisal(bad) is None, bad
 
@@ -208,3 +229,36 @@ async def test_a_build_batch_takes_a_background_ticket(monkeypatch):
     with anyio.fail_after(5):           # the releases come through the loop
         while len(sched.freed) < 2:
             await anyio.sleep(0)
+
+
+async def test_a_status_set_in_a_run_goes_when_its_turn_ends_and_a_chats_stays(store):
+    chat = await conversations.create(store)
+    run = await conversations.for_trigger(store, "run:r1", "Radar")
+    await mind.store_mood(store, "\U0001f440", run)
+    assert not await mind.clear_after(store, chat)          # another conversation ended
+    assert await mind.clear_after(store, run)
+    assert await mind.get_mood(store) is None
+    await mind.store_mood(store, "\U0001f440", run)
+    await mind.store_mood(store, "☕", chat)             # newer, in the chat
+    assert not await mind.clear_after(store, run)
+    assert not await mind.clear_after(store, chat)          # a chat's stays
+    assert (await mind.get_mood(store))["text"] == "☕"
+
+
+async def test_a_status_set_in_a_running_run_stays_through_its_turns_until_it_ends(store):
+    from celine.schedules import runs
+    cfg = load()
+    cid = await conversations.for_trigger(store, "run:r2", "Radar")
+    agent = await conversations.create(store, agent_of=cid, kind="agent")
+    at = T0.isoformat()
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
+        "created_at, started_at) VALUES('r2', 'radar', 'Radar', ?, ?, 'running', ?, ?, ?)",
+        (at, at[:10], cid, at, at)))
+    await mind.store_mood(store, "\U0001f440", cid)
+    assert not await mind.clear_after(store, cid)            # her turn, the partner's next
+    await mind.store_mood(store, "\U0001f50d", agent)
+    assert not await mind.clear_after(store, agent)          # a sub-agent of the run
+    await store.write(lambda c: runs._set(c, store, cfg, "r2", state="stopped",
+                                          finished_at=at))
+    assert await mind.get_mood(store) is None

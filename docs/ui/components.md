@@ -21,11 +21,41 @@ Also:
 
 ---
 
+## Typography
+
+One scale, ratio 1.125, in `web/src/styles/tokens.css`. Each step is one clamp, fluid from a
+380 px phone to a 1920 px desktop and flat beyond, times the Appearance text size. No CSS
+outside `tokens.css` writes a font size, line height, weight or letter spacing as a number.
+
+| Step | Phone to desktop | For | Line height | Tracking |
+|---|---|---|---|---|
+| `--t-xs` | 12.5 to 14 px | meta: times, counts, hints, chips, small labels, mono tool bodies | `--lh-ui` | `--tracking-meta` on muted labels (list sections, menu headings, groups) |
+| `--t-md` | 14 to 16 px | every piece of UI text: rows, buttons, fields, menus, names | `--lh-ui` one line, `--lh-body` wrapping | none |
+| `--t-lg` | 16 to 18 px | reading text: bubbles, prose, the composer, documents; card and empty-state heads | `--lh-body`, the story editor `--lh-story` | `--tracking-title` when it is a title |
+| `--t-xl` | 20 to 22.5 px | place, section and dialog titles, prose h2 | `--lh-title` | `--tracking-title` |
+| `--t-2xl` | 28 to 32 px | display: the greeting name, prose h1 | `--lh-title` | `--tracking-display` |
+
+- On a touch screen `--t-md` is `--t-lg`: the phone UI has one text size, 16 px at 100 %, and
+  a field's label matches it. A field never goes below 16 px there, at any text size, so iOS
+  never zooms into it (base.css).
+- Inline code in a sentence is `--t-code` (0.9em); a code block is `--t-md`.
+- Weights: `--fw-regular` for text, `--fw-medium` for names, labels, buttons, rows and
+  titles, `--fw-bold` for `strong` and a prose h1. Nothing else.
+- Reading widths are in em of `--t-lg`: `--measure` (the chat column, 32em of text plus the
+  bubble's padding) and `--measure-prose` (notes, documents, the story editor, 32em), about
+  66 characters a line at every text size. Forms and card grids (`--measure-form`,
+  `--measure-wide`) stay in rem.
+- Text size (Appearance) moves every step by whole steps of the scale: Small one down,
+  Large one up, Larger two up. Control heights, icons and faces stay.
+
+---
+
 ## Heads
 
 ### PlaceHead
 **When:** the head of every place, list and page. Nothing else draws a head.
-**Props:** `title`, `count` (the server's number), `detail` (a muted state beside the
+**Props:** `title` (left out in a sidebar that is the place's list: Celine's conversations),
+`count` (the server's number), `detail` (a muted state beside the
 title: a terminal's program, "Deleted"), `level` (1 for a page's h1), `titleAttr`,
 `back` (`label`, `onClick`: the way back to the list where list and page share one pane,
 shown on a phone only), `crumbs` (the pages above a detail page, each `label` with `href`
@@ -53,7 +83,9 @@ Select, Archive and Trash never move under the pointer. Its sides sit on the pag
 filters, Sort or Group in it (they are the Toolbar's); float a New button over the list.
 **Phone:** the same steps: icon buttons, a round "+", Search on its own row.
 Inside a Place, below 1024 px, it starts with the place's panel button, which opens the place
-sidebar as a Drawer from the left (left out on a page with `back` or `crumbs`).
+sidebar as a Drawer from the left (left out on a page with `back` or `crumbs`). In a Place
+with `fold`, on a wide screen, the sidebar's own head starts with Close sidebar and the
+page's head with Open sidebar while the sidebar is away.
 
 ### Toolbar
 **When:** under a PlaceHead, for the state of a list, its filters, Sort and Group.
@@ -79,7 +111,11 @@ While selecting, the SelectBar takes its place.
 `menu` (the group's own "..." and right-click: a folder's Rename, Move to Trash), `onDrop`
 (a dragged row lands in the group; the head takes the accent wash while one is over it).
 **Don't:** open or close (no fold); carry more than its "...".
-`ListSection` stays the small label in a place sidebar ("Recent", "Today").
+`ListSection` stays the small label in a place sidebar ("Recent", "Today"). With `onToggle`
+(and `open`, `count`) its label is a button with the DisclosureArrow (`aria-expanded`) that
+folds the group under it, and a folded one shows its count: Celine's date groups, the
+owner's explicit exception to "no folds". The rows go and come through the list's own
+`useMove`, so the rows below glide; a search shows its matches without groups.
 
 ### Section
 **When:** a block of a page: a settings group, a section of a page with an index.
@@ -165,6 +201,8 @@ ListRows.
 `after`, `inset`, `resetOn`, `page` (the list is part of a page that scrolls, such as a
 Section of a long page: no scroll box of its own, it follows the page's). Every row is
 measured once drawn, so `estimate` is only the first guess and rows never overlap or gap.
+When `items` change, rows glide to their new places, new rows rise and gone rows fade
+(`useMove`); a scroll or a new `resetOn` moves nothing.
 
 ### ListPage
 **When:** a place's list page. Kit classes,
@@ -194,8 +232,10 @@ card's whole top, to its edges: a cover), `title`, `subtitle`, `meta`, `selected
 (a pick: the accent ring), `onClick`, `href`, `menu` (the "..." items, also right-click and
 long press), `menuLabel`, `children` (a few lines under the head), `actions` (buttons at its
 foot, each its own press beside the card's: Open, New folder), `pick` (the grid's
-Select: a check on the card while selecting), `tooltip`.
-**Don't:** hand-build a card; put more than one primary in it.
+Select: a check on the card while selecting), `tooltip`. `CardGrid` lays cards out in as
+many columns as fit; a card that arrives rises, one that goes fades, the rest glide to
+their places.
+**Don't:** hand-build a card or a grid of them; put more than one primary in it.
 
 ### Tree
 **When:** only a real hierarchy of folders (Notebook, Documents).
@@ -254,7 +294,11 @@ such as "Also delete its sub-agents", off by default), `onConfirm(option)`
 **Props:** Dialog props.
 **Do:** rise from the bottom edge, `--r-xl` top corners, a 36 x 5 px grabber; dragging the
 grabber down, the back gesture (the sheet is one step of history), Escape, the scrim and
-the X close it. On a desktop it renders as a Dialog near the top.
+the X close it. On a desktop it renders as a Dialog near the top. A list's Sheet shows
+one thing at a time: a tool call's row opens the call, a run of calls alike ("Ran 8
+commands in terminal main") opens its rows, and a row there opens its call in the same
+Sheet with Back to the run.
+**Don't:** open a Sheet from a Sheet; unfold a run in place.
 
 ### Drawer
 **When:** a side panel beside the content (Celine's conversation panel, a Routine run).
@@ -300,11 +344,10 @@ most eight words.
 
 ### Face
 **When:** its face and every person's (`Avatar` for a chat contact).
-**Props:** `name`, `src`, `color`, `size` (`sm`, `md`, `lg`), `speaking`, `away`, `info` (its
-card: the big face, the name, one line, the caller's actions).
+**Props:** `name`, `src`, `color`, `size` (`sm`, `md`, `lg`), `speaking`, `away`.
 **Do:** one initial (the UI font, medium) on an OKLCH tint when there is no picture or it
 fails.
-**Don't:** show two letters.
+**Don't:** show two letters; give it a tooltip or a click (a face is a picture only).
 
 ## Fields
 
@@ -327,6 +370,24 @@ One height for every field, a hairline edge, a halo on focus.
 | `InlineEdit` | rename in place | `value`, `label`, `onSave`, `onCancel` |
 
 Don't: use a dropdown `<select>` (a dropdown only for a list that can run to hundreds of entries, such as a provider's models); put a hint line under a field; build a field by hand.
+
+### Form
+
+A whole form drawn from the server's field schema (server/celine/settings/form.py): one column, each field its label above its control, a switch its label beside it. A field's `help` is its tooltip.
+
+| Field type | Drawn as | Changes |
+|---|---|---|
+| `bool` | `Switch` | at once |
+| `choice` | `Choice` | at once |
+| `number`, `duration` | `NumberField` with its unit (`plain`: a `Field` with an `Input`, as in the onboarding's cards) | on leaving the field or Enter |
+| `text` | `Input` (`mono`, `placeholder`); `long`: `TextArea` | on leaving the field or Enter |
+| `list` | `TextArea`, one entry per line | on leaving the field |
+| `secret` | a password `Input`; once stored "Saved" with Remove, never the secret | `onChange(key, text)`, Remove `onChange(key, null)` |
+| `copy` | a read-only mono `Input` with Copy | never |
+
+Props: `fields`, `values`, `secrets` (each secret's `{state, set_at}`), `onChange(key, value)`, `disabled`, `plain`. A field with `where: 'config'` is read-only. A form served by `/api/forms/{id}` goes through `useForm(id)` (web/src/lib/forms.ts), which keeps the version, the pending changes and the secrets apart.
+
+Don't: draw a form's fields by hand; show a stored secret or a part of one.
 
 ## Feedback and state
 
@@ -359,10 +420,15 @@ the place's list, such as Celine's conversations: its own PlaceHead with Search,
 Archive and Trash in place of the title and action), `side` (the sections with their counts
 as `sm` ListRows, a ListSection "Recent" and its rows, or the list), `foot` (the user's own
 row), `label`, `open` with `onOpen` (the phone's drawer, when the page decides), children
-(the page). `usePlace()` gives a PlaceHead inside it the panel button.
+(the page), `fold` (a key: on a wide screen the sidebar folds away to the left and back,
+this device keeps which). `usePlace()` gives a PlaceHead inside it the panel button.
 **Do:** `--sidebar-w` on `--surface-1`; below 1024 px (a tablet, a phone) a Drawer from the
 left, so the page keeps its width, opened by the panel button in the head, closed by a link
 in it, the scrim, Escape and its X.
+Folding, the column goes at once and the sidebar slides out over the page by transform on
+`--dur --ease-exit`; back, the column comes at once and the sidebar slides in on
+`--dur-slow --ease`. The page takes its new width at once and glides (translate) from where
+its middle was on the sidebar's curve; its heads' actions on the right edge hold still.
 **Don't:** make it a list pane (a place's list is its page); hand-build a sidebar.
 
 ### Message
@@ -385,7 +451,7 @@ Shift+Enter is a new line; Send becomes Stop while it answers.
 
 ### Picture
 **When:** every picture shown small: on a message, a Gallery tile.
-**Props:** `src`, `name` (never a file name), `ratio`, `more` (its "...", right-click and
+**Props:** `src`, `full` (the file the Viewer shows when `src` is a smaller copy), `name` (never a file name), `ratio`, `more` (its "...", right-click and
 the Viewer's menu), `gallery` with `at` (the Viewer flips through them), `viewer`
 (`actions`, `panel`, `caption` for the Viewer), `onOpen` (a page of its own opens it in
 place of the Viewer here), `current` (the open one: the accent ring), `pick` (a check while
@@ -403,10 +469,44 @@ selecting),
 **Props:** `title` (a program, an address), `mono` (a terminal's text), `current` (the one
 shown now among shots), children.
 
+## Motion
+
+Every duration and curve is a token (`tokens.css`); only `opacity` and `transform` (or
+`translate`) animate. The one exception is Progress's bar width.
+
+| Token | For |
+|---|---|
+| `--dur-fast` 120 ms | hover, press, small exits (a menu, a toast, a row) |
+| `--dur` 220 ms | small enters, large exits, glides (a row, a tab's underline, a place) |
+| `--dur-slow` 320 ms | large enters: a dialog, a sheet, a drawer, the Viewer |
+| `--ease` | enter and move |
+| `--ease-exit` | leave |
+| `--ease-spring` | the rail's pill only: a destination; tabs and Segmented glide on `--ease` |
+
+Enter is slower than exit: a drawer slides in on `--dur-slow --ease` and out on
+`--dur --ease-exit`. Keyframes in `base.css`: `fade`, `rise`, `grow`, `pulse`, `sheet-up`,
+`spin`, `skeleton`, `shimmer`, `highlight`.
+
+| Primitive (`ui/motion.ts`) | For |
+|---|---|
+| `useLeave(ref, exit)` with `leave(g, OUT.x)` | anything that goes: plays the exit on a copy as React removes it |
+| `useMove(ref, on, { enter, leave, quiet, bottom })` | the children of a box glide to new places (FLIP): VirtualList, CardGrid, the toast stack, the composer's chips, the transcript's rows |
+| `glideAfter(el)` | before a change that resizes `el` alone (Fold): what follows it up to its scroller glides from where it was |
+| `useReplaced(ref)` | what takes a skeleton's place fades in (LoadingRow has it) |
+| `usePush(ref, depth)` | a phone: a deeper page pushes in from the right, back reverses it (PlaceHead has it) |
+| `useSlide` (`ui/slide.ts`) | one mark that slides to the chosen item: rail, Tabs, Segmented, Radios |
+
+A place switch fades the new place in over the one left (`App.tsx`). Press is
+`scale(0.98)` on `:active` with `transform` in the transition. A row that scrolls into view
+never animates. No `width`, `height` or `margin` transitions, no `will-change`.
+
+Reduced motion (`base.css`): every duration is 0.01 ms and the JS primitives skip; the
+working marks (spin, dots, a running dot) keep moving at half speed.
+
 ## Shell parts
 
 | Part | When |
 |---|---|
 | `Rail` | the app's left column of places; the phone's scrollable bottom bar of icons |
 | `Tabs` | only Celine's side panel (Model, Tools, Pages, Context). Nowhere else |
-| `DisclosureArrow` | only in a Tree |
+| `DisclosureArrow` | only in a Tree, a Fold and a folding ListSection |

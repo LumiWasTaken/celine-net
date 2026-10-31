@@ -1,6 +1,6 @@
 """Approvals: what the user answers before something runs, from a logged-in session
 (GET /api/approvals, POST /api/approvals/{id}/answer; Settings, Vault shows the vault's).
-One service, four kinds:
+One service, these kinds:
 
 - `vault`, the vault's taps. Only the high-risk actions ask: the password into its
   shellbox (vault__get with shell), where everything in the box and the internet can
@@ -16,6 +16,12 @@ One service, four kinds:
   user already approved on Bastet's ask (`call`, its tool call id) is not asked again.
 - `share`, a public share (shell__share, skills/shell.py): anyone with its link opens
   it, so it waits for the user, guard or no guard, as an edit of herself does.
+- `settings`, a change of the settings (settings__propose, skills/settings.py): every
+  one waits for the user, guard or no guard. Its chat row carries `changes`, each field's
+  label, before (none when it had no value) and after (a secret's value never: its
+  state), and her `why`.
+- `model`, a sub-agent on a cloud model (sub_agents__start, sub_agents/skill.py): every
+  start waits for the user; its line names the sub-agent, the model and the brief's start.
 
 Every request but a gate (Bastet's banner is its ask there) shows in the chat that asked,
 after the message that made the call, with Approve and Deny: the conversation event
@@ -32,7 +38,9 @@ In the user's own turn (turns/waiting.py) the tool call waits for their answer o
 Stop, and the turn's wall clock and the tool's time do not run meanwhile; in any other
 turn (a routine, a mission, a sub-agent) it waits ASK_FOR seconds. The user answers from
 a logged-in session (a named token is refused). One request waits at a time in a
-conversation. A request is in memory: a restart forgets it,
+conversation. Each carries where its conversation lives (`home`, `link`; homes.py), so
+the rail marks that place, the window's title counts them and the rows of the
+conversation and of its root (a mission, a run, a background task) say it waits. A request is in memory: a restart forgets it,
 and the vault is locked after a restart anyway. Every change is the global event
 `approvals.changed`, and a new request a `notice` (events.py) too.
 """
@@ -53,16 +61,16 @@ from .guard.sources import OUTSIDE   # skills whose results others wrote: one li
 log = logging.getLogger("celine.approvals")
 
 ASK_FOR = 120       # seconds a request waits for the user
-KINDS = ("vault", "gate", "her", "share")
-LABEL = {"vault": "Vault", "gate": "Bastet", "her": "Persona", "share": "Shares"}
+KINDS = ("vault", "gate", "her", "share", "settings", "model")
+LABEL = {"vault": "Vault", "gate": "Bastet", "her": "Persona", "share": "Shares",
+         "settings": "Settings", "model": "Cloud model"}
 LINE_MAX = 200      # characters of a request's facts on its line in the chat
 APPROVED_KEPT = 64  # tool calls approved on Bastet's ask, kept so the tool asks no more
 
 SHELL = "put the password of {entry} into a file in the shellbox"
 ROTATE = "change the password of {entry}"
-SHELL_SHORT = "{entry} password into the shell"
-ROTATE_SHORT = "new password for {entry}"
-WHY_MAX = 300
+SHELL_SHORT = "Put the {entry} password into a file in the shellbox"
+ROTATE_SHORT = "Change the password of {entry}"
 
 
 STOPPED = object()   # the turn the user waited on ended before they answered
@@ -87,21 +95,29 @@ class Ask:
     answer: asyncio.Future = field(repr=False)
     ref: int | None = None  # gate: Bastet's row, so her banner can answer it
     call: str | None = None  # the tool call it is for
+    changes: list[dict] | None = None   # settings: [{label, before, after}]
+    who: str = ""           # her name: the one who asks
+    home: str | None = None  # where its conversation lives (homes.of), and the link
+    link: str | None = None
+    root: str | None = None  # the top of its agent_of chain (homes.root): a mission, a run
 
     def view(self) -> dict:
         return {"id": self.id, "kind": self.kind, "action": self.action,
                 "facts": self.facts, "why": self.why,
                 "conversation": self.conversation, "read": self.read,
+                "home": self.home, "link": self.link,
                 "expires_in": None if self.expires is None else
                 max(0, round(self.expires - time.time()))}
 
     def line(self) -> str:
-        """Its line in the chat: the action, then the call's own data on one line."""
-        what = self.action[:1].upper() + self.action[1:] + "."
+        """Its line in the chat: who asks for the action, then the call's own data on
+        one line, each a sentence."""
+        what = f"{self.who} asks to {self.action}." if self.who else \
+            self.action[:1].upper() + self.action[1:] + "."
         facts = " ".join("; ".join(self.facts).split())
         if len(facts) > LINE_MAX:
             facts = facts[:LINE_MAX - 1].rstrip() + "\u2026"
-        return f"{what} {facts}" if facts else what
+        return f"{what} {facts[:1].upper()}{facts[1:]}" if facts else what
 
     def live(self) -> bool:
         return not self.answer.done() and (self.expires is None or
@@ -111,8 +127,11 @@ class Ask:
 def chat(ask: Ask, message_id: str | None) -> dict:
     """A request as its chat shows it: the kind's name, its line, Approve and Deny,
     after the message `message_id`."""
-    return {"id": ask.id, "kind": ask.kind, "label": LABEL[ask.kind], "line": ask.line(),
-            "tool_call_id": ask.call, "message_id": message_id}
+    out = {"id": ask.id, "kind": ask.kind, "label": LABEL[ask.kind], "line": ask.line(),
+           "tool_call_id": ask.call, "message_id": message_id}
+    if ask.changes is not None:
+        out |= {"changes": ask.changes, "why": ask.why}
+    return out
 
 
 def _open(rows) -> dict[str, tuple[str, dict]]:
@@ -148,6 +167,20 @@ async def close_left(store) -> int:
     return await store.write(fn)
 
 
+def asked(services) -> frozenset[str]:
+    """Approvals.conversations of the app's service, empty without one: the lists
+    (conversations, missions, runs, background tasks) mark those rows."""
+    a = getattr(services, "approvals", None)
+    return a.conversations() if a is not None else frozenset()
+
+
+def _where(c, cid: str) -> dict:
+    """{home, link, root} of conversation `cid` (homes.py); all None when it is gone."""
+    from . import homes
+    top = homes.root(c, cid)
+    return {**homes.of(c, cid), "root": top["id"] if top is not None else None}
+
+
 class Approvals:
     def __init__(self, cfg, emit=None, store=None):
         self.cfg, self.emit, self.store = cfg, emit, store
@@ -174,20 +207,25 @@ class Approvals:
 
     async def ask(self, action: str, facts: list[str], conversation: str,
                   why: str = "", short: str = "", kind: str = "vault",
-                  ref: int | None = None, call: str | None = None) -> str | None:
+                  ref: int | None = None, call: str | None = None,
+                  changes: list[dict] | None = None) -> str | None:
         """Wait for the user's answer. -> None when approved, else one sentence for its
         tool result: denied, no answer in time (it starts with `{user} did not answer`),
         no reason given (vault), or another one waits. `call`: the tool call it is for;
-        one the user approved on Bastet's ask (a gate) is not asked again by its tool."""
-        if call and kind != "gate" and call in self.approved:
+        one the user approved on Bastet's ask (a gate) is not asked again by its tool,
+        but a change of settings is: its request shows each field before and after."""
+        if call and kind not in ("gate", "settings") and call in self.approved:
             del self.approved[call]
             return None
         now = time.time()
         user = self.cfg.user
-        why = " ".join((why or "").split())[:WHY_MAX]
-        if kind == "vault" and len(why) < 10:
+        why = why or ""
+        if kind == "vault" and len(why.strip()) < 10:
             return (f"Nothing was asked: say why you need it in `why`, one real sentence "
                     f"{user} can judge (what for, which site or script).")
+        where = await self.store.read(lambda c: _where(c, conversation)) \
+            if self.store is not None else {}
+        # no await from this check to the insert: two calls at once cannot both pass
         if any(a.conversation == conversation for a in self.waiting.values()):
             return f"Another request waits for {user}; ask again once it is answered."
         from .turns.waiting import TURN
@@ -197,7 +235,9 @@ class Approvals:
                   why=why, short=short, conversation=conversation,
                   read=self.read.get(conversation),
                   expires=None if turn is not None else now + ASK_FOR,
-                  answer=asyncio.get_running_loop().create_future(), ref=ref, call=call)
+                  answer=asyncio.get_running_loop().create_future(), ref=ref, call=call,
+                  changes=changes, who=getattr(self.cfg, "name", "") or "",
+                  home=where.get("home"), link=where.get("link"), root=where.get("root"))
         self.waiting[ask.id] = ask
         log.info("approval asked", extra={"event": "approvals.asked", "kind": kind,
                                           "action": action.split(" ")[0]})
@@ -265,6 +305,17 @@ class Approvals:
 
     def view(self, kind: str | None = None) -> list[dict]:
         return [a.view() for a in self.waiting.values() if kind in (None, a.kind)]
+
+    def count(self) -> int:
+        """How many wait in a conversation that is there (one with a `home`): the
+        window's title; every one of them marks its place."""
+        return sum(1 for a in self.waiting.values() if a.home is not None)
+
+    def conversations(self) -> frozenset[str]:
+        """The conversations a request waits in, and the roots of those (a mission, a
+        run, a background task): their rows say they wait for the user."""
+        return frozenset(x for a in self.waiting.values()
+                         for x in (a.conversation, a.root) if x)
 
     def _changed(self) -> None:
         if self.emit is not None:

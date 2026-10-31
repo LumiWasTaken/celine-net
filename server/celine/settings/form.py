@@ -1,0 +1,250 @@
+"""The one form schema: the field record, `validate`, `view`, and the secrets of a form.
+General (settings/general.py), email (mail.py), the vault (vault.py), the services
+(services.py) and each plugin's `settings.toml` (celine/plugins.py) are validated here; a
+module keeps only its extra checks after this pass. Forms are served by api/forms.py.
+
+A field is a dict: `key`, `label`, `type` (one of TYPES), `default`, and by type:
+- `text`: `required`, `max_len`, `zone` (an IANA time zone), `word` (stripped, no spaces
+  inside), and for the UI `long`, `mono`, `placeholder`;
+- `number`, `duration`: `min`, `max` (a float default takes any number, an int one whole
+  numbers), and for the UI `step`, `unit`;
+- `choice`: `choices`, [value, label] pairs;
+- `list`: a list of strings, one per line in the UI, blank lines dropped;
+- `secret`: write-only, stored in <data>/secrets/<form>.<key>.key; the view says only
+  {state, set_at};
+- `copy`: a read-only string the form fills at view time, left out when it has none.
+Common: `help`, `advanced`, `group`, `where: "config"` (read-only), and in a plugin's form
+`filled`: the plugin's own code fills it (a device's report), never the user. Its text is
+what to do while it is empty (`fill`); it is left out of the view, and a client's save
+(`kept`) may not name it and keeps it as saved.
+
+A value is unset (back to its default) when it is None, or text that is only whitespace (an
+error for a `required` field). Anything else must be a value of its type: "" is no number,
+no choice and no switch."""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+from . import secrets
+from .files import Invalid
+
+TYPES = ("bool", "choice", "number", "duration", "text", "list", "secret", "copy")
+WRITE_ONLY = ("secret", "copy")     # never in `values`
+
+
+def check(path: str, f: dict[str, Any], v: Any) -> Any:
+    """One value against its field; -> the value as stored. Raises Invalid with `path`."""
+    t = f["type"]
+    if t == "bool":
+        if not isinstance(v, bool):
+            raise Invalid(path, "This must be true or false.")
+    elif t == "choice":
+        if v not in [c[0] for c in f["choices"]]:
+            raise Invalid(path, "This must be one of " +
+                          ", ".join(c[0] for c in f["choices"]) + ".")
+    elif t in ("number", "duration"):
+        if isinstance(f.get("default"), float):
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                raise Invalid(path, "This must be a number.")
+        elif not isinstance(v, int) or isinstance(v, bool):
+            raise Invalid(path, "This must be a whole number.")
+        if v < f.get("min", v) or v > f.get("max", v):
+            raise Invalid(path, f"This must be between {f['min']} and {f['max']}.")
+    elif t == "text":
+        if not isinstance(v, str):
+            raise Invalid(path, "This must be text.")
+        if f.get("word"):
+            v = v.strip()
+            if any(c.isspace() for c in v):
+                raise Invalid(path, "This must be text without spaces.")
+        if f.get("required") and not v.strip():
+            raise Invalid(path, "This cannot be empty.")
+        if len(v) > f.get("max_len", len(v)):
+            raise Invalid(path, f"This is at most {f['max_len']} characters.")
+        if f.get("zone"):
+            try:
+                from zoneinfo import ZoneInfo
+                ZoneInfo(v)
+            except Exception:
+                raise Invalid(path, f"'{v}' is not a time zone. Try America/New_York.") \
+                    from None
+    elif t == "list":
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            raise Invalid(path, "This must be a list of text.")
+        v = [x.strip() for x in v if x.strip()]
+    return v
+
+
+def clean(path: str, f: dict[str, Any], v: Any) -> Any:
+    """One value as stored, or None when it is unset."""
+    if f["type"] == "text" and isinstance(v, str) and not v.strip():
+        if f.get("required"):
+            raise Invalid(path, "This cannot be empty.")
+        return None
+    return None if v is None else check(path, f, v)
+
+
+def validate(section: str, fields: list[dict[str, Any]], data: Any) -> dict[str, Any]:
+    """Only known keys, each checked; a key left out (or None) is its default."""
+    if not isinstance(data, dict):
+        raise Invalid(section, "These settings are an object.")
+    by_key = {f["key"]: f for f in fields}
+    out: dict[str, Any] = {}
+    for k, v in data.items():
+        f = by_key.get(k)
+        if f is None or f["type"] in WRITE_ONLY:
+            raise Invalid(f"{section}.{k}", f"'{k}' is not a setting here.")
+        v = clean(f"{section}.{k}", f, v)
+        if v is not None:
+            out[k] = v
+    return out
+
+
+def values(fields: list[dict[str, Any]], saved: dict[str, Any]) -> dict[str, Any]:
+    """Every field's value: as saved, else its default."""
+    return {f["key"]: saved.get(f["key"], f.get("default"))
+            for f in fields if f["type"] not in WRITE_ONLY}
+
+
+def check_toml(pid: str, doc: dict[str, Any]) -> None:
+    """Plugin `pid`'s settings.toml as the loader reads it: [[fields]], an optional `note`,
+    `copies = "module:coroutine"` (api/forms.py), [[actions]] {id, label, input?, run =
+    "module:coroutine"}; raises ValueError."""
+    fields = doc.get("fields")
+    if not isinstance(fields, list) or not fields:
+        raise ValueError("settings.toml needs [[fields]]")
+    seen = set()
+    for f in fields:
+        if not isinstance(f, dict) or not isinstance(f.get("key"), str) \
+                or not isinstance(f.get("label"), str):
+            raise ValueError("every field needs a key and a label")
+        if f["key"] in seen:
+            raise ValueError(f"the field {f['key']!r} is there twice")
+        seen.add(f["key"])
+        if f.get("type") not in TYPES:
+            raise ValueError(f"the field {f['key']!r} has no known type "
+                             f"({', '.join(TYPES)})")
+        if f["type"] == "secret" and not secrets.valid_name(secret_name(pid, f["key"])):
+            raise ValueError(f"the secret {f['key']!r} cannot name its file "
+                             f"{secret_name(pid, f['key'])}.key: {secrets.NAME_RULE}")
+        if f["type"] == "choice" and not f.get("choices"):
+            raise ValueError(f"the choice {f['key']!r} needs choices")
+        if "filled" in f and (not isinstance(f["filled"], str) or not f["filled"]):
+            raise ValueError(f"filled of {f['key']!r} is the sentence what fills it")
+        if f["type"] not in WRITE_ONLY and "default" in f:
+            try:
+                check(f["key"], f, f["default"])
+            except Invalid as e:
+                raise ValueError(f"the default of {f['key']!r}: {e}") from None
+    if not isinstance(doc.get("note", ""), str):
+        raise ValueError("the note is one text")
+    if not isinstance(doc.get("copies", ""), str):
+        raise ValueError('copies is one "module:function"')
+    for a in doc.get("actions", []):
+        if not isinstance(a, dict) or not all(isinstance(a.get(k), str)
+                                              for k in ("id", "label", "run")):
+            raise ValueError("every action needs an id, a label and a run")
+
+
+def actions_view(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What a client sees of the actions: never the code they run."""
+    return [{k: a[k] for k in ("id", "label", "input") if k in a} for a in actions]
+
+
+def secret_name(section: str, key: str) -> str:
+    """Its file in <data>/secrets: <section>.<key>.key."""
+    return f"{section}.{key}"
+
+
+def secret_states(section: str, fields: list[dict[str, Any]],
+                  root: Path | None) -> dict[str, dict[str, Any]]:
+    return {f["key"]: (secrets.state(root, secret_name(section, f["key"])) if root is not None
+                       else {"state": "not set", "set_at": None})
+            for f in fields if f["type"] == "secret"}
+
+
+def view(section: str, fields: list[dict[str, Any]], saved: dict[str, Any],
+         root: Path | None, copies: dict[str, str] | None = None) -> dict[str, Any]:
+    """What a client gets: the fields (a `copy` without a value and a `filled` one left
+    out), the values, each secret's state, never a secret."""
+    copies = copies or {}
+    typed = [f for f in fields if "filled" not in f]
+    shown = [({**f, "value": copies[f["key"]]} if f["type"] == "copy" else f)
+             for f in typed if f["type"] != "copy" or copies.get(f["key"])]
+    return {"fields": shown, "values": values(typed, saved),
+            "secrets": secret_states(section, typed, root)}
+
+
+def kept(section: str, fields: list[dict[str, Any]], data: Any, secrets_: Any,
+         saved: dict[str, Any]) -> Any:
+    """A client's whole `values` with each `filled` value as saved; a `filled` key in
+    `data` or `secrets_` is refused."""
+    filled = {f["key"] for f in fields if "filled" in f}
+    for k in [*(data if isinstance(data, dict) else ()),
+              *(secrets_ if isinstance(secrets_, dict) else ())]:
+        if k in filled:
+            raise Invalid(f"{section}.{k}", f"'{k}' is not a setting here.")
+    if not isinstance(data, dict):
+        return data
+    return {**data, **{k: saved[k] for k in filled if k in saved}}
+
+
+def check_secrets(section: str, fields: list[dict[str, Any]], data: Any) -> dict[str, Any]:
+    """{key: "new" | None}: a string sets, None deletes; only secret fields."""
+    if not isinstance(data, dict):
+        raise Invalid(f"{section}.secrets", "The secrets are an object.")
+    kinds = {f["key"]: f["type"] for f in fields}
+    out: dict[str, Any] = {}
+    for k, v in data.items():
+        path = f"{section}.{k}"
+        if kinds.get(k) != "secret":
+            raise Invalid(path, f"'{k}' is not a secret here.")
+        if not secrets.valid_name(secret_name(section, k)):
+            raise Invalid(path, f"This secret cannot name its file: {secrets.NAME_RULE}")
+        if v is not None:
+            if not isinstance(v, str) or not v.strip():
+                raise Invalid(path, "This must be text.")
+            v = v.strip()
+            if len(v) > secrets.MAX_KEY or any(c in v for c in "\r\n\0"):
+                raise Invalid(path, "This is not one line of text.")
+        out[k] = v
+    return out
+
+
+def written(section: str, root: Path, clean: dict[str, Any]):
+    """Write a form's checked secrets (check_secrets) for the save that follows:
+    `with written(...): commit`. A failed save puts every one back as it was."""
+    return secrets.written(root, {secret_name(section, k): v for k, v in clean.items()})
+
+
+def read_secret(cfg, section: str, key: str) -> str | None:
+    """For the code that uses it. Never for an API response."""
+    root = getattr(getattr(cfg, "settings", None), "secrets_root", None)
+    return secrets.read_key(root, secret_name(section, key)) if root is not None else None
+
+
+_REF = re.compile(r"\$\{(\w+)\}")
+
+
+def fill(cfg, section: str, fields: list[dict[str, Any]], text: str,
+         empty: list[str]) -> str:
+    """`text` with each `${KEY}` the value of the field whose key is `key` (a value as
+    saved, a secret as stored); each one empty or unknown adds its sentence to `empty` (a `filled` one its `filled`
+    text)."""
+    by_name = {f["key"].upper(): f for f in fields}
+    saved = values(fields, (getattr(cfg.settings, "plugins", None) or {}).get(section, {}))
+
+    def one(m: re.Match) -> str:
+        f = by_name.get(m.group(1))
+        if f is None:
+            empty.append(f"{m.group(0)} names no field")
+            return ""
+        got = read_secret(cfg, section, f["key"]) if f["type"] == "secret" \
+            else saved.get(f["key"])
+        if got is None or str(got) == "":
+            empty.append(f.get("filled") or f"{f['label']} is empty")
+            return ""
+        return str(got)
+    return _REF.sub(one, text)
