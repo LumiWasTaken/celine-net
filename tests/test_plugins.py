@@ -338,3 +338,19 @@ def test_a_closed_file_drops_its_readers_and_reads_again(tmp_path):
         first.execute("SELECT 1")
     assert f.read_sync(lambda c: c.execute("SELECT count(*) FROM heard").fetchone()[0]) == 0
     assert f._reader() is not first
+
+
+def test_the_readers_of_ended_threads_are_closed(tmp_path):
+    import threading
+    from celine.kb.db import KBFile
+    f = KBFile(tmp_path / "x.db", ECHO / "migrations")
+    seen = []
+    for _ in range(5):
+        t = threading.Thread(target=lambda: seen.append(f._reader()))
+        t.start()
+        t.join()
+    f._reader()
+    assert len(f._readers) == 1, "one reader left: this thread's"
+    for c in seen:
+        with pytest.raises(Exception, match="closed"):
+            c.execute("SELECT 1")

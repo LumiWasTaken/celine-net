@@ -79,8 +79,8 @@ class KBs:
     def close(self, kid: str) -> None:
         """A source switched off: its archive gone from the lists, its file kept."""
         kb = self.all.pop(kid, None)
-        if kb is not None and hasattr(kb, "close"):
-            kb.close()
+        if kb is not None:
+            kb.file.close()
 
     # ---- lookup ----------------------------------------------------------------------
     def get(self, kid: str) -> ChatKB | DocumentsKB | None:

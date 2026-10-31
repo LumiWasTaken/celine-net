@@ -74,14 +74,16 @@ class KBFile:
     def __init__(self, path: Path, migrations: Path):
         self.path = path
         migrate(path, migrations)
-        self._readers: set[sqlite3.Connection] = set()    # every thread's, for close()
+        # every thread's reader and its thread, for close() and to close the readers
+        # of worker threads that ended (anyio's idle workers exit after 10 s)
+        self._readers: dict[sqlite3.Connection, threading.Thread] = {}
         self._lock = threading.Lock()
 
     def _reader(self) -> sqlite3.Connection:
         """This thread's connection to the file. Reopened when the file on disk is a
         different one than when it was opened (a restored backup, a copied-in
         knowledge base), so a replaced file is never served from the old inode, and
-        after close()."""
+        after close(). Opening one closes those of the threads that ended."""
         cache: dict[tuple[str, int], tuple[sqlite3.Connection, int]] = \
             getattr(_local, "conns", None) or {}
         _local.conns = cache
@@ -95,16 +97,18 @@ class KBFile:
             mine = hit is not None and hit[0] in self._readers
         if mine and hit[1] == ino:
             return hit[0]
-        if mine:
-            with self._lock:
-                self._readers.discard(hit[0])
-            try:
-                hit[0].close()
-            except sqlite3.Error:
-                pass
         conn = connect(self.path)
         with self._lock:
-            self._readers.add(conn)
+            old = [c for c, t in self._readers.items()
+                   if not t.is_alive() or (mine and c is hit[0])]
+            for c in old:
+                del self._readers[c]
+            self._readers[conn] = threading.current_thread()
+        for c in old:
+            try:
+                c.close()
+            except sqlite3.Error:
+                pass
         cache[key] = (conn, os.stat(self.path).st_ino)
         return conn
 
@@ -113,7 +117,7 @@ class KBFile:
         A read still running in another thread at that moment fails; a read after it
         opens a new one. The file stays."""
         with self._lock:
-            conns, self._readers = self._readers, set()
+            conns, self._readers = list(self._readers), {}
         for conn in conns:
             try:
                 conn.close()
