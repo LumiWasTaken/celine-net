@@ -23,8 +23,8 @@ plans, a diary, what she knows about you.
 
 **She works on her own.** Routines run on a schedule (a daily diary, the news, whatever you
 set up). Missions are bigger goals she works on over hours or days, with sub-agents doing
-parts of the work. Everything you, she and her helpers say to each other goes through one
-intercom.
+parts of the work. Everything you, she and her helpers say to each other goes through the
+Intercom.
 
 **A guard.** A second, smaller model called Bastet looks at risky actions before they run
 and can stop them or ask you first.
@@ -80,16 +80,17 @@ docker compose exec -u celine celine cat /data/app/setup-code.txt
 ```
 
 `.env` starts her Linux box, her browser, web search and the Discord and WhatsApp
-connectors along with the app. Take out of `COMPOSE_PROFILES` what you don't want.
+connectors along with the app. Remove the services you don't want from `COMPOSE_PROFILES`.
 
-Open http://localhost:8766, enter the setup code and pick a login (passkey, password or
-PIN). After that the setup walks you through naming her, telling her about you, connecting
+Open http://localhost:8766, enter the setup code (the last command above prints it) and
+pick a way to log in: a passkey, a password or a PIN. After that the setup walks you through naming her, telling her about you, connecting
 a model and turning features on.
 
 To use it from other machines on your network (her Mac, your phone) without a domain:
 put `CELINE_PUBLISH=8766` in `.env`, run `docker compose up -d` again, open
-`http://<this machine's LAN address>:8766` and enter the setup code there. The app keeps
-the address you set it up at. Log in with a password or a PIN: passkeys need https or
+`http://<this machine's LAN address>:8766` and enter the setup code there. The app remembers
+the address where you entered the setup code. You can change it later in Settings, General,
+Network. Log in with a password or a PIN: passkeys need https or
 localhost.
 
 More about running it for real is in [docs/DEPLOY.md](docs/DEPLOY.md).
