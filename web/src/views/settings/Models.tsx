@@ -64,7 +64,7 @@ export function providerProblem(p: ProviderView): string | null {
 
 /** why a model cannot be used now, or null */
 function modelProblem(m: ProviderModel | undefined, p: ProviderView | undefined): string | null {
-  if (!m || !p) return 'Not on its provider any more.'
+  if (!m || !p) return 'This model is no longer on its provider. Pick another one.'
   if (p.state.key_missing) return `${p.provider.label} has no API key.`
   if (p.state.reachable === false) return `${p.provider.label} is not connected.`
   if (m.state.state === 'failed') {
@@ -196,16 +196,16 @@ export function RoleRow({ role, info, providers, onChanged, fallback, onSave, he
 
 // plain words for the provider options the server lists per kind; others are humanised
 const OPTION: Record<string, { label: string; help?: string; unit?: string; choices?: Record<string, string> }> = {
-  service_tier: { label: 'Speed and price', choices: { '': 'Default', flex: 'Flex (cheaper, slower)', priority: 'Priority (faster, dearer)' } },
+  service_tier: { label: 'Speed and price', choices: { '': 'Default', flex: 'Flex (cheaper, slower)', priority: 'Priority (faster, more expensive)' } },
   data_collection: { label: 'Provider may keep data', choices: { deny: 'No', allow: 'Yes' } },
   require_parameters: { label: 'Require parameters' },
   allow_fallbacks: { label: 'Allow fallbacks' },
   sort: { label: 'Sort by', choices: { '': 'Default', throughput: 'Throughput', latency: 'Latency', price: 'Price' } },
   timeout: { label: 'Timeout', unit: 'seconds' },
-  max_concurrent: { label: 'Requests at once', help: '0 = no limit' },
-  keep_alive: { label: 'Unload after', help: '5m' },
+  max_concurrent: { label: 'Requests at once', help: '0 means no limit.' },
+  keep_alive: { label: 'Unload after', help: 'How long an idle model stays loaded, for example 5m or 1h.' },
   shares_gpu_with: { label: 'Shares its GPU with',
-                     help: 'The app unloads its models before each image.' },
+                     help: 'Before each image, the app unloads this provider\'s models to free the GPU.' },
 }
 // lists of OpenRouter provider names: edited in var/settings/providers.toml
 const FILE_ONLY = new Set(['order', 'only', 'ignore', 'quantizations', 'backup_models', 'thinking_levels'])
@@ -311,7 +311,7 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
       {open && <ModelDialog p={p} m={open} onClose={() => setEditing(null)} onChanged={onChanged} />}
       {dropping && (
         <ConfirmDialog title={`Remove ${modelName(dropping)}?`} danger confirmLabel="Remove"
-                       body={`It leaves ${cfg.label}.`}
+                       body={`It is removed from ${cfg.label} and from every role that uses it.`}
                        onClose={() => setDropping(null)}
                        onConfirm={async () => {
                          try { await settingsApi.deleteModel(p.id, dropping.name); setDropping(null); onChanged() }
@@ -320,7 +320,7 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
       )}
       {remove && (
         <ConfirmDialog title={`Remove ${cfg.label}?`} danger confirmLabel="Remove"
-                       body="Its models leave every role. The app deletes its key."
+                       body="Its models are removed from every role, and its saved key is deleted."
                        onClose={() => setRemove(false)}
                        onConfirm={async () => {
                          try { await settingsApi.deleteProvider(p.id); onChanged(); nav.go({ section: 'settings', page: 'models' }) }
@@ -540,7 +540,7 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
         )}
         {list.error && !list.data ? <InlineError compact message={list.error} onRetry={list.reload} />
           : !list.data ? <LoadingRow label="Loading" />
-          : shown.length === 0 ? (unlisted ? null : <EmptyState compact>{q ? `No model matches "${q}".` : 'Every model it has is added already.'}</EmptyState>)
+          : shown.length === 0 ? (unlisted ? null : <EmptyState compact>{q ? `No model matches "${q}".` : 'All models from this provider are already added.'}</EmptyState>)
           : (
             <div className="boxed-list boxed-list--dialog" style={{ '--rows': shown.length } as CSSProperties}>
               <VirtualList items={shown} estimate={44} getKey={d => d.id} resetOn={q}

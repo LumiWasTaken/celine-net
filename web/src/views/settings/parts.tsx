@@ -71,7 +71,7 @@ export function StatusDot({ level, word = false }: { level: Level; word?: boolea
 const WHAT: Record<string, string> = {
   sync: 'Syncing', import: 'Importing', feed: 'Syncing new messages',
   subscribe: 'Syncing past messages', channels: 'Syncing new channels',
-  semantic: 'Updating the semantic topic search index', captions: 'Writing photo descriptions',
+  semantic: 'Updating topic search', captions: 'Writing photo descriptions',
 }
 /* server progress units in the glossary's words; the semantic topic search index shows no unit */
 const UNIT: Record<string, string> = {

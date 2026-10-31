@@ -77,7 +77,7 @@ function SourceLink({ s }: { s: Source }) {
 function Face({ t }: { t: Thread }) {
   if (t.source?.kind === 'mission') return <span className="intercom-face" aria-hidden><Flag size={ICON.md} /></span>
   if (t.last.from === 'system:app') return <span className="intercom-face" aria-hidden><Info size={ICON.md} /></span>
-  if (t.name === 'Everyone working') return <span className="intercom-face" aria-hidden><Mail size={ICON.md} /></span>
+  if (t.name === 'Everyone') return <span className="intercom-face" aria-hidden><Mail size={ICON.md} /></span>
   return <Who name={t.name} />
 }
 
@@ -202,7 +202,7 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
   ]
   const word = kind ? KIND_PLURAL[kind].toLowerCase() : null
   const empty = s ? 'No messages match'
-    : show === 'waiting' && !who ? (word ? `No ${word} wait for you` : 'Nothing waits for you')
+    : show === 'waiting' && !who ? (word ? `No ${word} are waiting for you` : 'Nothing is waiting for you')
     : word ? `No ${word} yet` : 'No messages yet'
   const froms = (list.data?.groups ?? []).map(g => ({ address: g.addresses[0] ?? g.name, name: g.name }))
   const failed = !shown.data && shown.error
@@ -411,7 +411,7 @@ function NewMessage({ onClose, onSent }: { onClose: () => void; onSent: (thread:
   const [text, setText] = useState('')
   const [when, setWhen] = useState<When>('now')
   const [whenText, setWhenText] = useState('')
-  const all = recipients.data ?? [{ to: 'all', name: 'Everyone working', line: null }]
+  const all = recipients.data ?? [{ to: 'all', name: 'Everyone', line: null }]
   // its own: its chats and tasks and their sub-agents, newest first, picked in a second step
   const hers = all.filter(r => r.line)
   const options = [...all.filter(r => !r.line).map(r => ({ value: r.to, label: r.name })), ...(hers.length ? [{ value: HER, label: her || 'Celine' }] : [])]

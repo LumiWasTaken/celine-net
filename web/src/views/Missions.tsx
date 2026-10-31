@@ -255,7 +255,7 @@ function Rename({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDon
 
 function StopMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDone: () => void }) {
   return (
-    <ConfirmDialog title={`Stop ${m.name}?`} danger confirmLabel="Stop" body="Its conversation, plan and terminals stay."
+    <ConfirmDialog title={`Stop ${m.name}?`} danger confirmLabel="Stop" body="Its conversation, plan and terminals are kept."
                    onClose={onClose}
                    onConfirm={async () => { try { await missionsApi.stop(m.conversation_id) } catch (e) { return errorText(e) } onDone(); onClose() }} />
   )
@@ -264,7 +264,7 @@ function StopMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; 
 function TrashMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDone: () => void }) {
   const nav = useNav()
   return (
-    <ConfirmDialog title={`Move ${m.name} to Trash?`} danger confirmLabel="Move to Trash" body="Restore brings it back."
+    <ConfirmDialog title={`Move ${m.name} to Trash?`} danger confirmLabel="Move to Trash" body="You can restore it from the Trash."
                    onClose={onClose}
                    onConfirm={async () => {
                      try { await missionsApi.trash(m.conversation_id) } catch (e) { return errorText(e) }

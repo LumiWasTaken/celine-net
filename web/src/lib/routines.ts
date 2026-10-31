@@ -132,7 +132,7 @@ export const ASKED_WORD = 'Waiting for you'
 /** the one word for a run's state */
 export const STATE_WORD: Record<RunState | 'planned', string> = {
   waiting: 'Waiting', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', stopped: 'Stopped',
-  planned: 'Planned',
+  planned: 'Scheduled',
 }
 
 /** the dot of a run's state */

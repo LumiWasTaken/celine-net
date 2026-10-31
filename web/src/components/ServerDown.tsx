@@ -19,8 +19,8 @@ export function ServerDown() {
   if (!down) return null
   return createPortal(
     <div ref={box} className="server-down" role="alertdialog" aria-modal="true" aria-labelledby="server-down-title" tabIndex={-1}>
-      <EmptyState title={<h1 id="server-down-title" className="server-down__title">X_X</h1>}>
-        Attempting to reconnect<Dots className="server-down__dots" />
+      <EmptyState title={<h1 id="server-down-title" className="server-down__title">No connection to the server</h1>}>
+        Reconnecting<Dots className="server-down__dots" />
       </EmptyState>
     </div>,
     document.body,

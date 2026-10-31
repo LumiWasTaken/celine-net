@@ -60,7 +60,7 @@ export function WhatSheSaw({ conversationId, steps, title, onClose }: {
       {mind && <MindView mind={mind} />}
       {error ? <InlineError compact message={error} />
         : !kept ? <LoadingRow />
-        : !kept.length ? <StatusLine>Not kept</StatusLine>
+        : !kept.length ? <StatusLine>Nothing was saved for this reply.</StatusLine>
         : kept.map(({ st, i }) => <StepView key={steps[i]!.id} n={data!.length > 1 ? i + 1 : null} step={st} />)}
     </Sheet>
   )

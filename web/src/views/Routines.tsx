@@ -411,7 +411,7 @@ function SchedulesList({ list, night, all, go, onChange }: {
 
 function DeleteSchedule({ s, onClose, onDone }: { s: Schedule; onClose: () => void; onDone: () => void }) {
   return (
-    <ConfirmDialog title={`Delete ${s.title}?`} danger confirmLabel="Delete" body="Its runs stay."
+    <ConfirmDialog title={`Delete ${s.title}?`} danger confirmLabel="Delete" body="Its past runs are kept."
                    onClose={onClose}
                    onConfirm={async () => {
                      try { await routinesApi.remove(s.name) } catch (e) { return e instanceof Error ? e.message : String(e) }

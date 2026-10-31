@@ -225,7 +225,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
       const done = (Array.isArray(ev.jobs) ? ev.jobs : []) as { state: string }[]
       const ok = done.filter(j => j.state === 'done').length
       const bad = done.filter(j => j.state !== 'done' && j.state !== 'cancelled').length
-      if (ok || bad) setAway(`While you were away: ${ok} finished${bad ? `, ${bad} failed` : ''}`)
+      if (ok || bad) setAway(`While you were away, ${ok} background ${ok === 1 ? 'job' : 'jobs'} finished${bad ? ` and ${bad} failed` : ''}.`)
     }
     // its first write of a new page in the open conversation shows it beside the chat
     if (ev.type === 'artifact.updated' && ev.n === 1 && !ev.yours && ev.conversation === selected && typeof ev.id === 'string') {
@@ -536,7 +536,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
       )}
       {confirmTrash && (
         <ConfirmDialog title="Move to Trash?" danger confirmLabel="Move to Trash"
-                       body={<>"{every.find(c => c.id === confirmTrash)?.title || 'Untitled'}" goes to Trash, where Restore brings it back.</>}
+                       body={<>"{every.find(c => c.id === confirmTrash)?.title || 'Untitled'}" moves to the Trash. You can restore it from there.</>}
                        onClose={() => setConfirmTrash(null)} onConfirm={() => toTrash(confirmTrash)} />
       )}
       {standalonePhoto && (

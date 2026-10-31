@@ -147,7 +147,7 @@ function took(call: ToolCall): ReactNode {
 function outcome(call: ToolCall): string | null {
   const d = call.display
   if (!d) return null
-  if (d.ambiguous === true) return 'the name matches more than one'
+  if (d.ambiguous === true) return 'More than one match for this name'
   if (typeof d.exit === 'number' && d.exit !== 0) return `exit ${d.exit}`
   return null
 }

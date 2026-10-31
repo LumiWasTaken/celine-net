@@ -439,9 +439,9 @@ export const SKILL_WORD: Record<SkillView['status'], string | null> = {
   up: null, starting: null, down: LINK.down, dead: 'Stopped', unset: LINK.unset, unconnected: LINK.down,
 }
 
-/* Settings → Tools and a conversation's panel group skills the same way: On, Needs setup
+/* Settings → Tools and a conversation's panel group skills the same way: On, Not set up
    (shown off until it works), Off */
-export const TOOL_GROUPS = [['on', 'On'], ['setup', 'Needs setup'], ['off', 'Off']] as const
+export const TOOL_GROUPS = [['on', 'On'], ['setup', 'Not set up'], ['off', 'Off']] as const
 export const toolGroup = (status: SkillView['status'], anyOn: boolean) =>
   SKILL_WORD[status] ? 'setup' : anyOn ? 'on' : 'off'
 

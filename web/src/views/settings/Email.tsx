@@ -41,7 +41,7 @@ export function Email() {
     <Page title={title}
           actions={<Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check email</Button>}>
       <Section>
-        {set && <p className="src-line">{checked ? (checked.ok ? LINK.up : LINK.down) : check.error ? LINK.down : 'Testing'}</p>}
+        {set && <p className="src-line">{checked ? (checked.ok ? LINK.up : LINK.down) : check.error ? LINK.down : 'Checking'}</p>}
         <div title={online ? undefined : OFFLINE_TITLE}>
           <Form fields={res.data.fields} values={{ ...res.data.email, ...auto.pending }} disabled={!online}
                 onChange={(k, v) => auto.set(k, v)} />

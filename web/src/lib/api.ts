@@ -199,7 +199,7 @@ async function settle<T>(status: number, text: string): Promise<T> {
     const e = (body && typeof body === 'object' ? (body as { error?: { code?: string; message?: string; detail?: Record<string, string> } }).error : null) ?? {}
     throw new ApiError(e.code ?? 'http_error', e.message ?? httpMessage(status), status, e.detail ?? {})
   }
-  if (body === BAD) throw new ApiError('bad_response', `The server sent a response that is not JSON (HTTP ${status}).`, status)
+  if (body === BAD) throw new ApiError('bad_response', `The server sent an answer the app cannot read (HTTP ${status}). Try again in a moment.`, status)
   return body as T
 }
 
@@ -210,9 +210,9 @@ function parseBody(text: string): unknown {
 }
 
 function httpMessage(status: number): string {
-  if (status === 502 || status === 503 || status === 504) return `The server didn't answer in time (HTTP ${status}). Retry in a moment.`
+  if (status === 502 || status === 503 || status === 504) return `The server didn't answer in time (HTTP ${status}). Try again in a moment.`
   if (status === 404) return 'Not found (HTTP 404).'
-  return `The server didn't respond as expected (HTTP ${status}).`
+  return `The server returned an error (HTTP ${status}). Try again in a moment.`
 }
 
 /** `login`: passkeys are on (a deployment setting), off for local runs; `methods`: the kinds of

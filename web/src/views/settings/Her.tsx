@@ -174,7 +174,7 @@ function Banned({ her, auto }: { her: HerView; auto: Autosave<unknown> }) {
     <Section title="Banned words" count={v.banned.length}
              action={<span title="Banned words and phrases work on tabbyAPI, llama-swap and llama-server models"><Switch hideLabel label="Banned words" checked={on} disabled={!online} onChange={x => auto.set('on', x)} /></span>}>
       <TextPreview mono text={v.banned.map(w => w.trim()).join(', ')} to={editRoute('banned')} empty="Banned words" />
-      <Slider label={<span title="How strongly to avoid them; -100 bans">Bias</span>} value={p.bias ?? v.bias}
+      <Slider label={<span title="How strongly the model avoids these words. At -100 it never uses them.">Bias</span>} value={p.bias ?? v.bias}
               min={-100} max={0} step={1} disabled={!on} onChange={n => auto.set('bias', n, 'soon')} />
     </Section>
   )

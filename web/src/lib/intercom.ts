@@ -140,7 +140,7 @@ export const isScheduled = (m: Pick<IntercomMessage, 'due_at' | 'state'>) => !!m
 
 /** an address as you read it (the server names it) */
 export function addressName(addr: string, names: Record<string, string | null>): string {
-  if (addr === 'all') return 'everyone working'
+  if (addr === 'all') return 'everyone'
   const name = names[addr] ?? addr
   return addr.startsWith('team:') ? `the team of ${name}` : name
 }

@@ -262,17 +262,17 @@ export function Composer({
     const word = args.split(/\s+/)[0] ?? ''
     if (cmd === 'think') {
       if (!word) { setNote({ tone: 'success', text: `Thinking: ${newSettings.thinking ?? 'the model default'}.` }); return true }
-      if (!THINK_WORD.test(word)) { setNote({ tone: 'error', text: 'Thinking is off, default, or one word such as low or high.' }); return false }
+      if (!THINK_WORD.test(word)) { setNote({ tone: 'error', text: 'Use /think off, /think default, or a level such as /think low or /think high.' }); return false }
       const level = word.toLowerCase() === 'default' ? null : word
       setNewSettings(s => ({ ...s, thinking: level }))
-      setNote({ tone: 'success', text: `Thinking: ${level ?? 'the model default'}, from the next turn.` })
+      setNote({ tone: 'success', text: `Thinking: ${level ?? 'the model default'}. This applies from your next message.` })
       return true
     }
     if (cmd === 'model') {
       if (!word) { onModelPanel(); return true }
       if (word.toLowerCase() === 'default') {
         setNewSettings(s => ({ ...s, model: null }))
-        setNote({ tone: 'success', text: 'Model: the default, from the next turn.' })
+        setNote({ tone: 'success', text: 'Model: the default. This applies from your next message.' })
         return true
       }
       const providers = (await settingsApi.providers()).providers
@@ -281,7 +281,7 @@ export function Composer({
         .find(m => [m.ref, m.name, m.label ?? ''].some(x => x.toLowerCase() === w))
       if (!hit) { setNote({ tone: 'error', text: `No chat model "${word}" in Settings, Models.` }); return false }
       setNewSettings(s => ({ ...s, model: hit.ref }))
-      setNote({ tone: 'success', text: `Model: ${hit.label ?? hit.name}, from the next turn.` })
+      setNote({ tone: 'success', text: `Model: ${hit.label ?? hit.name}. This applies from your next message.` })
       return true
     }
     setNote({ tone: 'error', text: `/${cmd} needs a conversation. Send a first message.` })
@@ -417,7 +417,7 @@ export function Composer({
         {setup}
         {typed !== null && (
           <div>
-            <Button variant="ghost" size="sm" icon={Undo2} onClick={() => { setDraft(typed); setTyped(null) }}>Put back what I typed</Button>
+            <Button variant="ghost" size="sm" icon={Undo2} onClick={() => { setDraft(typed); setTyped(null) }}>Undo</Button>
           </div>
         )}
         {exists && closed ? <Notice>{closed}</Notice> : (

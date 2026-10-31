@@ -54,14 +54,14 @@ export function Status({ words, queued = false }: { words: string | null; queued
 /* One sentence for a reason the server says nothing about in words. A failed turn's
    reason is the server's sentence (turns.reason) and shows as it is. */
 const REASON: Record<string, string> = {
-  restart: 'The server restarted during the answer.',
-  wall_clock: 'The answer took too long and was stopped.',
+  restart: 'The server restarted during the reply.',
+  wall_clock: 'The reply took too long and was stopped.',
   max_tool_iterations: 'Stopped at the step limit.',
-  cut_length: 'The answer reached the length limit.',
+  cut_length: 'The reply reached the length limit.',
 }
 const ENDED: Record<string, string> = {
-  aborted: 'Stopped.', interrupted: 'Interrupted.', capped: 'Stopped at the step limit.', failed: 'The answer failed.',
-  done: 'The answer reached the length limit.',
+  aborted: 'Stopped.', interrupted: 'Interrupted.', capped: 'Stopped at the step limit.', failed: 'The reply failed.',
+  done: 'The reply reached the length limit.',
 }
 
 /** the line under an answer that did not come; null when it came */
@@ -70,7 +70,7 @@ export function endWords(turn: Turn | null, error: { message: string } | null, u
   const ended = !!turn && !RUNNING.includes(turn.state) && (turn.state !== 'done' || !!turn.cut)
   if (ended) {
     if (turn.state === 'failed' && turn.reason) return turn.reason
-    return (turn.reason_code && REASON[turn.reason_code]) || ENDED[turn.state] || 'The answer did not finish.'
+    return (turn.reason_code && REASON[turn.reason_code]) || ENDED[turn.state] || 'The reply did not finish.'
   }
   return error ? error.message : null
 }

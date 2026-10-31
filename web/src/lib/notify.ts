@@ -198,6 +198,6 @@ export function useNotices(open: (link: string) => void, icon: string | undefine
       sessionStorage.setItem(ASKED, '1')
     } catch { /* said again on the next load */ }
     toast({ title: 'Notifications', text: 'Blocked in this browser',
-            action: { label: 'Open', onClick: () => open(format({ section: 'settings', page: 'notifications' })) } })
+            action: { label: 'Open Settings', onClick: () => open(format({ section: 'settings', page: 'notifications' })) } })
   }, [p.on, perm]) // eslint-disable-line react-hooks/exhaustive-deps
 }

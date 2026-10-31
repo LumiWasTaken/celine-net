@@ -341,7 +341,7 @@ function ModelStep({ back, next }: StepNav) {
       {saved && (
         <Field label="Model" group>
           {!models ? <LoadingRow label="Loading" />
-            : models.length === 0 ? <InlineError compact message="No chat model found." onRetry={() => void check.run()} />
+            : models.length === 0 ? <InlineError compact message="This server has no chat model. Load one on the server, then press Retry." onRetry={() => void check.run()} />
             : <Choice list label="Model" value={model} onChange={setModel}
                       options={models.map(m => ({ value: m.id, label: m.name || m.id }))} />}
         </Field>
@@ -568,7 +568,7 @@ function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & {
         <p className="onb__line">{name} is ready.</p>
         <p className="onb__line">On: {labels(view, f => switched(view, f, 'on'))}</p>
         {labels(view, f => switched(view, f, 'missing')) !== 'None' && (
-          <p className="onb__line">Off (did not answer): {labels(view, f => switched(view, f, 'missing'))}</p>
+          <p className="onb__line">Off because they did not answer: {labels(view, f => switched(view, f, 'missing'))}. Check their addresses in Settings, Features.</p>
         )}
         {view.catalog.filter(f => switched(view, f, 'unset')).map(f => (
           <p key={f.id} className="onb__line">Not set up: {f.label}. {f.detail}</p>

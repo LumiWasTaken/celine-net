@@ -384,7 +384,7 @@ export function LoginProblem({ kid, st, onChanged }: { kid: string; st: Connecto
              detail={st.connection.error ?? undefined}
              action={online ? { label: failed ? 'Get a new code' : 'Log in with QR code', icon: QrCode, onClick: () => void start.run(), busy: start.busy } : undefined}>
       <div className="muted">Logging in with a user account may break Discord's terms; use it at your own risk.</div>
-      {failed && <InlineError compact message={session.error ?? (session.state === 'expired' ? 'The code expired before you scanned it.' : 'Discord ended the login without a reason.')} />}
+      {failed && <InlineError compact message={session.error ?? (session.state === 'expired' ? 'The code expired before you scanned it.' : 'Discord ended the login. Get a new code and try again.')} />}
       {start.error && <InlineError compact message={start.error} />}
     </Problem>
   )

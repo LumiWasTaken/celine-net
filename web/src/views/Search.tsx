@@ -254,7 +254,7 @@ export function Search({ active }: { active: boolean }) {
             <Button variant="ghost" size="sm" onClick={() => setLiteral(true)}>{`Search for "${corrected.original}"`}</Button>
           </p>
         )}
-        {indexing && hits.length > 0 && <p className="search-line">The word index is still being built</p>}
+        {indexing && hits.length > 0 && <p className="search-line">Search is still indexing your messages, so some results may be missing.</p>}
         {didYouMean && (
           <p className="search-line"><Button variant="ghost" size="sm" icon={SearchIcon} onClick={() => setQ(didYouMean)}>{didYouMean}</Button></p>
         )}
@@ -277,7 +277,7 @@ export function Search({ active }: { active: boolean }) {
         : !loading && !error && hits.length === 0 ? (
           <div className="list-page__empty">
             <EmptyState icon={SearchX} title="No results match" action={<Button onClick={() => setQ('')}>Clear search</Button>}>
-              {indexing ? 'The word index is still being built' : undefined}
+              {indexing ? 'Search is still indexing your messages, so some results may be missing.' : undefined}
             </EmptyState>
           </div>
         ) : (

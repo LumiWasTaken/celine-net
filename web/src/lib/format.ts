@@ -133,7 +133,7 @@ export function dueTime(t: number | string | null | undefined, now = Date.now())
 }
 
 const TURN_STEP: Record<string, string> = {
-  queued: 'Waiting for the model', preparing: 'Answering', streaming: 'Answering', tools: 'Using a tool',
+  queued: 'Waiting for the model', preparing: 'Thinking', streaming: 'Writing', tools: 'Using a tool',
 }
 
 /** a turn at work, in words, the same on every page */

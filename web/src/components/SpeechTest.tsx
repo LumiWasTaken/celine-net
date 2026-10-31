@@ -47,7 +47,7 @@ export function SpeechTest({ direction, identity, ready, save }: {
         return
       }
       if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder)
-        throw new Error('The microphone needs HTTPS or localhost.')
+        throw new Error('Your browser only allows the microphone on an https address or on localhost. Open the app that way to test dictation.')
       setState('permission')
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (c.signal.aborted) { stream.getTracks().forEach(t => t.stop()); return }
@@ -70,7 +70,7 @@ export function SpeechTest({ direction, identity, ready, save }: {
         void speechApi.transcribe(new Blob(chunks, { type: r.mimeType }), '', c.signal)
           .then(result => {
             if (c.signal.aborted) return
-            if (!result.text.trim()) { failed(new Error('Nothing heard. Try again.')); return }
+            if (!result.text.trim()) { failed(new Error('No speech was heard. Speak closer to the microphone and try again.')); return }
             setTranscript(result.text); setState('idle')
           }).catch(failed)
       }
@@ -92,7 +92,7 @@ export function SpeechTest({ direction, identity, ready, save }: {
     {direction === 'output' && <>
       <Field label="Text"><Input value={text} maxLength={900} disabled={busy} onChange={e => setText(e.target.value)} /></Field>
       <Field label="Voice"><Input value={voice} disabled={busy} placeholder="Default" onChange={e => setVoice(e.target.value)} /></Field>
-      {voices.length > 0 && <Choice label="Voices" value={voice} disabled={busy} onChange={setVoice}
+      {voices.length > 0 && <Choice label="Available voices" value={voice} disabled={busy} onChange={setVoice}
         options={Array.from(new Set([voice, ...voices].filter(Boolean))).map(v => ({ value: v, label: v }))} />}
       <Button disabled={!ready || busy} onClick={() => void discoverVoices()}>Find voices</Button>
     </>}
@@ -103,8 +103,8 @@ export function SpeechTest({ direction, identity, ready, save }: {
       </Button>
       {(busy || audio) && <Button onClick={stop}>Stop</Button>}
     </div>
-    {busy && <p role="status">{state === 'recording' ? 'Recording' : state === 'permission' ? 'Waiting for microphone' : state === 'saving' ? 'Saving' : direction === 'input' ? 'Writing it down' : 'Reading it out'}</p>}
-    {transcript !== null && <Field label="Heard"><p role="status">{transcript}</p></Field>}
+    {busy && <p role="status">{state === 'recording' ? 'Recording' : state === 'permission' ? 'Allow the microphone in your browser' : state === 'saving' ? 'Saving' : direction === 'input' ? 'Transcribing' : 'Reading aloud'}</p>}
+    {transcript !== null && <Field label="Transcript"><p role="status">{transcript}</p></Field>}
     {audio && <Field label="Sample"><audio key={audio} controls autoPlay src={audio} onError={() => setError('The browser could not play this audio.')} /></Field>}
     {error && <InlineError compact message={error} />}
   </>

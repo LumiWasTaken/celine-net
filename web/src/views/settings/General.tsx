@@ -25,7 +25,7 @@ export function General({ status }: { status: ConfigStatus | null }) {
       {problems.length > 0 && (
         <Section>
           <div className="config-line">
-            <p className="src-line">{problems.length === 1 ? 'A settings file has an error.' : 'Settings files have errors.'}</p>
+            <p className="src-line">{problems.length === 1 ? 'A settings file has an error. Fix it and save the file.' : 'Some settings files have errors. Fix them and save the files.'}</p>
             <ul className="plain-list">
               {problems.map((p, i) => <li key={i}><code>{p.file}</code>: {p.message}</li>)}
             </ul>

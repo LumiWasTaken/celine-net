@@ -1,6 +1,6 @@
 /* The setup forms, one per `setup` id of the feature catalog (Welcome.tsx and Settings,
    Features pick them by it): comfyui (one address for Images and Music: the saved ComfyUI
-   provider's to start with; Music says "Same ComfyUI as Images" once Images has one), email
+   provider's to start with; Music says "Music uses the same ComfyUI as Images." once Images has one), email
    (the account, Check email logs in), vault (the server fields and the client secret), search
    (what an embedding and a reranker model give and how to run one, then the Topic search and
    Reranking models out of what the saved providers offer, a pick saves at once), guard (Bastet's
@@ -126,7 +126,7 @@ function AddProvider({ onAdded }: { onAdded: () => void }) {
   const kinds = providers.data?.kinds ?? []
   const add = useAction(async () => {
     const r = await settingsApi.testNew({ kind: d.kind || undefined, base_url: d.url.trim(), key: d.key.trim() || undefined })
-    if (!r.kind || !r.ok) throw new Error(r.sentence || 'No answer there.')
+    if (!r.kind || !r.ok) throw new Error(r.sentence || 'Nothing answered at this address. Check the address and try again.')
     const all = providers.data?.providers ?? []
     const same = (a: string, b: string) => a.replace(/\/+$/, '').toLowerCase() === b.replace(/\/+$/, '').toLowerCase()
     const have = all.find(p => same(p.provider.base_url, r.base_url))
@@ -182,7 +182,7 @@ function ComfyuiForm({ feature, value, onChange, saveRef, reprobe }: FormProps<C
   saveRef.current = save
   const check = useAction(async () => { await save(); await reprobe() })
   if (!d) return providers.error ? <InlineError compact message={providers.error} onRetry={providers.reload} /> : <LoadingRow label="Loading" />
-  if (feature.id === 'music' && d.base_url.trim()) return <p className="onb__line">Same ComfyUI as Images</p>
+  if (feature.id === 'music' && d.base_url.trim()) return <p className="onb__line">Music uses the same ComfyUI as Images.</p>
   return (
     <>
       <Field label="Address">
@@ -337,9 +337,9 @@ function SearchForm({ value, onChange, saveRef, reprobe }: FormProps<Picks>) {
   return (
     <>
       <p className="onb__about">
-        An embedding model lets Search find messages by topic, not only by their words, and a reranker model puts the best
-        matches first. Any OpenAI-compatible server can run them, for example Ollama: run <code>ollama pull nomic-embed-text</code> on
-        the server from Connect a model and it shows up here. You can also pick them later in Settings, Models, under Topic search and Reranking.
+        An embedding model lets Search find messages by topic, not only by exact words. A reranker model puts the best
+        matches first. Any OpenAI-compatible server can run them. With Ollama, run <code>ollama pull nomic-embed-text</code> on
+        the server you added in Connect a model, then pick it here. You can change this later in Settings, Models.
       </p>
       {ROLES.map(({ role, cap }) => {
         const info: RoleView | undefined = roles.data!.roles[role]
@@ -369,7 +369,7 @@ function ModelState({ offers, value }: { offers: Offer[]; value: string }) {
   if (!value) return null
   const ref = value.replace(/^\+/, '')
   const o = offers.find(x => ref.startsWith(`${x.p.id}/`))
-  if (!o || (!value.startsWith('+') && !o.p.models.some(m => m.ref === ref))) return <Dot tone="warn" text="Not on its provider any more." />
+  if (!o || (!value.startsWith('+') && !o.p.models.some(m => m.ref === ref))) return <Dot tone="warn" text="This model is no longer on its provider. Pick another one." />
   const { tone, word } = reach(o.p)
   return <Dot tone={tone} text={`${o.p.provider.label}: ${word}`} />
 }
@@ -425,16 +425,16 @@ function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
   return (
     <>
       <Field label="Decision model" group hint={<>
-        Decides quickly whether a risky step needs a check (it is also the Titles and descriptions model).
-        Without one, Watch lets every step run, and On holds a risky step until one answers.
+        A small, fast model that decides whether a risky step needs a check. It also writes titles and descriptions.
+        Without it, Watch lets every step run, and On holds risky steps until this model answers.
       </>}>
         <Choice list label="Decision model" value={d.small} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', false)}
                 onChange={v => void pick.run({ ...d, small: v })} />
         <ModelState offers={offers.data} value={d.small} />
       </Field>
       <Field label="Second look model" group hint={<>
-        A stronger model looks again at what the decision model stopped, before you are told: if it disagrees, you are not told and any freeze from it is lifted.
-        With None, or when it does not answer, the first decision stands, and your note says why.
+        A stronger model checks again what the decision model stopped, before Bastet writes you a note. If it disagrees, you get no note and any freeze is lifted.
+        With None, or when it does not answer, the first decision stands and her note says why.
       </>}>
         <Choice list label="Second look model" value={d.chain} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', true)}
                 onChange={v => void pick.run({ ...d, chain: v })} />
@@ -462,6 +462,7 @@ function ServiceFields({ feature, value, onChange, saveRef, reprobe, withKey }: 
   const res = useResource(() => settingsApi.services(), [])
   const saved = res.data?.services[id]
   const hash = res.data?.keys[id]?.hash ?? ''
+  const keyTip = `Copy this into /etc/${id}/key.hash on the ${id}, then restart it.`
   const d = value ?? (res.data !== undefined ? { url: saved?.url || feature.url || '' } : null)
   const save = async () => {
     if (!d) return
@@ -482,8 +483,8 @@ function ServiceFields({ feature, value, onChange, saveRef, reprobe, withKey }: 
       {withKey && feature.key && (
         <Field label="Key hash">
           <span className="onb__hash">
-            <Input value={hash} readOnly mono spellCheck={false} title="Put this in the box's key.hash file" />
-            <Button icon={Copy} disabled={!hash} title="Put this in the box's key.hash file" onClick={() => copied(hash)}>Copy</Button>
+            <Input value={hash} readOnly mono spellCheck={false} title={keyTip} />
+            <Button icon={Copy} disabled={!hash} title={keyTip} onClick={() => copied(hash)}>Copy</Button>
           </span>
         </Field>
       )}

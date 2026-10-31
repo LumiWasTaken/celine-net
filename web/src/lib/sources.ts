@@ -80,7 +80,7 @@ export function connectionState(platform: string, c: ConnectionRecord, account: 
       }
     }
     case 'needs_login':
-      return { level: 'needs_you', sentence: wa ? 'Not connected to your phone.' : 'Not logged in to Discord.' }
+      return { level: 'needs_you', sentence: wa ? 'Not connected to your phone. Log in with QR code in Settings, WhatsApp.' : 'Not logged in to Discord. Log in again in Settings, Discord.' }
     default:
       // calm: the archive picks up where it stopped as soon as the connection answers again
       return { level: 'off', sentence: c.error ?? `${LINK.down}.` }
@@ -91,5 +91,5 @@ export function connectionState(platform: string, c: ConnectionRecord, account: 
 export const lostWhen = (ms: number) => `at ${stamp(ms)}`
 
 export const LEVEL_WORD: Record<Level, string> = {
-  ok: LINK.up, working: 'Busy', needs_you: 'Waiting for you', off: LINK.down,
+  ok: LINK.up, working: 'Running', needs_you: 'Waiting for you', off: LINK.down,
 }

@@ -51,7 +51,7 @@ export function Media() {
       </>}
       {removing && comfy && (
         <ConfirmDialog title={`Remove ${comfy.provider.label}?`} danger confirmLabel="Remove"
-                       body="Its models leave every role. The app deletes its key."
+                       body="Its models are removed from every role, and its saved key is deleted."
                        onClose={() => setRemoving(false)}
                        onConfirm={async () => {
                          try { await settingsApi.deleteProvider(comfy.id); setRemoving(false); reload() }

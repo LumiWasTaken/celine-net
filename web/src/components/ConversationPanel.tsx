@@ -199,7 +199,7 @@ function GuardRow({ cid, enabled, live }: { cid: string; enabled: boolean; live:
   const global = res.data.effective.guard
   return <>
     <BastetSwitch checked={global && res.data.guard} disabled={!global || !online || patch.busy}
-                  title={!global ? 'Bastet is off in Settings' : online ? undefined : OFFLINE_TITLE}
+                  title={!global ? 'Bastet is off. Turn her on in Settings, Features.' : online ? undefined : OFFLINE_TITLE}
                   onChange={guard => void patch.run({ guard })} />
     {patch.error && <InlineError compact message={patch.error} />}
   </>
@@ -278,7 +278,7 @@ function blockWord(b: Block, subject: string): string {
 }
 
 function noteWord(n: ContextView['notes'][number], off: boolean): string {
-  if (off) return 'Left out here'
+  if (off) return 'Off in this conversation'
   return `${num(n.tokens)} tokens`
 }
 

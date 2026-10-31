@@ -57,7 +57,7 @@ export function Security() {
               <ListRow key={c.id} icon={KIND[c.kind].icon} title={c.label || KIND[c.kind].word}
                        subtitle={`Created ${when(c.created_at)}`}
                        meta={c.this_session ? 'This session' : undefined} trailingAlways
-                       trailing={<IconButton icon={Trash2} label="Delete" disabled={last} title={last ? 'The last one stays' : 'Delete'}
+                       trailing={<IconButton icon={Trash2} label="Delete" disabled={last} title={last ? 'You cannot delete your last way to log in.' : 'Delete'}
                                              onClick={() => setDeleting(c)} />} />
             ))}
           </div>
@@ -219,7 +219,7 @@ function Tokens({ guard }: { guard: Guard }) {
         </div>
       )}
       {revoking && (
-        <ConfirmDialog title={`Revoke the token ${revoking.name}?`} body="Scripts that use it stop reaching the intercom."
+        <ConfirmDialog title={`Revoke the token ${revoking.name}?`} body="Scripts that use this token can no longer reach the app."
                        confirmLabel="Revoke" danger
                        onClose={() => setRevoking(null)}
                        onConfirm={async () => {

@@ -161,8 +161,8 @@ export function useMessageActions(
         <ToolGroup calls={work} />
       </Side>}
       {confirming && (
-        <ConfirmDialog title="Delete the message?" danger confirmLabel="Delete"
-                       body="It goes for good, with every message after it."
+        <ConfirmDialog title="Delete this message?" danger confirmLabel="Delete"
+                       body="This deletes the message and every message after it. You can't undo this."
                        onClose={() => setConfirming(false)}
                        onConfirm={async () => {
                          await conversationApi.remove(conversationId, message.id)

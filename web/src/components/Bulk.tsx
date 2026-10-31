@@ -23,7 +23,7 @@ export function bulkActions({ what, shelf, noun, archive = false, purge = true, 
     run ? run(action, keys) : bulkApi.run(what, action, keys)
   const toTrash: BulkAction = {
     label: 'Move to Trash', icon: Trash2, danger: true, done: 'moved',
-    ask: n => ({ title: `Move ${noun(n)} to Trash?`, confirm: 'Move to Trash', body: 'Restore brings them back.' }),
+    ask: n => ({ title: `Move ${noun(n)} to Trash?`, confirm: 'Move to Trash', body: 'You can restore them from the Trash.' }),
     run: go('trash'),
   }
   if (shelf === 'archive') {

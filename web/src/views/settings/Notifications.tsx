@@ -32,8 +32,8 @@ export function Notifications() {
   return (
     <Page title="Notifications">
       <Section>
-        {perm === 'insecure' && <p className="src-line">Notifications need https.</p>}
-        {perm === 'unsupported' && <p className="src-line">This browser has no notifications.</p>}
+        {perm === 'insecure' && <p className="src-line">Notifications only work when the app opens over https.</p>}
+        {perm === 'unsupported' && <p className="src-line">This browser does not support notifications.</p>}
         {perm === 'default' && (
           <div><Button variant="primary" loading={ask.busy} onClick={() => void ask.run()}>Allow notifications</Button></div>
         )}
