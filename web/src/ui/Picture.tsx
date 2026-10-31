@@ -92,7 +92,7 @@ export function Picture({ src, full, name, ratio = '1', more = [], gallery, at =
 }
 
 /* ── Player: the track that plays, kept in one small bar (play and pause, its name, how far,
-   close) while you go on looking. ── */
+   close) while you keep looking. ── */
 export function Player({ src, title, detail, onClose, className }: {
   src: string
   title: string

@@ -378,7 +378,7 @@ def _plugin_state(cfg, feature: str) -> dict[str, Any]:
     """A feature without a probe: "unset" for a plugin while a value its servers need
     (a `${KEY}` of its form in its [servers] blocks, form.fill) is empty, with what is
     empty; "ready" once all are filled; "none" without servers. It never blocks the switch: its form is filled from what runs
-    only while it is on (its setup line, its routes)."""
+    only while it is on (its setup command, its routes)."""
     from . import form
     p = plugins.get(feature)
     if p is None or not p.manifest.get("servers"):

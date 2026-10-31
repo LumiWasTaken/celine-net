@@ -2,7 +2,7 @@
 form, an empty value keeps that server down with the reason; on, its server's tools are
 there with its plugin's guide; a form save starts it again with the new values; off, its
 tools go. The mac plugin: the setup script and the report the Mac posts back (with the
-link key), her scripts' messages to her, the setup line on its form and in her
+link key), her scripts' messages to her, the setup command on its form and in her
 settings__read, and Check's lines."""
 from __future__ import annotations
 
