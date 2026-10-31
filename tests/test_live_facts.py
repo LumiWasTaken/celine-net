@@ -206,3 +206,17 @@ async def test_a_report_carries_the_models_tokens_and_seconds(store):
         "[s, failed; changed a.md]"
     whole = await store.read(lambda c: work(c, sub, whole=True))
     assert (whole["prompt_tokens"], whole["seconds"]) == (4344, 72), "ever, for the tree"
+
+
+async def test_a_role_that_lost_a_capability_blocks_only_its_own_save(tmp_path, monkeypatch):
+    """A role saved while its model could see, after the server says it cannot: storing
+    the address (the first login) still saves; saving that role says why it cannot."""
+    from celine.settings import write
+    scratch(tmp_path, monkeypatch, providers=PROVIDERS,
+            roles={"vision": {"chain": ["home/qwen3.5-9b"]}})
+    cfg = boot.load()
+    monkeypatch.setattr(kinds, "_live", {})
+    kinds.stated_caps("http://home:8080/v1", {"qwen3.5-9b": ["chat", "tools"]})
+    assert write.save(cfg, {"address": {"origin": "https://celine.example.net"}}) == ["address"]
+    with pytest.raises(Invalid, match="no 'vision' capability"):
+        write.save(cfg, {"roles": {"vision": {"chain": ["home/qwen3.5-9b", "gpu/Gemma-4-31B"]}}})
