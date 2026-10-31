@@ -13,13 +13,13 @@ import {
 } from '../lib/api'
 import { emit, useServerEvents } from '../lib/bus'
 import { ShowArtifact } from '../lib/artifacts'
-import { chatApi, useMood, type ChatHit } from '../lib/chat'
+import { chatApi, useMood, type ChatHit, type Mood } from '../lib/chat'
 import { ConversationList, rowState, type RowState, type Work } from '../components/ConversationList'
 import { ConversationPanel, type PanelTab } from '../components/ConversationPanel'
 import { ReminderLines, Reminders, pendingOf } from '../components/Reminders'
 import { HerFace, MoodText } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
-import { useHer } from '../lib/her'
+import { useHer, type Her } from '../lib/her'
 import { count, errorText } from '../lib/format'
 import { useNav } from '../lib/nav'
 import { setPageName } from '../lib/title'
@@ -40,7 +40,7 @@ import { PhotoViewer } from '../components/PhotoViewer'
 import { GalleryContext, collectGeneratedImages, madeDetails, type Made } from '../components/Batch'
 import {
   Button, ConfirmDialog, EmptyState, IconButton, InlineEdit, InlineError, LoadingRow, Notice, Place, PlaceHead, SelectBar,
-  coarse, isNarrow, StatusLine, cx, usePicker, type Shelf,
+  coarse, isNarrow, StatusLine, cx, leave, OUT, useLeave, usePicker, type Shelf,
 } from '../ui'
 import { usePref } from '../lib/prefs'
 import { bulkActions, useArchiveOlder } from '../components/Bulk'
@@ -52,6 +52,19 @@ const LIST_EVENTS = new Set(['conversation.title', 'conversation.created', 'conv
 
 const place = 'celine' as const
 const chatsNoun = (n: number) => count(n, 'conversation')
+
+/** a new conversation's face, name and mood; the first message sent, it fades where it was */
+function Greeting({ who, name, mood }: { who: Her | null; name: string; mood: Mood | null }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLeave(ref, g => leave(g, OUT.fade, '--dur'))
+  return (
+    <div ref={ref} className="chat-greeting">
+      <HerFace who={who} size="lg" />
+      <div className="chat-greeting__name">{name}</div>
+      <MoodText mood={mood} />
+    </div>
+  )
+}
 const exportUrl = (id: string) => `/api/conversations/${encodeURIComponent(id)}/export`
 
 export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
@@ -472,7 +485,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                               pending={shownPending} compactions={convo.compactions} onRetry={regenerate}
                               live={convo.live} switched={convo.switched}
                               imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
-                              waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue}
+                              waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue} swaps={convo.swaps}
                               note={null} assistant={name}
                               user={status?.user ?? ''} />}
                 </KeepPlace.Provider>
@@ -492,11 +505,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
             </div>
           ) : (
             <div className="chat-scroll chat-scroll--empty">
-              <div className="chat-greeting">
-                <HerFace who={who} size="lg" />
-                <div className="chat-greeting__name">{name}</div>
-                <MoodText mood={mood} />
-              </div>
+              <Greeting who={who} name={name} mood={mood} />
               <FirstRun />
             </div>
           )}
