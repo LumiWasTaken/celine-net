@@ -210,7 +210,8 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown,
     if (!out) return
     for (const [el, a] of before) {
       if (now.has(el) || el.isConnected || !isGone(el)) continue
-      const { ghost, place } = copyOf(el as HTMLElement, { left: c.left + a.x + a.sx, top: top + a.y + a.sy, width: a.w, height: a.h }, box, null,
+      // where it is laid out: the glide or rise it was in at the last commit has ended since
+      const { ghost, place } = copyOf(el as HTMLElement, { left: c.left + a.x, top: top + a.y, width: a.w, height: a.h }, box, null,
                                      getComputedStyle(box).position !== 'static')
       place()
       play(ghost, g => leave(g, OUT.fade))
