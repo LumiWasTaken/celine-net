@@ -94,10 +94,12 @@ export function useLeave(ref: RefObject<HTMLElement | null>, exit: Exit) {
   }, [ref])
 }
 
-/** `rise` (base.css) from JS, on the translate property: a row that arrives while you look */
+/** `rise` (base.css) from JS, on the translate property: a row that arrives while you look.
+    The travel adds to a translate it has; the fade replaces (an added opacity stays 1). */
 export function rise(el: Element) {
-  return el.animate([{ opacity: 0, translate: `0 ${root().getPropertyValue('--rise').trim()}` }, { opacity: 1, translate: '0 0' }],
-                    { duration: ms('--dur'), easing: curve('--ease'), composite: 'add' })
+  const timing = { duration: ms('--dur'), easing: curve('--ease') }
+  el.animate([{ opacity: 0 }, { opacity: 1 }], timing)
+  return el.animate([{ translate: `0 ${root().getPropertyValue('--rise').trim()}` }, { translate: '0 0' }], { ...timing, composite: 'add' })
 }
 
 /** `fade` (base.css) from JS: what replaces a skeleton */
@@ -149,6 +151,21 @@ export function usePush(ref: RefObject<HTMLElement | null>, depth: number) {
 
 type Box = { x: number; y: number; w: number; h: number; sx: number; sy: number }
 
+/** `fn` once this frame's layout is final, before it is painted: after a scroll keeps a
+    place (a transcript pinned to its bottom, a kept message, the browser's anchoring).
+    A ResizeObserver's first call comes then, after the observers made before it. */
+function settled(el: Element, fn: () => void) {
+  const ro = new ResizeObserver(() => { ro.disconnect(); fn() })
+  ro.observe(el)
+}
+
+/** glide `el` from `dx`, `dy` away to where it is, on --dur --ease */
+function glide(el: Element, dx: number, dy: number) {
+  moving.get(el)?.cancel()
+  moving.set(el, el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }],
+                            { duration: ms('--dur'), easing: curve('--ease'), composite: 'add' }))
+}
+
 /** the translate an animation gives `el` now, in px */
 const shift = (el: Element) => getComputedStyle(el).translate.split(' ').map(v => parseFloat(v) || 0)
 const moving = new WeakMap<Element, Animation>()
@@ -170,6 +187,13 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown,
   const known = useRef(keys)
   const was = useRef(on)
   const calm = useRef(quiet)
+  // where the box is on screen before a commit that moves things, read as it renders: the
+  // commit's own scroll (a clamp, a kept place) moves it on screen too
+  const pre = useRef<{ x: number; y: number } | null>(null)
+  if (on === undefined || on !== was.current) {
+    const r = ref.current?.getBoundingClientRect()
+    pre.current = r ? { x: r.left, y: bottom ? r.bottom : r.top } : null
+  }
   useLayoutEffect(() => {
     const box = ref.current
     if (!box) return
@@ -197,16 +221,23 @@ export function useMove(ref: RefObject<HTMLElement | null>, on?: unknown,
       now.set(el, { x: r.left - c.left - sx, y: r.top - top - sy, w: r.width, h: r.height, sx, sy })
     }
     if (!changed || other || !before.size || reduced()) return
+    const moved: [Element, number, number][] = []
     for (const [el, b] of now) {
       const a = before.get(el)
       if (!a) { if (enter && isNew(el)) rise(el); continue }
       if (a.x === b.x && a.y === b.y) continue
       // from where it shows now: its old place, plus the glide it was in
-      const dx = a.x - b.x + b.sx, dy = a.y - b.y + b.sy
-      moving.get(el)?.cancel()
-      moving.set(el, el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }],
-                                { duration: ms('--dur'), easing: curve('--ease'), composite: 'add' }))
+      moved.push([el, a.x - b.x + b.sx, a.y - b.y + b.sy])
     }
+    // a scroll that keeps a place moves the box on screen in this commit and frame: what
+    // moved in it glides from where it was on screen (a row under one that grew while the
+    // bottom is kept stays)
+    const from = pre.current ?? { x: c.left, y: top }
+    if (moved.length) settled(box, () => {
+      const r = box.getBoundingClientRect()
+      const ox = from.x - r.left, oy = from.y - (bottom ? r.bottom : r.top)
+      for (const [el, dx, dy] of moved) if (dx + ox || dy + oy) glide(el, dx + ox, dy + oy)
+    })
     if (!out) return
     for (const [el, a] of before) {
       if (now.has(el) || el.isConnected || !isGone(el)) continue
@@ -239,12 +270,10 @@ export function glideAfter(el: Element): () => void {
   const was = after.map(spot)
   return () => {
     if (reduced()) return
-    after.forEach((s, i) => {
+    settled(el, () => after.forEach((s, i) => {
       const a = was[i]!, b = spot(s)
       if (!s.isConnected || (a.x === b.x && a.y === b.y) || (a.y > innerHeight && b.y > innerHeight)) return
-      moving.get(s)?.cancel()
-      moving.set(s, s.animate([{ translate: `${a.x - b.x + b.sx}px ${a.y - b.y + b.sy}px` }, { translate: '0 0' }],
-                              { duration: ms('--dur'), easing: curve('--ease'), composite: 'add' }))
-    })
+      glide(s, a.x - b.x + b.sx, a.y - b.y + b.sy)
+    }))
   }
 }
