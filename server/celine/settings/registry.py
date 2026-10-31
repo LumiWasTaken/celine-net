@@ -376,7 +376,6 @@ def validate_role(role: str, r: Any, providers: dict[str, Any],
     for k in r:
         if k != "chain":
             raise Invalid(f"{base}.{k}", f"'{k}' is not a role setting.")
-    spec = ROLES[role]
     chain = r.get("chain") or []
     if not isinstance(chain, list) or any(not isinstance(x, str) for x in chain):
         raise Invalid(f"{base}.chain", "The chain is a list of models.")
@@ -394,12 +393,17 @@ def validate_role(role: str, r: Any, providers: dict[str, Any],
         if m is None:
             raise Invalid(where, f"{p.get('label', prov)} has no model '{model}'. Add it "
                                  f"to the provider first.")
-        lacks = [c for c in spec["caps"] if c not in kinds_mod.caps_of(p, model)]
-        if lacks:
-            raise Invalid(where, f"{m.get('label', model)} cannot do "
-                                 f"{spec['label']}: the model has no "
-                                 f"'{lacks[0]}' capability.")
     return {"chain": list(chain)}
+
+
+def lacks(s: Settings, role: str, ref: str) -> str | None:
+    """The capability `role` needs that the model `ref` has not now (settings/kinds.py
+    caps_of: what its server states, else as saved), None when it has them all. A fact of
+    the moment, so the router checks it when it orders a chain, never a validator."""
+    pid, name = s.split(ref)
+    p = s.providers.get(pid) or {}
+    have = kinds_mod.caps_of(p, name)
+    return next((c for c in ROLES.get(role, {}).get("caps", []) if c not in have), None)
 
 
 def validate_roles(data: Any, providers: dict[str, Any]) -> dict[str, dict[str, Any]]:

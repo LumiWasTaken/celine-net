@@ -1,4 +1,4 @@
-"""Every write of var/settings: one lock, validate what changes, write the changed
+"""Every write of var/settings: one lock, validate everything, write the changed
 sections; reload.commit reloads in place and says so on the global feed
 (`settings.changed`)."""
 from __future__ import annotations
@@ -38,39 +38,31 @@ def _current(s) -> dict[str, Any]:
             **{p.id: dict(s.plugins.get(p.id, {})) for p in plugins.with_form()}}
 
 
-def _validate(new: dict[str, Any], old: dict[str, Any]) -> dict[str, Any]:
-    """Each section that differs from `old` validated, the rest as stored: a save never
-    fails on a setting it does not touch (a role whose model lost a capability since).
-    A role is checked when it changed or a provider in its chain did."""
+def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
     from ..guard import rules as guard_rules
-    checks = {"tools": validate_tools, "general": general_mod.validate,
-              "email": mail_mod.validate, "vault": vault_mod.validate,
-              "triggers": validate_triggers, "features": features_mod.validate,
-              "guard": guard_rules.validate, "services": services_mod.validate,
-              "address": address_mod.validate,
-              **{p.id: (lambda d, p=p: form.validate(p.id, p.form["fields"], d))
-                 for p in plugins.with_form()}}
-    out = {k: (fn(new[k]) if new[k] != old[k] else new[k]) for k, fn in checks.items()}
-    providers = new["providers"]
-    if providers != old["providers"]:
-        providers = validate_providers(providers)
-    moved = {pid for pid in set(providers) | set(old["providers"])
-             if providers.get(pid) != old["providers"].get(pid)}
-    out["providers"] = providers
-    out["roles"] = {
-        role: validate_role(role, r, providers)
-        if r != old["roles"].get(role)
-        or any(ref.partition("/")[0] in moved for ref in (r or {}).get("chain") or [])
-        else r
-        for role, r in new["roles"].items()}
-    return out
+    providers = validate_providers(new["providers"])
+    roles = {}
+    for role, r in new["roles"].items():
+        roles[role] = validate_role(role, r, providers)
+    return {"providers": providers, "roles": roles, "tools": validate_tools(new["tools"]),
+            "general": general_mod.validate(new["general"]),
+            "email": mail_mod.validate(new["email"]),
+            "vault": vault_mod.validate(new["vault"]),
+            "triggers": validate_triggers(new["triggers"]),
+            "features": features_mod.validate(new["features"]),
+            "guard": guard_rules.validate(new["guard"]),
+            "services": services_mod.validate(new["services"]),
+            "address": address_mod.validate(new["address"]),
+            **{p.id: form.validate(p.id, p.form["fields"], new[p.id])
+               for p in plugins.with_form()}}
 
 
 def check(cfg, changes: dict[str, Any]) -> dict[str, Any]:
     """Validate `changes` (section -> whole new value) on top of the current settings,
     as a save does, writing nothing. Raises Invalid; -> every section, clean."""
-    old = _current(cfg.settings)
-    return _validate({**old, **changes}, old)
+    new = _current(cfg.settings)
+    new.update(changes)
+    return _validate_all(new)
 
 
 def save(cfg, changes: dict[str, Any]) -> list[str]:

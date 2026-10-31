@@ -14,8 +14,7 @@ from celine.backends.llm import LLM
 from celine.backends.router import Router
 from celine.conversations import store as conversations
 from celine.settings import her_models, kinds
-from celine.settings.files import Invalid
-from celine.settings.registry import backend_config, validate_role
+from celine.settings.registry import backend_config
 from celine.skills import ToolContext
 from celine.skills.models import Models
 from celine.sub_agents.report import head, work
@@ -126,9 +125,10 @@ async def test_the_servers_caps_count_over_the_saved_ones(router):
     assert kinds.caps_of(s.providers["home"], "qwen3-embedding") == ["embeddings"], \
         "it states nothing: saved"
     assert her_models.allowed(s) == ["home/qwen3.5-9b", "home/two-slots", "gpu/Gemma-4-31B"]
-    with pytest.raises(Invalid, match="no 'vision' capability"):
-        validate_role("vision", {"chain": ["home/qwen3.5-9b"]}, s.providers)
-    validate_role("vision", {"chain": ["gpu/Gemma-4-31B"]}, s.providers)
+    ordered = router._ordered("vision", ["home/qwen3.5-9b", "gpu/Gemma-4-31B"])
+    assert ordered.refs == ["gpu/Gemma-4-31B"]
+    assert ordered.skipped == [("home/qwen3.5-9b", "qwen3.5-9b cannot do Photo descriptions: "
+                                                   "it has no 'vision' capability.")]
 
 
 async def test_a_vision_twin_sees_as_its_server_says(router):
@@ -208,15 +208,17 @@ async def test_a_report_carries_the_models_tokens_and_seconds(store):
     assert (whole["prompt_tokens"], whole["seconds"]) == (4344, 72), "ever, for the tree"
 
 
-async def test_a_role_that_lost_a_capability_blocks_only_its_own_save(tmp_path, monkeypatch):
-    """A role saved while its model could see, after the server says it cannot: storing
-    the address (the first login) still saves; saving that role says why it cannot."""
+async def test_what_a_server_says_never_makes_the_settings_invalid(tmp_path, monkeypatch):
+    """A role saved while its model could see, after the server says it cannot: the
+    settings still load, and every save goes through (the first login stores the address;
+    a change of that role saves). The router skips the model with the reason."""
     from celine.settings import write
     scratch(tmp_path, monkeypatch, providers=PROVIDERS,
             roles={"vision": {"chain": ["home/qwen3.5-9b"]}})
-    cfg = boot.load()
     monkeypatch.setattr(kinds, "_live", {})
     kinds.stated_caps("http://home:8080/v1", {"qwen3.5-9b": ["chat", "tools"]})
+    cfg = boot.load()
+    assert not [p for p in cfg.problems if p.fatal]
     assert write.save(cfg, {"address": {"origin": "https://celine.example.net"}}) == ["address"]
-    with pytest.raises(Invalid, match="no 'vision' capability"):
-        write.save(cfg, {"roles": {"vision": {"chain": ["home/qwen3.5-9b", "gpu/Gemma-4-31B"]}}})
+    assert write.save(cfg, {"roles": {"vision": {"chain": ["home/qwen3.5-9b"]},
+                                      "small": {"chain": ["home/two-slots"]}}}) == ["roles"]

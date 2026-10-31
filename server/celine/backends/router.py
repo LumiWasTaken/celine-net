@@ -748,9 +748,19 @@ class Router:
     def _ordered(self, role: str, chain: list[str]) -> Ordered:
         out = Ordered(role, [], chain)
         for ref in chain:
-            why = self._check(ref, self.provider_state(self.s.split(ref)[0]))
+            why = self._lacks(role, ref) or self._check(ref, self.provider_state(self.s.split(ref)[0]))
             (out.skipped.append((ref, why)) if why else out.refs.append(ref))
         return out
+
+    def _lacks(self, role: str, ref: str) -> str | None:
+        """The sentence why `ref` cannot do `role` now: a capability the role needs that
+        its server says it has not (registry.lacks), None when it has them all."""
+        from ..settings.registry import ROLES, lacks
+        cap = lacks(self.s, role, ref)
+        if cap is None:
+            return None
+        label = (self.s.model(ref) or {}).get("label") or self.s.split(ref)[1]
+        return f"{label} cannot do {ROLES[role]['label']}: it has no '{cap}' capability."
 
     async def can_answer(self, role: str) -> str | None:
         """None when a model of `role` can answer now, else the sentence why not, a
