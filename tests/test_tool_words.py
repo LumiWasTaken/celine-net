@@ -24,7 +24,7 @@ def test_done_running_and_failed():
         "Could not read the note ml/muon.md"
     assert w("plan__set", {"steps": [1, 2, 3]}, "ok")["settled"] == "Set a plan of 3 steps"
     assert w("email__read", {}, "ok", None, 'From: "Ann Lee" <ann@x.org>\nHi')["settled"] == \
-        "Read the mail from Ann Lee"
+        "Read the email from Ann Lee"
     long = "x" * 70
     assert w("web__search", {"query": long}, "ok")["settled"] == \
         f'Searched the web for "{"x" * 59}…"'

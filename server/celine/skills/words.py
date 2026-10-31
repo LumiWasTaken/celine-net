@@ -173,7 +173,7 @@ def _site(d: dict, a: Args) -> str:
 
 def _mails(d: dict, a: Args) -> str:
     n = d["messages"] if _num(d.get("messages")) is not None else len(_list(a.get("ids")))
-    return count(n, "mail") if n else "mail"
+    return count(n, "email") if n else "email"
 
 
 # ---- the sentences, by skill ----------------------------------------------------------
@@ -183,11 +183,11 @@ VERB = {
     "skills__load": "Loaded skills",
     "email__list_folders": "Listed the mail folders",
     "appearance__set_portrait": "Set a new portrait", "me__read": "Read the persona",
-    "me__edit": "Changed the Example lines", "me__whoami": "Checked where it is",
-    "settings__read": "Read the settings", "settings__propose": "Changed the settings",
-    "image_generator__generate": "Made an image", "image_generator__read": "Looked at an image",
+    "me__edit": "Changed the Example lines", "me__whoami": "Checked its setup",
+    "settings__read": "Read the settings", "settings__propose": "Proposed a settings change",
+    "image_generator__generate": "Made an image", "image_generator__read": "Checked the images",
     "image_generator__stop": "Stopped the images",
-    "music_generator__generate": "Made music", "music_generator__read": "Listened to a track",
+    "music_generator__generate": "Made music", "music_generator__read": "Checked the tracks",
     "music_generator__stop": "Stopped the music",
     "missions__update": "Updated the mission", "intercom__send": "Sent a message",
     "intercom__cancel": "Cancelled a message", "voice__send": "Sent a voice note",
@@ -251,7 +251,7 @@ CHAT_ARCHIVE: dict[str, Sentence] = {
         (f"[[{_str(a.get('ref'))}]]" if _str(a.get("ref")) else "a message"),
     "read_period": _read_period,
     "scroll": _scroll,
-    "get_messages": lambda a, d, r: "Read in Messages",
+    "get_messages": lambda a, d, r: "Read saved messages",
     "look_up": lambda a, d, r: f"Looked up {quote(_str(a.get('name')) or '')}",
     "mark_same_person": lambda a, d, r:
         f"Marked accounts as the same person: {quote(_str(a.get('name')) or '')}",
@@ -287,7 +287,7 @@ NOTEBOOK: dict[str, Sentence] = {
     "edit": lambda a, d, r: f"Edited the note {_path(a)}".strip(),
     "search": lambda a, d, r: f"Searched the notebook for {quote(_str(a.get('query')) or '')}",
     "list": lambda a, d, r: "Listed the notebook",
-    "delete": lambda a, d, r: f"Moved the note {_path(a)} to the trash",
+    "delete": lambda a, d, r: f"Moved the note {_path(a)} to Trash",
     "move": lambda a, d, r: f"Moved the note {_path(a, 'src')} to {_path(a, 'dst')}",
 }
 
@@ -305,8 +305,9 @@ def _agent_start(a, d, r):
     folder = _str(d.get("folder")) or _str(a.get("folder"))
     access = _str(d.get("access")) or _str(a.get("access")) or ("work" if folder else "read")
     name = _str(d.get("name")) or _str(a.get("name")) or ""
-    return f"{'Resumed' if d.get('resumed') is True else 'Started'} sub-agent {quote(name)}, " \
-           f"{access}{f', limited to {folder}' if folder else ''}"
+    can = "can edit" if access == "work" else "read-only"
+    return f"{'Resumed' if d.get('resumed') is True else 'Started'} sub-agent {quote(name)} " \
+           f"({can}{f', only in {folder}' if folder else ''})"
 
 
 SUB_AGENTS: dict[str, Sentence] = {
@@ -318,7 +319,7 @@ SUB_AGENTS: dict[str, Sentence] = {
 
 INTERCOM: dict[str, Sentence] = {
     "read": lambda a, d, r: f"Read thread #{_js(a['thread'])}"
-        if _num(a.get("thread")) is not None else "Read the intercom threads",
+        if _num(a.get("thread")) is not None else "Read the Intercom threads",
     "start_chat": lambda a, d, r: "Started a chat" +
         (f" {quote(_str(a.get('title')))}" if _str(a.get("title")) else ""),
 }
@@ -501,7 +502,7 @@ def _mail_read(a, d, r):
     # the sender's name from the headers the result starts with
     m = re.search(r"^From: (.+)$", r or "", re.M)
     sender = re.sub(r'^"|"$', "", re.sub(r"\s*<[^>]*>\s*$", "", m.group(1))).strip() if m else ""
-    return f"Read the mail from {sender}" if sender else "Read a mail"
+    return f"Read the email from {sender}" if sender else "Read an email"
 
 
 EMAIL: dict[str, Sentence] = {
@@ -511,7 +512,7 @@ EMAIL: dict[str, Sentence] = {
     "get_attachment": lambda a, d, r: f"Opened the attachment {_path(a, 'name')}".strip(),
     "mark": lambda a, d, r: f"Marked {_mails(d, a)} {_path(a, 'state')}".strip(),
     "move": lambda a, d, r: f"Moved {_mails(d, a)} to {_str(a.get('folder')) or 'a folder'}",
-    "delete": lambda a, d, r: f"Moved {_mails(d, a)} to the trash",
+    "delete": lambda a, d, r: f"Moved {_mails(d, a)} to Trash",
 }
 
 VAULT: dict[str, Sentence] = {
@@ -594,8 +595,8 @@ BROWSER: dict[str, Sentence] = {
 
 def _plan_step(a, d, r):
     n, state = _num(a.get("step")), _str(a.get("state"))
-    text = f"Marked step {'' if n is None else _js(n)} " \
-           f"{'to do' if state == 'todo' else state or ''}"
+    as_ = {"todo": "as to do", "doing": "as in progress", "done": "as done"}.get(state or "", state or "")
+    text = f"Marked step {'' if n is None else _js(n)} {as_}"
     return re.sub(r" +", " ", text).strip()
 
 
@@ -608,7 +609,7 @@ PLAN: dict[str, Sentence] = {
 MIND: dict[str, Sentence] = {
     "feel": lambda a, d, r: "Changed the mood" +
         (f" to {_str(a.get('emotion'))}" if _str(a.get("emotion")) else ""),
-    "set_status": lambda a, d, r: "Set the emojis by the name" +
+    "set_status": lambda a, d, r: "Set the status" +
         (f" to {_str(a.get('text'))}" if _str(a.get("text")) else ""),
 }
 
@@ -690,7 +691,7 @@ VERBS = {
     "Got": ("Getting", "get"), "Looked": ("Looking", "look"), "Marked": ("Marking", "mark"),
     "Listed": ("Listing", "list"), "Wrote": ("Writing", "write"), "Edited": ("Editing", "edit"),
     "Deleted": ("Deleting", "delete"), "Moved": ("Moving", "move"),
-    "Started": ("Starting", "start"), "Ran": ("Running", "run"), "Checked": ("Checking", "check"),
+    "Started": ("Starting", "start"), "Proposed": ("Proposing", "propose"), "Ran": ("Running", "run"), "Checked": ("Checking", "check"),
     "Asked": ("Asking", "ask"), "Stopped": ("Stopping", "stop"), "Sent": ("Sending", "send"),
     "Used": ("Using", "use"), "Loaded": ("Loading", "load"), "Opened": ("Opening", "open"),
     "Closed": ("Closing", "close"), "Continued": ("Continuing", "continue"),
@@ -751,20 +752,20 @@ def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = 
     skill, _, tool = name.partition("__")
     tool = tool.split("__")[0]
     if name == "intercom__cancel":
-        return f"{'Cancelled' if state == 'ok' else 'Cancel'} #{'' if a.get('id') is None else _js(a['id'])}"
+        said = f"Cancelled message #{'' if a.get('id') is None else _js(a['id'])}"
+        return _state_words(said, state, d, result)
     if name == "missions__update":
         status = _str(d.get("status")) or _str(a.get("status"))
         note = _str(d.get("note")) or _str(a.get("note")) or ""
         return f"Mission {status.replace('_', ' ') if status else 'update'}" \
                f"{f': {note}' if note else ''}"
     if skill in MEDIA and (_batch(d) or tool in ("generate", "read", "stop")):
-        b = _batch(d)
         items = a.get("items")
         first = _dict(items[0]) if isinstance(items, list) and items else {}
-        ref = ((b or {}).get("id") or _str(a.get("batch")) or "")[:8]
         made = tool not in ("read", "stop")
         label = ("Music" if skill == "music_generator" else "Images") if made else \
-            f"Looked at batch {ref}" if tool == "read" else f"Stopped batch {ref}"
+            ("Checked the " if tool == "read" else "Stopped the ") + \
+            ("tracks" if skill == "music_generator" else "images")
         prompt = (_str(first.get("prompt")) or _str(first.get("style"))) if made else None
         return " ".join(x for x in (label, prompt) if x)
     return _state_words(said, state, d, result)
