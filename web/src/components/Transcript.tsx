@@ -147,6 +147,10 @@ type Props = {
   closed?: boolean
 }
 
+/** the row where a reply lands (the dots, "Queued"), as useMove knows it: never gone */
+const LANDS = 'lands'
+const STAYS: ReadonlySet<string> = new Set([LANDS])
+
 /** what every line of one transcript shares */
 type T = {
   cid: string; running: boolean; turn: Turn | null; closed: boolean; lastId?: string
@@ -266,7 +270,9 @@ export function Transcript(
 
   function renderReply(seg: Extract<Segment, { kind: 'reply' }>) {
     const lastM = seg.msgs.at(-1)!
-    const writingHere = seg.msgs.some(m => m.id === liveId)
+    // the next step of this reply is on its way (Regenerate on a step, Continue): its dots here
+    const waitsHere = joins && seg === segments.at(-1)
+    const writingHere = waitsHere || seg.msgs.some(m => m.id === liveId)
     const calls = seg.msgs.flatMap(m => toolCalls[m.id] ?? [])
     // a step with words, calls or a call on its way draws; a step with none draws nothing
     const steps = seg.msgs.filter(m => m.content.trim() || switched[m.id] || m.id === liveId || forming.some(f => f.message_id === m.id)
@@ -292,6 +298,7 @@ export function Transcript(
               )}
               {thinkingNow && <EventLine quiet running className="thinking">Thinking</EventLine>}
               {steps.map(renderStep)}
+              {waitsHere && <div className="step">{thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}</div>}
               <ArtifactCards cards={artifactsOf(calls)} />
               <ShareCards cards={sharesOf(calls)} />
               <FileCards list={seg.msgs.flatMap(m => (m.attachments ?? []).filter(a => !a.batch_id && a.kind !== 'image' && a.kind !== 'audio'))} />
@@ -362,8 +369,10 @@ export function Transcript(
   const thinkingFirst = running && live?.phase === 'thinking'
   // frozen (the server's): its queued turn waits, it is not writing
   const held = !!frozen && turn?.state === 'queued'
+  // the reply it writes joins the reply above (its last step answered again): it waits there
+  const joins = ghost && !pending && !held && segments.at(-1)?.kind === 'reply'
   const ghostRow = (queued: boolean, key: string) => (
-    <div key={key} className="msg-hers" ref={watched ? riseIn : undefined}>
+    <div key={key} className="msg-hers" data-key={LANDS} ref={watched ? riseIn : undefined}>
       <Said face={<span className="msg__face" aria-hidden><Portrait size="sm" speaking={!queued} away={queued} /></span>}>
         {queued ? <Status words={null} queued /> : thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}
       </Said>
@@ -377,10 +386,11 @@ export function Transcript(
   // Its rows glide to their new places and a row that goes fades where it was (useMove), as
   // a list's rows do: an edit opens or closes, a message goes, a row comes or goes. A reply
   // growing as it is written moves nothing; another conversation or another version (a
-  // version, an edit saved, Regenerate) is another list.
+  // version, an edit saved, Regenerate) is another list. Where a reply lands never fades:
+  // the reply takes its place.
   const box = useRef<HTMLDivElement>(null)
   const shape = [editing, running, ghost, later.length, pending && !landed, banners.length, approvals.length, ...visible.map(m => m.id)].join('|')
-  useMove(box, shape, { leave: true, quiet: `${cidKey}|${swaps}` })
+  useMove(box, shape, { leave: true, quiet: `${cidKey}|${swaps}`, keys: STAYS })
 
   return (
     <ToolRuns.Provider value={toolRuns}>
@@ -399,7 +409,7 @@ export function Transcript(
         </div>
       )}
 
-      {ghost && ghostRow(held, 'next')}
+      {ghost && !joins && ghostRow(held, 'next')}
       {running && later.map(q => ghostRow(true, `q-${q.turn_id}`))}
 
       <div className="sr-only" aria-live="polite">{liveWords}</div>
