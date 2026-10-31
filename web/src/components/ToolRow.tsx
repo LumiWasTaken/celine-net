@@ -28,7 +28,7 @@ import { format, refHref } from '../lib/nav'
 import { intercomApi } from '../lib/intercom'
 import { ConversationReminders } from '../lib/reminders'
 import { useAction } from '../lib/useAction'
-import { useOwner } from '../lib/name'
+import { capital, useOwner } from '../lib/name'
 import { useNow } from '../lib/useNow'
 import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
 import { Button, Dot, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
@@ -133,10 +133,14 @@ function toneOf(call: ToolCall): Tone {
   return call.state === 'ok' ? null : 'muted'
 }
 
-/** the bare time a call took, or ticking while it works */
+/** the bare time a call took, or ticking while it works after what it says it is doing
+    now (its progress note: "Waiting for Bastet") */
 function took(call: ToolCall): ReactNode {
   if (!call.started_at) return null
-  if (busy(call)) return <Elapsed since={call.started_at} />
+  if (busy(call)) {
+    const note = call.progress?.note
+    return <>{note && `${capital(note)} `}<Elapsed since={call.started_at} /></>
+  }
   const ms = call.finished_at ? Date.parse(call.finished_at) - Date.parse(call.started_at) : NaN
   // every settled row has its time; under a second reads as one
   return Number.isNaN(ms) ? null : duration(Math.max(ms, 1000))

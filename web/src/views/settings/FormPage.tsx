@@ -4,10 +4,10 @@
    after it. FormActions is shared with the onboarding's card (WelcomeForms.tsx). */
 import { useState } from 'react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
-import { useForm, type ActionResult, type FormAction, type FormView, type UseForm } from '../../lib/forms'
+import { useForm, type ActionResult, type FormAction, type FormLine, type FormView, type UseForm } from '../../lib/forms'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
-import { Button, Dot, Facts, Field, Form, InlineError, Input, Section } from '../../ui'
+import { Button, Facts, Field, Form, InlineError, Input, Notice, Section } from '../../ui'
 import { AddressField } from './General'
 import { Page } from './parts'
 import './settings.css'
@@ -41,12 +41,21 @@ export function FormState({ view: d }: { view: FormView }) {
   return <>
     {d.note && <p className="src-line">{d.note}</p>}
     {d.facts && <Facts items={d.facts} />}
-    {d.lines && <div className="form__lines">{d.lines.map((l, i) => <Dot key={i} tone={l.tone} text={l.text} />)}</div>}
+    {d.lines && <Lines lines={d.lines} />}
   </>
 }
 
-/** a form's actions, each a button (with the one text it asks for), its answer as a Dot
-    and its lines as one Dot each.
+/** the server's lines in words, each one line of tinted text with its icon (a compact
+    Notice), never a dot */
+function Lines({ lines }: { lines: FormLine[] }) {
+  return <div className="form__lines">
+    {lines.map((l, i) => <Notice key={i} compact tone={NOTICE[l.tone]}>{l.text}</Notice>)}
+  </div>
+}
+const NOTICE = { ok: 'success', warn: 'warn', error: 'error' } as const
+
+/** a form's actions, each a button (with the one text it asks for), its answer and its
+    lines in words (Lines).
     `before`: what runs first (the onboarding saves its draft); `after`: what follows (its
     card's probe, asked anew) */
 export function FormActions({ form, disabled, before, after }: {
@@ -84,12 +93,8 @@ export function FormActions({ form, disabled, before, after }: {
                 onClick={() => void run.run(a)}>{a.label}</Button>
       ))}
     </div>
-    {result?.sentence && <Dot tone={result.ok ? 'ok' : 'error'} text={result.sentence} />}
-    {result?.lines && (
-      <div className="form__lines">
-        {result.lines.map((l, i) => <Dot key={i} tone={l.tone} text={l.text} />)}
-      </div>
-    )}
+    {result?.sentence && <Lines lines={[{ text: result.sentence, tone: result.ok ? 'ok' : 'error' }]} />}
+    {result?.lines && <Lines lines={result.lines} />}
     {run.error && <InlineError compact message={run.error} />}
   </>
 }

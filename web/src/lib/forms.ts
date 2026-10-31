@@ -12,7 +12,7 @@
    only while the view says `running`. */
 import { json, request } from './api'
 import { useResource, type Resource } from './useResource'
-import type { DotTone, FormField, SecretState } from '../ui'
+import type { FormField, SecretState } from '../ui'
 
 export type FormAction = { id: string; label: string; /** the label of the one text it asks for */ input?: string }
 export type FormView = {
@@ -22,7 +22,7 @@ export type FormView = {
   /** what the plugin knows of its device, as labels and values (her Mac's chip, memory) */
   facts?: { label: string; value: string }[]
   /** what is off on it now, one Dot each (a macOS permission) */
-  lines?: { text: string; tone: DotTone }[]
+  lines?: FormLine[]
   /** the app's own address belongs on this form now (her Mac's while it is localhost) */
   address?: boolean
   values: Record<string, unknown>
@@ -33,7 +33,9 @@ export type FormView = {
   running: boolean
 }
 /** `lines`: what it found, one Dot each (the Mac's Check: each server, each permission) */
-export type ActionResult = { ok: boolean; sentence: string; lines?: { text: string; tone: DotTone }[] }
+/** one line the server says of a form's device, in words: how it went */
+export type FormLine = { text: string; tone: 'ok' | 'warn' | 'error' }
+export type ActionResult = { ok: boolean; sentence: string; lines?: FormLine[] }
 
 const enc = encodeURIComponent
 
