@@ -1,6 +1,6 @@
 /* General: when a settings file has an error, one quiet line and the list under it; You
    (your name, time zone, what you write about you), each saved when you leave it; Chats
-   (Lock archived chats, Describe new chat photos), saved on change; Network: the app's
+   (Lock archived chats, Describe new photos in Messages), saved on change; Network: the app's
    address (logins, share links and her Mac's setup line use it). How the app looks is
    Appearance; its name is its own (Her.tsx). Source code: the code this build runs, its
    commit on the link (the server's `build`, the AGPL's offer). Advanced: the time limits and

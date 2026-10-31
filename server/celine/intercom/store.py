@@ -121,7 +121,7 @@ def recipients(c: sqlite3.Connection) -> list[dict]:
     each followed by its sub-agents. Those after the missions carry `line`, how a
     second step lists them: the conversation's title, a sub-agent as "<name>, in
     <where>"."""
-    out: list[dict] = [{"to": "all", "name": "Everyone working", "line": None}]
+    out: list[dict] = [{"to": "all", "name": "Everyone", "line": None}]
     tops = c.execute(
         "SELECT c.id, c.title, mi.name AS mission FROM conversations c "
         "LEFT JOIN missions "
@@ -338,7 +338,7 @@ def threads(c: sqlite3.Connection, addr: str | None, unread: bool = False,
 
     def named(a: str) -> str:
         if a not in names:
-            names[a] = name_of(c, a) or "Everyone working"
+            names[a] = name_of(c, a) or "Everyone"
         return names[a]
 
     want = with_ or ""

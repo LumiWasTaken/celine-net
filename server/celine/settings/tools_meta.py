@@ -18,17 +18,17 @@ SKILLS: dict[str, dict[str, str]] = {
     "notebook": {"label": "Notebook",
                  "summary": "{{Her}} own notes. Your notes in it are read-only for {{name}}."},
     "user_documents": {"label": "Documents",
-                       "summary": "Your drawer of files in folders. {{name}} lists, searches "
-                                  "and reads them, and writes text files into it."},
+                       "summary": "Your files in folders. {{name}} lists, searches and reads "
+                                  "them, and can write text files there."},
     "past_conversations": {"label": "Past conversations",
                            "summary": "Searches and reads your earlier conversations with "
                                       "{{name}}."},
     "shell": {"label": "Terminals", "summary": "{{Her}} terminals in {{her}} shellbox."},
-    "code": {"label": "Code", "summary": "{{Her}} coding agent in {{her}} shellbox: a task in a "
-                                         "folder of {{her}} own, worked on in the background."},
+    "code": {"label": "Code", "summary": "{{Her}} coding agent in {{her}} shellbox, which works on "
+                                         "a task in the background."},
     "intercom": {"label": "Intercom",
-                 "summary": "{{Her}} messages to you, to {{herself}}, to {{her}} sub-agents and to "
-                            "everyone working, now or later, in threads."},
+                 "summary": "{{Her}} messages, now or later, to you, to {{herself}}, to "
+                            "{{her}} sub-agents and to everyone, in threads."},
     "missions": {"label": "Missions",
                  "summary": "Your instructions, each worked on in a conversation of its own."},
     "plan": {"label": "Plan", "summary": "{{Her}} plan for a conversation, pinned at the top "
@@ -73,17 +73,17 @@ SKILLS: dict[str, dict[str, str]] = {
     "sub_agents": {"label": "Sub-agents",
                    "summary": "Gives instructions to a sub-agent with its own conversation."},
     "discord": {"label": "Discord", "summary": "Reads your Discord account live."},
-    "whatsapp": {"label": "WhatsApp", "summary": "Reads your WhatsApp linked device live."},
+    "whatsapp": {"label": "WhatsApp", "summary": "Reads your WhatsApp live, through the linked device."},
 }
 
 # wire name -> label, summary
 TOOLS: dict[str, dict[str, str]] = {
     "chat_archive__search": {"label": "Messages: search",
-                             "summary": "Semantic topic search and word search at once, "
-                                        "then reranking. Returns match windows."},
+                             "summary": "Searches your messages by topic and by word and "
+                                        "shows the best matches with the messages around them."},
     "chat_archive__count": {"label": "Messages: count",
-                            "summary": "Exact counts by time, person, chat or "
-                                       "co-participant."},
+                            "summary": "Counts messages exactly, by time, person or "
+                                       "chat."},
     "chat_archive__read_session": {"label": "Messages: read around a message",
                                    "summary": "Reads the conversation that contains one "
                                               "message."},
@@ -93,9 +93,9 @@ TOOLS: dict[str, dict[str, str]] = {
     "chat_archive__scroll": {"label": "Messages: read older or newer ones",
                              "summary": "Gets up to 20 older or newer messages next to one "
                                         "message, only the ones {{name}} does not have yet."},
-    "chat_archive__get_messages": {"label": "Messages: get by reference",
-                                   "summary": "Gets messages by their references, also "
-                                              "saved ones."},
+    "chat_archive__get_messages": {"label": "Messages: get messages",
+                                   "summary": "Gets the messages {{she}} has found or saved "
+                                              "before."},
     "chat_archive__look_up": {"label": "Messages: find a person or chat",
                               "summary": "Finds a person or chat on every source, with the "
                                          "accounts marked as the same person."},
@@ -112,7 +112,7 @@ TOOLS: dict[str, dict[str, str]] = {
     "notebook__list": {"label": "Notebook: list notes",
                        "summary": "Lists {{her}} notes with their summaries."},
     "notebook__delete": {"label": "Notebook: delete a note",
-                         "summary": "Deletes one note; the user keeps a copy."},
+                         "summary": "Deletes one note; you keep a copy."},
     "notebook__move": {"label": "Notebook: move a note",
                        "summary": "Changes the path of a note or folder."},
     "sub_agents__start": {"label": "Sub-agents: start",
@@ -144,21 +144,21 @@ TOOLS: dict[str, dict[str, str]] = {
                                            "their tool calls and failures."},
     "past_conversations__read_tool_call": {"label": "Past conversations: read a tool call",
                                       "summary": "Reads one tool call of an earlier "
-                                                 "conversation raw."},
+                                                 "conversation exactly as it ran."},
     "shell__run": {"label": "Terminals: run a command",
-                   "summary": "Runs a command in one of {{her}} terminals and waits for its "
-                              "end: exit status, duration, output and log."},
+                   "summary": "Runs a command in one of {{her}} terminals, waits until it "
+                              "finishes and shows its exit status, duration, output and log."},
     "shell__type": {"label": "Terminals: type into a terminal",
-                    "summary": "Types text and keys into the program in front in one of "
-                               "{{her}} terminals and shows the screen."},
+                    "summary": "Types text and presses keys in the program running in one "
+                               "of {{her}} terminals, then shows the screen."},
     "shell__stop": {"label": "Terminals: stop a program",
                     "summary": "Presses Ctrl-C in one of {{her}} terminals."},
     "shell__wait": {"label": "Terminals: wait for a command",
                     "summary": "Waits for the end of a command still running in one of "
                                "{{her}} terminals."},
     "shell__read": {"label": "Terminals: read a terminal",
-                    "summary": "Pages the log of a terminal's latest run, shows its "
-                               "screen, or lists {{her}} terminals."},
+                    "summary": "Reads the log of a terminal's latest run page by page, "
+                               "shows its screen, or lists {{her}} terminals."},
     "shell__send": {"label": "Terminals: send you files",
                     "summary": "Attaches up to 5 files from {{her}} shellbox to the "
                                "conversation for you to download."},
@@ -171,30 +171,30 @@ TOOLS: dict[str, dict[str, str]] = {
     "shell__unshare": {"label": "Terminals: end a share",
                        "summary": "Ends one of {{her}} shares; its link stops working."},
     "shell__list_shares": {"label": "Terminals: list the shares",
-                      "summary": "Lists {{her}} shares that run and whether each answers."},
+                      "summary": "Lists {{her}} running shares and whether each one is reachable."},
     "code__start": {"label": "Code: start a task",
-                    "summary": "Hands a task in a folder of {{her}} own to {{her}} coding agent, "
-                               "with the model {{name}} names, in a new or a kept session."},
+                    "summary": "Gives {{her}} coding agent a task in one of {{her}} folders, "
+                               "on the model {{she}} picks, in a new session or an earlier one."},
     "code__status": {"label": "Code: check a session",
-                     "summary": "Says whether a coding session runs, is done or failed."},
+                     "summary": "Says whether a coding session is running, done or failed."},
     "code__result": {"label": "Code: read the answer",
-                     "summary": "Brings a coding session's last answer, the files it changed "
+                     "summary": "Shows a coding session's last answer, the files it changed "
                                 "and its test summary."},
     "code__abort": {"label": "Code: stop a session",
                     "summary": "Stops a running coding session."},
     "code__list": {"label": "Code: list sessions",
                    "summary": "Lists {{her}} coding sessions."},
     "intercom__send": {"label": "Intercom: send a message",
-                       "summary": "Sends a message to you, to {{herself}}, to {{her}} parent, team "
-                                  "or everyone working, now or at a later time."},
+                       "summary": "Sends a message, now or later, to you, to {{herself}}, to the "
+                                  "agent that started {{her}}, to {{her}} team or to everyone."},
     "intercom__read": {"label": "Intercom: read threads",
                        "summary": "Lists {{her}} threads or reads one whole thread."},
     "intercom__cancel": {"label": "Intercom: cancel a scheduled message",
-                         "summary": "Cancels a message {{she}} scheduled that has not landed "
+                         "summary": "Cancels a scheduled message that has not been sent "
                                     "yet."},
     "intercom__start_chat": {"label": "Intercom: start a chat",
-                             "summary": "From a background task or a mission, starts a chat "
-                                        "for you that waits on the intercom."},
+                             "summary": "Starts a chat for you from a background task or a "
+                                        "mission. It waits for you in the Intercom."},
     "missions__update": {"label": "Missions: update the status",
                          "summary": "Records a mission's status, a short note and what "
                                     "{{she}} delivered."},
@@ -204,22 +204,22 @@ TOOLS: dict[str, dict[str, str]] = {
     "missions__list": {"label": "Missions: list",
                        "summary": "Lists the missions with their status and plan."},
     "missions__start": {"label": "Missions: start",
-                        "summary": "Starts a mission of {{her}} own, with what your form "
-                                   "takes."},
+                        "summary": "Starts a mission of {{her}} own, with the same fields "
+                                   "as the New mission form."},
     "voice__send": {"label": "Voice notes: send",
-                    "summary": "Speaks {{her}} text with the Read aloud model, an audio file "
-                               "on {{her}} message."},
+                    "summary": "Turns {{her}} text into speech with the Read aloud model "
+                               "and attaches the audio to {{her}} message."},
     "plan__set": {"label": "Plan: write", "summary": "Writes {{her}} plan for the "
                                                      "conversation, step by step."},
     "plan__step": {"label": "Plan: mark a step",
-                   "summary": "Marks a step of {{her}} plan doing or done."},
+                   "summary": "Marks a step of {{her}} plan as in progress or done."},
     "routines__list": {"label": "Routines: list",
                        "summary": "Lists the Routines with their time and last run."},
     "routines__read": {"label": "Routines: read",
                        "summary": "Reads one Routine whole, with its newest runs."},
     "routines__write": {"label": "Routines: write",
-                        "summary": "Makes or changes a Routine, checked as the Routines "
-                                   "page checks it."},
+                        "summary": "Creates or changes a Routine, with the same checks as "
+                                   "the Routines page."},
     "routines__run": {"label": "Routines: run now",
                       "summary": "Starts a run of a Routine now."},
     "artifacts__list": {"label": "Pages: list",
@@ -240,10 +240,10 @@ TOOLS: dict[str, dict[str, str]] = {
                                        "counts."},
     "email__mark": {"label": "Email: mark", "summary": "Marks messages read or unread, "
                                                        "flagged or unflagged."},
-    "email__move": {"label": "Email: move", "summary": "Moves messages to a folder, making "
-                                                       "it when it is new."},
-    "email__delete": {"label": "Email: delete", "summary": "Moves messages to the trash, or "
-                                                           "deletes them for good."},
+    "email__move": {"label": "Email: move", "summary": "Moves messages to a folder, and "
+                                                       "creates the folder if it does not exist."},
+    "email__delete": {"label": "Email: delete", "summary": "Moves messages to Trash, or "
+                                                           "deletes them permanently."},
     "email__get_attachment": {"label": "Email: get an attachment",
                               "summary": "Attaches a file from a message to the "
                                          "conversation and reads it."},
@@ -264,8 +264,8 @@ TOOLS: dict[str, dict[str, str]] = {
     "browser__close": {"label": "Browser: close a tab",
                        "summary": "Closes one of {{her}} browser tabs."},
     "vault__get": {"label": "Vault: get an entry",
-                   "summary": "Gives the form step for an entry's password, or writes it "
-                              "to a file in {{her}} shellbox."},
+                   "summary": "Gives {{her}} a browser step that types an entry's password "
+                              "into a form, or writes it to a file in {{her}} shellbox."},
     "vault__set": {"label": "Vault: add an entry",
                    "summary": "Makes an entry with a new 24-character password."},
     "vault__rotate": {"label": "Vault: change a password",
@@ -287,12 +287,12 @@ TOOLS: dict[str, dict[str, str]] = {
                  "summary": "Changes {{her}} Example lines or Banned words, kept in their "
                             "History."},
     "settings__read": {"label": "Settings: read",
-                       "summary": "Reads the settings of Settings; a secret only as set "
+                       "summary": "Reads every setting; a secret shows only as set "
                                   "or not set."},
     "settings__propose": {"label": "Settings: propose",
                           "summary": "Proposes a change of settings; it is saved once you "
                                      "approve it."},
-    "me__whoami": {"label": "Persona: whoami",
+    "me__whoami": {"label": "Persona: check setup",
                    "summary": "Says which model answers {{her}} turn and why, how full "
                               "{{her}} context is, where {{she}} works, which devices "
                               "and servers answer, and the guard's mode."},
@@ -300,8 +300,8 @@ TOOLS: dict[str, dict[str, str]] = {
                                  "summary": "Makes one of {{her}} images, or an image in "
                                             "Documents, {{her}} portrait."},
     "image_generator__generate": {"label": "Image generation: make images",
-                                  "summary": "Makes a batch of new images and edits, one "
-                                             "after the other, filled in place."},
+                                  "summary": "Makes a batch of new or edited images, one "
+                                             "after the other, each shown in the chat once it is done."},
     "image_generator__read": {"label": "Image generation: check progress",
                               "summary": "Shows a batch's images and their state."},
     "image_generator__stop": {"label": "Image generation: stop",
@@ -316,7 +316,7 @@ TOOLS: dict[str, dict[str, str]] = {
                                                  "does and its trigger words."},
     "music_generator__generate": {"label": "Music generation: make tracks",
                                   "summary": "Makes a batch of tracks, one after the "
-                                             "other, filled in place."},
+                                             "other, each shown in the chat once it is done."},
     "music_generator__read": {"label": "Music generation: check progress",
                               "summary": "Shows a batch's tracks and their state."},
     "music_generator__stop": {"label": "Music generation: stop",
@@ -330,7 +330,7 @@ TOOLS: dict[str, dict[str, str]] = {
     "skills__read_guide": {"label": "Skills: read a guide",
                            "summary": "Shows a skill's guide and {{her}} notes on it."},
     "skills__load": {"label": "Skills: load",
-                     "summary": "Gives {{her}} the parameters of skills and tools."},
+                     "summary": "Loads a skill's tools so {{she}} can use them."},
     "discord__list_chats": {"label": "Discord: list chats",
                             "summary": "Lists your Discord DMs, group DMs and servers."},
     "discord__read_messages": {"label": "Discord: read messages",

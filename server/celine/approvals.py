@@ -69,8 +69,8 @@ APPROVED_KEPT = 64  # tool calls approved on Bastet's ask, kept so the tool asks
 
 SHELL = "put the password of {entry} into a file in the shellbox"
 ROTATE = "change the password of {entry}"
-SHELL_SHORT = "{entry} password into the shell"
-ROTATE_SHORT = "new password for {entry}"
+SHELL_SHORT = "Put the {entry} password into a file in the shellbox"
+ROTATE_SHORT = "Change the password of {entry}"
 
 
 STOPPED = object()   # the turn the user waited on ended before they answered

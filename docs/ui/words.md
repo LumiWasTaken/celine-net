@@ -102,7 +102,7 @@ block at the end of this file lists the words no UI string uses.
 | Activity | the tool calls of one reply, from its "..." | ChatGPT (agent and deep research "Activity") |
 | Ran 8 commands in terminal main, 2 failed, Back | a run of three or more calls alike in a row, one row whose Sheet lists its rows (the words, the run and the failed count from the server, skills/words.py `runs`; a non-zero exit counts as failed); a row there opens its call in the same Sheet, Back returns to the run | GitHub Actions "3 failed" |
 | What (its name) saw | what one reply saw (its requests) | |
-| Plan, Asks you, Waiting for you, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
+| Plan, Asks you, Waiting for you, In progress, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
 | Daily at 04:00, Sundays at 03:00, Weekdays, Weekends, Every 2 hours from 10:00 to 22:00 | when a Routine's schedule runs, 24h times, from the server (schedules.words); a shape it cannot say stays the cron line | Google Calendar "Daily", "Weekly on Sunday" |
 | Started by | a Routine run you or it started by hand, in Events | GitHub Actions "Triggered by" for the same job |
 | (Its possessive pronoun) thoughts, Collapse thinking by default | its reasoning, and how its fold starts | Claude "Thinking", ChatGPT "Thought for" |
@@ -149,9 +149,9 @@ block at the end of this file lists the words no UI string uses.
 | Next, Back, Skip | the onboarding's steps: on, back one, leave this one as it is | Apple setup, Android setup "Next", "Back", "Skip" |
 | Step 4 of 7 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
 | Decision model, Second look model | Bastet's two models on the Guard Setup step and Settings, Guard: the small one that decides (the Titles and descriptions role), the one that looks again | First look and Second look in Events |
-| Address, Check | a service's address and the button that saves and tests it (its Setup step, Settings, Features, Edit; the Vault form too) | plain; Check as in Check provider |
+| Address, Check | a service's address and the button that saves and tests it (its Setup step, Settings, Features, Edit; the Vault form too); its help is "The shellbox's address, such as http://shellbox:8770."; an error about it ends with what to do, then press Check | plain; Check as in Check provider |
 | Connect a model | the Setup step that saves the first provider and picks its chat model | ChatGPT desktop "Connect", LM Studio "Connect to server" |
-| Type, Auto-detect | a provider's kind, the first row of its form (Setup, Add a provider, a provider's edit dialog); Auto-detect, first and chosen at the start, lets the server say what answers at the address | Windows "Type"; printers, Wi-Fi "Auto-detect" |
+| Type, Auto-detect | a provider's type (never kind, also in errors: "The type must be one of"), the first row of its form (Setup, Add a provider, a provider's edit dialog); Auto-detect, first and chosen at the start, lets the server say what answers at the address | Windows "Type"; printers, Wi-Fi "Auto-detect" |
 | Pick the type if you know it. | the tail of the sentence after a Check with Auto-detect found no known kind | plain |
 | http://192.168.1.20:11434, sk-..., Key, Home server | a provider form's placeholders: a value each, never "For example"; sk-... for a hosted kind's key, Key for a local one | everyone's forms |
 | Key hash, Copy this into /etc/shellbox/key.hash on the shellbox, then restart it. | the read-only sha256 of the app's key for a box (the shellbox, the browser), with Copy, and its tooltip | GitHub "SHA256 fingerprint"; plain |
@@ -253,10 +253,10 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Plan | its plan, from the button in the chat's head | as above |
 | Routines | its schedules and their runs | the Routines place |
 | Web | it searches the web and reads pages | ChatGPT, Claude "Web search" |
-| Email | its inbox | everyone |
+| Email | its inbox; one message is an email, several are emails (never a mail, mails) | everyone |
 | Browser | its browser | the Browser place |
 | Vault | its passwords | Bitwarden "Vault" |
-| Pages | its pages | as above |
+| Pages | its pages; also the feature's name in Features (its id stays artifacts) | as above |
 | Image generation, Music generation | it makes images and tracks with ComfyUI | Midjourney, Suno |
 | Models | the models it may ask | as above |
 | Writing | it writes a post or a message in its own voice | Grammarly, Notion AI "Writing" |
@@ -266,9 +266,9 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Voice notes | its voice notes to you, spoken by the Read aloud model | WhatsApp, Telegram "voice message" for the same job |
 | Persona | its description of itself | as above |
 | Settings | it reads every setting and proposes changes you approve | the Settings place |
-| Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name, the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
+| Mood and thoughts, Mood, Status, Thoughts | its mood, the emojis by its name (Set the status), the thoughts it writes down | Slack "Set a status"; Daylio "Mood" |
 | Sub-agents | the helpers it gives instructions to; also the side panel's tab with every sub-agent of the chain, each under the one that started it | Claude Code "Sub-agents" |
-| Cloud model | the approval card of a sub-agent that would run on a model of a cloud provider (OpenRouter, Anthropic): its name, the model and the start of its brief | OpenRouter, Anthropic: cloud providers |
+| Cloud model | the approval card of a sub-agent that would run on a model of a cloud provider (OpenRouter, Anthropic): its name, the model and the start of its Instructions | OpenRouter, Anthropic: cloud providers |
 | Discord, WhatsApp | read live from your accounts | their own names |
 
 ### Events
@@ -305,7 +305,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Apply | use the picked settings or filter | everyone |
 | Change, Change model | pick another value or model | ChatGPT "Change model" |
 | Default, <model> | the model chooser's first row, and the Model row while none is picked: the model a conversation (or a mission) comes to without its own | ChatGPT "Default" model; macOS "Default" |
-| Check and add, Check email, Check provider | test a connection (and add it when it works) | Thunderbird "Check mail", Open WebUI "Verify connection" |
+| Check and add, Check email, Check provider, Checking | test a connection (and add it when it works); Checking while it runs | Thunderbird "Check mail", Open WebUI "Verify connection" |
 | Check again | ask a feature's probe anew (the Features page, the onboarding); read the browser's notification permission anew (Notifications) | Chrome "Check again" (connectivity), macOS Software Update "Check Again" |
 | Choose channels, Choose chats | pick what the connection reads (WhatsApp and Discord chats: their apps' word stays) | WhatsApp "Choose chats" |
 | Clear recent searches | empty the recent searches | Google, YouTube |
@@ -317,7 +317,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Edit prompt | change a picture's prompt | Midjourney, Leonardo |
 | Freeze, Unfreeze, Frozen | stop everything she does until you let her go on (the guard, or you by hand); Frozen in the rail and Unfreeze on Bastet's banner | Revolut, Monzo "Freeze card" |
 | Go to the original message | jump to the message a reply or result came from | Slack, Discord "Jump to message" |
-| Lock, Unlock | the Vault | Bitwarden "Lock", "Unlock" |
+| Lock, Unlock, Client ID | the Vault; the API key's Client ID in its form | Bitwarden "Lock", "Unlock", "client_id" |
 | Log in with QR code | link WhatsApp or Discord with the phone | Discord "Log in with QR Code" |
 | Mark as read, Mark as unread, Mark all as read | notifications and messages | Gmail, Slack |
 | Move up, Move down | the order of a list (models) | Google Docs, Word |
@@ -371,6 +371,7 @@ string as a whole word (any case), so "Filter conversations" fails while "Filter
 | Working, Busy | label | Running | one word for the state; GitHub Actions |
 | Needs setup | word | Not set up | one word for the state |
 | Everyone working | word | Everyone | the Intercom recipient, plain |
+| Artifacts | word | Pages | the side panel's word |
 | Needs you | word | Waiting for you | plain |
 | Follows | label | Runs after | plain |
 | Partner, Partner prompt | word | Reviewer, Reviewer prompt | plain |
@@ -425,6 +426,7 @@ label Working => Running
 label Busy => Running
 word Needs setup => Not set up
 word Everyone working => Everyone
+word Artifacts => Pages
 word Needs you => Waiting for you
 label Try => Attempt
 label Tries => Attempts

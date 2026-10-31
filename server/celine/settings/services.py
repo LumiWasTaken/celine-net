@@ -33,13 +33,13 @@ DEFAULTS = {"shellbox": "http://127.0.0.1:8770", "browser": "http://127.0.0.1:87
 
 FIELDS: dict[str, list[dict[str, Any]]] = {
     "shellbox": [{"key": "url", "label": "Address", "type": "text",
-                  "help": "Where the shellbox answers, such as http://shellbox:8770.",
+                  "help": "The shellbox's address, such as http://shellbox:8770.",
                   "default": "", "word": True}],
     "browser": [{"key": "url", "label": "Address", "type": "text",
-                 "help": "Where the browser box answers, such as http://browser:8771.",
+                 "help": "The browser's address, such as http://browser:8771.",
                  "default": "", "word": True}],
     "searxng": [{"key": "url", "label": "Address", "type": "text",
-                 "help": "Where SearXNG answers, such as http://searxng:8080.",
+                 "help": "SearXNG's address, such as http://searxng:8080.",
                  "default": DEFAULTS["searxng"], "word": True}],
 }
 

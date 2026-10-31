@@ -20,13 +20,13 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "url", "label": "Server", "type": "text",
      "help": "The Vaultwarden address, such as https://vault.example.com.", "default": "",
      "word": True},
-    {"key": "client_id", "label": "Client id", "type": "text",
+    {"key": "client_id", "label": "Client ID", "type": "text",
      "help": "From the web vault: Settings, Security, Keys, View API key.", "default": "",
      "word": True},
     {"key": "collection", "label": "Collection", "type": "text",
-     "help": "An organization collection the agent shares with you, by name (or by id when "
-             "two have the same name): the agent's entries go there and it sees only that one. "
-             "Required: without it the vault takes nothing.",
+     "help": "The name of the organization collection you share with the agent (its ID if "
+             "two have the same name). The agent sees and saves logins only in this "
+             "collection.",
      "default": "", "word": True},
 ]
 _BY_KEY = {f["key"]: f for f in FIELDS}

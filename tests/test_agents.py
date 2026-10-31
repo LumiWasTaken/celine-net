@@ -451,7 +451,7 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
                              model="or/big")
     assert out.is_error and out.content == "denied; nothing was done."
     assert asked == [("model", "start the sub-agent site reader on the cloud model big on "
-                               "OpenRouter", ["brief: Read the whole site."], parent)]
+                               "OpenRouter", ["Instructions: Read the whole site."], parent)]
     out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
                              model="gpu/small")
     assert len(asked) == 1, "a local model starts without asking"

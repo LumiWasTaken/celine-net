@@ -272,7 +272,7 @@ class SubAgents:
         summary = " ".join(brief.split())
         if len(summary) > BRIEF_FACT:
             summary = summary[:BRIEF_FACT - 1].rstrip() + "\u2026"
-        return await approvals.ask(action, [f"brief: {summary}"], ctx.conversation_id,
+        return await approvals.ask(action, [f"Instructions: {summary}"], ctx.conversation_id,
                                    short=action, kind="model",
                                    call=ctx.tool_call_id or None)
 

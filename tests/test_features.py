@@ -75,7 +75,7 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
     assert status["features"]["web"] is False and status["setup"] is False
     box = next(f for f in status["catalog"] if f["id"] == "shellbox")
     assert box == {"id": "shellbox", "label": "Shellbox", "form": "",
-                   "about": features.get("shellbox").about,
+                   "about": api.cfg.substitute(features.get("shellbox").about),
                    "off_when": features.get("shellbox").off_when,
                    "places": ["terminals"], "pages": []}
     await api.put("/api/features", json={"features": {}})
@@ -138,7 +138,8 @@ async def test_a_connector_probe_says_one_thing(api, monkeypatch):
     monkeypatch.setattr(mcp.httpx, "AsyncClient", _answering(refused))
     said = await mcp.probe_discord(api.cfg, api.services)
     assert said == {"state": "missing", "detail":
-                    "A Discord connector answers at 127.0.0.1:8768 but it is not this app's."}
+                    "The Discord connector at 127.0.0.1:8768 does not accept this app's key. Give it the "
+                    "same key as this app, then press Check."}
 
     def down(r):
         raise httpx.ConnectError("refused")
@@ -283,15 +284,17 @@ async def test_the_messages_probe_says_what_search_can_do(api, monkeypatch):
     for sid in ("discord", "whatsapp"):
         api.services.connectors.open(sid)
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said == {"state": "unset", "detail": "No source connected yet."}, "no connector answered yet"
+    assert said == {"state": "unset", "detail": "Connect Discord or WhatsApp first."}, "no connector answered yet"
     for c in api.services.connectors.all.values():
         c.status = {"connection": {"state": "connected"}}
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said["state"] == "ready" and "Word search only" not in said["detail"]
+    assert said["state"] == "ready" and "only by their words" not in said["detail"]
     await api.put("/api/roles/embeddings", json={"chain": []})
     await api.put("/api/roles/reranker", json={"chain": []})
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said["detail"].endswith(" Word search only: no topic search model. No reranking model.")
+    assert said["detail"].endswith(" Search finds messages only by their words. Pick a Topic search model in "
+                                 "Settings, Models to search by topic too. Pick a Reranking model in Settings, "
+                                 "Models to put the best matches first.")
     assert said["detail"].startswith("Sources: ")
     files.write(api.var / "settings", "features", {"discord": False, "whatsapp": False})
     reload.apply(api.services)
