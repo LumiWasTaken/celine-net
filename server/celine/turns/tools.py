@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import inspect
+import difflib
 import json
+import re
 import keyword
 import logging
 from dataclasses import replace
@@ -225,12 +227,10 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if (no := _not_offered(offered, turn, call["name"], spec, registry, overrides,
                            cfg)) is not None:
         return no
-    args = call["args"]
+    args = _lenient(call["args"], spec.schema)
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
-        # a tool sent by name: its name and parameters with the error, not its description
-        fn = spec.as_wire()["function"]
-        full = "" if spec.skill in CORE else "\nThe tool: " + json.dumps(
-            {"name": fn["name"], "parameters": fn.get("parameters")}, ensure_ascii=False)
+        # a tool sent by name: what it takes, in one line, with the error
+        full = "" if spec.skill in CORE else f"\n{call['name']} takes {_takes(spec.schema)}."
         return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
                                    is_error=True), None
 
@@ -315,9 +315,9 @@ def _not_offered(offered, turn, name: str, spec, registry, overrides, cfg):
 
 
 def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
-    """What is wrong with the arguments for `spec`'s schema; None when they fit. Nothing
-    is changed: a value of the wrong type fails the call. `arguments`: as it sent them,
-    read again only to say why they are not an object."""
+    """What is wrong with the arguments for `spec`'s schema; None when they fit (after
+    _lenient). `arguments`: as it sent them, read again only to say why they are not an
+    object."""
     if args is None:
         try:
             json.loads(arguments or "{}")
@@ -334,10 +334,50 @@ def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
             desc = (props.get(m) or {}).get("description", "")
             hint = f" (one of {', '.join(map(str, opts))})" if opts else ""
             parts.append(f"missing {m}{hint}" + (f": {cfg.substitute(desc)}" if desc else ""))
-        if unknown:
-            parts.append(f"unexpected {', '.join(sorted(unknown))}")
+        for u in sorted(unknown):
+            near = _meant(u, sorted(missing), list(props))
+            parts.append(f"{u} is not a parameter" + (f", did you mean {near}?" if near else ""))
         return "; ".join(parts)
     return mistyped(args, spec.schema)
+
+
+def _meant(name: str, missing: list[str], props: list[str]) -> str | None:
+    """The parameter a wrong name most likely means: a missing one it abbreviates (cmd:
+    command), else the closest name of all."""
+    def abbreviates(full: str) -> bool:
+        it = iter(full.lower())
+        return name[:1].lower() == full[:1].lower() and all(c in it for c in name.lower())
+    return next((m for m in missing if abbreviates(m)), None) or next(
+        iter(difflib.get_close_matches(name, props, 1, 0.5)), None)
+
+
+def _lenient(args: dict | None, schema: dict) -> dict | None:
+    """The arguments with a plain value written as a string read as its type where the
+    schema asks for one: "true"/"False" for a boolean, "10" for a number. Anything else
+    as it came, for _invalid to name."""
+    if not isinstance(args, dict):
+        return args
+    props, out = schema.get("properties", {}), dict(args)
+    for key, v in args.items():
+        kind = _kind(props.get(key) or {})
+        if not isinstance(v, str) or kind not in ("boolean", "integer", "number"):
+            continue
+        t = v.strip()
+        if kind == "boolean" and t.lower() in ("true", "false"):
+            out[key] = t.lower() == "true"
+        elif kind == "integer" and re.fullmatch(r"-?\d+", t):
+            out[key] = int(t)
+        elif kind == "number" and re.fullmatch(r"-?\d+(\.\d+)?", t):
+            out[key] = float(t) if "." in t else int(t)
+    return out
+
+
+def _takes(schema: dict) -> str:
+    """A tool's parameters in one line: each name, its type, required ones marked."""
+    props, required = schema.get("properties", {}), set(schema.get("required", []))
+    return ", ".join(f"{k} ({_WORD.get(_kind(p) or '', 'a value')}"
+                     + (", required)" if k in required else ")")
+                     for k, p in props.items()) or "no parameters"
 
 
 # lists and objects are left to the tools: several read a string as one (a comma list,

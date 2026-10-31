@@ -128,12 +128,11 @@ async def test_a_call_by_name_is_checked_against_the_real_schema(store):
                  [TextDelta("done"), Done(reason="stop")]])
     await _run(store, cfg, reg, cid, b)
     rows = await _results(store)
-    spec = reg.tools["mac__tool02"]
     assert rows[0][:2] == ("mac__tool02", "error")
-    assert rows[0][2] == ("invalid arguments: missing command; unexpected cmd\nThe tool: "
-                          + json.dumps({"name": "mac__tool02",
-                                        "parameters": spec.as_wire()["function"]["parameters"]},
-                                       ensure_ascii=False)), "its parameters, not its description"
+    assert rows[0][2] == ("invalid arguments: missing command; cmd is not a parameter, did "
+                          "you mean command?\nmac__tool02 takes command (a string, required), "
+                          "cwd (a string), timeout_ms (a whole number), shell (a string)."), \
+        "the name it meant and its parameters in one line, not its description"
     assert rows[1][:2] == ("mac__tool02", "ok") and RAN == [{"tool": 2, "command": "sw_vers"}]
 
 
@@ -326,3 +325,16 @@ def test_the_name_form_goes_through_every_backend():
             for t in anthropic.request_body([], [entry])["tools"]] == [
         {"name": "mac__run", "description": "Run a command.",
          "input_schema": {"type": "object"}}]
+
+
+def test_a_plain_value_in_a_string_is_read_as_its_type_and_a_wrong_name_gets_a_hint():
+    from celine.turns.tools import _lenient, _meant
+    schema = {"properties": {"unread": {"type": "boolean"}, "limit": {"type": "integer"},
+                             "every": {"type": "number"}, "name": {"type": "string"}}}
+    assert _lenient({"unread": "True", "limit": "10", "every": "1.5", "name": "true"}, schema) \
+        == {"unread": True, "limit": 10, "every": 1.5, "name": "true"}, "a string stays one"
+    assert _lenient({"unread": "yes", "limit": "ten"}, schema) == {"unread": "yes",
+                                                                    "limit": "ten"}
+    assert _meant("cmd", ["command", "terminal"], ["command", "terminal", "cwd"]) == "command"
+    assert _meant("termnal", [], ["command", "terminal"]) == "terminal"
+    assert _meant("zzz", [], ["command"]) is None
