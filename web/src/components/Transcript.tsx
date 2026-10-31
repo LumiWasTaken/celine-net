@@ -288,7 +288,7 @@ export function Transcript(
                 <Fold key={String(collapse_thinking)} title={thoughtsTitle} icon={Brain} defaultOpen={!collapse_thinking}
                       remember={`thoughts:${seg.msgs[0]!.id}`}><Thoughts>{reasoning}</Thoughts></Fold>
               )}
-              {thinkingNow && <EventLine quiet running>Thinking</EventLine>}
+              {thinkingNow && <EventLine quiet running className="thinking">Thinking</EventLine>}
               {steps.map(renderStep)}
               <ArtifactCards cards={artifactsOf(calls)} />
               <ShareCards cards={sharesOf(calls)} />
@@ -363,7 +363,7 @@ export function Transcript(
   const ghostRow = (queued: boolean, key: string) => (
     <div key={key} className="msg-hers" ref={watched ? riseIn : undefined}>
       <Said face={<span className="msg__face" aria-hidden><Portrait size="sm" speaking={!queued} away={queued} /></span>}>
-        {queued ? <Status words={null} queued /> : thinkingFirst ? <EventLine quiet running>Thinking</EventLine> : <Status words={waiting} />}
+        {queued ? <Status words={null} queued /> : thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}
       </Said>
     </div>
   )

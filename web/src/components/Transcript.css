@@ -82,6 +82,8 @@
   font-size: var(--t-md); line-height: var(--lh-ui); color: var(--text-muted); }
 .status__dots { display: inline-flex; align-items: center; padding: 0 var(--s-1); cursor: default; }
 .status--queued { color: var(--text-muted); }
+/* "Thinking" between the dots and the text: the same height, so nothing moves as they swap */
+.thinking .event-line__head { min-height: calc(var(--t-lg) * var(--lh-body)); }
 
 /* where the answer would be when it did not come: soft words and one way on */
 .turn-end {
