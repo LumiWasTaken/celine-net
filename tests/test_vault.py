@@ -112,7 +112,7 @@ async def test_set_get_and_rotate_and_she_never_sees_a_password(vault_app, store
     assert redact(f"x {first} y") == "x **** y", "a new password is in the redaction set"
     again = await skill.set(ctx, name="example-shop")
     assert again.is_error and again.content == "example-shop exists: vault__rotate(name) changes it."
-    assert (await skill.set(ctx, name="Anocris Game")).is_error
+    assert (await skill.set(ctx, name="Lantern Quest")).is_error
 
     written = []
 
