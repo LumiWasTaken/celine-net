@@ -150,8 +150,15 @@ try {
 } catch (e) {
   opencode = { version: null, error: String(e.message ?? e) };
 }
+// share.js: Full Disk Access, which no dialog asks for (null: it does not answer)
+let full_disk_access = null;
+try {
+  const r = await fetch(`http://127.0.0.1:${new URL(SHARE).port}/grants`, { signal: AbortSignal.timeout(10000),
+    headers: { Authorization: `Bearer ${token}` } });
+  if (r.ok) full_disk_access = (await r.json()).full_disk_access;
+} catch {}
 console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, agents: AGENTS,
-                             share: SHARE, servers, opencode, mac }));
+                             share: SHARE, servers, opencode, full_disk_access, mac }));
 '
 }
 
@@ -383,7 +390,8 @@ cat > "$LIB/share.js" <<'EOF'
 // The app asks this as it asks shellboxd, with the token as the bearer:
 // GET /forward?port=<n> with Upgrade: tcp: 101, then raw bytes both ways to localhost:<n>
 // (502 when nothing listens there); GET /file?path=<path from home, or from />: the file,
-// or one byte range of it (206, 416 past its end); 404 missing, 400 "folder": true.
+// or one byte range of it (206, 416 past its end); 404 missing, 400 "folder": true;
+// GET /grants: {"full_disk_access": true or false}.
 const http = require("http"), net = require("net"), fs = require("fs"), os = require("os");
 const path = require("path"), crypto = require("crypto");
 const [port, tokenFile] = process.argv.slice(2);
@@ -400,6 +408,14 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://share");
   if (url.pathname === "/health") return json(res, 200, {});
   if (!ok(req)) return json(res, 401, { error: "Wrong token." });
+  // Full Disk Access, without a dialog: macOS never asks for it, a read of its own
+  // database fails at once without it (it runs under Celine.app, so the grant is Celine's)
+  if (req.method === "GET" && url.pathname === "/grants") {
+    let full = true;
+    try { fs.closeSync(fs.openSync(path.join(os.homedir(), "Library/Application Support/com.apple.TCC/TCC.db"), "r")); }
+    catch { full = false; }
+    return json(res, 200, { full_disk_access: full });
+  }
   if (req.method !== "GET" || url.pathname !== "/file") return json(res, 404, { error: "No such endpoint." });
   const asked = (url.searchParams.get("path") || "").replace(/^~(?=\/|$)/, os.homedir());
   const p = path.resolve(os.homedir(), asked);
@@ -550,10 +566,11 @@ console.log(`\nAddress: ${r.address}\nToken:   ${r.token}\nAgents:  ${r.agents}\
 for (const [name, s] of Object.entries(r.servers))
   console.log(`${name.padEnd(8)} ${s.tools === null ? "no answer: " + s.error : s.tools + " tools"}` +
               (s.missing.length ? `, needs ${s.missing.join(" and ")}` : ""));
-console.log(`opencode ${r.opencode.version ?? "no answer: " + r.opencode.error}`);'
+console.log(`opencode ${r.opencode.version ?? "no answer: " + r.opencode.error}`);
+if (r.full_disk_access === false) console.log("files    needs Full Disk Access");'
 again="bash setup.sh --status"   # a piped run left no file: the app serves it
 [ -z "$APP" ] || again="curl -fsSL $APP/api/plugins/mac/setup.sh | bash -s -- --status"
-case $line in *'"missing":["'*)   # the screen server lacks a grant: the panes, one by one
+case $line in *'"missing":["'*|*'"full_disk_access":false'*)   # a grant is off: the panes, one by one
   pane=x-apple.systempreferences:com.apple.preference.security
   # Celine asks for both once, which lists it in both panes. Through LaunchServices, so it
   # asks as itself: started from here, it would ask as this Terminal.
@@ -569,6 +586,9 @@ EOF
   read -r _ </dev/tty || true
   open "$pane?Privacy_Accessibility"
   printf 'Now turn on Celine under Accessibility too (drag it in from the Finder window if it is not in the list), then press Return. '
+  read -r _ </dev/tty || true
+  open "$pane?Privacy_AllFiles"
+  printf 'Now turn on Celine under Full Disk Access too (drag it in from the Finder window if it is not in the list), then press Return. '
   read -r _ </dev/tty || true
 esac
 echo "Done. To check the Mac later, run: $again"

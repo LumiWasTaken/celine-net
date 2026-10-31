@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, Response
 
@@ -41,6 +42,7 @@ from celine.errors import NotFound
 from celine.mcp import plugin_servers
 from celine.settings import address, form, secrets
 from celine.settings.files import Invalid
+from celine.skills import BLOCKED
 
 LINK = "link"                       # its secret: var/secrets/mac.link.key
 SCRIPT = Path(__file__).with_name("setup.sh")
@@ -67,10 +69,15 @@ def _link(cfg) -> str | None:
 
 
 async def run(services, p) -> None:
-    """The link key, made once."""
+    """The link key, made once; then the grants, watched while it is on."""
     root = services.cfg.settings.secrets_root
     if root is not None and _link(services.cfg) is None:
         secrets.set_key(root, form.secret_name(p.id, LINK), random.token_hex(32))
+    try:
+        await _watch_grants(services, p)
+    finally:
+        for sid in NAMES:
+            BLOCKED.pop(sid, None)
 
 
 async def copies(services, p) -> dict[str, str]:
@@ -86,6 +93,7 @@ async def copies(services, p) -> dict[str, str]:
         try:
             with anyio.fail_after(GRANTS_SECONDS):
                 off = await _off(services)
+            _block(off)
         except Exception:                   # Check says why the screen does not answer
             off = []
         out: dict[str, Any] = {"facts": [{"label": label, "value": saved[k]}
@@ -257,6 +265,7 @@ async def check(services, p, _input) -> dict[str, Any]:
             lines.append({"text": f"{name}: {n} tools", "tone": "ok"})
     try:
         off = await _off(services)
+        _block(off)
     except Exception as e:
         off = []
         lines.append({"text": f"{NAMES['macscreen']}: {e}", "tone": "error"})
@@ -268,13 +277,19 @@ async def check(services, p, _input) -> dict[str, Any]:
 
 APP = "Celine"         # setup.sh's ~/Applications/Celine.app: every server on the Mac runs under it
 GRANTS_SECONDS = 5     # the form's note waits this long for the screen server
-# Peekaboo's `_meta` key: the grant, what she cannot do without it, its pane, its tone
+GRANTS_EVERY = 30      # seconds between two looks at the grants while the Mac is connected
+# the grant (Peekaboo's `_meta` key, or share.js /grants), what she cannot do without
+# it, its pane, its tone, and the servers whose calls would wait on a dialog without it
 GRANTS = {
     "screen_recording": ("Screen Recording", "no screenshots",
-                         "Screen & System Audio Recording", "error"),
-    "accessibility": ("Accessibility", "no clicks or typing", "Accessibility", "error"),
+                         "Screen & System Audio Recording", "error", ("macscreen",)),
+    "accessibility": ("Accessibility", "no clicks or typing", "Accessibility", "error",
+                      ("macscreen",)),
     "event_synthesizing": ("Event Synthesizing", "no typing into apps in the background",
-                           "Accessibility", "warn"),
+                           "Accessibility", "warn", ()),
+    "full_disk_access": ("Full Disk Access", "a folder like Desktop or Documents waits for "
+                         "a click on the Mac's screen", "Full Disk Access", "error",
+                         ("macfiles", "macshell")),
 }
 
 
@@ -285,17 +300,52 @@ def turn_on(panes: list[str]) -> str:
             f"under {lists}.")
 
 
-async def _off(services) -> list[dict[str, str]]:
-    """Each grant the screen server says is off; [] while it does not run."""
+async def _off(services) -> list[dict[str, Any]]:
+    """Each grant that is off: the screen server's (Peekaboo) and share.js's (Full Disk
+    Access); a server that does not answer says nothing."""
+    meta: dict[str, Any] = {}
     screen = services.mcp.skills.get("macscreen")
-    if screen is None or screen.client is None:
-        return []
-    return _grants(await screen.client.call_tool("permissions", {}))
+    if screen is not None and screen.client is not None:
+        meta.update(getattr(await screen.client.call_tool("permissions", {}), "meta", None) or {})
+    saved = services.cfg.settings.plugins.get("mac") or {}
+    if saved.get("share") and saved.get("token"):
+        async with httpx.AsyncClient(timeout=GRANTS_SECONDS, headers={
+                "Authorization": f"Bearer {saved['token']}"}) as client:
+            r = await client.get(saved["share"].rstrip("/") + "/grants")
+        if r.status_code == 200:
+            meta.update(r.json())
+    return _grants(meta)
 
 
-def _grants(res) -> list[dict[str, str]]:
-    """Each grant Peekaboo's permissions answer says is off (`_meta`, false): what she
-    cannot do without it and where the user turns it on for APP."""
-    meta = getattr(res, "meta", None) or {}
-    return [{"text": f"{name} is off: {without}.", "tone": tone, "pane": pane}
-            for key, (name, without, pane, tone) in GRANTS.items() if meta.get(key) is False]
+def _grants(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each grant `meta` says is off (false): what she cannot do without it, where the
+    user turns it on for APP, and the servers it blocks."""
+    return [{"text": f"{name} is off: {without}.", "tone": tone, "pane": pane,
+             "blocks": blocks}
+            for key, (name, without, pane, tone, blocks) in GRANTS.items()
+            if meta.get(key) is False]
+
+
+def _block(off: list[dict[str, Any]]) -> None:
+    """Each Mac server whose calls would wait on a dialog: blocked with the grant and
+    where to turn it on (skills.BLOCKED, read where a call is resolved); the rest free."""
+    for sid in NAMES:
+        mine = [x for x in off if sid in x["blocks"]]
+        if mine:
+            names = [x["text"].split(" is off")[0] for x in mine]
+            BLOCKED[sid] = (" and ".join(names) + (" are" if len(names) > 1 else " is")
+                            + " off on the Mac. " + turn_on([x["pane"] for x in mine]))
+        else:
+            BLOCKED.pop(sid, None)
+
+
+async def _watch_grants(services, p) -> None:
+    """While the Mac is connected: its grants every GRANTS_EVERY seconds into BLOCKED."""
+    while True:
+        if (services.cfg.settings.plugins.get(p.id) or {}).get("url"):
+            try:
+                with anyio.fail_after(GRANTS_SECONDS * 2):
+                    _block(await _off(services))
+            except Exception:           # the Mac does not answer: its servers say so
+                pass
+        await anyio.sleep(GRANTS_EVERY)

@@ -387,6 +387,12 @@ def collect(skill: Any) -> list[ToolSpec]:
     return sorted(out, key=lambda t: t.name)
 
 
+# skill -> why it cannot run now although its server answers: a fact of the moment that
+# whoever knows it sets and clears (plugins/mac/gateway.py: a macOS permission that is off,
+# which would leave a call waiting on a dialog on the Mac's screen)
+BLOCKED: dict[str, str] = {}
+
+
 @dataclass
 class Registry:
     cfg: Any = None     # set: tool descriptions name the user ({{username}})
@@ -421,12 +427,12 @@ class Registry:
 
     def down(self, skill_name: str) -> str | None:
         """Why a skill is not up (a connector that is starting or dead, image generation
-        without a preset), or None while it is up. Its tools stay in its list as stubs
-        that say so."""
+        without a preset, a device that lacks a permission: BLOCKED), or None while it
+        is up. Its tools stay in its list as stubs that say so."""
         skill = self.skills.get(skill_name)
         status = getattr(skill, "status", "up")
         if status == "up":
-            return None
+            return BLOCKED.get(skill_name)
         return " ".join(str(getattr(skill, "error", None) or f"it is {status}").split())[:200]
 
     def index(self, cfg, carried) -> str | None:

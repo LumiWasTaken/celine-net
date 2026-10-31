@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
+import httpx
 import pytest
 
 from celine import boot, plugins, saves
@@ -346,6 +347,10 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
         {"text": "Accessibility is off: no clicks or typing.", "tone": "error"},
         {"text": "Event Synthesizing is off: no typing into apps in the background.",
          "tone": "warn"}]}
+    # a server whose calls would wait on a dialog is blocked with the reason (skills.BLOCKED)
+    from celine.skills import BLOCKED
+    assert BLOCKED == {"macscreen": "Screen Recording and Accessibility are off on the Mac. "
+                                    + turn_on}
     # the form's note and her settings__read say the same while the Mac is connected
     form.secrets.set_key(cfg.settings.secrets_root, "mac.link", "key")
     copies = p.attr("gateway:copies")
@@ -355,12 +360,32 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     Client.meta = {**META, "screen_recording": True, "accessibility": True,
                    "event_synthesizing": True}
     assert await copies(services, p) == {"facts": [], "note": "Connected."}, "all on: no grant"
+    assert BLOCKED == {}, "all on: nothing blocked"
+
+    # Full Disk Access, as share.js says it: files and shell would wait on a folder dialog
+    gateway = sys.modules[copies.__module__]
+    real = httpx.AsyncClient
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", lambda **kw: real(**kw, transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, json={"full_disk_access": False})
+        if req.url.path == "/grants" and req.headers["authorization"] == "Bearer tok"
+        else httpx.Response(404))))
+    cfg.settings.plugins["mac"] = {"url": "http://mac:8765", "share": "http://mac:8766",
+                                   "token": "tok"}
+    got = await copies(services, p)
+    assert got["lines"] == [{"text": "Full Disk Access is off: a folder like Desktop or "
+                                     "Documents waits for a click on the Mac's screen.",
+                             "tone": "error"}]
+    fda = ("Full Disk Access is off on the Mac. On the Mac, open System Settings, Privacy & "
+           "Security, and turn on Celine under Full Disk Access.")
+    assert BLOCKED == {"macfiles": fda, "macshell": fda}
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", real)
+    cfg.settings.plugins["mac"] = {"url": "http://mac:8765"}
+    BLOCKED.clear()
 
     # a screen server that does not answer holds the note for GRANTS_SECONDS at most
     class Silent:
         async def call_tool(self, name, args):
             await anyio.sleep_forever()
-    gateway = sys.modules[copies.__module__]
     monkeypatch.setattr(gateway, "GRANTS_SECONDS", 0.01)
     skills["macscreen"] = SimpleNamespace(status="up", error=None, client=Silent())
     assert await copies(services, p) == {"facts": [], "note": "Connected."}
