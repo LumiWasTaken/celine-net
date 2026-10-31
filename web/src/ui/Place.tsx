@@ -5,16 +5,18 @@
    tablet, a sheet from the bottom edge on a phone), opened by the panel button every PlaceHead inside the place shows there; a
    link in it closes it. With `fold` the sidebar folds away to the left on a wide screen:
    its head starts with Close sidebar, the page's head with Open sidebar while it is away,
-   and this device keeps which.
+   and this device keeps which. The page takes its new width at once and glides from where
+   its middle was, with the sidebar; its heads' actions on the right edge hold still.
 
      <Place title="Documents" action={<IconButton icon={SquarePen} label="New folder" href=... />}
             side={<><ListRow .../>...</>} foot={<ListRow title="Sam" .../>}>
        <PlaceHead title="Documents" ... />
        ...
      </Place> */
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { usePref } from '../lib/prefs'
 import { cx } from './cx'
+import { curve, ms, reduced } from './motion'
 import { Drawer } from './Drawer'
 import { useNarrow } from './phone'
 
@@ -51,8 +53,26 @@ export function Place({ title, action, head, side, foot, label, className, open:
   const [own, setOwn] = useState(false)
   const open = shown ?? own
   const setOpen = onOpen ?? setOwn
-  const [away, setAway] = usePref(`place:${fold ?? ''}:folded`, false)
+  const [away, setFolded] = usePref(`place:${fold ?? ''}:folded`, false)
   const folded = !!fold && !narrow && away
+  // the page's box before the sidebar goes or comes; after, it glides from its middle there
+  const main = useRef<HTMLDivElement>(null)
+  const was = useRef<DOMRect | null>(null)
+  const setAway = (on: boolean) => { was.current = main.current?.getBoundingClientRect() ?? null; setFolded(on) }
+  useLayoutEffect(() => {
+    const a = was.current, el = main.current
+    was.current = null
+    if (!a || !el || reduced()) return
+    const b = el.getBoundingClientRect()
+    const dx = a.left + a.width / 2 - (b.left + b.width / 2)
+    // on the sidebar's own curve: in on --dur-slow --ease, out on --dur --ease-exit
+    const timing = folded ? { duration: ms('--dur'), easing: curve('--ease-exit') } : { duration: ms('--dur-slow'), easing: curve('--ease') }
+    el.animate([{ translate: `${dx}px 0` }, { translate: '0 0' }], timing)
+    // a head's actions sit on the right edge, which stays: they hold still
+    for (const acts of el.querySelectorAll('.place-head__acts')) {
+      acts.animate([{ translate: `${-dx}px 0` }, { translate: '0 0' }], { ...timing, composite: 'add' })
+    }
+  }, [folded])
   // a link or a row in the drawer goes somewhere: the drawer gets out of the way
   const closeOnGo = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('a[href], .list-row')) setOpen(false)
@@ -86,7 +106,7 @@ export function Place({ title, action, head, side, foot, label, className, open:
             </aside>
           )}
         </PlaceCtx.Provider>
-        <div className="place__main">{children}</div>
+        <div ref={main} className="place__main">{children}</div>
       </div>
     </PlaceCtx.Provider>
   )
