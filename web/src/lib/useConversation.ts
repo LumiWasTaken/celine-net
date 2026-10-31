@@ -79,11 +79,13 @@ type State = {
   forming: Forming[]
   /** its plan here (event plan.state) */
   plan: Plan | null
+  /** how many snapshots brought another version (version.changed): a new list, not this one changing */
+  swaps: number
 }
 
 export interface Forming { message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string }
 
-const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, runs: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null }
+const EMPTY: State = { cid: null, conversation: null, messages: [], toolCalls: {}, runs: {}, turn: null, unanswered: null, queue: [], error: null, compactions: [], live: null, switched: {}, imageNotices: [], banners: [], approvals: [], stopping: null, compactOutcome: null, settings: null, forming: [], plan: null, swaps: 0 }
 
 export function useConversation(conversationId: string | null) {
   const [state, setState] = useState<State>(EMPTY)
@@ -92,15 +94,19 @@ export function useConversation(conversationId: string | null) {
 
   // one subscription on the app's socket (lib/socket.ts) while the conversation is open;
   // seq only grows and may skip, so a frame at or below it is one already applied.
-  // The text of a reply (message.delta, message.reasoning) is gathered and applied once a
-  // frame (every 250 ms in a hidden tab, where frames do not run); any other event first
-  // applies what was gathered, so the order holds and the end of a turn is never late.
+  // Events are gathered and applied once a frame (every 250 ms in a hidden tab, where
+  // frames do not run), in their order, the text of a reply joined: what one change on the
+  // server sent shows in one render. A version moved or a message went: what was gathered
+  // and what follows wait for the server's snapshot, which holds all of it, so the old
+  // path and the new never show together.
   useEffect(() => {
     seq.current = 0
     setState({ ...EMPTY, cid: conversationId })
     if (!conversationId) return
     const cid = conversationId
-    let held: TextFrame[] = []
+    let held: Frame[] = []
+    // waiting for the snapshot; `swap`: it brings another version
+    let stale = false, swap = false
     // a frame id and a timeout id are separate counters: each is cancelled only as itself
     let frame = 0, timeout = 0
     const cancel = () => {
@@ -121,21 +127,27 @@ export function useConversation(conversationId: string | null) {
       else frame = requestAnimationFrame(flush)
     }
     const stop = follow(cid, {
-      seq: () => seq.current,
+      // waiting, a subscription again (a reconnect) asks for the snapshot too
+      seq: () => (stale ? 0 : seq.current),
       onFrame: ev => {
         if (ev.type === 'resync') { held = []; seq.current = 0; snapshotAgain(cid); return }
-        if (ev.type === 'snapshot') { held = []; seq.current = ev.seq; setState(s => apply(s, ev)); return }
+        if (ev.type === 'snapshot') {
+          cancel(); held = []; seq.current = ev.seq
+          const swapped = swap
+          stale = swap = false
+          setState(s => ({ ...apply(s, ev), swaps: s.swaps + (swapped ? 1 : 0) }))
+          return
+        }
         if (typeof ev.seq === 'number') {
-          if (ev.seq <= seq.current) return
+          if (stale || ev.seq <= seq.current) return
           seq.current = ev.seq
         }
-        if (ev.type === 'message.delta' || ev.type === 'message.reasoning') { held.push(ev); later(); return }
-        flush()
         // the version moved or a message went: the server's snapshot, never a guess
         if (ev.type === 'version.changed' || ev.type === 'message.purged') {
+          cancel(); held = []; stale = true; swap ||= ev.type === 'version.changed'
           snapshotAgain(cid); return
         }
-        setState(s => apply(s, ev))
+        held.push(ev); later()
       },
     })
     return () => { cancel(); stop() }
@@ -162,12 +174,13 @@ export function useConversation(conversationId: string | null) {
 }
 
 /** text events in a row for the same message and kind joined into one */
-type TextFrame = Extract<Frame, { type: 'message.delta' | 'message.reasoning' }>
-function joinText(evs: TextFrame[]): TextFrame[] {
-  const out: TextFrame[] = []
+const isText = (ev: Frame): ev is Extract<Frame, { type: 'message.delta' | 'message.reasoning' }> =>
+  ev.type === 'message.delta' || ev.type === 'message.reasoning'
+function joinText(evs: Frame[]): Frame[] {
+  const out: Frame[] = []
   for (const ev of evs) {
     const prev = out.at(-1)
-    if (prev && prev.type === ev.type && prev.message_id === ev.message_id) out[out.length - 1] = { ...prev, text: prev.text + ev.text }
+    if (prev && isText(prev) && isText(ev) && prev.type === ev.type && prev.message_id === ev.message_id) out[out.length - 1] = { ...prev, text: prev.text + ev.text }
     else out.push(ev)
   }
   return out
