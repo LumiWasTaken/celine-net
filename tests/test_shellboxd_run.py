@@ -203,6 +203,12 @@ def test_stop_is_ctrl_c_and_the_shell_carries_on(box):
     assert (again["exit"], again["output"]) == (0, "ok"), "the shell's output is its own again"
 
 
+def test_a_program_that_splices_from_the_terminal_is_waiting(box):
+    """uutils' cat (Ubuntu 26) reads its input with splice, not read."""
+    r = box.run("python3 -c 'import os; r, w = os.pipe(); os.splice(0, w, 1)'")
+    assert r["state"] == "waiting"
+
+
 def test_a_question_comes_back_as_waiting_and_type_answers_it(box):
     began = time.monotonic()
     r = box.run('read -p "name? " x; echo "hi $x"')

@@ -177,7 +177,7 @@ STOP_WAIT = 5.0                     # /stop waits this long for the run it stopp
 KILL_WAIT = 2.0                     # a second /stop: seconds between SIGTERM and SIGKILL
 RUN_MAX = 3000                      # seconds one /run waits at most
 # the syscalls a program blocks in while it waits for the terminal (/proc/<pid>/syscall)
-READS = {"x86_64": {0, 17, 19}, "aarch64": {63, 65, 67}}                  # read, pread, readv
+READS = {"x86_64": {0, 17, 19, 275}, "aarch64": {63, 65, 67, 76}}    # read, pread, readv, splice
 POLLS = {"x86_64": {7, 23, 232, 270, 271, 281, 441},                      # poll, select, epoll
          "aarch64": {22, 72, 73, 441}}
 HEAD, TAIL = 2000, 6000             # characters of a long output kept from its start and end
