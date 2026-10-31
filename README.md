@@ -3,7 +3,7 @@ but more than that it's a custom harness built around one agent who lives on you
 A lot of things here work differently from the usual agent setups, so it's worth reading a
 bit before you dive in.
 
-https://github.com/user-attachments/assets/TOUR_VIDEO
+https://github.com/user-attachments/assets/f65eb1f9-9514-403d-9a4a-31c6aa1a9d41
 
 ## What's different
 
@@ -60,7 +60,7 @@ personal ones. But it's your setup, so that's up to you.
 The whole app works on a phone: the lists open as sheets from the bottom, and a long
 press on a message opens its menu.
 
-https://github.com/user-attachments/assets/PHONE_VIDEO
+https://github.com/user-attachments/assets/682e6109-184a-47ca-9e7c-622d59996bc4
 
 ## Models
 
