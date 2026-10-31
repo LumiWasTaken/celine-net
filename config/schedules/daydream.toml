@@ -1,5 +1,5 @@
 label = "Daydream"
-summary = "Thinks and tidies every two hours when nobody is around."
+summary = "Thinks and tidies the notes every two hours while you are away."
 cron = "0 10-23/2 * * *"
 after = []
 partner = ""

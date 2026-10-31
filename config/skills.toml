@@ -1,5 +1,5 @@
-# Built-in skills. `enabled` here is the global default; the Skills tab in a
-# conversation overrides it for that conversation only.
+# Built-in skills. `enabled` here is the default for every conversation; the Tools tab of a
+# conversation's side panel changes it for that conversation only.
 #
 # Turning a tool off does not hide it from Celine. It still sees it listed and
 # is told you turned it off, so it can say so instead of pretending it never
@@ -47,8 +47,8 @@ enabled = true
 
 [me]
 enabled = true
-# Self (skills/me.py): it reads its persona, talk and slop list, and changes its talk
-# and slop list; every change is in its History (Settings, the agent's page) and in Events.
+# Self (skills/me.py): it reads its Persona, Example lines and Banned words, and changes its
+# Example lines and Banned words; every change is in its History (Settings, the agent's page) and in Events.
 
 [settings]
 enabled = true
@@ -72,7 +72,7 @@ enabled = true
 
 [missions]
 enabled = true
-# Your briefs, each in a conversation of its own; missions__update records where it
+# Your missions, each with its Instructions in a conversation of its own; missions__update records where it
 # stands, missions__wait pauses one until a time. missions__list lists them from anywhere.
 
 [plan]
@@ -82,7 +82,7 @@ enabled = true
 
 [routines]
 enabled = true
-# The agent's hand on the Routines (server/celine/schedules/skill.py): list, read, write and run
+# The agent's access to Routines (server/celine/schedules/skill.py): list, read, write and run
 # them, with the same checks as the Routines page; its changes show as its own.
 
 [past_conversations]
@@ -91,7 +91,7 @@ enabled = true
 
 [sub_agents]
 enabled = true
-# The agent's sub-agents (sub_agents/skill.py): a brief in a new conversation of its own.
+# The agent's sub-agents (sub_agents/skill.py): each gets its Instructions in a new conversation of its own.
 
 [chat_archive]
 enabled = true
@@ -99,13 +99,13 @@ enabled = true
 # search (semantic topic search + word search, reranked, match windows), count,
 # read_session, read_period, scroll, get_messages, look_up, mark_same_person.
 # Which tools are on by default: Settings, Tools (var/settings/tools.toml).
-# Retrieval (kb/retrieve): query embeddings (the Topic Search role's query model), then
+# Retrieval (kb/retrieve): query embeddings (the Topic search model), then
 # a cross-encoder reranker (the Reranking role; empty turns reranking off). Both are
 # chosen in Settings, Models.
 
 [user_documents]
 enabled = true
-# {{username}}'s Documents (kind = "documents" in kb.toml), the drawer they share: list
+# {{username}}'s Documents (kind = "documents" in kb.toml), the files you both use: list
 # a folder (title, their description, the AI description, the mode), search, read, and
 # write a text file into it. Not its notebook.
 

@@ -8,11 +8,11 @@
 [server]
 # host = "127.0.0.1"
 # port = 8766
-# login = "off"                 # "on": the login, needed off loopback
+# login = "off"                 # "on" asks for a login. Turn it on when other computers can reach the app.
 # allowed_hosts = []
 # trusted_proxies = []
-# health_port = 0              # 0: none
-# metrics_port = 0             # 0: none
+# health_port = 0              # 0 turns it off
+# metrics_port = 0             # 0 turns it off
 
 [paths]
 # data = "var"                  # sqlite, notebook files, logs; relative to the repo root

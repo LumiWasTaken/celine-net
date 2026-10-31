@@ -11,7 +11,7 @@
 # the start of its last reply brings up its sections, graded by embedding similarity,
 # under [your memory] at the end of the message (server/celine/skills/recall.py).
 
-memory_floor = 0.5  # a section comes back only this similar to the talk (0 to 1)
+memory_floor = 0.5  # how similar a section must be to the conversation to come back (0 to 1)
 memory_sections = 3 # at most this many sections per message
 memory_tokens = 1500  # in at most this many tokens
 

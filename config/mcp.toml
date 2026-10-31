@@ -1,7 +1,7 @@
-# MCP servers. Each becomes a skill in the Skills tab, named after its key here,
+# MCP servers. Each becomes a skill in Settings, Tools and the side panel's Tools tab, named after its key here,
 # with one tool per tool the server advertises.
 #
-# A server that fails to start is reported in the Skills tab and its tools are
+# A server that fails to start shows its error in Settings, Tools, and its tools are
 # not offered that session. It does not take the rest of Celine down.
 #
 # Celine is only ever a client. Two servers here are connectors: they own the Discord

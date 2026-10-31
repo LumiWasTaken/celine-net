@@ -1,4 +1,4 @@
-# Sources. One block each; the block name is the id..
+# Sources, one block each. The block name is the source's id.
 #
 # Every source is its own SQLite file under paths.data/kb/<id>.db. Copying that file
 # copies the source. Adding a block and restarting creates an empty
@@ -14,7 +14,7 @@ kind     = "chat"
 title    = "WhatsApp"
 platform = "whatsapp"
 # Live messages come from the WhatsApp connection (wa-link, a linked device; the
-# `whatsapp` server in config/mcp.toml). Pairing is a QR code on the WhatsApp page.
+# `whatsapp` server in config/mcp.toml). Link it with Log in with QR code in Settings, WhatsApp.
 
 [discord]
 kind     = "chat"
@@ -28,13 +28,12 @@ platform = "discord"
 # code, images, anything). Celine reads them, and writes only its own files
 # (user_documents__write), never one of yours. Each file gets an
 # AI description in the background (the queue, background priority). A document is
-# chunked (passages in the word search and semantic topic search index) or full file
-# (read as one piece)..
+# split into passages (for word search and topic search) or read as a whole file.
 [documents]
 kind  = "documents"
 title = "Documents"
 path  = "documents"      # relative to paths.data; an absolute path works too (a vault)
-chunk_over_kb = 32       # default mode: a text file larger than this is chunked, else full file
+chunk_over_kb = 32       # a text file larger than this is split into passages, a smaller one is read as a whole file
 describe = true          # write AI descriptions in the background
 embed    = true          # passages into the semantic index ([embeddings] below)
 # describe_part_chars = 8000   # a longer file is summarised in parts of this size
@@ -42,7 +41,7 @@ embed    = true          # passages into the semantic index ([embeddings] below)
 
 # Semantic topic search.
 [embeddings]
-# Which model makes the vectors is the Topic Search role in Settings, Models. This block
+# The Topic search model in Settings, Models makes the vectors. This block
 # is the index shape. An index remembers what its model produces (a fingerprint); a
 # model that produces other vectors, or another `dims`, rebuilds it.
 batch      = 128

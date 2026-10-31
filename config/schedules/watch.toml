@@ -1,5 +1,5 @@
-label = "Watching"
-summary = "Watches videos from a list at night. Needs the shellbox."
+label = "Watch videos"
+summary = "Watches the videos on the watch list at night. Turn on Shellbox in Settings, Features first."
 cron = "0 22 * * *"
 after = []
 partner = ""
