@@ -8,6 +8,9 @@ patrol and Bastet's answers, and `media` (images or music) the batches. A featur
 a services PUT calls `apply(on, changed)`: what became on starts, what became off stops,
 what changed its address stops and starts again. Each runner is one task in the
 lifespan's task group under its own CancelScope; stop cancels it and waits for it to end.
+A runner lives while its feature is on: a function that returns (the vault's login) keeps
+it running, so the next apply does not run that function again; one that raises ends it,
+and the next apply starts it again.
 """
 from __future__ import annotations
 
@@ -45,6 +48,7 @@ class Runner:
         try:
             with self.scope:
                 await self.what()
+                await anyio.sleep_forever()
         except Exception:
             log.exception("runner failed", extra={"event": "runner.failed"})
         finally:

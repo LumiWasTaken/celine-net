@@ -407,6 +407,32 @@ async def test_a_real_runner_runs_under_its_own_scope(api):
         tg.cancel_scope.cancel()
 
 
+async def test_a_runner_that_finished_its_setup_is_not_run_again_by_the_next_apply(api):
+    """The vault's runner logs in and returns: a later apply (any settings save) must not
+    log in again, which would lock the vault the user unlocked. A crash may start again."""
+    import anyio
+    from celine.core.runners import Runner, Runners
+    ran: list[str] = []
+
+    async def login():
+        ran.append("login")
+
+    async def crash():
+        ran.append("crash")
+        raise RuntimeError("down")
+    async with anyio.create_task_group() as tg:
+        runners = Runners(vault=Runner(tg, login), box=Runner(tg, crash))
+        await runners.apply({})
+        await anyio.wait_all_tasks_blocked()
+        assert runners["vault"].running and not runners["box"].running
+        await runners.apply({})
+        await anyio.wait_all_tasks_blocked()
+        assert ran.count("login") == 1 and ran.count("crash") == 2
+        await runners.apply({"vault": False, "box": False})
+        assert not runners["vault"].running
+        tg.cancel_scope.cancel()
+
+
 async def test_discord_off_closes_its_archive_and_its_server_and_on_opens_them(
         tmp_path, monkeypatch, store):
     import anyio
