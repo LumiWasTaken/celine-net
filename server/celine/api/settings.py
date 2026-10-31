@@ -555,10 +555,11 @@ async def config_status(request: Request) -> dict:
             "user": cfg.user,
             "features": features_mod.effective(cfg.settings.features),
             "setup": features_mod.done(cfg.settings.features),
-            "catalog": [{"id": f.id, "label": f.label, "form": f.form,
-                         "about": cfg.substitute(f.about), "off_when": f.off_when,
-                         "places": list(f.places), "pages": list(f.pages)}
-                        for f in features_mod.catalog()],
+            # features.view fills every text with her name and pronouns
+            "catalog": [{k: v[k] for k in ("id", "label", "form", "about", "off_when",
+                                            "places", "pages")}
+                        for v in (features_mod.view(f, cfg.substitute)
+                                  for f in features_mod.catalog())],
             "problems": [{"file": p.file, "message": p.message, "fatal": p.fatal}
                          for p in cfg.problems],
             "hosts": router.hosts() if router is not None else {},
