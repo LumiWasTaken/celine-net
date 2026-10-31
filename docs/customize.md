@@ -6,8 +6,8 @@ in the app (the agent's page, Routines, Settings).
 ## Personality
 
 The agent's shipped persona is `config/her/persona.md` (who it is and how it works) and
-`config/her/talk.md` (how it sounds, by example lines). A fresh install copies both into
-its row; from then on you edit them in the onboarding or on the agent's page, and the files
+`config/her/talk.md` (how it sounds, by example lines). A new install copies both into
+its database; from then on you edit them in the onboarding or on the agent's page, and the files
 are only the seed for a new install. `config/her/owner.md` (its notebook rules) is
 appended to every persona.
 
@@ -28,9 +28,10 @@ A capital first letter (`{{She}}`) gives a capital word.
 `talk.md` shows how it sounds by example: your line, then its own, one beat each. Keep that
 shape when you add lines.
 
-`config/her/voice.toml` has `banned` (words its model is pushed away from, at `bias`),
-`phrases` (longer things it says that are not its own) and `patterns` (regexes that are
-only counted). It is copied into its row once; edit it there (The agent's page, Banned words).
+`config/her/voice.toml` has `banned` (Banned words: words the model avoids, as strongly as
+`bias` sets), `phrases` (longer phrases that do not sound like it) and `patterns` (regular
+expressions the app only counts, for statistics). A new install copies it once; after that,
+edit them on the agent's page under Banned words.
 
 ## Advanced
 
@@ -64,24 +65,24 @@ and rename it. Or add one on the Routines page.
 | `cron` | minute hour day month weekday, in your time zone (required) |
 | `prompt` | what it is asked (required) |
 | `after` | names of routines it follows on the same night |
-| `partner` | a `.md` prompt beside the file it talks with first; `""` for none |
-| `rounds` | the partner's lines at most, from 1 (default 8) |
+| `partner` | the Reviewer prompt: a `.md` file in the same folder; the routine talks with the reviewer first. `""` for none |
+| `rounds` | the most Turns the reviewer gets, 1 or more (default 8) |
 | `note` | notebook path (`.md`) its answer is written to; `""` for none |
 | `role` | the model role the run uses (default `chat`) |
-| `on` | `false`: it never starts by itself |
+| `on` | `false`: it runs only when you start it with Run now |
 | `idle_only` | `true`: runs only if nobody used the app for 30 minutes |
 | `wall_minutes` | most minutes a run may take, 1 to 180 |
-| `daytime` | `true`: `{{date}}` is the calendar date of the slot |
+| `daytime` | `true`: `{{date}}` is the date the routine runs on (otherwise it is the date of its night, the day before for a run after midnight) |
 
 The prompt, partner file and note can use `{{date}}`, `{{day_before}}`, `{{weekday}}`,
 `{{username}}`, `{{name}}`, the pronouns, `{{result:<routine>}}` (another routine's
 answer from the same night) and `{{mood}}`, `{{on_mind}}`, `{{tool_failures}}`,
-`{{voice_counts}}`. Nightly backups are kept for Backups kept in Settings, Advanced
-(default 7 days).
+`{{voice_counts}}`. How many days of nightly backups are kept is set in Settings,
+Advanced, Backups kept (default 7).
 
 ## Texts the model reads
 
-What a model reads lives where the one who edits it works. The agent's persona, talk and voice
+You edit each text a model reads in the place where it is used. The agent's persona, Example lines and Banned words
 are on the agent's page; a routine's prompt is on the Routines page; its seeded notes
 (`config/notebook_seed/`, copied once) are in her notebook from then on; Bastet's persona,
 its replies to Celine and its notes to you are on Settings, Guard (each with History; the
@@ -96,39 +97,42 @@ in `docker-compose.yml` under the `celine` service's `volumes`:
 
 ## Features
 
-Settings, Features (or `var/settings/features.toml`, `shellbox = false`). A feature not
-named is on, but Shares and Guard, which are on only once saved on (`shares = true`,
-`guard = true`); switching Shares on asks first, with what a share's link gives whoever holds it. The onboarding's Features
+Settings, Features (or `var/settings/features.toml`, `shellbox = false`). A feature that is
+not listed there is on, except Shares, Guard, Dictation and Read aloud, which stay off until
+you turn them on (`shares = true`, `guard = true`, `speech_input = true`,
+`speech_output = true`); switching Shares on asks first, with what a share's link gives whoever holds it. The onboarding's Features
 step lists every feature by tier (Core, on with no switch; Base modules, what ships in the repo;
 User modules, a plugin of `<data>/plugins` with no place of its own) and then gives a setup step
-to each feature switched on there that has a form or a connection (the shellbox and the Mac
-share one, Her computer; Discord and WhatsApp say how to run the connector; Routines switches
-each routine and sets its time). Off means its skills are not built, and for the connectors and services
+to each feature switched on there that has a form or a connection (the Shellbox and Her Mac
+share one step, Her computer; the Discord and WhatsApp steps say how to start the connector;
+the Routines step turns each routine on or off and sets its time). Off means its skills are not built, and for the connectors and services
 they are stopped at once: a switch, or a changed address in Settings, Features, is live
 without a restart. Docker starts a service only if its profile is in `COMPOSE_PROFILES`
 in `.env`.
 
 | id | Label | About | Needs | Compose profile |
 |---|---|---|---|---|
-| `shellbox` | Shellbox | An isolated Linux computer with a terminal, files and programs of its own, nothing on your machine. | the shellbox service | `shellbox` |
-| `shares` | Shares | It shows you a page, game, tool or file from its box in a new tab. | the shellbox feature on | |
+| `shellbox` | Shellbox | A Linux computer of its own in a container, with a terminal, files and programs. It does not touch your machine. | the shellbox service | `shellbox` |
+| `shares` | Shares | Shows you a page, game, tool or file from the shellbox in a new tab. | the shellbox feature on | |
 | `browser` | Browser | An isolated Brave browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch. | the browser service | `browser` |
-| `images` | Images | Pictures made with ComfyUI in the styles of the presets you keep. | a ComfyUI provider | |
+| `images` | Images | Pictures made with ComfyUI, in the styles of your presets. | a ComfyUI provider | |
 | `music` | Music | Music made with ComfyUI from a few words about the track. | a ComfyUI provider | |
+| `speech_input` | Dictation | Speak a message, read it over, then send it. | a Dictation model | |
+| `speech_output` | Read aloud | Replies read out loud, in a voice you pick. | a Read aloud model | |
 | `web` | Web search | Web search through your own SearXNG, with the pages found read as text or in the browser. | SearXNG | `web` |
-| `discord` | Discord | Your Discord history in the archive, and a chat from Discord itself. | the discord-link service | `discord` |
-| `whatsapp` | WhatsApp | Your WhatsApp history in the archive, and a chat from WhatsApp itself. | the wa-link service | `whatsapp` |
-| `email` | Email | A mailbox of yours read on your behalf: what came in, searchable and summarised. | an IMAP account in Settings, Email | |
-| `vault` | Vault | A Vaultwarden collection with the logins used in the browser on your behalf. | a Vaultwarden in Settings, Vault | |
+| `discord` | Discord | Your Discord history in Messages, and it can read your Discord live. | the discord-link service | `discord` |
+| `whatsapp` | WhatsApp | Your WhatsApp history in Messages, and it can read your WhatsApp live. | the wa-link service | `whatsapp` |
+| `email` | Email | It reads your mailbox for you: new mail, search and summaries. | an IMAP account in Settings, Email | |
+| `vault` | Vault | Logins from your Vaultwarden, which it types into websites in the browser for you. | a Vaultwarden in Settings, Vault | |
 | `guard` | Guard | Bastet, a second model that checks risky actions before they run and asks you when unsure. | a decision model (the Titles and descriptions role) | |
 | `documents` | Documents | A folder of your documents, searched, read and cited. | nothing | |
 | `messages` | Messages | Your chat history in one archive, searched by word or by topic. | Discord or WhatsApp | |
-| `artifacts` | Artifacts | Built pages: a chart, a table, a small app, kept with every version. | nothing | |
-| `routines` | Routines | Jobs on a schedule, a morning digest or a nightly tidy of the notes; change a time or switch one off. | nothing | |
-| `missions` | Missions | A long job carried over days, with check-ins as it goes. | nothing | |
-| `sub_agents` | Sub-agents | Parts of a big job handed to helpers, their results collected. | nothing | |
+| `artifacts` | Pages | Pages it builds for you, like a chart, a table or a small app, with every version kept. | nothing | |
+| `routines` | Routines | Jobs that run on a schedule, like a morning summary or a nightly tidy of its notes. | nothing | |
+| `missions` | Missions | Long jobs it works on over days, with updates as it goes. | nothing | |
+| `sub_agents` | Sub-agents | It hands parts of a big job to helpers and collects their results. | nothing | |
 
-`COMPOSE_PROFILES=shellbox,browser,discord,whatsapp,web` starts all of them; add
+`COMPOSE_PROFILES=shellbox,browser,discord,whatsapp,web` starts every optional service these features need; add
 `reranker` for the reranker.
 
 ## Skills and MCP
@@ -142,8 +146,8 @@ dropped.
 `[code]` is its coding agent: a coding agent server in its shellbox (opencode by default;
 the box picks the backend with the `CODING_AGENT` environment variable, one module in
 `shellbox/agents/`) that works on a folder of its own in the background with a model it
-picks from the ones you allow it. Settings, Advanced, Code: how long it waits between two
-looks at a session, how much of its answer it reads. It is part of the
+picks from the ones you allow it. Settings, Advanced, Code: how often it checks a running
+session, and how much of the coding agent's answer it reads. It is part of the
 Shellbox feature: off with it.
 `config/mcp.toml` adds MCP servers; each becomes a skill named after its key:
 
@@ -157,11 +161,12 @@ args      = ["-y", "@modelcontextprotocol/server-filesystem", "~/projects"]
 ```
 
 `transport = "http"` takes `url` and `[servers.<id>.headers]` instead. `${VAR}` and
-`${VAR:-default}` read the environment. A server that fails to start is reported and does
-not stop it.
+`${VAR:-default}` read the environment. A server that fails to start is shown as an error,
+and the app keeps running.
 
-Its tools' rows in the chat say "Used filesystem read file" until the server gives them
-words, a sentence per tool and the words of a run of the same calls (`{n}` their count):
+In the chat, a call to one of its tools shows as "Used filesystem read file" unless you
+give it words: one sentence per tool, and one for several calls of the same tool in a row
+(`{n}` is how many):
 
 ```toml
 [servers.filesystem.words]
