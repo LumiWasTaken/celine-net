@@ -52,6 +52,7 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
     note = copies.pop("note", None) or p.form.get("note")
     ask = copies.pop("address", None)
     hide = set(copies.pop("hide", ()))      # actions that do nothing now (the plugin says)
+    shown = {k: copies.pop(k) for k in ("facts", "lines") if copies.get(k)}
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root, copies),
            "actions": form.actions_view([a for a in p.form.get("actions", [])
                                          if a["id"] not in hide]),
@@ -62,7 +63,7 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
         out["note"] = note
     if ask:
         out["address"] = True
-    return out
+    return {**out, **shown}
 
 
 @router.get("/forms/{id}")

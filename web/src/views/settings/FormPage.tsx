@@ -4,10 +4,10 @@
    after it. FormActions is shared with the onboarding's card (WelcomeForms.tsx). */
 import { useState } from 'react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
-import { useForm, type ActionResult, type FormAction, type UseForm } from '../../lib/forms'
+import { useForm, type ActionResult, type FormAction, type FormView, type UseForm } from '../../lib/forms'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
-import { Button, Dot, Field, Form, InlineError, Input, Section } from '../../ui'
+import { Button, Dot, Facts, Field, Form, InlineError, Input, Section } from '../../ui'
 import { AddressField } from './General'
 import { Page } from './parts'
 import './settings.css'
@@ -23,7 +23,7 @@ export function FormPage({ id, label }: { id: string; label: string }) {
   return (
     <Page title={label}>
       <Section>
-        {d.note && <p className="src-line">{d.note}</p>}
+        <FormState view={d} />
         {d.address && <AddressField />}
         <div title={online ? undefined : OFFLINE_TITLE}>
           <Form fields={d.fields} values={shown.values} secrets={shown.secrets} disabled={!online}
@@ -34,6 +34,15 @@ export function FormPage({ id, label }: { id: string; label: string }) {
       </Section>
     </Page>
   )
+}
+
+/** what the server says of the form's device: its note, its facts, what is off */
+export function FormState({ view: d }: { view: FormView }) {
+  return <>
+    {d.note && <p className="src-line">{d.note}</p>}
+    {d.facts && <Facts items={d.facts} />}
+    {d.lines && <div className="form__lines">{d.lines.map((l, i) => <Dot key={i} tone={l.tone} text={l.text} />)}</div>}
+  </>
 }
 
 /** a form's actions, each a button (with the one text it asks for), its answer as a Dot
@@ -48,32 +57,34 @@ export function FormActions({ form, disabled, before, after }: {
 }) {
   // a plugin's actions are its code, which runs only while it is on
   const actions = form.res.data?.running ? form.res.data.actions : []
-  return <>{actions.map(a => <ActionRow key={a.id} a={a} form={form} disabled={disabled} before={before} after={after} />)}</>
-}
-
-function ActionRow({ a, form, disabled, before, after }: {
-  a: FormAction; form: UseForm; disabled: boolean; before?: () => Promise<void>; after?: () => Promise<unknown>
-}) {
-  const [input, setInput] = useState('')
+  const [inputs, setInputs] = useState<Record<string, string>>({})
   const [result, setResult] = useState<ActionResult | null>(null)
-  const run = useAction(async () => {
-    await before?.()
-    setResult(await form.run(a.id, a.input ? input : undefined))
-    setInput('')
-    form.res.reload()
-    await after?.()
+  const [busy, setBusy] = useState<string | null>(null)
+  const run = useAction(async (a: FormAction) => {
+    setBusy(a.id)
+    try {
+      await before?.()
+      setResult(await form.run(a.id, a.input ? inputs[a.id] ?? '' : undefined))
+      setInputs(x => ({ ...x, [a.id]: '' }))
+      form.res.reload()
+      await after?.()
+    } finally { setBusy(null) }
   })
+  if (!actions.length) return null
   return <>
-    {a.input && (
-      <Field label={a.input}>
-        <Input type="password" autoComplete="off" spellCheck={false} value={input} onChange={e => setInput(e.target.value)} />
+    {actions.filter(a => a.input).map(a => (
+      <Field key={a.id} label={a.input!}>
+        <Input type="password" autoComplete="off" spellCheck={false} value={inputs[a.id] ?? ''}
+               onChange={e => setInputs(x => ({ ...x, [a.id]: e.target.value }))} />
       </Field>
-    )}
+    ))}
     <div className="form__control">
-      <Button loading={run.busy} disabled={disabled || (!!a.input && !input)}
-              onClick={() => void run.run()}>{a.label}</Button>
-      {result?.sentence && <Dot tone={result.ok ? 'ok' : 'error'} text={result.sentence} />}
+      {actions.map(a => (
+        <Button key={a.id} loading={busy === a.id} disabled={disabled || !!busy || (!!a.input && !inputs[a.id])}
+                onClick={() => void run.run(a)}>{a.label}</Button>
+      ))}
     </div>
+    {result?.sentence && <Dot tone={result.ok ? 'ok' : 'error'} text={result.sentence} />}
     {result?.lines && (
       <div className="form__lines">
         {result.lines.map((l, i) => <Dot key={i} tone={l.tone} text={l.text} />)}

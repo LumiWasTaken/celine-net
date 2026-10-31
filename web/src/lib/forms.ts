@@ -19,6 +19,10 @@ export type FormView = {
   fields: FormField[]
   actions: FormAction[]
   note?: string
+  /** what the plugin knows of its device, as labels and values (her Mac's chip, memory) */
+  facts?: { label: string; value: string }[]
+  /** what is off on it now, one Dot each (a macOS permission) */
+  lines?: { text: string; tone: DotTone }[]
   /** the app's own address belongs on this form now (her Mac's while it is localhost) */
   address?: boolean
   values: Record<string, unknown>

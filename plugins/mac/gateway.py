@@ -82,13 +82,19 @@ async def copies(services, p) -> dict[str, str]:
         return {}
     saved = cfg.settings.plugins.get(p.id) or {}
     if saved.get("url") and p.id not in _again:
-        note = f"Connected: {saved['about']}." if saved.get("about") else "Connected."
         try:
             with anyio.fail_after(GRANTS_SECONDS):
                 off = await _off(services)
         except Exception:                   # Check says why the screen does not answer
             off = []
-        return {"note": " ".join([note, *(x["text"] for x in off)])}
+        out: dict[str, Any] = {"facts": [{"label": label, "value": saved[k]}
+                                         for k, label in FACTS if saved.get(k)]}
+        if off:
+            out["note"] = "Connected. " + turn_on([x["pane"] for x in off])
+            out["lines"] = [{"text": x["text"], "tone": x["tone"]} for x in off]
+        else:
+            out["note"] = "Connected."
+        return out
     app = address.base(cfg)
     if address.is_loopback(app):
         return {"note": LOCAL, "address": "ask", "publish": PUBLISH, "hide": ["again"]}
@@ -156,12 +162,33 @@ async def gateway(request: Request) -> dict[str, Any]:
             values[key] = body[key]
     if isinstance(body.get("mac"), dict) and (said := about(body["mac"])):
         values["about"] = said
+        values.update(facts(body["mac"]))
     out = await plugin_form(services, p, values, {"token": body["token"]})
     _again.discard(p.id)
     return out
 
 
 ABOUT_CHARS = 80   # the most of one fact of the Mac
+# the facts the form shows, each a field the Mac fills (settings.toml), in this order
+FACTS = (("chip", "Chip"), ("memory", "Memory"), ("macos", "macOS"), ("network", "Network"),
+         ("user", "User"))
+
+
+def facts(mac: dict[str, Any]) -> dict[str, str]:
+    """setup.sh's facts of the Mac as the form's values: {"chip": "Apple M4", "memory":
+    "16 GB", "macos": "15.6", "network": "Wi-Fi (en0)", "user": "celine"}; a fact it did
+    not send is left out."""
+    def said(k: str) -> str:
+        v = mac.get(k)
+        return " ".join(v.split())[:ABOUT_CHARS] if isinstance(v, str) else ""
+    memory = mac.get("memory")
+    out = {"chip": said("chip"),
+           "memory": f"{round(memory / 2**30)} GB"
+           if isinstance(memory, int) and not isinstance(memory, bool) and memory > 0 else "",
+           "macos": said("macos"),
+           "network": said("network") + (f" ({said('interface')})" if said("interface") else ""),
+           "user": said("user")}
+    return {k: v.strip() for k, v in out.items() if v.strip()}
 
 
 def about(mac: dict[str, Any]) -> str:
@@ -228,23 +255,33 @@ async def check(services, p, _input) -> dict[str, Any]:
             n = sum(1 for t in services.registry.tools.values() if t.skill == sid)
             lines.append({"text": f"{name}: {n} tools", "tone": "ok"})
     try:
-        lines += await _off(services)
+        off = await _off(services)
     except Exception as e:
+        off = []
         lines.append({"text": f"{NAMES['macscreen']}: {e}", "tone": "error"})
+    lines += [{"text": x["text"], "tone": x["tone"]} for x in off]
     ok = all(x["tone"] == "ok" for x in lines)
-    return {"ok": ok, "sentence": "", "lines": lines}
+    return {"ok": ok, "sentence": turn_on([x["pane"] for x in off]) if off else "",
+            "lines": lines}
 
 
 APP = "Celine"         # setup.sh's ~/Applications/Celine.app: every server on the Mac runs under it
 GRANTS_SECONDS = 5     # the form's note waits this long for the screen server
 # Peekaboo's `_meta` key: the grant, what she cannot do without it, its pane, its tone
 GRANTS = {
-    "screen_recording": ("Screen Recording", "she cannot see the screen",
+    "screen_recording": ("Screen Recording", "no screenshots",
                          "Screen & System Audio Recording", "error"),
-    "accessibility": ("Accessibility", "she cannot click or type", "Accessibility", "error"),
-    "event_synthesizing": ("Event Synthesizing", "she cannot type into apps in the background",
+    "accessibility": ("Accessibility", "no clicks or typing", "Accessibility", "error"),
+    "event_synthesizing": ("Event Synthesizing", "no typing into apps in the background",
                            "Accessibility", "warn"),
 }
+
+
+def turn_on(panes: list[str]) -> str:
+    """Where the user turns on APP for the grants that are off, each list named once."""
+    lists = " and ".join(dict.fromkeys(panes))
+    return (f"On the Mac, open System Settings, Privacy & Security, and turn on {APP} "
+            f"under {lists}.")
 
 
 async def _off(services) -> list[dict[str, str]]:
@@ -259,6 +296,5 @@ def _grants(res) -> list[dict[str, str]]:
     """Each grant Peekaboo's permissions answer says is off (`_meta`, false): what she
     cannot do without it and where the user turns it on for APP."""
     meta = getattr(res, "meta", None) or {}
-    return [{"text": f"{name} is off: {without}. Turn on {APP} in System Settings, "
-                     f"Privacy & Security, {pane}.", "tone": tone}
+    return [{"text": f"{name} is off: {without}.", "tone": tone, "pane": pane}
             for key, (name, without, pane, tone) in GRANTS.items() if meta.get(key) is False]

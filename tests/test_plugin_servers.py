@@ -218,8 +218,13 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert saved["agents"] == "http://127.0.0.1:4096"
         facts = ("user celine, home /Users/celine, Apple M4, 16 GB memory, macOS 15.6, "
                  "Wi-Fi (en0)")
-        assert await _copies(services, p) == {"note": f"Connected: {facts}."}, "no line"
-        assert view["note"] == f"Connected: {facts}." and view["fields"] == []
+        shown = [{"label": "Chip", "value": "Apple M4"}, {"label": "Memory", "value": "16 GB"},
+                 {"label": "macOS", "value": "15.6"}, {"label": "Network", "value": "Wi-Fi (en0)"},
+                 {"label": "User", "value": "celine"}]
+        assert await _copies(services, p) == {
+            "note": "Connected. Chip: Apple M4. Memory: 16 GB. macOS: 15.6. Network: Wi-Fi (en0). "
+                    "User: celine."}, "the facts as sentences for her"
+        assert view["note"] == "Connected." and view["facts"] == shown and view["fields"] == []
         # a client's save keeps what the Mac filled and may not name it
         bad = await c.put("/api/forms/mac", headers={"If-Match": view["version"]},
                           json={"values": {"url": "http://x:1"}})
@@ -237,7 +242,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert any(f["key"] == "command" for f in view["fields"])
         assert (await c.post("/api/plugins/mac/gateway", json=report,
                              headers={"Authorization": f"Bearer {key}"})).status_code == 200
-        assert (await c.get("/api/forms/mac")).json()["note"] == f"Connected: {facts}."
+        assert (await c.get("/api/forms/mac")).json()["facts"] == shown
         after = next(f for f in (await c.get("/api/features")).json()["catalog"]
                      if f["id"] == "mac")
         assert after["state"] != "unset", "the save asks the probes anew"
@@ -329,28 +334,27 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     services = SimpleNamespace(cfg=cfg, mcp=SimpleNamespace(skills=skills),
                                registry=SimpleNamespace(tools=tools))
     out = await p.attr("gateway:check")(services, p, None)
-    assert out == {"ok": False, "sentence": "", "lines": [
+    turn_on = ("On the Mac, open System Settings, Privacy & Security, and turn on Celine under "
+               "Screen & System Audio Recording and Accessibility.")
+    assert out == {"ok": False, "sentence": turn_on, "lines": [
         {"text": "Screen: 26 tools", "tone": "ok"},
         {"text": "Shell: The macshell server did not answer at mac:8765. Start it, or fix "
                  "the address.", "tone": "error"},
         {"text": "Browser: starting", "tone": "error"},
         {"text": "Files: starting", "tone": "error"},
-        {"text": "Screen Recording is off: she cannot see the screen. Turn on Celine in "
-                 "System Settings, Privacy & Security, Screen & System Audio Recording.",
-         "tone": "error"},
-        {"text": "Accessibility is off: she cannot click or type. Turn on Celine in System "
-                 "Settings, Privacy & Security, Accessibility.", "tone": "error"},
-        {"text": "Event Synthesizing is off: she cannot type into apps in the background. "
-                 "Turn on Celine in System Settings, Privacy & Security, Accessibility.",
+        {"text": "Screen Recording is off: no screenshots.", "tone": "error"},
+        {"text": "Accessibility is off: no clicks or typing.", "tone": "error"},
+        {"text": "Event Synthesizing is off: no typing into apps in the background.",
          "tone": "warn"}]}
     # the form's note and her settings__read say the same while the Mac is connected
     form.secrets.set_key(cfg.settings.secrets_root, "mac.link", "key")
     copies = p.attr("gateway:copies")
-    assert (await copies(services, p))["note"] == " ".join(
-        ["Connected.", *(x["text"] for x in out["lines"][4:])])
+    got = await copies(services, p)
+    assert got["note"] == f"Connected. {turn_on}", "the lists named once"
+    assert got["lines"] == out["lines"][4:], "each permission that is off, one line"
     Client.meta = {**META, "screen_recording": True, "accessibility": True,
                    "event_synthesizing": True}
-    assert await copies(services, p) == {"note": "Connected."}, "all on: no grant"
+    assert await copies(services, p) == {"facts": [], "note": "Connected."}, "all on: no grant"
 
     # a screen server that does not answer holds the note for GRANTS_SECONDS at most
     class Silent:
@@ -359,7 +363,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     gateway = sys.modules[copies.__module__]
     monkeypatch.setattr(gateway, "GRANTS_SECONDS", 0.01)
     skills["macscreen"] = SimpleNamespace(status="up", error=None, client=Silent())
-    assert await copies(services, p) == {"note": "Connected."}
+    assert await copies(services, p) == {"facts": [], "note": "Connected."}
     skills["macscreen"].client = Client()
 
     cfg.settings.plugins["mac"] = {}

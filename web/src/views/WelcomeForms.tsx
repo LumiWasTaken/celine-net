@@ -29,7 +29,7 @@ import { reach, slug } from './settings/Models'
 import './Welcome.css'
 import { SPEECH_ROLE, type Direction } from '../lib/speechApi'
 import { useForm } from '../lib/forms'
-import { FormActions } from './settings/FormPage'
+import { FormActions, FormState } from './settings/FormPage'
 import { AddressField } from './settings/General'
 import { EMPTY_PROVIDER, ProviderFields, host, ready, type ProviderDraft } from '../components/ProviderFields'
 import { SpeechTest } from '../components/SpeechTest'
@@ -63,7 +63,7 @@ function SchemaCard({ feature, value, onChange, saveRef, reprobe }: FormProps<Re
   if (!d) return form.res.error ? <InlineError compact message={form.res.error} onRetry={form.res.reload} /> : <LoadingRow label="Loading" />
   const shown = form.shown(draft)
   return <>
-    {d.note && <p className="onb__about">{d.note}</p>}
+    <FormState view={d} />
     {d.address && <AddressField />}
     <Form fields={d.fields} values={shown.values} secrets={shown.secrets} disabled={!online} plain
           onChange={(k, v) => onChange({ ...draft, [k]: v })} />

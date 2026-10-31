@@ -104,7 +104,11 @@ async def _copies(app, pl) -> dict[str, Any]:
     got = dict(await pl.attr(ref)(app, pl))
     got.pop("address", None)        # the app's address field: the page's, not hers
     got.pop("hide", None)           # the page's actions, not hers
-    out: dict[str, Any] = {"note": got.pop("note")} if "note" in got else {}
+    # the page's facts and lines, for her as sentences after the note
+    said = [*(f"{f['label']}: {f['value']}." for f in got.pop("facts", [])),
+            *(x["text"] for x in got.pop("lines", []))]
+    note = " ".join([got.pop("note"), *said] if "note" in got else said)
+    out: dict[str, Any] = {"note": note} if note else {}
     labels = {f["key"]: f["label"] for f in pl.form["fields"]}
     if got:
         out["copy"] = {labels.get(k, k): v for k, v in got.items()}
