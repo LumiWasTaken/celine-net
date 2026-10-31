@@ -24,7 +24,7 @@
    lives here. Next saves the step, so a closed tab loses nothing before it; a 400 with a
    field shows on that field. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CircleCheck, CircleDashed, RefreshCw } from 'lucide-react'
 import { ApiError, type ConfigStatus } from '../lib/api'
 import { kbApi } from '../lib/kb'
 import { onboardingModel } from '../lib/onboardingModel'
@@ -39,8 +39,8 @@ import {
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useServerEvents, type ServerEvent } from '../lib/bus'
-import { Button, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, SubHead, TextArea } from '../ui'
-import { FeatureSwitch, FeatureTiers, reprobe, stateTone } from './settings/Features'
+import { Button, Chip, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, SubHead, TextArea } from '../ui'
+import { FeatureSwitch, FeatureTiers, reprobe } from './settings/Features'
 import { blocked, firstTime, landing, stepping, stepsOf, toSave } from '../lib/featureSteps'
 import { useConnector } from './settings/Connector'
 import { LoginProblem } from './settings/DiscordSource'
@@ -400,14 +400,14 @@ function FeatureStep({ feature: f, view, error, reload, update, save, back, next
   useEffect(() => { if (view && blocked(f)) void check.run() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useServerEvents(ev => { if (savedFor(ev, f.id)) void check.run() })
   const Form = formOf(f)
-  const tone = stateTone(f, true)
   return (
     <StepCard title={f.label} back={back} next={next} onNext={onNext} disabled={!view && (error ?? 'Loading')}
               head={<>
                 {f.about && <p className="onb__about">{f.about}</p>}
-                {view && tone && (
+                {view && f.state !== 'none' && (
                   <div className="onb__check">
-                    <span className="onb__state"><Dot tone={tone} /><span className="onb__detail">{f.detail}</span></span>
+                    <SetupState feature={f} />
+                    {f.state !== 'ready' && f.detail && <span className="onb__detail">{f.detail}</span>}
                     {!Form && (
                       <Button variant="ghost" icon={RefreshCw} loading={check.busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
                               onClick={() => void check.run()}>Check again</Button>
@@ -422,6 +422,14 @@ function FeatureStep({ feature: f, view, error, reload, update, save, back, next
       </>}
     </StepCard>
   )
+}
+
+/** a feature's setup state as one word in the accent once it is ready, so it shows at a
+    glance: Ready, Not set up, Not connected; nothing while it has nothing to check */
+function SetupState({ feature: f }: { feature: Feature }) {
+  const ready = f.state === 'ready'
+  const word = ready ? 'Ready' : f.state === 'unset' ? 'Not set up' : f.state === 'missing' ? 'Not connected' : null
+  return word && <Chip tone={ready ? 'accent' : 'neutral'} icon={ready ? CircleCheck : CircleDashed} className="onb__status">{word}</Chip>
 }
 
 /* ── a group's step ("Her computer": Container and Own computer): each feature of the group
@@ -465,11 +473,14 @@ function GroupPart({ feature: f, view, update, form, setForm, saveRef }: {
   })
   useServerEvents(ev => { if (savedFor(ev, f.id)) void check.run() })
   const Form = formOf(f)
-  const tone = stateTone(f, true)
-  return <div className="onb__part">
-    <SubHead>{f.choice || f.label}</SubHead>
+  const ready = f.state === 'ready'
+  return <div className="onb__part" data-ready={ready || undefined}>
+    <div className="onb__part-head">
+      <SubHead>{f.choice || f.label}</SubHead>
+      <SetupState feature={f} />
+    </div>
     {f.about && <p className="onb__about">{f.about}</p>}
-    {tone && <span className="onb__state"><Dot tone={tone} /><span className="onb__detail">{f.detail}</span></span>}
+    {!ready && f.detail && <p className="onb__line">{f.detail}</p>}
     {check.error && <InlineError compact message={check.error} />}
     {Form && <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />}
   </div>

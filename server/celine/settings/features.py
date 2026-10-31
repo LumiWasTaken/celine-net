@@ -376,7 +376,7 @@ async def probe(cfg, services, feature: str) -> dict[str, Any]:
 def _plugin_state(cfg, feature: str) -> dict[str, Any]:
     """A feature without a probe: "unset" for a plugin while a value its servers need
     (a `${KEY}` of its form in its [servers] blocks, form.fill) is empty, with what is
-    empty; else "none". It never blocks the switch: its form is filled from what runs
+    empty; "ready" once all are filled; "none" without servers. It never blocks the switch: its form is filled from what runs
     only while it is on (its setup line, its routes)."""
     from . import form
     p = plugins.get(feature)
@@ -386,7 +386,7 @@ def _plugin_state(cfg, feature: str) -> dict[str, Any]:
     form.fill(cfg, p.id, (p.form or {}).get("fields", []),
               json.dumps(p.manifest["servers"]), empty)
     if not empty:
-        return {"state": "none", "detail": ""}
+        return {"state": "ready", "detail": ""}
     return {"state": "unset", "detail": "; ".join(dict.fromkeys(empty)) + ".",
             "blocks": False}
 
