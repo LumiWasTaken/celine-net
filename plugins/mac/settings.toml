@@ -3,12 +3,12 @@ copies = "gateway:copies"
 
 [[fields]]
 key = "publish"
-label = "Run on this computer, in the Celine folder"
+label = "Run in a terminal in the Celine folder on this computer"
 type = "copy"
 
 [[fields]]
 key = "command"
-label = "Run in the Terminal on the Mac"
+label = "Run in Terminal on the Mac"
 type = "copy"
 
 [[fields]]
@@ -22,7 +22,7 @@ word = true
 [[fields]]
 key = "agents"
 filled = "The Mac is not connected yet"
-label = "Agents"
+label = "Coding agent"
 type = "text"
 default = ""
 word = true

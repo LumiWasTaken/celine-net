@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
     --key) KEY=$2; shift ;;
     --json) JSON=1 ;;
     --status) STATUS=1 ;;
-    *) echo "unknown argument: $1" >&2; exit 2 ;;
+    *) echo "Unknown option: $1. Use --app, --key, --json or --status." >&2; exit 2 ;;
   esac
   shift
 done
@@ -61,7 +61,7 @@ MOVED=''
 if [ -n "$APP" ] && [ -s "$CONF/app" ] && [ "$(cat "$CONF/app")" != "$APP" ]; then
   MOVED=1
   if [ -z "$JSON$STATUS" ]; then
-    printf 'This Mac belongs to the Celine at %s.\nContinuing moves it to %s, and the other one loses it.\nPress Return to continue, or Ctrl+C to stop. ' \
+    printf 'This Mac is connected to Celine at %s.\nIf you continue, it connects to %s instead, and the other Celine loses access.\nPress Return to continue, or Ctrl+C to stop. ' \
       "$(cat "$CONF/app")" "$APP"
     read -r _ </dev/tty 2>/dev/null || true
   fi
@@ -157,7 +157,7 @@ console.log(JSON.stringify({ address: ADDRESS, token, token_file: TOKEN_FILE, ag
 
 if [ -n "$STATUS" ]; then
   if [ ! -x "$BREW" ] || [ ! -x "$(dirname "$BREW")/node" ]; then
-    echo "Nothing is installed yet: run bash setup.sh first." >&2
+    echo "Nothing is installed yet. First run the setup command from the Mac's page in Settings." >&2
     exit 1
   fi
   eval "$("$BREW" shellenv)"
@@ -165,8 +165,8 @@ if [ -n "$STATUS" ]; then
   exit
 fi
 
-echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome, four MCP servers and opencode and runs them as background services under the app Celine, lets $(id -un) run sudo without a password, and turns off sleep and the screen lock."
-say sudo
+echo "This installs Homebrew, the Xcode command line tools, Node, Peekaboo, Google Chrome, four MCP servers and opencode, and runs them in the background under the app Celine. It also lets $(id -un) use sudo without a password and turns off sleep and the screen lock. Type your Mac password when it asks."
+say "Allowing sudo without a password"
 sudo -n true 2>/dev/null || sudo -v   # -v asks even under NOPASSWD while %admin needs one
 sudoers=$(mktemp)
 echo "$(id -un) ALL=(ALL) NOPASSWD: ALL" > "$sudoers"
@@ -174,20 +174,20 @@ sudo visudo -cf "$sudoers" >/dev/null
 sudo install -m 440 -o root -g wheel "$sudoers" /etc/sudoers.d/celine
 rm -f "$sudoers"
 
-say power   # the display stays on and the lid closes without sleep; the screen never locks
+say "Turning off sleep and the screen lock"   # the display stays on and the lid closes without sleep; the screen never locks
 sudo pmset -a displaysleep 0 disablesleep 1
 sysadminctl -screenLock status 2>&1 | grep -q 'is off' || sysadminctl -screenLock off -password - </dev/tty   # piped: the password from the terminal
 
-say homebrew   # its installer also installs the Xcode command line tools when missing
+say "Installing Homebrew"   # its installer also installs the Xcode command line tools when missing
 [ -x "$BREW" ] || NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 eval "$("$BREW" shellenv)"
 
-say packages
+say "Installing Node, Peekaboo and Google Chrome"
 brew install node openclaw/tap/peekaboo
 brew install --cask google-chrome    # the browser Playwright MCP drives
 NODE=$(brew --prefix)/bin/node
 
-say servers
+say "Installing the MCP servers"
 mkdir -p "$LIB" "$AGENTS"
 cd "$LIB"
 [ -f package.json ] || echo '{ "private": true }' > package.json
@@ -203,7 +203,7 @@ fs.mkdirSync(require("path").dirname(file), { recursive: true });
 fs.writeFileSync(file, JSON.stringify({ ...c, blockedCommands: [], fileWriteLineLimit: 100000 }, null, 2));
 ' "$HOME/.claude-server-commander/config.json"
 
-say opencode   # the release binary, as the box has it
+say "Installing opencode"   # the release binary, as the box has it
 if [ "$("$OC" --version 2>/dev/null)" != "$OPENCODE_VERSION" ]; then
   zip=$LIB/opencode.zip
   curl -fsSLo "$zip" "https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION/opencode-darwin-arm64.zip"
@@ -211,7 +211,7 @@ if [ "$("$OC" --version 2>/dev/null)" != "$OPENCODE_VERSION" ]; then
   unzip -oq "$zip" opencode -d "$LIB/opencode" && rm "$zip"
 fi
 
-say app
+say "Building the Celine app"
 # macOS keeps a grant (Screen Recording, Accessibility) for the process a LaunchAgent
 # starts, and every process that one starts uses it: Peekaboo under the gateway asks with
 # the gateway's grants (launchctl procinfo: "responsible pid"). That process is Celine.app,
@@ -273,7 +273,7 @@ cat > "$src/Info.plist" <<'EOF'
 EOF
 if ! diff -rq "$src" "$LIB/app" >/dev/null 2>&1 || ! codesign -v "$CELINE_APP" 2>/dev/null; then
   if ! xcode-select -p >/dev/null 2>&1; then
-    echo "Install the Xcode command line tools: xcode-select --install" >&2
+    echo "The Xcode command line tools are missing. Run xcode-select --install, then run this command again." >&2
     exit 1
   fi
   new=$(mktemp -d)/Celine.app   # built beside, so a failed build leaves the working app
@@ -288,7 +288,7 @@ if ! diff -rq "$src" "$LIB/app" >/dev/null 2>&1 || ! codesign -v "$CELINE_APP" 2
 fi
 rm -rf "$src"
 
-say token
+say "Creating the token"
 mkdir -p "$CONF" && chmod 700 "$CONF"
 [ -z "$MOVED" ] || rm -f "$TOKEN"
 [ -s "$TOKEN" ] || (umask 077; openssl rand -hex 32 > "$TOKEN")
@@ -298,7 +298,7 @@ if [ -n "$APP" ]; then   # her scripts reach the app with these (README, From th
   (umask 077; echo "$KEY" > "$CONF/link")
 fi
 
-say chrome   # its own profile; its tabs and logins outlive the browser server's sessions
+say "Setting up Chrome"   # its own profile; its tabs and logins outlive the browser server's sessions
 cat > "$AGENTS/$CHROME.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -320,7 +320,7 @@ cat > "$AGENTS/$CHROME.plist" <<EOF
 </plist>
 EOF
 
-say gateway
+say "Setting up the gateway"
 cat > "$CONF/gateway.json" <<EOF
 {
   "port": $PORT,
@@ -378,7 +378,7 @@ cat > "$AGENTS/$LABEL.plist" <<EOF
 </dict>
 </plist>
 EOF
-say shares   # share.js: the app's shares of the Mac's ports and files (server/celine/shares.py)
+say "Setting up shares"   # share.js: the app's shares of the Mac's ports and files (server/celine/shares.py)
 cat > "$LIB/share.js" <<'EOF'
 // The app asks this as it asks shellboxd, with the token as the bearer:
 // GET /forward?port=<n> with Upgrade: tcp: 101, then raw bytes both ways to localhost:<n>
@@ -469,7 +469,7 @@ cat > "$AGENTS/$SHARE.plist" <<EOF
 </plist>
 EOF
 
-say drones   # opencode serve on the app's model proxy (the link key), with Peekaboo and Playwright MCP
+say "Setting up the coding agent"   # opencode serve on the app's model proxy (the link key), with Peekaboo and Playwright MCP
 mkdir -p "$HOME/.config/opencode" "$(dirname "$OC_LOG")"
 # only this script's keys are set, the rest stays: the app's models of provider celine
 # land in this same file (PATCH /global/config edits opencode.json when it exists)
@@ -518,7 +518,7 @@ EOF
 
 uid=$(id -u)
 if ! launchctl print "gui/$uid" >/dev/null 2>&1; then
-  echo "No desktop session for $(id -un): log in at the Mac, then run this again." >&2
+  echo "$(id -un) is not logged in on the Mac's screen. Log in on the Mac itself, then run this command again." >&2
   exit 1
 fi
 for label in "$CHROME" "$LABEL" "$OPENCODE" "$SHARE"; do   # each restarts with this run's config
@@ -562,14 +562,14 @@ case $line in *'"missing":["'*)   # the screen server lacks a grant: the panes, 
   open "$pane?Privacy_ScreenCapture"
   cat <<EOF
 
-Turn on Celine in the System Settings window, under Screen & System Audio Recording now
-and under Accessibility next. Not in the list: drag Celine in from the Finder window.
+In the System Settings window, turn on Celine under Screen & System Audio Recording.
+If Celine is not in the list, drag it in from the Finder window.
 EOF
-  printf 'Press Return when it is on. '
+  printf 'Press Return when Celine is on. '
   read -r _ </dev/tty || true
   open "$pane?Privacy_Accessibility"
-  printf 'Accessibility is open now: press Return when Celine is on there too. '
+  printf 'Now turn on Celine under Accessibility too (drag it in from the Finder window if it is not in the list), then press Return. '
   read -r _ </dev/tty || true
 esac
-echo "Check: $again"
+echo "Done. To check the Mac later, run: $again"
 }

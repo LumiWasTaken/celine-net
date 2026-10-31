@@ -706,6 +706,8 @@ VERBS = {
     "Uploaded": ("Uploading", "upload"), "Resized": ("Resizing", "resize"),
     "Recorded": ("Recording", "record"),
     "Pasted": ("Pasting", "paste"), "Dropped": ("Dropping", "drop"),
+    "Selected": ("Selecting", "select"), "Switched": ("Switching", "switch"),
+    "Hovered": ("Hovering", "hover"), "Created": ("Creating", "create"),
 }
 
 

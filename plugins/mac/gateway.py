@@ -46,13 +46,14 @@ LINK = "link"                       # its secret: var/secrets/mac.link.key
 SCRIPT = Path(__file__).with_name("setup.sh")
 PRESET = "APP='' KEY='' JSON='' STATUS=''"      # setup.sh's line a served copy fills in
 SETUP_SECONDS = 3600
-LOCAL = ("This page is open at localhost, and her Mac cannot reach that. First run the line "
-         "below on this computer, in the Celine folder. Then type the address her Mac can "
-         "reach, such as http://192.168.1.20:8766, and press Check. The setup line for the "
-         "Mac shows up here.")
+LOCAL = ("The Mac cannot open localhost. First run the command below in a terminal, in the "
+         "Celine folder on this computer. Then enter this computer's network address, for "
+         "example http://192.168.1.20:8766, and press Check. The command for the Mac then "
+         "appears here.")
 PUBLISH = "echo CELINE_PUBLISH=8766 >> .env && docker compose up -d"
-WAITING = "Run the setup line in the Terminal on the Mac. This page shows when it is connected."
-NOT_YET = "Not connected yet."
+WAITING = ("Copy the command above, paste it into Terminal on the Mac and press Return. "
+           "This page updates when the Mac is connected.")
+NOT_YET = "Not connected yet. Run the command above in Terminal on the Mac."
 _tokens: dict[str, float] = {}      # a setup line's token -> when it stops working
 _again: set[str] = set()            # plugins whose line Set up again shows until a report
 NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser",
@@ -249,7 +250,7 @@ async def check(services, p, _input) -> dict[str, Any]:
         if sid in why:
             lines.append({"text": f"{name}: {why[sid]}", "tone": "error"})
         elif skill is None or skill.status != "up":
-            said = (skill.error if skill is not None else None) or "starting"
+            said = (skill.error if skill is not None else None) or "Starting"
             lines.append({"text": f"{name}: {said}", "tone": "error"})
         else:
             n = sum(1 for t in services.registry.tools.values() if t.skill == sid)

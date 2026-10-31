@@ -408,7 +408,7 @@ a login writes a new setup code, and the old one stops working.
 
 **The app's address.** The app keeps the address of the browser the setup code was
 entered in (`var/settings/address.toml`); Settings, General, Network changes it. Logins, share
-links, push and her Mac's setup line use it, and requests from any other address but
+links, push and her Mac's setup command use it, and requests from any other address but
 localhost are refused. An install from before that has none learns it at the next login:
 until then only the login and the setup are accepted from elsewhere, and only from their
 own page.

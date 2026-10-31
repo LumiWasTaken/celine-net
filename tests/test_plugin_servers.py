@@ -148,7 +148,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert view["values"] == {} and view["secrets"] == {}
         assert await _copies(services, p) == {
             "note": gateway.LOCAL,
-            "copy": {"Run on this computer, in the Celine folder": gateway.PUBLISH}}, "the line to publish, for her too"
+            "copy": {"Run in a terminal in the Celine folder on this computer": gateway.PUBLISH}}, "the line to publish, for her too"
         # on the network: one line, a token that works once, the key never in the line
         await saves.address(services, {"origin": "http://192.168.1.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
@@ -165,7 +165,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert gateway.PRESET not in served.text and served.text.startswith("#!/bin/bash")
         assert (await c.get(f"/api/plugins/mac/setup/{m[1]}")).status_code == 404, "once"
         # an hour later it is gone
-        late = (await _copies(services, p))["copy"]["Run in the Terminal on the Mac"].split("/")[-1].split()[0]
+        late = (await _copies(services, p))["copy"]["Run in Terminal on the Mac"].split("/")[-1].split()[0]
         gateway._tokens[late] -= gateway.SETUP_SECONDS + 1
         assert (await c.get(f"/api/plugins/mac/setup/{late}")).status_code == 404
         # a served copy always has the app and the key in it
@@ -188,7 +188,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
             return json.loads((await sk.read(ctx, target="forms.mac")).content)
         chat = await conversations.create(store)
         agent = await conversations.create(store, agent_of=chat, agent_name="a", kind="agent")
-        assert (await read_in(chat))["copy"]["Run in the Terminal on the Mac"].startswith("curl -fsSL ")
+        assert (await read_in(chat))["copy"]["Run in Terminal on the Mac"].startswith("curl -fsSL ")
         ctx = ToolContext(conversation_id=chat, turn_id="t", tool_call_id="k", store=store,
                           config=cfg, emit=None)  # type: ignore[arg-type]
         no = await sk.propose(ctx, target="forms.mac", changes={"url": "http://x:8765"}, why="t")
@@ -340,8 +340,8 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
         {"text": "Screen: 26 tools", "tone": "ok"},
         {"text": "Shell: The macshell server did not answer at mac:8765. Make sure it is running "
                  "and the address is right, then press Check.", "tone": "error"},
-        {"text": "Browser: starting", "tone": "error"},
-        {"text": "Files: starting", "tone": "error"},
+        {"text": "Browser: Starting", "tone": "error"},
+        {"text": "Files: Starting", "tone": "error"},
         {"text": "Screen Recording is off: no screenshots.", "tone": "error"},
         {"text": "Accessibility is off: no clicks or typing.", "tone": "error"},
         {"text": "Event Synthesizing is off: no typing into apps in the background.",
@@ -390,7 +390,7 @@ async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
         await saves.address(services, {"origin": "http://192.168.1.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
         command = next(f for f in view["fields"] if f["key"] == "command")
-        assert command["label"] == "Run in the Terminal on the Mac"
+        assert command["label"] == "Run in Terminal on the Mac"
         token = command["value"].split("/setup/")[1].split()[0]
         assert (await c.get(f"/api/plugins/mac/setup/{token}")).status_code == 200
         got = (await c.get("/api/features")).json()

@@ -31,7 +31,7 @@ thing Settings saves at once:
 - `context`: your memory's numbers, `memory_floor`, `memory_sections`, `memory_tokens`,
   and `result_tokens`, the most one tool result takes.
 - `forms.<id>`: a plugin's form.
-- `forms.mac`: your Mac. While it is not connected, its `copy` holds the setup line:
+- `forms.mac`: your Mac. While it is not connected, its `copy` holds the setup command:
   {{username}} pastes that one line into Terminal on the Mac, and it installs everything
   and connects the Mac to you. Each read makes a new line that works once within an hour.
   Its `note` instead says what {{username}} does first when the app is only on localhost.
