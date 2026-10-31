@@ -12,6 +12,7 @@
 /* with room, Back to Settings sits at the left edge and the count stays centred on the page */
 @media (min-width: 768px) {
   .onb__top { position: relative; grid-template-columns: 1fr; }
+  .onb__steps, .onb__bar { grid-column: 1; }
   .onb__back { position: absolute; left: var(--gutter); top: var(--s-4); }
 }
 .onb__about { margin: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); }
