@@ -234,13 +234,18 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
                                    is_error=True), None
 
+    said: list[str] = []
+
     async def progress(note: str) -> None:
+        said.append(note)
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
     # Bastet (guard/calls.py), before the time check: her wait for the judge counts on
     # its clock
     gate = await bastet_calls.at_call(turn, call, spec, args, store=store, cfg=cfg,
                                       registry=registry, token=token, jobs=jobs,
                                       progress=progress)
+    if said:                    # its "waiting for Bastet" is over: the row says no more
+        await progress("")
     if gate.pending:
         return None
     if gate.refusal is not None:
