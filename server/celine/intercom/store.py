@@ -396,16 +396,19 @@ def thread_view(c: sqlite3.Connection, t: dict) -> dict:
 
 def grouped(c: sqlite3.Connection, found: list[dict], per: int, limit: int,
             before: int | None = None) -> tuple[list[dict], int | None]:
-    """The threads of `threads` grouped by who they are with, the group with the newest
-    activity first: {name (who by name), addresses, threads (how many), waiting (how many
-    of them wait), items (its `per` newest threads, as thread_view), more (the rest)}.
-    `limit` groups, those whose newest thread is below `before`. -> (the groups, the
-    `before` of the next page or None)."""
-    groups: dict[tuple, dict] = {}
+    """The threads of `threads` grouped by who they are with, by name (her chats are one
+    group "Celine", whatever conversation each thread sits in; a sub-agent by its name),
+    the group with the newest activity first: {name, addresses (every address of that
+    name in these threads), threads (how many), waiting (how many of them wait), items
+    (its `per` newest threads, as thread_view), more (the rest)}. `limit` groups, those
+    whose newest thread is below `before`. -> (the groups, the `before` of the next page
+    or None)."""
+    groups: dict[str | tuple, dict] = {}
     for t in found:
-        g = groups.setdefault(tuple(sorted(t["with"])), {
-            "name": t["name"], "addresses": t["with"], "threads": 0, "waiting": 0,
+        g = groups.setdefault(t["name"] or tuple(sorted(t["with"])), {
+            "name": t["name"], "addresses": [], "threads": 0, "waiting": 0,
             "newest": t["last"], "items": [], "more": 0})
+        g["addresses"] += [a for a in t["with"] if a not in g["addresses"]]
         g["threads"] += 1
         g["waiting"] += 1 if t["unread"] else 0
         if len(g["items"]) < per:

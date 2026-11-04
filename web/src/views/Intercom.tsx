@@ -164,7 +164,7 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
       for (const g of groups) {
         const these = items(g)
         if (!these.length) continue
-        const w = { address: g.addresses[0] ?? g.name, name: g.name }
+        const w = { address: g.addresses.length === 1 ? g.addresses[0]! : g.name, name: g.name }
         const icon = these[0]!.source?.kind === 'mission' ? Flag : these[0]!.source?.kind === 'sub-agent' ? Bot
           : these[0]!.last.from === 'system:app' ? Info : MessageCircle
         out.push({ type: 'group', key: `g:${w.address}`, name: g.name, icon, n: g.threads, who: w })
@@ -204,7 +204,7 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
   const empty = s ? 'No messages match'
     : show === 'waiting' && !who ? (word ? `No ${word} are waiting for you` : 'Nothing is waiting for you')
     : word ? `No ${word} yet` : 'No messages yet'
-  const froms = (list.data?.groups ?? []).map(g => ({ address: g.addresses[0] ?? g.name, name: g.name }))
+  const froms = (list.data?.groups ?? []).map(g => ({ address: g.addresses.length === 1 ? g.addresses[0]! : g.name, name: g.name }))
   const failed = !shown.data && shown.error
   const error = dismissAll.error ?? dismiss.error ?? toChat.error
 

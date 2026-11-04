@@ -497,3 +497,28 @@ async def test_a_reply_wakes_a_conversation_whose_turn_was_stopped(store):
     asked = await ic.send(f"agent:{cid}", "user", "stopped halfway, go on?")
     reply = await ic.send("user", "", "yes", reply_to=asked["intercom_id"])
     assert reply["turn_id"] and reply["turn_id"] != tid, "the reply starts its next turn"
+
+
+async def test_her_chats_are_one_group_for_the_user(store, cfg):
+    """Group by who: her threads from different chats are one group "Celine" with every
+    chat's address, and `with=Celine` lists them all (the Intercom page's From filter)."""
+    import httpx
+    from fastapi import FastAPI
+    from celine.errors import install_error_handler
+    from celine.intercom import api as intercom_api, store as rows
+    a, b = [await conversations.create(store) for _ in range(2)]
+    for cid, text in ((a, "done?"), (b, "and this?")):
+        await store.write(lambda c, cid=cid, text=text: rows.insert(
+            c, f"agent:{cid}", "user", "message", text))
+    app = FastAPI()
+    app.state.services = Services()
+    install_error_handler(app)
+    app.include_router(intercom_api.router)
+    app.state.services.store = store
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://t") as http:
+        page = (await http.get("/api/intercom/threads")).json()
+        assert [(g["name"], g["threads"], sorted(g["addresses"])) for g in page["groups"]] == \
+            [("Celine", 2, sorted([f"agent:{a}", f"agent:{b}"]))]
+        both = (await http.get("/api/intercom/threads?with=Celine")).json()
+        assert [len(g["items"]) for g in both["groups"]] == [2]
