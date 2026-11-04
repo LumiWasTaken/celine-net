@@ -678,6 +678,10 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
         await turns.transition(store, tid, cid, "failed", reason=msg,
                                reason_code="empty_reply")
         return None
+    nameless = sum(1 for s in acc.values() if not s["name"])
+    if nameless:
+        log.warning("tool call slots without a name dropped",
+                    extra={"event": "turn.nameless_call", "turn": tid, "count": nameless})
     calls = [{"id": turns.call_id(tid, iteration, index), "name": acc[index]["name"],
               "arguments": acc[index]["arguments"]}
              for index in sorted(acc) if acc[index]["name"]]
