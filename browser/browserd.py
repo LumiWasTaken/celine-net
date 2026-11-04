@@ -68,8 +68,8 @@ A refusal is {"error": code, "done": steps run, "effects": theirs, ...facts}: 40
 (what; screens with what screen), no_back, no_forward, no_dialog, no_option (options),
 no_select (role), no_file (file), password_field (target, none at the cursor: text that
 is not secret, into a password field; nothing of it was typed), not_password (target,
-none at the cursor: a vault entry into anything but an <input type=password>; nothing of
-it was typed), wrong_site (site: the
+none at the cursor: a vault entry while the focused line of the outline is not a
+password field; nothing of it was typed), wrong_site (site: the
 page's origin, or none: a vault entry into a page that is not one of the step's sites,
 a field in a frame of another site, or a page still loading; nothing of it was typed);
 401 key; 404 no_tab (tabs); 409 busy, tabs_full
@@ -754,8 +754,7 @@ def run_step(tab: Tab, step: dict) -> tuple[dict, tuple | None]:
 PASSWORD = re.compile(r"^\s*- password field\b")
 
 # the origin of the page and of the document that holds the cursor, through frames of
-# the same site; a frame of another site holds it -> frame null; and whether the cursor
-# is in an <input type=password>
+# the same site; a frame of another site holds it -> frame null
 SITE_JS = """(() => {
   let d = document;
   for (let i = 0; i < 10; i++) {
@@ -763,12 +762,10 @@ SITE_JS = """(() => {
     if (!a || !/^I?FRAME$/.test(a.tagName)) break;
     let c = null;
     try { c = a.contentDocument; } catch (e) {}
-    if (!c) return {top: location.href, frame: null, password: false};
+    if (!c) return {top: location.href, frame: null};
     d = c;
   }
-  const a = d.activeElement;
-  return {top: location.href, frame: d.location.href,
-          password: !!a && a.tagName === "INPUT" && a.type === "password"};
+  return {top: location.href, frame: d.location.href};
 })()"""
 
 
@@ -785,11 +782,11 @@ def origin_of(url: str | None) -> str | None:
     return f"https://{u.hostname.lower().rstrip('.')}:{port}"
 
 
-def on_its_site(tab: Tab, sites: list[str], target: str | None) -> None:
+def on_its_site(tab: Tab, sites: list[str]) -> None:
     """Right before a vault entry is typed: the page, and the frame that holds the
     cursor, are one of the entry's sites, and nothing is loading, else Problem
-    wrong_site; the cursor is in an <input type=password>, else Problem not_password.
-    Both before a key goes out."""
+    wrong_site, before a key goes out. Whether the cursor is in a password field is
+    read from the outline's focused line (act()), which sees into shadow roots."""
     got = {}
     if not tab.loading:
         try:
@@ -800,15 +797,15 @@ def on_its_site(tab: Tab, sites: list[str], target: str | None) -> None:
     top, frame = origin_of(got.get("top")), origin_of(got.get("frame"))
     if tab.loading or top is None or top not in sites or frame != top:
         raise Problem(400, "wrong_site", site=top or "none")
-    if got.get("password") is not True:
-        raise Problem(400, "not_password", **({} if target is None else {"target": target}))
 
 
 def act(tab: Tab, step: dict, parents: dict, focus: str | None = None) -> tuple | None:
     """The step's input, nothing waited for; the point and box it aimed at, if any.
     `focus`: the focused line before it (fingerprint()). Text goes into a password field
-    only when it is a vault entry (secret), which is inserted at once and leaves no
-    draft."""
+    only when it is a vault entry (secret), and a vault entry only into a password
+    field: the focused outline line after the click (or `focus` at the cursor) decides,
+    not the page's activeElement, which stops at a shadow host. A vault entry is
+    inserted at once and leaves no draft."""
     s = tab.session
     do, text, target = step["do"], step.get("text"), step.get("target")
     tab.stopped.clear()
@@ -836,18 +833,20 @@ def act(tab: Tab, step: dict, parents: dict, focus: str | None = None) -> tuple 
             field, into = (f"{node.role} {target}" if node else str(target)), None
             aimed = aim(tab, target, parents)
             press(tab, *aimed[:2])
-            if spot(target) is not None and not secret:
+            if secret or spot(target) is not None:
                 into = fingerprint(tab)["focus"]    # where the click put the cursor
+        facts = {} if target is None else {"target": str(target)}
         if into and PASSWORD.match(into) and not secret:
-            raise Problem(400, "password_field",
-                          **({} if target is None else {"target": str(target)}))
+            raise Problem(400, "password_field", **facts)
+        if secret and not (into and PASSWORD.match(into)):
+            raise Problem(400, "not_password", **facts)
         if target is not None:
             if mode == "replace":
                 key_event(tab, "a", modifiers=2, commands=["selectAll"])   # typing replaces
             else:
                 key_event(tab, "End", modifiers=2)                         # to the end
         if secret:
-            on_its_site(tab, step.get("sites") or [], None if target is None else str(target))
+            on_its_site(tab, step.get("sites") or [])
         if len(text) > KEYS_ONE_BY_ONE or secret:
             cdp("Input.insertText", {"text": text.rstrip("\n")}, s)
             if text.endswith("\n"):

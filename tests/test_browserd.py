@@ -242,15 +242,13 @@ def _login_page(box, monkeypatch, vault_app) -> SimpleNamespace:
     frame = SimpleNamespace(owner=None)
     box.tab.nodes = {14: browserd.Node(14, "s1", 140, "textbox", (0, 0, 100, 40), frame,
                                        password=True)}
-    page = SimpleNamespace(url="https://x/login", focus=None, shots=[], frame=None,
-                           password=True)
+    page = SimpleNamespace(url="https://x/login", focus='- password field "Password" [active]',
+                           shots=[], frame=None)
     box.answers["Target.getTargetInfo"] = lambda p: {"targetInfo": {"url": page.url,
                                                                     "title": "Sign in"}}
-    # browserd.on_its_site: the page's address, the cursor's frame's, and whether the
-    # cursor is in an <input type=password>
+    # browserd.on_its_site: the page's address and the cursor's frame's
     box.answers["Runtime.evaluate"] = lambda p: {"result": {"value": {
-        "top": page.url, "frame": page.url if page.frame is None else page.frame,
-        "password": page.password}}}
+        "top": page.url, "frame": page.url if page.frame is None else page.frame}}}
     box.answers["Page.navigate"] = lambda p: setattr(page, "url", p["url"]) or {}
     monkeypatch.setattr(browserd, "step_shot",
                         lambda tab, aimed: page.shots.append(aimed) or "")
@@ -316,7 +314,6 @@ async def test_a_missing_entry_names_its_tool(
     await vault_app.skill.set(ctx, name="example-shop", url="https://x")
     page = _login_page(box, monkeypatch, vault_app)
     b = page.browser
-    page.focus = '- password field "Password" [active]'
     out = await b.act(ctx, steps=[{"do": "type", "text": "vault:example-shop/password"}], tab="a")
     assert out.display["steps"][0]["step"] == "Typed vault:example-shop/password at the cursor"
     out = await b.act(ctx, steps=[{"do": "type", "target": "e14",
@@ -399,8 +396,8 @@ async def test_a_vault_entry_is_typed_only_on_its_own_site(box, monkeypatch, vau
 async def test_a_vault_entry_is_typed_only_into_a_password_field(box, monkeypatch, vault_app,
                                                                 store):
     """By its id from its last outline, refused before anything runs; at the cursor or
-    at a point, the element that holds the cursor is an <input type=password> right
-    before the text goes out, else nothing is typed. The model hears why."""
+    at a point, the focused line of the outline is a password field right before the
+    text goes out, else nothing is typed. The model hears why."""
     ctx = ctx_for(store, await conversations.create(store))
     await vault_app.skill.set(ctx, name="example-shop", url="https://x")
     page = _login_page(box, monkeypatch, vault_app)
@@ -419,7 +416,7 @@ async def test_a_vault_entry_is_typed_only_into_a_password_field(box, monkeypatc
                               "text": "vault:example-shop/password"}])
     assert out.is_error and out.content == f"Nothing was typed into e15. {words}"
     assert keys == []
-    page.password, page.focus = False, '- textbox "Search" [active]'
+    page.focus = '- textbox "Search" [active]'
     out, keys = await typed([{"do": "type", "text": "vault:example-shop/password"}])
     assert out.is_error and out.content == f"Nothing was typed at the cursor. {words}"
     assert "Input.insertText" not in keys
@@ -428,10 +425,29 @@ async def test_a_vault_entry_is_typed_only_into_a_password_field(box, monkeypatc
     assert out.is_error and out.content == (
         f"Nothing was typed into the field at 120,300. {words}")
     assert "Input.insertText" not in keys
-    page.password = True
+    page.focus = '- password field "Password" [active]'
     out, keys = await typed([{"do": "type", "target": "120,300",
                               "text": "vault:example-shop/password"}])
     assert not out.is_error and "Input.insertText" in keys
+
+
+@pytest.mark.anyio
+async def test_a_vault_entry_is_typed_into_a_password_field_in_a_shadow_root(
+        box, monkeypatch, vault_app, store):
+    """A password field inside a web component (reddit's faceplate-text-input): the
+    outline sees it through the shadow root and the page's activeElement stops at the
+    host. The outline's focused line decides, so the entry is typed."""
+    ctx = ctx_for(store, await conversations.create(store))
+    await vault_app.skill.set(ctx, name="example-shop", url="https://x")
+    page = _login_page(box, monkeypatch, vault_app)    # node 14 password=True, focus set
+    # the page's script answers only the site facts: no password input at activeElement
+    box.answers["Runtime.evaluate"] = lambda p: {"result": {"value": {
+        "top": page.url, "frame": page.url}}}
+    n = len(box.sent)
+    out = await page.browser.act(ctx, steps=[{"do": "type", "target": "e14",
+                                              "text": "vault:example-shop/password"}], tab="a")
+    assert not out.is_error
+    assert [m for m, _ in box.sent[n:] if m == "Input.insertText"] == ["Input.insertText"]
 
 
 def test_the_last_shot_is_taken_again_after_the_outline(box, monkeypatch):
