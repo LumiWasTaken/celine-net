@@ -388,7 +388,7 @@ def thread_view(c: sqlite3.Connection, t: dict) -> dict:
     message with its state."""
     first = c.execute("SELECT subject FROM intercom WHERE id=?", (t["thread"],)).fetchone()
     last = c.execute("SELECT * FROM intercom WHERE id=?", (t["last"],)).fetchone()
-    return {"thread": t["thread"], "name": t["name"],
+    return {"thread": t["thread"], "name": t["name"], "with": t["with"],
             "subject": first["subject"] if first else None, "count": t["count"],
             "unread": t["unread"], "source": thread_source(c, t["thread"]),
             "last": {**view(c, t["last"]), "text": last["text"], "state": state(c, last)}}

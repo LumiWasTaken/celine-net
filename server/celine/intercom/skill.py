@@ -263,15 +263,16 @@ class IntercomSkill:
 
         found, groups, jobs = await ctx.store.read(fn)
         lines, shown = [], 0
-        names = [g["name"] for g in groups]
         for i, g in enumerate(groups):
             if shown >= limit:
                 rest = groups[i:]
                 lines.append("Also threads with " + ", ".join(
                     f"{r['name']} ({r['threads']})" for r in rest) + ".")
                 break
-            peer = g["name"] if names.count(g["name"]) == 1 else \
-                f"{g['name']} ({', '.join(g['addresses'])})"
+            # one name over several addresses (her chats): the group names them all and
+            # each thread says which it is with
+            many = len(g["addresses"]) > 1
+            peer = f"{g['name']} ({', '.join(g['addresses'])})" if many else g["name"]
             waits = f", {g['waiting']} waiting" if g["waiting"] else ""
             lines.append(f"with {peer}: {g['threads']} thread"
                          f"{'s' if g['threads'] != 1 else ''}{waits}")
@@ -279,14 +280,14 @@ class IntercomSkill:
                 last = t["last"]
                 subject = f' "{t["subject"]}"' if t["subject"] else ""
                 waits = f", {t['unread']} waiting for you" if t["unread"] else ""
-                lines.append(f"  #{t['thread']}{subject}: {t['count']} message"
+                at = f" with {', '.join(t['with'])}" if many else ""
+                lines.append(f"  #{t['thread']}{subject}{at}: {t['count']} message"
                              f"{'s' if t['count'] != 1 else ''}{waits}, last from "
                              f"{who(last, self.cfg.user)} "
                              f"{when(last['created_at'], self.tz)}: {_short(last['text'])}")
             shown += len(g["items"])
             if g["more"]:
-                key = g["name"] if peer == g["name"] and len(g["addresses"]) == 1 else \
-                    (g["addresses"] or [""])[0]
+                key = g["name"] or (g["addresses"] or [""])[0]
                 lines.append(f"  and {g['more']} more" + (
                     f": intercom__read(with=\"{key}\")." if key else "."))
         if jobs and jobs["count"]:

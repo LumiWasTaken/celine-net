@@ -399,7 +399,9 @@ async def test_two_counterparts_with_one_name_show_their_addresses(store, cfg):
         await store.write(lambda c, frm=frm: rows.insert(
             c, f"agent:{frm}", f"agent:{me}", "report", "hello", subject="s"))
     out = (await IntercomSkill(cfg).read(ToolContext(me, "t", "k", store, cfg, None))).content
-    assert f"with Celine (agent:{a}): 1 thread" in out and f"(agent:{b})" in out
+    assert out.splitlines()[0] in (f"with Celine (agent:{a}, agent:{b}): 2 threads, 2 waiting",
+                                   f"with Celine (agent:{b}, agent:{a}): 2 threads, 2 waiting")
+    assert f'#2 "s" with agent:{b}: 1 message' in out and f'#1 "s" with agent:{a}: 1 message' in out
 
 
 async def test_the_badge_counts_what_waiting_lists_and_dismiss_all_reads_it(store):
