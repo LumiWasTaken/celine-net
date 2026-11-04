@@ -16,8 +16,8 @@ A message id is `<folder>:<number>`, such as `INBOX:4521`. The tools show the id
    words in the headers and the text, `from` the sender's name or address, `since` a day
    such as 2026-01-01. Example: email__search(from="anna", since="2026-01-01")
 3. `email__read(id)` returns the headers, the attachments by name, and the text, and
-   marks the message read. HTML comes as plain text. A long message comes in parts, with
-   a `later:` line.
+   marks the message read. HTML comes as plain text with its links listed after it. A
+   long message comes in parts, with a `later:` line.
 4. `email__get_attachment(id, name)` attaches the file to this conversation, so
    {{username}} can open it, and returns its text (text, PDF, Word, HTML) or a
    description of an image.

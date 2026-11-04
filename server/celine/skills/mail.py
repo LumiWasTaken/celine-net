@@ -17,6 +17,7 @@ import socket
 import ssl
 import tempfile
 import time
+from html.parser import HTMLParser
 from datetime import date, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -346,8 +347,42 @@ def _size(n: int | None) -> str:
     return f"{n / 1024 / 1024:.1f} MB"
 
 
+class _Links(HTMLParser):
+    """Every <a href> as (anchor text, href); html_text drops attributes, so the links
+    of an HTML-only message (log in, confirm, unsubscribe) come from here."""
+
+    def __init__(self):
+        super().__init__()
+        self.links: list[tuple[str, str]] = []
+        self._open: list[str] | None = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a" and (href := dict(attrs).get("href")):
+            self.links.append(("", href))
+            self._open = []
+
+    def handle_data(self, data):
+        if self._open is not None:
+            self._open.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._open is not None:
+            text, href = self.links[-1]
+            self.links[-1] = (" ".join("".join(self._open).split()), href)
+            self._open = None
+
+
+def _links(html: str) -> str:
+    p = _Links()
+    p.feed(html)
+    if not p.links:
+        return ""
+    return "\n\nlinks:\n" + "\n".join(f"{t or '(no text)'}: {h}" for t, h in p.links)
+
+
 def _body(msg) -> str:
-    """The text of a message: its plain part, else its HTML part as text."""
+    """The text of a message: its plain part, else its HTML part as text with its links
+    listed after it."""
     part = msg.get_body(preferencelist=("plain", "html"))
     if part is None:
         return ""
@@ -359,7 +394,7 @@ def _body(msg) -> str:
         note = f"[The text could not be decoded ({e}); shown as UTF-8.]\n\n"
     if part.get_content_type() == "text/html":
         from ..kb.documents_extract import html_text
-        text = "\n\n".join(s.text for s in html_text(text).segments)
+        text = "\n\n".join(s.text for s in html_text(text).segments).strip() + _links(text)
     return note + text.strip()
 
 
@@ -599,7 +634,8 @@ class Email:
                    part: Annotated[int | None, "Which part of a long message, from 1."] = None
                    ) -> ToolResult:
         """Read one message: its headers, its attachments by name, type and size, and its
-        text. HTML comes as plain text. Reading marks it read; email__mark sets it unread
+        text. HTML comes as plain text with its links listed after it (`links:` then one
+        `text: href` line each). Reading marks it read; email__mark sets it unread
         again. Returns: the headers, then one part of the text with an `earlier:` and
         `later:` line."""
         try:

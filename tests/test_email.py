@@ -37,6 +37,7 @@ def _html_only() -> bytes:
     m = EmailMessage()
     m["From"], m["Subject"], m["Date"] = "news@shop.de", "Angebote", "Sun, 04 Oct 2026 08:00:00 +0000"
     m.set_content("<html><body><h1>Herbst</h1><p>Alles über Pilze.</p>"
+                  "<p><a href=\"https://shop.de/login\">Log In</a></p>"
                   "<script>x()</script></body></html>", subtype="html")
     return m.as_bytes()
 
@@ -46,6 +47,7 @@ def mailbox():
         "INBOX": [
             [3, set(), _msg("Anna <anna@example.com>", "Fotos vom Wochenende",
                             "Fri, 02 Oct 2026 18:30:00 +0200", "Hier die Liste.",
+                            html="<p>Hier die <a href=\"https://x.de\">Liste</a>.</p>",
                             attach=("liste.txt", "Pilze\nKastanien\n"))],
             [7, {"\\Seen"}, _html_only()],
             [9, set(), _msg("Ben <ben@example.com>", "Rechnung", "Wed, 07 Oct 2026 09:00:00 "
@@ -259,6 +261,8 @@ async def test_list_search_and_attachment_leave_every_flag_reading_marks_read(ap
     assert "Attachments: liste.txt (text/plain" in read and "(was unread)" in read
     html = (await skill.read(ctx, "INBOX:7")).content
     assert "Herbst\n\nAlles über Pilze." in html and "x()" not in html
+    assert "links:\nLog In: https://shop.de/login" in html
+    assert "links:" not in read and "x.de" not in read, "a plain part shows alone"
     assert (await skill.read(ctx, "Spam:1")).is_error
 
     got = await skill.get_attachment(ctx, "INBOX:3", "liste.txt")
