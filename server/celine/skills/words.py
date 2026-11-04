@@ -626,6 +626,7 @@ ROUTINES: dict[str, Sentence] = {
 BUGREPORT: dict[str, Sentence] = {
     "file": lambda a, d, r: "Filed a bug" +
         (f": {_str(a.get('title'))}" if _str(a.get("title")) else ""),
+    "list": lambda a, d, r: "Read its bug reports",
 }
 
 SENTENCES: dict[str, dict[str, Sentence]] = {

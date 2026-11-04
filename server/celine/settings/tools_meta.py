@@ -272,6 +272,8 @@ TOOLS: dict[str, dict[str, str]] = {
                       "summary": "Gives an entry a new password and keeps the old one."},
     "bugreport__file": {"label": "Bugs: file a bug",
                         "summary": "Files a problem with the app for you to review."},
+    "bugreport__list": {"label": "Bugs: list its bugs",
+                        "summary": "Reads its reports with their state and your reply."},
     "artifacts__write": {"label": "Pages: write",
                          "summary": "Makes a page or a new version of one, with the whole "
                                     "text."},

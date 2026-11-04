@@ -67,6 +67,17 @@ def of_thread(c: sqlite3.Connection, tid: int) -> dict | None:
     return view(r) if r else None
 
 
+def answer(c: sqlite3.Connection, thread: int | None) -> dict | None:
+    """The newest message in a report's thread that is not the agent's own: the user's
+    reply or the app's closing line, as {from, text, created_at}; None without one."""
+    if thread is None:
+        return None
+    r = c.execute("SELECT from_addr, text, created_at FROM intercom WHERE thread = ? AND "
+                  "from_addr NOT LIKE 'agent:%' ORDER BY id DESC LIMIT 1", (thread,)).fetchone()
+    return {"from": r["from_addr"], "text": r["text"], "created_at": r["created_at"]} \
+        if r else None
+
+
 def listing(c: sqlite3.Connection, state: str | None = None) -> list[dict]:
     """Newest first; `state` open or closed, None for all."""
     sql, args = "SELECT * FROM bugreports", []

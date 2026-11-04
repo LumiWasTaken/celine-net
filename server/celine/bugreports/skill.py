@@ -1,4 +1,5 @@
-"""The agent's tool for app problems: bugreport__file, any time, anywhere (guides/bugreport.md).
+"""The agent's tools for app problems: bugreport__file, any time, anywhere, and
+bugreport__list, its reports with their state and the last word on each (guides/bugreport.md).
 The rows are bugreports/store.py's; each opens its Intercom thread to the user at once,
 and Events lists them."""
 from __future__ import annotations
@@ -9,6 +10,12 @@ from ..skills import ToolContext, ToolResult, guide, tool, described
 from . import store as reports
 
 LISTED = 10         # its other open reports the result names, the newest
+ANSWER_CHARS = 300  # of the last word on a report, in the list
+
+
+def closed_line(rid: int, why: str) -> str:
+    """The app's line in a report's thread when the user closes it with a reason."""
+    return f"Report #{rid} closed: {why}"
 
 
 class BugReport:
@@ -69,3 +76,33 @@ class BugReport:
         return ToolResult(content="\n".join(lines),
                           display={"bugreport": {"id": row["id"], "title": row["title"],
                                                  "severity": severity}})
+
+    @tool(read_only=True, destructive=False)
+    async def list(
+        self,
+        ctx: ToolContext,
+        state: Annotated[Literal["open", "closed", "all"],
+                         "open: what {{username}} has not closed. closed: what they closed, "
+                         "with why. all: both."] = "open",
+    ) -> ToolResult:
+        """Your bug reports with their state and the last word on each from {{username}}
+        or the app. Read it before filing: a problem that is listed is known, and a
+        closed one with a reason is done.
+        Returns: one line per report, newest first."""
+        want = None if state == "all" else state
+        def fn(c):
+            return [(r, reports.answer(c, r["thread"])) for r in reports.listing(c, want)]
+        rows = await ctx.store.read(fn)
+        if not rows:
+            return ToolResult(content=f"No {'' if state == 'all' else state + ' '}reports.")
+        lines = []
+        for r, a in rows:
+            line = f"#{r['id']} {r['state']}, {r['severity']}: {r['title']} ({r['created_at'][:10]})"
+            if a:
+                who = self.cfg.user if a["from"] == "user" else "the app"
+                said = " ".join(a["text"].split())
+                if len(said) > ANSWER_CHARS:
+                    said = said[:ANSWER_CHARS].rstrip() + "..."
+                line += f"\n  {who}, {a['created_at'][:10]}: {said}"
+            lines.append(line)
+        return ToolResult(content="\n".join(lines))

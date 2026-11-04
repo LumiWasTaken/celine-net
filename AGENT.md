@@ -97,6 +97,6 @@ An instance on a scratch data dir: `CELINE_DATA_DIR=DIR/data ./start.sh --port 8
 6. A feature is one entry in `settings/features.py`; a service address is a setting with a probe.
 7. UI: draw with the kit in `web/src/ui`; words from `docs/ui/words.md` or an icon with a tooltip; no explainer text; every colour, size, radius, shadow and duration from `web/src/styles/tokens.css`; one design. A dropdown only for a list that can run to hundreds of entries (a provider's models).
 8. The page never scrolls: a screen fits the viewport and only inner regions scroll (a transcript, a list, a text box, a card body).
-9. No em dash, en dash or " · " in any text a user or a model sees. Code that needs one writes the escape. Text says what exists and what it does, never what does not exist. Comments get to the point with no preamble, in plain technical English that has one reading.
+9. No em dash, en dash or " · " in any text a user or a model sees. Code that needs one writes the escape. Text says what exists and what it does, never what does not exist. Comments get to the point with no preamble, in plain technical English that has one reading. A line the app adds (an error, a run's reason, a refusal, a note it posts in a thread) reads as the app's own: it names what the app found or did, in one sentence, and never reads as if a person wrote it.
 10. Tests use fixed clocks and wait on conditions, never on sleeps.
 11. Small commits with short lowercase messages. Every gate green before a push.

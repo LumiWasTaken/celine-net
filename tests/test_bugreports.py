@@ -145,3 +145,36 @@ async def test_a_field_over_its_limit_is_refused_and_names_it_never_cut(store, c
     assert r.is_error and "at most 4,000 characters" in r.content
     r = await _file(store, cfg, cid, what="w" * 4000)
     assert not r.is_error
+
+
+async def test_closing_with_why_tells_her_in_the_thread_and_her_list_shows_it(store, cfg):
+    """Close with `why`: the app's line "Report #1 closed: ..." lands in the thread and in
+    the conversation that filed it; bugreport__list shows each report's state and the
+    last word on it, so it does not file a known or closed problem again."""
+    cid = await conversations.create(store, "a chat")
+    await _file(store, cfg, cid)
+    await _file(store, cfg, cid, title="tabs cap", severity="low", what="x")
+    ctx = ToolContext(conversation_id=cid, turn_id="", tool_call_id="", store=store,
+                      config=cfg, emit=None, max_output_tokens=8000)
+    out = await BugReport(cfg).list(ctx)
+    assert out.content.splitlines() == ["#2 open, low: tabs cap (" + out.content[out.content.index("(") + 1:out.content.index(")")] + ")",
+                                        "#1 open, high: read cuts results (" + out.content[out.content.rindex("(") + 1:out.content.rindex(")")] + ")"]
+    async with _http(_app(store, cfg)) as h:
+        closed = (await h.post("/api/bugreports/1/close", json={"why": "DNS failed, fixed"})).json()
+        assert closed["state"] == "closed"
+        again = await h.post("/api/bugreports/1/close", json={"why": "once more"})
+        assert again.status_code == 200, "a closed one stays as it is"
+        assert (await h.post("/api/bugreports/2/close")).json()["state"] == "closed", "why is optional"
+    first = await store.read(lambda c: rows.thread(c, 1))
+    assert [(m["from"], m["text"]) for m in first][1:] == [
+        ("system:app", "Report #1 closed: DNS failed, fixed")], "the app's line, once"
+    said = await store.read(lambda c: c.execute(
+        "SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY rowid DESC "
+        "LIMIT 1", (cid,)).fetchone()[0])
+    assert "Report #1 closed: DNS failed, fixed" in said, "delivered to the conversation that filed it"
+    out = await BugReport(cfg).list(ctx, state="closed")
+    lines = out.content.splitlines()
+    assert lines[0].startswith("#2 closed, low: tabs cap (") and len(lines) == 3
+    assert lines[1].startswith("#1 closed, high: read cuts results (")
+    assert lines[2].startswith("  the app, ") and lines[2].endswith(": Report #1 closed: DNS failed, fixed")
+    assert (await BugReport(cfg).list(ctx)).content == "No open reports."

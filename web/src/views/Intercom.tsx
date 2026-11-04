@@ -293,7 +293,8 @@ function ThreadPage({ id }: { id: number }) {
   const cancel = useAction(async (mid: number) => { await intercomApi.cancel(mid); thread.reload() })
   const report = useResource(signal => intercomApi.bugOf(id, signal), [id], { events: isIntercomEvent })
   const bug = report.data
-  const close = useAction(async () => { if (bug) await intercomApi.closeBug(bug.id); thread.reload(); report.reload() })
+  // Close with text in the reply box: the text is why, posted in the thread as the app's line
+  const close = useAction(async () => { if (bug) await intercomApi.closeBug(bug.id, text.trim()); setText(''); thread.reload(); report.reload() })
   const toChat = useAction(async () => nav.go({ section: 'celine', conversation: await intercomApi.toChat(id) }))
   // a reply goes to whoever wrote the newest message that is not yours; in a thread only
   // you wrote in, to whom you wrote

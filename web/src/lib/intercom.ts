@@ -107,7 +107,7 @@ export const intercomApi = {
   toChat: (thread: number) =>
     post<{ conversation_id: string }>(`/intercom/threads/${thread}/conversations`).then(r => r.conversation_id),
   /** a bug report's Close, on its thread: what waits in it is read too */
-  closeBug: (id: number) => post<BugReport>(`/bugreports/${id}/close`),
+  closeBug: (id: number, why = '') => why ? request<BugReport>(`/bugreports/${id}/close`, json('POST', { why })) : post<BugReport>(`/bugreports/${id}/close`),
   /** `in` ("30 min"), `at` ("19:00") land it later; `until` (to `all`) makes it an announcement that stands until then */
   send: (body: { to: string; text: string; subject?: string; reply_to?: number; in?: string; at?: string; until?: string }) =>
     request<{ intercom_id: number }>('/intercom', json('POST', body)),

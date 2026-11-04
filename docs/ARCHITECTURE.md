@@ -1532,7 +1532,10 @@ open until you close one. Each report is an Intercom thread: filing it sends a m
 you from the conversation that filed it (subject `Bug #<id>: <title>`), its id in
 `bugreports.thread`, and your reply wakes it in that conversation. `GET
 /api/bugreports?thread=` and `?state=open|closed` list them; `POST
-/api/bugreports/{id}/close` closes one.
+/api/bugreports/{id}/close` `{why?}` closes one, and `why` goes into its thread as the
+app's line `Report #<id> closed: <why>`, delivered to the conversation that filed it, so
+the agent reads why. `bugreport__list(state)` is its own view: each report's state and
+the last word on it from you or the app, which the guide tells it to read before filing.
 
 The web place is `views/Events.tsx` (`/events`); a row opens `links.open`.
 
