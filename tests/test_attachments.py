@@ -61,8 +61,9 @@ async def test_an_attached_file_is_never_dropped(cfg, store):
 
 
 async def test_an_image_a_result_holds_goes_to_the_model_with_it(cfg, store):
-    """user_documents__read on an image: the result carries the image (ToolResult.images)
-    and the context sends it as an image part of that tool message."""
+    """user_documents__read on an image: the result carries the image (ToolResult.images),
+    the tool message says the image follows, and the context sends it as the user message
+    after the reply's results."""
     from fake_backend import FakeBackend
     from celine.skills import ToolResult
     from celine.turns import context
@@ -79,7 +80,10 @@ async def test_an_image_a_result_holds_goes_to_the_model_with_it(cfg, store):
     built = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[])
     tool = next(m for m in built.messages if m["role"] == "tool")
     assert tool["tool_call_id"] == "c1"
-    assert [p["type"] for p in tool["content"]] == ["text", attachments.IMAGE]
+    assert tool["content"].endswith("\n[the image follows]")
+    after = built.messages[built.messages.index(tool) + 1]
+    assert after["role"] == "user"
+    assert [p["type"] for p in after["content"]] == ["text", attachments.IMAGE]
     assert shown_refs(built.messages) == {"documents:7"}
 
 
