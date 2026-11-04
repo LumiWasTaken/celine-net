@@ -64,6 +64,27 @@ async def test_private_and_local_addresses_are_refused(monkeypatch):
         await web._resolve_public("evil.example.com", 80)
 
 
+async def test_a_dead_resolver_is_not_a_wrong_host(monkeypatch):
+    import socket
+
+    def failing(errno, text):
+        async def gai(host, port, **kw):
+            raise socket.gaierror(errno, text)
+        return gai
+    monkeypatch.setattr(web.anyio, "getaddrinfo",
+                        failing(socket.EAI_AGAIN, "Temporary failure in name resolution"))
+    with pytest.raises(ToolRefused) as e:
+        await web._resolve_public("docs.python.org", 443)
+    assert str(e.value) == ("name lookup failed in the app (Temporary failure in name "
+                            "resolution); every host fails the same way until its resolver "
+                            "answers")
+    assert "docs.python.org" not in str(e.value)
+    monkeypatch.setattr(web.anyio, "getaddrinfo",
+                        failing(socket.EAI_NONAME, "Name or service not known"))
+    with pytest.raises(ToolRefused, match="^nosuch.example does not resolve$"):
+        await web._resolve_public("nosuch.example", 443)
+
+
 async def test_read_refuses_local_urls_and_redirects_to_them():
     from celine.settings import general
     cfg = SimpleNamespace(user="sam", name="Celine", substitute=lambda s: s,

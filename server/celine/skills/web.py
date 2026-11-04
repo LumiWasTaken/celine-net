@@ -70,7 +70,26 @@ def search_down_text(endpoint: str, e: Exception | int) -> str:
         return f"SearXNG at {host} answered {e} instead of JSON results."
     if isinstance(e, ValueError):
         return f"SearXNG at {host} answered something that is not JSON."
+    if (g := _resolver_failure(e)) is not None:
+        return resolver_down_text(g)
     return her_unreachable("SearXNG", endpoint)
+
+
+def _resolver_failure(e: BaseException) -> socket.gaierror | None:
+    """The gaierror under an exception when the app's resolver gave no answer: a dead
+    resolver fails every host the same way, which is not the host's fault. EAI_NONAME
+    is the host's own: that one stays None."""
+    c: BaseException | None = e
+    while c is not None:
+        if isinstance(c, socket.gaierror):
+            return None if c.errno == socket.EAI_NONAME else c
+        c = c.__cause__
+    return None
+
+
+def resolver_down_text(e: socket.gaierror) -> str:
+    return (f"name lookup failed in the app ({e.strerror}); every host fails the same way "
+            f"until its resolver answers")
 
 
 def search_down_page(endpoint: str, e: Exception | int) -> str:
@@ -253,6 +272,10 @@ async def _resolve_public(host: str, port: int) -> None:
     except ValueError:
         try:
             infos = await anyio.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as e:
+            if (g := _resolver_failure(e)) is not None:
+                raise ToolRefused(resolver_down_text(g)) from None
+            raise ToolRefused(f"{host} does not resolve") from None
         except OSError:
             raise ToolRefused(f"{host} does not resolve") from None
         addrs = [i[4][0] for i in infos]
@@ -574,9 +597,12 @@ class Web:
         if not rows:
             dead = [e[0] if isinstance(e, list) else str(e)
                     for e in data.get("unresponsive_engines") or []]
-            lines.append("no results" + (f" (engines not answering: {', '.join(dead[:6])})"
-                                         if dead else "") + ". Try other words, fewer "
-                         "words, or no time_range.")
+            if dead:
+                host = urlsplit(self.endpoint).netloc or self.endpoint
+                self._note(f"SearXNG at {host} reached none of its engines "
+                           f"({', '.join(dead[:6])}).")
+                return ToolResult(content=self._down(self.search_down), is_error=True)
+            lines.append("no results. Try other words, fewer words, or no time_range.")
             return ToolResult(content="\n".join(lines), display={"query": q, "results": []})
         shown_rows = []
         for res in rows:

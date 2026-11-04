@@ -47,6 +47,36 @@ async def test_a_dead_search_fails_with_searxng_named_and_no_way_around():
     assert await w.check(max_age=0) is None
 
 
+async def test_no_results_with_dead_engines_is_search_down():
+    empty = {"results": [], "unresponsive_engines": [["google", "timeout"], ["bing", "timeout"]]}
+    w = Web(CFG, transport=httpx.MockTransport(lambda req: httpx.Response(200, json=empty)))
+    r = await w.search(_ctx(), "muon vs adamw")
+    assert r.is_error
+    assert r.content == "SearXNG at searx.test reached none of its engines (google, bing)."
+    assert await w.check() == r.content, "the check says the same for a minute"
+    w = Web(CFG, transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, json={"results": []})))
+    r = await w.search(_ctx(), "muon vs adamw")
+    assert not r.is_error and r.content.endswith("no results. Try other words, fewer words, "
+                                                 "or no time_range.")
+    assert w.search_down is None
+
+
+async def test_a_dead_resolver_names_the_resolver_not_searxng():
+    import socket
+
+    def dead(req):
+        e = httpx.ConnectError("lookup", request=req)
+        e.__cause__ = socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+        raise e
+    w = Web(CFG, transport=httpx.MockTransport(dead))
+    r = await w.search(_ctx(), "x")
+    assert r.is_error and r.content == ("name lookup failed in the app (Temporary failure in "
+                                        "name resolution); every host fails the same way "
+                                        "until its resolver answers")
+    assert await w.check() == r.content
+
+
 async def test_a_wrong_searxng_says_which():
     html = Web(CFG, transport=httpx.MockTransport(
         lambda req: httpx.Response(200, text="<html>not searx</html>")))
