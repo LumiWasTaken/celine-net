@@ -328,6 +328,80 @@ async def test_a_chat_whose_model_is_gone_says_which_and_to_pick_another(
     assert nets["main/big"].calls == 0
 
 
+async def test_a_stream_that_never_yields_fails_as_produced_nothing(tmp_path, monkeypatch):
+    """The first event has FIRST_EVENT seconds to come: a server that keeps the
+    connection open without one (keepalives, empty chunks) fails the call once, an
+    error on the model, and a call the user waits on fails with that reason."""
+    from celine.backends import llm as llm_mod
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
+    monkeypatch.setattr(llm_mod, "FIRST_EVENT", 0)     # due at the first checkpoint
+
+    async def silent(messages, tools, body=None, model=None):
+        await anyio.sleep_forever()
+        yield Done(reason="stop")
+    nets["main/big"].stream = silent
+    with pytest.raises(BackendError, match=r"^big produced nothing for 0 s\.$"):
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    assert llm.router.model_state("main/big").kind == "error"
+    with pytest.raises(BackendError, match="produced nothing"):   # routed: once, then fails
+        await collect(llm.bind(role="chat", priority=A, conversation_id="c2"))
+
+
+async def test_a_502_marks_the_provider_unreachable_and_its_probe_down(tmp_path, monkeypatch):
+    """A proxy in front of a dead model box answers 502: the call and the probe agree
+    the provider is down, so a run waits for it and the host does not flap."""
+    import httpx
+    from celine.backends.openai import http_error
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
+    nets["main/big"].fail = http_error("Main", "big", 502, "Bad Gateway")
+    with pytest.raises(BackendError, match="returned 502"):
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    st = llm.router.provider_state("main")
+    assert st.reachable is False and st.error == "Main returned 502. Bad Gateway"
+    assert llm.router.model_state("main/big") is None, "the provider is down, not the model"
+
+    llm.router.transport = httpx.MockTransport(lambda r: httpx.Response(502, text="Bad Gateway"))
+    st = await llm.router.probe("main", max_age=0)
+    assert st.reachable is False
+    assert st.error == "main answered 502: the server behind its proxy is down."
+    assert llm.router.hosts()["main"]["state"] == "down"
+
+
+async def test_a_long_wait_for_a_model_ends_the_call_stale_and_sends_nothing(
+        tmp_path, monkeypatch, clock):
+    """A call that waited longer than MODEL_WAIT_FRESH for a model does not send the
+    request it was given (its clock line is the turn's start): it fails retryable, and
+    the turn's Regenerate builds a new one. A shorter wait sends it."""
+    from celine.backends import llm as llm_mod
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
+    monkeypatch.setattr(llm_mod, "time", SimpleNamespace(monotonic=clock))
+
+    async def probe(pid, **_):
+        return llm.router.provider_state(pid)
+    monkeypatch.setattr(llm.router, "probe", probe)
+    gone = "Main at main:11434 refused the connection."
+    secs, waits = 0, []
+
+    async def emit(d):
+        if d.get("reason") == "no_model":
+            waits.append(d["message"])
+            clock.advance(secs)
+            llm.router.note_ok("main/big")           # it answers again
+    llm.router.note_unreachable("main", gone)
+    secs = llm_mod.MODEL_WAIT_FRESH + 60
+    with pytest.raises(BackendError, match=r"^The model came back after 6 minutes; the "
+                                           r"turn's request is stale\.$") as e:
+        await collect(llm.bind(role="chat", priority=A, conversation_id="c1", emit=emit))
+    assert e.value.retryable and e.value.code is None, "the runner's backend_retryable"
+    assert nets["main/big"].calls == 0, "the stale request never went out"
+    assert waits == ["main does not answer."]
+
+    llm.router.note_unreachable("main", gone)
+    secs = 30
+    out = await collect(llm.bind(role="chat", priority=A, conversation_id="c1", emit=emit))
+    assert isinstance(out[-1], Done) and nets["main/big"].calls == 1
+
+
 async def test_the_vision_twin_answers_an_image_and_everything_while_loaded(
         tmp_path, monkeypatch):
     """One name for the ticket, the queue events and the request: the twin for an

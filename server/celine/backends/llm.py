@@ -26,16 +26,25 @@ are agent, titles, descriptions and captions are background.
 
 When no model of the task can answer (a call with fallback):
 - an interactive or agent call waits: it says so once ("waiting" with reason
-  `no_model` and the sentence why), and continues as soon as a model can answer
-  (a provider comes back, a setting changes). Stop ends the wait at once. The time
-  spent waiting does not count against the turn's wall clock.
+  `no_model` and the sentence why), and continues once a model can answer (a provider
+  comes back, a setting changes) when the wait stayed under MODEL_WAIT_FRESH. A longer
+  wait ends the call with a retryable error ("The model came back after N minutes; the
+  turn's request is stale."): the request was built when the turn began, its clock
+  line with it, and the runner ends the turn failed and retryable (Regenerate builds a
+  new one). Stop ends the wait at once. The time spent waiting does not count against
+  the turn's wall clock.
 - a background call raises `NoModel` at once; its work item is deferred until a host
   is back (work.py).
 
+A request that gets no event for FIRST_EVENT seconds fails with "produced nothing"
+(`_next`): the HTTP read timeout never trips on a server that sends keepalives or
+empty chunks. While llama-swap shows the model starting, and once it shows it loaded,
+the deadline starts again (`_watch_load`), so a cold load is not cut.
+
 A failure before the first token is recorded on the router: the provider is
-unreachable (the connection failed), the model could not be loaded (llama-swap was
-starting it, or said the start failed), or the model answered with an error. Nothing
-is remembered on a timer.
+unreachable (the connection failed, or a proxy in front of it answered 502), the model
+could not be loaded (llama-swap was starting it, or said the start failed), or the
+model answered with an error. Nothing is remembered on a timer.
 
 Every other call treats a busy provider as no failure and never moves to the next
 model: it waits and asks the same model again, as often as it takes, until Stop. A Keep
@@ -92,6 +101,8 @@ RECHECK = 5.0            # a call waiting for a model looks again this often
 UNLOAD_SECONDS = 60.0    # the most a lease waits for llama-swap to unload its models
 RETRY_AFTER = 10.0       # seconds before a busy model is asked again, no Retry-After
 RETRY_AFTER_MAX = 120.0  # the most a Retry-After header is waited for
+FIRST_EVENT = 180.0      # seconds a request may go without an event before its first
+MODEL_WAIT_FRESH = 300.0  # seconds a call may wait for a model and still send its request
 LEASE_HELD = "Waiting: the GPU is making an image."
 _leases = itertools.count(1)
 _LOAD_FAILED = ("exited prematurely", "failed to start", "unable to load", "out of memory",
@@ -351,10 +362,12 @@ class LLM:
             self.publish(snap)
 
     def _note(self, ref: str, e: BackendError, loaded_then, saw_starting: bool) -> str:
-        """Record why `ref` failed before its first token. Returns the kind."""
+        """Record why `ref` failed before its first token. Returns the kind. A 502 is
+        unreachable like a refused connection: a proxy answers it when the server behind
+        it is down, and the probe (router._parse) says down for it too."""
         pid = ref.partition("/")[0]
         msg = str(e)
-        if getattr(e, "unreachable", False):
+        if getattr(e, "unreachable", False) or getattr(e, "status", None) == 502:
             self.router.note_unreachable(pid, msg)
             return "unreachable"
         if saw_starting or any(w in msg.lower() for w in _LOAD_FAILED):
@@ -520,6 +533,7 @@ class QueuedBackend:
         head_why: str | None = None         # why the conversation's own model is not used
         asked_again = False
         started = anyio.current_time()
+        waiting_since: float | None = None  # monotonic: when the wait for a model began
         while True:
             if self._cancelled():
                 raise QueueCancelled("stopped")
@@ -554,6 +568,8 @@ class QueuedBackend:
                     else self.wait - (anyio.current_time() - started)
                 if left is not None and left <= 0:
                     raise NoModel(sentence)
+                if waiting_since is None:
+                    waiting_since = time.monotonic()
                 if sentence != said:
                     said = sentence
                     await self._send({"state": "waiting", "reason": "no_model",
@@ -566,6 +582,13 @@ class QueuedBackend:
                 # wait is worth a new try
                 failed_here.clear()
                 continue
+            if waiting_since is not None and \
+                    time.monotonic() - waiting_since > MODEL_WAIT_FRESH:
+                # the request was built when the turn began (its clock line with it):
+                # the turn ends retryable and Regenerate builds a new one
+                mins = round((time.monotonic() - waiting_since) / 60)
+                raise BackendError(f"The model came back after {mins} minutes; the "
+                                   f"turn's request is stale.")
             head = ordered.chain[0] if ordered.chain else None
             head_why = dict(ordered.skipped).get(head, head_why)
             for ref in todo:
@@ -807,8 +830,10 @@ class QueuedBackend:
     async def _next(self, inner, model: str, ref: str | None, label: str, watch: dict,
                     *, watching: bool):
         """The next event of `inner`, raced against the turn's Stop (the request is
-        cancelled, not waited for). Before the first event, a model llama-swap is
-        still loading is announced as "loading"."""
+        cancelled, not waited for). Before the first event (`watching`) the request has
+        FIRST_EVENT seconds to send one, else it fails with "produced nothing"; a model
+        llama-swap is still loading is announced as "loading" and gets the time
+        again (`_watch_load`)."""
         out: dict[str, Any] = {}
         async with anyio.create_task_group() as tg:
             if self.token is not None:
@@ -820,9 +845,15 @@ class QueuedBackend:
             if watching and ref is not None:
                 tg.start_soon(self._watch_load, model, ref, label, watch)
             try:
-                out["ev"] = await inner.__anext__()
+                with anyio.fail_after(FIRST_EVENT if watching else None) as first:
+                    watch["first"] = first
+                    out["ev"] = await inner.__anext__()
             except StopAsyncIteration:
                 out["end"] = True
+            except TimeoutError as e:
+                out["err"] = BackendError(
+                    f"{model} produced nothing for {FIRST_EVENT:g} s.") \
+                    if first.cancelled_caught else e
             except Exception as e:          # raised after the group, unwrapped
                 out["err"] = e
             tg.cancel_scope.cancel()
@@ -836,8 +867,10 @@ class QueuedBackend:
 
     async def _watch_load(self, model: str, ref: str, label: str, watch: dict) -> None:
         """While the request waits for its first event on llama-swap: say "loading"
-        once the server shows the model starting. No deadline: the server ends a
-        failed load with an error itself."""
+        once the server shows the model starting. The first-event deadline (`_next`)
+        starts again at every poll that shows the model starting, and once more when it
+        shows it loaded: a cold load takes what it takes, the server ends a failed one
+        with an error itself."""
         router = self.llm.router
         pid = ref.partition("/")[0]
         if (router.provider(pid) or {}).get("kind") not in SWAPS:
@@ -849,9 +882,12 @@ class QueuedBackend:
                 if watch["starting"] and not watch.get("timed"):   # a load we saw: to the poll
                     watch["timed"] = True
                     router.note_load(f"{pid}/{model}", time.monotonic() - watch["t0"])
+                watch["first"].deadline = anyio.current_time() + FIRST_EVENT
                 return                  # loaded: the prompt is being read
-            if model in st.starting and not watch["starting"]:
-                watch["starting"] = True
-                await self._send({"state": "loading", "model": model,
-                                  "endpoint": label})
+            if model in st.starting:
+                watch["first"].deadline = anyio.current_time() + FIRST_EVENT
+                if not watch["starting"]:
+                    watch["starting"] = True
+                    await self._send({"state": "loading", "model": model,
+                                      "endpoint": label})
 

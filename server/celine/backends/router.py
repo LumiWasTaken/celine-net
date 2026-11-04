@@ -344,11 +344,16 @@ class Router:
 
     def _parse(self, pid: str, status: int, data: Any) -> tuple[frozenset | None,
                                                                  frozenset, str | None]:
-        """(loaded, starting, error) from a probe answer. Any answer means the host is
-        up; only a rejected key is an error. Down is a refused connection or a timeout."""
+        """(loaded, starting, error) from a probe answer. Any answer but a 502 means the
+        host is up; a rejected key is an error, and so is a 502: a proxy answers it when
+        the server behind it is down (llm.LLM._note counts it unreachable too). Down is
+        a refused connection or a timeout."""
         p = self.provider(pid) or {}
         if status in (401, 403):
             return None, frozenset(), f"{p.get('label', pid)} rejected the API key."
+        if status == 502:
+            return None, frozenset(), \
+                f"{p.get('label', pid)} answered 502: the server behind its proxy is down."
         if status >= 400:       # a list endpoint it lacks (404, 405), a hiccup (429, 5xx)
             return None, frozenset(), None
         from ..settings.kinds import KINDS
