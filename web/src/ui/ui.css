@@ -289,7 +289,10 @@
   position: relative;
   width: min(var(--dialog-sm), 100%); max-height: calc(var(--vh, 100dvh) - 2 * var(--s-4)); overflow-y: auto;
   background: var(--surface-2); border-radius: var(--r-xl); box-shadow: var(--e-overlay);
-  --dialog-pad: var(--s-5); padding: var(--s-4) var(--dialog-pad) var(--dialog-pad); display: grid; gap: var(--s-4);
+  --dialog-pad: var(--s-5); padding: var(--s-4) var(--dialog-pad) var(--dialog-pad);
+  /* one explicit column that can shrink: an implicit auto column takes the widest content's width in Firefox
+     and the body lays out past the dialog's edge */
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4);
   animation: grow var(--dur-slow) var(--ease);
 }
 .dialog--md { width: min(var(--dialog-md), 100%); }
