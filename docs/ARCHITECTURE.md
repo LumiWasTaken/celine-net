@@ -570,7 +570,9 @@ through the same Router (below) but do not queue here.
 - **Host ping.** In the app (`Router.watch`) every provider with an
   address is probed every 10 s with a 2 s timeout by its own cheap GET. A provider is up
   or down with `since`; a model whose provider is down is left out of every list. Any
-  HTTP answer means up; down is a refused connection, a timeout or a rejected key. An up
+  HTTP answer but a 502 means up; down is a refused connection, a timeout, a rejected
+  key or a 502 (a proxy whose model server is down; a model call that gets a 502 marks
+  the provider unreachable the same way, so the probe and the call agree). An up
   host counts as down only after `SLOW_PINGS` (3) timeouts in a row. The state is in
   `GET /api/status` (`hosts`) and the metric `celine_host_up`.
 - **Paused.** While every model of the chat and tasks roles is on a provider the ping
@@ -600,7 +602,11 @@ through the same Router (below) but do not queue here.
 - **Failure.** A failure before the first token (a request every model would refuse, too long or with an image it cannot take, fails the call as it is) marks the model and moves to the next one;
   after the first token, never. When every model failed with an error, the call fails with
   the last one; when they were unreachable, the call waits and tries whatever the Router
-  offers next. A busy provider (status 429, 503 or 529; never a sentence in the body)
+  offers next. A request that gets no event for `FIRST_EVENT` (180 s) fails with
+  "<model> produced nothing for 180 s." like any other error: a server that sends
+  keepalives or empty chunks never trips the HTTP read timeout. While llama-swap shows
+  the model starting, and once it shows it loaded, the 180 s start again, so a cold
+  load is not cut. A busy provider (status 429, 503 or 529; never a sentence in the body)
   never moves to the next model. A call the user waits on fails with code `busy`, and
   so does a model that could not be loaded: the chat offers Switch provider (the
   conversation's model chooser, then Regenerate) and Keep waiting (Continue with
@@ -617,7 +623,13 @@ through the same Router (below) but do not queue here.
   whole for a batch of images or music. Text goes first: a lease waits while any request
   runs there, then `gpu_idle_seconds` more. One lease per batch.
 - **No model.** When no model of the task can answer, a turn waits with a `waiting` event
-  (reason `no_model`), rechecks on every change and every 5 s. Stop always works.
+  (reason `no_model`), rechecks on every change and every 5 s. Stop always works. A
+  wait under `MODEL_WAIT_FRESH` (300 s) goes on with the request as built; a longer
+  one ends the call with a retryable error ("The model came back after N minutes; the
+  turn's request is stale."): the request carries the clock line of the turn's start,
+  and the turn ends failed and retryable, so Regenerate builds a new one. A Routine's
+  run never waits here: its turn runs on exactly its first model and fails at once,
+  and the run waits in the scheduler (Routines, One try).
   Background work raises `NoModel`; its work item is deferred.
 - **Stop / timeout.** A stopped turn's waiting request leaves the queue at once
   (`QueueCancelled`); the turn ends `aborted`. Background work gives up after
@@ -1400,7 +1412,12 @@ its lines land as intercom messages from `system:<partner>`. Then it is asked fo
 final answer. The run is over when its conversation and its sub-agents are quiet and
 every sub-agent has reported. The result is written to `note` with `notebook__write`: a
 note that was there gets the answer appended under "## <date> <label>"; a note it wrote
-itself is the result and the app writes nothing over it.
+itself is the result and the app writes nothing over it. A turn that ends with a tool
+call that is not the note's write has no answer: the run is done with the lead-in beside
+that call as its result, the note is not written, and the run's `error` says so. A note
+it wrote and then went on past (ok tool calls after its last write of it, the note older
+than the last of them) is the result still, and the run's `error` says how many calls
+came after it.
 
 **One try.** A run is never re-asked, rewritten or retried. When its turn fails and the
 Router says the role's model cannot answer (unreachable, or none set), the run is `waiting`

@@ -45,7 +45,12 @@ that is there already gets it appended under "## <date> <label>" (run_date). A n
 wrote itself (a notebook__write or notebook__edit of that path that ended ok in the run)
 is the result instead, and the app writes nothing over it (only what it
 added, when it added to its end). The agent's words beside the write are a lead-in, not the
-result (a turn ends with that step, skills.ToolSpec needs_answer). The run is over
+result (a turn ends with that step, skills.ToolSpec needs_answer). A turn that ends with
+a tool call that is not the note's write has no answer: the run is done with the lead-in
+as its result, the note is not written, and the run's `error` says so. A note it wrote
+and then went on past (ok tool calls after its last write of it, the note older than the
+last of them) is the result still, and the run's `error` says how many calls came after
+it. The run is over
 when its conversation and its sub-agents are quiet and every sub-agent has reported
 (looked at after every turn or job end, the dispatcher's `on_end`). Every run first keeps the
 night's backups (schedules/backups.py: once a night, the later runs find them made).
@@ -273,6 +278,25 @@ def outcome(c: sqlite3.Connection, cid: str) -> tuple[str, str]:
     r = c.execute("SELECT state, reason FROM turns WHERE conversation_id = ? "
                   "ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
     return (r["state"], r["reason"] or "") if r else ("done", "")
+
+
+def _said(c: sqlite3.Connection, cid: str) -> tuple[str, bool]:
+    """(the run's last answer, it is the final words of its latest turn): the final words
+    (conversations/tree.final_words), else the lead-in beside the tool call its turn
+    ended with (sub_agents/report.last_answer)."""
+    t = c.execute("SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC "
+                  "LIMIT 1", (cid,)).fetchone()
+    words = tree.final_words(c, t["id"]) if t else ""
+    return (words, True) if words else (last_answer(c, cid), False)
+
+
+def _of_note(args: str, note: str) -> bool:
+    """`args`, a stored tool call's arguments, name the notebook path `note`."""
+    try:
+        path = json.loads(args).get("path")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(path, str) and posixpath.normpath(path) == posixpath.normpath(note)
 
 
 def _answer(c: sqlite3.Connection, cid: str, iid: int) -> str:
@@ -619,18 +643,25 @@ class Scheduler:
             if not fresh and start is not None and self._note_touched(note, started):
                 start = None
             if not fresh:
-                answer = await self._resume(cid)
+                answer, final = await self._resume(cid)
             elif s.partner:
                 prompt = fill(cfg, s.prompt, day, res, await extras(self.app, s.prompt, night))
-                answer = await self._dialogue(rid, s, cid, prompt, day, res, where)
+                answer, final = await self._dialogue(rid, s, cid, prompt, day, res, where)
             else:
                 prompt = fill(cfg, s.prompt, day, res, await extras(self.app, s.prompt, night))
-                answer = await self._turn(cid, "system:schedules", "\n\n".join(
+                answer, final = await self._turn(cid, "system:schedules", "\n\n".join(
                     [prompt, cfg.substitute(RULE.replace("{final}", where))]), "trigger",
                     {"run": rid})
             answer, hers = self._take(note, start, answer, await self._wrote(cid, note))
-            failed_note = await self._write_note(cid, note, answer, s, day.isoformat()) \
-                if note and not hers else None
+            if not note:
+                error = None
+            elif hers:
+                error = await self._stale(cid, note)
+            elif not final:
+                error = (f"The note {note} was not written: the run ended with a tool call "
+                         "and no answer after it.")
+            else:
+                error = await self._write_note(cid, note, answer, s, day.isoformat())
         except Exception as e:                   # noqa: BLE001 - every failure ends it
             error = str(e) or type(e).__name__
             why = FROZEN if getattr(e, "frozen", False) else \
@@ -645,13 +676,13 @@ class Scheduler:
                                           "waits": bool(why), "error": error})
             return
         await store.write(lambda c: _set(c, store, cfg, rid, state="done", result=answer,
-                                         error=failed_note, finished_at=now()))
+                                         error=error, finished_at=now()))
         log.info("run done", extra={"event": "schedules.done", "run": rid})
 
-    async def _resume(self, cid: str) -> str:
+    async def _resume(self, cid: str) -> tuple[str, bool]:
         """The run goes on in `cid`: its last turn, when it ended without an answer and
-        can be continued, is continued (turns/store.continue_turn); then its answer
-        once everything there is quiet. Raises RunFailed as `_turn`."""
+        can be continued, is continued (turns/store.continue_turn); then its answer as
+        `_said`. Raises RunFailed as `_turn`."""
         from ..turns import store as turns
         last = await self.app.store.read(lambda c: c.execute(
             "SELECT id, state, reason_code FROM turns WHERE conversation_id = ? ORDER BY "
@@ -668,22 +699,25 @@ class Scheduler:
                 notify = getattr(self.app.dispatcher, "notify", None)
                 if notify is not None:
                     notify()
-        await self._settle(cid)
-        answer = await self.app.store.read(lambda c: last_answer(c, cid))
-        if not answer:
-            raise RunFailed("No answer")
-        return answer
+        return await self._said(cid)
 
     async def _turn(self, cid: str, sender: str, text: str, kind: str = "message",
-                    data: dict | None = None) -> str:
-        """`text` to its conversation, then its answer once everything there is quiet.
-        Raises RunFailed when its turn failed or gave no answer."""
+                    data: dict | None = None) -> tuple[str, bool]:
+        """`text` to its conversation, then its answer as `_said`. Raises RunFailed when
+        its turn failed or gave no answer."""
         await self.app.intercom.send(sender, f"agent:{cid}", text, kind=kind, data=data)
+        return await self._said(cid)
+
+    async def _said(self, cid: str) -> tuple[str, bool]:
+        """Once everything in `cid` is quiet: (its answer, it is the final words of its
+        last turn). Not final: the turn ended with a tool call and the answer is the
+        lead-in beside it (sub_agents/report.last_answer). Raises RunFailed when it said
+        nothing."""
         await self._settle(cid)
-        answer = await self.app.store.read(lambda c: last_answer(c, cid))
+        answer, final = await self.app.store.read(lambda c: _said(c, cid))
         if not answer:
             raise RunFailed("No answer")
-        return answer
+        return answer, final
 
     async def _backups(self, night: date) -> None:
         """The night's backups, when this is its first run (schedules/backups.py)."""
@@ -736,15 +770,24 @@ class Scheduler:
             "SELECT tc.arguments FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
             "WHERE m.conversation_id=? AND tc.state='ok' AND tc.name IN "
             "('notebook__write', 'notebook__edit')", (cid,)).fetchall())
-        want = posixpath.normpath(note)
-        for (args,) in rows:
-            try:
-                path = json.loads(args).get("path")
-            except (ValueError, AttributeError):
-                continue
-            if isinstance(path, str) and posixpath.normpath(path) == want:
-                return True
-        return False
+        return any(_of_note(args, note) for (args,) in rows)
+
+    async def _stale(self, cid: str, note: str) -> str | None:
+        """`note`, which the run wrote: the sentence when ok tool calls ran after its last
+        write of it and the note is older than the last of them; else None."""
+        rows = await self.app.store.read(lambda c: c.execute(
+            "SELECT tc.name, tc.arguments, tc.finished_at FROM tool_calls tc JOIN messages m "
+            "ON m.id = tc.message_id WHERE m.conversation_id=? AND tc.state='ok' ORDER BY "
+            "tc.finished_at", (cid,)).fetchall())
+        later: list[str] = []
+        for name, args, at in rows:
+            later = [] if name in ("notebook__write", "notebook__edit") and \
+                _of_note(args, note) else later + [at]
+        if not later or self._note_touched(note, later[-1]):
+            return None
+        n = len(later)
+        return (f"The note {note} was last written before the run's last {n} tool "
+                f"call{'s' if n > 1 else ''}.")
 
     async def _write_note(self, cid: str, path: str, answer: str, s, day: str) -> str | None:
         """The agent's answer into the notebook at `path`: a note there already gets it appended
@@ -770,16 +813,17 @@ class Scheduler:
     # -- a partner
 
     async def _dialogue(self, rid: str, s, cid: str, prompt: str, day: date,
-                        res: dict, where: str) -> str:
-        """The agent and the partner alternate (module docstring); -> its final answer."""
+                        res: dict, where: str) -> tuple[str, bool]:
+        """The agent and the partner alternate (module docstring); -> its final answer
+        as `_said`."""
         cfg = self.app.cfg
         who = s.partner.removesuffix(".md")
         sender = f"system:{who}"
         rule = cfg.substitute(RULE.replace("{final}", where))
         line = cfg.substitute(PARTNER_LINE.replace("{who}", who))
-        history = [{"role": "user", "content": await self._turn(
+        history = [{"role": "user", "content": (await self._turn(
             cid, "system:schedules", "\n\n".join([prompt, line, rule]), "trigger",
-            {"run": rid})}]
+            {"run": rid}))[0]}]
         base = "\n\n".join([fill(cfg, s.partner_prompt, day, res),
                             cfg.substitute(ASKED), prompt])
         backend, tools = self._partner_backend(cid, s), self._partner_tools()

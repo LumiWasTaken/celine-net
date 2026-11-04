@@ -6,6 +6,7 @@ next run of the night."""
 from __future__ import annotations
 
 import json
+import os
 from contextlib import asynccontextmanager
 import tomllib
 from datetime import date, datetime, timedelta, timezone
@@ -643,7 +644,7 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
 class Writer(FakeBackend):
     """A real run: a lead-in line beside the notebook__write of
     the whole note, which ends its turn (the runner's quiet end). `script` maps words of
-    the newest message to its step."""
+    the newest message to its step, a list of events or a callable that makes it."""
 
     def __init__(self, script: dict):
         super().__init__()
@@ -653,6 +654,8 @@ class Writer(FakeBackend):
         self.calls.append(messages)
         last = json.dumps(messages[-1]["content"])
         step = next(v for k, v in self.script.items() if k in last)
+        if callable(step):
+            step = step()
         if isinstance(step, Exception):
             raise step
         for ev in step:
@@ -668,12 +671,12 @@ def _write(note: str, content: str) -> list:
 NOTE = "diary/2026-10-10-review.md"     # {{date}} on _one_run's clock
 
 
-async def _one_run(store, cfg, backend) -> dict:
+async def _one_run(store, cfg, backend, clock=None) -> dict:
     """One run of a self-review with a note."""
     cfg.schedules = {"review": _s("review", "0 4 * * *", "Review the night.",
                                   label="Self-review", note="diary/{{date}}-review.md")}
     async with _scheduler(store, cfg, _app(store, cfg, backend), backend,
-                          Clock(datetime(2026, 10, 10, 4, tzinfo=UTC))) as sched:
+                          clock or Clock(datetime(2026, 10, 10, 4, tzinfo=UTC))) as sched:
         run = await sched.run_now("review")
         await sched.tick()
         await until(lambda: _state(store, run["id"], "done"))
@@ -691,6 +694,44 @@ async def test_a_note_she_wrote_is_the_result_not_the_line_beside_the_write(stor
     assert "Writing the review now" not in note
     assert row["result"] == review, "the note is the result the next run reads"
     assert len(backend.calls) == 1, "its turn ended with the write, no step more"
+
+
+async def test_a_turn_that_ends_with_another_write_leaves_the_note_unwritten(store, cfg):
+    """Her lead-in beside a write of another note is no answer: the note is not written,
+    the run says so, the lead-in stays its result as it came."""
+    backend = Writer({"Review the night": [TextDelta("Merged the notes:"),
+                                           *_write("thoughts/x.md", "The merge.")]})
+    row = await _one_run(store, cfg, backend)
+    assert not (cfg.her.notebook / NOTE).exists()
+    assert row["state"] == "done" and row["result"] == "Merged the notes:"
+    assert row["error"] == (f"The note {NOTE} was not written: the run ended with a tool "
+                            "call and no answer after it.")
+
+
+async def test_a_note_she_wrote_then_went_on_past_is_the_result_and_the_run_says_so(
+        store, cfg, monkeypatch):
+    """She writes the note, reads it, then answers with a correction: the note is the
+    result, untouched, and the run's error says the note is older than her later calls."""
+    from celine.skills.notebook import unstamped
+    from celine.turns import store as turns
+    clock = Clock(datetime(2026, 10, 10, 4, tzinfo=UTC))
+    monkeypatch.setattr(turns, "now", lambda: iso(clock.at))
+    draft = "# Self-review\n\nDiagnosis: the mail."
+    note = cfg.her.notebook / NOTE
+
+    def read_it():
+        os.utime(note, (clock.at.timestamp(), clock.at.timestamp()))
+        clock.at += timedelta(minutes=1)
+        return [ToolCallDelta(index=0, id="r", name="notebook__read",
+                              arguments=json.dumps({"path": NOTE})),
+                Done(reason="tool_calls")]
+    backend = Writer({"Review the night": _write(NOTE, draft),     # no text: it goes on
+                      "Saved": read_it,
+                      "Diagnosis": [TextDelta("corrected diagnosis"), Done(reason="stop")]})
+    row = await _one_run(store, cfg, backend, clock)
+    assert (row["state"], row["result"]) == ("done", draft)
+    assert row["error"] == f"The note {NOTE} was last written before the run's last 1 tool call."
+    assert unstamped(note.read_text()).strip() == draft, "her note stays as she wrote it"
 
 
 async def test_a_new_note_gets_her_answer_whole(store, cfg):
