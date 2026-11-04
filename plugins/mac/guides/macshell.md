@@ -35,3 +35,7 @@ and you keep your chat for {{username}}.
 A script on your Mac starts your turn with a message to you, as intercom__send to "me"
 does, in the conversation it names or your newest chat:
 `curl -fsS -H "Authorization: Bearer $(cat ~/.config/celine/link)" -H 'Content-Type: application/json' -d '{"text": "the backup is done", "conversation": "<id>"}' "$(cat ~/.config/celine/app)/api/plugins/mac/events"`
+
+Your models from your Mac: every shell there has `$OPENAI_BASE_URL` and `$OPENAI_API_KEY`
+for the app's model proxy, so `curl -H "Authorization: Bearer $OPENAI_API_KEY" "$OPENAI_BASE_URL/models"`
+or any OpenAI client works. Use that, never a model server's own LAN address.

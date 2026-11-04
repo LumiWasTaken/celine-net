@@ -28,6 +28,7 @@ What it sets on the Mac:
 | `~/.claude-server-commander/config.json` | Desktop Commander: `blockedCommands` empty, `fileWriteLineLimit` 100000 |
 | `~/.config/celine/token` | the gateway's token (mode 600), made once |
 | `~/.config/celine/app`, `~/.config/celine/link` | the app's address and the link key (mode 600), filled in by the setup command (or `--app` and `--key`) |
+| `~/.config/celine/env`, a line in `~/.zshenv` | `OPENAI_BASE_URL` (`<app>/llm/v1`) and `OPENAI_API_KEY` (the link key) for every zsh command on the Mac, so her shell there calls the model proxy like the box's terminals |
 | `~/.config/celine/gateway.json` | the gateway's servers and settings, written on every run |
 | `~/.local/share/celine` | the npm packages, and `chrome/`, Chrome's profile |
 | `~/Library/LaunchAgents/com.celine.chrome.plist` | Chrome with DevTools on 127.0.0.1:9222; its tabs and logins outlive the browser server's sessions |
@@ -89,6 +90,14 @@ for FileVault's unlock and her login); the form says why they are down until the
 ```sh
 curl -fsS -H "Authorization: Bearer $(cat ~/.config/celine/link)" -H 'Content-Type: application/json' \
   -d '{"text": "the backup is done", "conversation": "<id>"}' "$(cat ~/.config/celine/app)/api/plugins/mac/events"
+```
+
+Her models from the Mac's shell go through the model proxy (`<app>/llm/v1` with the link
+key, api/llm_proxy.py), never to a model server's LAN address (the guard's escape rule
+stops those). Every zsh on the Mac has `$OPENAI_BASE_URL` and `$OPENAI_API_KEY`:
+
+```sh
+curl -fsS -H "Authorization: Bearer $OPENAI_API_KEY" "$OPENAI_BASE_URL/models"
 ```
 
 ## Drones

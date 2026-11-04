@@ -117,7 +117,12 @@ def origins(it: dict) -> list[str]:
 
 
 class _Gone(VaultError):
-    """The session is gone (logged out, locked): log in once more."""
+    """The session is gone (logged out, locked): log in once more. `said` is what bw
+    said, for the log."""
+
+    def __init__(self, status: str, said: str = ""):
+        super().__init__(status)
+        self.said = said
 
 
 def reason(e: VaultError) -> str:
@@ -145,7 +150,7 @@ def _sentence(args: tuple[str, ...], out: str) -> VaultError:
     if any(w in low for w in _OFFLINE):
         return VaultError(UNREACHABLE)
     if "not logged in" in low or "locked" in low:
-        return _Gone(LOCKED)
+        return _Gone(LOCKED, " ".join(out.split())[:300])
     log.warning("bw failed", extra={"event": "vault.bw_failed", "command": " ".join(args[:2]),
                                     "said": " ".join(out.split())[:500]})
     return VaultError(ERROR)
@@ -307,7 +312,9 @@ class Vault:
                 raise VaultError(LOCKED)
             try:
                 out = await fn()
-            except _Gone:
+            except _Gone as e:
+                log.warning("vault locked: bw lost its session", extra={"event": "vault.locked",
+                                                                        "said": e.said})
                 self.session = None
                 self.on_lock()
                 self._say(None)

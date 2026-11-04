@@ -303,6 +303,13 @@ chmod 600 "$TOKEN"
 if [ -n "$APP" ]; then   # her scripts reach the app with these (README, From the Mac)
   echo "$APP" > "$CONF/app"
   (umask 077; echo "$KEY" > "$CONF/link")
+  # her shell on the Mac calls the app's model proxy as the box's terminals do: zsh reads
+  # ~/.zshenv for every command, so the shell server's commands have both
+  cat > "$CONF/env" <<EOF
+export OPENAI_BASE_URL=$APP/llm/v1
+export OPENAI_API_KEY=\$(cat "\$HOME/.config/celine/link" 2>/dev/null)
+EOF
+  grep -qs 'config/celine/env' "$HOME/.zshenv" || echo '. "$HOME/.config/celine/env"' >> "$HOME/.zshenv"
 fi
 
 say "Setting up Chrome"   # its own profile; its tabs and logins outlive the browser server's sessions
