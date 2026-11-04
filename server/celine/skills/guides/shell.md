@@ -109,6 +109,8 @@ for their answer; denied, nothing is shared and the result says so. A share runs
   turn; your instructions list what still runs.
 - A command that asks something (apt without -y, a password, `read`) comes back as
   waiting for input. Answer with shell__type(terminal="build", text="y"), or stop it.
+  After 3 runs in a conversation refused as busy or waiting for input, a run under a
+  new terminal name is refused: free a terminal with shell__stop and run there.
 - While something runs in a terminal, a new run there is refused, naming what runs and
   how to stop it. shell__type is never refused. Use another terminal for parallel work.
 - A long output shows its start and its end; the line in between says which lines are

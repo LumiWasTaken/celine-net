@@ -218,6 +218,28 @@ async def test_a_busy_terminal_refuses_with_what_runs_or_waits_and_how_out(shell
                                   "command k3x9ab (node build.mjs), and the line")
 
 
+async def test_three_wedged_runs_close_new_terminal_names(store, shell, box):
+    from celine.core.ids import now
+    from celine.terminals import store as terminals
+    busy = ran(state="busy", reason="running", cmd="k3x9ab", command="make", running_for=5)
+    box.answers = [busy, busy, ran(state="waiting", exit=None, program="python3", pid=9,
+                                   front=[{"pid": 9, "name": "python3", "args": ["python3"]}])]
+    for _ in range(shell_mod.WEDGE_MAX):
+        await shell.run(ctx(), terminal="main", command="ls")
+    assert shell.wedged["c"] == shell_mod.WEDGE_MAX
+    box.sent.clear()
+    out = await shell.run(ctx(), terminal="fresh", command="ls")
+    assert out.is_error and out.content.startswith(
+        f"{shell_mod.WEDGE_MAX} runs in this conversation were refused or waited for input, "
+        "so no new terminal opens.")
+    assert box.sent == []
+    await terminals.upsert(store, "m1m1m1", "main", "celine", now())
+    out = await shell.run(ctx(store=store), terminal="main", command="ls")
+    assert not out.is_error and box.sent[-1][0] == "/run", "an open terminal still runs"
+    assert (await shell.type(ctx(store=store), terminal="fresh", text="y")).is_error is False
+    assert box.sent[-1][0] == "/type", "shell__type is never refused"
+
+
 async def test_a_stop_names_what_outlived_ctrl_c_and_the_next_one_ends_it(shell, box):
     py = {"pid": 9, "name": "python3", "args": ["python3"]}
     box.answers = [ran(state="waiting", exit=None, program="python3", pid=9, front=[py],

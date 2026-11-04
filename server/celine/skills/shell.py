@@ -50,6 +50,8 @@ TURN_MARGIN = 3        # seconds a run's wait ends before its turn's time: the a
 HEAD, TAIL = 2000, 6000    # characters of a long output kept: its start and its end
 READ_CHARS = 8000      # characters one shell__read page carries
 PROBE_WAIT = 2.5       # seconds Settings, Features waits for the box's answer
+WEDGE_MAX = 3          # runs refused as busy or ended waiting for input in one conversation
+                       # before a new terminal name is refused
 
 # ---- words that never change ------------------------------------------------------------
 KEY_FORMAT = "keys is one string, names separated by spaces: keys=\"Escape\", keys=\"Down Down Enter\"."
@@ -412,16 +414,18 @@ class Shell:
         self.cfg = cfg
         self.transport = transport                  # tests: a fake shellbox
         # per conversation: the boot id it last saw, the apt note and the full-disk note,
-        # the programs it had a hint for, and the runs whose end it was told
+        # the programs it had a hint for, the runs whose end it was told, and the runs
+        # refused as busy or ended waiting for input
         self.boots: dict[str, str] = {}
         self.apt_noted: set[str] = set()
+        self.wedged: dict[str, int] = {}
         self.full_noted: set[str] = set()
         self.hinted: set[tuple[str, str]] = set()
         self.told: set[tuple[str, str]] = set()
 
     def carry(self, old) -> None:
         """A reload's rebuild keeps what it was already told (reload.py)."""
-        for a in ("boots", "apt_noted", "full_noted", "hinted", "told"):
+        for a in ("boots", "apt_noted", "full_noted", "hinted", "told", "wedged"):
             setattr(self, a, getattr(old, a))
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
@@ -475,6 +479,12 @@ class Shell:
             return self._refused(str(e), terminal)
         if (refused := await self._not_hers(ctx, name)) is not None:
             return refused
+        if self.wedged.get(ctx.conversation_id, 0) >= WEDGE_MAX and (
+                ctx.store is None or await terminals.open_by_name(ctx.store, name) is None):
+            return self._refused(
+                f"{WEDGE_MAX} runs in this conversation were refused or waited for input, so "
+                f"no new terminal opens. shell__stop(terminal=...) frees a terminal that "
+                f"waits; then run there, or stop and tell {self.cfg.user} what wedged.", name)
         body = {"terminal": name, "command": command, "timeout": seconds,
                 "chars": self._chars(ctx, HEAD + TAIL)}
         return await self._watch(ctx, "/run", body, name, command)
@@ -1025,9 +1035,12 @@ class Shell:
                                       f"terminal: {said}.",
                               is_error=True, display={"terminal": name, "state": "error"})
         if state == "busy":
+            self.wedged[ctx.conversation_id] = self.wedged.get(ctx.conversation_id, 0) + 1
             return self._refused(self._busy(res, name), name)
         prog, pid = program_of(res)
         is_run = "cmd" in res and isinstance(res.get("cmd"), str)
+        if tool_name == "run" and is_run and state == "waiting":
+            self.wedged[ctx.conversation_id] = self.wedged.get(ctx.conversation_id, 0) + 1
         lines = [self._status(res, name, prog, pid, is_run)]
         ended_by = None
         if ctx.store is not None and any(str(n).startswith("closed:")
