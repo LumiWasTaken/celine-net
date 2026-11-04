@@ -362,28 +362,38 @@ class _Plan:
                 stubbed = aged and _agable(c, self.policy, self.counter)
                 if not stubbed:
                     res = mark.shown(res, c.get("display"), self.guarded)  # guard/mark.py
+                images: list[dict] = []
                 if stubbed:
                     res = compact.stub(c["name"], c["arguments"], c["result"], self.cited)
-                elif c.get("attachments"):        # an image the result holds
-                    out.append({**attachments.render(self.cfg, [
-                        {"role": "tool", "content": res, "attachments": c["attachments"]}])[0],
-                        "tool_call_id": c["id"], ORIGIN: came})
-                    continue
+                elif c.get("attachments"):
+                    # the result's files (shell__look): their notes stay in the tool
+                    # message, the image parts go below
+                    rendered = attachments.render(self.cfg, [
+                        {"role": "tool", "content": res,
+                         "attachments": c["attachments"]}])[0]["content"]
+                    if isinstance(rendered, list):
+                        res, images = rendered[0]["text"], rendered[1:]
+                    else:
+                        res = rendered
+                # a result meant to be seen (browser__look's screen, display "see")
+                shown = (c.get("display") or {}) if not stubbed else {}
+                shot = shown.get("shot") if shown.get("see") else None
+                if shot:
+                    images.append({"type": attachments.IMAGE, "attachment": {
+                        **{k: shot[k] for k in ("id", "filename", "sha256", "media_type")},
+                        "size": attachments.image_size_of(
+                            attachments.blob_path(self.cfg, shot["sha256"]))}})
+                if images:
+                    res += "\n" + ("[the image follows]" if len(images) == 1
+                                   else "[the images follow]")
                 out.append({"role": "tool", "tool_call_id": c["id"], "content": res,
                             ORIGIN: came})
-                # a result meant to be seen (browser__look's screen, display "see"): the
-                # image follows the results of the reply as a user message, until the
+                # the chat templates take image parts in user turns only: a result's
+                # images follow the results of the reply as a user message, until the
                 # result is aged away
-                shot = (c.get("display") or {}).get("shot") if not stubbed and \
-                    (c.get("display") or {}).get("see") else None
-                if shot:
+                if images:
                     screens.append({"role": "user", "content": [
-                        {"type": "text", "text": f"[the screen from {c['name']}]"},
-                        {"type": attachments.IMAGE, "attachment": {
-                            **{k: shot[k] for k in ("id", "filename", "sha256",
-                                                    "media_type")},
-                            "size": attachments.image_size_of(
-                                attachments.blob_path(self.cfg, shot["sha256"]))}}],
+                        {"type": "text", "text": f"[the screen from {c['name']}]"}, *images],
                         ORIGIN: origin(it.cid, turn=it.turn, call=c["id"], note="screen")})
             out += screens
         else:

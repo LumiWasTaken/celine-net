@@ -34,7 +34,8 @@ LINES = (
     "result. Call the tool again for the whole of it.",
     "- [N lines, about T tokens, shortened; the call is kept: ...] in an older call's "
     "argument: the app sent its first line only. The call ran with the whole of it.",
-    "- [the screen from ...]: a picture of a screen your tool took.",
+    "- [the screen from ...]: a picture of a screen your tool took, or the image a tool "
+    "result says follows it ([the image follows]).",
     "- [loaded with this call] after a tool result: the skill of that tool, loaded as "
     "skills__load loads it, the first time you call one of its tools here.",
 )

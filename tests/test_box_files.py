@@ -194,6 +194,35 @@ async def test_look_hands_the_image_to_a_model_that_sees(home, cfg, store, monke
     assert attachments.blob_path(cfg, row["sha256"]).read_bytes() == PNG
 
 
+async def test_the_image_follows_the_tool_message_as_a_user_message(home, cfg, store,
+                                                                   monkeypatch):
+    """The chat templates take image parts in user turns only: the tool message keeps
+    the file line, the image comes in the user message after it (a browser shot's way)."""
+    from celine.skills import ToolResult
+    from celine.turns import context
+    from fake_backend import FakeBackend
+
+    async def sees(cfg, ctx):
+        return True
+    monkeypatch.setattr(attachments, "turn_sees_images", sees)
+    (home / "shot.png").write_bytes(PNG)
+    ctx = await _look_ctx(store)
+    out = await Shell(cfg).look(ctx, path="shot.png")
+    mid = await store.read(lambda c: c.execute(
+        "SELECT message_id FROM tool_calls WHERE id='c2'").fetchone()[0])
+    await turns.finish_tool_call(store, ctx.conversation_id, mid, "c2", "shell__look",
+                                 ToolResult(content=out.content, images=out.images), "ok")
+    await user_says(store, ctx.conversation_id, "and now?")
+    built = await context.build(store, cfg, FakeBackend(), ctx.conversation_id, system="S",
+                                tools=[])
+    at = [m["role"] for m in built.messages].index("tool")
+    tool, after = built.messages[at], built.messages[at + 1]
+    assert tool["content"] == out.content + "\n[the image follows]"
+    assert after["role"] == "user" and after["origin"][0]["note"] == "screen"
+    assert [p["type"] for p in after["content"]] == ["text", attachments.IMAGE]
+    assert after["content"][1]["attachment"]["id"] == out.images[0]
+
+
 async def test_a_file_kept_with_the_call_is_a_files_block(home, cfg, store, monkeypatch):
     from celine.skills import ToolResult
 
