@@ -187,6 +187,19 @@ async def test_the_same_call_with_the_same_result_runs_every_time(store, cfg):
     assert b.tools == [True] * 5 and final["content"] == "Nothing found."
 
 
+async def test_a_call_cut_at_the_reply_limit_says_so(store, cfg):
+    t = T()
+    b = Script([[ToolCallDelta(index=0, id="r0", name="t__same", arguments='{"q": "piz'),
+                 Done(reason="length")],
+                [TextDelta("k"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(t), b)
+    assert t.runs == 0
+    assert await _tool_results(store) == [
+        "invalid arguments: your reply reached its length limit before this call's "
+        "arguments ended. Send the call again with shorter arguments, or the content in "
+        "several calls."]
+
+
 async def test_a_malformed_argument_fails_with_its_reason(store, cfg):
     """A value of the wrong type is not converted: the call fails with the schema's
     reason and the tool never runs."""

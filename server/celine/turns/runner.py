@@ -304,7 +304,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         text = await _verify_citations(store, cfg, cid, mid, text, thinking, messages, kbs,
                                        hidden)
         # `request`: what was just sent, the guard's view of the outside text in it
-        await run_tool_calls({**tool_turn, "root_message_id": mid, "request": step},
+        # `cut`: the reply reached its length limit, so its last call may end mid-argument
+        await run_tool_calls({**tool_turn, "root_message_id": mid, "request": step,
+                              "cut": done is not None and done.reason == "length"},
                              [{**c, "message_id": mid} for c in calls],
                              store, cfg, registry, overrides, token, jobs)
         if token.cancelled:

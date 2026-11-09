@@ -205,6 +205,9 @@ BACKGROUND_AFTER = 5  # seconds a call it asked into the background runs before 
                       # directly. Nothing detaches unasked: a call runs in its turn to
                       # its end or its time.
 TIME_UP = "Not run: the time for this turn is up."
+# a call whose arguments end mid-way because the reply reached its length limit
+CUT = ("your reply reached its length limit before this call's arguments ended. Send "
+       "the call again with shorter arguments, or the content in several calls.")
 
 
 # Every path returns a result: an unanswered tool_call makes the conversation
@@ -230,6 +233,8 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if (wrong := _invalid(args, call["arguments"], spec, cfg)) is not None:
         # a tool sent by name: what it takes, in one line, with the error
         full = "" if spec.skill in CORE else f"\n{call['name']} takes {_takes(spec.schema)}."
+        if args is None and turn.get("cut"):
+            wrong = CUT
         return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
                                    is_error=True), None
 
