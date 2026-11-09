@@ -15,6 +15,7 @@ type = "copy"
 key = "url"
 filled = "The Mac is not connected yet"
 label = "Address"
+help = "The Mac's screen, shell, browser and files servers."
 type = "text"
 default = ""
 word = true
@@ -23,6 +24,7 @@ word = true
 key = "agents"
 filled = "The Mac is not connected yet"
 label = "Coding agent"
+help = "opencode on the Mac. Sub-agents started on the Mac work here."
 type = "text"
 default = ""
 word = true
@@ -31,6 +33,7 @@ word = true
 key = "share"
 filled = "The Mac is not connected yet"
 label = "Shares"
+help = "Where the app opens shares of the Mac's ports and files."
 type = "text"
 default = ""
 word = true
@@ -46,6 +49,7 @@ default = ""
 key = "token"
 filled = "The Mac is not connected yet"
 label = "Token"
+help = "The token the app sends to the Mac's servers."
 type = "secret"
 
 [[fields]]
@@ -83,10 +87,29 @@ label = "User"
 type = "text"
 default = ""
 
+[[fields]]
+key = "opencode"
+filled = "The Mac is not connected yet"
+label = "opencode"
+type = "text"
+default = ""
+
+[[fields]]
+key = "setup"                   # the version of the setup the Mac last ran (gateway.py version)
+filled = "The Mac is not connected yet"
+label = "Setup"
+type = "text"
+default = ""
+
 [[actions]]
 id = "check"
 label = "Check"
 run = "gateway:check"
+
+[[actions]]
+id = "update"
+label = "Update"
+run = "gateway:update"
 
 [[actions]]
 id = "again"

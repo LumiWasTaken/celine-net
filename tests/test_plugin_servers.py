@@ -2,7 +2,7 @@
 form, an empty value keeps that server down with the reason; on, its server's tools are
 there with its plugin's guide; a form save starts it again with the new values; off, its
 tools go. The mac plugin: the setup script and the report the Mac posts back (with the
-link key), her scripts' messages to her, the setup command on its form and in her
+link key), its scripts' messages to the agent, the setup command on its form and in its
 settings__read, and Check's lines."""
 from __future__ import annotations
 
@@ -120,7 +120,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
     app, services, routes = _app(cfg, store)
     p = plugins.get("mac")
     report = {"address": "http://127.0.0.1:9", "token": "mac-token-1", "token_file": "/x",
-              "agents": "http://127.0.0.1:4096",
+              "agents": "http://127.0.0.1:4096", "opencode": {"version": "1.19.4"},
               "servers": {"screen": {"tools": 26, "missing": []}},
               "mac": {"user": "celine", "home": "/Users/celine", "chip": "Apple M4",
                       "memory": 17179869184, "macos": "15.6", "network": "Wi-Fi",
@@ -137,6 +137,10 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
 
         script = await c.get("/api/plugins/mac/setup.sh")
         assert script.status_code == 200 and script.text.startswith("#!/bin/bash")
+        lock = (await c.get("/api/plugins/mac/package-lock.json")).json()
+        wanted = (await c.get("/api/plugins/mac/package.json")).json()["dependencies"]
+        assert lock["packages"][""]["dependencies"] == wanted, "npm ci needs the two in step"
+        assert all(v.get("integrity") for k, v in lock["packages"].items() if k), "every sum"
 
         gateway = sys.modules[p.attr("gateway:copies").__module__]
         key = form.read_secret(cfg, "mac", "link")
@@ -145,11 +149,12 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert view["note"] == gateway.LOCAL and view["address"] is True
         assert [f["key"] for f in view["fields"]] == ["publish"], "the Mac fills every other field"
         assert view["fields"][0]["value"] == gateway.PUBLISH
-        assert [a["id"] for a in view["actions"]] == ["check"], "Set up again only once connected"
+        assert [a["id"] for a in view["actions"]] == ["check"], \
+            "Set up again and Update only once connected"
         assert view["values"] == {} and view["secrets"] == {}
         assert await _copies(services, p) == {
             "note": gateway.LOCAL,
-            "copy": {"Run in a terminal in the Celine folder on this computer": gateway.PUBLISH}}, "the line to publish, for her too"
+            "copy": {"Run in a terminal in the Celine folder on this computer": gateway.PUBLISH}}, "the line to publish, for the agent too"
         # on the network: one line, a token that works once, the key never in the line
         await saves.address(services, {"origin": "http://192.168.1.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
@@ -158,11 +163,13 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
                          r"([\w-]{40,}) \| bash", command)
         assert m and key not in command and "address" not in view
         assert view["note"] == gateway.WAITING
+        assert [a["id"] for a in view["actions"]] == ["check"]
         assert plugins.is_open("GET", f"/api/plugins/mac/setup/{m[1]}")
         assert not plugins.is_open("GET", "/api/plugins/mac/setup/")
         served = await c.get(f"/api/plugins/mac/setup/{m[1]}")
         assert served.status_code == 200
-        assert f"APP=http://192.168.1.20:8766 KEY={key} JSON=''" in served.text
+        assert (f"APP=http://192.168.1.20:8766 KEY={key} SETUP={gateway.version()} JSON=''"
+                in served.text), "the setup's version, which its report says back"
         assert gateway.PRESET not in served.text and served.text.startswith("#!/bin/bash")
         assert (await c.get(f"/api/plugins/mac/setup/{m[1]}")).status_code == 404, "once"
         # an hour later it is gone
@@ -179,7 +186,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
                 gateway.filled("http://192.168.1.20:8766", key)
         finally:
             gateway.SCRIPT = script
-        # her settings__read: the line in her own chat, not in a sub-agent's
+        # its settings__read: the line in its own chat, not in a sub-agent's
         sk = SettingsSkill(cfg)
         sk.app = services
 
@@ -221,11 +228,30 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
                  "Wi-Fi (en0)")
         shown = [{"label": "Chip", "value": "Apple M4"}, {"label": "Memory", "value": "16 GB"},
                  {"label": "macOS", "value": "15.6"}, {"label": "Network", "value": "Wi-Fi (en0)"},
-                 {"label": "User", "value": "celine"}]
+                 {"label": "User", "value": "celine"}, {"label": "opencode", "value": "1.19.4"}]
         assert await _copies(services, p) == {
             "note": "Connected. Chip: Apple M4. Memory: 16 GB. macOS: 15.6. Network: Wi-Fi (en0). "
-                    "User: celine."}, "the facts as sentences for her"
+                    "User: celine. opencode: 1.19.4."}, "the facts as sentences for the agent"
         assert view["note"] == "Connected." and view["facts"] == shown and view["fields"] == []
+        # a Mac that said no setup version (set up by hand, or before versions) has an update
+        assert view["actions"] == [
+            {"id": "check", "label": "Check"},
+            {"id": "update", "label": "Update", "badge": "Update available"},
+            {"id": "again", "label": "Set up again"}]
+        for said, badge in ((gateway.version(), None), ("0123456789ab", "Update available")):
+            assert (await c.post("/api/plugins/mac/gateway", json={**report, "setup": said},
+                                 headers={"Authorization": f"Bearer {key}"})).status_code == 200
+            assert cfg.settings.plugins["mac"]["setup"] == said
+            actions = (await c.get("/api/forms/mac")).json()["actions"]
+            assert [a.get("badge") for a in actions] == [None, badge, None], said
+        # a report where opencode did not answer shows no version
+        silent = {**report, "opencode": {"version": None, "error": "no answer"}}
+        assert (await c.post("/api/plugins/mac/gateway", json=silent,
+                             headers={"Authorization": f"Bearer {key}"})).status_code == 200
+        assert "opencode" not in cfg.settings.plugins["mac"]
+        assert (await c.post("/api/plugins/mac/gateway", json=report,
+                             headers={"Authorization": f"Bearer {key}"})).status_code == 200
+        view = (await c.get("/api/forms/mac")).json()
         # a client's save keeps what the Mac filled and may not name it
         bad = await c.put("/api/forms/mac", headers={"If-Match": view["version"]},
                           json={"values": {"url": "http://x:1"}})
@@ -264,7 +290,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         tg.cancel_scope.cancel()
 
 
-async def test_her_script_on_the_mac_starts_her_turn_with_a_message_to_herself(
+async def test_the_agents_script_on_the_mac_starts_its_turn_with_a_message_to_itself(
         tmp_path, monkeypatch, store):
     from celine.intercom import Intercom
     scratch(tmp_path, monkeypatch)
@@ -289,7 +315,7 @@ async def test_her_script_on_the_mac_starts_her_turn_with_a_message_to_herself(
         assert wrong.status_code == 404
         out = (await c.post("/api/plugins/mac/events", json={"text": "the build is done"},
                             headers=auth)).json()
-        assert out["conversation"] == newest and out["turn_id"], "her newest chat, her turn"
+        assert out["conversation"] == newest and out["turn_id"], "its newest chat, its turn"
         named = (await c.post("/api/plugins/mac/events",
                               json={"text": "backup done", "conversation": older},
                               headers=auth)).json()
@@ -307,6 +333,7 @@ async def test_her_script_on_the_mac_starts_her_turn_with_a_message_to_herself(
 
 
 # Peekaboo's permissions answer's _meta on a Mac without the grants, as it came (2026-10-29)
+UPDATE = {"update": "Update available"}   # copies' badge while the Mac said no setup version
 META ={"accessibility": False, "event_synthesizing": False,
         "event_synthesizing_limits": ["background keyboard input"],
         "permission_snapshot_available": True, "required_permissions_granted": False,
@@ -351,7 +378,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     from celine.skills import BLOCKED
     assert BLOCKED == {"macscreen": "Screen Recording and Accessibility are off on the Mac. "
                                     + turn_on}
-    # the form's note and her settings__read say the same while the Mac is connected
+    # the form's note and its settings__read say the same while the Mac is connected
     form.secrets.set_key(cfg.settings.secrets_root, "mac.link", "key")
     copies = p.attr("gateway:copies")
     got = await copies(services, p)
@@ -359,25 +386,29 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     assert got["lines"] == out["lines"][4:], "each permission that is off, one line"
     Client.meta = {**META, "screen_recording": True, "accessibility": True,
                    "event_synthesizing": True}
-    assert await copies(services, p) == {"facts": [], "note": "Connected."}, "all on: no grant"
+    assert await copies(services, p) == {"facts": [], "note": "Connected.", "badges": UPDATE}, \
+        "all on: no grant"
     assert BLOCKED == {}, "all on: nothing blocked"
 
-    # Full Disk Access, as share.js says it: files and shell would wait on a folder dialog
+    # Full Disk Access and Local Network, as share.js says them: a protected folder waits
+    # for one click on the Mac, so files and shell stay on
     gateway = sys.modules[copies.__module__]
     real = httpx.AsyncClient
     monkeypatch.setattr(gateway.httpx, "AsyncClient", lambda **kw: real(**kw, transport=httpx.MockTransport(
-        lambda req: httpx.Response(200, json={"full_disk_access": False})
+        lambda req: httpx.Response(200, json={"full_disk_access": False, "local_network": False})
         if req.url.path == "/grants" and req.headers["authorization"] == "Bearer tok"
         else httpx.Response(404))))
     cfg.settings.plugins["mac"] = {"url": "http://mac:8765", "share": "http://mac:8766",
                                    "token": "tok"}
     got = await copies(services, p)
-    assert got["lines"] == [{"text": "Full Disk Access is off: a folder like Desktop or "
-                                     "Documents waits for a click on the Mac's screen.",
-                             "tone": "error"}]
-    fda = ("Full Disk Access is off on the Mac. On the Mac, open System Settings, Privacy & "
-           "Security, and turn on Celine under Full Disk Access.")
-    assert BLOCKED == {"macfiles": fda, "macshell": fda}
+    assert got["lines"] == [
+        {"text": "Full Disk Access is off: a folder like Desktop or Documents waits for a "
+                 "click on the Mac's screen.", "tone": "warn"},
+        {"text": "Local Network is off: sub-agents and shell commands on the Mac cannot reach the "
+                 "app.", "tone": "error"}]
+    assert got["note"] == ("Connected. On the Mac, open System Settings, Privacy & Security, "
+                           "and turn on Celine under Full Disk Access and Local Network.")
+    assert BLOCKED == {}, "no Mac server waits on a dialog for these"
     monkeypatch.setattr(gateway.httpx, "AsyncClient", real)
     cfg.settings.plugins["mac"] = {"url": "http://mac:8765"}
     BLOCKED.clear()
@@ -388,7 +419,7 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
             await anyio.sleep_forever()
     monkeypatch.setattr(gateway, "GRANTS_SECONDS", 0.01)
     skills["macscreen"] = SimpleNamespace(status="up", error=None, client=Silent())
-    assert await copies(services, p) == {"facts": [], "note": "Connected."}
+    assert await copies(services, p) == {"facts": [], "note": "Connected.", "badges": UPDATE}
     skills["macscreen"].client = Client()
 
     cfg.settings.plugins["mac"] = {}
@@ -396,7 +427,49 @@ async def test_check_lists_each_server_and_each_grant_the_screen_lacks(tmp_path,
     assert out["lines"] == [{"text": gateway.NOT_YET, "tone": "warn"}], "one line before it connects"
 
 
-async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
+async def test_a_look_at_the_screen_server_reads_the_grants_again_while_unknown_or_blocked(
+        tmp_path, monkeypatch):
+    """No timer, no form: a request's look at the screen server (Registry.down) reads the
+    grants once after a start, then while they block it, at most every GRANTS_AGAIN."""
+    from celine.skills import ASK, BLOCKED, Registry
+    scratch(tmp_path, monkeypatch)
+    cfg = boot.load()
+    gateway = sys.modules[plugins.get("mac").attr("gateway:copies").__module__]
+    reads: list[str] = []
+
+    class Client:
+        meta = META
+
+        async def call_tool(self, name, args):
+            reads.append(name)
+            return SimpleNamespace(meta=self.meta, content=[])
+    services = SimpleNamespace(cfg=cfg, mcp=SimpleNamespace(skills={
+        "macscreen": SimpleNamespace(status="up", error=None, client=Client())}))
+    at = [100.0]
+    grants = gateway.Grants(clock=lambda: at[0])
+    ASK["macscreen"] = grants.ask
+    look = Registry().down
+    try:
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(grants.run, services)
+            assert look("macscreen") is None and grants.due.is_set(), "unknown: a read"
+            await until(lambda: "macscreen" in BLOCKED)
+            assert look("macscreen").startswith("Screen Recording and Accessibility are off")
+            assert not grants.due.is_set(), "at most every GRANTS_AGAIN"
+            Client.meta = {**META, "screen_recording": True, "accessibility": True}
+            at[0] += gateway.GRANTS_AGAIN
+            assert look("macscreen") and grants.due.is_set(), "blocked: a read again"
+            await until(lambda: "macscreen" not in BLOCKED)
+            at[0] += gateway.GRANTS_AGAIN
+            assert look("macscreen") is None and not grants.due.is_set(), "known and free"
+            assert reads == ["permissions", "permissions"]
+            tg.cancel_scope.cancel()
+    finally:
+        ASK.pop("macscreen", None)
+        BLOCKED.pop("macscreen", None)
+
+
+async def test_a_fresh_install_switches_its_mac_on_while_it_is_not_set_up(
         tmp_path, monkeypatch, store):
     """Its form fills from what runs only while it is on: not set up never blocks it."""
     var = scratch(tmp_path, monkeypatch)
@@ -424,3 +497,107 @@ async def test_a_fresh_install_switches_her_mac_on_while_it_is_not_set_up(
         assert (mac["state"], mac["blocks"]) == ("unset", False)
         assert mac["detail"] == "The Mac is not connected yet."
         tg.cancel_scope.cancel()
+
+
+def test_the_mac_and_the_box_run_one_opencode():
+    root = Path(__file__).parent.parent
+    mac = re.search(r"^OPENCODE_VERSION=(\S+)", (root / "plugins/mac/setup.sh").read_text(), re.M)
+    box = re.search(r"^ARG OPENCODE_VERSION=(\S+)", (root / "shellbox/Dockerfile").read_text(),
+                    re.M)
+    assert mac and box and mac[1] == box[1]
+
+
+def test_setup_asks_for_local_network_and_opens_only_the_panes_that_are_off(tmp_path):
+    import subprocess
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    text = (Path(__file__).parent.parent / "plugins/mac/setup.sh").read_text()
+    assert "<key>NSLocalNetworkUsageDescription</key>" in text
+    js = re.search(r"grants\(\) \{\n.*?\"\$NODE\" -e '\n(.*?)'\n\}", text, re.S)[1]
+
+    def panes(**r):
+        line = {"servers": {"screen": {"tools": 26, "missing": []}}, **r}
+        out = subprocess.run([node, "-e", js], input=json.dumps(line), text=True,
+                             capture_output=True, check=True).stdout
+        return [x.split(" ", 2) for x in out.splitlines()]
+    assert panes(full_disk_access=True, local_network=None) == [
+        ["Privacy_ScreenCapture", "on", "Screen Recording"],
+        ["Privacy_Accessibility", "on", "Accessibility"],
+        ["Privacy_AllFiles", "on", "Full Disk Access"]], "an unknown grant has no pane"
+    off = panes(servers={"screen": {"tools": 26, "missing": ["Event Synthesizing"]}},
+                full_disk_access=False, local_network=False)
+    assert [x[0] for x in off if x[1] == "off"] == [
+        "Privacy_Accessibility", "Privacy_LocalNetwork", "Privacy_AllFiles"], "optional last"
+    assert panes(servers={"screen": {"tools": None, "missing": []}}) == [], \
+        "a screen server that does not answer says nothing of its grants"
+
+
+def test_the_setup_version_covers_every_file_a_setup_gets(tmp_path, monkeypatch):
+    scratch(tmp_path, monkeypatch)
+    boot.load()
+    gateway = sys.modules[plugins.get("mac").attr("gateway:update").__module__]
+    served = tmp_path / "served"
+    served.mkdir()
+    for name in gateway.SERVED:
+        shutil.copy(gateway.SCRIPT.with_name(name), served / name)
+    monkeypatch.setattr(gateway, "SCRIPT", served / "setup.sh")
+    seen = [gateway.version()]
+    for name in gateway.SERVED:
+        with (served / name).open("a") as f:
+            f.write("\n")
+        seen.append(gateway.version())
+    assert len(set(seen)) == 4 and all(re.fullmatch(r"[0-9a-f]{12}", v) for v in seen)
+    assert f"KEY=k SETUP={seen[-1]} JSON=''" in gateway.filled("http://192.168.1.20:8766", "k")
+
+
+async def test_update_runs_the_apps_setup_on_the_mac_in_a_job_of_its_own(tmp_path, monkeypatch):
+    import shlex
+    scratch(tmp_path, monkeypatch)
+    cfg = boot.load()
+    p = plugins.get("mac")
+    update = p.attr("gateway:update")
+    gateway = sys.modules[update.__module__]
+    calls = []
+
+    class Shell:
+        said: str | None = None     # its answer; None: what the command prints once `open` ran
+
+        async def call_tool(self, name, args):
+            calls.append((name, args))
+            text = self.said if self.said is not None else \
+                f"Process started with PID 7\n{args['command'].rsplit(' ', 1)[1]}\n"
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)],
+                                   is_error=False)
+
+    shell = SimpleNamespace(status="up", error=None, client=Shell())
+    services = SimpleNamespace(cfg=cfg, mcp=SimpleNamespace(skills={"macshell": shell}))
+    assert await update(services, p, None) == {"ok": True, "sentence": "The Mac is updating."}
+    (name, args), = calls
+    assert name == "start_process" and args["timeout_ms"] == 10000
+    words = shlex.split(args["command"])
+    # Celine.app opened anew: a launchd job of its own, outside the gateway's, under its grants
+    assert words[:6] == ["open", "-ng", "$HOME/Applications/Celine.app", "--args", "/bin/bash",
+                         "-c"]
+    assert words[7:9] == ["&&", "echo"] and len(words) == 10
+    m = re.fullmatch(r'exec >"\$HOME/Library/Logs/celine-update\.log" 2>&1; curl -fsSL (\S+)'
+                     r" \| bash -s -- --json", words[6])
+    assert m, words[6]
+    url = shlex.split(m[1])[0]
+    assert url.startswith(f"{gateway.address.base(cfg)}/api/plugins/mac/setup/")
+    assert url.rsplit("/", 1)[1] in gateway._tokens, "a new setup line that works once"
+    # pressed again while it runs: no second setup on the Mac
+    assert await update(services, p, None) == {"ok": True, "sentence": "The Mac is updating."}
+    assert len(calls) == 1
+    gateway._updating.clear()                   # what the Mac's report does (POST /gateway)
+
+    # `open` did not launch it: the shell's words
+    shell.client.said = "Unable to find application named 'Celine'"
+    assert await update(services, p, None) == {
+        "ok": False, "sentence": "Shell: Unable to find application named 'Celine'"}
+    # the shell server is down: Check's words, nothing runs
+    calls.clear()
+    services.mcp.skills["macshell"] = SimpleNamespace(status="down", client=None,
+                                                      error="No route to host")
+    assert await update(services, p, None) == {"ok": False, "sentence": "Shell: No route to host"}
+    assert calls == []

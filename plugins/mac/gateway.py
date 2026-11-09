@@ -1,28 +1,34 @@
-"""Her Mac: setup.sh served to the Mac, the report it posts back saved into the form,
-her scripts' messages to her, the setup line the form shows, and Check.
+"""The agent's Mac: setup.sh served to the Mac, the report it posts back saved into the
+form, its scripts' messages to it, the setup line the form shows, and Check.
 
 - The setup line, `curl -fsSL <app>/api/plugins/mac/setup/<token> | bash`: the form and
-  her settings__read ask for it while the Mac has reported no Address, or after Set up
+  its settings__read ask for it while the Mac has reported no Address, or after Set up
   again until it reports, and each ask makes a new token that works once within
   SETUP_SECONDS. The app's address is its stored one (settings/address.py); while that is
   localhost the form says how to publish the app on the network and asks for its address
   instead. Once the Mac reported, the form says Connected with what it said of itself.
-- GET /api/plugins/mac/setup/<token>: setup.sh with the app's address and the link key
-  filled in. GET /api/plugins/mac/setup.sh: the script as it is (`--status`).
+- GET /api/plugins/mac/setup/<token>: setup.sh with the app's address, the link key and
+  `version()` (the setup the app serves: setup.sh and the npm files, hashed) filled in.
+  GET /api/plugins/mac/setup.sh: the script as it is (`--status`).
+  GET /api/plugins/mac/package.json and package-lock.json: the MCP servers' versions and
+  sha512 sums, which setup.sh installs with npm ci.
 - POST /api/plugins/mac/gateway with `Authorization: Bearer <link key>`: setup.sh's
-  report line {address, token, agents, share, mac, ...}; the address, the token, the
-  drones' and the share server's addresses and the Mac's facts (`mac`: its user, home,
-  chip, memory, macOS, network; About This Mac, in her system prompt through
-  devices.about) are saved into the form (celine/saves.py plugin_form), so the servers start
-  again with them.
+  report line {address, token, agents, share, setup, mac, ...}; the address, the token,
+  the drones' and the share server's addresses, the setup's version and the Mac's facts
+  (`mac`: its user, home, chip, memory, macOS, network; About This Mac, in its system
+  prompt through devices.about) are saved into the form (celine/saves.py plugin_form), so
+  the servers start again with them. A version other than `version()` (or none) marks Update on the form.
+- Update (`update`): the setup the app serves now, run on the Mac over its shell server;
+  its report saves the new version.
 - POST /api/plugins/mac/events with the link key: {text, conversation?}, a message from
-  her to herself (intercom__send to "me") in that conversation, else her newest chat: it
-  starts her turn there, or reaches the one running.
+  the agent to itself (intercom__send to "me") in that conversation, else its newest
+  chat: it starts its turn there, or reaches the one running.
 These are `open` in plugin.toml: the Mac has no session. The link key is made once
 (var/secrets/mac.link.key) and goes to the Mac only inside the script a token gets; it is
 also the Mac's key to the app's model proxy (plugin.toml [drones])."""
 from __future__ import annotations
 
+import hashlib
 import hmac
 import secrets as random
 import shlex
@@ -39,14 +45,15 @@ from celine import plugins
 from celine.api.deps import json_body, services_of
 from celine.saves import plugin_form
 from celine.errors import NotFound
-from celine.mcp import plugin_servers
+from celine.mcp import plugin_servers, result_text
 from celine.settings import address, form, secrets
 from celine.settings.files import Invalid
-from celine.skills import BLOCKED
+from celine.skills import ASK, BLOCKED
 
 LINK = "link"                       # its secret: var/secrets/mac.link.key
 SCRIPT = Path(__file__).with_name("setup.sh")
-PRESET = "APP='' KEY='' JSON='' STATUS=''"      # setup.sh's line a served copy fills in
+PRESET = "APP='' KEY='' SETUP='' JSON='' STATUS=''"   # setup.sh's line a served copy fills in
+SERVED = ("setup.sh", "package.json", "package-lock.json")   # what a setup gets from the app
 SETUP_SECONDS = 3600
 LOCAL = ("The Mac cannot open localhost. First run the command below in a terminal, in the "
          "Celine folder on this computer. Then enter this computer's network address, for "
@@ -56,8 +63,13 @@ PUBLISH = "echo CELINE_PUBLISH=8766 >> .env && docker compose up -d"
 WAITING = ("Copy the command above, paste it into Terminal on the Mac and press Return. "
            "This page updates when the Mac is connected.")
 NOT_YET = "Not connected yet. Run the command above in Terminal on the Mac."
+UPDATING = "The Mac is updating."
+UPDATE_AVAILABLE = "Update available"   # the words of Update's badge
+UPDATE_SECONDS = 20                     # Update waits this long for the shell server
+RUN_SECONDS = 900                       # a second Update this soon after one runs no setup
 _tokens: dict[str, float] = {}      # a setup line's token -> when it stops working
 _again: set[str] = set()            # plugins whose line Set up again shows until a report
+_updating: dict[str, float] = {}    # plugin -> when its Update started (monotonic), until a report
 NAMES = {"macscreen": "Screen", "macshell": "Shell", "macbrowser": "Browser",
          "macfiles": "Files"}
 
@@ -69,22 +81,29 @@ def _link(cfg) -> str | None:
 
 
 async def run(services, p) -> None:
-    """The link key, made once; then the grants, watched while it is on."""
+    """The link key, made once; the grants read again as Grants says; the Mac's servers
+    free again when the plugin stops. The grants are also read when the form opens, on
+    Check and when the Mac reports."""
     root = services.cfg.settings.secrets_root
     if root is not None and _link(services.cfg) is None:
         secrets.set_key(root, form.secret_name(p.id, LINK), random.token_hex(32))
+    grants = Grants()
+    for sid in NAMES:
+        ASK[sid] = grants.ask
     try:
-        await _watch_grants(services, p)
+        await grants.run(services)
     finally:
         for sid in NAMES:
             BLOCKED.pop(sid, None)
+            ASK.pop(sid, None)
 
 
 async def copies(services, p) -> dict[str, str]:
     """{"command": the setup line with a new token, "note": WAITING}; {"note": LOCAL,
     "address": "ask"} while the app's address is localhost; once the Mac reported its
     Address (and no Set up again since), {"note": "Connected: <about>."} followed by each
-    grant the screen server says is off (the form's note and her settings__read)."""
+    grant the screen server says is off (the form's note and its settings__read), and
+    Update's badge while the Mac's setup is not `version()`."""
     cfg = services.cfg
     if _link(cfg) is None:
         return {}
@@ -98,6 +117,8 @@ async def copies(services, p) -> dict[str, str]:
             off = []
         out: dict[str, Any] = {"facts": [{"label": label, "value": saved[k]}
                                          for k, label in FACTS if saved.get(k)]}
+        if saved.get("setup") != version():     # set up by an older app, or by hand
+            out["badges"] = {"update": UPDATE_AVAILABLE}
         if off:
             out["note"] = "Connected. " + turn_on([x["pane"] for x in off])
             out["lines"] = [{"text": x["text"], "tone": x["tone"]} for x in off]
@@ -106,14 +127,20 @@ async def copies(services, p) -> dict[str, str]:
         return out
     app = address.base(cfg)
     if address.is_loopback(app):
-        return {"note": LOCAL, "address": "ask", "publish": PUBLISH, "hide": ["again"]}
+        return {"note": LOCAL, "address": "ask", "publish": PUBLISH,
+                "hide": ["again", "update"]}
+    return {"command": f"curl -fsSL {shlex.quote(_setup_url(app, p.id))} | bash",
+            "note": WAITING, "hide": ["again", "update"]}
+
+
+def _setup_url(app: str, pid: str) -> str:
+    """The setup script's address with a new token that works once within SETUP_SECONDS."""
     now = time.monotonic()
     for t in [t for t, end in _tokens.items() if end < now]:
         del _tokens[t]
     token = random.token_urlsafe(32)
     _tokens[token] = now + SETUP_SECONDS
-    return {"command": f"curl -fsSL {shlex.quote(f'{app}/api/plugins/{p.id}/setup/{token}')}"
-                       f" | bash", "note": WAITING, "hide": ["again"]}
+    return f"{app}/api/plugins/{pid}/setup/{token}"
 
 
 async def again(services, p, _input) -> dict[str, Any]:
@@ -122,9 +149,58 @@ async def again(services, p, _input) -> dict[str, Any]:
     return {"ok": True, "sentence": ""}
 
 
+async def update(services, p, _input) -> dict[str, Any]:
+    """Update: the setup the app serves now, run on the Mac with a new setup line and --json
+    over the shell server (the Mac's token; it accepts nothing else). Celine.app runs it,
+    opened anew through LaunchServices: a launchd job of its own, so it outlives the
+    gateway's restart (a setsid child does not, bootout ends the job's whole coalition, and
+    a `launchctl submit` job is kept alive, so it would run again and again), under
+    Celine's grants (Local Network, for the report). Its report then saves the new version
+    (POST /gateway). The Mac logs the run to ~/Library/Logs/celine-update.log."""
+    if time.monotonic() - _updating.get(p.id, -RUN_SECONDS) < RUN_SECONDS:
+        return {"ok": True, "sentence": UPDATING}       # one setup at a time on the Mac
+    shell = services.mcp.skills.get("macshell")
+    if shell is None or shell.client is None or shell.status != "up":
+        said = (shell.error if shell is not None else None) or "Starting"
+        return {"ok": False, "sentence": f"{NAMES['macshell']}: {said}"}
+    run = (f'exec >"$HOME/Library/Logs/celine-update.log" 2>&1; '
+           f"curl -fsSL {shlex.quote(_setup_url(address.base(services.cfg), p.id))}"
+           f" | bash -s -- --json")
+    started = random.token_hex(8)       # printed once `open` launched it
+    command = (f'open -ng "$HOME/Applications/{APP}.app" --args /bin/bash -c '
+               f"{shlex.quote(run)} && echo {started}")
+    try:
+        with anyio.fail_after(UPDATE_SECONDS):
+            res = await shell.client.call_tool(
+                "start_process", {"command": command, "timeout_ms": 10000})
+    except Exception as e:
+        return {"ok": False, "sentence": f"{NAMES['macshell']}: {str(e) or 'No answer'}"}
+    said = result_text(res)
+    if getattr(res, "is_error", False) or started not in said:
+        return {"ok": False, "sentence": f"{NAMES['macshell']}: {said.strip() or 'No answer'}"}
+    _updating[p.id] = time.monotonic()
+    return {"ok": True, "sentence": UPDATING}
+
+
+def version() -> str:
+    """The setup the app serves now: the first 12 hex digits of the sha256 of SERVED."""
+    h = hashlib.sha256()
+    for name in SERVED:
+        h.update(SCRIPT.with_name(name).read_bytes())
+    return h.hexdigest()[:12]
+
+
 @router.get("/setup.sh")
 async def setup_sh() -> FileResponse:
     return FileResponse(SCRIPT, media_type="text/x-shellscript", filename="setup.sh")
+
+
+@router.get("/package.json")
+@router.get("/package-lock.json")
+async def npm_files(request: Request) -> FileResponse:
+    """The MCP servers' versions and sha512 sums, beside setup.sh, which runs npm ci on them."""
+    return FileResponse(SCRIPT.with_name(request.url.path.rsplit("/", 1)[1]),
+                        media_type="application/json")
 
 
 @router.get("/setup/{token}")
@@ -140,12 +216,13 @@ async def setup_line(request: Request, token: str) -> Response:
 
 
 def filled(app: str, key: str) -> str:
-    """setup.sh with `app` and `key` in its PRESET line; never a copy without them."""
+    """setup.sh with `app`, `key` and `version()` in its PRESET line; never a copy without
+    them."""
     text = SCRIPT.read_text()
     if text.count(PRESET) != 1 or not app or not key:
         raise RuntimeError("setup.sh has no PRESET line to fill")
     return text.replace(PRESET, f"APP={shlex.quote(app)} KEY={shlex.quote(key)} "
-                                f"JSON='' STATUS=''")
+                                f"SETUP={version()} JSON='' STATUS=''")
 
 
 def _linked(request: Request):
@@ -172,15 +249,30 @@ async def gateway(request: Request) -> dict[str, Any]:
     if isinstance(body.get("mac"), dict) and (said := about(body["mac"])):
         values["about"] = said
         values.update(facts(body["mac"]))
+    if isinstance(body.get("setup"), str) and body["setup"].strip():
+        values["setup"] = body["setup"].strip()[:ABOUT_CHARS]
+    else:                               # set up by hand: its version is unknown
+        values.pop("setup", None)
+    oc = body.get("opencode")
+    if isinstance(oc, dict) and isinstance(oc.get("version"), str) and oc["version"].strip():
+        values["opencode"] = oc["version"].strip()[:ABOUT_CHARS]
+    else:                               # it did not answer: no version shown as live
+        values.pop("opencode", None)
     out = await plugin_form(services, p, values, {"token": body["token"]})
     _again.discard(p.id)
+    _updating.pop(p.id, None)
+    try:
+        with anyio.fail_after(GRANTS_SECONDS):
+            _block(await _off(services))
+    except Exception:                   # Check says why the Mac does not answer
+        pass
     return out
 
 
 ABOUT_CHARS = 80   # the most of one fact of the Mac
 # the facts the form shows, each a field the Mac fills (settings.toml), in this order
 FACTS = (("chip", "Chip"), ("memory", "Memory"), ("macos", "macOS"), ("network", "Network"),
-         ("user", "User"))
+         ("user", "User"), ("opencode", "opencode"))
 
 
 def facts(mac: dict[str, Any]) -> dict[str, str]:
@@ -204,7 +296,7 @@ def about(mac: dict[str, Any]) -> str:
     """setup.sh's facts of the Mac in one line: "user celine, home /Users/celine, Apple
     M4, 16 GB memory, macOS 15.6, Wi-Fi (en0)"; a fact it did not send is left out."""
     def said(k: str) -> str:
-        v = mac.get(k)    # from the Mac, into her system prompt: one line, short
+        v = mac.get(k)    # from the Mac, into its system prompt: one line, short
         return " ".join(v.split())[:ABOUT_CHARS] if isinstance(v, str) else ""
     memory = mac.get("memory")
     parts = [f"user {said('user')}" if said("user") else "",
@@ -277,9 +369,9 @@ async def check(services, p, _input) -> dict[str, Any]:
 
 APP = "Celine"         # setup.sh's ~/Applications/Celine.app: every server on the Mac runs under it
 GRANTS_SECONDS = 5     # the form's note waits this long for the screen server
-GRANTS_EVERY = 30      # seconds between two looks at the grants while the Mac is connected
-# the grant (Peekaboo's `_meta` key, or share.js /grants), what she cannot do without
-# it, its pane, its tone, and the servers whose calls would wait on a dialog without it
+GRANTS_AGAIN = 30.0    # seconds: a look at a Mac server reads the grants again at most this often
+# the grant (Peekaboo's `_meta` key, or share.js /grants), what the agent cannot do
+# without it, its pane, its tone, and the servers whose calls would wait on a dialog without it
 GRANTS = {
     "screen_recording": ("Screen Recording", "no screenshots",
                          "Screen & System Audio Recording", "error", ("macscreen",)),
@@ -288,8 +380,9 @@ GRANTS = {
     "event_synthesizing": ("Event Synthesizing", "no typing into apps in the background",
                            "Accessibility", "warn", ()),
     "full_disk_access": ("Full Disk Access", "a folder like Desktop or Documents waits for "
-                         "a click on the Mac's screen", "Full Disk Access", "error",
-                         ("macfiles", "macshell")),
+                         "a click on the Mac's screen", "Full Disk Access", "warn", ()),
+    "local_network": ("Local Network", "sub-agents and shell commands on the Mac cannot reach "
+                      "the app", "Local Network", "error", ()),
 }
 
 
@@ -302,7 +395,7 @@ def turn_on(panes: list[str]) -> str:
 
 async def _off(services) -> list[dict[str, Any]]:
     """Each grant that is off: the screen server's (Peekaboo) and share.js's (Full Disk
-    Access); a server that does not answer says nothing."""
+    Access, Local Network); a server that does not answer says nothing."""
     meta: dict[str, Any] = {}
     screen = services.mcp.skills.get("macscreen")
     if screen is not None and screen.client is not None:
@@ -318,12 +411,46 @@ async def _off(services) -> list[dict[str, Any]]:
 
 
 def _grants(meta: dict[str, Any]) -> list[dict[str, Any]]:
-    """Each grant `meta` says is off (false): what she cannot do without it, where the
+    """Each grant `meta` says is off (false): what the agent cannot do without it, where the
     user turns it on for APP, and the servers it blocks."""
     return [{"text": f"{name} is off: {without}.", "tone": tone, "pane": pane,
              "blocks": blocks}
             for key, (name, without, pane, tone, blocks) in GRANTS.items()
             if meta.get(key) is False]
+
+
+class Grants:
+    """The grants read again without the form: when a request looks at a Mac server
+    (skills.ASK, from Registry.down: a request lists its tools, a call is resolved) while
+    the grants are unknown (no read answered since the plugin started) or block that
+    server, at most every GRANTS_AGAIN seconds by `clock`; never on a timer. `run` reads
+    them, GRANTS_SECONDS at most."""
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.known = False                   # a read answered since the plugin started
+        self.asked: float | None = None      # when a look last asked for a read
+        self.due = anyio.Event()
+
+    def ask(self, sid: str) -> None:
+        if self.known and sid not in BLOCKED:
+            return
+        at = self.clock()
+        if self.asked is not None and at - self.asked < GRANTS_AGAIN:
+            return
+        self.asked = at
+        self.due.set()
+
+    async def run(self, services) -> None:
+        while True:
+            await self.due.wait()
+            self.due = anyio.Event()
+            try:
+                with anyio.fail_after(GRANTS_SECONDS):
+                    _block(await _off(services))
+            except Exception:               # the Mac does not answer: still unknown
+                continue
+            self.known = True
 
 
 def _block(off: list[dict[str, Any]]) -> None:
@@ -338,14 +465,3 @@ def _block(off: list[dict[str, Any]]) -> None:
         else:
             BLOCKED.pop(sid, None)
 
-
-async def _watch_grants(services, p) -> None:
-    """While the Mac is connected: its grants every GRANTS_EVERY seconds into BLOCKED."""
-    while True:
-        if (services.cfg.settings.plugins.get(p.id) or {}).get("url"):
-            try:
-                with anyio.fail_after(GRANTS_SECONDS * 2):
-                    _block(await _off(services))
-            except Exception:           # the Mac does not answer: its servers say so
-                pass
-        await anyio.sleep(GRANTS_EVERY)

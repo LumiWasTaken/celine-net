@@ -8,4 +8,6 @@ give you its tools: macscreen, macshell, macbrowser and macfiles (this one).
 
 macfiles is the MCP filesystem server, on the whole disk of your Mac. read_media_file
 attaches the file to this conversation, any kind of file, for {{username}} to open and
-for you to see when it is a picture.
+for you to see when it is a picture. While Full Disk Access is off, a call into a
+protected folder (Desktop, Documents, Downloads and the like) waits for a click on the
+Mac's screen.

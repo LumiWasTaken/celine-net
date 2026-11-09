@@ -289,7 +289,7 @@ def test_the_schema_cleans_what_it_keeps():
             mail.validate(data)
         assert e.value.field == field
     assert mail.validate({"host": " ", "user": "me@x.y "}) == {"user": "me@x.y"}
-    assert services.validate({"browser": {"url": "  "}}) == {"browser": {}}
+    assert services.validate({"browser": {"url": "  "}}) == {"browser": {"url": ""}}, "cleared"
 
 
 async def test_a_broken_plugin_switched_on_keeps_the_app_up(tmp_path, monkeypatch, store):

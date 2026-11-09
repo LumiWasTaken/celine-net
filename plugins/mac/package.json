@@ -1,0 +1,10 @@
+{
+  "name": "celine-mac",
+  "private": true,
+  "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "1.0.0",
+    "@playwright/mcp": "0.0.84",
+    "@wonderwhy-er/desktop-commander": "0.3.1",
+    "supergateway": "4.2.1"
+  }
+}

@@ -1,4 +1,4 @@
-# Her own computer, a Mac: the four servers setup.sh runs behind its gateway, filled from
+# The agent's own computer, a Mac: the four servers setup.sh runs behind its gateway, filled from
 # the form (settings.toml): ${URL} is the Address, ${TOKEN} the Token; and its drones.
 id = "mac"
 label = "{{name}}'s Mac"
@@ -6,9 +6,12 @@ about = "{{name}}'s own Mac: its screen, a shell and its files, and a browser."
 off_when = "Turn it off if the Mac is off or nobody is logged in."
 group = "computer"
 choice = "Own computer"
+# its shell's commands show in Terminals (Commands) and its browser's calls in Browser
+# (History): those places stay on while the Mac is set up, without a shellbox or a browser box
+places = ["terminals", "browser"]
 routes = ["gateway:router"]
 run = "gateway:run"
-open = ["GET /setup.sh", "GET /setup/{token}", "POST /gateway", "POST /events"]   # the Mac reaches these without a session
+open = ["GET /setup.sh", "GET /package.json", "GET /package-lock.json", "GET /setup/{token}", "POST /gateway", "POST /events"]   # the Mac reaches these without a session
 
 # The device "mac" for drones (server/celine/sub_agents/drone.py): opencode serve at the
 # Agents address, its password the Token; its model calls come to the app's model proxy
@@ -16,7 +19,7 @@ open = ["GET /setup.sh", "GET /setup/{token}", "POST /gateway", "POST /events"] 
 [drones]
 url      = "${AGENTS}"
 password = "${TOKEN}"
-share    = "${SHARE}"           # share.js (setup.sh): her shares of its ports and files, shares.py
+share    = "${SHARE}"           # share.js (setup.sh): the agent's shares of its ports and files, shares.py
 key      = "link"
 label    = "{{name}}'s Mac"
 about    = "${ABOUT}"           # what setup.sh reported of the Mac (gateway.py about)
@@ -38,7 +41,7 @@ see          = "Looked at the screen of the Mac"
 image        = "Took a screenshot on the Mac"
 capture      = "Recorded the screen of the Mac"
 inspect_ui   = "Read the windows of the Mac"
-analyze      = "Asked \"{question}\" about a picture on the Mac"
+analyze      = "Asked \"{question}\" about an image on the Mac"
 verify_state = "Checked the screen of the Mac"
 click        = "Clicked {query} on the Mac"
 type         = "Typed \"{text}\" on the Mac"
@@ -96,7 +99,9 @@ enabled   = true
 transport = "http"
 url       = "${URL}/shell/mcp"
 sends     = "house"
-outside   = "shell"             # her own output: outside only as her box's shell's is
+outside   = "shell"             # its own output: outside only as its box's shell's is
+place     = "terminals"         # Terminals, Commands: what it ran and what it typed
+place_tools = ["start_process", "interact_with_process"]
 
 [servers.macshell.headers]
 Authorization = "Bearer ${TOKEN}"
@@ -160,63 +165,64 @@ enabled   = true
 transport = "http"
 url       = "${URL}/browser/mcp"
 sends     = "public"
+place     = "browser"           # Browser, History: every call of its words
 
 [servers.macbrowser.headers]
 Authorization = "Bearer ${TOKEN}"
 
 [servers.macbrowser.words]
-browser_navigate         = "Opened {url|a page} in Chrome on the Mac"
-browser_navigate_back    = "Went back in Chrome on the Mac"
-browser_click            = "Clicked {element} in Chrome on the Mac"
-browser_type             = "Typed \"{text}\" in Chrome on the Mac"
-browser_fill_form        = "Filled in a form in Chrome on the Mac"
-browser_select_option    = "Chose an option in Chrome on the Mac"
-browser_hover            = "Hovered over {element} in Chrome on the Mac"
-browser_drag             = "Dragged in Chrome on the Mac"
-browser_drop             = "Dropped {paths|something} in Chrome on the Mac"
-browser_press_key        = "Pressed {key} in Chrome on the Mac"
-browser_find             = "Looked for \"{text}\" in Chrome on the Mac"
-browser_snapshot         = "Read the page in Chrome on the Mac"
-browser_take_screenshot  = "Took a screenshot of Chrome on the Mac"
-browser_wait_for         = "Waited in Chrome on the Mac"
-browser_tabs             = "Used the tabs of Chrome on the Mac"
-browser_close            = "Closed the page in Chrome on the Mac"
-browser_resize           = "Resized Chrome on the Mac"
-browser_emulate_media    = "Changed the page display settings in Chrome on the Mac"
-browser_evaluate         = "Ran a script in Chrome on the Mac"
-browser_run_code_unsafe  = "Ran code in Chrome on the Mac"
-browser_handle_dialog    = "Answered a dialog in Chrome on the Mac"
-browser_file_upload      = "Uploaded {paths|a file} in Chrome on the Mac"
-browser_console_messages = "Read the console of Chrome on the Mac"
-browser_network_requests = "Read the network requests of Chrome on the Mac"
-browser_network_request  = "Read a network request of Chrome on the Mac"
+browser_navigate         = "Opened {url|a page} in a browser on the Mac"
+browser_navigate_back    = "Went back in a browser on the Mac"
+browser_click            = "Clicked {element} in a browser on the Mac"
+browser_type             = "Typed \"{text}\" in a browser on the Mac"
+browser_fill_form        = "Filled in a form in a browser on the Mac"
+browser_select_option    = "Chose an option in a browser on the Mac"
+browser_hover            = "Hovered over {element} in a browser on the Mac"
+browser_drag             = "Dragged in a browser on the Mac"
+browser_drop             = "Dropped {paths|something} in a browser on the Mac"
+browser_press_key        = "Pressed {key} in a browser on the Mac"
+browser_find             = "Looked for \"{text}\" in a browser on the Mac"
+browser_snapshot         = "Read the page in a browser on the Mac"
+browser_take_screenshot  = "Took a screenshot of a browser on the Mac"
+browser_wait_for         = "Waited in a browser on the Mac"
+browser_tabs             = "Used the tabs of a browser on the Mac"
+browser_close            = "Closed the page in a browser on the Mac"
+browser_resize           = "Resized a browser on the Mac"
+browser_emulate_media    = "Changed the page display settings in a browser on the Mac"
+browser_evaluate         = "Ran a script in a browser on the Mac"
+browser_run_code_unsafe  = "Ran code in a browser on the Mac"
+browser_handle_dialog    = "Answered a dialog in a browser on the Mac"
+browser_file_upload      = "Uploaded {paths|a file} in a browser on the Mac"
+browser_console_messages = "Read the console of a browser on the Mac"
+browser_network_requests = "Read the network requests of a browser on the Mac"
+browser_network_request  = "Read a network request of a browser on the Mac"
 
 [servers.macbrowser.groups]
-browser_navigate         = "Used Chrome on the Mac {n} times"
-browser_navigate_back    = "Used Chrome on the Mac {n} times"
-browser_click            = "Used Chrome on the Mac {n} times"
-browser_type             = "Used Chrome on the Mac {n} times"
-browser_fill_form        = "Used Chrome on the Mac {n} times"
-browser_select_option    = "Used Chrome on the Mac {n} times"
-browser_hover            = "Used Chrome on the Mac {n} times"
-browser_drag             = "Used Chrome on the Mac {n} times"
-browser_drop             = "Used Chrome on the Mac {n} times"
-browser_press_key        = "Used Chrome on the Mac {n} times"
-browser_find             = "Used Chrome on the Mac {n} times"
-browser_snapshot         = "Used Chrome on the Mac {n} times"
-browser_take_screenshot  = "Used Chrome on the Mac {n} times"
-browser_wait_for         = "Used Chrome on the Mac {n} times"
-browser_tabs             = "Used Chrome on the Mac {n} times"
-browser_close            = "Used Chrome on the Mac {n} times"
-browser_resize           = "Used Chrome on the Mac {n} times"
-browser_emulate_media    = "Used Chrome on the Mac {n} times"
-browser_evaluate         = "Used Chrome on the Mac {n} times"
-browser_run_code_unsafe  = "Used Chrome on the Mac {n} times"
-browser_handle_dialog    = "Used Chrome on the Mac {n} times"
-browser_file_upload      = "Used Chrome on the Mac {n} times"
-browser_console_messages = "Used Chrome on the Mac {n} times"
-browser_network_requests = "Used Chrome on the Mac {n} times"
-browser_network_request  = "Used Chrome on the Mac {n} times"
+browser_navigate         = "Used a browser on the Mac {n} times"
+browser_navigate_back    = "Used a browser on the Mac {n} times"
+browser_click            = "Used a browser on the Mac {n} times"
+browser_type             = "Used a browser on the Mac {n} times"
+browser_fill_form        = "Used a browser on the Mac {n} times"
+browser_select_option    = "Used a browser on the Mac {n} times"
+browser_hover            = "Used a browser on the Mac {n} times"
+browser_drag             = "Used a browser on the Mac {n} times"
+browser_drop             = "Used a browser on the Mac {n} times"
+browser_press_key        = "Used a browser on the Mac {n} times"
+browser_find             = "Used a browser on the Mac {n} times"
+browser_snapshot         = "Used a browser on the Mac {n} times"
+browser_take_screenshot  = "Used a browser on the Mac {n} times"
+browser_wait_for         = "Used a browser on the Mac {n} times"
+browser_tabs             = "Used a browser on the Mac {n} times"
+browser_close            = "Used a browser on the Mac {n} times"
+browser_resize           = "Used a browser on the Mac {n} times"
+browser_emulate_media    = "Used a browser on the Mac {n} times"
+browser_evaluate         = "Used a browser on the Mac {n} times"
+browser_run_code_unsafe  = "Used a browser on the Mac {n} times"
+browser_handle_dialog    = "Used a browser on the Mac {n} times"
+browser_file_upload      = "Used a browser on the Mac {n} times"
+browser_console_messages = "Used a browser on the Mac {n} times"
+browser_network_requests = "Used a browser on the Mac {n} times"
+browser_network_request  = "Used a browser on the Mac {n} times"
 
 [servers.macfiles]                # the MCP filesystem server: its files, any file into the chat
 enabled   = true

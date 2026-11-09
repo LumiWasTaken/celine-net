@@ -8,7 +8,9 @@ var/secrets/<id>.<key>.key.
   `features.changed` says when that changes). While it runs, its `copies =
   "module:function"` (services, plugin) -> {key: text} fills its `copy` fields; a
   `note` among them is the form's note, an `address` puts `address: true` in the view:
-  the app's own address (settings/address.py, GET/PUT /api/address) belongs on it now.
+  the app's own address (settings/address.py, GET/PUT /api/address) belongs on it now;
+  `hide` [action ids] leaves those actions out, `badges` {action id: words} gives an action
+  a badge (an update waits) with those words.
   A `filled` field (settings/form.py) is not in the view and not in a PUT.
 - PUT /api/forms/{id} {values, secrets?} with If-Match -> the same view. `values` is the
   whole object (a key left out goes back to its default). A secret is set by a string,
@@ -52,10 +54,12 @@ async def _view(request: Request, response: Response, p: Plugin) -> dict[str, An
     note = copies.pop("note", None) or p.form.get("note")
     ask = copies.pop("address", None)
     hide = set(copies.pop("hide", ()))      # actions that do nothing now (the plugin says)
+    badges = copies.pop("badges", {})
     shown = {k: copies.pop(k) for k in ("facts", "lines") if copies.get(k)}
     out = {**form.view(p.id, p.form["fields"], saved, s.secrets_root, copies),
-           "actions": form.actions_view([a for a in p.form.get("actions", [])
-                                         if a["id"] not in hide]),
+           "actions": [{**a, "badge": badges[a["id"]]} if a["id"] in badges else a
+                       for a in form.actions_view([a for a in p.form.get("actions", [])
+                                                   if a["id"] not in hide])],
            "version": etag(response, version(saves.form_version(s, p))),
            "saved": bool(s.saved.get(p.id)),
            "running": p.data is not None}
