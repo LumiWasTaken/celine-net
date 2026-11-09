@@ -323,6 +323,9 @@ class Supervisor:
         return next((s for s in self.skills.values() if s.cfg.kb == kb_id), None)
 
     def _register(self, skill: McpSkill, tools: list[dict[str, Any]]) -> None:
+        """Its tools by name, as the cache lists them (cached_tools) and as every
+        other skill's are (skills.collect): the same list before and after it connects."""
+        tools = sorted(tools, key=lambda t: t["name"])
         offered = tools
         if skill.cfg.kb:
             offered = [t for t in tools if _hints(t).read_only]

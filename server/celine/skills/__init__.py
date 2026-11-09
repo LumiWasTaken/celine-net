@@ -415,10 +415,11 @@ class Registry:
         self.add_specs(skill, collect(skill))
 
     def add_specs(self, skill: Any, specs: list[ToolSpec]) -> None:
-        """Replace one skill's tools wholesale, in the place its tools had: the tool list
-        of a request keeps its order through a reload or a reconnect, so the server's
-        cached prompt holds. The dict is rebuilt, never mutated under a turn that is
-        iterating it."""
+        """Replace one skill's tools wholesale. Skills and tools then stand in one fixed
+        order (`_rank`), whatever the order they were registered in: a skill switched
+        off and on, an MCP server that reconnects and a restart all give a request the
+        same tool list, so the server's cached prompt holds. The dicts are rebuilt,
+        never mutated under a turn that is iterating them."""
         self.skills[skill.name] = skill
         mine: dict[str, ToolSpec] = {}
         for spec in specs:
@@ -436,7 +437,17 @@ class Registry:
             elif mine:                  # its first old tool: its new ones go here
                 tools.update(mine)
                 mine = {}
-        self.tools = {**tools, **mine}
+        rank = self._rank()
+        at = lambda name: rank.get(name, len(rank))     # noqa: E731
+        self.skills = dict(sorted(self.skills.items(), key=lambda kv: at(kv[0])))
+        self.tools = dict(sorted({**tools, **mine}.items(), key=lambda kv: at(kv[1].skill)))
+
+    def _rank(self) -> dict[str, int]:
+        """Each skill's place: the built-in and plugin skills as `build` makes them, the
+        `skills` skill, then the MCP servers as the config lists them. A skill outside
+        these (a test's) follows, in the order it was registered (the sort is stable)."""
+        order = [*names(), META, *(getattr(self.cfg, "mcp", None) or {})]
+        return {name: i for i, name in enumerate(dict.fromkeys(order))}
 
     def remove(self, name: str) -> None:
         self.skills.pop(name, None)

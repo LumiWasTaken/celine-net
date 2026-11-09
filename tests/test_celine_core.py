@@ -303,3 +303,32 @@ def test_a_skill_registered_again_keeps_its_place_in_the_tool_list():
     reg.add_specs(A(), [])
     reg.add(A())
     assert list(reg.tools) == ["b__two", "a__one"], "a skill that had no tools goes last"
+
+
+def test_skills_and_tools_stand_in_one_order_whatever_order_they_were_registered_in(cfg):
+    """A skill switched off and on, an MCP server that reconnects and a restart register
+    in different orders; a request's tool list is the same after each."""
+    def skill(name):
+        class S:
+            description = name
+
+            @tool()
+            async def run(self, ctx) -> ToolResult:
+                """run"""
+                return ToolResult(content="1")
+        S.name = name
+        return S()
+
+    cfg.mcp = {"github": None, "calendar": None}
+    want = ["notebook__run", "web__run", "github__run", "calendar__run"]
+    for order in (["notebook", "web", "github", "calendar"],
+                  ["calendar", "web", "github", "notebook"]):
+        reg = Registry(cfg)
+        for name in order:
+            reg.add(skill(name))
+        assert list(reg.tools) == want and list(reg.skills) == [w[:-5] for w in want]
+    reg.remove("web")                       # switched off, then on again
+    reg.add(skill("web"))
+    reg.remove("github")                    # its server went away and came back
+    reg.add(skill("github"))
+    assert list(reg.tools) == want
