@@ -39,6 +39,7 @@ from typing import Any, Iterator
 
 from .importers import ImportContext, Unreachable
 from ..core.ids import now_ms
+from ..errors import answered, said
 from .documents import sha256_file
 from .media import media_dir
 
@@ -510,9 +511,11 @@ def _download(kb, link, m: dict[str, Any], direct_path: str | None = None
     if r.status_code in (404, 410):
         return "gone", EXPIRED
     if r.status_code == 413:
-        return "failed", r.json().get("error") or "too large"
-    if r.status_code != 200 or not r.content:
-        return "failed", f"{r.status_code} {r.text}"
+        return "failed", said(r.content).text or "too large"
+    if r.status_code != 200:
+        return "failed", answered("The WhatsApp connection", r)
+    if not r.content:
+        return "failed", "The WhatsApp connection sent an empty file."
     data = r.content
     sha = hashlib.sha256(data).hexdigest()
     if m["file_hash"] and sha != m["file_hash"]:
@@ -541,10 +544,10 @@ def request_media_retry(kb, settings, m: dict[str, Any], *, link) -> None:
             "is_group": m["chat_kind"] == "group" or str(m["chat"]).endswith("@g.us"),
             "sender": "" if m["from_me"] else (m["sender"] or ""),
             "media_key": m["media_key"]}
-    code, data = link.request_sync("POST", "/admin/media/retry", body)
-    if code != 202:
-        raise RuntimeError(f"The WhatsApp connection refused the attachment retry ({code}): "
-                           f"{(data or {}).get('error') or ''}".strip())
+    r = link.raw_sync("POST", "/admin/media/retry", body, timeout=30.0)
+    if r.status_code != 202:
+        raise RuntimeError(f"The WhatsApp connection refused the attachment retry "
+                           f"({r.status_code}): {said(r.content, r.status_code).text}")
 
 
 def _retry_answers(link) -> dict[str, dict[str, Any]]:

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import anyio
 import httpx
 
+from ..errors import said
 from ..settings import services as services_mod
 from ..core.event_types import BROWSER_STATE
 
@@ -24,11 +25,12 @@ EVERY = 5                     # seconds between two looks for the pages
 
 
 class BrowserRefused(Exception):
-    """The box said no: its HTTP status and facts, {"error": code, ...}."""
+    """The box said no: its HTTP status and facts, {"error": code, ...}; `words`: what
+    its answer said (errors.said), for a code the skill has no sentence for."""
 
-    def __init__(self, status: int, facts: dict):
+    def __init__(self, status: int, facts: dict, words: str = ""):
         super().__init__(f"{status} {facts.get('error')}")
-        self.status, self.facts = status, facts
+        self.status, self.facts, self.words = status, facts, words
 
 
 def url(cfg) -> str:
@@ -47,7 +49,7 @@ def _facts(r: httpx.Response) -> dict:
     if not isinstance(data, dict):
         data = {}
     if r.status_code != 200:
-        raise BrowserRefused(r.status_code, data)
+        raise BrowserRefused(r.status_code, data, said(r.content, r.status_code).text)
     return data
 
 
@@ -150,8 +152,8 @@ async def probe(cfg, services) -> dict[str, str]:
     up; Brave down or starting is missing with browserd's reason. No saved address: the
     default one is tried, and an answer comes back with `url`, the address the setup form
     prefills."""
-    from ..errors import (bad_key, her_bad_key, her_not_set_up, her_unreachable,
-                          not_set_up, unreachable_words)
+    from ..errors import (bad_key, agent_bad_key, agent_not_set_up, agent_unreachable,
+                          not_set_up)
     saved = url(cfg)
     at = saved or services_mod.default("browser")
     host = urlsplit(at).netloc
@@ -162,19 +164,18 @@ async def probe(cfg, services) -> dict[str, str]:
     except httpx.HTTPError as e:
         if not saved:
             return {"state": "unset", "detail": not_set_up("the browser"),
-                    "why": her_not_set_up("the browser")}
-        return {"state": "missing", "detail": unreachable_words("the browser", at, e),
-                "why": her_unreachable("the browser", at)}
+                    "why": agent_not_set_up("the browser")}
+        return {"state": "missing", "detail": services_mod.unreachable("the browser", at, e, "browser"),
+                "why": agent_unreachable("the browser", at)}
     except BrowserRefused as e:
         if e.status in (401, 403):
             return {"state": "missing", "detail": bad_key("the browser", at),
-                    "why": her_bad_key("the browser", at), "key": True, **found}
-        return {"state": "missing", "detail": f"The browser at {host} answered with error {e.status}. Check the "
-                                               f"address, or restart the browser container.",
-                **found}
+                    "why": agent_bad_key("the browser", at), "key": True, **found}
+        return {"state": "missing", "detail": f"The browser at {host} returned {e.status}: "
+                                              f"{e.words}", **found}
     if now.get("state") != "up":
         why = now.get("reason") or f"it is {now.get('state') or 'down'}"
-        return {"state": "missing", "detail": f"The browser box answers at {host} but Brave "
+        return {"state": "missing", "detail": f"The browser answers at {host} but Brave "
                                               f"is not running: {why}.", **found}
     if saved:
         return {"state": "ready", "detail": f"The browser at {host} answers."}

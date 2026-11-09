@@ -9,17 +9,21 @@ runs on exactly its first model: when it fails, the
 call fails with its error, and nothing waits for another model. When that model's
 provider is seen down (backends/router.py), its state is asked for once more (2 s at
 most, the state may be stale) and the call fails with the provider's sentence only
-when it is still down. Only background work
-(schedules, sub-agents, compaction, titles, summaries, captions, every aux role) walks
-its task's list.
+when it is still down. A Routine's run (its turns and its sub-agents', at any depth:
+schedules/runs.binding) runs on exactly its first model too: it waits for a busy
+provider and for its provider's hour, and when its model cannot answer the run waits
+for it and continues the failed turn (schedules/runs.py). Everything else (trigger and
+job turns, sub-agents outside a run, compaction, titles, summaries, captions, every aux
+role) walks its task's list.
 
 A busy provider (HTTP 429, 503 or 529) or a model that could not be loaded fails a call
 the user waits on (priority interactive) with code `busy`: the chat offers Switch
 provider and Keep waiting. Keep waiting (`keep_waiting`, a turn continued with
 `wait`) runs that one model and waits like background work does, until Stop; so does
 every model call made for that turn (a tool's vision, Writing or models__ask call, bound
-with the turn's id). A wait for a model stops the turn's clock and the
-time limit of the tool that waits (TOOL_CLOCKS).
+with the turn's id). A wait for a model stops the turn's clock, the
+time limit of the tool that waits (TOOL_CLOCKS) and the time limit of the Routine's run
+it belongs to (`run_clock`, a HeldClock: concurrent waits of one run count once).
 
 Priority belongs to the caller: the user's turn is interactive, trigger and job turns
 are agent, titles, descriptions and captions are background.
@@ -28,8 +32,8 @@ When no model of the task can answer (a call with fallback):
 - an interactive or agent call waits: it says so once ("waiting" with reason
   `no_model` and the sentence why), and continues once a model can answer (a provider
   comes back, a setting changes) when the wait stayed under MODEL_WAIT_FRESH. A longer
-  wait ends the call with a retryable error ("The model came back after N minutes; the
-  turn's request is stale."): the request was built when the turn began, its clock
+  wait ends the call with a retryable error ("The model is back, but the turn's request
+  is stale."): the request was built when the turn began, its clock
   line with it, and the runner ends the turn failed and retryable (Regenerate builds a
   new one). Stop ends the wait at once. The time spent waiting does not count against
   the turn's wall clock.
@@ -38,13 +42,17 @@ When no model of the task can answer (a call with fallback):
 
 A request that gets no event for FIRST_EVENT seconds fails with "produced nothing"
 (`_next`): the HTTP read timeout never trips on a server that sends keepalives or
-empty chunks. While llama-swap shows the model starting, and once it shows it loaded,
-the deadline starts again (`_watch_load`), so a cold load is not cut.
+empty chunks. On a server that says what it has loaded, a request for a model it did
+not list says "loading" once; at FIRST_EVENT with no event the server is asked once,
+strict (`_first_event`): while it shows the model starting, and once when it shows it
+loaded (the prompt is being read), the deadline moves FIRST_EVENT on, so a cold load is
+not cut. Nothing polls the server while a request waits.
 
 A failure before the first token is recorded on the router: the provider is
 unreachable (the connection failed, or a proxy in front of it answered 502), the model
-could not be loaded (llama-swap was starting it, or said the start failed), or the
-model answered with an error. Nothing is remembered on a timer.
+could not be loaded (the server said the start failed), or the model answered with an
+error. A first token says the model answers (router.note_ok), and after a load one
+probe learns what the server has loaded now. Nothing is remembered on a timer.
 
 Every other call treats a busy provider as no failure and never moves to the next
 model: it waits and asks the same model again, as often as it takes, until Stop. A Keep
@@ -66,8 +74,17 @@ the scheduler. It waits until no request of this app runs there and holds new on
 endpoint when the image is done, stopped or failed. Clients of llama-swap outside this
 app are not held.
 
+A provider's Requests per hour (`max_per_hour`, 0 none) counts each request to that
+provider as it is about to wait for its slot (Router.take, keyed by the provider). A
+call with a fallback passes over a provider that used its hour to the next model of its
+list (Router.order). A call left with only models whose provider is over it: one the
+user waits on fails with code `busy` and the sentence "<provider> reached its <n>
+requests this hour."; any other waits, holding no slot, until the hour has room
+("waiting" with reason `busy`).
+
 Config: `[queue]` in config/llm.toml (how long a call waits for a slot), the providers
-and task models in Settings (slots per model, `max_concurrent` per provider).
+and task models in Settings (slots per model, `max_concurrent` and `max_per_hour` per
+provider).
 """
 from __future__ import annotations
 
@@ -83,6 +100,7 @@ import anyio
 import httpx
 
 from .. import metrics
+from ..core.ids import reached
 from .base import BackendError, Done
 from .openai import has_images
 from .queue import Position, Priority, QueueCancelled, Scheduler, Ticket
@@ -96,7 +114,7 @@ QUEUE_KEYS = {              # config/llm.toml [queue]: here and backends/queue.p
 
 log = logging.getLogger("celine.llm")
 
-LOAD_POLL = 1.0          # seconds between /running looks while a model loads
+UNLOAD_POLL = 0.5        # seconds between /running looks while a lease unloads
 RECHECK = 5.0            # a call waiting for a model looks again this often
 UNLOAD_SECONDS = 60.0    # the most a lease waits for llama-swap to unload its models
 RETRY_AFTER = 10.0       # seconds before a busy model is asked again, no Retry-After
@@ -118,20 +136,53 @@ TOOL_CLOCKS: contextvars.ContextVar[tuple] = contextvars.ContextVar("tool_clocks
                                                                     default=())
 
 
+class HeldClock:
+    """A time limit that stands still while any work under it waits for a model: a
+    Routine's run, whose turns, sub-agents and reviewer may wait at the same time.
+    `deadline` moves on by the union of the waits, so overlapping waits count once.
+    `now` gives the time in the deadline's own terms (the scheduler's clock), `limit`
+    in the same terms (a timedelta for a datetime clock)."""
+
+    def __init__(self, limit, now: Callable[[], Any]):
+        self.now = now
+        self.deadline = now() + limit
+        self._held = 0
+        self._since = None
+
+    def hold(self) -> None:
+        if self._held == 0:
+            self._since = self.now()
+        self._held += 1
+
+    def release(self) -> None:
+        self._held -= 1
+        if self._held == 0:
+            self.deadline += self.now() - self._since
+
+    def left(self):
+        """The time to the deadline (negative once past it); None while a wait holds it."""
+        return None if self._held else self.deadline - self.now()
+
+
 @contextlib.contextmanager
-def paused(clock):
+def paused(clock, run: HeldClock | None = None):
     """Time spent waiting for a model is not its work: while inside, `clock` (a turn's)
-    and the running tools' limits do not run, and they end that much later after."""
+    and the running tools' limits do not run, and they end that much later after; a
+    run's clock (`run`) is held for the time (HeldClock)."""
     clocks = [c for c in (clock, *TOOL_CLOCKS.get()) if c is not None]
     t0, was = time.monotonic(), [c.deadline for c in clocks]
     for c in clocks:
         c.deadline = math.inf
+    if run is not None:
+        run.hold()
     try:
         yield
     finally:
         spent = time.monotonic() - t0
         for c, d in zip(clocks, was):
             c.deadline = d + spent
+        if run is not None:
+            run.release()
 
 
 def endpoint_key(backend) -> str:
@@ -184,6 +235,7 @@ class LLM:
                                    settings=lambda: self.queue)
         self.turn_priority: dict[str, Priority] = {}
         self.turn_clock: dict[str, Any] = {}       # a turn's wall clock, credited for waits
+        self.turn_run: dict[str, HeldClock] = {}   # a run's turn: the run's clock (HeldClock)
         self.turn_waits: dict[str, Any] = {}       # Keep waiting turns: their Stop token
 
     # ---- settings -------------------------------------------------------------------
@@ -258,7 +310,7 @@ class LLM:
              thinking: str | None = None, images=None,
              wait: float | None = None,
              voice: bool = True, fallback: bool = True, keep_waiting: bool = False,
-             label: str | None = None) -> "QueuedBackend":
+             label: str | None = None, run_clock: HeldClock | None = None) -> "QueuedBackend":
         """A backend for one task. `backend` given (a test double): that
         backend alone, queued but not routed. Else the task's models from Settings.
         `thinking`: the call's own level (settings/thinking.py), e.g. "off" for a
@@ -269,14 +321,19 @@ class LLM:
         waits on, exactly its first model. `keep_waiting`: the user chose Keep waiting,
         a busy provider is waited for (QueuedBackend._attempt). `label`: who the calls
         are for in the queue (the conversation's title, a schedule's name); else the
-        role's name. A call for a turn (`turn_id`: a tool's vision, Writing or
-        models__ask call) credits its waits to the turn's clock, and in a Keep waiting
-        turn it waits like the turn, until the turn's Stop."""
+        role's name. `run_clock`: the time limit of the Routine's run the calls belong
+        to, held while they wait for a model. A call for a turn (`turn_id`: a tool's
+        vision, Writing or models__ask call) credits its waits to the turn's clock and
+        its run's, and in a Keep waiting turn it waits like the turn, until the turn's
+        Stop."""
         if turn_id:
             self.turn_priority[turn_id] = priority
             if clock is not None:
                 self.turn_clock[turn_id] = clock
+            if run_clock is not None:
+                self.turn_run[turn_id] = run_clock
             clock = self.turn_clock.get(turn_id)
+            run_clock = self.turn_run.get(turn_id)
             if keep_waiting:
                 self.turn_waits[turn_id] = token
             elif turn_id in self.turn_waits:
@@ -288,11 +345,13 @@ class LLM:
                              lane=lane or conversation_id or turn_id or role,
                              clock=clock, body=body, thinking=thinking, images=images,
                              wait=wait, voice=voice, fallback=fallback,
-                             keep_waiting=keep_waiting, label=label or _role_label(role))
+                             keep_waiting=keep_waiting, label=label or _role_label(role),
+                             run_clock=run_clock)
 
     def forget_turn(self, turn_id: str) -> None:
         self.turn_priority.pop(turn_id, None)
         self.turn_clock.pop(turn_id, None)
+        self.turn_run.pop(turn_id, None)
         self.turn_waits.pop(turn_id, None)
 
     # ---- the GPU lease ----------------------------------------------------------------
@@ -314,9 +373,9 @@ class LLM:
                         priority=prio, lane=f"lease-{next(_leases)}", role=label,
                         label=label,
                         conversation_id=conversation_id, turn_id=turn_id, exclusive=True)
-        with paused(self.turn_clock.get(turn_id or "")):
-            await self.scheduler.acquire(ticket, timeout=self.wait_timeout(prio),
-                                         on_wait=on_wait)
+        with paused(self.turn_clock.get(turn_id or ""), self.turn_run.get(turn_id or "")):
+            await self.scheduler.acquire(ticket, timeout=self.wait_timeout(
+                prio, turn_id is not None), on_wait=on_wait)
         try:
             await self._unload(pid)
             yield
@@ -339,7 +398,7 @@ class LLM:
                 with anyio.move_on_after(UNLOAD_SECONDS) as waited:
                     while (await c.get(f"{root}/running", headers=headers)).json().get(
                             "running"):
-                        await anyio.sleep(LOAD_POLL / 2)
+                        await anyio.sleep(UNLOAD_POLL)
             log.info("models unloaded", extra={"event": "llm.unloaded", "provider": pid,
                                                 "complete": not waited.cancelled_caught})
         except (httpx.HTTPError, ValueError) as e:
@@ -347,13 +406,15 @@ class LLM:
                                              "error": str(e) or type(e).__name__})
         await self.router.probe(pid, max_age=0)
 
-    def wait_timeout(self, priority: Priority) -> float:
+    def wait_timeout(self, priority: Priority, turn: bool = False) -> float:
         """The most seconds a call of `priority` waits for a slot; 0: no limit. The user
-        waits on an interactive call: it waits as long as it takes."""
+        waits on an interactive call: it waits as long as it takes. A background call
+        for a turn (a Routine's run) waits like any turn; background_wait_seconds is for
+        the calls of no turn (titles, descriptions)."""
         q = self.queue
         if priority == Priority.INTERACTIVE:
             return 0.0
-        if priority == Priority.BACKGROUND:
+        if priority == Priority.BACKGROUND and not turn:
             return float(q.get("background_wait_seconds", 120))
         return float(q.get("wait_seconds", 0))
 
@@ -361,7 +422,7 @@ class LLM:
         if self.publish is not None:
             self.publish(snap)
 
-    def _note(self, ref: str, e: BackendError, loaded_then, saw_starting: bool) -> str:
+    def _note(self, ref: str, e: BackendError, loaded_then) -> str:
         """Record why `ref` failed before its first token. Returns the kind. A 502 is
         unreachable like a refused connection: a proxy answers it when the server behind
         it is down, and the probe (router._parse) says down for it too."""
@@ -370,7 +431,7 @@ class LLM:
         if getattr(e, "unreachable", False) or getattr(e, "status", None) == 502:
             self.router.note_unreachable(pid, msg)
             return "unreachable"
-        if saw_starting or any(w in msg.lower() for w in _LOAD_FAILED):
+        if any(w in msg.lower() for w in _LOAD_FAILED):
             self.router.note_failed(ref, "could_not_load", msg, loaded_then)
             return "could_not_load"
         self.router.note_failed(ref, "error", msg)
@@ -417,8 +478,9 @@ class QueuedBackend:
                  body: dict[str, Any] | None = None, thinking: str | None = None,
                  images=None, shared: dict | None = None, wait: float | None = None,
                  voice: bool = True, fallback: bool = True, keep_waiting: bool = False,
-                 label: str = ""):
+                 label: str = "", run_clock: HeldClock | None = None):
         self.llm = llm
+        self.run_clock = run_clock
         self.label = label
         self.fixed = fixed
         self.role = role
@@ -495,7 +557,8 @@ class QueuedBackend:
                              thinking=thinking or self.thinking, images=self.images,
                              shared=self._shared,
                              wait=self.wait, voice=self.voice, fallback=self.fallback,
-                             keep_waiting=self.keep_waiting, label=self.label)
+                             keep_waiting=self.keep_waiting, label=self.label,
+                             run_clock=self.run_clock)
 
     async def _send(self, payload: dict[str, Any]) -> None:
         if self.emit is None:
@@ -542,9 +605,8 @@ class QueuedBackend:
                 raise NoModel(f"This chat's model {pick} no longer exists. "
                               f"Pick another model for this chat.")
             ordered: Ordered = await router.order(self.role,
-                                                  conversation_id=self.conversation_id)
-            if only:
-                ordered = ordered.head()
+                                                  conversation_id=self.conversation_id,
+                                                  fallback=not only)
             todo = [r for r in ordered.refs if r not in failed_here]
             if not todo:
                 if last_error is not None:
@@ -586,9 +648,7 @@ class QueuedBackend:
                     time.monotonic() - waiting_since > MODEL_WAIT_FRESH:
                 # the request was built when the turn began (its clock line with it):
                 # the turn ends retryable and Regenerate builds a new one
-                mins = round((time.monotonic() - waiting_since) / 60)
-                raise BackendError(f"The model came back after {mins} minutes; the "
-                                   f"turn's request is stale.")
+                raise BackendError("The model is back, but the turn's request is stale.")
             head = ordered.chain[0] if ordered.chain else None
             head_why = dict(ordered.skipped).get(head, head_why)
             for ref in todo:
@@ -636,15 +696,15 @@ class QueuedBackend:
                 if self._interactive():
                     b.error.code = "busy"
                     raise b.error from None
-                await self._wait_busy(b.error, backend, tries)
+                await self._wait_busy(b.error, backend, ref, tries)
                 tries += 1
             finally:                        # a consumer that stops early frees the slot
                 await one.aclose()
 
     async def _wait(self, until: Callable[[], Awaitable[None]]) -> None:
         """Until `until` returns, or Stop. The wait is not counted against the turn's
-        wall clock."""
-        with paused(self.clock):
+        wall clock or its run's."""
+        with paused(self.clock, self.run_clock):
             async with anyio.create_task_group() as tg:
                 async def wake() -> None:
                     await until()
@@ -662,16 +722,37 @@ class QueuedBackend:
         """Until the router says something changed, a recheck is due, or Stop."""
         await self._wait(lambda: self.llm.router.wait_change(RECHECK))
 
-    async def _wait_busy(self, e: BackendError, backend, tries: int) -> None:
+    async def _wait_busy(self, e: BackendError, backend, ref: str | None,
+                         tries: int) -> None:
         """The provider's Retry-After (else RETRY_AFTER) for a Keep waiting turn, the
-        backoff after `tries` waits for background work; or Stop. The UI hears why."""
+        backoff after `tries` waits for background work; or Stop. The UI hears why, in
+        the provider's own words."""
+        from ..settings.agent_models import label
+        who = backend.model if ref is None or self.llm.router.s is None else \
+            label(self.llm.router.s, ref)
         await self._send({"state": "waiting", "reason": "busy",
-                          "message": f"Waiting for {backend.model}.",
+                          "message": f"Waiting for {who}. {e}",
                           "model": backend.model, "endpoint": provider_label(backend),
                           "priority": self.priority.name.lower()})
         secs = retry_after(e) if self.priority == Priority.INTERACTIVE else \
             backoff(e, tries, self.llm.cfg)
         await self._wait(lambda: anyio.sleep(secs))
+
+    async def _per_hour(self, pid: str, label: str, model: str) -> None:
+        """The request counted in provider `pid`'s Requests per hour. Over it, a call the
+        user waits on fails with code `busy` (Switch provider, Keep waiting); any other
+        waits, holding no slot, until the hour has room, or Stop."""
+        router = self.llm.router
+        while secs := router.take(pid):
+            full = reached(label, router.per_hour(pid))
+            if self._interactive():
+                e = BackendError(full)
+                e.code = "busy"
+                raise e
+            await self._send({"state": "waiting", "reason": "busy", "message": full,
+                              "model": model, "endpoint": label,
+                              "priority": self.priority.name.lower()})
+            await self._wait(lambda: anyio.sleep(secs))
 
     async def _one(self, backend, ref: str | None, messages, tools, *, head: str | None,
                    loaded_then, why: str | None = None):
@@ -686,6 +767,8 @@ class QueuedBackend:
             # before this model's slot: a description may need a model on the same server
             messages = await self._fit_images(messages, backend, ref)
         model = await self._model_for(backend, ref, messages, loaded_then)
+        if ref is not None:             # a test's fixed backend has no provider
+            await self._per_hour(ref.partition("/")[0], label, model)
         ticket = Ticket(endpoint=endpoint, model=model, priority=self.priority,
                         lane=self.lane, role=self.role, label=self.label,
                         conversation_id=self.conversation_id, turn_id=self.turn_id)
@@ -701,15 +784,18 @@ class QueuedBackend:
                               "holder": sched.holder(endpoint), **held})
 
         try:
-            with paused(self.clock):
+            with paused(self.clock, self.run_clock):
                 await sched.acquire(ticket, token=self.token,
-                                    timeout=self.llm.wait_timeout(self.priority)
+                                    timeout=self.llm.wait_timeout(
+                                        self.priority, self.turn_id is not None)
                                     if self.wait is None or self.priority == Priority.INTERACTIVE
                                     else self.wait, on_wait=on_wait)
         except BackendError as e:
             await self._send({"state": "left", "model": model, "endpoint": label,
                               "reason": "cancelled" if self._cancelled() else "timeout",
                               "message": str(e)})
+            metrics.MODEL_REQUESTS.labels(self.role, label, model, "cancelled"
+                                          if self._cancelled() else "queue_timeout").inc()
             raise
         metrics.QUEUE_WAIT.labels(self.role, label).observe(ticket.waited_ms / 1000)
         if self.llm.exclusive(endpoint) and sched.streak.get(endpoint) == (model, 1) \
@@ -732,6 +818,10 @@ class QueuedBackend:
                 log.info("model call on the next model", extra={
                     "event": "llm.fallback", "role": self.role, "model": model})
             # a model in the list without the tools capability gets no tool list
+            if ref is not None and loaded_then is not None and model not in loaded_then:
+                # the server said what it has loaded, and not this one: it loads it now
+                watch["starting"] = True
+                await self._send({"state": "loading", "model": model, "endpoint": label})
             sent = tools if backend.supports_tools else []
             self._shared["request"] = _request_of(backend, messages, sent, self.body, model)
             kw: dict[str, Any] = {"body": self.body} if self.body else {}
@@ -750,10 +840,8 @@ class QueuedBackend:
                         metrics.MODEL_FIRST_TOKEN.labels(self.role, label, model).observe(
                             self._shared["first_token"])
                     if not yielded and ref is not None:
-                        self.llm.router.note_ok(ref)
-                        # a load the watch saw start but not end (the first token came
-                        # first): timed to that token
-                        if watch["starting"] and not watch.get("timed"):
+                        self.llm.router.note_ok(ref, swapped=watch["starting"])
+                        if watch["starting"]:        # a load: timed to its first token
                             self.llm.router.note_load(f"{ref.partition('/')[0]}/{model}",
                                                       time.monotonic() - watch["t0"])
                     yielded = True
@@ -770,16 +858,19 @@ class QueuedBackend:
         except BackendError as e:
             if self._cancelled():
                 raise QueueCancelled("stopped") from None
-            outcome = "error"
+            outcome = e.code or ("busy" if busy(e) else "error")
             # a request the model cannot take (too long, an image) is the same for the
             # next one; a missing model, a rejected key, no credits are this model's
             if yielded or e.code in ("context_overflow", "unsupported_input"):
                 raise
-            if busy(e):                     # the model is fine: nothing to note
+            if busy(e):                     # the model answers again later: its words stay
+                if ref is not None:         # on it until its next first token (note_ok)
+                    self.llm.router.note_failed(ref, "busy", str(e))
                 raise _Busy(e) from None
             if ref is None:
                 raise
-            kind = self.llm._note(ref, e, loaded_then, watch["starting"])
+            kind = self.llm._note(ref, e, loaded_then)
+            outcome = e.code or kind
             raise _Moved(kind, e) from None
         finally:
             sched.release(ticket)
@@ -802,7 +893,7 @@ class QueuedBackend:
             return backend.model
         if has_images(messages):
             return twin
-        loaded = (await self.llm.router.probe(ref.partition("/")[0])).loaded \
+        loaded = self.llm.router.provider_state(ref.partition("/")[0]).loaded \
             if ref is not None else None
         return twin if twin in (loaded or loaded_then or ()) else backend.model
 
@@ -831,10 +922,13 @@ class QueuedBackend:
                     *, watching: bool):
         """The next event of `inner`, raced against the turn's Stop (the request is
         cancelled, not waited for). Before the first event (`watching`) the request has
-        FIRST_EVENT seconds to send one, else it fails with "produced nothing"; a model
-        llama-swap is still loading is announced as "loading" and gets the time
-        again (`_watch_load`)."""
+        FIRST_EVENT seconds to send one, else it fails with "produced nothing"; on a
+        server that says what it has loaded, it is asked once then (`_first_event`)."""
         out: dict[str, Any] = {}
+        lists = watching and ref is not None and \
+            self.llm.router.provider_state(ref.partition("/")[0]).loaded is not None
+        first = anyio.CancelScope(deadline=math.inf if lists or not watching
+                                  else anyio.current_time() + FIRST_EVENT)
         async with anyio.create_task_group() as tg:
             if self.token is not None:
                 async def stop() -> None:
@@ -842,20 +936,17 @@ class QueuedBackend:
                     out.setdefault("why", "stopped")
                     tg.cancel_scope.cancel()
                 tg.start_soon(stop)
-            if watching and ref is not None:
-                tg.start_soon(self._watch_load, model, ref, label, watch)
+            if lists:
+                tg.start_soon(self._first_event, model, ref, first)
             try:
-                with anyio.fail_after(FIRST_EVENT if watching else None) as first:
-                    watch["first"] = first
+                with first:
                     out["ev"] = await inner.__anext__()
             except StopAsyncIteration:
                 out["end"] = True
-            except TimeoutError as e:
-                out["err"] = BackendError(
-                    f"{model} produced nothing for {FIRST_EVENT:g} s.") \
-                    if first.cancelled_caught else e
             except Exception as e:          # raised after the group, unwrapped
                 out["err"] = e
+            if first.cancelled_caught:
+                out["err"] = BackendError(f"{model} produced nothing for {FIRST_EVENT:g} s.")
             tg.cancel_scope.cancel()
         if "ev" in out:
             return out["ev"]
@@ -865,29 +956,21 @@ class QueuedBackend:
             raise StopAsyncIteration
         raise QueueCancelled("stopped")
 
-    async def _watch_load(self, model: str, ref: str, label: str, watch: dict) -> None:
-        """While the request waits for its first event on llama-swap: say "loading"
-        once the server shows the model starting. The first-event deadline (`_next`)
-        starts again at every poll that shows the model starting, and once more when it
-        shows it loaded: a cold load takes what it takes, the server ends a failed one
-        with an error itself."""
-        router = self.llm.router
+    async def _first_event(self, model: str, ref: str, first: anyio.CancelScope) -> None:
+        """A request with no event for FIRST_EVENT seconds: its server is asked once,
+        strict. While it shows the model starting the request gets FIRST_EVENT more; once
+        it shows it loaded (the prompt is being read), once more; anything else ends the
+        request ("produced nothing"). A cold load takes what it takes, and a server that
+        fails a load ends the request with its error itself."""
         pid = ref.partition("/")[0]
-        if (router.provider(pid) or {}).get("kind") not in SWAPS:
-            return
+        reading = False
         while True:
-            await anyio.sleep(LOAD_POLL)
-            st = await router.probe(pid, max_age=LOAD_POLL / 2)
-            if model in (st.loaded or ()):
-                if watch["starting"] and not watch.get("timed"):   # a load we saw: to the poll
-                    watch["timed"] = True
-                    router.note_load(f"{pid}/{model}", time.monotonic() - watch["t0"])
-                watch["first"].deadline = anyio.current_time() + FIRST_EVENT
-                return                  # loaded: the prompt is being read
-            if model in st.starting:
-                watch["first"].deadline = anyio.current_time() + FIRST_EVENT
-                if not watch["starting"]:
-                    watch["starting"] = True
-                    await self._send({"state": "loading", "model": model,
-                                      "endpoint": label})
-
+            await anyio.sleep(FIRST_EVENT)
+            st = await self.llm.router.probe(pid, max_age=0, strict=True)
+            if st.reachable and model in st.starting:
+                continue
+            if st.reachable and model in (st.loaded or ()) and not reading:
+                reading = True
+                continue
+            first.cancel()
+            return

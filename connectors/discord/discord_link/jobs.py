@@ -37,7 +37,7 @@ def due_at(every_ms: float, *, last_ok: int | None, last_attempt: int | None,
 def sentence(e: BaseException) -> str:
     if isinstance(e, (Failed, Unreachable)):
         return str(e)
-    return f"The run stopped with an error ({type(e).__name__})."
+    return f"The sync stopped with an error ({type(e).__name__})."
 
 
 @dataclass

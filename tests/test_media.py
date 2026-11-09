@@ -8,6 +8,7 @@ import sqlite3
 from chat_fixtures import until_sync
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from celine.kb import KBs, media, media_wa
@@ -154,7 +155,7 @@ def test_a_download_names_its_size_and_a_refused_one_says_why(tmp_path):
     class Link:
         def raw_sync(self, method, path, body):
             sent.append(body)
-            return SimpleNamespace(status_code=413, content=b"", text="", json=lambda: {
+            return httpx.Response(413, json={
                 "error": "The file is larger than the connection downloads (100 MB)."})
     kb = ChatKB(id="whatsapp", title="w", platform="whatsapp", path=tmp_path / "w.db")
     m = {"id": 1, "direct_path": "/v/x", "media_key": "a2V5", "file_hash": None,
@@ -162,3 +163,14 @@ def test_a_download_names_its_size_and_a_refused_one_says_why(tmp_path):
     assert media_wa._download(kb, Link(), m) == (
         "failed", "The file is larger than the connection downloads (100 MB).")
     assert sent[0]["file_length"] == 2 << 30
+
+
+def test_a_failed_download_keeps_the_connections_words(tmp_path):
+    class Link:
+        def raw_sync(self, method, path, body):
+            return httpx.Response(500, text="media server: decrypt failed")
+    kb = ChatKB(id="whatsapp", title="w", platform="whatsapp", path=tmp_path / "w.db")
+    m = {"id": 1, "direct_path": "/v/x", "media_key": "a2V5", "file_hash": None,
+         "enc_file_hash": None, "mtype": "image", "mime": None, "file_size": 10}
+    assert media_wa._download(kb, Link(), m) == (
+        "failed", "The WhatsApp connection returned 500: media server: decrypt failed")

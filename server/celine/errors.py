@@ -90,6 +90,155 @@ def redact(text: str) -> str:
     return text
 
 
+# ---- what a server said ------------------------------------------------------------
+# One reader for every error answer the app gets from a server it calls (model
+# providers, ComfyUI, SearXNG, the boxes, MCP servers, speech): the server's own words,
+# whatever shape they come in, never dropped and never reworded. The caller's sentence
+# wraps them once ("5090 returned 503: The model server is paused. Retry later.").
+
+SAID_CAP = 400                  # characters of the server's words a sentence carries
+
+# the keys an error's words sit under, in the order they win
+_WORDS = ("message", "detail", "error_description", "msg", "reason", "description",
+          "title", "error", "errors", "status_message", "statusText")
+_KIND = ("type", "code", "status", "error_type")
+_LEAF = re.compile(r"error|message|detail|reason|description|msg", re.I)
+_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+_DROP = re.compile(r"<(script|style|head)[^>]*>.*?</\1>", re.I | re.S)
+_TAG = re.compile(r"<[^>]+>")
+
+
+@dataclass(frozen=True)
+class Said:
+    """What a server said in an error answer. `text`: its words on one line, masked,
+    at most SAID_CAP characters (its start and its end when longer); "" when it said
+    nothing. `kind`: the type or code it named, if any. `obj`: the error object itself
+    when the body was JSON, for the numbers a caller reads (n_ctx, n_prompt_tokens)."""
+    text: str
+    kind: str = ""
+    obj: dict | None = None
+
+
+def said(body: str | bytes | None, status: int | None = None) -> Said:
+    """The words of an error answer's body: a JSON error in any of the usual shapes
+    (OpenAI and every server that copies it, Anthropic, Ollama, FastAPI's detail,
+    RFC 9457 problem details, GraphQL's errors, OAuth's error_description, a JSON
+    string inside a message), else the first string under a key that names an error,
+    else the JSON itself; an HTML page's title, else its visible text; plain text as
+    it is. An empty body gives the status's reason phrase (503: "Service Unavailable")."""
+    if isinstance(body, bytes):
+        body = body.decode(errors="replace")
+    raw = (body or "").strip()
+    if not raw:
+        return Said(_phrase(status))
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = None
+    if isinstance(value, (dict, list)) and value:
+        text, kind, obj = _from_json(value)
+        return Said(_fit(text) or _phrase(status), kind, obj)
+    if isinstance(value, str):
+        return Said(_fit(value) or _phrase(status))
+    if isinstance(value, (dict, list)):                    # {} or []: it said nothing
+        return Said(_phrase(status))
+    if raw.startswith("<") or "<html" in raw[:500].lower():
+        return Said(_fit(_html(raw)) or _phrase(status))
+    return Said(_fit(raw))
+
+
+def answered(who: str, r) -> str:
+    """The one sentence for an error answer `r` (anything with status_code and content):
+    "ComfyUI at host returned 503: Service Unavailable"."""
+    words = said(r.content, r.status_code).text
+    return f"{who} returned {r.status_code}: {words}" if words else \
+        f"{who} returned {r.status_code}."
+
+
+def _phrase(status: int | None) -> str:
+    from http import HTTPStatus
+    try:
+        return HTTPStatus(int(status)).phrase if status else ""
+    except ValueError:
+        return ""
+
+
+def _fit(text: str) -> str:
+    """One line, masked, at most SAID_CAP characters: the start and the end of a longer
+    text (a server often names the cause last, after quoting what it was given)."""
+    text = redact(" ".join(str(text or "").split()))
+    if len(text) <= SAID_CAP:
+        return text
+    half = (SAID_CAP - 3) // 2
+    return f"{text[:half].rstrip()} … {text[-half:].lstrip()}"
+
+
+def _html(raw: str) -> str:
+    import html
+    if m := _TITLE.search(raw):
+        if title := " ".join(html.unescape(_TAG.sub(" ", m[1])).split()):
+            return title
+    return html.unescape(_TAG.sub(" ", _DROP.sub(" ", raw)))
+
+
+def _from_json(value, depth: int = 0) -> tuple[str, str, dict | None]:
+    """(words, kind, the error object) of a JSON error body."""
+    if depth > 6:
+        return "", "", None
+    if isinstance(value, list):
+        parts = [p for p in (_from_json(v, depth + 1) for v in value[:3]) if p[0]]
+        return ("; ".join(p[0] for p in parts), parts[0][1], parts[0][2]) if parts \
+            else ("", "", None)
+    if isinstance(value, str):
+        inner = _json_in(value)
+        return _from_json(inner, depth + 1) if inner is not None else (value, "", None)
+    if not isinstance(value, dict):
+        return "", "", None
+    kind = next((str(value[k]) for k in _KIND
+                 if isinstance(value.get(k), (str, int)) and value[k] not in ("", "error")), "")
+    title, detail = value.get("title"), value.get("detail")
+    if isinstance(title, str) and title and isinstance(detail, str) and detail:
+        return f"{title}: {detail}", kind, value           # RFC 9457 problem details
+    loc, msg = value.get("loc"), value.get("msg")
+    if isinstance(loc, list) and isinstance(msg, str):     # one pydantic detail item
+        return f"{'.'.join(map(str, loc))}: {msg}", kind, value
+    for key in _WORDS:
+        v = value.get(key)
+        if (isinstance(v, str) and v.strip()) or (isinstance(v, (dict, list)) and v):
+            words, k, obj = _from_json(v, depth + 1)
+            if words:
+                return words, k or kind, value if obj is None else obj
+    words = _leaf(value, depth) or json.dumps(value, ensure_ascii=False,
+                                              separators=(", ", ": "))
+    return words, kind, value
+
+
+def _leaf(value, depth: int) -> str:
+    """The first non-empty string under a key that names an error, anywhere in `value`."""
+    if depth > 6 or not isinstance(value, dict):
+        return ""
+    for k, v in value.items():
+        if isinstance(v, str) and v.strip() and _LEAF.search(str(k)):
+            return v
+    for v in value.values():
+        if isinstance(v, dict) and (found := _leaf(v, depth + 1)):
+            return found
+    return ""
+
+
+def _json_in(text: str):
+    """The JSON object or list a string holds (Ollama wraps llama.cpp's error object in
+    one), else None."""
+    t = text.strip()
+    if not t.startswith(("{", "[")):
+        return None
+    try:
+        inner = json.loads(t)
+    except ValueError:
+        return None
+    return inner if isinstance(inner, (dict, list)) else None
+
+
 @dataclass
 class CelineError(Exception):
     """An error with a code the UI knows how to place. `message` is shown to the user
@@ -146,7 +295,7 @@ class ForbiddenOrigin(CelineError):
                                              "Open the app at its own address.", 403)
 
 
-async def _as_hers(request: Request, text: str) -> str:
+async def _filled(request: Request, text: str) -> str:
     """A sentence still holding {{name}} and the like, filled in."""
     services = getattr(request.app.state, "services", None)
     cfg = getattr(services, "cfg", None)
@@ -171,10 +320,10 @@ def install_error_handler(app) -> None:
         body = exc.as_dict()
         err = body["error"]
         if "{{" in err["message"]:
-            err["message"] = await _as_hers(request, err["message"])
+            err["message"] = await _filled(request, err["message"])
         for k, v in (err.get("detail") or {}).items():
             if "{{" in v:
-                err["detail"][k] = await _as_hers(request, v)
+                err["detail"][k] = await _filled(request, v)
         return JSONResponse(body, status_code=exc.status)
 
     # A bad request body gets one short sentence: the first field and what is wrong with
@@ -218,7 +367,7 @@ def install_error_handler(app) -> None:
 # The shellbox, the browser, SearXNG and ComfyUI are services the app runs without. When one
 # has no address, does not answer or does not take the app's key, a page or probe says so in
 # the same plain sentence: the service, its address and what the user does about it. What
-# she reads (a tool result, the tail, me__whoami) is the her_ sentence: the fact alone.
+# the agent reads (a tool result, the tail, me__whoami) is the agent_ sentence: the fact alone.
 
 def _name(what: str) -> str:
     return f"{what[0].upper()}{what[1:]}"
@@ -230,8 +379,9 @@ def _host(url: str) -> str:
 
 
 def not_set_up(what: str) -> str:
-    """The box has no address: type one in Setup, or leave the feature off."""
-    return f"{_name(what)} has no address yet. Type one below, or leave it off."
+    """The box has no address. Shown in Setup beside its address field and elsewhere beside
+    Open Setup, so it names the fact alone."""
+    return f"{_name(what)} has no address yet."
 
 
 # a compose service's host name -> the profile in .env that starts it (docker-compose.yml)
@@ -240,7 +390,8 @@ PROFILES = {"shellbox": "shellbox", "browser": "browser", "searxng": "web"}
 
 def unreachable_words(what: str, url: str, e: Exception) -> str:
     """No answer from the box at `url`: refused, too slow or cut off. At a compose service's
-    own address, the way to start that container."""
+    own address, the way to start that container (settings.services.unreachable first names
+    a compose variable that points elsewhere)."""
     if not url:
         return not_set_up(what)
     from urllib.parse import urlsplit
@@ -252,17 +403,17 @@ def unreachable_words(what: str, url: str, e: Exception) -> str:
             f"address is right, then press Check.")
 
 
-def her_not_set_up(what: str) -> str:
+def agent_not_set_up(what: str) -> str:
     return f"{_name(what)} is not set up."
 
 
-def her_unreachable(what: str, url: str) -> str:
+def agent_unreachable(what: str, url: str) -> str:
     if not url:
-        return her_not_set_up(what)
+        return agent_not_set_up(what)
     return f"{_name(what)} at {_host(url)} does not answer."
 
 
-def her_bad_key(what: str, url: str) -> str:
+def agent_bad_key(what: str, url: str) -> str:
     return f"{_name(what)} at {_host(url)} does not take the app's key."
 
 

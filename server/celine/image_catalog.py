@@ -36,8 +36,9 @@ from typing import Any
 import anyio
 import httpx
 
-from .comfyui.presets import options
+from .comfyui.presets import ImageError, options
 from .comfyui.server import object_info
+from .errors import answered
 
 log = logging.getLogger("celine.image_catalog")
 
@@ -152,14 +153,18 @@ _cache: dict[str, Catalog] = {}
 
 async def load(base_url: str, headers: dict[str, str] | None = None, *,
                transport: httpx.AsyncBaseTransport | None = None) -> Catalog:
-    """The server's catalog, reused for TTL seconds."""
+    """The server's catalog, reused for TTL seconds. ImageError with the server's words
+    when it gives an error answer."""
     key = base_url.rstrip("/")
     hit = _cache.get(key)
     if hit is not None and time.monotonic() - hit.loaded < TTL:
         return hit
     async with httpx.AsyncClient(base_url=key, headers=headers or {}, timeout=TIMEOUT,
                                  transport=transport) as c:
-        names = {kind: await _names(c, *LOADERS[kind]) for kind in KINDS}
+        try:
+            names = {kind: await _names(c, *LOADERS[kind]) for kind in KINDS}
+        except httpx.HTTPStatusError as e:
+            raise ImageError(str(e)) from None
         lm, excluded = await _lora_manager(c)
         triggers = await _triggers(c, [n for n in names["lora"] if _key(n) in lm])
     out = []
@@ -189,12 +194,13 @@ def _key(name: str) -> str:
 
 
 async def _lm_get(c: httpx.AsyncClient, path: str, **params) -> dict | None:
-    """One LoRA-Manager answer; None when it is not installed (404). Any other failure
-    raises: httpx.HTTPStatusError, or ValueError for an answer that is not JSON."""
+    """One LoRA-Manager answer; None when it is not installed (404). Any other error
+    answer raises ImageError with its words; an answer that is not JSON, ValueError."""
     r = await c.get(path, params=params)
     if r.status_code == 404:
         return None
-    r.raise_for_status()
+    if r.is_error:
+        raise ImageError(answered(f"LoRA-Manager at {r.url.netloc.decode()}", r))
     return r.json() or {}
 
 

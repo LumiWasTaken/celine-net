@@ -20,15 +20,15 @@ from test_terminals_api import Daemon, _app, _client, term
 
 pytestmark = pytest.mark.anyio
 
-NOT_SET_UP = "The shellbox has no address yet. Type one below, or leave it off."
+NOT_SET_UP = "The shellbox has no address yet."
 REFUSED = ("The shellbox is not running. In the Celine folder, put shellbox in "
            "COMPOSE_PROFILES in .env and run docker compose up -d.")
 BAD_KEY = ("The shellbox at shellbox:8770 does not accept this app's key. Copy the key hash "
            "below into its key.hash file, then press Check.")
-# what she reads in a tool result: the fact, no field to type in
-HER_NOT_SET_UP = "The shellbox is not set up."
-HER_REFUSED = "The shellbox at shellbox:8770 does not answer."
-HER_BAD_KEY = "The shellbox at shellbox:8770 does not take the app's key. Tell Joe."
+# what the agent reads in a tool result: the fact, no field to type in
+AGENT_NOT_SET_UP = "The shellbox is not set up."
+AGENT_REFUSED = "The shellbox at shellbox:8770 does not answer."
+AGENT_BAD_KEY = "The shellbox at shellbox:8770 does not take the app's key. Tell Joe."
 
 
 @pytest.fixture
@@ -49,25 +49,25 @@ def shell(box, monkeypatch, stack_key):
 
 async def test_shell_without_an_address_is_down_with_the_variable_named(monkeypatch):
     sh = Shell(load())
-    assert (sh.status, sh.error) == ("down", HER_NOT_SET_UP)
+    assert (sh.status, sh.error) == ("down", AGENT_NOT_SET_UP)
     out = await sh.run(ctx(), terminal="main", command="ls")       # called anyway: no traceback, the reason
-    assert out.is_error and out.content == HER_NOT_SET_UP
+    assert out.is_error and out.content == AGENT_NOT_SET_UP
 
 
 async def test_shell_refused_wrong_key_and_timeout_each_get_one_sentence(shell, box):
     box.answers = [httpx.ConnectError("refused")]
     out = await shell.run(ctx(), terminal="main", command="ls")
-    assert out.is_error and out.content == HER_REFUSED and out.display["unreachable"]
+    assert out.is_error and out.content == AGENT_REFUSED and out.display["unreachable"]
 
     for status in (401, 403):
         box.answers = [(status, {"error": "unauthorized"})]
         out = await shell.run(ctx(), terminal="main", command="ls")
-        assert out.is_error and out.content == HER_BAD_KEY, status
+        assert out.is_error and out.content == AGENT_BAD_KEY, status
         assert shell.status == "up", "a key problem is said at the call, the tools stay"
 
     box.answers = [httpx.ReadTimeout("slow")]
     out = await shell.type(ctx(), text="ls", terminal="main")
-    assert out.is_error and out.content == HER_REFUSED
+    assert out.is_error and out.content == AGENT_REFUSED
 
     box.answers = [[{"progress": "x"}]]            # the stream ended without a result
     out = await shell.run(ctx(), terminal="main", command="ls")
@@ -122,16 +122,16 @@ async def test_a_dead_box_never_fails_an_upload_copy(tmp_path, monkeypatch):
 
 # ---- the browser --------------------------------------------------------------------------
 
-B_NOT_SET_UP = "The browser has no address yet. Type one below, or leave it off."
+B_NOT_SET_UP = "The browser has no address yet."
 B_REFUSED = ("The browser is not running. In the Celine folder, put browser in "
              "COMPOSE_PROFILES in .env and run docker compose up -d.")
-B_HER_NOT_SET_UP = "The browser is not set up."
-B_HER_REFUSED = "The browser at browser:8771 does not answer."
+B_AGENT_NOT_SET_UP = "The browser is not set up."
+B_AGENT_REFUSED = "The browser at browser:8771 does not answer."
 
 
 async def test_browser_without_an_address_is_down_with_the_variable_named(monkeypatch):
     b = Browser(SimpleNamespace(user="Joe", settings=SimpleNamespace(services={})))
-    assert (b.status, b.error) == ("down", B_HER_NOT_SET_UP)
+    assert (b.status, b.error) == ("down", B_AGENT_NOT_SET_UP)
     with pytest.raises(OSError, match="has no address"):
         await browser_sync.screen(b.cfg)
 
@@ -156,11 +156,11 @@ async def test_browser_refused_wrong_key_and_timeout_each_get_one_sentence(monke
 
     answers.append(httpx.ConnectError("refused"))
     out = await b.open(c, url="https://example.com", tab="main")
-    assert out.is_error and out.content == f"{B_HER_REFUSED} Tell Joe if it stays away."
+    assert out.is_error and out.content == f"{B_AGENT_REFUSED} Tell Joe if it stays away."
 
     answers.append(httpx.ReadTimeout("slow"))
     out = await b.open(c, url="https://example.com", tab="main")
-    assert out.content == f"{B_HER_REFUSED} Tell Joe if it stays away."
+    assert out.content == f"{B_AGENT_REFUSED} Tell Joe if it stays away."
 
     for status in (401, 403):
         answers.append(BrowserRefused(status, {"error": "unauthorized"}))

@@ -16,6 +16,7 @@ from .conversations import tree
 from .core.states import LIVE_SQL
 from .core.store import connect
 from .db.migrate import read_only, schema_version
+from .errors import answered
 
 
 def _say(ok: bool, text: str) -> bool:
@@ -47,7 +48,7 @@ def doctor(cfg: config_mod.Config) -> int:
             n = c.execute("SELECT count(*) FROM conversations").fetchone()[0]
             live = c.execute(f"SELECT count(*) FROM turns WHERE state IN {LIVE_SQL}"
                              ).fetchone()[0]
-            _say(True, f"{n} conversations, {live} turns live")
+            _say(True, f"{n} chats, {live} turns live")
     else:
         _say(True, "no database yet")
     free = shutil.disk_usage(cfg.data_dir if cfg.data_dir.exists() else Path.cwd()).free
@@ -106,7 +107,8 @@ def doctor(cfg: config_mod.Config) -> int:
                            timeout=30)
             ok = r.status_code == 200
             dims = len(r.json()["data"][0]["embedding"]) if ok else 0
-            good &= _say(ok, f"embeddings {ref} -> {f'{dims} dimensions' if ok else r.status_code}")
+            good &= _say(ok, f"embeddings {ref} -> {dims} dimensions" if ok
+                         else answered(f"embeddings {ref}", r))
         except (httpx.HTTPError, ValueError, KeyError) as e:
             good &= _say(False, f"embeddings {ref}: no answer within 30 s ({type(e).__name__})")
 
@@ -151,7 +153,8 @@ def _connector(s) -> tuple[bool, str]:
     except httpx.HTTPError:
         return False, f"{s.id}: the connection is not running at {s.url}"
     if r.status_code != 200:
-        return False, f"{s.id}: the connection answered {r.status_code} (is its clients file the app's keys/connector-clients?)"
+        return False, (f"{answered(f'{s.id}: the connection', r)} (is its clients file the "
+                       f"app's keys/connector-clients?)")
     conn = r.json().get("connection") or {}
     state = conn.get("state") or "unknown"
     return state != "needs_login", f"{s.id}: {state}" + (f", {conn['error']}"
@@ -206,13 +209,13 @@ def export(cfg: config_mod.Config, out: Path | None) -> Path:
             if src.exists():
                 (out / "blobs").mkdir(exist_ok=True)
                 shutil.copy2(src, out / "blobs" / b["sha256"])
-        from . import her
-        nb = her.notebook(cfg)              # the one notebook
+        from . import agent
+        nb = agent.notebook(cfg)              # the one notebook
         if nb.exists():
             shutil.copytree(nb, out / "notebook", dirs_exist_ok=True)
     finally:
         c.close()
-    print(f"exported {len(convs)} conversations to {out}", file=sys.stderr)
+    print(f"exported {len(convs)} chats to {out}", file=sys.stderr)
     return out
 
 

@@ -1,13 +1,16 @@
 """Cross-encoder reranking through an OpenAI-style `/v1/rerank` endpoint (llama-server
 `--reranking`, alone or behind llama-swap). The model is the first of the Reranking
-task in Settings that can answer now (backends/router.py). A reranker that fails never
-fails a search: the caller falls back to the fused order and says so."""
+task in Settings that can answer now (backends/router.py); each call counts in its
+provider's Requests per hour, and a call over it fails with the sentence. A reranker
+that fails never fails a search: the caller falls back to the fused order and says so."""
 from __future__ import annotations
 
 import time
 from typing import Protocol
 
 import httpx
+
+from ...errors import said
 
 
 class RerankError(Exception):
@@ -25,13 +28,14 @@ class HttpReranker:
 
     def __init__(self, url: str, model: str, *, key: str | None = None,
                  timeout: float = 60.0, max_chars: int = 2000,
-                 on_unreachable=None):
+                 on_unreachable=None, hour=None):
         self.url = url
         self.model = model
         self.key = key
         self.timeout = timeout
         self.max_chars = max_chars
         self.on_unreachable = on_unreachable
+        self.hour = hour        # None, or the sentence once its provider's hour is used up
         self.deadline: float | None = None       # set by the first call
 
     def score(self, query: str, docs: list[str]) -> list[float]:
@@ -44,6 +48,8 @@ class HttpReranker:
         left = self.deadline - now
         if left <= 0:
             raise RerankError(f"the reranker took over {self.timeout:g} s")
+        if self.hour is not None and (full := self.hour()):
+            raise RerankError(full)
         headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
         try:
             r = httpx.post(self.url, json={"model": self.model, "query": query,
@@ -59,7 +65,8 @@ class HttpReranker:
                 self.on_unreachable(e)
             raise RerankError(f"the reranker did not answer: {e}") from None
         if r.status_code >= 400:
-            raise RerankError(f"the reranker said {r.status_code}: {r.text[:200]}")
+            raise RerankError(f"the reranker said {r.status_code}: "
+                              f"{said(r.content, r.status_code).text}")
         out = [float("-inf")] * len(docs)
         for item in r.json().get("results", []):
             i = int(item["index"])
@@ -87,4 +94,5 @@ def from_config(cfg) -> Reranker | None:
     pid = ref.partition("/")[0]
     return HttpReranker(f"{b.base_url}/rerank", b.model, key=b.api_key,
                         on_unreachable=lambda e: router.note_unreachable(
-                            pid, router._unreachable_sentence(pid, e)))
+                            pid, router._unreachable_sentence(pid, e)),
+                        hour=lambda: router.full(pid) if router.take(pid) else None)

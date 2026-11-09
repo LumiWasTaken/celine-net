@@ -5,7 +5,7 @@ import json
 
 import httpx
 
-from .errors import CelineError
+from .errors import CelineError, answered
 from .settings.registry import ROLES, provider_headers
 
 MAX_RECORDING = 12_000_000
@@ -51,13 +51,20 @@ def client():
 
 async def call(cfg, direction: str, path: str, *, limit: int, **kw) -> tuple[bytes, str]:
     base, headers, _ = endpoint(cfg, direction)
+    from .backends.router import app_router
+    pid = cfg.settings.chain(ROLE[direction])[0].partition("/")[0]
+    router = app_router(cfg)
+    if router.take(pid):                        # its provider's Requests per hour
+        raise CelineError("speech_provider", router.full(pid), 429)
     try:
         async with client() as c:
             async with c.stream(kw.pop("method", "POST"), base + path, headers=headers, **kw) as r:
-                # Never forward error bodies or follow redirects: either can expose a key.
+                # Never follow redirects: one can expose a key. An error answer's words
+                # come through errors.said, which masks the known keys.
                 if not 200 <= r.status_code < 300:
-                    raise CelineError("speech_provider", f"The speech model's server answered with error {r.status_code}. "
-                                      f"Check it in Settings, Providers.", 502)
+                    await r.aread()
+                    raise CelineError("speech_provider",
+                                      answered("The speech model's server", r), 502)
                 chunks, size = [], 0
                 async for chunk in r.aiter_bytes():
                     size += len(chunk)

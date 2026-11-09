@@ -250,7 +250,7 @@ class Batches:
         return b
 
     async def _slot(self, kind: str, raw: dict, index: int, k: int, ordered,
-                    cid: str | None, hers: bool) -> dict:
+                    cid: str | None, own: bool) -> dict:
         bad: list[str] = []
         if kind == "images":
             raw, bad = tidy(raw)
@@ -280,7 +280,7 @@ class Batches:
                     raise ImageError("The duration is a number of seconds.")
                 item["duration"] = d
             if kind == "images":
-                await self._image_slot(item, raw, ordered, cid, hers)
+                await self._image_slot(item, raw, ordered, cid, own)
             else:
                 if not item["style"].strip():
                     raise ImageError("The style is empty.")
@@ -292,7 +292,7 @@ class Batches:
             item.update(state="failed", error=str(e))
         return item
 
-    async def _image_slot(self, item: dict, raw: dict, ordered, cid, hers: bool) -> None:
+    async def _image_slot(self, item: dict, raw: dict, ordered, cid, own: bool) -> None:
         """The agent's item as it gave it, checked: the prompt goes to the workflow as it is;
         what does not fit the preset fails the item with the sentence why."""
         if not item["prompt"].strip():
@@ -300,7 +300,7 @@ class Batches:
         given = [k for k in presets_mod.SOURCES if raw.get(k)]
         names = presets_mod.SOURCES[:len(given)]
         for key, name in zip(given, names):
-            got = await self._source(str(raw[key]), cid, hers)
+            got = await self._source(str(raw[key]), cid, own)
             item[name] = {k: got[k] for k in ("id", "sha256", "filename", "media_type")}
         source = item.get("source")
         warn = item.setdefault("warnings", []).append
@@ -362,7 +362,7 @@ class Batches:
         item.pop("loras", None)
         item.update({k: v for k, v in choice.recipe().items() if k != "triggers"})
 
-    async def _source(self, ref: str, cid: str | None, hers: bool) -> dict:
+    async def _source(self, ref: str, cid: str | None, own: bool) -> dict:
         """The image an edit starts from: its portrait (portrait, or
         name>, or its name alone); else its own: one it made (an attachment of its own
         message, in any conversation) or one the user attached to this conversation,
@@ -372,12 +372,12 @@ class Batches:
             return face
         store = self.app.store
         wanted = ref.strip().lower()
-        if not hers:
+        if not own:
             row = await attachments.get(store, wanted)
             if row is None or row["kind"] != "image":
                 raise ImageError(f"There is no image {wanted}.")
             return row
-        row = await attachments.her_image(store, wanted, cid, self.app.cfg.user)
+        row = await attachments.agent_image(store, wanted, cid, self.app.cfg.user)
         if isinstance(row, str):
             raise ImageError(row)
         return row
@@ -385,15 +385,15 @@ class Batches:
     def _portrait(self, ref: str) -> dict | None:
         """`portrait`, `portrait:<its name>`, or its name alone: its portrait as an
         edit's source; None for another ref. Raises ImageError when it has none."""
-        from .. import her
+        from .. import agent
         cfg = self.app.cfg
         key = ref.strip().casefold()
         if key not in ("portrait", f"portrait:{cfg.name.casefold()}", cfg.name.casefold()):
             return None
-        got = her.portrait_file(cfg)
+        got = agent.portrait_file(cfg)
         if got is None:
             raise ImageError(f"{cfg.name} has no portrait.")
-        return {"id": "portrait", "sha256": cfg.her.portrait,
+        return {"id": "portrait", "sha256": cfg.agent.portrait,
                 "filename": f"portrait{_EXT.get(got[1], '.png')}", "media_type": got[1]}
 
     def _pick(self, kind: str, ordered, name: str | None, task: str,

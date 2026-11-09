@@ -9,6 +9,7 @@ from uuid import uuid4
 import anyio
 import httpx
 
+from ..errors import answered, said
 from ..settings.registry import provider_headers
 from . import presets as presets_mod
 from .presets import ImageError
@@ -37,6 +38,8 @@ class Comfy:
     async def object_info(self, classes: set[str]) -> dict[str, Any]:
         try:
             return await object_info(self.client, self.url, classes)
+        except httpx.HTTPStatusError as e:
+            raise ImageError(str(e)) from None
         except ValueError:
             raise ImageError(f"ComfyUI at {_host(self.url)} answered /object_info with "
                              f"something that is not JSON: is {self.url} a ComfyUI "
@@ -47,8 +50,7 @@ class Comfy:
                                    json={"prompt": graph, "client_id": client_id})
         if r.status_code == 400:
             raise ImageError(_refused(r))
-        r.raise_for_status()
-        return str(r.json()["prompt_id"])
+        return str(_ok(r).json()["prompt_id"])
 
     async def upload(self, data: bytes, name: str, media_type: str) -> str:
         """The source of an edit, into ComfyUI's input folder. Returns the name its
@@ -56,20 +58,16 @@ class Comfy:
         r = await self.client.post(f"{self.url}/upload/image",
                                    files={"image": (name, data, media_type)},
                                    data={"type": "input", "overwrite": "true"})
-        r.raise_for_status()
-        out = r.json() or {}
+        out = _ok(r).json() or {}
         return f"{out['subfolder']}/{out['name']}" if out.get("subfolder") else out["name"]
 
     async def history(self, prompt_id: str) -> dict[str, Any] | None:
-        r = await self.client.get(f"{self.url}/history/{prompt_id}")
-        r.raise_for_status()
+        r = _ok(await self.client.get(f"{self.url}/history/{prompt_id}"))
         return (r.json() or {}).get(prompt_id)
 
     async def position(self, prompt_id: str) -> tuple[bool, int]:
         """(running now, prompts ahead of it in ComfyUI's own queue)."""
-        r = await self.client.get(f"{self.url}/queue")
-        r.raise_for_status()
-        q = r.json() or {}
+        q = _ok(await self.client.get(f"{self.url}/queue")).json() or {}
         if any(item[1] == prompt_id for item in q.get("queue_running") or []):
             return True, 0
         pending = sorted(q.get("queue_pending") or [], key=lambda item: item[0])
@@ -80,7 +78,7 @@ class Comfy:
         r = await self.client.get(f"{self.url}/view", params={
             "filename": ref["filename"], "subfolder": ref.get("subfolder", ""),
             "type": ref.get("type", "output")})
-        r.raise_for_status()
+        _ok(r)
         return r.content, r.headers.get("content-type", "image/png").split(";")[0]
 
     async def stop(self, prompt_id: str) -> None:
@@ -97,11 +95,14 @@ class Comfy:
 async def object_info(c: httpx.AsyncClient, url: str, classes: set[str],
                       headers: dict[str, str] | None = None) -> dict[str, Any]:
     """{class: its /object_info entry, or None when the server has no such node}.
-    ValueError: an answer that is not JSON."""
+    ValueError: an answer that is not JSON; httpx.HTTPStatusError with ComfyUI's words:
+    an error answer (an HTTP error still, for the Settings check's key and credit
+    sentences, settings/kinds.py)."""
     info: dict[str, Any] = {}
     for cls in sorted(classes):
         r = await c.get(f"{url.rstrip('/')}/object_info/{cls}", headers=headers)
-        r.raise_for_status()
+        if r.is_error:
+            raise httpx.HTTPStatusError(_who(r), request=r.request, response=r)
         info[cls] = (r.json() or {}).get(cls)
     return info
 
@@ -111,15 +112,26 @@ def _host(url: str) -> str:
     return urlsplit(url).netloc or url
 
 
+def _who(r: httpx.Response) -> str:
+    return answered(f"ComfyUI at {_host(str(r.url))}", r)
+
+
+def _ok(r: httpx.Response) -> httpx.Response:
+    """`r`, or ImageError with ComfyUI's words when it is an error answer."""
+    if r.is_error:
+        raise ImageError(_who(r))
+    return r
+
+
 def _refused(r: httpx.Response) -> str:
     """ComfyUI's 400 for a workflow it will not run, in one or two sentences."""
+    out = f"ComfyUI refused the workflow: {_plain(said(r.content, r.status_code).text)}."
     try:
-        data = r.json() or {}
+        data = r.json()
     except ValueError:
-        return "ComfyUI refused the workflow."
-    why = _plain((data.get("error") or {}).get("message")) or "the workflow is not valid"
-    out = f"ComfyUI refused the workflow: {why}."
-    for node in (data.get("node_errors") or {}).values():
+        return out
+    nodes = data.get("node_errors") if isinstance(data, dict) else None
+    for node in (nodes if isinstance(nodes, dict) else {}).values():
         for e in node.get("errors") or []:
             detail = _plain(e.get("details") or e.get("message"))
             if detail:
@@ -199,7 +211,6 @@ async def run(comfy: Comfy, graph: dict[str, Any], note, timeout: float) -> tupl
     prompt_id: str | None = None
     finished = False
     try:
-        await note("Sending the workflow to ComfyUI")
         prompt_id = await comfy.queue(graph, uuid4().hex)
         try:
             with anyio.fail_after(timeout):
@@ -226,7 +237,9 @@ async def run(comfy: Comfy, graph: dict[str, Any], note, timeout: float) -> tupl
 
 
 async def _follow(comfy: Comfy, prompt_id: str, note) -> dict[str, Any]:
-    """Until the prompt is in /history as completed or failed; says where it is."""
+    """Until the prompt is in /history as completed or failed. Its note says only what
+    the user cannot see: a wait in ComfyUI's queue; nothing while it is being made (the
+    picture block shows that)."""
     said = None
     while True:
         entry = await comfy.history(prompt_id)
@@ -235,9 +248,8 @@ async def _follow(comfy: Comfy, prompt_id: str, note) -> dict[str, Any]:
                                   or status.get("status_str") == "error"):
             return entry
         running, ahead = await comfy.position(prompt_id)
-        line = ("Generating" if running else
-                f"Waiting in the ComfyUI queue: {ahead} ahead" if ahead else
-                "Waiting in the ComfyUI queue")
+        line = ("" if running else
+                f"Waiting in the queue, {ahead} ahead" if ahead else "Waiting in the queue")
         if line != said:
             said = line
             await note(line)
@@ -255,11 +267,13 @@ async def _probe(cfg, role: str) -> dict[str, str]:
     url = str(p.get("base_url", "")).rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=PROBE, headers=provider_headers(s, pid)) as c:
-            (await c.get(f"{url}/object_info/CheckpointLoaderSimple")).raise_for_status()
+            r = await c.get(f"{url}/object_info/CheckpointLoaderSimple")
     except httpx.HTTPError as e:
-        from ..errors import her_unreachable, unreachable_words
+        from ..errors import agent_unreachable, unreachable_words
         return {"state": "missing", "detail": unreachable_words("ComfyUI", url, e),
-                "why": her_unreachable("ComfyUI", url)}
+                "why": agent_unreachable("ComfyUI", url)}
+    if r.is_error:
+        return {"state": "missing", "detail": _who(r), "why": _who(r)}
     from ..settings.registry import ROLES
     note = ("" if s.chain(role) else
             f" No preset is picked for {ROLES[role]['label']} yet (Settings, Images "

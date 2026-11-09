@@ -54,7 +54,7 @@ from websockets.asyncio.client import connect as ws_connect
 from . import devices, keys, shellbox
 from .artifacts.page import HEAD as PAGE_HEAD
 from .core.ids import iso
-from .errors import NotFound
+from .errors import NotFound, said
 from .core.event_types import SHARE_UPDATED
 from .settings import address, features
 
@@ -90,7 +90,7 @@ KEEP_OUT = {b"content-type", b"content-length", b"content-encoding", b"content-r
             b"access-control-allow-methods", b"access-control-allow-headers",
             b"access-control-expose-headers"}
 METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-NOT_FOUND = "Not found"
+NOT_FOUND = ("Not found", "Nothing at this link.")    # a missing page: title, body
 BOX_DOWN = "The shellbox is not answering right now."
 
 
@@ -190,7 +190,7 @@ async def create(cfg, store, title: str, *, port: int | None = None, path: str |
         r = await _file_head(cfg, device, path)
         folder = r.status_code == 400 and _said(r).get("folder") is True
         if r.status_code not in (200, 206, 416) and not folder:
-            raise RuntimeError(_said(r).get("error") or f"No file or folder {path}.")
+            raise RuntimeError(said(r.content).text or f"No file or folder {path}.")
     row = {"token": "".join(secrets.choice(TOKEN_CHARS) for _ in range(TOKEN_LEN)),
            "title": title, "port": port, "path": path, "folder": int(folder),
            "reset": str(status.get("reset") or ""), "conversation_id": conversation_id,
@@ -270,14 +270,26 @@ async def _ended(store, row: dict) -> str:
     return "ended"
 
 
-def shown(row: dict, st: str) -> dict:
-    """A share as the UI gets it; `url` opens it in a tab of its own."""
+def shown(row: dict, st: str, cfg=None) -> dict:
+    """A share as the UI gets it; `url` opens it in a tab of its own; `line` its card's
+    words: what is shared and from which computer while it runs, else why not."""
     return {"token": row["token"], "title": row["title"], "port": row["port"],
             "path": row["path"], "device": row["device"],
             "conversation_id": row["conversation_id"],
             "public": bool(row["public"]), "created_at": row["created_at"],
-            "ends_at": end_of(row), "state": st,
+            "ends_at": end_of(row), "state": st, "line": _line(row, st, cfg),
             "url": f"/api/shares/{row['token']}/open"}
+
+
+def _line(row: dict, st: str, cfg) -> str:
+    if st == "ended":
+        return "Ended"
+    if st != "live":
+        return "Not running"
+    from .devices import label
+    what = f"Port {row['port']}" if row["port"] else str(row["path"] or "")
+    return f"{what} in the shellbox" if not row["device"] else \
+        f"{what} on {label(row['device'], cfg)}"
 
 
 async def from_browser(cfg, client: str | None) -> bool:
@@ -387,8 +399,10 @@ class _Stream(httpcore.AsyncNetworkStream):
 
 # ---- the routes ------------------------------------------------------------------------
 
-def _page(status: int, words: str) -> Response:
-    r = Response(f"{PAGE_HEAD}<title>{words}</title><p>{words}</p>".encode(), status)
+def _page(status: int, words: str | tuple[str, str]) -> Response:
+    """A page of one line; `words` a (title, body) pair or one text for both."""
+    title, body = words if isinstance(words, tuple) else (words, words)
+    r = Response(f"{PAGE_HEAD}<title>{title}</title><p>{body}</p>".encode(), status)
     r.raw_headers = [(b"content-type", b"text/html; charset=utf-8"), *HEADERS,
                      (b"content-length", str(len(r.body)).encode())]
     return r
@@ -568,7 +582,7 @@ async def share_list(request: Request, conversation: str | None = None) -> dict:
     cfg, store = _services(request.app)
     rows = await listing(store, conversation)
     states = await asyncio.gather(*(state(cfg, store, r) for r in rows))
-    return {"shares": [shown(r, s) for r, s in zip(rows, states) if s != "ended"]}
+    return {"shares": [shown(r, s, cfg) for r, s in zip(rows, states) if s != "ended"]}
 
 
 @router.get("/api/shares/{token}")
@@ -577,7 +591,7 @@ async def share_one(request: Request, token: str) -> dict:
     row = await get(store, token)
     if row is None:
         raise NotFound("share")
-    return shown(row, await state(cfg, store, row))
+    return shown(row, await state(cfg, store, row), cfg)
 
 
 @router.get("/api/shares/{token}/open", include_in_schema=False)
@@ -599,8 +613,8 @@ async def share_open(request: Request, token: str) -> Response:
 @router.post("/api/shares/{token}/stop")
 async def share_stop(request: Request, token: str) -> dict:
     """The user ends a share for everyone, it too."""
-    _, store = _services(request.app)
+    cfg, store = _services(request.app)
     if await get(store, token) is None:
         raise NotFound("share")
     await end(store, token)
-    return shown(await get(store, token), "ended")
+    return shown(await get(store, token), "ended", cfg)

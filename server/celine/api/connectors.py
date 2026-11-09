@@ -305,6 +305,8 @@ async def wa_qr(request: Request, sid: str) -> Response:
         r = await c.raw("GET", "/admin/qr", timeout=30.0)
     except Unreachable as e:
         raise CelineError("unreachable", str(e), 503) from None
-    if r.status_code != 200:
+    if r.status_code == 404:
         raise CelineError("not_found", "There is no code to scan right now.", 404)
+    if r.status_code != 200:
+        raise CelineError("connector", str(c.refusal(r)), 502)
     return Response(r.content, media_type="image/png", headers={"Cache-Control": "no-store"})

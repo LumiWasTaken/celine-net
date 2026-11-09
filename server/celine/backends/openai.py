@@ -3,12 +3,15 @@ backend shares (backends/ollama.py and backends/anthropic.py build on this modul
 from __future__ import annotations
 
 import json
+import time
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 
 from ..config import BackendConfig
+from ..errors import answered, said
 from .base import (
     ORIGIN, BackendError, Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage,
 )
@@ -283,31 +286,16 @@ async def _sse_data(res: httpx.Response):
         yield "\n".join(data)
 
 
-def _error(raw: str) -> dict:
-    """The error object of an error body. llama.cpp's own error arrives wrapped in a
-    string by Ollama (`{"error": "{\"error\": {...}}"}` from /api/chat, the same
-    string as `message` from its /v1): the inner object wins, it has the numbers."""
-    try:
-        err = json.loads(raw).get("error") or {}
-    except (json.JSONDecodeError, AttributeError):
-        return {}
-    text = err.get("message") if isinstance(err, dict) else err
-    if isinstance(text, str) and text.lstrip().startswith("{"):
-        try:
-            inner = json.loads(text).get("error")
-        except (json.JSONDecodeError, AttributeError):
-            inner = None
-        if isinstance(inner, dict):
-            return inner
-    if isinstance(err, str):
-        return {"message": err}
-    return err if isinstance(err, dict) else {}
+def _marks(raw: str) -> str:
+    """An error body's words with its type and code, lower case: what the checks below
+    look for."""
+    s = said(raw)
+    o = s.obj or {}
+    return " ".join((s.text, s.kind, str(o.get("type", "")), str(o.get("code", "")))).lower()
 
 
 def _is_context_overflow(raw: str) -> bool:
-    err = _error(raw)
-    marks = (str(err.get("type", "")), str(err.get("code", "")), str(err.get("message", "")))
-    text = " ".join(marks).lower()
+    text = _marks(raw)
     # Anthropic: "prompt is too long: 215000 tokens > 200000 maximum", and "input length
     # and `max_tokens` exceed context limit: ..."
     return ("exceed_context_size" in text or "context_length_exceeded" in text
@@ -323,13 +311,12 @@ _NO_IMAGES = ("support image input", "image input is not supported")
 
 
 def _is_unsupported_image(raw: str) -> bool:
-    msg = str(_error(raw).get("message", "")).lower()
-    return any(w in msg for w in _NO_IMAGES)
+    return any(w in _marks(raw) for w in _NO_IMAGES)
 
 
 def _overflow_numbers(raw: str) -> tuple[int | None, int | None]:
     """llama.cpp puts n_prompt_tokens and n_ctx in the error body."""
-    err = _error(raw)
+    err = said(raw).obj or {}
 
     def num(k):
         v = err.get(k)
@@ -351,14 +338,14 @@ def http_error(label: str, model: str, status: int, raw: str,
     `context_overflow`, with the server's numbers when it gives them), an image the
     model cannot take (`unsupported_input`), no credits left (`out_of_credits`,
     `no_credits`), or the status and the body.
-    `retry_after` is the Retry-After header; its seconds are kept on the error
-    (backends/llm.py waits that long on a 429)."""
+    `retry_after` is the Retry-After header, seconds or an HTTP date; its seconds from
+    now are kept on the error (backends/llm.py waits that long on a 429)."""
     if _is_context_overflow(raw):
         n_prompt, n_ctx = _overflow_numbers(raw)
         err = BackendError(
             f"This turn needs more context than {model} has ({n_prompt:,} of {n_ctx:,} "
             f"tokens)." if n_prompt and n_ctx
-            else f"This conversation is longer than {label} can take.", retryable=False)
+            else f"This chat is longer than {label} can take.", retryable=False)
         err.code = "context_overflow"
         err.n_ctx = n_ctx
         err.n_prompt_tokens = n_prompt
@@ -370,38 +357,40 @@ def http_error(label: str, model: str, status: int, raw: str,
         err.code = "unsupported_input"
         return err
     if no_credits(status, raw):
-        err = BackendError(f"{label} is out of credits.", retryable=False)
+        err = BackendError(f"{label} is out of credits: {said(raw, status).text}",
+                           retryable=False)
         err.code = "out_of_credits"
         return err
     err = BackendError(_http_message(label, model, status, raw),
                        retryable=status in (408, 429, 500, 502, 503, 529))
     err.status = status
-    err.retry_after = (float(retry_after) if retry_after and retry_after.isdigit()
-                       else None)
+    err.retry_after = retry_seconds(retry_after)
     return err
 
 
+def retry_seconds(value: str | None, now: float | None = None) -> float | None:
+    """A Retry-After header's seconds from `now` (time.time()): delay-seconds as they
+    are, an HTTP date as the time left until it (RFC 9110 10.2.3); None when absent or
+    unreadable."""
+    value = (value or "").strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        at = parsedate_to_datetime(value).timestamp()
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, at - (time.time() if now is None else now))
+
+
 def _http_message(label: str, model: str, status: int, raw: str) -> str:
-    if status in (401, 403):
-        return f"{label} rejected the API key. Check the key in Settings, Models."
-    if status == 429:
-        return f"{label} is rate-limiting."
-    if status == 404:
-        return f"{label} has no model {model}. Check its name in Settings, Models."
-    return f"{label} returned {status}. {_said(raw)[:300]}".strip()
-
-
-def _said(raw: str) -> str:
-    """What an error body says: an OpenAI-shaped body's message, else the body when it
-    is plain text (never raw JSON or HTML). Only the message's last line: a llama.cpp
-    chat template error quotes the template first and ends with the template's own
-    sentence."""
-    msg = str(_error(raw).get("message") or "")
-    if not msg:
-        text = " ".join(raw.split())
-        return "" if text[:1] in ("{", "[", "<") else text
-    lines = [ln.strip() for ln in msg.splitlines() if ln.strip()]
-    return lines[-1] if lines else ""
+    """The server's own words behind its status (errors.answered), and for a status
+    that has one fix in Settings, that fix."""
+    line = answered(label, httpx.Response(status, text=raw))
+    fix = {401: "Check the key in Settings, Models.",
+           404: f"Check the model name {model} and the address in Settings, Models."}.get(status)
+    if not fix:
+        return line
+    return f"{line}{'' if line.endswith(('.', '!', '?')) else '.'} {fix}"
 
 
 def has_images(messages) -> bool:

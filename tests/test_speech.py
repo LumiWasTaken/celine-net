@@ -9,7 +9,7 @@ import httpx
 import pytest
 from starlette import formparsers
 
-from celine import boot, speech
+from celine import boot, errors, speech
 from celine.api import speech as api_mod
 from celine.settings import secrets
 from settings_fixtures import client, make_app, scratch
@@ -153,15 +153,19 @@ async def test_audio_forwarding_and_limits(api, monkeypatch):
 
 
 @pytest.mark.parametrize("status", [302, 401, 500])
-async def test_redirects_and_private_provider_errors_not_forwarded(api, monkeypatch, status):
+async def test_a_provider_error_says_its_words_with_its_key_masked_and_no_redirect(
+        api, monkeypatch, status):
     await setup(api)
+    monkeypatch.setattr(errors, "_SECRETS", [KEY])     # Config.secrets() names every saved key
     calls = []
     def handle(r):
         calls.append(r)
-        return httpx.Response(status, text=KEY, headers={"location": "https://untrusted.example"})
+        return httpx.Response(status, text=f"bad key {KEY}",
+                              headers={"location": "https://untrusted.example"})
     upstream(monkeypatch, handle)
     r = await api.get("/api/speech/voices")
-    assert r.status_code == 502 and KEY not in r.text and len(calls) == 1
+    assert r.status_code == 502 and len(calls) == 1
+    assert r.json()["error"]["message"] == f"The speech model's server returned {status}: bad key ****"
 
 
 async def test_bad_provider_content_and_bounded_responses(api, monkeypatch):

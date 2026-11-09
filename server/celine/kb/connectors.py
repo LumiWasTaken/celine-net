@@ -30,6 +30,7 @@ import anyio
 import httpx
 
 from ..core.ids import now_ms
+from ..errors import answered, said
 from .feed import Applied, Consumer, KeyRefused
 from .importers import Failed, ImportContext, Unreachable
 from .media_text import file_shas
@@ -159,23 +160,23 @@ class Connector:
         r = self.raw_sync(method, path, body, timeout)
         return r.status_code, _json(r)
 
-    def refused(self, code: int, data: Any = None) -> "Refused":
-        """The connector's error answer as one sentence: its own `error`, else the code."""
-        msg = data.get("error") if isinstance(data, dict) else None
-        return Refused(msg or f"The {self.title} connection refused the request ({code}).", code)
+    def refusal(self, r: httpx.Response) -> "Refused":
+        """The connector's error answer as one sentence: its own words, else the code."""
+        return Refused(said(r.content).text or f"The {self.title} connection refused the "
+                       f"request ({r.status_code}).", r.status_code)
 
     async def admin(self, method: str, path: str, body: Any = None) -> Any:
         """An admin call's answer; Refused when the connector said no, Unreachable."""
-        code, data = await self.request(method, path, body)
-        if code >= 400:
-            raise self.refused(code, data)
-        return data
+        r = await self.raw(method, path, body)
+        if r.status_code >= 400:
+            raise self.refusal(r)
+        return _json(r)
 
     def admin_sync(self, method: str, path: str, body: Any = None) -> Any:
-        code, data = self.request_sync(method, path, body)
-        if code >= 400:
-            raise self.refused(code, data)
-        return data
+        r = self.raw_sync(method, path, body)
+        if r.status_code >= 400:
+            raise self.refusal(r)
+        return _json(r)
 
     def pull(self, sha: str) -> bool:
         """Copy one file the connector keeps into this archive's media folder."""
@@ -224,13 +225,13 @@ class Connector:
         """The status from the connector. True when the connection record changed."""
         before = self.connection()
         try:
-            code, status = await self.request("GET", "/admin/status", timeout=5.0)
-            if code == 401:
+            r = await self.raw("GET", "/admin/status", timeout=5.0)
+            if r.status_code == 401:
                 raise Unreachable(f"The {self.title} connection does not know this app's key "
                                   f"(its clients file is not the app's keys/connector-clients).")
-            if code != 200:
-                raise Unreachable(self._down())
-            self.status, self.down_since = status, None
+            if r.status_code != 200:
+                raise Unreachable(answered(f"The {self.title} connection", r))
+            self.status, self.down_since = _json(r), None
             self.refused = None
         except Unreachable as e:
             if self.status is not None or self.down_since is None:
@@ -290,9 +291,7 @@ class Connector:
             if ctx.cancelled():
                 self.request_sync("DELETE", f"/admin/jobs/{job}")
                 ctx.check()
-            code, j = self.request_sync("GET", f"/admin/jobs/{job}")
-            if code != 200:
-                raise Failed(f"The {self.title} connection lost this task.")
+            j = self._job(job)
             p = j.get("progress") or {}
             ctx.progress(int(p.get("done") or 0), p.get("total"), p.get("unit") or "")
             if j["state"] == "done":
@@ -305,6 +304,15 @@ class Connector:
                 ctx.check()
                 return {}
             sleep(every)
+
+    def _job(self, job: str) -> dict[str, Any]:
+        """One of the connector's jobs; Failed when it is gone (404) or another error answer."""
+        r = self.raw_sync("GET", f"/admin/jobs/{job}")
+        if r.status_code == 404:
+            raise Failed(f"The {self.title} connection lost this task.")
+        if r.status_code != 200:
+            raise Failed(answered(f"The {self.title} connection", r))
+        return _json(r)
 
     def first_import(self, job: str | None, ctx: ImportContext, *, every: float = 1.0,
                      sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
@@ -321,9 +329,7 @@ class Connector:
                     self.request_sync("DELETE", f"/admin/jobs/{job}")
                 ctx.check()
             if job is not None:
-                code, j = self.request_sync("GET", f"/admin/jobs/{job}")
-                if code != 200:
-                    raise Failed(f"The {self.title} connection lost this task.")
+                j = self._job(job)
                 if j["state"] == "unreachable":
                     raise Unreachable(j.get("error") or f"{self.title} is not reachable.")
                 if j["state"] == "failed":
@@ -331,10 +337,10 @@ class Connector:
                 if j["state"] in ("done", "cancelled"):
                     job = None
             if job is None and head is None:
-                code, st = self.request_sync("GET", "/admin/status")
-                if code != 200:
-                    raise Unreachable(self._down())
-                head = int((st.get("journal") or {}).get("head") or 0)
+                r = self.raw_sync("GET", "/admin/status")
+                if r.status_code != 200:
+                    raise Unreachable(answered(f"The {self.title} connection", r))
+                head = int((_json(r).get("journal") or {}).get("head") or 0)
             n = self.kb.file.read_sync(lambda c: c.execute(
                 "SELECT COALESCE(SUM(message_count), 0) FROM chats").fetchone()[0])
             ctx.progress(n, None, "messages")

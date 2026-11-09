@@ -21,6 +21,7 @@ import anyio
 import httpx
 
 from . import shellbox
+from .errors import said
 from .settings import features
 
 log = logging.getLogger("celine.box_files")
@@ -56,11 +57,7 @@ async def put(cfg, src: Path | bytes, rel: str, *, origin: str = "",
                         content=src if isinstance(src, bytes) else _chunks(src),
                         headers={"Content-Length": str(size)})
     if r.status_code != 200:
-        try:
-            said = r.json().get("error")
-        except ValueError:
-            said = None
-        raise RuntimeError(said or f"The shellbox answered {r.status_code}.")
+        raise RuntimeError(str(shellbox.refusal(cfg, r)))
     return r.json()
 
 
@@ -71,13 +68,10 @@ async def stream(cfg, rel: str, *, transport: httpx.AsyncBaseTransport | None = 
             c.stream("GET", shellbox.url(cfg) + "/file", params={"path": rel}) as r:
         if r.status_code != 200:
             await r.aread()
-            try:
-                said = r.json().get("error")
-            except ValueError:
-                said = None
             if r.status_code == 404:
-                raise FileNotFoundError(said or f"No file {rel} in the shellbox home.")
-            raise RuntimeError(said or f"The shellbox answered {r.status_code}.")
+                raise FileNotFoundError(said(r.content).text
+                                        or f"No file {rel} in the shellbox home.")
+            raise RuntimeError(str(shellbox.refusal(cfg, r)))
         async for chunk in r.aiter_bytes(CHUNK):
             yield chunk
 
@@ -92,7 +86,7 @@ async def copy_upload(cfg, src: Path, filename: str, store=None, aid: str | None
     try:
         sha = await anyio.to_thread.run_sync(_sha, src)
         rel = f"{UPLOADS}/{sha[:12]}/{safe_name(filename)}"
-        # the same bytes landed before: that file stays as it is, her edits too
+        # the same bytes landed before: that file stays as it is, its edits too
         if not await _there(cfg, rel, transport):
             await put(cfg, src, rel, origin=f"upload:{filename}", transport=transport)
     except (httpx.HTTPError, RuntimeError, OSError) as e:
@@ -114,7 +108,7 @@ async def _there(cfg, rel: str, transport: httpx.AsyncBaseTransport | None) -> b
     if r.status_code == 404:
         return False
     if r.status_code not in (200, 206, 416):        # 416: an empty file
-        raise RuntimeError(f"The shellbox answered {r.status_code}.")
+        raise RuntimeError(str(shellbox.refusal(cfg, r)))
     return True
 
 

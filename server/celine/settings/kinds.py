@@ -16,33 +16,34 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..backends.openai import no_credits
+from ..errors import answered, said
 
 # Per kind: its label, the backend that talks to it (backends/openai.py build), whether
 # it needs a key, its one address when it has one, where the router asks for its state
 # (`probe`: the path under the address root, "/..." on the server root), how that answer
 # lists the loaded models (`loaded`: llama-swap's /running, Ollama's /api/ps, a /models
-# list; None: it does not say), and how often its model list is read for the context and
-# caps it states (`discover_every` seconds; None: never).
+# list; None: it does not say), and whether it has a model list that states each model's
+# context and caps (`lists`; the router reads it on first answer and on Check provider).
 KINDS: dict[str, dict[str, Any]] = {
     "llama-swap": {"label": "llama-swap", "backend": "llama-server", "key": "optional",
-                   "probe": "/running", "loaded": "running", "discover_every": 60.0},
+                   "probe": "/running", "loaded": "running", "lists": True},
     "tabby": {"label": "tabbyAPI", "backend": "llama-server", "key": "optional",
-              "probe": "/running", "loaded": "running", "discover_every": 60.0},
+              "probe": "/running", "loaded": "running", "lists": True},
     "llama-server": {"label": "llama-server", "backend": "llama-server", "key": "optional",
-                     "probe": "models", "loaded": "models", "discover_every": 60.0},
+                     "probe": "models", "loaded": "models", "lists": True},
     "ollama": {"label": "Ollama", "backend": "ollama", "key": "optional",
-               "probe": "/api/ps", "loaded": "ps", "discover_every": 3600.0},
+               "probe": "/api/ps", "loaded": "ps", "lists": True},
     # /models answers without a key; /key checks it
     "openrouter": {"label": "OpenRouter", "backend": "openrouter", "key": "required",
                    "default_url": "https://openrouter.ai/api/v1",
-                   "probe": "key", "loaded": None, "discover_every": 3600.0},
+                   "probe": "key", "loaded": None, "lists": True},
     "anthropic": {"label": "Anthropic", "backend": "anthropic", "key": "required",
                   "default_url": "https://api.anthropic.com/v1",
-                  "probe": "models", "loaded": None, "discover_every": 3600.0},
+                  "probe": "models", "loaded": None, "lists": True},
     "openai": {"label": "OpenAI-compatible", "backend": "openai", "key": "optional",
-               "probe": "models", "loaded": None, "discover_every": 60.0},
+               "probe": "models", "loaded": None, "lists": True},
     "comfyui": {"label": "ComfyUI", "backend": "comfyui", "key": "optional",
-                "probe": "/system_stats", "loaded": None, "discover_every": None},
+                "probe": "/system_stats", "loaded": None, "lists": False},
 }
 # llama-swap's API (/running, /upstream/<m>/, /api/models/unload): llama-swap itself and
 # the modality router in front of tabbyAPI
@@ -526,13 +527,14 @@ async def check(kind: str, base_url: str, key: str | None, *, key_required: bool
         code = e.response.status_code
         if code in (401, 403):
             return {"ok": False, "level": "needs_you",
-                    "sentence": f"The server rejected the key ({code}).", "fix": "replace_key"}
+                    "sentence": answered(host, e.response), "fix": "replace_key"}
         if no_credits(code, e.response.text):
+            words = said(e.response.text, code).text
+            words += "" if words.endswith((".", "!", "?")) else "."
             return {"ok": False, "level": "needs_you",
-                    "sentence": f"{KINDS[kind]['label']} is out of credits. Add credits on its "
-                                f"website, then press Check."}
-        return {"ok": False, "level": "needs_you", "sentence": f"The server answered with error {code}. "
-                                                         f"Check the address and the type."}
+                    "sentence": f"{KINDS[kind]['label']} is out of credits: {words} Add "
+                                f"credits on its website, then press Check."}
+        return {"ok": False, "level": "needs_you", "sentence": answered(host, e.response)}
     except (httpx.HTTPError, ValueError) as e:
         return {"ok": False, "level": "needs_you",
                 "sentence": f"Could not connect to {host} ({type(e).__name__}). Check the address."}
@@ -547,7 +549,7 @@ async def check(kind: str, base_url: str, key: str | None, *, key_required: bool
                 r = await c.get(f"{url.rstrip('/')}/key", headers=headers(kind, key))
             if r.status_code in (401, 403):
                 return {"ok": False, "level": "needs_you", "fix": "replace_key",
-                        "sentence": f"OpenRouter rejected the key ({r.status_code})."}
+                        "sentence": answered("OpenRouter", r)}
         except httpx.HTTPError:
             pass                        # /models answered: the key is checked next time
     return out

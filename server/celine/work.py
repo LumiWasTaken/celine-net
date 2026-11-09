@@ -20,9 +20,10 @@ The five calls a worker makes, the same shape as turns.claim:
 - `fail(id, worker, error)`: the one try failed, with its reason.
 and `put_down(workers)` for a worker that stops (its running items go back to queued).
 
-The pool: WORKERS loops. Before an item runs, its kind's roles are looked at: when every
-model of them is on a host the gateway sees down (backends/router.py), the item is
-deferred without a call. A handler that raises NoModel, an unreachable error or a queue
+The pool: WORKERS loops. Before an item runs, its kind's roles are looked at: a server
+of them known to be down is asked again (router.revisit, at most every RETRY_DOWN), and
+when every model of them is still on a server seen down (backends/router.py), the item
+is deferred without a call. A handler that raises NoModel, an unreachable error or a queue
 timeout is deferred too; any other error is a try. Times are ISO UTC text, as `runs`;
 every call takes `now` so a test fixes the clock.
 """
@@ -306,6 +307,8 @@ class Pool:
         """One claimed item. -> done, deferred, queued (a try failed) or failed."""
         roles, fn = self.handlers[item["kind"]]
         kind, wid = item["kind"], item["id"]
+        if self.llm is not None and roles:      # a server known down is asked again first
+            await self.llm.router.revisit(roles)
         if (why := self._down(roles)) is not None:
             await defer(self.store, wid, worker, why, now=self.clock())
             return self._count(kind, "deferred", why)

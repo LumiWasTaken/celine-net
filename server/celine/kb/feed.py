@@ -34,6 +34,7 @@ from typing import Any, Callable, Iterable, Iterator
 
 import httpx
 
+from ..errors import answered
 from .db import kv
 from .chat import ChatKB
 from .importers import Failed, ImportContext, Unreachable
@@ -303,7 +304,8 @@ class Consumer:
                 if resp.status_code in (401, 403):
                     raise KeyRefused(f"The {self.name} connection refused this app's key.")
                 if resp.status_code != 200:
-                    raise Unreachable(f"The {self.name} connection is not reachable.")
+                    resp.read()
+                    raise Unreachable(answered(f"The {self.name} connection", resp))
                 for line in _lines(resp):
                     ctx.check()
                     if line:

@@ -265,7 +265,9 @@ async def test_the_error_answers(monkeypatch):
         return e.value
 
     refused = await error_of(401, "authentication_error", "invalid x-api-key")
-    assert not refused.retryable and "rejected the API key" in str(refused)
+    assert not refused.retryable
+    assert str(refused) == ("Anthropic returned 401: invalid x-api-key. Check the key in "
+                            "Settings, Models.")
     limited = await error_of(429, "rate_limit_error", "slow down", **{"retry-after": "7"})
     assert limited.retryable and limited.status == 429 and limited.retry_after == 7.0
     busy = await error_of(529, "overloaded_error", "Overloaded")
@@ -273,7 +275,8 @@ async def test_the_error_answers(monkeypatch):
     broke = await error_of(400, "invalid_request_error", "Your credit balance is too low to "
                            "access the Anthropic API. Please go to Plans & Billing.")
     assert broke.code == "out_of_credits" and not broke.retryable
-    assert str(broke) == "Anthropic is out of credits."
+    assert str(broke) == ("Anthropic is out of credits: Your credit balance is too low to "
+                          "access the Anthropic API. Please go to Plans & Billing.")
     # too long for the model: a context overflow, so the runner compacts and tries again
     for said in ("prompt is too long: 215000 tokens > 200000 maximum",
                  "input length and `max_tokens` exceed context limit: 187254 + 20000 > "
@@ -327,7 +330,8 @@ async def test_discovery_pages_through_the_model_list():
                               transport=httpx.MockTransport(lambda r: httpx.Response(400, json={
                                   "type": "error", "error": {"type": "invalid_request_error",
                                   "message": "Your credit balance is too low."}})))
-    assert broke["sentence"] == "Anthropic is out of credits. Add credits on its website, then press Check."
+    assert broke["sentence"] == ("Anthropic is out of credits: Your credit balance is too low. "
+                                 "Add credits on its website, then press Check.")
 
 
 async def test_thinking_sends_the_effort_and_room_for_it_and_no_temperature(monkeypatch):
