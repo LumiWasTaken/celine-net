@@ -181,3 +181,13 @@ async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows
     assert lines[1].startswith("#1 closed, high: read cuts results (")
     assert lines[2].startswith("  the app, ") and lines[2].endswith(": Report #1 closed: DNS failed, fixed")
     assert (await BugReport(cfg).list(ctx)).content == "No open reports."
+
+
+async def test_a_sub_agent_is_offered_no_bug_report_tool(store, cfg):
+    skill = BugReport(cfg)
+    chat = await conversations.create(store, "Plans")
+    sub = await conversations.create(store, "Helper")
+    await store.write(lambda c: c.execute(
+        "UPDATE conversations SET agent_of=? WHERE id=?", (chat, sub)))
+    assert await skill.offered_in(store, chat) is True
+    assert await skill.offered_in(store, sub) is False

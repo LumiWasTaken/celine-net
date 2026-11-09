@@ -1,5 +1,7 @@
-"""The agent's tools for app problems: bugreport__file, any time, anywhere, and
-bugreport__list, its reports with their state and the last word on each (guides/bugreport.md).
+"""The agent's tools for app problems, in its own conversations (a chat, a mission, a
+routine's run): bugreport__file, any time, and bugreport__list, its reports with their
+state and the last word on each (guides/bugreport.md). A sub-agent keeps to its brief and
+is offered neither: what blocks it goes in its report to its parent.
 The rows are bugreports/store.py's; each opens its Intercom thread to the user at once,
 and Events lists them."""
 from __future__ import annotations
@@ -27,6 +29,11 @@ class BugReport:
         self.cfg = cfg
 
     app = None
+
+    async def offered_in(self, store, cid: str) -> bool:
+        """In the agent's own conversations; in a sub-agent's, nothing."""
+        return store is None or not await store.read(lambda c: (c.execute(
+            "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
 
     @tool(read_only=False, destructive=False)
     async def file(
