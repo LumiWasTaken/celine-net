@@ -172,6 +172,9 @@ async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows
         "SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY rowid DESC "
         "LIMIT 1", (cid,)).fetchone()[0])
     assert "Report #1 closed: DNS failed, fixed" in said, "delivered to the conversation that filed it"
+    assert await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM turns WHERE conversation_id=? AND state='queued'", (cid,)
+    ).fetchone()[0]) == 0, "the line starts no turn"
     out = await BugReport(cfg).list(ctx, state="closed")
     lines = out.content.splitlines()
     assert lines[0].startswith("#2 closed, low: tabs cap (") and len(lines) == 3

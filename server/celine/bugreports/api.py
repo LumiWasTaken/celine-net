@@ -32,8 +32,8 @@ async def list_reports(request: Request, state: str | None = None,
 async def close(request: Request, rid: int) -> dict:
     """`{why?}`. Closes an open report and reads what waits in its thread; a closed one
     stays as it is. `why` goes into the thread as the app's line ("Report #3 closed:
-    ..."), delivered to the conversation that filed it, so the agent reads why and does
-    not file it again."""
+    ..."), delivered to the conversation that filed it with its next turn (it starts no
+    turn of its own), so the agent reads why and does not file it again."""
     services = request.app.state.services
     body = await request.json() if await request.body() else {}
     why = " ".join(str((body or {}).get("why") or "").split())
@@ -43,5 +43,6 @@ async def close(request: Request, rid: int) -> dict:
         raise NotFound("bug report")
     if why and was and was["state"] == "open" and row["conversation_id"]:
         await services.intercom.send("system:app", f"agent:{row['conversation_id']}",
-                                     closed_line(rid, why), reply_to=row["thread"])
+                                     closed_line(rid, why), reply_to=row["thread"],
+                                     wake=False)
     return row
