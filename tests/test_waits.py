@@ -77,6 +77,17 @@ async def test_a_bug_report_a_mission_filed_waits_as_its_own_thread(store):
     assert await store.write(lambda c: rows.read_from(c, f"agent:{night}")) == []
 
 
+async def test_an_archived_mission_waits_for_nobody(store):
+    night = await conversations.create(store, "Night", kind="mission")
+    await missions.create(store, night, {"name": "Night", "terminal": "n", "brief": "b"})
+    await store.write(lambda c: missions.set_status_sync(c, store, night, "needs_you", "A question."))
+    services = SimpleNamespace(store=store, approvals=None, connectors=None)
+    assert [i["kind"] for i in await waits.items(services)] == ["mission"]
+    await conversations.archive(store, night, True)
+    assert await waits.items(services) == []
+    assert {"conversation.archived", "conversation.unarchived"} <= waits.CHANGES
+
+
 async def test_nothing_waiting_is_an_empty_list(store):
     services = SimpleNamespace(store=store, approvals=None, connectors=None)
     assert await waits.items(services) == []

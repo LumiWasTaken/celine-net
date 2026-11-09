@@ -18,8 +18,10 @@ import anyio
 
 from .core.event_types import (
     APPROVALS_CHANGED,
+    CONVERSATION_ARCHIVED,
     CONVERSATION_DELETED,
     CONVERSATION_RESTORED,
+    CONVERSATION_UNARCHIVED,
     INTERCOM_STATE,
     MISSION_STATE,
     SOURCE_STATE,
@@ -29,7 +31,8 @@ from .core.event_types import (
 log = logging.getLogger("celine.waits")
 
 CHANGES = frozenset({APPROVALS_CHANGED, MISSION_STATE, SOURCE_STATE, INTERCOM_STATE,
-                     CONVERSATION_DELETED, CONVERSATION_RESTORED})
+                     CONVERSATION_DELETED, CONVERSATION_RESTORED,
+                     CONVERSATION_ARCHIVED, CONVERSATION_UNARCHIVED})
 # a lost login's line, by platform; any other platform reads LOST
 LOST_BY = {"whatsapp": "Not connected to WhatsApp. Log in with QR code in Settings, WhatsApp.",
            "discord": "Not connected to Discord. Log in again in Settings, Discord."}
@@ -54,7 +57,8 @@ def lost_logins(connectors) -> list[dict]:
 
 
 def _missions(c) -> list[dict]:
-    """Every mission in Needs you or with a message to the user that waits (its home is
+    """Every mission outside the Archive and the Trash that is in Needs you or has a
+    message to the user that waits (its home is
     the mission: intercom/store.py MISSION_FROM), once; the line is the newest waiting
     message, else its note."""
     from . import homes
@@ -65,7 +69,7 @@ def _missions(c) -> list[dict]:
         "(SELECT i.text FROM intercom i WHERE i.from_addr = 'agent:' || m.conversation_id "
         f"AND i.kind <> 'job' AND {_UNREAD} AND NOT {BUG} ORDER BY i.id DESC LIMIT 1) AS asked "
         "FROM missions m JOIN conversations cv ON cv.id = m.conversation_id "
-        "WHERE cv.trashed_at IS NULL) WHERE status = 'needs_you' OR asked IS NOT NULL "
+        "WHERE cv.trashed_at IS NULL AND cv.archived_at IS NULL) WHERE status = 'needs_you' OR asked IS NOT NULL "
         "ORDER BY updated_at DESC", ("user", now())).fetchall()
     return [{"kind": "mission", "id": r["conversation_id"], "title": r["name"],
              "line": _line(r["asked"] or r["note"]),
