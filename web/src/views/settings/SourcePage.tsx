@@ -1,7 +1,7 @@
 /* One page per source, built for that source, always in the same parts
    (12-sources-settings §1.2):
 
-     1. State     a dot and a word in the head; the sentence as one calm line when it
+     1. State     its word in the head; the sentence as one calm line when it
                   is not connected
      2. To fix    only real problems (a lost login, a task or an automatic task that
                   failed), each with the one button that fixes it
@@ -17,7 +17,7 @@ import { failedTasks, type Source } from '../../lib/sources'
 import type { Level } from '../../lib/settingsApi'
 import { useResource } from '../../lib/useResource'
 import { Button, Loaded, Notice, Section, type NoticeAction } from '../../ui'
-import { Page, StatusDot, TaskLine } from './parts'
+import { Page, LevelWord, TaskLine } from './parts'
 import { WhatsAppSource } from './WhatsAppSource'
 import { DiscordSource } from './DiscordSource'
 import './settings.css'
@@ -126,7 +126,7 @@ function GenericSource({ source }: { source: Source }) {
   const schedules = useSchedules()
   const list = tasks.data ?? []
   return (
-    <Page title={source.title} detail={<StatusDot level={source.level} word />}>
+    <Page title={source.title} detail={<LevelWord level={source.level} />}>
       <StateNotice level={source.level} sentence={source.sentence} />
       <ToFix>{[...scheduleProblems(kb.id, schedules.data), ...failedLines(kb.id, list, tasks.reload)]}</ToFix>
       <Section title="Included">

@@ -36,24 +36,114 @@ TARGET = re.compile(r"^[A-Za-z0-9_-]+(__[A-Za-z0-9_.-]+)?$")
 # an OpenRouter provider slug: "deepinfra", "deepinfra/fp4"
 PROVIDER_SLUG = re.compile(r"^[a-z0-9._-]+(/[a-z0-9._-]+)?$")
 
-# role -> label and the capabilities a model needs for it
+# role -> label, the capabilities a model needs for it, and its help (the "?" on Models)
 ROLES: dict[str, dict[str, Any]] = {
-    "chat": {"label": "Chat", "caps": ["chat"]},
-    "tasks": {"label": "Tasks", "caps": ["chat", "tools"]},
-    "writer": {"label": "Writing", "caps": ["chat"]},
-    "small": {"label": "Titles and descriptions", "caps": ["chat"]},
-    "embeddings": {"label": "Topic search", "caps": ["embeddings"]},
-    "reranker": {"label": "Reranking", "caps": ["rerank"]},
-    "vision": {"label": "Photo descriptions", "caps": ["vision"]},
-    "screen": {"label": "Screen reading", "caps": ["vision"]},
-    "image_generation": {"label": "Image generation", "caps": ["image_generation"]},
-    "music_generation": {"label": "Music generation", "caps": ["music_generation"]},
-    "transcription": {"label": "Dictation", "caps": ["transcription"]},
-    "speech": {"label": "Read aloud", "caps": ["speech"]},
+    "chat": {"label": "Chat", "caps": ["chat"],
+             "help": "Replies in your chats and routines. A chat uses the model you picked, "
+                     "else the first one; a routine uses only the first one and waits for it."},
+    "tasks": {"label": "Tasks", "caps": ["chat", "tools"],
+              "help": "Missions and sub-agents. Their steps move to the next model when one "
+                      "fails; with this list empty, the Chat models do the work."},
+    "writer": {"label": "Writing", "caps": ["chat"],
+               "help": "Posts, comments and messages written in the voice of the Persona and "
+                       "Example lines. Only the first model writes; when it fails, the draft "
+                       "fails."},
+    "small": {"label": "Titles and descriptions", "caps": ["chat"],
+              "help": "Names chats and describes documents in a line or two. A small, fast "
+                      "model does this well."},
+    "guard": {"label": "Decision model", "caps": ["chat"],
+              "help": "Decides whether a risky step may run and writes Bastet's messages and "
+                      "answers. Without it, Warn lets every step run and Enforce makes risky "
+                      "steps wait."},
+    "embeddings": {"label": "Topic search", "caps": ["embeddings"],
+                   "help": "Finds messages, notes and documents by what they are about, not "
+                           "only by their words."},
+    "reranker": {"label": "Reranking", "caps": ["rerank"],
+                 "help": "Sorts search results so the best ones come first."},
+    "vision": {"label": "Photo descriptions", "caps": ["vision"],
+               "help": "Describes photos in messages and documents, so Search finds them by "
+                       "what they show."},
+    "screen": {"label": "Screen reading", "caps": ["vision"],
+               "help": "Looks at a screenshot of a browser page and answers a question about "
+                       "it."},
+    "image_generation": {"label": "Image generation", "caps": ["image_generation"],
+                         "help": "The presets images are made with. ComfyUI renders them."},
+    "music_generation": {"label": "Music generation", "caps": ["music_generation"],
+                         "help": "The music presets tracks are made with. ComfyUI renders "
+                                 "them."},
+    "transcription": {"label": "Dictation", "caps": ["transcription"],
+                      "help": "Turns what you say into text in the message box."},
+    "speech": {"label": "Read aloud", "caps": ["speech"],
+               "help": "Reads replies out loud."},
 }
+
+# the "?" of Settings, Models, Providers (GET /providers `help`)
+PROVIDERS_HELP = "The servers your models run on. Any provider can serve any role."
+
+# a provider option's words on its page: label, help (the "?"), unit, and each choice's
+# label; an option left out is its key in words. `cloud` is the provider's Cloud switch.
+OPTION_WORDS: dict[str, dict[str, Any]] = {
+    "service_tier": {"label": "Speed and price",
+                     "help": "How OpenRouter weighs speed against price for this provider's "
+                             "requests.",
+                     "choices": {"": "Default", "flex": "Flex (cheaper, slower)",
+                                 "priority": "Priority (faster, more expensive)"}},
+    "data_collection": {"label": "Provider may keep data",
+                        "help": "Yes lets OpenRouter use providers that may store your "
+                                "requests or train on them.",
+                        "choices": {"deny": "No", "allow": "Yes"}},
+    "require_parameters": {"label": "Require parameters",
+                           "help": "Only providers that take every setting a request sends "
+                                   "get it."},
+    "allow_fallbacks": {"label": "Allow fallbacks",
+                        "help": "When the first provider fails, OpenRouter sends the request "
+                                "to the next one."},
+    "sort": {"label": "Sort by", "help": "Which providers OpenRouter tries first.",
+             "choices": {"": "Default", "throughput": "Throughput", "latency": "Latency",
+                         "price": "Price"}},
+    "timeout": {"label": "Timeout", "unit": "seconds",
+                "help": "How long one request may take before it fails."},
+    "max_concurrent": {"label": "Requests at once", "zero": "No limit",
+                       "help": "How many requests this provider gets at the same time. 0 "
+                               "means no limit."},
+    "max_per_hour": {"label": "Requests per hour", "zero": "No limit",
+                     "help": "The most requests this provider gets in one hour since the app "
+                             "started, 0 for no limit. Past it, a chat fails with the reason and "
+                             "other work moves on or waits, as Next model at the hourly limit "
+                             "says."},
+    "next_when_full": {"label": "Next model at the hourly limit", "needs": "max_per_hour",
+                       "help": "On, work past Requests per hour moves to the next model in "
+                               "its list. Off, it waits until this provider has room again."},
+    "keep_alive": {"label": "Unload after",
+                   "help": "How long an idle model stays loaded, such as 5m or 1h."},
+    "shares_gpu_with": {"label": "Shares its GPU with",
+                        "help": "Before each image, the app unloads this provider's models to "
+                                "free the GPU."},
+    "cloud": {"label": "Cloud",
+              "help": "A server outside your network. {{name}} asks you before sending work "
+                      "to one of its models you did not pick."},
+}
+
+
+def option_view(key: str, type_: str, default: Any, choices, fill=lambda text: text) -> dict:
+    """One provider option as its page draws it: the server's words, `fill` putting the
+    names in (cfg.substitute); `zero`: what 0 shows as, `needs`: the option that must be
+    set (not 0, not off) for this one to apply."""
+    w = OPTION_WORDS.get(key, {})
+    named = w.get("choices", {})
+    return {"key": key, "type": type_, "default": default,
+            "label": w.get("label") or key.replace("_", " ").capitalize(), "zero": w.get("zero"),
+            "needs": w.get("needs"),
+            "help": fill(w["help"]) if w.get("help") else None, "unit": w.get("unit"),
+            "choices": [[c, named.get(c) or c or "Default"] for c in choices] if choices else None}
+
 
 # option name -> (type, default, choices) per kind; types: bool int num str list
 _COMMON = {"timeout": ("num", 600.0, None), "max_concurrent": ("int", 0, None),
+           # requests in one hour (backends/llm.py LLM.take); 0 none
+           "max_per_hour": ("int", 0, None),
+           # past it, work with another model in its list moves on (router._ordered)
+           "next_when_full": ("bool", True, None),
            # effort words its models accept (the UI's list); a model can say its own
            "thinking_levels": ("list", [], None)}
 OPTIONS: dict[str, dict[str, tuple]] = {
@@ -80,7 +170,9 @@ OPTIONS: dict[str, dict[str, tuple]] = {
         "backup_models": ("list", [], None),
     },
 }
-_PROVIDER_KEYS = {"kind", "label", "base_url", "options", "models"}
+# `cloud`: the Cloud switch (settings/agent_models.py provider_cloud); left out, the address
+# says, so a changed address changes it
+_PROVIDER_KEYS = {"kind", "label", "base_url", "cloud", "options", "models"}
 _MODEL_KEYS = {"label", "caps", "context", "slots", "params", "llama", "reasoning_effort",
                "thinking_levels", "zdr", "provider", "vision_twin", "max_tokens", "cache_ttl"}
 # an Anthropic model's `max_tokens` (the API needs one) when unset; its most is what the
@@ -213,6 +305,8 @@ def validate_provider(pid: str, p: Any, path: str = "") -> dict[str, Any]:
         raise Invalid(f"{base}.base_url", "That is not an address. Try "
                                           "http://192.168.1.20:11434 or similar.")
     out["base_url"] = url
+    if p.get("cloud") is not None:
+        out["cloud"] = _typed(f"{base}.cloud", p["cloud"], "bool", None)
     opts_in = p.get("options") or {}
     if not isinstance(opts_in, dict):
         raise Invalid(f"{base}.options", "Options are an object.")
@@ -372,13 +466,13 @@ def validate_role(role: str, r: Any, providers: dict[str, Any],
         raise Invalid(base, f"There is no role called '{role}'. Roles: "
                       + ", ".join(ROLES) + ".")
     if not isinstance(r, dict):
-        raise Invalid(base, "A role is an object with a chain.")
+        raise Invalid(base, "A role is an object with a list of models.")
     for k in r:
         if k != "chain":
             raise Invalid(f"{base}.{k}", f"'{k}' is not a role setting.")
     chain = r.get("chain") or []
     if not isinstance(chain, list) or any(not isinstance(x, str) for x in chain):
-        raise Invalid(f"{base}.chain", "The chain is a list of models.")
+        raise Invalid(f"{base}.chain", "This must be a list of models.")
     if len(set(chain)) != len(chain):
         raise Invalid(f"{base}.chain", "A model is in the list twice.")
     if len(chain) > 6:

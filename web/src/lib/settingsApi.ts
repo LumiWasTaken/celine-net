@@ -1,13 +1,14 @@
 /* The Settings API (server/celine/api/settings.py): providers and their models,
    write-only keys, the models of each role, tool defaults, general
-   settings, it (GET/PUT /her), and the chat model of one conversation.
+   settings, the agent (GET/PUT /agent), and the chat model of one conversation.
 
    Every PUT takes the whole object and is idempotent; keys are never sent back. Every
    change reaches open pages at once: `settings.changed` after a save, `models.state`
    when a provider or model changes state (SETTINGS_EVENTS). */
 import { del, json, post, request } from './api'
 import { LOCALE } from './format'
-import type { Her } from './her'
+import type { Agent } from './agent'
+import type { GuardRules as GuardPage } from './guard'
 import type { ServerEvent } from './bus'
 import type { FormField } from '../ui'
 
@@ -44,6 +45,8 @@ type ProviderConfig = {
   kind: ProviderKind
   label: string
   base_url: string
+  /** the Cloud switch the user set; null or left out, its address says (ProviderView.cloud) */
+  cloud?: boolean | null
   options?: Record<string, unknown>
   models: Record<string, ModelConfig>
 }
@@ -58,8 +61,6 @@ type KeyState = {
 type ProviderState = {
   /** null: not asked yet */
   reachable: boolean | null
-  /** ms, when this reachability began */
-  since: number | null
   /** why it is unreachable, one sentence */
   error: string | null
   /** the models loaded now; null when the server does not say */
@@ -71,7 +72,7 @@ type ProviderState = {
 
 type ModelState =
   | { state: 'ok' }
-  | { state: 'failed'; kind: 'could_not_load' | 'error'; message: string; at: number }
+  | { state: 'failed'; kind: 'could_not_load' | 'error' | 'busy'; message: string }
 
 export type ProviderModel = ModelConfig & {
   name: string
@@ -83,6 +84,8 @@ export type ProviderModel = ModelConfig & {
   /** false while its provider has no key: not offered in any list */
   offered: boolean
   state: ModelState
+  /** the server's one sentence why it does not answer now, else null */
+  problem: string | null
   /** the context the server says it runs with; turns budget with it over `context` */
   server_context: number | null
   /** the caps the server states; its tools and vision count over `caps`. null when it states none */
@@ -94,6 +97,8 @@ export type ProviderModel = ModelConfig & {
 export type ProviderView = {
   id: string
   provider: ProviderConfig
+  /** the Cloud switch as it stands: its own, else what its address says */
+  cloud: boolean
   version: string
   key: KeyState
   state: ProviderState
@@ -102,7 +107,13 @@ export type ProviderView = {
   used_by: string[]
 }
 
-export type OptionSchema = { key: string; type: 'bool' | 'int' | 'num' | 'str' | 'list'; default: unknown; choices: string[] | null }
+/** a provider option with the server's words: its label, help, unit and each choice's label */
+export type OptionSchema = {
+  key: string; type: 'bool' | 'int' | 'num' | 'str' | 'list'; default: unknown
+  label: string; help: string | null; unit: string | null; choices: [string, string][] | null
+  /** what 0 shows as ('No limit'); the option that must be set for this one to apply */
+  zero?: string | null; needs?: string | null
+}
 /** `default_url`: the kind lives at that one address (OpenRouter, Anthropic), no address field */
 export type KindInfo = { kind: ProviderKind; label: string; key: 'required' | 'optional'; default_url: string | null; options: OptionSchema[] }
 
@@ -124,10 +135,14 @@ export type Available = { id: string; name?: string; caps?: Cap[]; context?: num
 /* ── roles: an ordered list of models each; the first that can answer works ── */
 export type RoleView = {
   label: string
+  /** what the role does (its "?") */
+  help: string
   /** the capabilities every model in the list needs */
   needs: Cap[]
   chain: string[]
-  models: { ref: string; label: string; provider: string; provider_label: string; key_missing: boolean }[]
+  /** `problem`: the server's one sentence why it does not answer in this role (its provider
+      no longer has it, a capability it lacks, its provider's state, its last failed answer), else null */
+  models: { ref: string; label: string; provider: string; provider_label: string; key_missing: boolean; problem: string | null }[]
   version: string
 }
 
@@ -154,52 +169,31 @@ type EmailView = {
 
 type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 
-type AskKind = 'vault' | 'gate' | 'her' | 'share' | 'settings' | 'model'
+type AskKind = 'vault' | 'gate' | 'agent' | 'share' | 'settings' | 'model'
 
-/** one request waiting for you (server/celine/approvals.py): `vault` a tap, `gate` a
-    tool Bastet asks you about, `her` an edit of herself, `share` a public share,
-    `settings` a change of Settings, `model` a sub-agent on a cloud model; every word is
-    the server's, built from fixed sentences and the call's own data */
-export type VaultAsk = {
+/** one request of the agent's that waits for you, as its card (server/celine/approvals.py
+    Ask.card): `vault` a tap, `gate` a tool Bastet asks you about, `agent` an edit of
+    itself, `share` a public share, `settings` a change of Settings, `model` work it
+    sends to a cloud model you did not pick (a sub-agent, a mission, a coding task, a plan
+    step, messages to it). Every word is the server's: the title, the call's own data as
+    facts, its long text whole (`detail`, under Details), why it is asked (`help`) */
+export type Approval = {
   id: string
   kind: AskKind
-  action: string
-  facts: string[]
-  why: string
-  conversation: string
-  /** the last tool that read from outside in that conversation before it asked */
-  read: string | null
-  /** null: it waits for you (your own turn), until you answer or Stop */
-  expires_in: number | null
-  /** where its conversation lives (server/celine/homes.py), and the link that opens it */
+  title: string
+  facts: { label: string; value: string }[]
+  detail: { title: string; text: string } | null
+  help: string
+  /** where its work lives, by name ("Mission Night"), and the link that opens it */
+  where: string | null
   home: Home | null
   link: string | null
-}
-
-export type Home = 'her' | 'missions' | 'routines'
-
-/** GET /approvals: what waits, and how many wait in a conversation that is there */
-export type Asks = {
-  approvals: VaultAsk[]
-  count: number
-}
-
-/** a request as its chat shows it, after the message that made the call (the snapshot's
-    `approvals`, the events approval.asked and approval.closed); a gate is asked on
-    Bastet's banner instead */
-export type ChatApproval = {
-  id: string
-  kind: AskKind
-  /** the kind's name, in bold */
-  label: string
-  line: string
+  /** in its chat: after the message that made the call */
   tool_call_id: string | null
   message_id: string | null
-  /** settings: each field's label, before and after (a secret: its state) */
-  changes?: { label: string; before?: string; after: string }[]
-  /** settings: her reason, in her words */
-  why?: string
 }
+
+export type Home = 'agent' | 'missions' | 'routines'
 
 type VaultView = {
   fields: FormField[]
@@ -208,7 +202,7 @@ type VaultView = {
   /** the master password is stored nowhere: this says whether it was typed since the
       last start */
   unlocked: boolean
-  asks: VaultAsk[]
+  asks: Approval[]
   /** the server's status line: Not set up, Locked, Unlocked, or what went wrong */
   status: string
   version: string
@@ -253,6 +247,8 @@ export type Feature = {
   /** one sentence on what it gives you, and one short phrase on why someone turns it off */
   about: string
   off_when: string
+  /** its "?": `about` then `off_when` */
+  help: string
   /** the onboarding's setup form for it, or "" */
   setup: string
   /** its form at /api/forms/<id> (a plugin's settings.toml), or "": its Settings page and its card's body */
@@ -297,12 +293,13 @@ export type FeaturesView = {
   done: boolean
   version: string
 }
-/** the Dot of a feature's state; null: nothing to show */
-export const STATE_TONE: Record<FeatureState, 'ok' | 'error' | 'muted' | null> = { ready: 'ok', missing: 'error', unset: 'muted', none: null }
 
 /* ── Bastet's rules and her services ── */
-type GuardRules = { chain: { provider: string; model: string } & Record<string, unknown> } & Record<string, unknown>
-type ServiceView = { url: string }
+type GuardRules = GuardPage & { chain: { provider: string; model: string } & Record<string, unknown> }
+/** `source`: where `url` comes from (saved here, the compose's variable, else the field's
+    default); `default`: the address Use the default puts back while a saved one hides the
+    variable or the field's default, else null */
+type ServiceView = { url: string; source: 'saved' | 'environment' | 'default'; default: string | null }
 type AddressView = { origin: string; version: string }
 /** `keys`: the sha256 of each box's key, what its key.hash file holds */
 type ServicesView = { services: Record<string, ServiceView>; keys: Record<string, { hash: string }>; version: string }
@@ -315,7 +312,8 @@ export const settingsApi = {
   /** one feature's state, asked now (no cache): "Check again" */
   probeFeature: (id: string) => request<Probe>(`/features/${enc(id)}/probe`),
 
-  providers: () => request<{ providers: ProviderView[]; kinds: KindInfo[]; version: string }>('/providers'),
+  /** `help`: what the Providers section is (its "?") */
+  providers: () => request<{ providers: ProviderView[]; kinds: KindInfo[]; help: string; cloud_help: string; version: string }>('/providers'),
   putProvider: (pid: string, p: ProviderConfig) => request<ProviderView>(`/providers/${enc(pid)}`, json('PUT', p)),
   /** the onboarding's ComfyUI: the saved one's id and models when there is one (the address
       changes in place), else a new `comfyui` with no models: the server fills the preset roles */
@@ -327,7 +325,7 @@ export const settingsApi = {
   test: (pid: string) => post<ProviderView>(`/providers/${enc(pid)}/test`),
   /** no kind: the server says what it is (`kind` in the answer; null when it could not tell) */
   testNew: (body: { kind?: ProviderKind; base_url?: string; key?: string }) =>
-    request<Health & { kind: ProviderKind | null; base_url: string }>('/provider-checks', json('POST', body)),
+    request<Health & { kind: ProviderKind | null; base_url: string; cloud?: boolean }>('/provider-checks', json('POST', body)),
   available: (pid: string, refresh = false) =>
     request<{ models: Available[]; total: number }>(`/providers/${enc(pid)}/available-models${refresh ? '?refresh=true' : ''}`),
   putModel: (pid: string, model: string, m: ModelConfig) =>
@@ -355,9 +353,8 @@ export const settingsApi = {
 
   /** its services (the shellbox, its browser, SearXNG): their addresses and the boxes' key hashes */
   services: () => request<ServicesView>('/services'),
-  /** whole object: every service's url */
-  putServices: (view: ServicesView, id: string, url: string) =>
-    request<ServicesView>('/services', json('PUT', { services: { ...view.services, [id]: { url } } })),
+  /** one service's url, "" clears it, null forgets it (Use the default); the others stay */
+  putService: (id: string, url: string | null) => request<ServicesView>(`/services/${enc(id)}`, json('PUT', { url })),
   /** one service, asked now with what is saved */
   testService: (id: string) => post<Probe>(`/services/${enc(id)}/test`),
 
@@ -388,10 +385,9 @@ export const settingsApi = {
   unlockVault: (master_password: string) =>
     request<VaultView>('/vault/unlock', json('POST', { master_password })),
   lockVault: () => post<VaultView>('/vault/lock'),
-  approvals: () => request<Asks>('/approvals'),
-  /** POST /approvals/{id}/answer: the answer to one request, from Settings or its chat */
+  /** POST /approvals/{id}/answer: the answer to one request, wherever its card is */
   answerApproval: (id: string, ok: boolean) =>
-    request<{ approvals: VaultAsk[] }>(`/approvals/${enc(id)}/answer`, json('POST', { ok })),
+    request<{ ok: true }>(`/approvals/${enc(id)}/answer`, json('POST', { ok })),
 
   conversationSettings: (cid: string) => request<ConversationSettings>(`/conversations/${enc(cid)}/settings`),
   /** merge-patch: a key left out stays, null goes back to the default */
@@ -399,28 +395,42 @@ export const settingsApi = {
     request<ConversationSettings>(`/conversations/${enc(cid)}/settings`, json('PATCH', patch)),
 }
 
-/* ── it (server/celine/api/agent.py): GET /her, PUT /her with If-Match ── */
+/* ── the agent (server/celine/api/agent.py): GET /agent, PUT /agent with If-Match ── */
 export type Portrait = { url: string; media_type: string; size: number; updated_at: string }
 /** its Banned words: each one as it is sent (" delve" mid-sentence), all at one Bias (-100 bans) */
 export type Voice = { on: boolean; banned: string[]; bias: number }
-export type HerView = Her & {
+export type AgentView = Agent & {
   persona: string
   /** how it talks, its own text, null for the shipped one (talk_shipped) */
   talk: string | null
   talk_shipped: string
   voice: Voice
-  /** its voice as History keeps it (her:voice), one line per entry */
+  /** its voice as History keeps it (agent:voice), one line per entry */
   voice_text: string
+  /** the "?" of Banned words and Bias */
+  voice_help: { banned: string; bias: string }
   version: string
 }
-export type HerPut = Partial<{ name: string; pronouns: string; color: string; persona: string; talk: string | null; voice: Voice }>
+export type AgentPut = Partial<{ name: string; pronouns: string; color: string; persona: string; talk: string | null; voice: Voice }>
 
-export const herApi = {
-  get: () => request<HerView>('/agent'),
+/* ── Settings, Prompts (server/celine/api/prompts.py): every text a model reads ── */
+/** a row: `href` opens a text edited on its own page (its persona), else it opens here */
+export type PromptItem = { id: string; name: string; about: string; edited: boolean; href: string | null }
+export type PromptGroup = { label: string; items: PromptItem[] }
+export type PromptView = { id: string; name: string; about: string; text: string; edited: boolean }
+export const promptsApi = {
+  list: () => request<{ groups: PromptGroup[]; help: string }>('/prompts'),
+  get: (id: string) => request<PromptView>(`/prompts/${enc(id)}`),
+  /** null: back to the shipped text (Use the default) */
+  put: (id: string, text: string | null) => request<PromptView>(`/prompts/${enc(id)}`, json('PUT', { text })),
+}
+
+export const agentApi = {
+  get: () => request<AgentView>('/agent'),
   /** `version`: the one its page was loaded at; a change made meanwhile (by Celine) is a
       version_conflict with the server's sentence, nothing written */
-  put: (body: HerPut, version: string) =>
-    request<HerView>('/agent', { ...json('PUT', body), headers: { 'If-Match': version } }),
+  put: (body: AgentPut, version: string) =>
+    request<AgentView>('/agent', { ...json('PUT', body), headers: { 'If-Match': version } }),
   putPortrait: (file: File) => {
     const form = new FormData()
     form.append('image', file)
@@ -449,5 +459,5 @@ export function toolOrder<T extends { label: string; tools: { label: string }[] 
   return [...skills].sort(byLabel).map(s => ({ ...s, tools: [...s.tools].sort(byLabel) }))
 }
 
-/* The source dot: filled, pulsing, amber, hollow. */
+/* A source's level: its state word and tone (parts.tsx LevelWord). */
 export type Level = 'ok' | 'working' | 'needs_you' | 'off'

@@ -20,7 +20,8 @@ def _root(request: Request):
 
 @router.get("/appearance")
 async def get_appearance(request: Request) -> dict:
-    return {"appearance": appearance_mod.effective(appearance_mod.read(_root(request)))}
+    return {"appearance": appearance_mod.effective(appearance_mod.read(_root(request))),
+            "help": appearance_mod.HELP}
 
 
 @router.put("/appearance")

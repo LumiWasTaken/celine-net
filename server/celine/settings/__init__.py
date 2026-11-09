@@ -96,9 +96,7 @@ def load(cfg) -> Settings:
         {k: x for k, x in v.items() if k in known or k == "done"}))
     if not s.saved["features"]:          # nothing that needs a service before Setup saved it
         s.features = features_mod.seed()
-    s.services = pick("services", services_mod.validate)
-    if not s.saved["services"]:          # the environment, read nowhere else
-        s.services = services_mod.seed()
+    s.services = pick("services", services_mod.validate)    # the environment fills the rest
     s.address = pick("address", address_mod.validate)
     for p in plugins.with_form():        # var/settings/<id>.toml
         s.plugins[p.id] = pick(p.id, lambda v, p=p: form.validate(p.id, p.form["fields"], v))
@@ -107,19 +105,22 @@ def load(cfg) -> Settings:
 
 def apply(cfg) -> None:
     """Load and compile into cfg. A broken file is a ConfigError, an invalid one a fatal
-    Problem (a reload keeps the last good values)."""
+    Problem (a reload keeps the last good values). The user's edits of the prompts
+    (<data>/prompts, celine/prompts.py) are read from there from now on."""
+    from .. import prompts
+    prompts.use(cfg.data_dir)
     s = load(cfg)
     cfg.problems.extend(s.problems)
     compile_into(cfg, s)
 
 
-def compile_her(cfg) -> None:
+def compile_agent(cfg) -> None:
     """The names people read (intercom/store.py NAMES): the user's and its own."""
     from ..intercom import store as intercom_rows
-    intercom_rows.NAMES.update(user=cfg.user or "you", her=cfg.name)
+    intercom_rows.NAMES.update(user=cfg.user or "you", agent=cfg.name)
 
 
 __all__ = ["CONVERSATION_MODELS", "CONVERSATION_ROLES",
-           "CONVERSATION_THINKING", "Invalid", "Settings", "apply", "compile_her",
+           "CONVERSATION_THINKING", "Invalid", "Settings", "apply", "compile_agent",
            "load",
            "file_to_section", "section_to_file"]

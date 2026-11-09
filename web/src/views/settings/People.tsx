@@ -7,7 +7,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link2, MoreHorizontal, NotebookPen, PenLine, SquareCheck, Unlink, Users } from 'lucide-react'
 import { identitiesApi, kbApi, type Kb, type Person, type PersonAccount, type PersonEntry } from '../../lib/kb'
-import { errorText, listTime, nothingMatches } from '../../lib/format'
+import { errorText, listTime, noneMatch } from '../../lib/format'
 import { useResource } from '../../lib/useResource'
 import { useAutosave } from '../../lib/useAutosave'
 import {
@@ -83,7 +83,7 @@ export function People({ kbs }: { kbs: Kb[] }) {
   const ctx = useContextMenu()
   const rowMenu = (p: PersonEntry): MenuItem[] => [
     { label: 'Rename', icon: PenLine, onSelect: () => setEditing(p.key) },
-    { label: 'Edit about', icon: NotebookPen, onSelect: () => setAbout(p) },
+    { label: `About ${p.name}`, icon: NotebookPen, onSelect: () => setAbout(p) },
     { label: picked.has(p.key) ? 'Clear selection' : 'Select', icon: SquareCheck, onSelect: () => toggle(p, !picked.has(p.key)) },
   ]
   const accountMenu = (a: PersonAccount): MenuItem[] => [
@@ -177,7 +177,7 @@ export function People({ kbs }: { kbs: Kb[] }) {
             )}
             {picked.size > 1 && (
               <Button variant="primary" icon={Link2} loading={busy === 'mark'} onClick={() => void markSame()}
-                      title={`Search and the conversations treat these accounts as one person. Messages keep their own names.\n${pickedList.map(r => r.name).join(', ')}`}>
+                      title={`Search and the chats treat these accounts as one person. Messages keep their own names.\n${pickedList.map(r => r.name).join(', ')}`}>
                 Mark {picked.size} as the same person
               </Button>
             )}
@@ -187,7 +187,7 @@ export function People({ kbs }: { kbs: Kb[] }) {
         {people.error && <InlineError message={people.error} onRetry={people.reload} />}
         <div className="people__table" role="table" aria-label="People">
           {!people.data && !people.error ? <LoadingRow label="Loading people" /> : list.length === 0 ? (
-            <EmptyState compact>{q ? nothingMatches(q) : 'No people yet'}</EmptyState>
+            <EmptyState compact>{q ? noneMatch('people') : 'No people yet'}</EmptyState>
           ) : (
             <VirtualList items={list} getKey={p => p.key} page renderRow={renderPerson}
                          estimate={i => LINE * (list[i]!.same_person ? list[i]!.accounts.length + 1 : 1)} />

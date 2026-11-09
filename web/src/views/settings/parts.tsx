@@ -1,4 +1,4 @@
-/* Pieces every Settings page uses: the page frame, the status dot, a task as one
+/* Pieces every Settings page uses: the page frame, the level word, a task as one
    quiet line. The generic form is the kit's Form (ui/Form.tsx). */
 import { useSyncExternalStore, type ReactNode } from 'react'
 import { CircleCheck, RefreshCw, Square, TriangleAlert, X } from 'lucide-react'
@@ -9,7 +9,7 @@ import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { useAction } from '../../lib/useAction'
 import type { Level } from '../../lib/settingsApi'
 import { LEVEL_WORD } from '../../lib/sources'
-import { Button, Dot, ICON, IconButton, InlineError, PlaceHead, Progress, cx, usePhone, type Crumb, type MenuItem } from '../../ui'
+import { Button, ICON, IconButton, InlineError, PlaceHead, Progress, StateWord, cx, usePhone, type Crumb, type MenuItem } from '../../ui'
 import './settings.css'
 
 /* ── the page frame: the pane head and a scrolling body with the page's column in the
@@ -23,8 +23,10 @@ const watchPane = (cb: () => void) => {
   return () => m.removeEventListener('change', cb)
 }
 
-export function Page({ title, detail, actions, more, children, wide = false, fill = false, up }: {
+export function Page({ title, help, detail, actions, more, children, wide = false, fill = false, up }: {
   title: ReactNode
+  /** what the page is, behind a "?" after its title (the server's words) */
+  help?: string
   /** a muted state beside the title (a provider's health) */
   detail?: ReactNode
   /** the page's own action in its head (Check provider) */
@@ -44,12 +46,12 @@ export function Page({ title, detail, actions, more, children, wide = false, fil
   const one = useSyncExternalStore(watchPane, onePane, () => false)
   const above = up ?? (one ? { page: '', label: 'Settings' } : null)
   // a phone has the head's back arrow; a wider screen names the page above as a crumb
-  const back = phone && above ? { label: above.label, onClick: () => nav.go({ section: 'settings', page: above.page || undefined }) } : undefined
+  const back = phone && above ? { label: 'Back', onClick: () => nav.back({ section: 'settings', page: above.page || undefined }) } : undefined
   const crumbs: Crumb[] | undefined = !phone && above
     ? [{ label: above.label, href: format({ section: 'settings', page: above.page || undefined }) }] : undefined
   return (
     <>
-      <PlaceHead title={title} detail={detail} actions={actions} more={more} level={1} className="settings__head" back={back} crumbs={crumbs} />
+      <PlaceHead title={title} help={help} detail={detail} actions={actions} more={more} level={1} className="settings__head" back={back} crumbs={crumbs} />
       <div className={cx('page', 'settings__content', fill && 'page--fill')}>
         <div className={cx('page__col settings__col', wide && 'page__col--wide settings__col--wide', fill && 'page__col--fill')}>{children}</div>
       </div>
@@ -57,21 +59,21 @@ export function Page({ title, detail, actions, more, children, wide = false, fil
   )
 }
 
-/* ── the source dot: filled (OK), pulsing (busy), amber (needs you), hollow (imports only);
-   `word`: the state's word beside it (a page's head) ── */
-export function StatusDot({ level, word = false }: { level: Level; word?: boolean }) {
-  const tone = ({ ok: 'ok', working: 'running', needs_you: 'warn', off: 'off' } as const)[level]
-  return <Dot tone={tone} pulse={level === 'working'} label={LEVEL_WORD[level]} text={word ? LEVEL_WORD[level] : undefined} />
+/* ── a source's state as its word in a text tone: Waiting for you in warn, Running, the
+   rest muted ── */
+export function LevelWord({ level }: { level: Level }) {
+  const tone = ({ ok: 'muted', working: 'running', needs_you: 'warn', off: 'muted' } as const)[level]
+  return <StateWord tone={tone}>{LEVEL_WORD[level]}</StateWord>
 }
 
 /* ── one task, as one quiet line where it was started ────────────────────────
    Running: what it does, a progress bar and Stop. Done: one sentence of result and an
-   × to dismiss it. Failed: the reason, Retry and ×. Stopped: Continue and ×. Finished
+   × to dismiss it. Failed: the reason, Retry and ×. Stopped: Retry and ×. Finished
    tasks also go away on their own (done after an hour, failed after a day). */
 const WHAT: Record<string, string> = {
   sync: 'Syncing', import: 'Importing', feed: 'Syncing new messages',
   subscribe: 'Syncing past messages', channels: 'Syncing new channels',
-  semantic: 'Updating topic search', captions: 'Writing photo descriptions',
+  semantic: 'Updating the search index', captions: 'Writing photo descriptions',
 }
 /* server progress units in the glossary's words; the semantic topic search index shows no unit */
 const UNIT: Record<string, string> = {
@@ -89,7 +91,7 @@ export function TaskLine({ task: t, onChanged }: { task: Task; onChanged?: () =>
   const retry = useAction(async () => { await kbApi.retryTask(t.id); onChanged?.() })
   const dismiss = useAction(async () => { await kbApi.dismissTask(t.id); onChanged?.() })
   const x = t.state !== 'running' && (
-    <IconButton icon={X} size="sm" label="Dismiss" loading={dismiss.busy} onClick={() => void dismiss.run()} />
+    <IconButton icon={X} size="sm" label="Close" loading={dismiss.busy} onClick={() => void dismiss.run()} />
   )
   return (
     <div className={`task task--${t.state}`}>
@@ -126,7 +128,7 @@ export function TaskLine({ task: t, onChanged }: { task: Task; onChanged?: () =>
         <div className="task__line">
           <span className="task__text">Stopped.</span>
           <Button size="sm" icon={RefreshCw} loading={retry.busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
-                  onClick={() => void retry.run()}>Continue</Button>
+                  onClick={() => void retry.run()}>Retry</Button>
           {x}
         </div>
       )}

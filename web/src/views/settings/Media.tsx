@@ -13,8 +13,8 @@ import { SETTINGS_EVENTS, settingsApi, type ProviderView } from '../../lib/setti
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import { kindInfo } from '../../components/ProviderFields'
-import { Button, ConfirmDialog, Dot, Field, Form, InlineError, Input, Loaded, Section } from '../../ui'
-import { KeySection, optionSchema, providerProblem, reach } from './Models'
+import { Button, ConfirmDialog, Field, Form, InlineError, Input, Loaded, Section } from '../../ui'
+import { KeySection, ReachWord, optionSchema } from './Models'
 import { Page } from './parts'
 import { Presets } from './Presets'
 import './settings.css'
@@ -30,11 +30,10 @@ export function Media() {
   const list = providers.data?.providers ?? []
   const comfy = list.find(p => p.provider.kind === 'comfyui')
   const check = useAction(async () => { if (comfy) await settingsApi.test(comfy.id); reload() })
-  const st = comfy && reach(comfy)
-  const problem = comfy && providerProblem(comfy)
+  const problem = comfy?.state.error
 
   return (
-    <Page title="Images & Music" detail={st && <Dot tone={st.tone} text={st.word} />}
+    <Page title="Images & Music" detail={comfy && <ReachWord p={comfy} />}
           actions={comfy && <Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check provider</Button>}
           more={comfy ? [{ label: 'Remove this provider', icon: Trash2, danger: true, disabled: comfy.used_by.length > 0 || !online,
                            title: comfy.used_by.length ? `Used for ${comfy.used_by.join(', ')}` : undefined, onSelect: () => setRemoving(true) }] : undefined}>

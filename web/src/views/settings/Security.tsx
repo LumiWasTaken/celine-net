@@ -1,7 +1,7 @@
 /* Security: the login's credentials in one list (a passkey, a password, a PIN: its kind as
    the icon, its label, when it was created, "This session" on the one this browser logged in
    with), Add passkey (the browser's prompt), Add password and Add PIN (a dialog each, the
-   server's sentence on the field), Delete on each row (never the last one; when the server
+   server's sentence on the field), Remove on each row (never the last one; when the server
    says logged_out the page goes to /). Then the sessions (each browser logged in, "This
    session" on this one, Log out on each, Log out everywhere for every other), new recovery
    codes and the named tokens host scripts send on the intercom with (logging out is the
@@ -57,7 +57,7 @@ export function Security() {
               <ListRow key={c.id} icon={KIND[c.kind].icon} title={c.label || KIND[c.kind].word}
                        subtitle={`Created ${when(c.created_at)}`}
                        meta={c.this_session ? 'This session' : undefined} trailingAlways
-                       trailing={<IconButton icon={Trash2} label="Delete" disabled={last} title={last ? 'You cannot delete your last way to log in.' : 'Delete'}
+                       trailing={<IconButton icon={Trash2} label="Remove" disabled={last} title={last ? 'You cannot remove your last way to log in.' : 'Remove'}
                                              onClick={() => setDeleting(c)} />} />
             ))}
           </div>
@@ -87,9 +87,9 @@ export function Security() {
 
       {deleting && (
         <ConfirmDialog
-          title={`Delete this ${KIND[deleting.kind].word.toLowerCase()}?`}
+          title={`Remove this ${KIND[deleting.kind].word.toLowerCase()}?`}
           body="The app logs out every browser that used it."
-          confirmLabel="Delete" danger
+          confirmLabel="Remove" danger
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
             const r = await securityApi.deleteCredential(deleting.id)
@@ -172,7 +172,7 @@ function AddSecret({ kind, guard, onClose, onAdded }: { kind: 'password' | 'pin'
 }
 
 /* Named tokens: `Authorization: Bearer <token>` on /api/intercom only
-   sends as system:<name> (docs/ARCHITECTURE.md). The token is shown once; revoking hides it. */
+   sends as system:<name> (docs/ARCHITECTURE.md). The token is shown once; Remove hides it. */
 function Tokens({ guard }: { guard: Guard }) {
   const list = useResource(() => securityApi.tokens(), [])
   const [name, setName] = useState('')
@@ -196,7 +196,7 @@ function Tokens({ guard }: { guard: Guard }) {
               <span className="passkey-row__name">{t.name}</span>
               <span className="passkey-row__meta">Created {stamp(t.created_at)}</span>
             </div>
-            <Button size="sm" onClick={() => setRevoking(t)}>Revoke</Button>
+            <Button size="sm" onClick={() => setRevoking(t)}>Remove</Button>
           </div>
         ))}
       </div>
@@ -219,8 +219,8 @@ function Tokens({ guard }: { guard: Guard }) {
         </div>
       )}
       {revoking && (
-        <ConfirmDialog title={`Revoke the token ${revoking.name}?`} body="Scripts that use this token can no longer reach the app."
-                       confirmLabel="Revoke" danger
+        <ConfirmDialog title={`Remove the token ${revoking.name}?`} body="Scripts that use this token can no longer reach the app."
+                       confirmLabel="Remove" danger
                        onClose={() => setRevoking(null)}
                        onConfirm={async () => {
                          await securityApi.revokeToken(revoking.id)

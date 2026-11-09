@@ -74,10 +74,10 @@ async def vault_app(tmp_path, monkeypatch, store, fake_bw):
     vault = app.state.services.vault = Vault(cfg, store.emit_global)
     approvals = app.state.services.approvals = Approvals(cfg)
     vault.forget = lambda: approvals.forget("vault")
-    taps: list[tuple[str, list[str]]] = []
+    taps: list[tuple[str, list]] = []
 
-    async def yes(action, facts, conversation, *_, **__):
-        taps.append((action, facts))
+    async def yes(kind, conversation, action, *, facts=(), **__):
+        taps.append((action, list(facts)))
         return None
     monkeypatch.setattr(approvals, "ask", yes)
     async with client(app) as c:
@@ -85,6 +85,9 @@ async def vault_app(tmp_path, monkeypatch, store, fake_bw):
         assert r.status_code == 200 and r.json()["status"].startswith("Locked"), r.text
         r = await c.post("/api/vault/unlock", json={"master_password": MASTER})
         assert r.status_code == 200 and r.json()["status"] == "Unlocked", r.text
+        # the shellbox on, for the file a script reads (its PUT /file is a test's own)
+        cfg.settings.features = {**cfg.settings.features, "shellbox": True}
+        cfg.settings.services = {"shellbox": {"url": "http://shellbox.test:8770"}}
         c.cfg, c.app, c.bw, c.taps = cfg, app, fake_bw, taps
         c.vault = app.state.services.vault
         c.skill = app.state.services.registry.skills["vault"]

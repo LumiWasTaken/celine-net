@@ -1,7 +1,7 @@
 """General settings: the everyday choices that are not about models or tools, and
 the Advanced ones (time limits, sizes, how much is kept), each defined once here.
 
-Your name lives here (its own name and pronouns are its own, celine.her); how the app is
+Your name lives here (its own name and pronouns are its own, celine.agent); how the app is
 served (host, port, login) stays in config/celine.toml. Each field here has a schema the
 UI renders as a generic form; an `advanced` one is on the Advanced page. Every reader
 asks `cfg.r(key)` (or `value`) when it runs, so a save applies at once.
@@ -19,96 +19,120 @@ from typing import Any
 from .files import Invalid
 from .form import clean
 
+# the Advanced page's groups in their order; a skill's knobs follow, each under its label
+GROUPS = ("Turns", "Models", "Routines and missions", "Files", "Storage")
+
+
+def _number(group: str, k: str, label: str, unit: str | None, lo: float, hi: float, d: float,
+            tip: str, zero: str | None = None) -> dict[str, Any]:
+    """`zero`: what the field shows for 0 ("No limit")."""
+    return {"key": k, "label": label, "type": "number", "unit": unit, "min": lo, "max": hi,
+            "default": d, "advanced": True, "group": group, "help": tip,
+            **({"zero": zero} if zero else {})}
+
+
+def _switch(group: str, k: str, label: str, d: bool, tip: str) -> dict[str, Any]:
+    return {"key": k, "label": label, "type": "bool", "default": d, "advanced": True,
+            "group": group, "help": tip}
+
+
 FIELDS: list[dict[str, Any]] = [
-    {"key": "user_name", "label": "Your name", "type": "text",
-     "help": "What the agent calls you.", "default": "User", "required": True},
+    {"key": "user_name", "label": "Your name", "type": "text", "default": "User",
+     "required": True},
     {"key": "timezone", "label": "Time zone", "type": "text",
-     "help": "Your time zone, such as Europe/Berlin or America/New_York.", "default": "UTC", "required": True,
-     "zone": True},
+     "help": "Routines run and dates show in this zone, written like Europe/Berlin or "
+             "America/New_York.", "default": "UTC", "required": True, "zone": True},
     {"key": "user_bio", "label": "About you", "type": "text", "default": "", "max_len": 2000},
     {"key": "smart_search_refresh_minutes", "label": "Update the search index every",
      "type": "number", "unit": "minutes", "min": 0, "max": 1440,
-     "help": "0 turns the updates off.", "default": 15},
+     "help": "How often new messages are added to Search. 0 turns the updates off.",
+     "default": 15},
     {"key": "lock_archived", "label": "Lock archived chats", "type": "bool",
      "help": "An archived chat stays as it is until you write in it again.", "default": True},
     {"key": "image_captions_auto", "label": "Describe new photos in Messages",
      "type": "bool",
      "help": "Each new photo gets a description, so Search finds it by what it shows.",
      "default": False},
-    # turns/prompt.py: on, her prompt carries turns/ask_before_setup.md
+    # turns/prompt.py: on, its prompt carries turns/ask_before_setup.md
     {"key": "ask_before_setup", "label": "Ask before setting up services", "type": "bool",
-     "help": "Before the agent sets up a server, a model or a service, it explains "
-             "the plan and waits for your OK.", "default": True},
+     "help": "A server, a model or a service is set up only after the plan is explained "
+             "and you say OK.", "default": True},
+    # settings/agent_models.py picked_by_user: on, a role list makes no cloud model the user's pick
+    {"key": "ask_listed_cloud", "label": "Ask before cloud models from your lists",
+     "type": "bool",
+     "help": "A cloud model from your role lists asks you too before a sub-agent, mission "
+             "or coding session runs on it. Off, only cloud models outside your lists ask.",
+     "default": False},
     {"key": "code_websearch", "label": "Web search for the coding agent", "type": "bool",
      "help": "The coding agent searches the web through Exa, an outside service.", "default": False},
     # server/celine/guard: read at every call, so a change applies at once; off is the
-    # Guard feature switch (Settings, Features)
+    # Guard feature switch (Settings, Features). Its "?" is the Mode section's on Settings,
+    # Guard (guard/view.py PAGE_HELP)
     {"key": "guard", "label": "Guard mode", "type": "choice",
-     "choices": [["watch", "Watch"], ["on", "On"]],
-     "help": "Watch: every step runs at once, and Bastet writes down in Events what she "
-             "would have done. On: Bastet checks a risky step before it runs.",
-     "default": "watch"},
-    # Advanced: whole numbers, read where they are used (turns, jobs, uploads, backups)
-    *({"key": k, "label": label, "type": "number", "unit": unit, "min": lo, "max": hi,
-       "default": d, "advanced": True, **({"help": tip} if tip else {})}
-      for k, label, unit, lo, hi, d, tip in (
-        ("max_concurrent_turns", "Turns at once", None, 1, 64, 6,
-         "How many chats may generate at the same time."),
-        ("max_tool_iterations", "Tool rounds per turn", None, 0, 100_000, 0,
-         "0 means no limit; only the turn time limit applies."),
-        ("turn_wall_clock_seconds", "Turn time limit", "seconds", 1, 86_400, 1800,
-         "The agent's work time in one turn, tools included."),
-        ("last_step_seconds", "Last answer time", "seconds", 1, 3600, 180,
-         "After the turn time limit, the step that is running gets this long to finish."),
-        ("tool_timeout_seconds", "Tool time limit", "seconds", 1, 86_400, 180, None),
-        ("routine_max_minutes", "Routine time limit", "minutes", 0, 100_000, 180,
-         "The longest one routine run may take. 0 means no limit."),
-        ("mission_max_hours", "Mission time limit", "hours", 0, 100_000, 0,
-         "The longest one mission may take, from its start. 0 means no limit."),
-        ("mission_max_sub_agents", "Sub-agents per mission", None, 0, 10_000, 0,
-         "0 means no limit."),
-        ("job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
-         "A tool that runs in the background is stopped after this."),
-        ("embed_query_timeout_seconds", "Search embedding time limit", "seconds", 1,
-         3600, 60, "A search waits this long for its embedding model."),
-        ("busy_retry_seconds", "Busy model wait", "seconds", 1, 86_400, 10,
-         "Background work asks a busy model again after this, twice as long each time."),
-        ("busy_retry_max_seconds", "Longest busy model wait", "seconds", 1, 86_400, 600,
-         None),
-        ("history_messages", "Messages per request", "messages", 0, 100_000, 200,
-         "The most messages one request carries. 0 means no limit."),
-        ("events_keep", "Log entries per chat", "entries", 0, 1_000_000, 500,
-         "How many log entries a chat keeps after its turn ends."),
-        ("backup_keep_days", "Backups kept", "days", 1, 3650, 7, None),
-        ("max_attachments", "Attachments per message", None, 0, 1000, 10, None),
-        ("max_upload_mb", "Largest upload", "MB", 1, 1_000_000, 512,
-         "The largest file you can add to Documents."),
-        ("max_attachment_bytes", "Largest attachment", "bytes", 1, 10_000_000_000,
-         20_000_000, None),
-        ("inline_text_max_bytes", "Largest text read inline", "bytes", 0, 100_000_000,
-         200_000, "A larger text file is attached, not put into the message."),
-        ("max_message_bytes", "Largest message", "bytes", 1, 100_000_000, 1_000_000, None),
-        ("requests_keep", "Model requests kept", "days", 0, 36_500, 0,
-         "How long to keep what each step sent to its model. 0 keeps it forever."),
-        # kb/documents_extract.py: what one document may cost to read
-        ("document_part_mb", "Largest part in a document", "MB", 1, 100_000, 256,
-         "An EPUB or Word file with a larger part unpacked is not read whole."),
-        ("document_html_mb", "Largest web page document", "MB", 1, 100_000, 64, None),
-        ("document_pdf_pages", "PDF pages read", "pages", 1, 1_000_000, 5000, None),
-        ("document_pdf_seconds", "PDF read time limit", "seconds", 1, 86_400, 600, None),
-    )),
-    # Advanced switches, read where they are used (schedules, missions, answers)
-    *({"key": k, "label": label, "type": "bool", "default": d, "advanced": True,
-       "help": tip}
-      for k, label, d, tip in (
-        ("routines_wait_for_missions", "Routines wait for missions", False,
-         "A routine waits until no mission is running."),
-        ("missions_resume_after_unfreeze", "Continue missions after Unfreeze", True,
-         "A mission that a freeze stopped continues automatically after Unfreeze."),
-        # turns/reply.py: the [[kb:id]] citations of an answer
-        ("verify_citations", "Check citations", True,
-         "Every message or document an answer cites must be one a tool showed."),
-    )),
+     "choices": [["watch", "Warn"], ["on", "Enforce"]], "default": "watch"},
+    # Advanced, one group after another: read where they are used (turns, jobs, uploads,
+    # backups, schedules, missions, answers)
+    _number("Turns", "max_concurrent_turns", "Turns at once", None, 1, 64, 6,
+            "How many chats, routines and missions may generate at the same time."),
+    _number("Turns", "max_tool_iterations", "Tool rounds per turn", None, 0, 100_000, 0,
+            "The most rounds of tool calls in one turn. 0 means no limit, so only the turn "
+            "time limit applies.", zero="No limit"),
+    _number("Turns", "turn_wall_clock_seconds", "Turn time limit", "seconds", 1, 86_400, 1800,
+            "The longest one turn may work, tools included."),
+    _number("Turns", "last_step_seconds", "Last answer time", "seconds", 1, 3600, 180,
+            "After the turn time limit, the step that is running gets this long to finish."),
+    _number("Turns", "tool_timeout_seconds", "Tool time limit", "seconds", 1, 86_400, 180,
+            "The longest one tool call may take before it fails."),
+    _number("Turns", "job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
+            "A tool that runs in the background is stopped after this."),
+    _number("Turns", "history_messages", "Messages per request", "messages", 0, 100_000, 200,
+            "The most messages one request to a model carries. 0 means no limit.", zero="No limit"),
+    # turns/reply.py: the [[kb:id]] citations of an answer
+    _switch("Turns", "verify_citations", "Check citations", True,
+            "Every message or document an answer cites must be one a tool showed."),
+    _number("Models", "embed_query_timeout_seconds", "Search embedding time limit", "seconds",
+            1, 3600, 60, "How long a search waits for the Topic search model."),
+    _number("Models", "busy_retry_seconds", "Busy model wait", "seconds", 1, 86_400, 10,
+            "Background work asks a busy model again after this, twice as long each time."),
+    _number("Models", "busy_retry_max_seconds", "Longest busy model wait", "seconds", 1,
+            86_400, 600, "The longest wait between two asks of a busy model."),
+    _number("Routines and missions", "routine_max_minutes", "Routine time limit", "minutes",
+            0, 100_000, 180, "The longest one routine run may take. 0 means no limit.", zero="No limit"),
+    _switch("Routines and missions", "routines_wait_for_missions",
+            "Routines wait for missions", False,
+            "A routine starts only when no mission is running."),
+    _number("Routines and missions", "mission_max_hours", "Mission time limit", "hours", 0,
+            100_000, 0, "The longest one mission may take, from its start. 0 means no limit.", zero="No limit"),
+    _number("Routines and missions", "mission_max_sub_agents", "Sub-agents per mission", None,
+            0, 10_000, 0, "The most sub-agents one mission may start. 0 means no limit.", zero="No limit"),
+    _switch("Routines and missions", "missions_resume_after_unfreeze",
+            "Continue missions after Unfreeze", True,
+            "A mission that a freeze stopped continues by itself after Unfreeze."),
+    _number("Files", "max_attachments", "Attachments per message", None, 0, 1000, 10,
+            "The most files one message may carry."),
+    _number("Files", "max_upload_mb", "Largest upload", "MB", 1, 1_000_000, 512,
+            "The largest file you can add to Documents."),
+    _number("Files", "max_attachment_bytes", "Largest attachment", "bytes", 1,
+            10_000_000_000, 20_000_000, "The largest file one message may carry."),
+    _number("Files", "inline_text_max_bytes", "Largest text read inline", "bytes", 0,
+            100_000_000, 200_000, "A larger text file is attached, not put into the message."),
+    _number("Files", "max_message_bytes", "Largest message", "bytes", 1, 100_000_000,
+            1_000_000, "The longest text one message may hold."),
+    # kb/documents_extract.py: what one document may cost to read
+    _number("Files", "document_part_mb", "Largest part in a document", "MB", 1, 100_000, 256,
+            "An EPUB or Word file with a larger part unpacked is not read whole."),
+    _number("Files", "document_html_mb", "Largest web page document", "MB", 1, 100_000, 64,
+            "A larger saved web page in Documents is not read."),
+    _number("Files", "document_pdf_pages", "PDF pages read", "pages", 1, 1_000_000, 5000,
+            "The most pages of one PDF that are read."),
+    _number("Files", "document_pdf_seconds", "PDF read time limit", "seconds", 1, 86_400, 600,
+            "The longest reading one PDF may take."),
+    _number("Storage", "events_keep", "Log entries per chat", "entries", 0, 1_000_000, 500,
+            "How many log entries a chat keeps after its turn ends."),
+    _number("Storage", "backup_keep_days", "Backups kept", "days", 1, 3650, 7,
+            "How long a backup is kept before it is deleted."),
+    _number("Storage", "requests_keep", "Model requests kept", "days", 0, 36_500, 0,
+            "How long to keep what each step sent to its model. 0 keeps it forever."),
 ]
 
 

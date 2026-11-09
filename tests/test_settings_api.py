@@ -147,6 +147,14 @@ async def test_tabby_discovery():
     kind, answered, url = await kinds.detect("http://192.0.2.10:11434/v1",
                                              transport=httpx.MockTransport(swap_only))
     assert (kind, answered) == ("llama-swap", True)
+
+    def keyed(req: httpx.Request) -> httpx.Response:
+        if req.headers.get("authorization") != "Bearer tabby-key":
+            return httpx.Response(401, json={"detail": "Invalid API key"})
+        return reply(req)
+    kind, _, _ = await kinds.detect("http://192.0.2.10:11434/v1", "tabby-key",
+                                    transport=httpx.MockTransport(keyed))
+    assert kind == "tabby", "a keyed tabbyAPI is found with its key"
     found = await kinds.discover("tabby", "http://192.0.2.10:11434/v1",
                                  refresh=True, transport=t)
     assert found == [{
@@ -157,6 +165,20 @@ async def test_tabby_discovery():
         "thinking_levels": ["low", "medium", "xhigh"],
         "loaded": True,
     }]
+
+
+async def test_a_provider_check_says_the_servers_own_words():
+    import httpx
+    from celine.settings import kinds
+
+    def check(answer):
+        return kinds.check("openai", "http://192.0.2.10:8000/v1", "k", key_required=False,
+                           transport=httpx.MockTransport(lambda r: answer))
+    paused = await check(httpx.Response(503, json={"detail": "Model is loading"}))
+    assert paused["sentence"] == "192.0.2.10:8000 returned 503: Model is loading"
+    refused = await check(httpx.Response(401, json={"error": {"message": "bad key"}}))
+    assert (refused["sentence"], refused["fix"]) == (
+        "192.0.2.10:8000 returned 401: bad key", "replace_key")
 
 
 async def test_a_new_address_keeps_the_providers_key_and_models(api):
@@ -235,3 +257,130 @@ async def test_status_links_the_source_of_this_build(api, monkeypatch):
             assert build["commit"] == commit and build["source"] == source
     finally:
         config_mod.build.cache_clear()
+
+
+
+async def test_a_provider_without_its_key_names_that_on_each_of_its_models(api):
+    api.cfg.settings.providers["or"]["models"] = {"tiny": {"caps": ["chat"]}}
+    p = (await api.get("/api/providers/or")).json()
+    assert api.cfg.settings.key_missing("or")
+    assert [m["problem"] for m in p["models"]] == ["OpenRouter has no API key. Add it in Settings, Models."]
+    main = (await api.get("/api/providers/main")).json()
+    assert all(m["problem"] is None for m in main["models"])
+
+
+def test_a_role_model_its_provider_no_longer_has_says_so():
+    from celine.settings import views
+    from celine.settings.registry import Settings
+    s = Settings(providers={"main": {"kind": "llama-swap", "label": "Main", "base_url": "http://x",
+                                     "models": {"big": {"caps": ["chat"]}}}},
+                 roles={"chat": {"chain": ["main/big", "main/gone"]}})
+    assert [m["problem"] for m in views.roles(s)["chat"]["models"]] == [None, views.GONE]
+
+
+def test_a_role_model_shows_the_routers_sentence_for_that_role():
+    from types import SimpleNamespace
+    from celine.settings import views
+    from celine.settings.registry import Settings
+    s = Settings(providers={"main": {"kind": "llama-swap", "label": "Main", "base_url": "http://x",
+                                     "models": {"big": {"caps": ["chat"]}}}},
+                 roles={"tasks": {"chain": ["main/big", "main/gone"]}})
+    router = SimpleNamespace(problem=lambda role, ref: f"{ref} cannot do {role}.")
+    assert [m["problem"] for m in views.roles(s, router)["tasks"]["models"]] == [
+        "main/big cannot do tasks.", views.GONE]
+
+
+async def test_cloud_is_a_switch_on_the_provider_preset_from_its_address(api, monkeypatch):
+    lan = (await api.get("/api/providers/lan")).json()
+    assert lan["cloud"] is False and "cloud" not in lan["provider"]
+    body = {**lan["provider"], "base_url": "https://api.example.com/v1"}
+    r = await api.put("/api/providers/lan", json=body)
+    assert r.json()["cloud"] is True, "no switch saved: the new address says"
+    r = await api.put("/api/providers/lan", json={**body, "cloud": False})
+    assert r.json()["cloud"] is False and api.cfg.settings.providers["lan"]["cloud"] is False
+    bad = await api.put("/api/providers/lan", json={**body, "cloud": "no"})
+    assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == "provider.cloud"
+    listed = (await api.get("/api/providers")).json()
+    assert listed["cloud_help"] == api.cfg.substitute(
+        "A server outside your network. {{name}} asks you before sending work to one of "
+        "its models you did not pick.")
+
+    from celine.settings import kinds
+
+    async def answers(kind, url, key, key_required):
+        return {"ok": True, "level": "ok"}
+    monkeypatch.setattr(kinds, "check", answers)
+    for url, is_cloud in (("http://100.100.1.2:8080/v1", False),
+                          ("https://api.example.com/v1", True)):
+        r = await api.post("/api/provider-checks", json={"kind": "openai", "base_url": url})
+        assert r.json()["cloud"] is is_cloud, url
+
+
+async def test_a_cloud_provider_fills_no_empty_role_until_its_switch_is_off(api):
+    assert api.cfg.settings.chain("transcription") == []
+    far = {"kind": "openai", "label": "Far", "base_url": "https://api.example.com/v1",
+           "models": {"ears": {"caps": ["transcription"]}}}
+    assert (await api.put("/api/providers/far", json=far)).status_code == 200
+    assert api.cfg.settings.chain("transcription") == [], "a cloud provider stays out"
+    await api.put("/api/providers/far", json={**far, "cloud": False})
+    assert api.cfg.settings.chain("transcription") == ["far/ears"], "the user's own server"
+
+
+async def test_a_comfyui_at_a_public_address_still_fills_its_preset_roles(api):
+    assert api.cfg.settings.chain("image_generation") == []
+    r = await api.put("/api/providers/comfy", json={
+        "kind": "comfyui", "label": "ComfyUI", "base_url": "https://comfy.example.com"})
+    assert r.status_code == 200 and api.cfg.settings.chain("image_generation"), \
+        "Images & Music has no Cloud switch: its presets fill the empty roles"
+
+
+async def test_storing_a_key_asks_its_provider_again(api):
+    """Add provider saves the provider, then its key: the new provider is asked before
+    the key exists and a server that wants one answers 401. Storing the key asks it
+    once more, so it reads up."""
+    import httpx
+    from celine.backends.router import app_router
+    app_router(api.cfg).transport = httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"data": []})
+        if r.headers.get("authorization") == f"Bearer {KEY}"
+        else httpx.Response(401, json={"error": {"message": "no key"}}))
+    den = {"kind": "openai", "label": "Den", "base_url": "http://192.0.2.4:8000/v1",
+           "models": {}}
+    assert (await api.put("/api/providers/den", json=den)).json()["state"]["reachable"] is False
+    assert (await api.put("/api/secrets/den", json={"key": KEY})).status_code == 200
+    st = (await api.get("/api/providers/den")).json()["state"]
+    assert (st["reachable"], st["error"]) == (True, None)
+
+
+async def test_a_providers_cloud_null_follows_its_address(api):
+    far = {"kind": "openai", "label": "Far", "base_url": "https://api.example.com/v1",
+           "models": {}}
+    assert (await api.put("/api/providers/far", json={**far, "cloud": False})
+            ).json()["cloud"] is False
+    r = await api.put("/api/providers/far", json={**far, "cloud": None})
+    assert r.status_code == 200 and r.json()["cloud"] is True, "the address is someone else's"
+    assert "cloud" not in api.cfg.settings.providers["far"]
+
+
+async def test_use_the_default_forgets_a_saved_address(api, monkeypatch):
+    """A saved address hides the compose's variable; {"url": null} forgets it, so the
+    variable applies again. The view says where each address comes from."""
+    monkeypatch.setenv("CELINE_SHELL_URL", "http://shellbox:8770")
+    def shell(r):
+        return r.json()["services"]["shellbox"]
+    assert shell(await api.get("/api/services")) == {
+        "url": "http://shellbox:8770", "source": "environment", "default": None}
+    assert shell(await api.put("/api/services/shellbox", json={"url": "http://box:1"})) == {
+        "url": "http://box:1", "source": "saved", "default": "http://shellbox:8770"}
+    assert shell(await api.put("/api/services/shellbox", json={"url": None})) == {
+        "url": "http://shellbox:8770", "source": "environment", "default": None}
+    from celine.settings import services as services_mod
+    assert services_mod.url(api.cfg, "shellbox") == "http://shellbox:8770"
+    monkeypatch.delenv("CELINE_SHELL_URL")
+    await api.put("/api/services/browser", json={"url": "http://b:1"})
+    browser = (await api.get("/api/services")).json()["services"]["browser"]
+    assert browser == {"url": "http://b:1", "source": "saved", "default": None}, \
+        "nothing behind it: no Use the default"
+    searxng = (await api.put("/api/services/searxng", json={"url": ""})).json()
+    assert searxng["services"]["searxng"]["default"] == "http://127.0.0.1:8888", \
+        "a cleared address hides the field's default"

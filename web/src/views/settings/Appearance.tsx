@@ -8,12 +8,13 @@
    the page; on a wide screen the preview stays beside them, on a phone it follows them. */
 import { useEffect, useRef, useState } from 'react'
 import { Activity, Brain, Copy, Eye, Plus, RefreshCw } from 'lucide-react'
-import { ACCENTS, CONTRAST_MAX, GRAINS, previewAppearance, saveAppearance, useAppearance, type Appearance as Look } from '../../lib/appearance'
+import { ACCENTS, CONTRAST_MAX, GRAINS, appearanceApi, previewAppearance, saveAppearance, useAppearance, type Appearance as Look } from '../../lib/appearance'
 import { errorText } from '../../lib/format'
-import { useHer } from '../../lib/her'
-import { capital, usePronouns } from '../../lib/name'
+import { useAgent } from '../../lib/agent'
+import { useOwner } from '../../lib/name'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { useAutosave } from '../../lib/useAutosave'
+import { useResource } from '../../lib/useResource'
 import {
   Button, Choice, ComposerBox, ConfirmDialog, Face, Field, Fold, IconButton, InlineError, ListRow, Message, Section, Segmented, Slider, Switch, Thoughts,
   type Option,
@@ -51,6 +52,7 @@ export function Appearance() {
   const look: Look = { ...useAppearance(), ...pending }
   useEffect(() => { previewAppearance(pending) }, [pending])
   const [resetting, setResetting] = useState(false)
+  const help = useResource(() => appearanceApi.get().then(r => r.help), []).data
   const put = <K extends keyof Look>(k: K, when: 'now' | 'soon' = 'now') => (v: Look[K]) => auto.set(k, v, when)
   return (
     <Page title="Appearance" wide
@@ -61,9 +63,9 @@ export function Appearance() {
           <Field group label="Accent colour">
             <Choice label="Accent colour" value={look.accent} onChange={put('accent')} options={ACCENTS.map(swatch)} />
           </Field>
-          <Slider label={<span title="How much the accent colours the background and surfaces">Tint</span>}
+          <Slider label="Tint" help={help?.tint}
                   value={look.tint} onChange={put('tint', 'soon')} min={0} max={300} step={25} format={pct} />
-          <Slider label={<span title="The step in lightness between the background and surfaces">Contrast</span>}
+          <Slider label="Contrast" help={help?.contrast}
                   value={look.contrast} onChange={put('contrast', 'soon')} min={50} max={CONTRAST_MAX} step={10} format={pct} />
         </Section>
         <Section title="Background">
@@ -107,7 +109,7 @@ const SAMPLE_CALL: ToolCall = {
   arguments: '{"document":"house-inventory.md"}',
   state: 'ok',
   display: { title: 'house-inventory.md' },
-  words: { running: 'Reading "house-inventory.md"', settled: 'Read "house-inventory.md"', step: 'Reading a document', where: null },
+  words: { running: 'Reading "house-inventory.md"', settled: 'Read "house-inventory.md"', step: 'Reading a document', where: null, why: null },
   started_at: '2026-01-19T10:00:00Z',
   finished_at: '2026-01-19T10:00:01Z',
 }
@@ -115,10 +117,10 @@ const SAMPLE_CALL: ToolCall = {
 /** one chat reply, in the real type, colours and sizes; a picture of the look, so nothing
     in it acts (its action row shown as on a hover) */
 function Preview({ hideThinking, hideTools, collapseThinking }: { hideThinking: boolean; hideTools: boolean; collapseThinking: boolean }) {
-  const her = useHer()
-  const name = her?.name ?? ''
-  const words = usePronouns()
-  const thoughtsTitle = `${capital(words.possessive)} thoughts`
+  const agent = useAgent()
+  const name = agent?.name ?? ''
+  const owner = useOwner()
+  const thoughtsTitle = `${owner} thoughts`
   const [draft, setDraft] = useState('what did she knock over?')
   const face = (name: string, hue: string) => (
     <Face name={name} size="sm" bg={`color-mix(in oklch, var(--char-${hue}) 22%, var(--surface-2))`} fg={`var(--char-${hue})`} />
@@ -132,11 +134,11 @@ function Preview({ hideThinking, hideTools, collapseThinking }: { hideThinking: 
       </div>
       <div className="appearance__chat">
         <Message mine>{ASKED}</Message>
-        <Message face={face(name, her?.color ?? 'rose')} shown
+        <Message face={face(name, agent?.color ?? 'rose')} shown
                  actions={<><IconButton size="sm" icon={RefreshCw} label="Regenerate" /><IconButton size="sm" icon={Copy} label="Copy" /></>}
                  menu={[
                    ...(hideThinking ? [{ label: thoughtsTitle, icon: Brain, onSelect: () => {} }] : []),
-                   { label: 'Activity', icon: Activity, onSelect: () => {} }, { label: `What ${name || words.subject} saw`, icon: Eye, onSelect: () => {} },
+                   { label: 'Activity', icon: Activity, onSelect: () => {} }, { label: `What ${name || 'your agent'} saw`, icon: Eye, onSelect: () => {} },
                  ]}>
           <div className="reply">
             {!hideThinking && (

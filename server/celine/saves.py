@@ -1,5 +1,5 @@
 """The saves of the Settings screens, one function each: the routes (api/settings.py,
-api/forms.py) and her settings skill (skills/settings.py) save through the same one.
+api/forms.py) and the agent's settings skill (skills/settings.py) save through the same one.
 Each holds write.lock, checks `if_match` (the version the saver saw; None: no check; a
 stale one raises files.Conflict), validates, commits (reload.commit) and does what
 follows that save (runners, a new vault login). -> reload.commit's answer."""
@@ -91,15 +91,16 @@ async def tools(app, changes: dict[str, str | None], if_match: str | None = None
         return await reload.commit(app, {"tools": new})
 
 
-async def addresses(app, values: Any, if_match: str | None = None) -> dict:
-    """The services' addresses; a service whose address changed starts again while its
-    feature is on."""
+async def addresses(app, changes: dict[str, Any], if_match: str | None = None) -> dict:
+    """Only the services in `changes` ({sid: {url}}, services.merged): "" clears one, None
+    forgets it so the compose's variable fills it again; the others stay as saved. A
+    service whose address changed starts again while its feature is on."""
     async with write.lock():
         s = app.cfg.settings
         files.check_version("services", s.services, if_match)
-        clean = services_mod.validate(values)
-        changed = {sid for sid in services_mod.IDS if services_mod.value(clean, sid, "url")
-                   != services_mod.value(s.services, sid, "url")}
+        clean = services_mod.validate(services_mod.merged(s.services, changes))
+        changed = {sid for sid in services_mod.IDS if services_mod.effective(clean, sid)
+                   != services_mod.effective(s.services, sid)}
         out = await reload.commit(app, {"services": clean})
         await views.apply_runners(app, changed)
     return out
@@ -172,9 +173,10 @@ def provider_clean(pid: str, body: Any) -> dict:
 
 async def provider(app, pid: str, body: Any, if_match: str | None = None) -> dict:
     """Create or replace one provider, models included; a role left empty that one of
-    its models fits gets it (views.fill_roles)."""
+    its models fits gets it (views.fill_roles). A new provider is asked once (`_ask`)."""
     async with write.lock():
         s = app.cfg.settings
+        new = pid not in s.providers
         files.check_version("provider", s.providers.get(pid), if_match)
         clean = provider_clean(pid, body)
         providers = copy.deepcopy(s.providers)
@@ -182,12 +184,24 @@ async def provider(app, pid: str, body: Any, if_match: str | None = None) -> dic
         changes: dict[str, Any] = {"providers": providers}
         if filled := views.fill_roles(s, pid, clean):
             changes["roles"] = filled
-        return await reload.commit(app, changes)
+        out = await reload.commit(app, changes)
+    if new:
+        await _ask(app, pid)
+    return out
+
+
+async def _ask(app, pid: str) -> None:
+    """The provider asked now, so its row shows its state at once: after it is created
+    and after its key changes (a server that wants a key answered 401 before it had one)."""
+    s = app.cfg.settings
+    if pid in s.providers and not s.key_missing(pid):
+        await views.model_router(app).probe(pid, max_age=0)
 
 
 async def provider_key(app, pid: str, key: str | None, if_match: str | None = None) -> dict:
-    """A provider's key: a string sets it, None removes it. The backends pick it up and
-    the masking learns it. -> {"applied"}, as a commit answers."""
+    """A provider's key: a string sets it, None removes it. The backends pick it up, the
+    masking learns it, and the provider is asked once (`_ask`). -> {"applied"}, as a
+    commit answers."""
     async with write.lock():
         s = app.cfg.settings
         if pid not in s.providers:
@@ -201,6 +215,7 @@ async def provider_key(app, pid: str, key: str | None, if_match: str | None = No
             secrets_mod.set_key(_root(app), pid, key)
         applied = reload.apply(app)
     write.publish(app, ["secrets"])
+    await _ask(app, pid)
     return {"applied": applied}
 
 

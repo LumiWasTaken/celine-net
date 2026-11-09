@@ -18,7 +18,8 @@ from typing import Annotated
 
 import httpx
 
-from .. import box_files
+from .. import box_files, shellbox
+from ..settings import features
 from ..settings.vault import account
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from .. import vault
@@ -78,11 +79,11 @@ class VaultSkill:
     def _bad(text: str) -> ToolResult:
         return ToolResult(content=text, is_error=True, display={"refused": True})
 
-    async def _ask(self, ctx: ToolContext, action: str, facts: list[str],
-                   why: str, short: str = "") -> ToolResult | None:
+    async def _ask(self, ctx: ToolContext, action: str, facts: list[tuple[str, str]],
+                   why: str) -> ToolResult | None:
         """The user's tap (celine/approvals.py): None when approved, else the result."""
-        no = await self.app.approvals.ask(action, facts, ctx.conversation_id, why, short,
-                                          call=ctx.tool_call_id or None)
+        no = await self.app.approvals.ask("vault", ctx.conversation_id, action, facts=facts,
+                                          why=why, call=ctx.tool_call_id or None)
         return None if no is None else self._bad(no)
 
     def _who(self, it: dict) -> str:
@@ -129,10 +130,15 @@ class VaultSkill:
             if not _folder(name):
                 return self._bad(f"{name} cannot be a folder in ~/.vault; the file was not "
                                  f"written. A form takes it as {step(name)}")
+            box = "off" if not features.on(self.cfg, "shellbox") else \
+                "not set up" if not shellbox.url(self.cfg) else ""
+            if box:         # nothing to ask for: the file cannot be written
+                return self._bad(f"The shellbox is {box}, so the file was not written and "
+                                 f"nothing was asked.")
             if no := await self._ask(ctx, approvals.SHELL.format(entry=name),
-                                     [f"The file: ~/.vault/{name}/password, readable by "
-                                      f"everything in the shellbox, the internet included"],
-                                     why, approvals.SHELL_SHORT.format(entry=name)):
+                                     [("Entry", name), ("File", f"~/.vault/{name}/password"),
+                                      ("Sites", ", ".join(vault.origins(it)) or "None")],
+                                     why):
                 return no
             try:
                 await box_files.put(self.cfg, ((it.get("login") or {}).get("password") or "").encode(),
@@ -188,9 +194,8 @@ class VaultSkill:
             if it is None:
                 return self._bad(missing(name))
             if no := await self._ask(ctx, approvals.ROTATE.format(entry=it["name"]), [
-                    f"Its sites: {', '.join(vault.origins(it)) or 'none'}",
-                    "The old password stays in the entry as its previous one"], why,
-                    approvals.ROTATE_SHORT.format(entry=it["name"])):
+                    ("Entry", it["name"]),
+                    ("Sites", ", ".join(vault.origins(it)) or "None")], why):
                 return no
             await self.app.vault.rotate(it)
         except VaultError as e:

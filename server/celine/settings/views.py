@@ -6,7 +6,8 @@ import copy
 import logging
 from typing import Any
 
-from . import features as features_mod, kinds, mail as mail_mod, secrets as secrets_mod
+from . import features as features_mod, agent_models, kinds, mail as mail_mod
+from . import secrets as secrets_mod
 from . import services as services_mod, tools_meta, vault as vault_mod
 from .files import version
 from .registry import ROLES, key_state
@@ -59,8 +60,12 @@ def provider(s, pid: str, router) -> dict[str, Any]:
                        "used_by": _task_labels(used.get(name, [])),
                        # a provider without its key offers nothing to choose from
                        "offered": not missing,
-                       "state": ms.public() if ms is not None else {"state": "ok"}})
+                       "state": ms.public() if ms is not None else {"state": "ok"},
+                       # the one sentence why it does not answer now (router.problem)
+                       "problem": router.problem(None, ref)})
     return {"id": pid, "provider": p, "version": version(p),
+            # the Cloud switch as it stands: its own, else what its address says
+            "cloud": agent_models.provider_cloud(p),
             "key": key_state(pid, p, s.secrets_root),
             "state": {**st, "key_missing": missing},
             "models": models,
@@ -68,16 +73,17 @@ def provider(s, pid: str, router) -> dict[str, Any]:
 
 
 def kinds_view() -> list[dict[str, Any]]:
-    from .registry import OPTIONS
+    from .registry import OPTIONS, option_view
     return [{"kind": k, "label": v["label"], "key": v["key"],
              "default_url": v.get("default_url"),
-             "options": [{"key": o, "type": t, "default": d, "choices": list(c) if c else None}
-                         for o, (t, d, c) in OPTIONS[k].items()]}
+             "options": [option_view(o, t, d, c) for o, (t, d, c) in OPTIONS[k].items()]}
             for k, v in kinds.KINDS.items()]
 
 
 # the roles an empty one of fills itself from a new provider's models: the first model
 # with the role's caps, every preset for the ComfyUI roles. Settings shows it, change it there.
+# A cloud model provider fills none: the user picks its models in the role's list. ComfyUI
+# (Images & Music, no Cloud switch) fills its preset roles wherever it runs.
 AUTO_ROLES = ("chat", "small", "embeddings", "reranker", "vision",
               "image_generation", "music_generation", "transcription", "speech")
 _ALL = ("image_generation", "music_generation")
@@ -85,7 +91,9 @@ _ALL = ("image_generation", "music_generation")
 
 def fill_roles(s, pid: str, provider: dict[str, Any]) -> dict[str, Any] | None:
     """The roles with the empty ones filled from `provider`'s models, or None when no
-    role changes."""
+    role changes or it is a cloud model provider (agent_models.provider_cloud)."""
+    if provider.get("kind") != "comfyui" and agent_models.provider_cloud(provider):
+        return None
     roles = copy.deepcopy(s.roles)
     changed = False
     for role in AUTO_ROLES:
@@ -98,23 +106,6 @@ def fill_roles(s, pid: str, provider: dict[str, Any]) -> dict[str, Any] | None:
             roles[role] = {**roles.get(role, {}), "chain": fits[:6] if role in _ALL else fits[:1]}
             changed = True
     return roles if changed else None
-
-
-async def discovered(s, pid: str, router) -> list[dict] | None:
-    """What a provider's server reports about its models now, for "Check again"; None
-    when there is nothing to merge (ComfyUI, no saved models) or the server did not
-    answer (its state, from the probe, says why)."""
-    from .registry import provider_key
-    p = s.providers.get(pid)
-    if not p or p.get("kind") == "comfyui" or not p.get("models"):
-        return None
-    try:
-        return await kinds.discover(p["kind"], p["base_url"], provider_key(pid, s.secrets_root),
-                                    refresh=True, transport=getattr(router, "transport", None))
-    except Exception as e:
-        log.warning("model discovery failed", extra={"event": "settings.discover_failed",
-                                                      "provider": pid, "error": repr(e)})
-        return None
 
 
 def merge_discovered(s, pid: str, found: list[dict]) -> dict[str, Any] | None:
@@ -145,19 +136,27 @@ def merge_discovered(s, pid: str, found: list[dict]) -> dict[str, Any] | None:
 
 # ---- roles ---------------------------------------------------------------------------
 
-def roles(s) -> dict[str, Any]:
+GONE = "This model is no longer on its provider. Pick another one."
+
+
+def roles(s, router=None) -> dict[str, Any]:
+    """Every role's list; each model's `problem`: that its provider no longer has it, else
+    the router's one sentence for it in this role (backends/router.py problem: a
+    capability it lacks, its provider's state, its last failed answer)."""
     out = {}
     for role, spec in ROLES.items():
         r = s.roles.get(role) or {"chain": []}
         chain = []
         for ref in r.get("chain") or []:
-            m = s.model(ref) or {}
+            m = s.model(ref)
             pid = s.split(ref)[0]
-            chain.append({"ref": ref, "label": m.get("label", ref),
+            chain.append({"ref": ref, "label": (m or {}).get("label", ref),
                           "provider": pid,
                           "provider_label": (s.providers.get(pid) or {}).get("label", pid),
-                          "key_missing": s.key_missing(pid)})
-        out[role] = {"label": spec["label"],
+                          "key_missing": s.key_missing(pid),
+                          "problem": GONE if m is None else
+                          router.problem(role, ref) if router is not None else None})
+        out[role] = {"label": spec["label"], "help": spec["help"],
                      "needs": spec["caps"], "chain": r.get("chain") or [],
                      "models": chain, "version": version(s.roles.get(role))}
     return out
@@ -243,13 +242,13 @@ async def apply_runners(services, changed: set[str] = frozenset()) -> None:
 
 
 def services_view(services) -> dict[str, Any]:
-    """The addresses of the shellbox, the browser and SearXNG, and the hash of each box's
-    key (settings/services.py, celine/keys.py): what goes into a box's key.hash file."""
+    """The addresses of the shellbox, the browser and SearXNG, each with where it comes
+    from (services.view), and the hash of each box's key (celine/keys.py): what goes into
+    a box's key.hash file."""
     from .. import keys
     s = services.cfg.settings
     return {"fields": services_mod.FIELDS,
-            "services": {sid: {f["key"]: services_mod.value(s.services, sid, f["key"])
-                               for f in services_mod.FIELDS[sid]} for sid in services_mod.IDS},
+            "services": {sid: services_mod.view(s.services, sid) for sid in services_mod.IDS},
             "keys": {sid: {"hash": keys.key_hash(services.cfg.data_dir, name)}
                      for sid, name in services_mod.KEYS.items()},
             "version": version(s.services), "saved": bool(s.saved.get("services"))}
@@ -271,7 +270,8 @@ def vault(services) -> dict[str, Any]:
     s = services.cfg.settings
     root = secrets_mod.secrets_dir(services.cfg.data_dir)
     v = services.vault
-    return {"fields": vault_mod.FIELDS,
+    fill = services.cfg.substitute
+    return {"fields": [{**f, "help": fill(f["help"])} for f in vault_mod.FIELDS],
             "vault": {f["key"]: vault_mod.value(s.vault, f["key"]) for f in vault_mod.FIELDS},
             "client_secret": secrets_mod.state(root, vault_mod.CLIENT_SECRET),
             "unlocked": v.session is not None,

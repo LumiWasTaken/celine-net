@@ -97,7 +97,7 @@ async def test_only_a_logged_in_person_unlocks_and_answers(vault_app):
     vault_app.app.state.auth = None
 
 
-async def test_set_get_and_rotate_and_she_never_sees_a_password(vault_app, store, monkeypatch):
+async def test_set_get_and_rotate_and_the_agent_never_sees_a_password(vault_app, store, monkeypatch):
     skill, bw = vault_app.skill, vault_app.bw
     ctx = ctx_for(store)
     out = await skill.set(ctx, name="example-shop", username="celine@example.com",
@@ -183,6 +183,30 @@ async def test_any_name_an_entry_has_is_taken_and_one_that_differs_by_case_is_na
     assert (it["name"], old) == ("My Bank", "test-hand-made-0002")
 
 
+async def test_the_file_for_a_script_with_the_shellbox_off_is_refused_before_asking(
+        vault_app, store, monkeypatch):
+    """No approval card for a file that cannot be written: the shellbox off or with no
+    address refuses at once, and the browser step still comes with a plain get."""
+    skill, ctx, cfg = vault_app.skill, ctx_for(store), vault_app.cfg
+    await skill.set(ctx, name="example-shop")
+    written = []
+
+    async def put(cfg, src, rel, **kw):
+        written.append(rel)
+        return {"path": f"/home/celine/{rel}", "bytes": len(src)}
+    monkeypatch.setattr(box_files, "put", put)
+    cfg.settings.features = {**cfg.settings.features, "shellbox": False}
+    got = await skill.get(ctx, name="example-shop", shell=True, why="the order script logs in")
+    assert got.is_error and got.content == (
+        "The shellbox is off, so the file was not written and nothing was asked.")
+    cfg.settings.features = {**cfg.settings.features, "shellbox": True}
+    cfg.settings.services = {"shellbox": {"url": ""}}
+    got = await skill.get(ctx, name="example-shop", shell=True, why="the order script logs in")
+    assert got.content == "The shellbox is not set up, so the file was not written and nothing was asked."
+    assert vault_app.taps == [] and written == []
+    assert not (await skill.get(ctx, name="example-shop")).is_error
+
+
 async def test_a_bw_that_keeps_no_history_gets_the_old_one_by_hand(vault_app, store):
     vault_app.bw.change(history=False)
     ctx = ctx_for(store)
@@ -225,7 +249,7 @@ async def test_a_bw_answer_with_no_sentence_of_its_own_is_said_plainly_and_logge
     assert vault_app.vault.status == "Unlocked"
 
 
-async def test_what_she_reads_from_the_file_is_stored_nowhere(vault_app, store):
+async def test_what_the_agent_reads_from_the_file_is_stored_nowhere(vault_app, store):
     """`cat ~/.vault/example-shop/password` in its shell, then the value in its arguments and in
     its reply, streamed in two pieces: no stored message, tool row, raw answer or event
     holds it. A token the user handed it is not a known secret: it reaches the tool."""
@@ -306,7 +330,7 @@ async def test_no_turn_starts_before_the_first_login_is_over(vault_app, store):
         tg.cancel_scope.cancel()
 
 
-async def test_with_a_shared_collection_her_entries_go_there_and_she_sees_only_it(vault_app, store):
+async def test_with_a_shared_collection_the_agents_entries_go_there_and_it_sees_only_it(vault_app, store):
     """Settings, Vault, collection: a new entry gets the collection and its organization,
     so the user sees it; its own vault and other collections are out of its sight. A
     collection it is not in says so and makes nothing."""

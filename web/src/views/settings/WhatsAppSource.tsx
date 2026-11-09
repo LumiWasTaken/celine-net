@@ -9,7 +9,7 @@ import { connectionState, lostWhen, type Source } from '../../lib/sources'
 import { useResource } from '../../lib/useResource'
 import { Button, InlineError, ListRow, LoadingRow, Section, VirtualList } from '../../ui'
 import { useConnector } from './Connector'
-import { Page, StatusDot } from './parts'
+import { Page, LevelWord } from './parts'
 import { Problem, StateNotice, ToFix, failedLines, includedSentence, scheduleProblems, useSchedules, useTasks } from './SourcePage'
 import './settings.css'
 
@@ -33,12 +33,12 @@ export function WhatsAppSource({ source, active }: { source: Source; active: boo
 
   const lost = c.state === 'needs_login' && !!st.login_lost_at
   return (
-    <Page title={source.title} detail={<StatusDot level={state.level} word />}>
+    <Page title={source.title} detail={<LevelWord level={state.level} />}>
       {c.state !== 'needs_login' && <StateNotice level={state.level} sentence={state.sentence} />}
 
       <ToFix>
         {lost && (
-          <Problem key="pair" sentence={`Your phone unlinked WhatsApp ${lostWhen(st.login_lost_at!)}. Connect your phone again.`}>
+          <Problem key="pair" sentence={`Not connected to WhatsApp. Your phone unlinked it ${lostWhen(st.login_lost_at!)}.`}>
             {pairing}
           </Problem>
         )}

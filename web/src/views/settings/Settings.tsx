@@ -1,7 +1,7 @@
 /* Settings: a list on the left, one page on the right (like system settings). No tabs.
    /settings/<page>[/<sub>]; on a phone the list is the first screen and a row opens
    its page (with a back arrow). Setup (the onboarding, run again) comes first, then General,
-   then its page (named after it); Advanced (the time limits and sizes) is last.
+   then its page (named after it); Advanced (the time limits and sizes, and Prompts under it) is last.
    Sources are rows
    of their own, so 20 sources are 20 calm rows: glyph, name, a dot (amber when there
    is something to fix). */
@@ -15,11 +15,11 @@ import { useResource } from '../../lib/useResource'
 import { format, useNav, type Route } from '../../lib/nav'
 import { useSources, type Source } from '../../lib/sources'
 import { LINK } from '../../lib/settingsApi'
-import { Dot, EmptyState, ICON, InlineError, PlaceHead, ListRow, ListSection, SearchField, SourceGlyph, VirtualList } from '../../ui'
-import { Page, StatusDot } from './parts'
+import { EmptyState, ICON, InlineError, PlaceHead, ListRow, ListSection, SearchField, SourceGlyph, StateWord, VirtualList } from '../../ui'
+import { LevelWord, Page } from './parts'
 import { Advanced, General } from './General'
 import { Features } from './Features'
-import { HerPage, HerText } from './Her'
+import { AgentPage, AgentText } from './Agent'
 import { Appearance } from './Appearance'
 import { Notifications } from './Notifications'
 import { SourcePage } from './SourcePage'
@@ -33,10 +33,11 @@ import { Email } from './Email'
 import { Vault } from './Vault'
 import { Security } from './Security'
 import { FormPage } from './FormPage'
+import { Prompts } from './Prompts'
 import './settings.css'
-import { nothingMatches } from '../../lib/format'
+import { count, noneMatch } from '../../lib/format'
 
-type PageId = 'general' | 'agent' | 'features' | 'guard' | 'appearance' | 'notifications' | 'sources' | 'people' | 'search' | 'models' | 'media' | 'tools' | 'email' | 'vault' | 'security' | 'advanced'
+type PageId = 'general' | 'agent' | 'features' | 'guard' | 'appearance' | 'notifications' | 'sources' | 'people' | 'search' | 'models' | 'media' | 'tools' | 'email' | 'vault' | 'security' | 'prompts' | 'advanced'
 
 const PAGES: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -55,7 +56,8 @@ const PAGES: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'security', label: 'Security', icon: ShieldCheck },
   { id: 'advanced', label: 'Advanced', icon: Gauge },
 ]
-const KNOWN = new Set<string>(['sources', ...PAGES.map(p => p.id)])
+// Prompts opens from Advanced, so it is a page without a row of its own
+const KNOWN = new Set<string>(['sources', 'prompts', ...PAGES.map(p => p.id)])
 /** the Settings pages whose every owner is off (`catalog[].pages`, GET /status `features`):
     a page leaves the list (Images & Music stays while Images or Music is on), a source as
     "source:<platform>" */
@@ -72,7 +74,7 @@ const FIRST: PageId = 'general'
 
 type Item =
   | { type: 'page'; id: PageId | string; label: string; icon: LucideIcon }
-  /** the onboarding, run again (/welcome/her) */
+  /** the onboarding, run again (/welcome/agent) */
   | { type: 'setup' }
   | { type: 'section'; label: string }
   | { type: 'source'; source: Source }
@@ -133,7 +135,7 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
   const current = page && known(page) ? page : undefined
   const openSource = route.sub ?? list[0]?.id
   const selected = (it: Item) =>
-    it.type === 'page' ? (current ?? FIRST) === it.id
+    it.type === 'page' ? (current === 'prompts' ? 'advanced' : current ?? FIRST) === it.id
       : it.type === 'source' ? current === 'sources' && openSource === it.source.id : false
 
   return (
@@ -151,9 +153,9 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
                        if (it.type === 'filter') {
                          return <div className="settings__filter"><SearchField size="sm" value={filter} onChange={setFilter} placeholder="Search sources" /></div>
                        }
-                       if (it.type === 'none') return <EmptyState compact>{nothingMatches(it.query)}</EmptyState>
+                       if (it.type === 'none') return <EmptyState compact>{noneMatch('settings')}</EmptyState>
                        if (it.type === 'setup') {
-                         return <ListRow href={format({ section: 'welcome', step: 'her' })} title="Setup"
+                         return <ListRow href={format({ section: 'welcome', step: 'agent' })} title="Setup"
                                          leading={<span className="settings__icon"><ListChecks size={ICON.md} aria-hidden /></span>} />
                        }
                        if (it.type === 'source') {
@@ -164,9 +166,8 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
                                     leading={<span className="settings__icon"><SourceGlyph source={s.platform} label={s.title} /></span>}
                                     title={s.title}
                                     meta={s.problems > 0
-                                      ? <Dot tone="warn" label={`${s.problems} to fix`} />
-                                      : s.level === 'off' ? <span className="settings__off">{LINK.down}</span>
-                                      : <StatusDot level={s.level} />} />
+                                      ? <StateWord tone="warn">{count(s.problems, 'problem')}</StateWord>
+                                      : s.level === 'ok' ? undefined : <LevelWord level={s.level} />} />
                          )
                        }
                        return (
@@ -174,7 +175,7 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
                                   leading={<span className="settings__icon"><it.icon size={ICON.md} aria-hidden /></span>}
                                   title={it.label}
                                   meta={it.id === 'people' && sources.data && !people
-                                    ? <span className="settings__off">{LINK.down}</span> : undefined} />
+                                    ? <StateWord>{LINK.down}</StateWord> : undefined} />
                        )
                      }} />
       </aside>
@@ -190,7 +191,7 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
 function PageBody({ page, sub, edit, history, status, sources, auth, active, forms }: {
   page: string
   sub?: string
-  /** its page and Guard: one of the long texts open in the large editor, or its History */
+  /** its page, Guard and Prompts: one of the long texts open in the large editor, or its History */
   edit?: string
   history: boolean
   status: ConfigStatus | null
@@ -209,14 +210,14 @@ function PageBody({ page, sub, edit, history, status, sources, auth, active, for
         if (!sources.data) return <Page title="Sources"><div /></Page>
         return (
           <Page title="Sources">
-            <EmptyState title={`No source called "${sub}".`} />
+            <EmptyState title="Not found">Nothing at this link.</EmptyState>
           </Page>
         )
       }
       return <SourcePage key={src.id} source={src} active={active} />
     }
     default: return <General status={status} />
-    case 'agent': return edit ? <HerText key={`${edit}:${history}`} edit={edit} history={history} /> : <HerPage />
+    case 'agent': return edit ? <AgentText key={`${edit}:${history}`} edit={edit} history={history} /> : <AgentPage />
     case 'features': return <Features />
     case 'guard': return edit ? <BastetText key={`${edit}:${history}`} edit={edit} history={history} /> : <Guard />
     case 'appearance': return <Appearance />
@@ -229,6 +230,7 @@ function PageBody({ page, sub, edit, history, status, sources, auth, active, for
     case 'email': return <Email />
     case 'vault': return <Vault />
     case 'security': return auth?.login ? <Security /> : <Page title="Security"><div /></Page>
+    case 'prompts': return <Prompts key={`${edit}:${history}`} id={edit} history={history} />
     case 'advanced': return <Advanced />
   }
 }

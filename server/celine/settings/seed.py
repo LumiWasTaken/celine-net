@@ -2,11 +2,11 @@
 schedules. config/ ships the defaults; each is copied into var/settings/ when its place
 there does not exist (a deleted folder comes back), and from then on only var/settings is
 read: a schedule shipped later reaches an install that has the folder only by hand or on
-the Routines page. The agent's own row is celine.her.
+the Routines page. The agent's own row is celine.agent.
 
 - `var/settings/context.toml`: config/context.toml, the shares of the window it
   carries notes in, and the tokens of tools (turns/loads.py). At preflight (`seed`).
-- `var/settings/schedules/`: config/schedules/*.toml and the partner prompts *.md
+- `var/settings/schedules/`: config/schedules/*.toml and the reviewer prompts *.md
   (celine/schedules). At the Scheduler's start (`schedules`), so only with routines on.
 Bastet's persona and voice are never seeded: config/guard/ is their default (guard/persona.py).
 """

@@ -1,20 +1,22 @@
-/* General: when a settings file has an error, one quiet line and the list under it; You
+/* General: when a settings file or a prompt has an error, one quiet line and the list under it; You
    (your name, time zone, what you write about you), each saved when you leave it; Chats
    (Lock archived chats, Describe new photos in Messages), saved on change; Network: the app's
-   address (logins, share links and her Mac's setup command use it). How the app looks is
-   Appearance; its name is its own (Her.tsx). Source code: the code this build runs, its
-   commit on the link (the server's `build`, the AGPL's offer). Advanced: the time limits and
-   sizes (the server's `advanced` fields; a skill's own under its label), each saved on change
+   address (logins, share links and the setup command of the agent's Mac use it). How the app looks is
+   Appearance; its name is its own (Agent.tsx). Source code: the code this build runs, its
+   commit on the link (the server's `build`, the AGPL's offer). Advanced: a row that opens
+   Prompts, then the time limits and sizes (the server's `advanced` fields), one section per server `group` in the server's
+   order with an index beside them (a skill's own under its label), each saved on change
    (lib/useAutosave). */
 import { useEffect } from 'react'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, ScrollText } from 'lucide-react'
 import type { ConfigStatus } from '../../lib/api'
+import { format } from '../../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { settingsApi } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, Field, Form, type FormField, InlineError, Input, Section, TextArea } from '../../ui'
+import { Button, Field, Form, type FormField, ICON, InlineError, Input, ListRow, PageIndex, Section, TextArea } from '../../ui'
 import { Page } from './parts'
 import './settings.css'
 
@@ -25,7 +27,7 @@ export function General({ status }: { status: ConfigStatus | null }) {
       {problems.length > 0 && (
         <Section>
           <div className="config-line">
-            <p className="src-line">{problems.length === 1 ? 'A settings file has an error. Fix it and save the file.' : 'Some settings files have errors. Fix them and save the files.'}</p>
+            <p className="src-line">{problems.length === 1 ? 'A setting needs a fix:' : 'Some settings need a fix:'}</p>
             <ul className="plain-list">
               {problems.map((p, i) => <li key={i}><code>{p.file}</code>: {p.message}</li>)}
             </ul>
@@ -49,15 +51,21 @@ export function General({ status }: { status: ConfigStatus | null }) {
 
 export function Advanced() {
   return (
-    <Page title="Advanced">
+    <Page title="Advanced" wide>
+      <Section>
+        <div className="rows">
+          <ListRow title="Prompts" href={format({ section: 'settings', page: 'prompts' })}
+                   leading={<span className="settings__icon"><ScrollText size={ICON.md} aria-hidden /></span>} />
+        </div>
+      </Section>
       <GeneralFields advanced />
     </Page>
   )
 }
 
 /* The general settings from the server's schema: the ones named, or the Advanced ones
-   (the app's own, then one section per skill, by the server's `group`). Several pages
-   show a few of them; each save sends the whole object back (the API replaces it). */
+   (one section per server `group`, in its order, with the index). Several pages show a
+   few of them; each save sends the whole object back (the API replaces it). */
 export function GeneralFields({ only, advanced = false }: { only?: string[]; advanced?: boolean }) {
   const online = useOnline()
   const res = useResource(() => settingsApi.general(), [],
@@ -81,11 +89,14 @@ export function GeneralFields({ only, advanced = false }: { only?: string[]; adv
     </div>
   )
   if (!advanced) return form(schema, true)
-  const groups = [...new Set(schema.map(f => f.group).filter((g): g is string => !!g))]
+  const groups = [...new Set(schema.map(f => f.group ?? ''))]
+  const id = (g: string) => `adv-${groups.indexOf(g)}`
   return (
     <>
-      <Section>{form(schema.filter(f => !f.group), true)}</Section>
-      {groups.map(g => <Section key={g} title={g}>{form(schema.filter(f => f.group === g))}</Section>)}
+      {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
+      <PageIndex sections={groups.map(g => ({ id: id(g), label: g }))}>
+        {groups.map(g => <Section key={g} id={id(g)} title={g}>{form(schema.filter(f => (f.group ?? '') === g))}</Section>)}
+      </PageIndex>
     </>
   )
 }
@@ -93,7 +104,7 @@ export function GeneralFields({ only, advanced = false }: { only?: string[]; adv
 const ADDRESS: FormField = { key: 'origin', label: 'Address', type: 'text', mono: true, placeholder: 'https://celine.example.net' }
 
 /** the app's own address (GET/PUT /api/address), saved when you leave the field: here
-    under Network, and on a plugin's form whose view asks for it (her Mac's) */
+    under Network, and on a plugin's form whose view asks for it (the agent's Mac) */
 export function AddressField() {
   const res = useResource(() => settingsApi.address(), [], { events: ev => ev.type === 'settings.changed' })
   const save = useAction(async (origin: string) => { res.set(await settingsApi.putAddress(res.data?.version ?? '', origin)) })

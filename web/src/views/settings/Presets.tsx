@@ -16,13 +16,11 @@ import { useServerEvents } from '../../lib/bus'
 import { clock, errorText } from '../../lib/format'
 import { batchEvent, fileUrl, mediaApi, ROLE, tileUrl, workflowUrl, type Batch, type Kind, type Param, type Preset } from '../../lib/media'
 import { useOnline } from '../../lib/socket'
-import { SETTINGS_EVENTS, STATE_TONE, settingsApi, type Cap, type ProviderView, type RoleView } from '../../lib/settingsApi'
+import { SETTINGS_EVENTS, settingsApi, type Cap, type ProviderView, type RoleView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
 import { BatchGallery, StopBatch, doneWords, madeImages, type Made } from '../../components/Batch'
-import {
-  Button, Card, CardGrid, Choice, ConfirmDialog, Dialog, Dot, Field, FileButton, Form, Picks, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Player, Section, Step, SubHead, Switch, TextArea,
-} from '../../ui'
+import { Button, Card, CardGrid, Choice, ConfirmDialog, Dialog, Field, FileButton, Form, IconButton, InlineError, Input, ListRow, LoadingRow, NumberField, Picks, Player, Section, StateWord, Step, SubHead, Switch, TextArea } from '../../ui'
 import './settings.css'
 
 const TASK: Record<Preset['task'], string> = { generate: 'new images', edit: 'edits', music: 'music' }
@@ -56,7 +54,7 @@ export function Presets({ kind, providers, roles, onChanged }: {
   return (
     <Section title={kind === 'images' ? 'Images' : 'Music'}
              action={<FileButton icon={Upload} accept=".json,application/json" disabled={!online} onFiles={([f]) => { if (f) setFile(f) }}>Upload workflow</FileButton>}>
-      {probe.data && probe.data.state !== 'none' && <Dot tone={STATE_TONE[probe.data.state] ?? 'off'} text={probe.data.detail} />}
+      {probe.data && probe.data.state !== 'none' && <StateWord tone={probe.data.state === 'missing' ? 'error' : 'muted'}>{probe.data.detail}</StateWord>}
       {list.error && !list.data ? <InlineError message={list.error} onRetry={list.reload} />
         : !list.data ? <LoadingRow label="Loading presets" /> : (
         <CardGrid on={list.data?.presets} className="presets">

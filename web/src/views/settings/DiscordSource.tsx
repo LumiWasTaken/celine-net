@@ -12,7 +12,7 @@ import {
   kbApi, type ConnectorState, type DiscordGuild, type DiscordSubSettings,
   type DiscordSubscription, type DiscordTarget,
 } from '../../lib/kb'
-import { count, countdown, errorText, nothingMatches } from '../../lib/format'
+import { count, countdown, errorText, noneMatch } from '../../lib/format'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { connectionState, lostWhen, type Source } from '../../lib/sources'
 import { useAction } from '../../lib/useAction'
@@ -22,7 +22,7 @@ import {
   Avatar, Button, Checkbox, Chip, ConfirmDialog, Dialog, EmptyState, Field, Form, type FormField, InlineError, Input, LoadingRow, SearchField, Section, Switch, VirtualList,
 } from '../../ui'
 import { useConnector } from './Connector'
-import { Page, StatusDot, TaskLine } from './parts'
+import { Page, LevelWord, TaskLine } from './parts'
 import { Problem, StateLine, StateNotice, ToFix, failedLines, scheduleProblems, useSchedules, useTasks } from './SourcePage'
 import './settings.css'
 
@@ -50,7 +50,7 @@ export function DiscordSource({ source, active }: { source: Source; active: bool
   const lost = c.state === 'needs_login' && !!st.login_lost_at
 
   return (
-    <Page title={source.title} detail={<StatusDot level={state.level} word />}>
+    <Page title={source.title} detail={<LevelWord level={state.level} />}>
       {c.state !== 'needs_login' && <StateNotice level={state.level} sentence={state.sentence} />}
 
       <ToFix>
@@ -139,7 +139,7 @@ function ChooseDms({ kid, dms, onClose, onSaved }: {
       <div className="dialog__form">
         <SearchField value={q} onChange={setQ} placeholder="Search direct messages" autoFocus />
         <div className="boxed-list boxed-list--dialog">
-          {shown.length === 0 ? <EmptyState compact>{nothingMatches(q)}</EmptyState> : (
+          {shown.length === 0 ? <EmptyState compact>{noneMatch('direct messages')}</EmptyState> : (
             <VirtualList items={shown} estimate={44} getKey={d => d.id} resetOn={q}
                          renderRow={d => (
                            <label className="pick-row">
@@ -216,7 +216,7 @@ function Servers({ kid, guilds, subs, first }: {
       {!subs.data && guilds.length > 0 ? <LoadingRow label="Loading servers" /> : (
         <div className="server-list" style={{ '--rows': rows.length } as CSSProperties}>
           <VirtualList items={rows} estimate={44} getKey={(g, i) => g?.id ?? `dms:${i}`} resetOn={q}
-                       after={shown.length === 0 ? <EmptyState compact>{q ? `No server matches "${q}".` : 'No servers on this account.'}</EmptyState> : undefined}
+                       after={shown.length === 0 ? <EmptyState compact>{q ? 'No servers match' : 'No servers on this account.'}</EmptyState> : undefined}
                        renderRow={g => {
                          if (!g) return first
                          const sub = byId.get(g.id)
@@ -319,7 +319,7 @@ function ChannelsDialog({ kid, guild, on, initial, onClose, onConfirm }: {
         <div className="boxed-list boxed-list--dialog">
           {channels.error ? <InlineError message={channels.error} onRetry={channels.reload} />
             : !channels.data ? <LoadingRow inline label="Loading channels" />
-            : rows.length === 0 ? <EmptyState compact>{q ? `No channel matches "${q}".` : 'This server has no text channels you can read.'}</EmptyState>
+            : rows.length === 0 ? <EmptyState compact>{q ? 'No channels match' : 'This server has no text channels you can read.'}</EmptyState>
             : (
               <VirtualList items={rows} estimate={i => (rows[i]?.type === 'cat' ? 40 : 36)}
                            getKey={(r, i) => r.type === 'ch' ? r.c.id : `cat:${r.name}:${i}`} resetOn={f}
@@ -380,7 +380,7 @@ export function LoginProblem({ kid, st, onChanged }: { kid: string; st: Connecto
   }
   const failed = session && (session.state === 'failed' || session.state === 'expired')
   return (
-    <Problem calm={!st.login_lost_at} sentence={st.login_lost_at ? `Discord ended the login ${lostWhen(st.login_lost_at)}.` : undefined}
+    <Problem calm={!st.login_lost_at} sentence={st.login_lost_at ? `Not connected to Discord. Discord ended the login ${lostWhen(st.login_lost_at)}.` : undefined}
              detail={st.connection.error ?? undefined}
              action={online ? { label: failed ? 'Get a new code' : 'Log in with QR code', icon: QrCode, onClick: () => void start.run(), busy: start.busy } : undefined}>
       <div className="muted">Logging in with a user account may break Discord's terms; use it at your own risk.</div>

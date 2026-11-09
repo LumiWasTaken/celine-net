@@ -1,7 +1,7 @@
-"""She configures herself (skills/settings.py): settings__read shows the settings with no
+"""The agent configures itself (skills/settings.py): settings__read shows the settings with no
 secret in them; settings__propose checks at once, asks the user (approvals, kind
 `settings`), and once approved saves through the Settings save (celine/saves.py) on
-the version it was proposed against; a secret goes from a file in her box into
+the version it was proposed against; a secret goes from a file in its box into
 var/secrets and nowhere else."""
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from celine.core.services import Services
 from celine.guard.owner import _SEAL, Owner
 from celine import saves
 from celine.settings import secrets as secrets_mod
-from celine.settings import her_models
+from celine.settings import agent_models
 from celine.settings.files import version
 from celine.skills import ToolContext, build
 from celine.skills.settings import Settings
@@ -149,11 +149,10 @@ async def test_a_valid_proposal_asks_with_before_and_after_and_deny_changes_noth
     assert ask.kind == "settings" and ask.call == "k1"
     (kind, asked), (closed, _) = await _approval_events(app)
     assert (kind, closed) == ("approval.asked", "approval.closed")
-    chat = asked["approval"]
-    assert chat["label"] == "Settings" and chat["line"] == "Celine asks to change the General settings."
-    assert chat["changes"] == [{"label": "Turn time limit", "before": "1800",
-                                "after": "3600"}]
-    assert chat["why"] == "Long research turns stop at the limit."
+    card = asked["approval"]
+    assert card["title"] == "Celine asks to change the General settings."
+    assert card["facts"] == [{"label": "Turn time limit", "value": "1800 \u2192 3600"},
+                             {"label": "Reason", "value": "Long research turns stop at the limit."}]
     assert got.is_error and got.content == "sam denied it; nothing was done."
     assert (app.var / "settings" / "general.toml").read_bytes() == before
     assert "turn_wall_clock_seconds" not in app.cfg.settings.general
@@ -184,8 +183,8 @@ async def test_a_feature_switched_on_says_what_its_probe_finds(app, monkeypatch)
     sk = _skill(app)
     got, _ = await _answer(app, sk.propose(
         await _ctx(app), target="features", changes={"web": True}, why="w"), True)
-    assert got.content == ("Changed Features. Web search: Off → On. "
-                           "Web search: missing. SearXNG is not running."), got.content
+    assert got.content == ("Changed Features. Web: Off → On. "
+                           "Web: missing. SearXNG is not running."), got.content
 
 
 async def test_an_approve_after_the_setting_changed_fails_and_keeps_the_change(app):
@@ -204,7 +203,7 @@ async def test_an_approve_after_the_setting_changed_fails_and_keeps_the_change(a
     assert app.cfg.settings.general["turn_wall_clock_seconds"] == 900
 
 
-async def test_a_secret_goes_from_her_box_to_var_secrets_and_nowhere_else(app, caplog):
+async def test_a_secret_goes_from_its_box_to_var_secrets_and_nowhere_else(app, caplog):
     caplog.set_level(logging.DEBUG)
     box = Box(PASSWORD + "\n")
     sk = _skill(app, box)
@@ -230,17 +229,16 @@ async def test_a_secret_goes_from_her_box_to_var_secrets_and_nowhere_else(app, c
         why="The mail skill needs the account."), True, unread)
     assert not got.is_error, got.content
     assert box.reads == 1
-    assert ask.changes == [{"label": "IMAP server", "before": "Empty",
-                            "after": "imap.example.com"},
-                           {"label": "Password", "after": "New value"}]
+    assert ask.facts == [("IMAP server", "Empty \u2192 imap.example.com"),
+                         ("Password", "New value"), ("Reason", "The mail skill needs the account.")]
     root = secrets_mod.secrets_dir(app.cfg.data_dir)
     assert secrets_mod.read_key(root, "email") == PASSWORD
     assert app.cfg.settings.email["host"] == "imap.example.com"
     events = await app.store.read(lambda c: [r[0] for r in c.execute(
         "SELECT data FROM events")])
     read = (await sk.read(ctx, target="email")).content
-    for text in (got.content, json.dumps(got.display), json.dumps(ask.view()),
-                 json.dumps(ap.chat(ask, None)), *events, caplog.text, read,
+    for text in (got.content, json.dumps(got.display), json.dumps(ask.card()),
+                 json.dumps(ask.card()), *events, caplog.text, read,
                  json.dumps(app.seen)):
         assert PASSWORD not in text
     assert '"state": "set"' in read
@@ -281,7 +279,7 @@ async def test_a_call_bastet_let_through_still_shows_its_settings_card(app):
     app.approvals.approved["k1"] = None         # approved on Bastet's ask
     got, ask = await _answer(app, sk.propose(
         ctx, target="general", changes={"turn_wall_clock_seconds": 3600}, why="w"), True)
-    assert ask.changes and not got.is_error
+    assert ask.facts and not got.is_error
 
 
 async def test_a_refused_reload_is_reported(app, monkeypatch):
@@ -304,7 +302,7 @@ async def test_a_refused_reload_is_reported(app, monkeypatch):
         "its last good settings: llm.toml does not parse.")
 
 
-async def test_a_new_lan_provider_is_added_and_its_model_is_hers_and_local(app):
+async def test_a_new_lan_provider_is_added_and_its_model_is_the_agents_and_local(app):
     sk = _skill(app)
     ctx = await _ctx(app)
     assert "mac" not in app.cfg.settings.providers
@@ -316,15 +314,16 @@ async def test_a_new_lan_provider_is_added_and_its_model_is_hers_and_local(app):
                                           "context": 40960}}},
         why="A model server on my Mac for my agents."), True)
     assert not got.is_error, got.content
-    assert ap.chat(ask, None)["line"] == "Celine asks to add the model provider mac."
-    assert {"label": "Address", "after": "192.168.1.50:1234"} in ask.changes
-    assert all("before" not in c for c in ask.changes), "a new provider had no values"
-    assert {"label": "Models", "after": "small, chat and tools\n"
-            "qwen3:14b, Qwen3 14B (Mac), chat and tools, 40,960 tokens"} in ask.changes
+    assert ask.card()["title"] == "Celine asks to add the model provider mac."
+    assert ("Address", "192.168.1.50:1234") in ask.facts
+    assert ("Cloud", "Off") in ask.facts, "a LAN address: the switch starts off"
+    assert all("\u2192" not in v for _, v in ask.facts), "a new provider had no values"
+    assert ("Models", "small, chat and tools\n"
+            "qwen3:14b, Qwen3 14B (Mac), chat and tools, 40,960 tokens") in ask.facts
     s = app.cfg.settings
     assert s.providers["mac"]["base_url"] == "http://192.168.1.50:1234/v1"
-    assert "mac/small" in her_models.allowed(s), "a template's model: takes it"
-    assert not her_models.cloud(s, "mac/small"), "its sub-agents start without an ask"
+    assert "mac/small" in agent_models.allowed(s), "a template's model: takes it"
+    assert not agent_models.cloud(s, "mac/small"), "its sub-agents start without an ask"
 
 
 async def test_a_new_providers_card_lists_the_roles_it_fills(app):
@@ -342,6 +341,31 @@ async def test_a_new_providers_card_lists_the_roles_it_fills(app):
     filled = [r for r in empty if s.chain(r) == ["mac/ears"]]
     assert filled == ["transcription"]
     for r in filled:
-        assert {"label": ROLES[r]["label"], "after": "mac/ears"} in ask.changes
+        assert (ROLES[r]["label"], "mac/ears") in ask.facts
         assert f"{ROLES[r]['label']}: mac/ears." in got.content
-    assert len([c for c in ask.changes if c["after"] == "mac/ears"]) == len(filled)
+    assert len([v for _, v in ask.facts if v == "mac/ears"]) == len(filled)
+
+
+async def test_a_providers_card_shows_its_cloud_switch_when_it_changes(app):
+    class Yes:
+        def __init__(self):
+            self.facts = []
+
+        async def ask(self, kind, conversation, action, *, facts=(), **k):
+            self.facts.append(list(facts))
+            return None
+    app.approvals = yes = Yes()
+    sk = _skill(app)
+    ctx = await _ctx(app)
+    got = await sk.propose(ctx, target="providers.lan",
+                           changes={"base_url": "https://api.example.com/v1"}, why="w")
+    assert not got.is_error, got.content
+    assert ("Cloud", "Off \u2192 On") in yes.facts[-1], "the new address is outside"
+    got = await sk.propose(ctx, target="providers.lan", changes={"cloud": False}, why="w")
+    assert yes.facts[-1] == [("Cloud", "On \u2192 Off")]
+    assert app.cfg.settings.providers["lan"]["cloud"] is False
+    read = json.loads((await sk.read(ctx, target="providers.lan")).content)
+    assert next(f for f in read["fields"] if f["key"] == "cloud")["value"] is False
+    got = await sk.propose(ctx, target="providers.lan", changes={"cloud": None}, why="w")
+    assert yes.facts[-1] == [("Cloud", "Off \u2192 On")], "back to what the address says"
+    assert "cloud" not in app.cfg.settings.providers["lan"]

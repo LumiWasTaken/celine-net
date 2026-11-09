@@ -1,6 +1,6 @@
 """Settings API: providers, models, keys, task models (roles), tool defaults, general
 settings, features, services, email, the vault, and the per-conversation chat model. The agent's persona, voice and
-portrait are its own (api/her.py).
+portrait are its own (api/agent.py).
 
 Rules every route keeps:
 - Stateless. Every PUT takes the whole object and is idempotent; the same PUT twice
@@ -30,7 +30,8 @@ from ..settings import mail as mail_mod, services as services_mod
 from ..settings import vault as vault_mod, views, write
 from ..settings import secrets as secrets_mod
 from ..settings.files import Invalid, version
-from ..settings.registry import ROLES, key_state, validate_model
+from ..settings import agent_models
+from ..settings.registry import OPTION_WORDS, PROVIDERS_HELP, ROLES, key_state, validate_model
 from .deps import cfg_of, etag, json_body, person_only, services_of, settings_of
 
 router = APIRouter(prefix="/api")
@@ -39,15 +40,17 @@ router = APIRouter(prefix="/api")
 
 @router.get("/providers")
 async def list_providers(request: Request, response: Response) -> dict:
+    """Every provider with what the app last learned of it (backends/router.py: from its
+    requests); nothing is asked here, Check provider asks."""
     s = settings_of(request)
     router = views.model_router(services_of(request))
-    for pid in s.providers:             # a list the user opens shows the state now
-        if not s.key_missing(pid):
-            await router.probe(pid)
     return {"providers": [views.provider(s, pid, router) for pid in s.providers],
             "kinds": views.kinds_view(),
             "version": etag(response, version(s.providers)),
-            "saved": bool(s.saved.get("providers"))}
+            "saved": bool(s.saved.get("providers")),
+            "help": PROVIDERS_HELP,
+            # the Cloud switch's "?" in a provider's dialog and in Add provider
+            "cloud_help": cfg_of(request).substitute(OPTION_WORDS["cloud"]["help"])}
 
 
 @router.get("/providers/{pid}")
@@ -55,10 +58,7 @@ async def get_provider(request: Request, response: Response, pid: str) -> dict:
     s = settings_of(request)
     if pid not in s.providers:
         raise NotFound("provider")
-    router = views.model_router(services_of(request))
-    if not s.key_missing(pid):
-        await router.probe(pid)
-    view = views.provider(s, pid, router)
+    view = views.provider(s, pid, views.model_router(services_of(request)))
     etag(response, view["version"])
     return view
 
@@ -67,7 +67,8 @@ async def get_provider(request: Request, response: Response, pid: str) -> dict:
 async def put_provider(request: Request, response: Response, pid: str,
                        if_match: str | None = Header(default=None)) -> dict:
     """Create or replace one provider, models included. Removing a model a role uses
-    is refused (400)."""
+    is refused (400). A new provider is asked once, so its row shows its state; `cloud`
+    null or left out follows the address (agent_models.provider_cloud)."""
     out = await saves.provider(services_of(request), pid, await json_body(request),
                                if_match)
     view = views.provider(settings_of(request), pid, views.model_router(services_of(request)))
@@ -99,18 +100,17 @@ async def delete_provider(request: Request, pid: str,
 
 @router.post("/providers/{pid}/test")
 async def test_saved_provider(request: Request, pid: str) -> dict:
-    """"Check again": the same probe the app makes before it uses a provider, asked
-    now. Models that could not be loaded get another chance, and saved models pick up
-    capabilities, context and thinking levels the server now reports. Returns the
-    provider's view with its state."""
+    """Check provider: the provider asked now, strict (a timeout counts as down), and
+    its model list read once. Models that could not be loaded get another chance, and
+    saved models pick up capabilities, context and thinking levels the server now
+    reports. Returns the provider's view with its state."""
     s = settings_of(request)
     if pid not in s.providers:
         raise NotFound("provider")
     router = views.model_router(services_of(request))
     if not s.key_missing(pid):
-        await router.probe(pid, max_age=0)
-        await router.discover(pid, force=True)
-        found = await views.discovered(s, pid, router)
+        await router.probe(pid, max_age=0, strict=True)
+        found = await router.discover(pid)
         if found:
             async with write.lock():
                 providers = views.merge_discovered(settings_of(request), pid, found)
@@ -151,7 +151,9 @@ async def test_new_provider(request: Request) -> dict:
         url = kinds.normalize_url(kind, url)
     out = await kinds.check(kind, url, key or None,
                             key_required=kinds.KINDS[kind]["key"] == "required")
-    return {**out, "kind": kind, "base_url": url}
+    # what the Cloud switch starts at for this address (agent_models.provider_cloud)
+    return {**out, "kind": kind, "base_url": url,
+            "cloud": agent_models.provider_cloud({"kind": kind, "base_url": url})}
 
 
 @router.get("/providers/{pid}/available-models")
@@ -231,7 +233,8 @@ async def list_secrets(request: Request) -> dict:
 
 @router.put("/secrets/{pid}")
 async def put_secret(request: Request, pid: str) -> dict:
-    """{"key": "..."}. Stores it; the answer only says it is set."""
+    """{"key": "..."}. Stores it and asks the provider once; the answer only says it is
+    set."""
     if pid not in settings_of(request).providers:
         raise NotFound("provider")
     body = await json_body(request, need=("key",), allow=("key",))
@@ -257,8 +260,8 @@ async def delete_secret(request: Request, pid: str) -> dict:
 @router.get("/roles")
 async def get_roles(request: Request, response: Response) -> dict:
     s = settings_of(request)
-    return {"roles": views.roles(s), "version": etag(response, version(s.roles)),
-            "saved": bool(s.saved.get("roles"))}
+    return {"roles": views.roles(s, views.model_router(services_of(request))),
+            "version": etag(response, version(s.roles)), "saved": bool(s.saved.get("roles"))}
 
 
 @router.put("/roles")
@@ -271,7 +274,8 @@ async def put_roles(request: Request, response: Response,
         raise Invalid("roles", "Roles are an object keyed by role.")
     out = await saves.roles(services_of(request), body["roles"], if_match)
     s = settings_of(request)
-    return {"roles": views.roles(s), "version": etag(response, version(s.roles)), **out}
+    return {"roles": views.roles(s, views.model_router(services_of(request))),
+            "version": etag(response, version(s.roles)), **out}
 
 
 @router.put("/roles/{role}")
@@ -280,23 +284,15 @@ async def put_role(request: Request, response: Response, role: str,
     """One task: {"chain": ["provider/model", ...]}. An empty chain turns it off."""
     body = await json_body(request, need=("chain",), allow=("chain",))
     out = await saves.role(services_of(request), role, body, if_match)
-    view = views.roles(settings_of(request))[role]
+    view = views.roles(settings_of(request), views.model_router(services_of(request)))[role]
     etag(response, view["version"])
     return {"role": role, **view, **out}
 
 
 # ---- tools ---------------------------------------------------------------------------
 
-async def _check_web(request: Request) -> None:
-    reg = request.app.state.services.registry
-    web = reg.skills.get("web") if reg is not None else None
-    if web is not None and hasattr(web, "check"):
-        await web.check()
-
-
 @router.get("/tool-defaults")
 async def get_tools(request: Request, response: Response) -> dict:
-    await _check_web(request)
     view = views.tools(services_of(request))
     etag(response, view["version"])
     return view
@@ -401,14 +397,17 @@ async def get_services(request: Request, response: Response) -> dict:
     return view
 
 
-@router.put("/services")
-async def put_services(request: Request, response: Response,
-                       if_match: str | None = Header(default=None)) -> dict:
-    """{"services": {shellbox: {url}, browser: {url}, searxng: {url}}}. The whole object: a
-    url left out is empty (searxng: its default). A service whose address changed starts
-    again while its feature is on."""
-    body = await json_body(request, need=("services",), allow=("services",))
-    out = await saves.addresses(services_of(request), body["services"], if_match)
+@router.put("/services/{id}")
+async def put_service(request: Request, response: Response, id: str,
+                      if_match: str | None = Header(default=None)) -> dict:
+    """{"url": "..."}: this service's address alone, "" clears it, null forgets it so the
+    compose's variable fills it again (Use the default); the others stay as saved. It
+    starts again while its feature is on."""
+    if id not in services_mod.IDS:
+        raise NotFound("service")
+    body = await json_body(request, need=("url",), allow=("url",))
+    out = await saves.addresses(services_of(request),
+                                {id: None if body["url"] is None else body}, if_match)
     view = views.services_view(services_of(request))
     etag(response, view["version"])
     return {**view, **out}
@@ -544,18 +543,20 @@ async def lock_vault(request: Request) -> dict:
 async def config_status(request: Request) -> dict:
     """Configuration problems (a broken file, an unknown key, a missing model), for
     Settings, General ("To fix"), plus your name and `owner`: it, as every page draws
-    it (her.view: name, pronouns, color, portrait, named). `hosts`: each provider's
-    host as the gateway's ping sees it ({state: up | down | null, since}); `hold`:
-    {state: "paused", since} while it is paused, else null (event `her.hold`); `build`:
+    it (agent.view: name, pronouns, color, portrait, named). `hosts`: each provider as
+    the app last learned it (up, down, or null: not asked yet); `hold`: "paused" while
+    it is paused, else null (event `agent.hold`); `build`:
     {commit, built, source} of this build (config.build); `vault_locked`: set up and locked."""
-    from .. import her
+    from .. import agent
     services = request.app.state.services
     cfg, router = services.cfg, getattr(services.llm, "router", None)
-    return {"owner": her.view(cfg),
+    return {"owner": agent.view(cfg),
             "user": cfg.user,
             "features": features_mod.effective(cfg.settings.features),
+            # the places that leave the rail: no feature of theirs is on and set up
+            "places_off": features_mod.places_off(cfg),
             "setup": features_mod.done(cfg.settings.features),
-            # features.view fills every text with her name and pronouns
+            # features.view fills every text with the agent's name
             "catalog": [{k: v[k] for k in ("id", "label", "form", "about", "off_when",
                                             "places", "pages")}
                         for v in (features_mod.view(f, cfg.substitute)

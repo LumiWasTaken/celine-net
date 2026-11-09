@@ -12,7 +12,7 @@ import {
 } from '../../lib/notify'
 import { useAction } from '../../lib/useAction'
 import { useResource } from '../../lib/useResource'
-import { Button, Dot, IconButton, InlineError, ListRow, LoadingRow, Section, Switch } from '../../ui'
+import { Button, IconButton, InlineError, ListRow, LoadingRow, Section, StateWord, Switch } from '../../ui'
 import { Page } from './parts'
 import './settings.css'
 
@@ -39,12 +39,12 @@ export function Notifications() {
         )}
         {perm === 'denied' && <>
           <div className="feature-line">
-            <Dot tone="warn" text="Blocked" />
+            <StateWord tone="warn">Blocked</StateWord>
             <Button onClick={checkAgain}>Check again</Button>
           </div>
           <p className="src-line">Allow them in this site's settings in your browser.</p>
         </>}
-        {granted && <Dot tone="ok" text="Allowed" />}
+        {granted && <StateWord>Allowed</StateWord>}
         <Switch label="Show notifications" checked={usable && prefs.on} disabled={!usable}
                 onChange={on => (on && !granted ? void ask.run() : setPrefs({ on }))} />
         <Switch label="Push to this device" checked={usable && pushing} disabled={!usable || !canPush || toggle.busy || !devices.data}

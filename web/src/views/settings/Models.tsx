@@ -12,7 +12,7 @@
    API: server/celine/api/settings.py (lib/settingsApi.ts). */
 import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp, KeyRound, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
-import { clock, errorText } from '../../lib/format'
+import { errorText } from '../../lib/format'
 import { format, useNav } from '../../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import {
@@ -26,7 +26,7 @@ import { useResource, type Resource } from '../../lib/useResource'
 import { ModelChooser, contextWords, findModel, modelDetail, modelName } from '../../components/ModelChooser'
 import { EMPTY_PROVIDER, ProviderFields, host, kindInfo, ready, type ProviderDraft } from '../../components/ProviderFields'
 import {
-  Button, Checkbox, Choice, ConfirmDialog, Dialog, Dot, EmptyState, Field, Form, type FormField, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton, Notice, NumberField, SearchField, Section, Step, SubHead, Switch, useContextMenu, VirtualList, type DotTone, type MenuItem,
+  Button, Checkbox, Choice, ConfirmDialog, Dialog, EmptyState, Field, Form, type FormField, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton, Notice, NumberField, SearchField, Section, StateWord, Step, SubHead, Switch, useContextMenu, VirtualList, type MenuItem, type WordTone,
 } from '../../ui'
 import { Page } from './parts'
 import { ROLE } from '../../lib/media'
@@ -44,43 +44,27 @@ export function Models({ providerId }: { providerId?: string }) {
       return <Page title="Models"><Section><Loaded res={providers} /></Section></Page>
     }
     const p = data.providers.find(x => x.id === providerId && x.provider.kind !== 'comfyui')
-    if (!p) return <Page title="Models"><EmptyState>No provider at this link.</EmptyState></Page>
+    if (!p) return <Page title="Models"><EmptyState title="Not found">Nothing at this link.</EmptyState></Page>
     // a save's answer in place at once, so an option never flips back while the list reloads
     const put = (v: ProviderView) => providers.set(d => d && { ...d, providers: d.providers.map(x => (x.id === v.id ? v : x)) })
-    return <ProviderPage p={p} providers={data.providers} kinds={data.kinds} onChanged={reload} onSaved={put} />
+    return <ProviderPage p={p} providers={data.providers} kinds={data.kinds} cloudHelp={data.cloud_help} onChanged={reload} onSaved={put} />
   }
   return <ModelsHome providers={providers} roles={roles} onChanged={reload} />
 }
 
 /* ── words for state ── */
-const hm = (ms: number | null | undefined) => (ms ? clock(ms) : '')
-
-/** one line when the app cannot reach this provider, else nothing */
-export function providerProblem(p: ProviderView): string | null {
-  const st = p.state
-  if (st.reachable !== false) return null
-  return st.error ?? `${LINK.down}.`
-}
-
-/** why a model cannot be used now, or null */
-function modelProblem(m: ProviderModel | undefined, p: ProviderView | undefined): string | null {
-  if (!m || !p) return 'This model is no longer on its provider. Pick another one.'
-  if (p.state.key_missing) return `${p.provider.label} has no API key.`
-  if (p.state.reachable === false) return `${p.provider.label} is not connected.`
-  if (m.state.state === 'failed') {
-    return m.state.kind === 'could_not_load'
-      ? `The model did not load at ${hm(m.state.at)}.`
-      : `Failed at ${hm(m.state.at)}: ${m.state.message}`
-  }
-  return null
-}
-
-/** a provider's reachability as a dot and a word */
-export function reach(p: ProviderView): { tone: DotTone; word: string } {
+/** a provider's reachability as its word; `tone` warn when it needs a look */
+export function reach(p: ProviderView): { tone: WordTone; word: string } {
   if (p.state.key_missing) return { tone: 'warn', word: LINK.unset }
-  if (p.state.reachable === true) return { tone: 'ok', word: LINK.up }
+  if (p.state.reachable === true) return { tone: 'muted', word: LINK.up }
   if (p.state.reachable === false) return { tone: 'warn', word: LINK.down }
-  return { tone: 'off', word: 'Not checked' }
+  return { tone: 'muted', word: 'Not checked' }
+}
+
+/** the reach word in its text tone */
+export function ReachWord({ p }: { p: ProviderView }) {
+  const st = reach(p)
+  return <StateWord tone={st.tone}>{st.word}</StateWord>
 }
 
 /* ── the chat model first, then the other roles, then the providers ── */
@@ -98,38 +82,37 @@ function ModelsHome({ providers, roles, onChanged }: {
     .sort(([a], [b]) => Number(b === 'chat') - Number(a === 'chat'))
   return (
     <Page title="Models">
-      <Section>
-        {r ? shown.map(([k, info]) => <RoleRow key={k} head role={k} info={info} providers={list} onChanged={onChanged} />)
-          : <Loaded res={roles} />}
-      </Section>
-      <Section title="Providers" count={providers.data ? list.length : undefined}
-               action={list.length > 0 && <Button icon={Plus} onClick={() => setAdding(true)}>Add a provider</Button>}>
+      <Section title="Providers" help={providers.data?.help} count={providers.data ? list.length : undefined}
+               action={list.length > 0 && <Button icon={Plus} onClick={() => setAdding(true)}>Add provider</Button>}>
         {providers.error && !providers.data ? <InlineError message={providers.error} onRetry={providers.reload} />
           : !providers.data ? <LoadingRow label="Checking providers" />
           : list.length === 0 ? (
             <EmptyState title="No providers yet."
-                   action={<Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Add a provider</Button>} />
+                   action={<Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Add provider</Button>} />
           ) : (
             <div className="rows">
-              {list.map(p => {
-                const st = reach(p)
-                return (
-                  <ListRow key={p.id} href={format({ section: 'settings', page: 'models', sub: p.id })} title={p.provider.label}
-                           meta={<span className="reach"><Dot tone={st.tone} />{st.word}</span>} />
-                )
-              })}
+              {list.map(p => (
+                <ListRow key={p.id} href={format({ section: 'settings', page: 'models', sub: p.id })} title={p.provider.label}
+                         subtitle={p.state.error ? <StateWord tone="warn">{p.state.error}</StateWord> : undefined}
+                         meta={<span className="reach"><ReachWord p={p} /></span>} />
+              ))}
             </div>
           )}
       </Section>
+      <Section title="Roles">
+        {r ? shown.map(([k, info]) => <RoleRow key={k} head role={k} info={info} providers={list} onChanged={onChanged} />)
+          : <Loaded res={roles} />}
+      </Section>
       {adding && providers.data && (
-        <AddProvider kinds={providers.data.kinds} taken={providers.data.providers.map(p => p.id)} onClose={() => setAdding(false)} onAdded={onChanged} />
+        <AddProvider kinds={providers.data.kinds} cloudHelp={providers.data.cloud_help} taken={providers.data.providers.map(p => p.id)}
+                     onClose={() => setAdding(false)} onAdded={onChanged} />
       )}
     </Page>
   )
 }
 
 /** a role's list of models (`onSave` writes it, else the role):
-    a numbered row per model in the order they are tried, its "..." to move or remove it,
+    a row per model in the order they are tried (numbered when there are two or more), its "..." to move or remove it,
     then Add model under it */
 export function RoleRow({ role, info, providers, onChanged, fallback, onSave, head = false }: {
   role: string; info: RoleView; providers: ProviderView[]; onChanged: () => void
@@ -158,22 +141,21 @@ export function RoleRow({ role, info, providers, onChanged, fallback, onSave, he
   ]
   const add = (
     <Button icon={Plus} loading={save.busy} disabled={!online || !providers.length}
-            title={!online ? OFFLINE_TITLE : providers.length ? undefined : 'Add a provider first'}
+            title={!online ? OFFLINE_TITLE : providers.length ? undefined : 'Add provider first'}
             onClick={() => setChoosing(true)}>Add model</Button>
   )
   return (
     <div className="chain">
-      {head && <SubHead>{info.label}</SubHead>}
+      {head && <SubHead help={info.help}>{info.label}</SubHead>}
       {info.models.length > 0 ? (
         <div className="rows">
           {info.models.map((m, i) => {
-            const found = findModel(m.ref, providers)
-            // the providers may still be loading: no problem until they say so
-            const problem = providers.length ? modelProblem(found?.model, found?.provider) : null
+            // the server's sentence: a model gone from its provider, else its provider's view of it
+            const problem = m.problem ?? findModel(m.ref, providers)?.model.problem ?? null
             const items = menu(i, m.label)
             return (
-              <ListRow key={m.ref} density="lg" leading={<Step n={i + 1} />} title={m.label} subtitle={m.provider_label}
-                       detail={problem && <span className="chain__problem">{problem}</span>}
+              <ListRow key={m.ref} density="lg" leading={info.models.length > 1 ? <Step n={i + 1} /> : undefined} title={m.label} subtitle={m.provider_label}
+                       detail={problem && <StateWord tone="warn">{problem}</StateWord>}
                        onContextMenu={e => ctx.open(e, items, m.label)} press={ctx.press(() => items, m.label)}
                        trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
             )
@@ -184,7 +166,7 @@ export function RoleRow({ role, info, providers, onChanged, fallback, onSave, he
       {save.error && <InlineError compact message={save.error} />}
       {ctx.menu}
       {choosing && (
-        <ModelChooser title="Add model" providers={providers} needs={info.needs} skip={chain}
+        <ModelChooser title={`Add model to ${info.label}`} providers={providers} needs={info.needs} skip={chain}
                       onPick={ref => { setChoosing(false); void save.run([...chain, ref]) }}
                       onClose={() => setChoosing(false)} />
       )}
@@ -194,44 +176,27 @@ export function RoleRow({ role, info, providers, onChanged, fallback, onSave, he
 
 /* ── one provider ── */
 
-// plain words for the provider options the server lists per kind; others are humanised
-const OPTION: Record<string, { label: string; help?: string; unit?: string; choices?: Record<string, string> }> = {
-  service_tier: { label: 'Speed and price', choices: { '': 'Default', flex: 'Flex (cheaper, slower)', priority: 'Priority (faster, more expensive)' } },
-  data_collection: { label: 'Provider may keep data', choices: { deny: 'No', allow: 'Yes' } },
-  require_parameters: { label: 'Require parameters' },
-  allow_fallbacks: { label: 'Allow fallbacks' },
-  sort: { label: 'Sort by', choices: { '': 'Default', throughput: 'Throughput', latency: 'Latency', price: 'Price' } },
-  timeout: { label: 'Timeout', unit: 'seconds' },
-  max_concurrent: { label: 'Requests at once', help: '0 means no limit.' },
-  keep_alive: { label: 'Unload after', help: 'How long an idle model stays loaded, for example 5m or 1h.' },
-  shares_gpu_with: { label: 'Shares its GPU with',
-                     help: 'Before each image, the app unloads this provider\'s models to free the GPU.' },
-}
 // lists of OpenRouter provider names: edited in var/settings/providers.toml
 const FILE_ONLY = new Set(['order', 'only', 'ignore', 'quantizations', 'backup_models', 'thinking_levels'])
 
 /** the options of one provider; `others`: the llama-swap and tabbyAPI providers it can share a GPU with */
 export function optionSchema(opts: OptionSchema[], others: ProviderView[]): FormField[] {
   return opts.filter(o => !FILE_ONLY.has(o.key)).map(o => {
-    const m = OPTION[o.key]
-    const label = m?.label ?? (o.key.charAt(0).toUpperCase() + o.key.slice(1)).replace(/_/g, ' ')
+    const base = { key: o.key, label: o.label, help: o.help ?? undefined, default: o.default, where: 'state' as const,
+                   zero: o.zero ?? undefined, needs: o.needs ?? undefined }
     if (o.key === 'shares_gpu_with') {
-      return { key: o.key, label, type: 'choice', help: m?.help, default: o.default, where: 'state',
+      return { ...base, type: 'choice',
                choices: [['', 'No other provider'] as [string, string],
                          ...others.map(x => [x.id, x.provider.label] as [string, string])] }
     }
-    if (o.type === 'bool') return { key: o.key, label, type: 'bool', help: m?.help, default: o.default, where: 'state' }
-    if (o.choices) {
-      return { key: o.key, label, type: 'choice', help: m?.help, default: o.default, where: 'state',
-               choices: o.choices.map(c => [c, m?.choices?.[c] ?? (c || 'Default')] as [string, string]) }
-    }
-    return { key: o.key, label, type: o.type === 'int' || o.type === 'num' ? 'number' : 'text', help: m?.help,
-             unit: m?.unit, default: o.default, where: 'state' }
+    if (o.type === 'bool') return { ...base, type: 'bool' }
+    if (o.choices) return { ...base, type: 'choice', choices: o.choices }
+    return { ...base, type: o.type === 'int' || o.type === 'num' ? 'number' : 'text', unit: o.unit }
   })
 }
 
-function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
-  p: ProviderView; providers: ProviderView[]; kinds: KindInfo[]; onChanged: () => void; onSaved: (p: ProviderView) => void
+function ProviderPage({ p, providers, kinds, cloudHelp, onChanged, onSaved }: {
+  p: ProviderView; providers: ProviderView[]; kinds: KindInfo[]; cloudHelp: string; onChanged: () => void; onSaved: (p: ProviderView) => void
 }) {
   const kind = kindInfo(kinds, p.provider.kind)
   const nav = useNav()
@@ -251,8 +216,6 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
   const schema = useMemo(() => optionSchema(kind?.options ?? [], providers.filter(x => x.provider.kind === 'llama-swap' || x.provider.kind === 'tabby')),
                          [kind, providers])
   const keyed = kind?.key === 'required' || p.key.state === 'set' || cfg.kind === 'openai'
-  const st = reach(p)
-  const problem = providerProblem(p)
   const open = p.models.find(m => m.name === editing)
   const menu = (m: ProviderModel): MenuItem[] => [
     { label: 'Edit', icon: Pencil, onSelect: () => setEditing(m.name) },
@@ -262,12 +225,12 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
   ]
 
   return (
-    <Page title={cfg.label} up={{ page: 'models', label: 'Models' }} detail={<Dot tone={st.tone} text={st.word} />}
+    <Page title={cfg.label} up={{ page: 'models', label: 'Models' }} detail={<ReachWord p={p} />}
           actions={<Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check provider</Button>}
           more={[{ label: 'Edit', icon: Pencil, disabled: !online, onSelect: () => setRenaming(true) },
                  { label: 'Remove this provider', icon: Trash2, danger: true, disabled: p.used_by.length > 0 || !online,
                    title: p.used_by.length ? `Used for ${p.used_by.join(', ')}` : undefined, onSelect: () => setRemove(true) }]}>
-      {(problem || check.error) && <InlineError message={check.error ?? problem} />}
+      {(p.state.error || check.error) && <InlineError message={check.error ?? p.state.error} />}
 
       {keyed && <KeySection p={p} required={kind?.key === 'required'} onChanged={onChanged} />}
 
@@ -280,14 +243,14 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
         ) : (
           <div className="rows">
             {p.models.map(m => {
-              const trouble = modelProblem(m, { ...p, state: { ...p.state, key_missing: false, reachable: true } })
+              const trouble = m.problem
               const facts = modelDetail(m)
               const stale = !trouble && m.context && m.server_context && m.context !== m.server_context
                 ? `Context size ${Math.round(m.context / 1024)}k differs from the server` : null
               const items = menu(m)
               return (
                 <ListRow key={m.ref} density="lg" title={modelName(m)} subtitle={facts || undefined} aside={m.used_by.join(', ') || undefined}
-                         detail={(trouble || stale) && <span className="chain__problem">{trouble || stale}</span>}
+                         detail={(trouble || stale) && <StateWord tone="warn">{trouble || stale}</StateWord>}
                          onClick={() => setEditing(m.name)} onContextMenu={e => ctx.open(e, items, modelName(m))}
                          press={ctx.press(() => items, modelName(m))}
                          trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
@@ -307,7 +270,7 @@ function ProviderPage({ p, providers, kinds, onChanged, onSaved }: {
 
       {ctx.menu}
       {adding && <AddModels p={p} onClose={() => setAdding(false)} onAdded={onChanged} />}
-      {renaming && <ProviderDialog p={p} kinds={kinds} onClose={() => setRenaming(false)} onChanged={onChanged} />}
+      {renaming && <ProviderDialog p={p} kinds={kinds} cloudHelp={cloudHelp} onClose={() => setRenaming(false)} onChanged={onChanged} />}
       {open && <ModelDialog p={p} m={open} onClose={() => setEditing(null)} onChanged={onChanged} />}
       {dropping && (
         <ConfirmDialog title={`Remove ${modelName(dropping)}?`} danger confirmLabel="Remove"
@@ -443,8 +406,8 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
                     options={[{ value: '', label: 'Default' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
           </Field>
         ) : (
-          <Field label="Reasoning effort" group>
-            <Choice label={`Reasoning effort of ${modelName(m)}`} value={d.effort} disabled={!online} onChange={v => change({ effort: v })} options={efforts} />
+          <Field label="Thinking" group>
+            <Choice label={`Thinking of ${modelName(m)}`} value={d.effort} disabled={!online} onChange={v => change({ effort: v })} options={efforts} />
           </Field>
         ))}
         {!ok ? <InlineError compact message="Enter a whole number." />
@@ -455,16 +418,23 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
 }
 
 /* A key is write-only: typed once, stored on the server, never shown again. */
-/** a provider's type, address and name: Save checks the address (Auto-detect asks the server
-    what answers there), saves what it found and asks the provider's probe (its key: KeySection) */
-function ProviderDialog({ p, kinds, onClose, onChanged }: { p: ProviderView; kinds: KindInfo[]; onClose: () => void; onChanged: () => void }) {
+/** a provider's type, address, Cloud and name: Save checks the address (Auto-detect asks the
+    server what answers there), saves what it found and asks the provider's probe (its key:
+    KeySection). Cloud is saved only once the user sets it; left alone, or after Use the
+    default, the address says (null) */
+function ProviderDialog({ p, kinds, cloudHelp, onClose, onChanged }: {
+  p: ProviderView; kinds: KindInfo[]; cloudHelp: string; onClose: () => void; onChanged: () => void
+}) {
   const online = useOnline()
   const [d, setD] = useState<ProviderDraft>({ kind: p.provider.kind, url: p.provider.base_url, key: '', label: p.provider.label })
+  const [cloud, setCloud] = useState(p.provider.cloud ?? undefined)
+  // p.cloud is the address's word only while the saved provider has no switch of its own
+  const said = d.url.trim() === p.provider.base_url && p.provider.cloud == null ? p.cloud : 'mixed'
   const ok = !!d.url.trim()
   const save = useAction(async () => {
     const r = await settingsApi.testNew({ kind: d.kind || undefined, base_url: d.url.trim() })
     if (!r.kind) throw new Error(r.sentence)
-    await settingsApi.putProvider(p.id, { ...p.provider, kind: r.kind, label: d.label.trim() || p.provider.label, base_url: r.base_url })
+    await settingsApi.putProvider(p.id, { ...p.provider, kind: r.kind, label: d.label.trim() || p.provider.label, base_url: r.base_url, cloud: cloud ?? null })
     await settingsApi.test(p.id)
     onChanged(); onClose()
   })
@@ -475,7 +445,9 @@ function ProviderDialog({ p, kinds, onClose, onChanged }: { p: ProviderView; kin
               <Button variant="primary" loading={save.busy} disabled={!online || !ok} onClick={() => void save.run()}>Save</Button>
             </>}>
       <form className="dialog__form" onSubmit={e => { e.preventDefault(); if (online && ok) void save.run() }}>
-        <ProviderFields kinds={kinds} value={d} onChange={setD} withKey={false} />
+        <ProviderFields kinds={kinds} value={d} onChange={setD} withKey={false}
+                        cloud={{ checked: cloud ?? said, help: cloudHelp, onChange: setCloud,
+                                 onReset: cloud === undefined ? undefined : () => setCloud(undefined) }} />
         {save.error && <InlineError compact message={save.error} />}
       </form>
     </Dialog>
@@ -540,7 +512,7 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
         )}
         {list.error && !list.data ? <InlineError compact message={list.error} onRetry={list.reload} />
           : !list.data ? <LoadingRow label="Loading" />
-          : shown.length === 0 ? (unlisted ? null : <EmptyState compact>{q ? `No model matches "${q}".` : 'All models from this provider are already added.'}</EmptyState>)
+          : shown.length === 0 ? (unlisted ? null : <EmptyState compact>{q ? 'No models match' : 'All models from this provider are already added.'}</EmptyState>)
           : (
             <div className="boxed-list boxed-list--dialog" style={{ '--rows': shown.length } as CSSProperties}>
               <VirtualList items={shown} estimate={44} getKey={d => d.id} resetOn={q}
@@ -585,7 +557,7 @@ const stated = (m: ProviderModel, c: Cap): boolean | null =>
   m.server_caps && (c === 'tools' || c === 'vision') ? m.server_caps.includes(c) : null
 const capWords = (caps: string[] | undefined) => (caps ?? []).map(c => c.replace(/_/g, ' ')).join(', ')
 
-/* ── Add a provider: check the address first, then save ── */
+/* ── Add provider: check the address first, then save ── */
 export function slug(label: string, taken: string[]): string {
   const base = label.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'provider'
   let id = base, n = 2
@@ -593,11 +565,15 @@ export function slug(label: string, taken: string[]): string {
   return id
 }
 
-function AddProvider({ kinds, taken, onClose, onAdded }: { kinds: KindInfo[]; taken: string[]; onClose: () => void; onAdded: () => void }) {
+function AddProvider({ kinds, cloudHelp, taken, onClose, onAdded }: {
+  kinds: KindInfo[]; cloudHelp: string; taken: string[]; onClose: () => void; onAdded: () => void
+}) {
   const nav = useNav()
   const online = useOnline()
   // d.kind '' is Auto-detect: the server says what answers, and its answer fills Type and Address
   const [d, setD] = useState<ProviderDraft>(EMPTY_PROVIDER)
+  // Cloud as the user set it; unset, the check says what the address is and nothing is saved
+  const [cloud, setCloud] = useState<boolean>()
   const [checked, setChecked] = useState<Awaited<ReturnType<typeof settingsApi.testNew>> | null>(null)
   const check = useAction(async () => {
     setChecked(null)
@@ -611,16 +587,18 @@ function AddProvider({ kinds, taken, onClose, onAdded }: { kinds: KindInfo[]; ta
     const at = kindInfo(kinds, k)
     const name = d.label.trim() || (at?.default_url ? at.label : host(base_url))
     const id = slug(name, taken)
-    await settingsApi.putProvider(id, { kind: k, label: name, base_url, models: {} })
+    await settingsApi.putProvider(id, { kind: k, label: name, base_url, cloud, models: {} })
     if (d.key.trim()) await settingsApi.setKey(id, d.key.trim())
     onAdded(); onClose()
     nav.go({ section: 'settings', page: 'models', sub: id })
   }
   const anyway = useAction(async () => { if (checked?.kind) await save(checked.kind, checked.base_url) })
   return (
-    <Dialog title="Add a provider" onClose={onClose} size="md" dismissable={!check.busy && !anyway.busy}>
+    <Dialog title="Add provider" onClose={onClose} size="md" dismissable={!check.busy && !anyway.busy}>
       <form className="dialog__form" onSubmit={e => { e.preventDefault(); void check.run() }}>
-        <ProviderFields kinds={kinds} value={d} onChange={v => { setD(v); setChecked(null) }} autoFocus />
+        <ProviderFields kinds={kinds} value={d} onChange={v => { setD(v); setChecked(null) }} autoFocus
+                        cloud={{ checked: cloud ?? checked?.cloud ?? 'mixed', help: cloudHelp, onChange: setCloud,
+                                 onReset: cloud === undefined ? undefined : () => setCloud(undefined) }} />
         {checked && !checked.ok && !check.busy && (
           <Notice tone="warn" action={checked.kind ? { label: 'Add anyway', onClick: () => void anyway.run(), busy: anyway.busy } : undefined}>
             {checked.sentence}

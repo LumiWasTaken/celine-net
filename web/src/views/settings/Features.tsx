@@ -1,11 +1,10 @@
 /* Settings, Features (/settings/features): the server's tiers in its order (FeatureTiers),
    each under its SubHead: Core, its rows on and fixed (no switch to flip); Base modules
-   and User modules, one row per feature: the Dot of what its probe found (the detail
-   sentence as the tooltip), its label (its `about` as the row's tooltip), its switch (off
+   and User modules, one row per feature: its label (its `help` behind a "?"), its switch (off
    and greyed while the service is missing or not set up, its `needs` sentence under it and
    in a toast on a click), saved on each change (the whole object). A feature with a setup
    form opens it under its row (Edit), the same form the onboarding uses (WelcomeForms.tsx);
-   its Check saves and asks the probe anew, the row's Dot follows. A form's draft is kept by
+   its Check saves and asks the probe anew, the row follows. A form's draft is kept by
    feature id. "Check again" in the head asks every probe anew. The onboarding's Features
    step draws the same tiers with `about` as a second line, and a feature with a setup step
    switches on even while blocked (`free`): its step comes next. API: lib/settingsApi.ts
@@ -15,17 +14,15 @@ import { format } from '../../lib/nav'
 import { useRef, useState } from 'react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { blocked, flip, waits } from '../../lib/featureSteps'
-import { STATE_TONE, settingsApi, type Feature, type FeaturesView } from '../../lib/settingsApi'
+import { settingsApi, type Feature, type FeaturesView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, ConfirmDialog, cx, Dot, InlineError, Loaded, Section, SubHead, Switch, toast } from '../../ui'
+import { Button, ConfirmDialog, cx, InlineError, Loaded, Section, StateWord, SubHead, Switch, toast } from '../../ui'
 import { formOf, type SaveRef } from '../WelcomeForms'
 import { Page } from './parts'
 import './settings.css'
 
-/** the Dot of a feature's state: grey once its switch is off, whatever the probe found */
-export const stateTone = (f: Feature, on: boolean) => (f.state === 'ready' && !on ? 'muted' : STATE_TONE[f.state ?? 'none'])
 const MEDIA = new Set(['images', 'music'])
 
 /** the probes of the catalog's features (or `only` those ids), asked now; the catalog with the answers */
@@ -95,7 +92,7 @@ export function FeatureTiers({ view, disabled = false, about = false, free = fal
           <SubHead>{t.label}</SubHead>
           {t.id === 'core' ? view.core.map(c => (
             <div key={c.id} className="feature-row">
-              <Switch checked disabled title={about ? undefined : c.about} onChange={() => undefined}
+              <Switch checked disabled help={about ? undefined : c.about} onChange={() => undefined}
                       label={<>{c.label}{about && <span className="feature-about">{c.about}</span>}</>} />
             </div>
           )) : view.catalog.filter(f => f.tier === t.id).map(f => {
@@ -145,13 +142,13 @@ function SetupForm({ Form, feature, value, onChange, reprobe }: {
   return <div className="feature-setup"><Form feature={feature} value={value} onChange={onChange} saveRef={saveRef} reprobe={reprobe} /></div>
 }
 
-/** one feature's switch: the state Dot (grey once the switch is off; its tip the server's
-    reason: what the probe said or what turns it on, else why someone turns it off) and the label.
+/** one feature's switch and its label; switched on but missing or not set up, the probe's
+    sentence under it in the warn tone.
     Blocked (its service missing or not set up): off and greyed, its `needs` sentence under
     it, and a click shows it as a toast; `free` (the onboarding, a feature whose setup step
     comes next): it switches as any other. `waiting` (the feature it comes `after` is switched
     off, as flipped on this page): off and greyed as when blocked. With `about` the sentence is a second line and
-    the tooltip is `off_when`; without, the tooltip is `about`. A tooltip never repeats what
+    its "?" is `off_when`; without, its "?" is the server's `help`. A "?" never repeats what
     the row shows: an off row has none. A feature with `warn` (shares) asks first when
     switched on (Turn on); off needs no confirm */
 export function FeatureSwitch({ feature: f, on, disabled = false, about = false, free = false, waiting = false, onChange }: {
@@ -164,19 +161,19 @@ export function FeatureSwitch({ feature: f, on, disabled = false, about = false,
   waiting?: boolean
   onChange: (on: boolean) => void
 }) {
-  const tone = stateTone(f, on)
   const off = (blocked(f) && !free) || waiting
-  const line = off ? f.needs : about ? f.about : ''
-  const title = off ? undefined : (about ? f.off_when : f.about) || undefined
+  // switched on but the probe found it missing or not set up: its sentence, in the warn tone
+  const problem = on && !off && (f.state === 'missing' || f.state === 'unset') && f.detail
+  const line = off ? f.needs : problem ? <StateWord tone="warn">{f.detail}</StateWord> : about ? f.about : ''
+  const help = off ? undefined : (about ? f.off_when : f.help) || undefined
   const [asking, setAsking] = useState(false)
   return (
     <div className={cx('feature-row', off && 'feature-row--off')}
          onClick={off ? () => toast({ text: f.needs }) : undefined}>
-      <Switch checked={!off && on} disabled={disabled || off} title={title}
+      <Switch checked={!off && on} disabled={disabled || off} help={help}
               onChange={v => (v && f.warn ? setAsking(true) : onChange(v))}
               label={<>
-                {tone && <Dot tone={tone} label={f.detail || (on ? '' : f.off_when) || undefined} />}
-                {tone && ' '}{f.label}
+                {f.label}
                 {line && <span className="feature-about">{line}</span>}
               </>} />
       {asking && (

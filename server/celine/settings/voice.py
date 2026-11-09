@@ -1,5 +1,5 @@
 """Banned words: the words its chat models are steered from (its row's `voice`,
-shipped in config/her/voice.toml).
+shipped in config/agent/voice.toml).
 
 One list, `banned`, one weight, `bias`. On tabbyAPI (its chat) the banned words and the
 `phrases` go into the request as `banned_strings`, plain text the engine backtracks over,
@@ -27,6 +27,10 @@ ROLES = ("chat", "writer")
 DEFAULT = {"banned": [], "bias": -8.0, "on": True, "phrases": [], "patterns": []}
 MAX_BANS = 1000
 MAX_PHRASES = 500
+# the "?" of Banned words (its section) and Bias on the agent's page
+HELP = {"banned": "Words and phrases the chat models are steered away from. They work on "
+                  "tabbyAPI, llama-swap and llama-server models.",
+        "bias": "How strongly the model avoids these words. At -100 it never uses them."}
 
 
 def validate(data: Any) -> dict[str, Any]:
@@ -62,7 +66,7 @@ def validate(data: Any) -> dict[str, Any]:
     bias = data.get("bias", DEFAULT["bias"])
     if isinstance(bias, bool) or not isinstance(bias, (int, float)) or \
             not -100 <= bias <= 100:
-        raise Invalid("voice.bias", "The weight is a number from -100 to 100.")
+        raise Invalid("voice.bias", "The bias is a number from -100 to 100.")
     on = data.get("on", DEFAULT["on"])
     if not isinstance(on, bool):
         raise Invalid("voice.on", "This must be true or false.")
@@ -73,9 +77,9 @@ def of(cfg, role: str) -> dict | None:
     """The voice of a call of `role`: its turns (a chat call, whatever role the
     conversation's kind runs on: a mission, a sub-agent and a background run are its own
     too) and the writer speak with its Banned words; any other call has none."""
-    if role not in ROLES or getattr(cfg, "her", None) is None:
+    if role not in ROLES or getattr(cfg, "agent", None) is None:
         return None
-    return cfg.her.voice
+    return cfg.agent.voice
 
 
 def apply(bc, voice: dict[str, Any]):

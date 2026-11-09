@@ -30,6 +30,11 @@ APPEARANCE: dict[str, tuple[tuple, Any]] = {
     "collapse_thinking": ((False, True), True),
 }
 
+# the "?" of the sliders whose name does not say what they do
+HELP = {"tint": "How much the accent colours the background and surfaces. At 0 % they stay "
+                "plain grey.",
+        "contrast": "The step in lightness between the background and surfaces."}
+
 
 def validate(data: Any) -> dict[str, Any]:
     """Only the keys given; a value must be one of its choices, null puts the key back to its

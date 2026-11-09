@@ -90,7 +90,7 @@ export function FormActions({ form, disabled, before, after }: {
     <div className="form__control">
       {actions.map(a => (
         <Button key={a.id} loading={busy === a.id} disabled={disabled || !!busy || (!!a.input && !inputs[a.id])}
-                onClick={() => void run.run(a)}>{a.label}</Button>
+                badge={a.badge} onClick={() => void run.run(a)}>{a.label}</Button>
       ))}
     </div>
     {result?.sentence && <Lines lines={[{ text: result.sentence, tone: result.ok ? 'ok' : 'error' }]} />}
