@@ -82,16 +82,22 @@ def _threads(c) -> list[dict]:
     return out
 
 
+# the head each kind is listed under in the sheet, the Notifications words
+GROUPS = {"approval": "Approvals", "mission": "Missions", "login": "Sources",
+          "thread": "Intercom"}
+
+
 async def items(services) -> list[dict]:
-    """Every item that waits: the requests first (oldest first), then missions, lost
-    logins and Intercom threads (newest first). A request is {kind: "approval",
-    approval: its card}; every other {kind, id, title, line, link}."""
+    """Every item that waits, each with its `group` (GROUPS): the requests first (oldest
+    first), then missions, lost logins and Intercom threads (newest first). A request is
+    {kind: "approval", approval: its card}; every other {kind, id, title, line, link}."""
     a = getattr(services, "approvals", None)
     asks = [{"kind": "approval", "approval": card} for card in (a.view() if a else [])]
     rows = await services.store.read(lambda c: _missions(c) + _threads(c))
     missions = [r for r in rows if r["kind"] == "mission"]
     threads = [r for r in rows if r["kind"] == "thread"]
-    return [*asks, *missions, *lost_logins(getattr(services, "connectors", None)), *threads]
+    out = [*asks, *missions, *lost_logins(getattr(services, "connectors", None)), *threads]
+    return [{**i, "group": GROUPS[i["kind"]]} for i in out]
 
 
 async def run(store, bus) -> None:

@@ -48,12 +48,13 @@ async def test_an_ask_a_mission_a_lost_login_and_a_thread_are_four_items(store):
     services = SimpleNamespace(store=store, approvals=a, connectors=Connectors())
     got = await waits.items(services)
     assert [i["kind"] for i in got] == ["approval", "mission", "login", "thread"]
+    assert [i["group"] for i in got] == ["Approvals", "Missions", "Sources", "Intercom"]
     assert got[0]["approval"]["title"] == "Celine asks to change the Persona."
     assert got[0]["approval"]["where"] == "Chat Plans"
     assert {k: got[1][k] for k in ("title", "line", "link")} == {
         "title": "Night", "line": "A question for you at step 3: Book the hotel.",
         "link": f"/mission/{night}"}
-    assert got[2] == {"kind": "login", "id": "wa", "title": "WhatsApp",
+    assert got[2] == {"kind": "login", "id": "wa", "title": "WhatsApp", "group": "Sources",
                       "line": waits.LOST_BY["whatsapp"], "link": "/settings/sources/wa"}
     assert got[3]["line"] == "I found three flats. more"
     assert got[3]["link"] == f"/intercom/{got[3]['id']}"

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DoorOpen, Ellipsis, Flag, Hand, Mail, PauseCircle, Plug, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
 import './components/Shell.css'
 import './components/App.css'
@@ -24,7 +24,7 @@ import { ServerDown } from './components/ServerDown'
 import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
 import { isTyping } from './lib/keys'
-import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
+import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, ListSection, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
 import { usePageName } from './lib/title'
 import { BAR, TITLE, VIEWS, Welcome, sectionHref, shownPlaces, type RailEntry } from './routes'
@@ -298,13 +298,18 @@ function Shell() {
       )}
 
       {sheet === 'waiting' && (
-        <Sheet title="Waiting for you" onClose={() => setSheet(null)}>
+        <Sheet title="Waiting for you" size="lg" onClose={() => setSheet(null)}>
           <div>
-            {(waits.data?.items ?? []).map(w => w.kind === 'approval'
-              ? <ApprovalCard key={`a:${w.approval.id}`} ask={w.approval} onOpen={openWait} />
-              : <ListRow key={`${w.kind}:${w.id}`} icon={WAIT_ICON[w.kind]} title={w.title} subtitle={w.line || undefined}
-                         href={w.link ?? undefined}
-                         onClick={w.link ? e => { e.preventDefault(); openWait(w.link!) } : undefined} />)}
+            {(waits.data?.items ?? []).map((w, i, all) => (
+              <Fragment key={w.kind === 'approval' ? `a:${w.approval.id}` : `${w.kind}:${w.id}`}>
+                {w.group !== all[i - 1]?.group && <ListSection label={w.group} />}
+                {w.kind === 'approval'
+                  ? <ApprovalCard ask={w.approval} onOpen={openWait} />
+                  : <ListRow density="lg" icon={WAIT_ICON[w.kind]} title={w.title} subtitle={w.line || undefined}
+                             href={w.link ?? undefined}
+                             onClick={w.link ? e => { e.preventDefault(); openWait(w.link!) } : undefined} />}
+              </Fragment>
+            ))}
           </div>
         </Sheet>
       )}

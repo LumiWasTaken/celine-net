@@ -254,6 +254,7 @@ block at the end of this file lists the words no UI string uses.
 | Extract text | read a document's text again | |
 | Running, Queued, Waiting for you, Failed, Done, Scheduled, Not set up | states; Queued for a run or a work item that has not started; Scheduled for a Routine that runs later; Not set up for a tool group or a feature that lacks its setup | GitHub Actions, everyone |
 | Invalid | a citation in its reply that failed the check, shown with its id | everyone |
+| Waiting, Waiting for you; Approvals, Missions, Sources, Intercom | the rail item while something waits for you, and its sheet: the agent's requests, missions that ask you, chat sources whose login was lost and Intercom threads, each group under its head (waits.py GROUPS); a mission you stop leaves it | Slack "Activity", GitHub "Inbox" |
 | Dismiss, Dismiss all | a message that waits for you leaves the waiting list: an Intercom thread, or a mission's messages on its page (Waiting for you) | Android notifications |
 | Close | the X that hides a notice, a toast or a row | everyone |
 | Continue in a chat | an Intercom thread goes on as a new chat with it, its messages carried over | plain |

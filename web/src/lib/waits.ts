@@ -5,9 +5,9 @@ import { request } from './api'
 import type { Approval } from './settingsApi'
 import { useResource } from './useResource'
 
-export type Wait =
+export type Wait = { group: string } & (
   | { kind: 'approval'; approval: Approval }
-  | { kind: 'mission' | 'login' | 'thread'; id: string; title: string; line: string; link: string | null }
+  | { kind: 'mission' | 'login' | 'thread'; id: string; title: string; line: string; link: string | null })
 
 export const waitsApi = {
   list: (signal?: AbortSignal) => request<{ items: Wait[]; count: number }>('/waits', { signal }),
