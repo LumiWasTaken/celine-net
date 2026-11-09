@@ -26,7 +26,7 @@ The map of the code and the rules it follows.
 | `core/` | the single writer and event append, EventBus, ids and times, Services |
 | `db/` | `migrations/0001_schema.sql`, the later `NNNN_*.sql` and `NNNN_*.py` (a `.py` one moves stored data), and the chains for `log/` and `notebook/`; `migrate.py` applies them |
 | `conversations/` | conversation rows, the message tree, snapshot and replay, routes |
-| `turns/` | one turn: dispatcher, runner, tool chokepoint, context, compaction, titles; `reply.py` the one place that touches a stored reply (citation tokens only) |
+| `turns/` | one turn: dispatcher, runner, tool chokepoint, context, compaction, titles; `reply.py` the one place that touches a stored reply (citation tokens only); `warm.py` keeps the newest chat ready on its model server |
 | `backends/` | model APIs (openai, anthropic), router, queue, the test model is `tests/fake_backend.py` |
 | `skills/` | the tool registry and the tools without a module of their own; `guides/<skill>.md` the skill guides; `recall.py` what comes back on its own |
 | `kb/` | knowledge bases: the chat archive, documents, instant and semantic search, the connectors' feed |

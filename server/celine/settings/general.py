@@ -90,6 +90,11 @@ FIELDS: list[dict[str, Any]] = [
     # turns/reply.py: the [[kb:id]] citations of an answer
     _switch("Turns", "verify_citations", "Check citations", True,
             "Every message or document an answer cites must be one a tool showed."),
+    # turns/warm.py
+    _number("Models", "keep_warm_minutes", "Keep the chat ready", "minutes", 0, 1440, 0,
+            "After the newest chat's last reply, its request goes to its model server again "
+            "every 4 minutes for this long. The server keeps the model loaded and the chat "
+            "in its cache, so your next message starts at once.", zero="Off"),
     _number("Models", "embed_query_timeout_seconds", "Search embedding time limit", "seconds",
             1, 3600, 60, "How long a search waits for the Topic search model."),
     _number("Models", "busy_retry_seconds", "Busy model wait", "seconds", 1, 86_400, 10,

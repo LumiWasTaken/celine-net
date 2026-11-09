@@ -307,3 +307,35 @@ async def test_each_request_starts_with_the_request_before_it(store, cfg):
     assert step[2]["reasoning_content"] == "a picture first"
     assert step[3]["content"].endswith("[the image follows]")
     assert next_turn[:len(step)] == step
+
+
+async def test_keep_the_chat_ready_sends_the_start_of_the_next_turns_request(store, cfg):
+    """Keep the chat ready (turns/warm.py): within its minutes after the newest chat's
+    last reply, what goes is the next turn's request through the last user message;
+    past them, or at 0, nothing goes."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+    from celine.turns import warm
+    b = Script([[ReasoningDelta("a picture first"), *_call(1, "t__take", {})],
+                [TextDelta("there"), Done(reason="stop")],
+                [TextDelta("."), Done(reason="stop")],
+                [TextDelta("again"), Done(reason="stop")]])
+    reg = _reg(Shot(cfg))
+    cid = await conversations.create(store)
+    await user_says(store, cid, "show me")
+    turn = await turns.claim(store, "w")
+    await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), reg)
+    ended = datetime.fromisoformat(await store.read(lambda c: c.execute(
+        "SELECT finished_at FROM turns").fetchone()[0]))
+    services = SimpleNamespace(cfg=cfg, store=store, registry=reg, llm=None,
+                               dispatcher=SimpleNamespace(bound=lambda cid, **kw: b))
+    assert await warm.once(services, at=ended) is None, "0 minutes: off"
+    cfg.settings.general["keep_warm_minutes"] = 10
+    assert await warm.once(services, at=ended + timedelta(minutes=11)) is None
+    assert await warm.once(services, at=ended + timedelta(minutes=9)) == cid
+    await user_says(store, cid, "and now")
+    turn = await turns.claim(store, "w")
+    await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), reg)
+    warmed, next_turn = b.calls[2], b.calls[3]
+    assert [m["role"] for m in warmed] == ["system", "user"]
+    assert next_turn[:len(warmed)] == warmed

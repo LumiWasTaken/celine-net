@@ -375,6 +375,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
                 if on[p.id]:
                     await runners[p.id].start()
             tg.start_soon(reload.watch, services)
+            from .turns import warm               # Keep the chat ready (Advanced, Models)
+            tg.start_soon(warm.run, services)
 
             auth = app.state.auth
             if auth is not None:
