@@ -3,6 +3,57 @@
 What each release changed for the people who run it, newest first. The images carry
 the release as their tag (`CELINE_TAG=v1.2`, docs/DEPLOY.md "CI").
 
+## v2.1.0
+
+Pull the images and restart: the migrations run at start, after the databases are copied.
+After Update or Set up again, the Mac asks once more for Screen Recording and
+Accessibility, because Celine.app is rebuilt.
+
+### Added
+
+- A plugins folder of your own (`CELINE_PLUGINS_DIR`, `./user-plugins` with Docker compose) and the plugin guide, docs/plugins.md. Settings, General names a key a `plugin.toml` has wrong.
+- The Mac page has Update, marked while the Mac runs an older setup. The Mac's MCP servers install from a lockfile with checksums.
+- Terminals and Browser list the commands and pages your agent ran on its Mac. A place with nothing set up behind it leaves the rail.
+- Waiting, in the rail while something waits for you: cloud models, the vault, settings, Bastet, public shares, missions and Intercom threads, answered in place.
+- Routines: "When a run fails" (Retry or Skip), Retry on a failed, skipped or stopped run, and Running and Queued tabs in Runs.
+- Providers have a Cloud switch and Requests per hour; web search has Searches per hour. A cloud model your agent picks for itself asks you once per use.
+- Settings, Prompts: every text a model reads, editable, with History and Use the default.
+- A "?" beside settings, roles and features says what each does.
+- Bastet runs in Warn or Enforce, with its own Guard model role. A stop has Allow once on its banner.
+- New mission has a Check-in field, shown on the mission page.
+- Your agent looks itself up: `missions__read`, `routines__list` with runs, `past_conversations__list` by kind, `intercom__read` across chats, `bugreport__list`.
+- A shell command can carry an `about` line, shown in the chat in its place.
+
+### Changed
+
+- Every error shows the server's own words: model providers, ComfyUI, SearXNG, the shellbox, the browser, speech, embeddings and MCP servers.
+- The app learns a server's state from real requests. A server known to be down is asked again while something waits for it, every 10 s at most; Check provider asks at once.
+- A routine waits for its own model, and time spent waiting for a busy model stays outside the run's time limit.
+- Every message to you has a home: a mission talks in its mission, a routine's message starts a chat titled with its subject or the run's title, and your reply lands there.
+- Your chats with the agent are Chats again. The agent's texts use its name and pronouns, and its colour is "Face colour".
+- In a chat, a stretch of tool work is one quiet line that opens Activity, a failed call says why under it, and Thinking sits below the finished rows.
+- Settings opens at its start and Back goes back. Models lists the providers, then the Roles.
+- Schedule files use `reviewer` and `turns`; migration 0027 rewrites yours.
+- A `CELINE_*_URL` fills its service's address until you save that address in Settings.
+- Dialogs keep their title and close button in view and give the focus back to the button that opened them.
+- The Mac's shell and files work with Full Disk Access off: a protected folder waits for one click on the Mac. Setup raises the Local Network prompt and opens System Settings for the permissions still off.
+
+### Removed
+
+- Status dots, "down since" times and the probes on a timer.
+
+### Fixed
+
+- Web search marks SearXNG down after a failed search and up after the next one that works; when a saved address hides `CELINE_SEARXNG_URL`, the error names both.
+- Two agent messages in a row reach the model as one, as templates like Gemma's require.
+- The voice skill is offered while Read aloud is on.
+- Search with Source All covers your agent's chats.
+- A tool row's wait for Bastet ends when Bastet answers.
+- A tool result's image reaches the model after its tool message.
+- A settings save checks what it changes.
+- The shell refuses a new terminal after three wedged runs.
+- An HTML email lists its links.
+
 ## v1.2
 
 ### Added
