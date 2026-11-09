@@ -1,7 +1,7 @@
 /* The Intercom: messages between you, its conversations and the app, in threads. The list:
    Waiting for you, All and Guard (Bastet's threads, the server's) with their counts, Type
    and From to narrow it, Sort, Group by whom it is with (Show more for the rest), job results as one line, Search, Select to dismiss many, Dismiss all in More.
-   Each row says where it came from (the server's source); what a mission wrote you waits
+   Each row says where it came from (the server's source); what a mission wrote you (but a bug report) waits
    on the mission's page, not in Waiting for you (the server's). A thread is a chat history,
    oldest first, your lines on the right, where each came from under it, the reply pinned
    at its foot; replying marks it read, Dismiss does too. Continue in a chat takes any thread

@@ -3,7 +3,8 @@ api/waits.py; the rail's Waiting and its sheet). The server's one answer; the cl
 
 - every request of the agent's (approvals.py), as its card;
 - every mission in Needs you or with a message of its own that waits for the user, once,
-  that message or its note as the line (missions/watch.py);
+  that message or its note as the line (missions/watch.py); a bug report it filed is
+  an Intercom thread;
 - every chat source whose login was lost and is not back (kb/connectors.py);
 - every other Intercom thread with a message that waits for the user (intercom/store.py).
 
@@ -33,7 +34,7 @@ CHANGES = frozenset({APPROVALS_CHANGED, MISSION_STATE, SOURCE_STATE, INTERCOM_ST
 LOST_BY = {"whatsapp": "Not connected to WhatsApp. Log in with QR code in Settings, WhatsApp.",
            "discord": "Not connected to Discord. Log in again in Settings, Discord."}
 LOST = "Not connected to {title}. Log in again in Settings, {title}."
-LINE = 160          # characters of a thread's last message on its line
+LINE = 320          # characters of a message on its item (the sheet shows three lines)
 
 
 def _line(text: str | None) -> str:
@@ -58,11 +59,11 @@ def _missions(c) -> list[dict]:
     message, else its note."""
     from . import homes
     from .core.ids import now
-    from .intercom.store import _UNREAD
+    from .intercom.store import _UNREAD, BUG
     rows = c.execute(
         "SELECT * FROM (SELECT m.conversation_id, m.name, m.note, m.status, m.updated_at, "
         "(SELECT i.text FROM intercom i WHERE i.from_addr = 'agent:' || m.conversation_id "
-        f"AND i.kind <> 'job' AND {_UNREAD} ORDER BY i.id DESC LIMIT 1) AS asked "
+        f"AND i.kind <> 'job' AND {_UNREAD} AND NOT {BUG} ORDER BY i.id DESC LIMIT 1) AS asked "
         "FROM missions m JOIN conversations cv ON cv.id = m.conversation_id "
         "WHERE cv.trashed_at IS NULL) WHERE status = 'needs_you' OR asked IS NOT NULL "
         "ORDER BY updated_at DESC", ("user", now())).fetchall()

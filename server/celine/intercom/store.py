@@ -227,11 +227,12 @@ def listed(c: sqlite3.Connection, to: str | None = None, from_addr: str | None =
            limit: int | None = None, waiting: bool = False) -> list[dict]:
     """Messages to `to` (a stored address) and from `from_addr`, in thread `thread`, with
     an id above `after`, oldest first; with `scheduled` only those with a due time, by
-    due time; with `waiting` only those that wait for the user. Each with its `text`
+    due time; with `waiting` only those that wait for the user outside a bug report (a
+    mission's page: what it asked). Each with its `text`
     and `state`."""
     sql, args = "SELECT * FROM intercom i WHERE i.id > ?", [after]
     if waiting:
-        sql += f" AND {_UNREAD}"
+        sql += f" AND {_UNREAD} AND NOT {BUG}"
         args += ["user", now()]
     if to:
         sql += (" AND EXISTS (SELECT 1 FROM intercom_deliveries d WHERE "
@@ -274,10 +275,10 @@ def read(c: sqlite3.Connection, ids: list[int]) -> list[int]:
 
 
 def read_from(c: sqlite3.Connection, addr: str) -> list[int]:
-    """Every message from `addr` that waits for the user becomes read (a mission that
-    stopped asks nothing any more). -> the ids changed."""
+    """Every message from `addr` outside a bug report that waits for the user becomes
+    read (a mission that stopped asks nothing any more). -> the ids changed."""
     return read(c, [r[0] for r in c.execute(
-        f"SELECT i.id FROM intercom i WHERE i.from_addr = ? AND {_UNREAD}",
+        f"SELECT i.id FROM intercom i WHERE i.from_addr = ? AND {_UNREAD} AND NOT {BUG}",
         (addr, "user", now()))])
 
 
@@ -302,9 +303,13 @@ BACKGROUND = ("EXISTS (SELECT 1 FROM intercom r JOIN intercom_deliveries d ON "
               "WHERE r.id = i.thread AND r.from_addr LIKE 'system:%' AND "
               "bg.kind = 'background')")
 
-# Sent by a mission: what it writes to the user has the mission as its home (its page's
-# Waiting for you, waits.py), not the Intercom's Waiting for you.
-MISSION_FROM = "i.from_addr IN (SELECT 'agent:' || conversation_id FROM missions)"
+# A bug report's thread (bugreports/store.py): an Intercom thread of its own, whoever filed it.
+BUG = "i.thread IN (SELECT thread FROM bugreports WHERE thread IS NOT NULL)"
+
+# Sent by a mission outside a bug report: what it writes to the user has the mission as its
+# home (its page's Waiting for you, waits.py), not the Intercom's Waiting for you.
+MISSION_FROM = ("(i.from_addr IN (SELECT 'agent:' || conversation_id FROM missions) AND "
+                f"NOT {BUG})")
 
 # The app's own notice into a mission (its keep-going line, its time limit, a restart):
 # in the mission's transcript, never listed as a thread.

@@ -63,6 +63,20 @@ async def test_an_ask_a_mission_a_lost_login_and_a_thread_are_four_items(store):
     await task
 
 
+async def test_a_bug_report_a_mission_filed_waits_as_its_own_thread(store):
+    from celine.bugreports import store as bugs
+    from celine.intercom import store as rows
+    night = await conversations.create(store, "Night", kind="mission")
+    await missions.create(store, night, {"name": "Night", "terminal": "n", "brief": "b"})
+    report = await store.write(lambda c: bugs.file(
+        c, store, night, "Writes come back short", "high", "A write lost its end.", "", ""))
+    got = await waits.items(SimpleNamespace(store=store, approvals=None, connectors=None))
+    assert [(i["kind"], i["title"], i["line"]) for i in got] == [
+        ("thread", f"Bug #{report['id']}: Writes come back short", "High: A write lost its end.")]
+    assert await store.read(lambda c: rows.listed(c, from_addr=f"agent:{night}", waiting=True)) == []
+    assert await store.write(lambda c: rows.read_from(c, f"agent:{night}")) == []
+
+
 async def test_nothing_waiting_is_an_empty_list(store):
     services = SimpleNamespace(store=store, approvals=None, connectors=None)
     assert await waits.items(services) == []
