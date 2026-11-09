@@ -483,11 +483,16 @@ async def record_usage(store, cid: str, turn_id: str, data: dict,
                        request: dict | None = None) -> None:
     """One model call's numbers: `context.usage` in the log (not rendered), and
     turns.iterations. `request` ({provider, model, body}, the call as it went out) is
-    kept in `requests` with the numbers, one row per step of the reply, for good."""
+    kept in `requests` with the numbers, one row per step of the reply, for good. The
+    body is packed on a reader, so the single writer only inserts it."""
+    packed = None
+    if request is not None and data.get("message_id"):
+        packed = await store.read(lambda c: pack_body(c, request.get("body")))
+
     def fn(c: sqlite3.Connection) -> None:
         c.execute("UPDATE turns SET iterations = iterations + 1 WHERE id=?", (turn_id,))
         store.event(c, cid, CONTEXT_USAGE, {"turn_id": turn_id, **data})
-        if request is not None and data.get("message_id"):
+        if packed is not None:
             c.execute(
                 "INSERT OR REPLACE INTO requests(message_id, step, turn_id, provider, "
                 "model, body, estimate, prompt_tokens, completion_tokens, window, "
@@ -495,7 +500,7 @@ async def record_usage(store, cid: str, turn_id: str, data: dict,
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (data["message_id"], int(data.get("iteration") or 0), turn_id,
                  request.get("provider", ""), request.get("model", ""),
-                 pack_body(c, request.get("body")),
+                 packed,
                  data.get("estimate"), data.get("prompt_tokens"),
                  data.get("completion_tokens"), data.get("window"),
                  data.get("finish_reason"), data.get("first_token_ms"),
