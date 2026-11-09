@@ -85,8 +85,6 @@ FIELDS: list[dict[str, Any]] = [
             "The longest one tool call may take before it fails."),
     _number("Turns", "job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
             "A tool that runs in the background is stopped after this."),
-    _number("Turns", "history_messages", "Messages per request", "messages", 0, 100_000, 200,
-            "The most messages one request to a model carries. 0 means no limit.", zero="No limit"),
     # turns/reply.py: the [[kb:id]] citations of an answer
     _switch("Turns", "verify_citations", "Check citations", True,
             "Every message or document an answer cites must be one a tool showed."),

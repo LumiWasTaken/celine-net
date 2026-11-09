@@ -29,7 +29,7 @@ SMALL = context.Policy(age_at=0.99, compact_at=0.5, compact_to=0.3)
 def cfg():
     c = load()
     c.settings.general.update({"tool_timeout_seconds": 10, "turn_wall_clock_seconds": 60,
-                               "max_concurrent_turns": 1, "history_messages": 200})
+                               "max_concurrent_turns": 1})
     return c
 
 

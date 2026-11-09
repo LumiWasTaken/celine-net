@@ -29,7 +29,7 @@ SMALL = context.Policy(age_at=0.99, compact_at=0.5, compact_to=0.3)
 def cfg():
     c = load()
     c.settings.general.update({"tool_timeout_seconds": 10, "turn_wall_clock_seconds": 60,
-                 "max_concurrent_turns": 1, "history_messages": 200})
+                 "max_concurrent_turns": 1})
     return c
 
 
@@ -212,17 +212,16 @@ async def test_a_completion_past_its_time_is_a_failure_never_the_part_so_far():
         await compact.complete(Slow(), asked, 0, errors=True)
 
 
-async def test_a_chat_past_history_messages_keeps_the_last_ones(store, cfg):
-    """A chat cuts history_messages at the first user message past the limit, as it
-    always did; the big steps are a scene's."""
-    cfg.settings.general.update({"history_messages": 12})
+async def test_a_long_chat_sends_every_message_since_its_summary(store, cfg):
+    """Nothing but a summary moves where a chat's history starts: a long chat that fits
+    its window goes whole."""
     cid = await conversations.create(store)
-    for i in range(12):
+    for i in range(120):
         await seed_exchange(store, cid, f"question {i}", [])
-    await user_says(store, cid, "and now?")          # 25 items, 13 past the limit
-    built = await context.build(store, cfg, Model(window=100_000), cid, system="s", tools=[])
+    await user_says(store, cid, "and now?")
+    built = await context.build(store, cfg, Model(window=1_000_000), cid, system="s", tools=[])
     asked = [m["content"] for m in built.messages if m["role"] == "user"]
-    assert "question 7" in asked[0] and "question 6" not in json.dumps(built.messages)
+    assert len(asked) == 121 and "question 0" in asked[0]
 
 
 async def test_a_background_completion_does_not_count_its_wait_in_the_queue():

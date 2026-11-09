@@ -108,7 +108,6 @@ a save applies at once. They are listed here in the page's sections (`general.GR
 | `last_step_seconds` | Last answer time | 180 | after the work time: the step under way may still finish |
 | `tool_timeout_seconds` | Tool time limit | 180 | a blocking tool past this is cancelled |
 | `job_timeout_seconds` | Job time limit | 3600 | a background job is stopped after this; must exceed `tool_timeout_seconds` |
-| `history_messages` | Messages per request | 200 | transcript sent to the model; 0 means no cap |
 | `verify_citations` | Check citations | on | the citation check of a reply (`turns/reply.py`): every message or document it cites must be one a tool showed |
 | `embed_query_timeout_seconds` | Search embedding time limit | 60 | how long a search waits for the Topic search model (`kb/semantic.py`) |
 | `busy_retry_seconds` | Busy model wait | 10 | agent and background work asks a busy model again after this, doubled at each try |
@@ -315,8 +314,8 @@ also drops the `requests` older than `requests_keep` days (0, the default, keeps
 `messages.parent_id` is the tree. `ordinal` is sibling display order and nothing else;
 there is no unique constraint on it. `conversations.active_leaf_id` is where the visible
 path ends, `messages.preferred_child_id` is which child to follow when descending.
-History for the model is a parent-pointer walk from the active leaf, truncated to
-`history_messages` at a `user` message boundary. `reasoning` is stored on the row and
+History for the model is a parent-pointer walk from the active leaf, from the newest
+summary on (`turns/context.py`). `reasoning` is stored on the row and
 never sent to a provider.
 
 A version of a message is a sibling of it (same parent); the counter and the arrows are
@@ -494,8 +493,8 @@ reaches the model with its tool's name (`backends/openai.wire_messages`; Ollama
 The agent's own-mind block at the end of a new user message, first line `[your mind]`
 (`skills/mind.py`, stored once in `message_context`): its mood, the gap since the last
 talk, a new model, what is down and an unfreeze. There is no block unless its state
-differs from the last whole block on this branch, none is in its view (a compaction or
-the `history_messages` limit lies between), the last message here is over an hour old, or
+differs from the last whole block on this branch, none is in its view (a compaction
+lies between), the last message here is over an hour old, or
 an unfreeze; then it goes whole.
 
 The agent's memory block, before it in the same stored row, first line `[your memory]`

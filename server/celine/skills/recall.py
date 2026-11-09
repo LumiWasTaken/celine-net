@@ -71,8 +71,7 @@ def _hash(text: str) -> str:
     return hashlib.sha1(text.encode()).hexdigest()[:12]
 
 
-def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, limit: int | None,
-) -> dict | None:
+def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str) -> dict | None:
     """What the block needs from the database, in one read: the conversation's switch,
     folder and left-out notes, the place, its last reply before `mid`, and the sections shown on this branch since the last
     compaction ({id: hash})."""
@@ -83,7 +82,7 @@ def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, limit: int | Non
         return None
     from ..turns.message_context import reports
     reply, shown = "", {}
-    for role, content, value in reports(c, cid, mid, "$.notebook.shown", limit):
+    for role, content, value in reports(c, cid, mid, "$.notebook.shown"):
         if role == "assistant" and not reply and content.strip():
             reply = content
         for s in value or ():
@@ -112,9 +111,8 @@ async def block(cfg, store, cid: str, tid: str, message: dict
     from . import notebook, notebook_index
     from .places import offered
     from ..turns import loads, tokens
-    from ..turns.message_context import history_limit
     s = loads.shares(cfg)
-    f = await store.read(lambda c: _facts(c, cid, tid, message["id"], history_limit(cfg)))
+    f = await store.read(lambda c: _facts(c, cid, tid, message["id"]))
     if f is None or not offered("mind", f["place"]) or not f["auto"]:
         return None
     talk = "\n".join([message.get("content") or "", f["reply"][:loads.KEY_REPLY]]).strip()

@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 28
+LATEST = 29
 
 
 def _version(db) -> int:
@@ -598,4 +598,54 @@ def test_0028_keeps_a_missions_check_in_time_and_reads_its_old_check_ins(tmp_pat
     assert c.execute("SELECT checked_in_at FROM missions").fetchone() == (at,)
     assert dict(c.execute("SELECT intercom_id, state FROM intercom_deliveries")) == {
         1: "read", 2: "pending"}, "a check-in stops waiting, a question still waits"
+    c.close()
+
+
+def test_0029_takes_the_limit_out_and_a_chat_it_had_cut_keeps_its_view(tmp_path, monkeypatch):
+    """`history_messages` leaves the saved settings; a chat past it gets one compactions
+    row at the cut the limit made (its earlier summary's text carried), a shorter chat
+    none; a second run writes nothing."""
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0029":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 28
+    at = "2026-11-01T10:00:00.000+00:00"
+    c = sqlite3.connect(db)
+
+    def chat(cid: str, exchanges: int) -> None:
+        c.execute("INSERT INTO conversations(id, created_at, updated_at, kind) "
+                  "VALUES(?, ?, ?, 'chat')", (cid, at, at))
+        parent = None
+        for i in range(exchanges):
+            for role in ("user", "assistant"):
+                mid = f"{cid}-{role[0]}{i}"
+                c.execute("INSERT INTO messages(id, conversation_id, parent_id, role, content, "
+                          "ordinal, author, created_at) VALUES(?,?,?,?,?,0,'model',?)",
+                          (mid, cid, parent, role, f"{role} {i}", at))
+                parent = mid
+        c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (parent, cid))
+
+    chat("long", 5)            # 10 messages, the limit is 4
+    chat("short", 2)
+    chat("told", 5)            # summarised through its first exchange
+    c.execute("INSERT INTO compactions(id, conversation_id, through_message_id, trigger, "
+              "covers_messages, text, tokens, created_at) VALUES('s1', 'told', 'told-a0', "
+              "'auto', 2, 'They met.', 3, ?)", (at,))
+    c.commit()
+    c.close()
+    general = tmp_path / "settings" / "general.toml"
+    general.parent.mkdir()
+    general.write_text('user_name = "Sam"\nhistory_messages = 4\n')
+    shutil.copy(MIGRATIONS_DIR / "0029_no_history_limit.py", d)
+    assert migrate_all(db) == 29
+    assert "history_messages" not in general.read_text() and "Sam" in general.read_text()
+    c = sqlite3.connect(db)
+    rows = c.execute("SELECT conversation_id, through_message_id, covers_messages, text "
+                     "FROM compactions ORDER BY conversation_id, created_at, rowid").fetchall()
+    assert rows == [("long", "long-a2", 0, ""),
+                    ("told", "told-a0", 2, "They met."), ("told", "told-a2", 2, "They met.")]
     c.close()

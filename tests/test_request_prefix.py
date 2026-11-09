@@ -118,12 +118,11 @@ async def test_a_skill_goes_down_and_comes_back(chat):
     chat.held()
 
 
-@pytest.mark.xfail(strict=True, reason="2.1: past history_messages every turn drops the oldest")
-async def test_the_chat_passes_200_messages(chat):
-    chat.cfg.settings.general["history_messages"] = 4
-    for text in ("one", "two", "three", "four"):
-        await chat.say(text)
-    chat.held()
+async def test_the_chat_grows_long(chat):
+    for n in range(12):
+        await chat.say(f"message {n}")
+        if n:
+            chat.held()
 
 
 async def test_a_reply_cites_a_ref_an_older_shortened_result_holds(chat):

@@ -298,7 +298,7 @@ def _agable(call: dict, policy: Policy) -> bool:
 
 
 class _Plan:
-    def __init__(self, view: dict, cfg, backend, counter, policy: Policy, limit: int,
+    def __init__(self, view: dict, cfg, backend, counter, policy: Policy,
                  cid: str = ""):
         self.cfg, self.backend, self.counter, self.policy = cfg, backend, counter, policy
         self.cid = cid
@@ -323,7 +323,6 @@ class _Plan:
         self.start = self.pos[self.compaction["through_message_id"]] + 1 \
             if self.compaction else 0
         self.mark = self.pos.get(view["aged"] or "", -1)
-        self.limit = limit
         self.opening = ""           # what goes before its first message (history)
         # the refs each turn's replies cited: an aged result keeps the lines its own
         # turn cited whole (a later turn's citation leaves an old stub's bytes as they are)
@@ -334,23 +333,15 @@ class _Plan:
         self._select()
 
     def _select(self) -> None:
-        """The items after the newest summary, past `limit` cut at a user message."""
-        items = [it for it in self.all_items if it.idx >= self.start]
-        if self.limit and len(items) > self.limit:     # history_messages, at a user
-            items = items[self._cut(items):]
-        self.items = items
+        """The items after the newest summary: all of them go, until the window's share
+        (Policy) makes the next summary. Nothing else moves where its history starts,
+        so a request starts with the request before it."""
+        self.items = [it for it in self.all_items if it.idx >= self.start]
 
     def cut_through(self, idx: int) -> None:
         """The agent's history starts after chain position `idx` (a summary covers it)."""
         self.start = idx + 1
         self._select()
-
-    def _cut(self, items: list[_Item]) -> int:
-        """Where its history starts past `limit` items, always at a user message."""
-        cut = len(items) - self.limit
-        while cut < len(items) and items[cut].role != "user":
-            cut += 1
-        return cut
 
     # -- rendering
     def aged(self, it: _Item) -> bool:
@@ -561,8 +552,7 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
     counter = tokens.counter(backend)
     win = tokens.window(backend)
     view = await compactions.context_view(store, cid, path)
-    plan = _Plan(view, cfg, backend, counter, policy, int(cfg.r("history_messages") or 0),
-                 cid)
+    plan = _Plan(view, cfg, backend, counter, policy, cid)
     # the mark of a shortened argument names the read-back tool: no tool, no shortening
     plan.readback = any((t.get("function") or {}).get("name") == READBACK for t in tools)
     plan.opening = await store.read(lambda c: (c.execute(

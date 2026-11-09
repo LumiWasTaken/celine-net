@@ -348,7 +348,7 @@ export function Transcript(
   }
   const divider = (ids: string[]) => ids.flatMap(id => summaryAfter.get(id) ?? []).map(c => (
     <div key={c.id} className="msg-event">
-      <EventLine quiet icon={Shrink} detail={<p className="compaction__text">{c.text}</p>} detailTitle="Compacted">Compacted</EventLine>
+      <EventLine quiet icon={Shrink} detail={c.text ? <p className="compaction__text">{c.text}</p> : undefined} detailTitle="Compacted">Compacted</EventLine>
     </div>
   ))
   const noticesAfter = (ids: string[]) => imageNotices.filter(n => ids.includes(n.after_message_id))

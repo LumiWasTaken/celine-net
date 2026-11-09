@@ -77,38 +77,29 @@ def unsent(chain: list[dict]) -> list[dict]:
     return out[::-1]
 
 
-def history_limit(cfg) -> int | None:
-    """How many earlier messages a request carries (`history_messages`); None: all."""
-    return int(cfg.r("history_messages") or 0) or None
-
-
-def reports(c: sqlite3.Connection, cid: str, mid: str, path: str,
-            limit: int | None) -> list[tuple[str, str, object]]:
+def reports(c: sqlite3.Connection, cid: str, mid: str,
+            path: str) -> list[tuple[str, str, object]]:
     """The messages before `mid` on its branch that it still sees, newest first, back
-    to the newest compaction or `limit` messages (tool results not counted): (role,
-    content, the value at JSON `path` of its block's report, None without one).
-    note: the limit counts every message but tool results, so it errs toward one
-    more message; context._Plan._cut is the exact cut, made at request time."""
+    to the newest compaction: (role, content, the value at JSON `path` of its block's
+    report, None without one)."""
     throughs = {r[0] for r in c.execute(
         "SELECT through_message_id FROM compactions WHERE conversation_id=?", (cid,))}
     out: list[tuple[str, str, object]] = []
-    seen = 0
     pid = (c.execute("SELECT parent_id FROM messages WHERE id=?", (mid,)).fetchone()
            or [None])[0]
-    while pid and pid not in throughs and (limit is None or seen < limit):
+    while pid and pid not in throughs:
         r = c.execute("SELECT m.parent_id, m.role, m.content, x.report -> ? "
                       "FROM messages m LEFT JOIN message_context x ON x.message_id = m.id "
                       "WHERE m.id=?", (path, pid)).fetchone()
         if r is None:
             break
         out.append((r[1], r[2] or "", json.loads(r[3]) if r[3] is not None else None))
-        pid, seen = r[0], seen + (r[1] != "tool")
+        pid = r[0]
     return out
 
 
-def last_report(c: sqlite3.Connection, cid: str, mid: str, path: str,
-                limit: int | None):
+def last_report(c: sqlite3.Connection, cid: str, mid: str, path: str):
     """The newest value at JSON `path` of a block it still sees before `mid`
     (reports), None when there is none."""
-    return next((v for _, _, v in reports(c, cid, mid, path, limit) if v is not None),
+    return next((v for _, _, v in reports(c, cid, mid, path) if v is not None),
                 None)

@@ -5,8 +5,8 @@
   one gone stale), the gap since the last talk, a new model and what is down. The time is not in it: the message's own stamp says when it was
   sent and the tail says now (clock.now_line). The block only when something in it
   changed since the last whole block on this branch that it still sees (its report's
-  `state` in `message_context`, so it holds across a restart; a compaction or the
-  history limit in between makes the next one whole), after a pause here or with an
+  `state` in `message_context`, so it holds across a restart; a compaction in between
+  makes the next one whole), after a pause here or with an
   unfreeze; else nothing. Its first line is HEAD, as the legend at the top
   of its prompt names it (turns/legend.py). Only in its chats, missions and background
   jobs, and never with automatic context off (`conversations.auto_context`). The agent's notes
@@ -249,8 +249,7 @@ def _ago(seconds: float) -> str:
     return f"{n} days ago"
 
 
-def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, at: str,
-           limit: int | None) -> dict:
+def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, at: str) -> dict:
     """What the block needs from the database, in one read."""
     from .places import place_of
     conv = c.execute("SELECT auto_context FROM conversations WHERE id=?", (cid,)).fetchone()
@@ -276,7 +275,7 @@ def _facts(c: sqlite3.Connection, cid: str, tid: str, mid: str, at: str,
     # the state of the last whole block on this branch it still sees (only a whole
     # block's report has one)
     from ..turns.message_context import last_report
-    last = last_report(c, cid, mid, "$.mind.state", limit)
+    last = last_report(c, cid, mid, "$.mind.state")
     return {"place": place_of(c, cid, tid), "auto": bool(conv[0]) if conv else False,
             "model": model, "here": here, "anywhere": anywhere, "last": last}
 
@@ -307,9 +306,8 @@ class Mind:
         or None where its mind does not run."""
         cfg, store = self.cfg, ctx.store
         at = message.get("created_at") or now()
-        from ..turns.message_context import history_limit
         f = await store.read(lambda c: _facts(c, ctx.conversation_id, ctx.turn_id,
-                                              message["id"], at, history_limit(cfg)))
+                                              message["id"], at))
         if not offered("mind", f["place"]) or not f["auto"]:
             return None
         tz, now_ = zone(cfg), _at(at)
