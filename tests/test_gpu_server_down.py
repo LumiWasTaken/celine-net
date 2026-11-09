@@ -1,6 +1,6 @@
 """The app with its big GPU server gone: a server seen down is left out of every chain at once, background work answers on the next model
-of its task, the user's own turn fails with the reason, and the host ping brings the
-server back. Fake servers only."""
+of its task, the user's own turn fails with the reason, and waiting work asks it again
+once RETRY_DOWN has passed. Nothing polls it in between. Fake servers only."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -11,6 +11,7 @@ import pytest
 from celine.backends.base import BackendError, Done, TextDelta
 from celine.backends.llm import LLM
 from celine.backends.queue import Priority
+from celine.backends import router as router_mod
 from celine.backends.router import NoModel, Router
 from celine.boot import load
 from settings_fixtures import scratch
@@ -72,23 +73,20 @@ async def _chat(llm, cid):
     return out[0].text
 
 
-async def test_a_server_seen_down_is_left_out_at_once_and_the_ping_brings_it_back(
+async def test_a_server_seen_down_is_left_out_at_once_and_asked_again_after_retry_down(
         tmp_path, monkeypatch):
     llm, models, gone = _llm(tmp_path, monkeypatch)
-    llm.router._pinging = True              # the app's ping owns the hosts seen down
-    await llm.router.ping_once()
-    assert llm.router.hosts()["gpu"]["state"] == "down"
+    await llm.router.check_all()
+    assert llm.router.hosts()["gpu"] == "down"
     asked = gone["asks"]
     for i in range(3):
         assert await _chat(llm, f"c{i}") == "from small"
     assert models["gpu/big"].calls == 0 and gone["asks"] == asked, \
         "no call waits for the missing server"
     gone["gpu"] = False
-    for st in llm.router._providers.values():      # the next ping, PING_EVERY later
-        st.checked -= 3600
-    await llm.router.ping_once()
-    assert llm.router.hosts()["gpu"]["state"] == "up"
-    assert await _chat(llm, "c9") == "from big"
+    llm.router._providers["gpu"].checked -= router_mod.RETRY_DOWN
+    assert await _chat(llm, "c9") == "from big", "the next call asks it again"
+    assert llm.router.hosts()["gpu"] == "up"
 
 
 async def test_the_users_turn_fails_with_the_reason_and_tries_no_other(tmp_path, monkeypatch):
@@ -103,10 +101,9 @@ async def test_the_users_turn_fails_with_the_reason_and_tries_no_other(tmp_path,
 async def test_the_users_turn_asks_a_host_seen_down_once_more_before_it_fails(
         tmp_path, monkeypatch):
     llm, models, gone = _llm(tmp_path, monkeypatch)
-    llm.router._pinging = True
-    await llm.router.ping_once()
-    assert llm.router.hosts()["gpu"]["state"] == "down"
-    gone["gpu"] = False                     # back, and the next ping is not yet due
+    await llm.router.check_all()
+    assert llm.router.hosts()["gpu"] == "down"
+    gone["gpu"] = False                     # back, and RETRY_DOWN has not passed
     b = llm.bind(role="chat", priority=Priority.INTERACTIVE, conversation_id="c",
                  fallback=False)
     out = [ev async for ev in b.stream([{"role": "user", "content": "hi"}], [])]

@@ -69,3 +69,25 @@ def clock(due: datetime, tz, now_: datetime) -> str:
 def iso(t: datetime) -> str:
     """A time as the tables store it: UTC ISO like now()."""
     return t.astimezone(timezone.utc).isoformat(timespec="milliseconds")
+
+
+HOUR = 3600.0
+
+
+def hour_room(sent, cap: int, now: float) -> float:
+    """A cap per hour over `sent` (a deque of monotonic times, oldest first): 0 when one
+    more fits, counted into `sent` now; else the seconds until one fits. `cap` 0 is no
+    limit."""
+    if not cap:
+        return 0.0
+    while sent and now - sent[0] >= HOUR:
+        sent.popleft()
+    if len(sent) < cap:
+        sent.append(now)
+        return 0.0
+    return sent[-cap] + HOUR - now
+
+
+def reached(who: str, cap: int) -> str:
+    """The sentence when `who` used its `cap` per hour (hour_room)."""
+    return f"{who} reached its {cap} request{'' if cap == 1 else 's'} this hour."

@@ -71,6 +71,7 @@ class Fake:
         self.lacks: dict[str, str] = {}     # node class -> an input whose file is not there
         self.dead = False                   # ComfyUI answers its probe, then nothing else
         self.lm = 404                       # LoRA-Manager's answer: 404 not installed
+        self.answer: dict[str, httpx.Response] = {}     # path -> what ComfyUI answers
         self.llm: LLM | None = None
         self.lease_at_free: bool | None = None
         self.queued = anyio.Event()
@@ -82,6 +83,8 @@ class Fake:
             self.bodies.setdefault(f"{host} {path}", []).append(json.loads(request.content))
         if host == "comfy" and self.dead and path != "/system_stats":
             raise httpx.ConnectError("refused", request=request)
+        if host == "comfy" and path in self.answer:
+            return self.answer[path]
         if host == "swap":
             if path == "/running":
                 return httpx.Response(200, json={"running": []})
@@ -202,6 +205,32 @@ async def test_a_failed_item_fails_its_slot_and_the_rest_are_made(app):
     assert fake.count("comfy POST /free") == 1 and app.llm.scheduler.running == []
 
 
+async def test_an_error_answer_fails_the_item_with_comfyuis_words(app):
+    app.fake.answer["/prompt"] = httpx.Response(503, json={"error": "the queue is paused"})
+    b = await app.batches.create("images", [{"prompt": "a"}])
+    b = await app.batches.run(b["id"])
+    assert b["items"][0]["error"] == "ComfyUI at comfy:8188 returned 503: the queue is paused"
+
+
+async def test_a_refused_workflow_that_is_not_json_says_comfyuis_words(app):
+    app.fake.answer["/prompt"] = httpx.Response(400, text="invalid prompt")
+    b = await app.batches.run((await app.batches.create("images", [{"prompt": "a"}]))["id"])
+    assert b["items"][0]["error"] == "ComfyUI refused the workflow: invalid prompt."
+
+
+async def test_the_probe_says_what_comfyui_answered(app, monkeypatch):
+    import types
+    shim = types.SimpleNamespace(**{k: getattr(httpx, k) for k in dir(httpx)
+                                    if not k.startswith("__")})
+    shim.AsyncClient = lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: httpx.Response(502, text="<title>502 Bad Gateway</title>")), **kw)
+    monkeypatch.setattr(server, "httpx", shim)
+    out = await server.probe_images(app.cfg, app)
+    assert out == {"state": "missing",
+                   "detail": "ComfyUI at comfy:8188 returned 502: 502 Bad Gateway",
+                   "why": "ComfyUI at comfy:8188 returned 502: 502 Bad Gateway"}
+
+
 async def test_a_stop_interrupts_the_item_and_leaves_the_rest_unmade(app):
     fake = app.fake
     fake.hang = True
@@ -283,7 +312,7 @@ async def test_music_made_outside_a_chat_says_nothing_of_hearing_it(app, store):
 
 # ---- its call ------------------------------------------------------------------------
 
-async def test_her_call_returns_at_once_fills_in_place_and_never_wakes_her(app, store):
+async def test_the_agents_call_returns_at_once_fills_in_place_and_never_wakes_it(app, store):
     skill = ImageGenerator(app.cfg)
     skill.app = app
     reg = Registry()
@@ -322,7 +351,7 @@ async def test_her_call_returns_at_once_fills_in_place_and_never_wakes_her(app, 
     assert events.count("images.batch") >= 4, "every change is an event"
 
 
-async def test_an_edit_starts_from_her_images_never_from_yours_elsewhere(app, store):
+async def test_an_edit_starts_from_the_agents_images_never_from_yours_elsewhere(app, store):
     skill = ImageGenerator(app.cfg)
     skill.app = app
     here, other = await conversations.create(store), await conversations.create(store)
@@ -400,7 +429,7 @@ async def test_a_lora_is_checked_against_the_catalog_and_a_broken_one_says_why(a
     image_catalog._cache.clear()
     app.fake.lm = 500
     b = await app.batches.create("images", [item])
-    assert b["items"][0]["error"] == "ComfyUI did not list its models (HTTPStatusError)."
+    assert b["items"][0]["error"] == "LoRA-Manager at comfy:8188 returned 500: oops"
 
 
 
@@ -465,7 +494,7 @@ def test_every_shipped_preset_loads_and_a_broken_one_says_why(tmp_path):
     assert all(p.file == f"config/{tmp_path.name}/bad.toml" for p in problems)
 
 
-async def test_her_guide_gets_the_presets_from_their_files(app):
+async def test_the_agents_guide_gets_the_presets_from_their_files(app):
     docs = ImageGenerator(app.cfg).docs["presets"]
     assert "### `anima-turbo`: Anima turbo (Anima), new images, the default" in docs
     assert "—" not in docs
@@ -481,7 +510,7 @@ async def test_an_unknown_preset_errors_and_lists_the_presets(app):
         assert out.is_error and "krea2-turbo" in out.content, name
 
 
-async def test_her_item_is_taken_as_given_and_what_does_not_fit_fails(app):
+async def test_the_agents_item_is_taken_as_given_and_what_does_not_fit_fails(app):
     b = await app.batches.create("images", [
         "a cat on a roof",
         {"prompt": "b", "variant": "krea2-turbo"},
@@ -501,7 +530,7 @@ async def test_her_item_is_taken_as_given_and_what_does_not_fit_fails(app):
     assert five["error"] == "Anima turbo has no variant 'expand': it has none."
 
 
-async def test_her_prompt_reaches_the_workflow_byte_for_byte(app):
+async def test_the_agents_prompt_reaches_the_workflow_byte_for_byte(app):
     prompt = "  1girl, camera, photo, 16:9 widescreen, 4k,, wallpaper size\n\"quoted\"  "
     b = await app.batches.create("images", [{"prompt": prompt}])
     assert b["items"][0]["prompt"] == prompt and "warnings" not in b["items"][0]
@@ -583,7 +612,7 @@ def _user_files(kind="images"):
     return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
 
 
-async def test_an_uploaded_workflow_is_a_preset_her_batch_runs_end_to_end(app):
+async def test_an_uploaded_workflow_is_a_preset_its_batch_runs_end_to_end(app):
     async with _web(app) as c:
         r = await c.post("/api/generation-presets", json={
             "kind": "images", "label": "My Flux", "workflow": json.dumps(UPLOAD)})
@@ -698,3 +727,27 @@ async def test_a_batch_call_while_the_batches_are_down_is_an_error_result():
     assert (got.is_error, got.content) == (True, "Images are off.")
     got = await batch_stop(app, ctx, "music", "b1", lambda b, started: "")
     assert (got.is_error, got.content) == (True, "Music is off.")
+
+
+async def test_the_note_says_only_a_wait_in_the_queue_never_what_the_block_shows():
+    from celine.comfyui import server
+
+    class Queue:
+        def __init__(self):
+            self.looks = [(False, 2), (False, 0), (True, 0)]
+
+        async def history(self, prompt_id):
+            return {"status": {"completed": True}} if not self.looks else None
+
+        async def position(self, prompt_id):
+            return self.looks.pop(0)
+    notes: list[str] = []
+
+    async def note(line, **_):
+        notes.append(line)
+    server.POLL, poll = 0, server.POLL
+    try:
+        await server._follow(Queue(), "p1", note)
+    finally:
+        server.POLL = poll
+    assert notes == ["Waiting in the queue, 2 ahead", "Waiting in the queue", ""]

@@ -1,12 +1,14 @@
 """The model proxy for opencode and the other programs in its shellbox, and for the
 drones on its devices (sub_agents/drone.py).
 
-    GET  /llm/v1/models             the models it may use (settings/her_models.py), and
+    GET  /llm/v1/models             the models it may use (settings/agent_models.py), and
                                     `default`: the first of them its chats run on
     POST /llm/v1/chat/completions   OpenAI's wire format
 
-A device gets its local models and the cloud model each drone there was approved on
-(`yours`); another cloud model is refused with a sentence.
+A caller gets its local models, the cloud models in the user's role lists, and the
+cloud models its own approved work runs on (`yours`): the box a CLI sub-agent's and
+code__start's (agent_models.ask_cloud), a device each drone's there; another cloud model
+is refused with a sentence.
 
 Each model in /models carries what the app knows of its size, so a coding agent budgets
 with the real numbers (shellbox/agents/opencode.py writes them as opencode's
@@ -26,7 +28,9 @@ the box's key is missing, 403 to a call while it is frozen (guard/freeze.py). A 
 opens these routes only: on /api it is no token (the gate's 404, api/settings.py
 _person's 403).
 
-Every call takes its slot in the app's model queue (backends/queue.py): the box's in the
+A call over its provider's Requests per hour (backends/llm.py LLM.take) is answered 429
+with the app's sentence and a Retry-After. Every call takes its slot in the app's model
+queue (backends/queue.py): the box's in the
 `shellbox` lane at background priority, so its turns and the user's go first; a
 device's in a lane named after it at agent priority, as the sub-agents' turns. It waits
 as long as it takes, and leaving the call gives the slot back. The request goes to the
@@ -37,6 +41,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import math
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -47,8 +52,8 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import keys, metrics
 from ..backends.queue import Priority, Ticket
-from ..core.ids import iso
-from ..settings import her_models
+from ..core.ids import iso, reached
+from ..settings import agent_models
 from ..settings.kinds import headers as provider_headers, server_output
 from ..settings.registry import backend_config
 from ..turns import tokens
@@ -185,26 +190,31 @@ def resolve(s, model: str, refs: list[str]) -> str | None:
     return model if model in refs else None
 
 
-APPROVAL_GRACE = 600    # s a drone's approved cloud model stays served after its turn
+APPROVAL_GRACE = 600    # s an agent's approved cloud model stays served after its turn
 
 
 async def yours(services, lane: str) -> list[str]:
-    """The models a caller may use: the box every one of hers; a device its local ones
-    and the cloud model each drone there was approved on (sub_agents/skill.py _model,
-    its conversation's model) while it works, and for APPROVAL_GRACE after it started or
-    its last turn ended (opencode's late title and summary calls)."""
+    """The models a caller may use: its local ones, the cloud models the user picked
+    (agent_models.picked_by_user: in a role's list), and the cloud model each agent there
+    was approved on (sub_agents/skill.py, its conversation's model: a CLI sub-agent's in
+    the box, a drone's on its device) while it works and for APPROVAL_GRACE after it
+    started or its last turn ended (opencode's late title and summary calls); the box
+    also the ones code__start was approved on (agent_models.granted)."""
     from ..core.states import LIVE_SQL
     s = services.cfg.settings
-    refs = her_models.allowed(s)
-    if lane == LANE:
-        return refs
+    refs = agent_models.allowed(s)
+    box = lane == LANE
     since = iso(datetime.now(timezone.utc) - timedelta(seconds=APPROVAL_GRACE))
+    where = "c.agent_cli IS NOT NULL AND c.agent_device IS NULL" if box else \
+        "c.agent_device=?"
     approved = await services.store.read(lambda c: {r[0] for r in c.execute(
-        "SELECT DISTINCT c.model_id FROM conversations c WHERE c.agent_device=? "
+        f"SELECT DISTINCT c.model_id FROM conversations c WHERE {where} "
         "AND c.trashed_at IS NULL AND (c.created_at >= ? OR EXISTS (SELECT 1 FROM turns t "
         f"WHERE t.conversation_id = c.id AND (t.state IN {LIVE_SQL} OR t.finished_at >= ?)))",
-        (lane, since, since))})
-    return [r for r in refs if r in approved or not her_models.cloud(s, r)]
+        (since, since) if box else (lane, since, since))} | (agent_models.granted(c) if box
+                                                             else set()))
+    return [r for r in refs if r in approved or not agent_models.cloud(s, r)
+            or agent_models.picked_by_user(s, r, None)]
 
 
 async def _forward(request: Request, path: str):
@@ -229,15 +239,26 @@ async def _forward(request: Request, path: str):
     asked = str(body.get("model") or "default")
     refs = await yours(services, caller[0])
     ref = resolve(s, asked, refs)
-    if ref is None and resolve(s, asked, her_models.allowed(s)) is not None:
-        return _error(403, f"{asked} is a cloud model no drone on {caller[1]} "
-                           f"was approved for.", "permission_error")
+    if ref is None and resolve(s, asked, agent_models.allowed(s)) is not None:
+        how = "code__start, or sub_agents__start with cli," if caller[0] == LANE else \
+            f"sub_agents__start with device {caller[0]}"
+        return _error(403, f"{asked} is a cloud model that needs {services.cfg.user}'s "
+                           f"approval: {how} on that model asks for it.", "permission_error")
     if ref is None:
         names = ", ".join(refs) or "none"
         return _error(404, f"{asked} is not one of your models. Yours: {names}.",
                       "model_not_found")
+    if caller[0] == LANE and agent_models.cloud(s, ref):
+        # each call keeps code__start's approval alive
+        await services.store.write(lambda c: agent_models.keep_sync(c, ref))
     bc = backend_config(s, ref)
-    p = s.providers[s.split(ref)[0]]
+    pid = s.split(ref)[0]
+    if secs := services.llm.router.take(pid):      # its provider's Requests per hour
+        r = _error(429, reached(bc.label, services.llm.router.per_hour(pid)),
+                   "rate_limit_error")
+        r.headers["Retry-After"] = str(math.ceil(secs))
+        return r
+    p = s.providers[pid]
     body["model"] = bc.model
     headers = {"content-type": "application/json",
                **provider_headers(p["kind"], bc.api_key)}
@@ -260,10 +281,10 @@ def listing(s, refs: list[str]) -> list[dict]:
     """/models' data: the models `refs` with their sizes, and `default` when it is
     one of them."""
     data = [{"id": r, "object": "model", "created": 0, "owned_by": "celine",
-             "name": her_models.label(s, r), **_sizes(s, r)} for r in refs]
+             "name": agent_models.label(s, r), **_sizes(s, r)} for r in refs]
     if (d := resolve(s, "default", refs)) is not None:
         data.append({"id": "default", "object": "model", "created": 0, "owned_by": "celine",
-                     "name": f"default: {her_models.label(s, d)}", **_sizes(s, d)})
+                     "name": f"default: {agent_models.label(s, d)}", **_sizes(s, d)})
     return data
 
 

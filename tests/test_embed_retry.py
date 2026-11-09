@@ -30,7 +30,7 @@ def test_a_failed_embedding_is_tried_once_and_says_why(monkeypatch):
         return httpx.Response(503)
 
     monkeypatch.setattr(httpx, "post", post)
-    with pytest.raises(embed.SemanticError, match="answered 503"):
+    with pytest.raises(embed.SemanticError, match="answered 503: Service Unavailable$"):
         embed.embed_sync({"url": "http://x/embeddings", "model": "m"}, ["a"])
     assert len(posts) == 1
 
@@ -58,3 +58,13 @@ def test_a_search_waits_for_its_embedding_as_long_as_advanced_says(tmp_path, mon
     waits.clear()
     semantic.build_embedder(cfg, tmp_path / "none.db").embed(["a passage"])
     assert waits == [None], "a build: the client's own limit"
+
+
+def test_an_embedding_request_over_its_providers_hour_is_not_sent(monkeypatch):
+    import pytest
+    from celine.kb import embed
+    monkeypatch.setattr(embed.httpx, "post", lambda *a, **k: pytest.fail("sent"))
+    s = {"url": "http://e/v1/embeddings", "model": "m",
+         "hour": lambda: "E reached its 1 request this hour."}
+    with pytest.raises(embed.SemanticError, match="^E reached its 1 request this hour.$"):
+        embed.embed_sync(s, ["a text"])

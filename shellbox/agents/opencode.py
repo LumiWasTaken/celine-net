@@ -4,7 +4,7 @@ Every backend in this folder is one file with the same six functions and Problem
 standard library only; shellboxd loads the one CODING_AGENT names (default opencode) and
 serves it on /code/* (see shellboxd.py). Another agent is another file here.
 
-    boot(home, env, as_her, llm_url, llm_key)   write its config, start and supervise it
+    boot(home, env, as_agent, llm_url, llm_key)   write its config, start and supervise it
     start(dir, task, model, session, websearch) -> {"session", "state": "running"}
     attach(session)                             -> the shell command that shows it live
     status(session)                             -> {"session", "state", "error"?}
@@ -61,6 +61,7 @@ CONTEXT = 32768             # limit.context of a model the proxy does not size
 REFRESH = 3600              # seconds between two looks at the proxy's model list
 RETRY = 30                  # seconds between tries while the proxy has not answered yet
 RESTART_WAIT = 5            # seconds before the server is started again after it exited
+READY = 30                  # seconds a start waits for the server it restarted to answer
 TAIL = 4000                 # characters of the tool outputs a result carries, from the end
 LOG = Path("/var/lib/shellbox/opencode.log")    # the server's output; gone with the reset
 INSTRUCTIONS = ("Keep your final answer short: what you changed and what you ran, in a "
@@ -68,7 +69,7 @@ INSTRUCTIONS = ("Keep your final answer short: what you changed and what you ran
 
 PASSWORD = ""               # read at boot; tests set it
 HOME: Path | None = None    # its home, from boot
-_state: dict = {"models": None, "proc": None, "as_her": {}, "llm_url": "", "llm_key": "",
+_state: dict = {"models": None, "proc": None, "as_agent": {}, "llm_url": "", "llm_key": "",
                "cfg": None, "websearch": False}
 
 
@@ -85,11 +86,11 @@ class Problem(Exception):
 
 # ---- boot --------------------------------------------------------------------------------
 
-def boot(home: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> None:
+def boot(home: Path, env: dict, as_agent: dict, llm_url: str, llm_key: str) -> None:
     """The agent's config and password, then the server in a thread of its own that restarts it
     whenever it exits."""
     global PASSWORD, HOME
-    HOME, _state["as_her"], _state["llm_url"], _state["llm_key"] = home, as_her, llm_url, llm_key
+    HOME, _state["as_agent"], _state["llm_url"], _state["llm_key"] = home, as_agent, llm_url, llm_key
     cfg = _state["cfg"] = home / ".config" / "opencode"
     pw = cfg / "server.password"
     if not pw.is_file() or not pw.read_text().strip():
@@ -99,7 +100,7 @@ def boot(home: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> Non
     if not (cfg / "opencode.jsonc").exists():
         _put(cfg / "opencode.jsonc", '{\n  "$schema": "https://opencode.ai/config.json"\n}\n')
     _write_config(cfg, llm_url, llm_key, _models(llm_url, llm_key))
-    threading.Thread(target=_serve, args=(cfg, env, as_her, llm_url, llm_key),
+    threading.Thread(target=_serve, args=(cfg, env, as_agent, llm_url, llm_key),
                      daemon=True).start()
 
 
@@ -156,10 +157,10 @@ def _put(path: Path, text: str, mode: str = "644") -> None:
     its browser shares this home, and a root-owned ~/.config kills Brave."""
     subprocess.run(["sh", "-c", 'mkdir -p -- "$(dirname -- "$1")" && (umask 077 && '
                     'cat > "$1") && chmod "$2" -- "$1"', "sh", str(path), mode],
-                   input=text.encode(), check=True, **_state["as_her"])
+                   input=text.encode(), check=True, **_state["as_agent"])
 
 
-def _serve(cfg: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> None:
+def _serve(cfg: Path, env: dict, as_agent: dict, llm_url: str, llm_key: str) -> None:
     """Runs `opencode serve` as it, again after every exit (said in LOG); refreshes the
     model list while it runs."""
     looked = time.monotonic()
@@ -169,7 +170,7 @@ def _serve(cfg: Path, env: dict, as_her: dict, llm_url: str, llm_key: str) -> No
                 ["opencode", "serve", "--hostname", "127.0.0.1", "--port", str(PORT)],
                 cwd=str(HOME), env={**env, "OPENCODE_SERVER_PASSWORD": PASSWORD,
                      **({"OPENCODE_ENABLE_EXA": "1"} if _state["websearch"] else {})},
-                stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **as_her)
+                stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, **as_agent)
         _state["proc"] = proc
         while True:
             due = REFRESH if _state["models"] else RETRY      # none yet: a fresh instance
@@ -324,7 +325,9 @@ def _q(folder: str) -> str:
 def start(dir: str, task: str, model: str, session: str | None = None,
           websearch: bool = False) -> dict:
     """A new session in `dir`, or the given one, told `task`; it works in the background.
-    `websearch` is the app's setting: when it changed, the server restarts with it."""
+    A model the proxy offers since the server started (a cloud model the user just
+    approved) or a changed `websearch` (the app's setting) restarts the server on it
+    first, and the start goes on once it answers (_restart)."""
     folder = _dir(dir)
     if not task.strip():
         raise Problem("The task is empty.")
@@ -334,27 +337,22 @@ def start(dir: str, task: str, model: str, session: str | None = None,
         raise Problem(f"{NAME} has no models yet: the app's model proxy "
                       f"({_state['llm_url']}/v1/models) has not answered the box since it "
                       f"started. The box asks again every {RETRY} s.", 503)
-    if bool(websearch) != _state["websearch"]:
-        if _busy():
-            raise Problem(f"The web search setting changed and {NAME} restarts on it, but a "
-                          f"session is working; start again when none is.", 409)
-        _state["websearch"] = bool(websearch)
-        _write_config(_state["cfg"], _state["llm_url"], _state["llm_key"], _state["models"])
-        _state["proc"].terminate()         # _serve starts it again with the new environment
-        raise Problem(f"The web search setting changed: {NAME} restarts on it. "
-                      f"Start again in {RESTART_WAIT + 5} s.", 503)
-    if model not in _state["models"]:
-        models = _models(_state["llm_url"], _state["llm_key"])
-        models = models or _state["models"]
-        if models and model in models and not _busy():
-            _write_config(_state["cfg"], _state["llm_url"], _state["llm_key"], models)
-            _state["proc"].terminate()     # _serve starts it again on the new list
-            raise Problem(f"{model} is new to {NAME}: it restarts on the new model list. "
-                          f"Start again in {RESTART_WAIT + 5} s.", 503)
-        if not models:
-            raise Problem("The app has no chat model with a key yet: the user adds one in "
-                          "Settings, Models.", 503)
+    new = model not in _state["models"]
+    models = (_models(_state["llm_url"], _state["llm_key"]) or _state["models"]) if new \
+        else _state["models"]
+    if not models:
+        raise Problem("The app has no chat model with a key yet: the user adds one in "
+                      "Settings, Models.", 503)
+    if model not in models:
         raise Problem(f"{model} is not one of the models. The models: {', '.join(models)}.")
+    if new or bool(websearch) != _state["websearch"]:
+        if _busy():
+            on = "the new model list" if new else "the web search setting"
+            raise Problem(f"{NAME} restarts on {on} first, but a session is working; start "
+                          f"again when none is.", 409)
+        _state["websearch"] = bool(websearch)
+        _write_config(_state["cfg"], _state["llm_url"], _state["llm_key"], models)
+        _restart()
     if session:
         info = _call("GET", f"/session/{session}", query=_q(folder))
         if _busy_one(session):
@@ -364,6 +362,25 @@ def start(dir: str, task: str, model: str, session: str | None = None,
         session = new_session(task, _q(folder))
     prompt(session, model, task, _q(folder))
     return {"session": session, "state": "running", "dir": folder, "model": model}
+
+
+def _restart() -> None:
+    """The server restarts on the config just written (_serve starts it again RESTART_WAIT
+    s after it exits); returns once the new one answers, within READY s."""
+    old = _state["proc"]
+    old.terminate()
+    end = time.monotonic() + READY
+    while True:
+        if _state["proc"] is not old:
+            try:
+                _call("GET", "/session/status", timeout=5)
+                return
+            except Problem:
+                pass
+        if time.monotonic() > end:
+            raise Problem(f"{NAME} restarted on its new config and did not answer within "
+                          f"{READY} s. Its log says why: tail -50 {LOG}.", 503)
+        time.sleep(1)
 
 
 def attach(session: str) -> str:

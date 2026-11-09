@@ -7,7 +7,7 @@ import { SETTINGS_EVENTS } from './settingsApi'
 import { useResource } from './useResource'
 
 export type Loaded = {
-  models: { ref: string; loaded: boolean; load_seconds: number | null }[]
+  models: { ref: string; loaded: boolean; loading: boolean; load_seconds: number | null }[]
 }
 
 export function useLoaded(): Loaded | undefined {

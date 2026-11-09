@@ -38,7 +38,7 @@ async def test_a_dead_comfyui_names_its_address_and_flips_the_host(app):
     b = await app.batches.run(b["id"])
     assert [i["state"] for i in b["items"]] == ["failed", "failed"]
     assert b["items"][0]["error"] == "ComfyUI at comfy:8188 refused the connection."
-    assert app.llm.router.hosts()["comfy"]["state"] == "down", "the Models page flips"
+    assert app.llm.router.hosts()["comfy"] == "down", "the Models page flips"
     assert app.llm.router.provider_state("comfy").error == b["items"][0]["error"]
 
 
@@ -80,12 +80,13 @@ def test_embedding_server_failures_are_one_sentence_each(monkeypatch):
     answer["a"] = httpx.ReadTimeout("slow")
     with pytest.raises(embed.SemanticError, match="did not answer within 20 s$"):
         embed.embed_sync(s, ["x"])
-    for status, words in ((401, "rejected the API key"), (404, "has no model qwen3-embed"),
-                          (500, "answered 500")):
+    for status, words in ((401, "rejected the API key: nope (Settings, Models)"),
+                          (404, "has no model qwen3-embed: nope (Settings, Models)"),
+                          (500, "answered 500: nope")):
         answer["a"] = httpx.Response(status, text="<html>nope</html>")
-        with pytest.raises(embed.SemanticError, match=words) as e:
+        with pytest.raises(embed.SemanticError) as e:
             embed.embed_sync(s, ["x"])
-        assert "<" not in str(e.value)
+        assert str(e.value) == f"the embedding server at emb:8081 {words}"
     answer["a"] = httpx.Response(200, text="<html>a web page</html>")
     with pytest.raises(embed.SemanticError, match="answered without vectors"):
         embed.embed_sync(s, ["x"])
@@ -101,7 +102,7 @@ def test_a_search_without_an_embedder_says_why_in_its_notes(tmp_path):
 
 # ---- bw -----------------------------------------------------------------------------------
 
-async def test_a_missing_bw_is_said_once_and_her_turns_are_not_held(tmp_path, monkeypatch):
+async def test_a_missing_bw_is_said_once_and_its_turns_are_not_held(tmp_path, monkeypatch):
     from celine import vault as vault_mod
     from celine.vault import Vault
     monkeypatch.setenv("PATH", str(tmp_path))                 # no bw anywhere

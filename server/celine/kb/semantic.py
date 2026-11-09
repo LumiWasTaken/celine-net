@@ -73,8 +73,11 @@ class Embedder:
         if bc is None:
             raise SemanticError(f"{ref} is not a model in Settings.")
         self.ref = ref
+        pid = self.router.s.split(ref)[0]
         self.s = {**_shape(cfg), "url": f"{bc.base_url}/embeddings", "key": bc.api_key,
                   "headers": dict(bc.headers), "model": bc.model,
+                  # its provider's Requests per hour
+                  "hour": lambda: self.router.full(pid) if self.router.take(pid) else None,
                   **({"timeout": timeout} if timeout else {})}
         try:
             self.fp = fingerprint(self.s, _embed)
@@ -282,7 +285,7 @@ async def run_scheduler(cfg, kbs) -> None:
                 try:
                     if (job is not None and job["state"] == "unreachable") or \
                             await kb.file.read(due):
-                        kbs.tasks.start(kb.id, "semantic", "Semantic topic search index",
+                        kbs.tasks.start(kb.id, "semantic", "Search index",
                                         lambda ctx, kb=kb: build(cfg, kb, ctx), quiet=True)
                 except Exception:
                     log.exception("scheduled semantic check failed")

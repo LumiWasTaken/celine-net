@@ -23,4 +23,5 @@ async def test_a_rejected_openrouter_key_is_the_provider_state(tmp_path, monkeyp
     t = httpx.MockTransport(reply)
     st = await Router(load(), None, transport=t, sync_transport=t).probe("or", max_age=0)
     assert asked == ["/api/v1/key"]
-    assert st.reachable is False and st.error == "OpenRouter rejected the API key."
+    assert st.reachable is False and st.error == (
+        "OpenRouter returned 401: Unauthorized. Check the key in Settings, Models.")

@@ -2,12 +2,13 @@
    conversation (its side panel). Grouped by provider, in the providers' order. Only
    models that can do the role's work are listed, and none of a provider that still needs its key.
    A llama-swap model says whether it is loaded now, or that it loads first and about how
-   long the last load took (lib/loaded). A provider with a problem says it under its name. */
+   long the last load took (lib/loaded). A model that does not answer now says the server's
+   sentence why under its name. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import type { Cap, ProviderModel, ProviderView } from '../lib/settingsApi'
 import { useLoaded, type Loaded } from '../lib/loaded'
-import { Dialog, EmptyState, ICON, ListRow, ListSection, SearchField, VirtualList, type VirtualListHandle } from '../ui'
+import { Dialog, EmptyState, ICON, ListRow, ListSection, SearchField, StateWord, VirtualList, type VirtualListHandle } from '../ui'
 import './ModelChooser.css'
 
 export const modelName = (m: ProviderModel) => m.label || m.name
@@ -23,11 +24,12 @@ export const modelDetail = (m: ProviderModel) => {
   return [capWords(m.caps_now), n ? contextWords(n) : ''].filter(Boolean).join(', ').replace(/^./, c => c.toUpperCase())
 }
 
-/** "Loaded", or "Not loaded, loads in about 12 s" with what its last load took */
+/** "Loaded", "Loading", or "Not loaded, loads in about 12 s" with what its last load took */
 function loadWord(ref: string, loaded: Loaded | undefined): string | null {
   const m = loaded?.models.find(x => x.ref === ref)
   if (!m) return null
   if (m.loaded) return 'Loaded'
+  if (m.loading) return 'Loading'
   return m.load_seconds != null ? `Not loaded, loads in about ${Math.round(m.load_seconds)} s` : 'Not loaded'
 }
 
@@ -66,12 +68,11 @@ export function ModelChooser({ title, providers, needs, current, skip, onPick, o
         .filter(m => !f || modelName(m).toLowerCase().includes(f) || m.name.toLowerCase().includes(f))
       if (!models.length) continue
       out.push({ type: 'provider', p })
-      if (p.state.reachable === false && p.state.error) out.push({ type: 'problem', p })
       for (const m of models) out.push({ type: 'model', m })
     }
     return out
   }, [providers, needs, skip, q, extra])
-  const picks = rows.map((r, i) => (r.type === 'provider' || r.type === 'problem' ? -1 : i)).filter(i => i >= 0)
+  const picks = rows.map((r, i) => (r.type === 'provider' ? -1 : i)).filter(i => i >= 0)
   useEffect(() => { setActive(picks[0] ?? 0); list.current?.scrollToIndex(0) }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (r: Row | undefined) => {
@@ -98,20 +99,18 @@ export function ModelChooser({ title, providers, needs, current, skip, onPick, o
         <div className="chooser">
           {models === 0 && <EmptyState compact title={q ? 'No models match' : 'No model for this role yet'} />}
           <VirtualList items={rows} handleRef={list}
-                       getKey={(r, i) => r.type === 'model' ? r.m.ref : r.type === 'provider' ? `p:${r.p.id}` : r.type === 'problem' ? `e:${r.p.id}` : `x:${i}`}
-                       estimate={i => (rows[i]?.type === 'provider' ? 36 : rows[i]?.type === 'model' ? 56 : rows[i]?.type === 'problem' ? 28 : 44)}
+                       getKey={(r, i) => r.type === 'model' ? r.m.ref : r.type === 'provider' ? `p:${r.p.id}` : `x:${i}`}
+                       estimate={i => { const r = rows[i]; return r?.type === 'provider' ? 36 : r?.type === 'model' ? (r.m.problem ? 76 : 56) : 44 }}
                        renderRow={(r, i) => {
                          if (r.type === 'provider') {
                            return <ListSection label={r.p.provider.label} />
-                         }
-                         if (r.type === 'problem') {
-                           return <p className="chooser__problem">{r.p.state.error}</p>
                          }
                          const on = r.type === 'extra' ? !current : r.m.ref === current
                          const swap = r.type === 'model' ? loadWord(r.m.ref, loaded) : null
                          return (
                            <ListRow selected={i === active} title={r.type === 'extra' ? extra!.label : modelName(r.m)}
                                     subtitle={r.type === 'model' ? modelDetail(r.m) || undefined : undefined}
+                                    detail={r.type === 'model' && r.m.problem ? <StateWord tone="warn">{r.m.problem}</StateWord> : undefined}
                                     meta={<>{swap}{on && <Check size={ICON.sm} aria-label="Current" />}</>}
                                     onClick={() => choose(r)} />
                          )
@@ -122,4 +121,4 @@ export function ModelChooser({ title, providers, needs, current, skip, onPick, o
   )
 }
 
-type Row = { type: 'extra' } | { type: 'provider'; p: ProviderView } | { type: 'problem'; p: ProviderView } | { type: 'model'; m: ProviderModel }
+type Row = { type: 'extra' } | { type: 'provider'; p: ProviderView } | { type: 'model'; m: ProviderModel }
