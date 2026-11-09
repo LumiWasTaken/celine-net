@@ -389,7 +389,7 @@ async def continue_turn(request: Request, cid: str, tid: str,
     try:
         tid, seq = await turns.continue_turn(store_of(request), cid, tid, registry,
                                              wait=bool(body and body.wait),
-                                             prefill=_prefills(request, cid))
+                                             prefill=_prefills(request, cid), by_user=True)
     except KeyError:
         raise NotFound("turn") from None
     except ValueError as e:

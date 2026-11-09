@@ -252,6 +252,25 @@ async def test_keep_waiting_continues_a_busy_turn_marked_to_wait(store, cfg):
     assert (await turns.claim(store, "w2"))["reason"] == "keep_waiting"
 
 
+async def test_the_users_retry_takes_a_mission_out_of_needs_you(store, cfg):
+    from celine.missions import store as missions
+    cid = await conversations.create(store, "Night", kind="mission")
+    await missions.create(store, cid, {"name": "Night", "terminal": "n", "brief": "b"})
+    await user_says(store, cid, "go")
+    turn = await turns.claim(store, "w1")
+    tid = turn["id"]
+    await run_turn(turn, store, cfg, Busy(), EventBus(), Token(tid), None, None)
+    await store.write(lambda c: missions.set_status_sync(
+        c, store, cid, "needs_you", "Its last turn failed: main returned 429."))
+    await turns.continue_turn(store, cid, tid)              # the app's own: it still waits
+    assert (await missions.get(store, cid))["status"] == "needs_you"
+    await store.write(lambda c: c.execute(
+        "UPDATE turns SET state='failed', reason_code='busy' WHERE id=?", (tid,)))
+    await turns.continue_turn(store, cid, tid, by_user=True)
+    m = await missions.get(store, cid)
+    assert (m["status"], m["note"]) == ("active", None)
+
+
 def test_a_skill_registered_again_keeps_its_place_in_the_tool_list():
     """A reload or a reconnect registers a skill again: its tools keep their place, so
     every request's tool list keeps its order (the model server's cached prompt)."""

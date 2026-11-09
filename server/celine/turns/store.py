@@ -323,8 +323,11 @@ async def request_abort(store, cid: str) -> str | None:
 
 
 async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
-                        wait: bool = False, prefill: bool = True) -> tuple[str, int]:
+                        wait: bool = False, prefill: bool = True,
+                        by_user: bool = False) -> tuple[str, int]:
     """Put a finished-but-unfinished turn back in the queue, as the same turn.
+    `by_user`: the user pressed it (Retry, Continue, Keep waiting), which answers a
+    mission or plan that waits for them (plans.answered_sync).
     `wait`: Keep waiting, its queued reason `keep_waiting`: a busy provider is waited
     for (backends/llm.py). `prefill`: whether its model takes one; a turn whose tail is
     a cut reply is refused before anything is written when it does not (the runner
@@ -399,6 +402,9 @@ async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
                 **(runs_field(c, store, reran, reset=True) if i == len(reran) - 1 else {})})
         seq = tree.turn_state(c, store, cid, turn_id, "queued", reason=why,
                               continues=continues)
+        if by_user:
+            from ..plans.store import answered_sync
+            answered_sync(c, store, cid)
         return turn_id, seq
 
     return await store.write(fn)
