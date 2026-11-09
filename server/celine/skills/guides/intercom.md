@@ -31,16 +31,34 @@ goes into that thread for them.
 intercom__read lists your threads by who they are with, newest activity first: one
 line per counterpart ("with scout: 4 threads, 2 waiting"), then its 3 newest threads
 and a count of the rest. {{username}}'s plain chat messages are no threads: they are
-in the conversation. Job results are one line ("2 job results, newest #530"), listed
-with kind="job". with="scout" (a name, "user" or a conversation id) lists every thread
-with them, kind="report" (message, brief, report, job, notice, trigger) only messages
-of that kind, unread=true only threads with messages waiting for you.
+in the conversation. Job results are one line ("2 job results, newest #530").
+with="scout" (a name or a conversation id) lists every thread with them,
+kind="report" (message, brief, report, notice, trigger) only messages of that kind,
+unread=true only threads with messages waiting for you.
 intercom__read(thread=409) shows one whole thread.
 
-A message to "user" is in {{username}}'s Intercom section in the app, where they read and
-answer it. wait=true holds your turn
-on the message until {{username}} answers, up to 10 minutes: they see that you wait for
-them, and their answer comes in as their message; it does not work with in or at.
+with="user" lists every thread between {{username}} and any of your conversations
+(chats, missions, runs, tasks), newest activity first, one line each: its number and
+subject, where it lives (kind, title, conversation id), how many messages, whether it
+waits for them, and the last message; unread=true only those that still wait for them.
+kind="job" lists your jobs in every conversation, running first, then the newest that
+ended: its id, tool, what it was asked, its conversation, its state and time, and for
+an ended one its result message's number and first line (intercom__read(thread=<that
+number>) reads it whole).
+
+Where a message to "user" goes depends on where you write it from:
+- In a chat with {{username}}: they read you there, so what you write in the chat reaches
+  them. With in or at, your text lands in this chat at that time, as your message, and
+  they get notified.
+- In a background task or a Routine's run: it starts a chat for them. The subject is the
+  chat's name, your text its first message; they get it on the Intercom, and their answer
+  comes to you in that chat.
+- In a mission: it waits for them on the mission's page and in Waiting for you, and their
+  answer comes back into the mission. A question that only they can decide is also
+  missions__update(status="Needs you", note=<the question>).
+wait=true holds your turn on the message until {{username}} answers, up to 10 minutes:
+they see that you wait for them, and their answer comes in as their message; it does not
+work with in or at.
 
 attachments=["f5ef648c"] sends files along by their short ids: one on your own message
 (a voice note, a file you sent, an image you made) or one {{username}} attached here.
@@ -63,8 +81,8 @@ intercom__cancel(id) cancels a scheduled message that has not landed; it stays l
 cancelled.
 
 In a background task or a mission, intercom__start_chat(title, text) starts a chat for
-{{username}}: the text is your first message there and waits for them on the intercom;
-when they answer, you go on there with them. Check intercom__read first: when they have
-it already, add to that thread. The result lists what they got from the same place in
-the last 24 h (a bug report still open, a thread), with what it says and whether they
-answered. The title is the topic in 2 to 4 plain words.
+{{username}} the same way: the text is your first message there and waits for them on
+the intercom; when they answer, you go on there with them. Check intercom__read first:
+when they have it already, add to that thread. The result lists what they got from the
+same place in the last 24 h (a bug report still open, a thread), with what it says and
+whether they answered. The title is the topic in 2 to 4 plain words.

@@ -79,9 +79,10 @@ It reports for the work you (or {{username}}) gave it: the brief and every messa
 you after that. A message from one of its own sub-agents alone gets no report to you.
 
 A sub-agent starts sub-agents of its own, as you do, down to 3 levels below you; each
-reports only to the one that started it. A model of a cloud provider (OpenRouter,
-Anthropic) waits for {{username}}'s approval at every start; your local models start at
-once. A model server you run on one of your devices is local: once it is a provider
+reports only to the one that started it. A cloud model you pick yourself waits for
+{{username}}'s approval at each start and at each resume (models__list marks it); a local
+model, one in {{username}}'s role lists and this conversation's own model start at once.
+A model server you run on one of your devices is local: once it is a provider
 (settings guide), agents on its models keep working while your main model is busy or
 down.
 

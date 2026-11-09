@@ -9,6 +9,6 @@ plain text only: no emojis, no actions, no formatting. Up to 900 characters.
 
 The result gives the voice note's short id. From a background task or a mission,
 intercom__send(to="user", text=..., attachments=["<short id>"]) sends it on to
-{{username}}'s Intercom.
+{{username}}.
 
 With Read aloud off in Settings, Features, voice__send fails and says so.

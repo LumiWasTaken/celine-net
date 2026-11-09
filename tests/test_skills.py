@@ -144,15 +144,15 @@ async def test_a_tool_that_is_off_or_down_is_not_sent_and_refused(store, cfg):
     # a skill that is down: test_turn_loop
 
 
-async def test_read_guide_shows_the_guide_and_her_notes_loaded_or_not(store, cfg):
+async def test_read_guide_shows_the_guide_and_its_notes_loaded_or_not(store, cfg):
     from celine.turns import loads
     reg = build(Services(cfg=cfg))
     meta = reg.skills["skills"]
     cid = await conversations.create(store)
     ctx = ToolContext(conversation_id=cid, turn_id="t", tool_call_id="x", store=store,
                       config=cfg, emit=None)
-    (cfg.her.notebook / "skills").mkdir(parents=True)
-    (cfg.her.notebook / "skills" / "web.md").write_text("searx is slow at night\n" * 500)
+    (cfg.agent.notebook / "skills").mkdir(parents=True)
+    (cfg.agent.notebook / "skills" / "web.md").write_text("searx is slow at night\n" * 500)
     out = await meta.read_guide(ctx, name="web")
     assert out.content.startswith("# web\n\n") and "searx is slow at night" in out.content
     assert out.content.endswith(("searx is slow at night\n" * 500).strip()), "the whole note"
@@ -211,7 +211,7 @@ def test_a_source_without_its_account_is_not_connected():
     assert status_of(services, "shell", up) == "up"
 
 
-async def test_a_failed_prompt_part_or_message_context_reaches_her(cfg):
+async def test_a_failed_prompt_part_or_message_context_reaches_the_agent(cfg):
     class Broken:
         name = "broken"
 

@@ -1,5 +1,5 @@
-"""Web search down: the way around it, the check Settings shows, and results pages
-labelled as such. A fake network."""
+"""Web search down: the way around it, what Settings shows after a failed search, and
+results pages labelled as such. A fake network."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -42,9 +42,9 @@ async def test_a_dead_search_fails_with_searxng_named_and_no_way_around():
     assert r.is_error and r.content == REFUSED
     assert "duckduckgo" not in r.content, "no fallback inside its turn"
     assert w.search_down == REFUSED
-    assert await w.check() == REFUSED, "a fresh failure answers for a minute"
-    w.transport = httpx.MockTransport(lambda req: httpx.Response(200, text="OK"))
-    assert await w.check(max_age=0) is None
+    w.transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"results": []}))
+    assert not (await w.search(_ctx(), "x")).is_error
+    assert w.search_down is None, "the next search that answers clears it"
 
 
 async def test_no_results_with_dead_engines_is_search_down():
@@ -53,7 +53,7 @@ async def test_no_results_with_dead_engines_is_search_down():
     r = await w.search(_ctx(), "muon vs adamw")
     assert r.is_error
     assert r.content == "SearXNG at searx.test reached none of its engines (google, bing)."
-    assert await w.check() == r.content, "the check says the same for a minute"
+    assert w.search_down == r.content
     w = Web(CFG, transport=httpx.MockTransport(
         lambda req: httpx.Response(200, json={"results": []})))
     r = await w.search(_ctx(), "muon vs adamw")
@@ -71,10 +71,10 @@ async def test_a_dead_resolver_names_the_resolver_not_searxng():
         raise e
     w = Web(CFG, transport=httpx.MockTransport(dead))
     r = await w.search(_ctx(), "x")
-    assert r.is_error and r.content == ("name lookup failed in the app (Temporary failure in "
-                                        "name resolution); every host fails the same way "
-                                        "until its resolver answers")
-    assert await w.check() == r.content
+    assert r.is_error and r.content == ("DNS failed in the app (Temporary failure in name "
+                                        "resolution): every host fails until its DNS server "
+                                        "answers")
+    assert w.search_down == r.content
 
 
 async def test_a_wrong_searxng_says_which():
@@ -83,9 +83,24 @@ async def test_a_wrong_searxng_says_which():
     r = await html.search(_ctx(), "x")
     assert r.is_error and r.content == ("SearXNG at searx.test answered something that is "
                                         "not JSON.")
-    r = await Web(CFG, transport=httpx.MockTransport(
-        lambda req: httpx.Response(403))).search(_ctx(), "x")
-    assert r.content == "SearXNG at searx.test answered 403 instead of JSON results."
+    w = Web(CFG, transport=httpx.MockTransport(lambda req: httpx.Response(403)))
+    r = await w.search(_ctx(), "x")
+    assert r.content == "SearXNG at searx.test returned 403: Forbidden"
+    assert w.search_down == r.content, "an error answer marks search down too"
+
+
+async def test_a_searxng_error_answer_says_its_words():
+    r = await Web(CFG, transport=httpx.MockTransport(lambda req: httpx.Response(
+        429, text="Too many requests from this client"))).search(_ctx(), "x")
+    assert r.content == "SearXNG at searx.test returned 429: Too many requests from this client"
+
+
+async def test_a_page_that_answers_an_error_says_its_title():
+    w = Web(CFG, check_addresses=False, transport=httpx.MockTransport(lambda req: httpx.Response(
+        403, text="<html><title>Just a moment...</title></html>")))
+    r = await w.read_page(_ctx(), "https://example.com/a")
+    assert r.is_error and r.content == ("could not read https://example.com/a: HTTP 403: "
+                                        "Just a moment...")
 
 
 async def test_settings_tools_say_where_each_skill_is_offered_and_web_down(tmp_path, monkeypatch,
@@ -98,12 +113,16 @@ async def test_settings_tools_say_where_each_skill_is_offered_and_web_down(tmp_p
     web_skill.transport = httpx.MockTransport(lambda r: httpx.Response(502))
     async with client(app) as api:
         view = (await api.get("/api/tool-defaults")).json()
+        assert {s["name"]: s for s in view["skills"]}["web"]["status"] != "down", \
+            "nothing asks SearXNG until a search does"
+        await web_skill.search(_ctx(), "x")
+        view = (await api.get("/api/tool-defaults")).json()
     assert [p["name"] for p in view["places"]] == ["chat", "mission", "background"]
     assert view["places"][1]["label"] == "Missions"
     skills = {s["name"]: s for s in view["skills"]}
     assert skills["web"]["places"] == ["chat", "mission", "background"]
     assert skills["web"]["status"] == "down"
-    assert skills["web"]["error"].startswith("SearXNG at ") and "answered 502" in skills["web"]["error"]
+    assert skills["web"]["error"].startswith("SearXNG at ") and "returned 502" in skills["web"]["error"]
 
 
 async def test_a_results_page_is_labelled_with_no_date():
@@ -118,3 +137,17 @@ async def test_a_results_page_is_labelled_with_no_date():
     assert web.page_label("https://www.reddit.com/login/?dest=x") == "Login page"
     assert web.page_label("https://www.google.de/search?q=x") == "Search results"
     assert web.page_label("https://example.com/search") is None
+
+
+def test_a_saved_address_that_hides_the_env_one_names_both(monkeypatch):
+    from celine.errors import unreachable_words
+    from celine.settings.services import unreachable
+    e = httpx.ConnectError("lookup")
+    monkeypatch.setenv("CELINE_SEARXNG_URL", "http://10.0.0.9:8888")
+    said = unreachable("SearXNG", "http://searxng:8080", e, "searxng")
+    assert said == ("SearXNG did not answer at searxng:8080. CELINE_SEARXNG_URL is "
+                    "http://10.0.0.9:8888; the address saved here is used instead.")
+    assert "COMPOSE_PROFILES" in unreachable_words("SearXNG", "http://searxng:8080", e), \
+        "without a service id the profile advice stays"
+    monkeypatch.setenv("CELINE_SEARXNG_URL", "http://searxng:8080")
+    assert "COMPOSE_PROFILES" in unreachable("SearXNG", "http://searxng:8080", e, "searxng")

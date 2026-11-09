@@ -191,6 +191,24 @@ def tool(*, mode: "Mode" = "blocking", read_only: bool = True,
 # skills/guides/<skill>.md, in the package, read once when first asked
 
 
+def frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """A guide's `---` frontmatter as {key: value} (a folded line joins its key's value)
+    and the body after it; ({}, text) without one."""
+    meta: dict[str, str] = {}
+    body = text
+    if text.startswith("---\n"):
+        head, _, body = text[4:].partition("\n---\n")
+        key = None
+        for line in head.splitlines():
+            if line[:1].isspace() and key:          # a folded continuation line
+                meta[key] += " " + line.strip()
+            elif ":" in line:
+                key, _, value = line.partition(":")
+                key = key.strip()
+                meta[key] = value.strip()
+    return meta, body
+
+
 class Guide:
     """guides/<name>.md: `---` frontmatter (name, description), then the body, with
     {{key}} filled from `fill` (a number the code owns, like browser's MAX_TABS). Read
@@ -217,18 +235,7 @@ class Guide:
         filled = text
         for key, value in self._fill.items():
             filled = filled.replace("{{" + key + "}}", str(value))
-        meta: dict[str, str] = {}
-        body = filled
-        if filled.startswith("---\n"):
-            head, _, body = filled[4:].partition("\n---\n")
-            key = None
-            for line in head.splitlines():
-                if line[:1].isspace() and key:          # a folded continuation line
-                    meta[key] += " " + line.strip()
-                elif ":" in line:
-                    key, _, value = line.partition(":")
-                    key = key.strip()
-                    meta[key] = value.strip()
+        meta, body = frontmatter(filled)
         if meta.get("name") != self.name:
             raise ValueError(f"{self._rel}: name must be {self.name!r}")
         self._parsed = (text, meta, body.strip())
@@ -391,6 +398,10 @@ def collect(skill: Any) -> list[ToolSpec]:
 # whoever knows it sets and clears (plugins/mac/gateway.py: a macOS permission that is off,
 # which would leave a call waiting on a dialog on the Mac's screen)
 BLOCKED: dict[str, str] = {}
+# skill -> fn(skill) of whoever sets its BLOCKED, called at each look at the skill while
+# its server answers (`down`: a request lists its tools, a call is resolved), so a fact
+# that may be stale is learned again; it never waits (plugins/mac/gateway.py Grants.ask)
+ASK: dict[str, Callable[[str], None]] = {}
 
 
 @dataclass
@@ -428,10 +439,13 @@ class Registry:
     def down(self, skill_name: str) -> str | None:
         """Why a skill is not up (a connector that is starting or dead, image generation
         without a preset, a device that lacks a permission: BLOCKED), or None while it
-        is up. Its tools stay in its list as stubs that say so."""
+        is up. Its tools stay in its list as stubs that say so. A look while it is up
+        is told to its ASK."""
         skill = self.skills.get(skill_name)
         status = getattr(skill, "status", "up")
         if status == "up":
+            if (ask := ASK.get(skill_name)) is not None:
+                ask(skill_name)
             return BLOCKED.get(skill_name)
         return " ".join(str(getattr(skill, "error", None) or f"it is {status}").split())[:200]
 

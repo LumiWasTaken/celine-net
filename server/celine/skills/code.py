@@ -6,7 +6,9 @@ Five tools. code__start hands a task and a model to a new session, or to one it 
 (the session is the agent's memory of the folder and the task); code__status says
 running, done or failed; code__result brings its last answer (cut to result_chars), the
 files it changed and a tests line when its output shows a pytest or npm summary;
-code__abort stops one; code__list lists its sessions. This skill knows nothing of the
+code__abort stops one; code__list lists its sessions. A cloud model the user did not
+pick waits for their approval at each code__start, and the box's model proxy serves it
+once approved (agent_models.ask_cloud). This skill knows nothing of the
 backend but the interface and its name on the status line. Every call goes to the
 shellbox at its address with the app's key (settings/services.py, keys.py), and no answer
 is worded as the shell skill words it (errors.py).
@@ -21,19 +23,20 @@ import httpx
 
 from . import ToolContext, ToolResult, guide, knob, tool, described
 from .. import shellbox
-from ..settings import general
+from ..settings import general, agent_models
 from ..core.ids import now
 from ..terminals import store as terminals
-from ..errors import ToolRefused, her_not_set_up, her_unreachable
+from ..errors import ToolRefused, agent_not_set_up, agent_unreachable
 
+ASK = "start a coding session on a cloud model"    # the approval card's action
 POLL_SECONDS = 20          # between two code__status looks (it is told)
 RESULT_CHARS = 2000        # of the agent's last answer code__result carries
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
     knob("code.poll_seconds", "Status look every", "seconds", 1, 3600, POLL_SECONDS,
-         "How long it waits between two looks at a coding task."),
+         "How long to wait between two looks at a running coding session."),
     knob("code.result_chars", "Answer length", "characters", 100, 1_000_000, RESULT_CHARS,
-         "Of the coding agent's last answer."),
+         "How much of the coding agent's last answer one result brings."),
 )
 # a test summary in the agent's output: pytest's "3 passed, 1 failed in 0.4s", npm's
 # (jest, vitest) "Tests: 3 passed, 1 failed, 4 total", go's "ok" and "FAIL" lines
@@ -69,7 +72,7 @@ class Code:
 
     @property
     def error(self) -> str | None:
-        return None if shellbox.url(self.cfg) else her_not_set_up("the shellbox")
+        return None if shellbox.url(self.cfg) else agent_not_set_up("the shellbox")
 
     # ---- the tools ------------------------------------------------------------------------
 
@@ -93,6 +96,10 @@ class Code:
         what it learned. Then poll with code__status at the pace its answer names, and read
         the answer with code__result once it says done.
         Returns: the session id and "running"."""
+        if no := await agent_models.ask_cloud(self.cfg, self.app, ctx, model, action=ASK,
+                                            facts=[("Folder", dir)],
+                                            detail=("Task", task), box=True):
+            return self._refused(no, session_id)
         try:
             status, res = await self._call("POST", "/code/session",
                                            {"dir": dir, "task": task, "model": model,
@@ -252,7 +259,7 @@ class Code:
     def _unreachable(self, e: httpx.HTTPError) -> ToolResult:
         if isinstance(e, (httpx.ConnectError, httpx.TimeoutException,
                           httpx.UnsupportedProtocol)):
-            content = her_unreachable("the shellbox", shellbox.url(self.cfg))
+            content = agent_unreachable("the shellbox", shellbox.url(self.cfg))
         else:
             content = (f"The shellbox at {urlsplit(shellbox.url(self.cfg)).netloc} dropped the "
                        f"connection or restarted ({type(e).__name__}: {e}). Look with "

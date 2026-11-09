@@ -308,6 +308,8 @@ class ImageGenerator:
             cat = await image_catalog.load(
                 s.providers[pid]["base_url"], provider_headers(s, pid),
                 transport=self.app.llm.router.transport if self.app else None)
+        except presets_mod.ImageError as e:
+            return ToolResult(content=str(e), is_error=True)
         except Exception as e:
             return ToolResult(content=f"ComfyUI did not list its models "
                                       f"({type(e).__name__}).", is_error=True)

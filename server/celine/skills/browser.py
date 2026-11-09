@@ -41,16 +41,14 @@ from ..browser.sync import BrowserRefused
 from ..turns import tokens
 from .. import vault as vault_mod
 from ..vault import EntryError, VaultError, reason
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, parts, tool, described
 from ..clock import zone
-from ..errors import ToolRefused, her_bad_key, her_not_set_up, her_unreachable
-from .web import split_parts
+from ..errors import ToolRefused, agent_bad_key, agent_not_set_up, agent_unreachable
 
 log = logging.getLogger("celine.browser")
 
 MAX_TABS = 4           # tabs open at once (browserd's MAX_TABS)
 STEPS_MAX = 20         # steps in one browser__act (browserd's STEPS_MAX)
-PART_TOKENS = 6000     # one part of a page's text or HTML
 OUTLINE_TOKENS = 4000  # the outline at most; more is cut and said
 VIEW = (1440, 900)     # the view and every shot, px (browserd's W, H)
 CDP_PORT = 9300        # its DevTools, on the box's loopback (browserd's CDP_PORT)
@@ -355,7 +353,7 @@ class Browser:
     @property
     def error(self) -> str | None:
         if not sync.url(self.cfg):
-            return her_not_set_up("the browser")
+            return agent_not_set_up("the browser")
         return None
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
@@ -464,7 +462,7 @@ class Browser:
                         res, located, _ = await self._locate(ctx, name, chunk[0]["text"])
                     except BrowserRefused as e:
                         raise BrowserRefused(e.status, {**e.facts, "done": i,
-                                                        "effects": effects}) from None
+                                                        "effects": effects}, e.words) from None
                     point, box = located
                     if chunk[0]["then"] == "none":
                         effects.append({"effect": "located", "point": point, "box": box})
@@ -484,7 +482,7 @@ class Browser:
                     except BrowserRefused as e:
                         raise BrowserRefused(e.status, {
                             **e.facts, "done": start + int(e.facts.get("done") or 0),
-                            "effects": effects + ran(e.facts)}) from None
+                            "effects": effects + ran(e.facts)}, e.words) from None
                     effects += ran(res)
                 i = j
             out = {**res, "effects": effects, "done": len(steps)}
@@ -648,34 +646,21 @@ class Browser:
                                                  f"downloads it."] + self._notes(res)),
                               display=self._display(res))
         text = res.get({"page": "markdown", "html": "html", "source": "source"}[what]) or ""
-        budget = PART_TOKENS
-        if ctx.max_output_tokens:
-            budget = max(800, min(budget, int(ctx.max_output_tokens) - 300))
-        parts = split_parts(text.strip(), budget) if text.strip() else [""]
-        k = max(1, min(int(part or 1), len(parts)))
-        lines = [self._head(res)]
+        head = [self._head(res), {"page": "text", "html": "HTML", "source": "source"}[what]]
+        shape = {"head": head, "call": f"browser__look(what=\"{what}\", tab=\"{name}\"",
+                 "after": self._notes(res)}
+        chunks = parts.fit(text.strip() or "(nothing readable on this page)", ctx, **shape)
+        k = max(1, min(int(part or 1), len(chunks)))
         if find.strip():
             want = find.strip().lower()
-            hit = next((i for i, p in enumerate(parts, 1) if want in p.lower()), None)
-            if hit is None:
-                lines.append(f"\"{find.strip()}\" is not on this page.")
-                return ToolResult(content="\n".join(lines + self._notes(res)),
+            k = next((i for i, p in enumerate(chunks, 1) if want in p.lower()), 0)
+            if not k:
+                return ToolResult(content="\n".join([head[0], f"\"{find.strip()}\" is not "
+                                                     f"on this page.", *shape["after"]]),
                                   display=self._display(res))
-            k = hit
-        kind = {"page": "text", "html": "HTML", "source": "source"}[what]
-        lines.append(f"{kind}, part {k} of {len(parts)}" if len(parts) > 1 else kind)
-        lines += ["", parts[k - 1] or "(nothing readable on this page)", ""]
-        if len(parts) > 1:
-            nav = []
-            if k > 1:
-                nav.append(f"earlier: browser__look(what=\"{what}\", part={k - 1}, "
-                           f"tab=\"{name}\")")
-            nav.append(f"later: browser__look(what=\"{what}\", part={k + 1}, tab=\"{name}\")"
-                       if k < len(parts) else "end of page")
-            lines.append(", ".join(nav))
-        return ToolResult(content="\n".join(lines + self._notes(res)),
+        return ToolResult(content=parts.show(chunks, k, **shape),
                           display={**self._display(res), "what": what, "part": k,
-                                   "parts": len(parts)})
+                                   "parts": len(chunks)})
 
     # ---- calls ----------------------------------------------------------------------------
 
@@ -1047,7 +1032,7 @@ class Browser:
         return ToolResult(content=text, is_error=True, display={"tab": tab, "refused": True})
 
     def _unreachable(self, tab: str | None, e: Exception) -> ToolResult:
-        return self._error(f"{her_unreachable('the browser', sync.url(self.cfg))} Tell "
+        return self._error(f"{agent_unreachable('the browser', sync.url(self.cfg))} Tell "
                            f"{self.cfg.user} if it stays away.", tab)
 
     def _refusal(self, e: BrowserRefused, tab: str | None, steps: list | None = None) -> ToolResult:
@@ -1066,7 +1051,7 @@ class Browser:
                                f"on the screen; nothing was done. " + (
                                    f"It said: \"{said}\"" if said else "It said nothing."), tab)
         if e.status in (401, 403):
-            return self._error(f"{her_bad_key('the browser', sync.url(self.cfg))} Tell {user}.", tab)
+            return self._error(f"{agent_bad_key('the browser', sync.url(self.cfg))} Tell {user}.", tab)
         if code == "no_tab":
             open_tabs = f.get("tabs") or []
             return self._error(f"No tab named {tab}. " + (
@@ -1157,4 +1142,5 @@ class Browser:
                                f"page again.", tab)
         if code == "cdp":
             return self._error(where + f"The browser could not do it: {f.get('message')}.", tab)
-        return self._error(f"The browser box answered {e.status}: {code or 'no reason'}.", tab)
+        return self._error(f"The browser box returned {e.status}: "
+                           f"{e.words or code or 'no reason'}", tab)

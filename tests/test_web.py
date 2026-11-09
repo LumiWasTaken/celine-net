@@ -3,6 +3,7 @@ the runner. A fake SearXNG, no network."""
 from __future__ import annotations
 
 from chat_fixtures import Script, user_says
+from parts_fixtures import ROOM, joined
 
 import json
 from types import SimpleNamespace
@@ -75,13 +76,12 @@ async def test_a_dead_resolver_is_not_a_wrong_host(monkeypatch):
                         failing(socket.EAI_AGAIN, "Temporary failure in name resolution"))
     with pytest.raises(ToolRefused) as e:
         await web._resolve_public("docs.python.org", 443)
-    assert str(e.value) == ("name lookup failed in the app (Temporary failure in name "
-                            "resolution); every host fails the same way until its resolver "
-                            "answers")
+    assert str(e.value) == ("DNS failed in the app (Temporary failure in name resolution): "
+                            "every host fails until its DNS server answers")
     assert "docs.python.org" not in str(e.value)
     monkeypatch.setattr(web.anyio, "getaddrinfo",
                         failing(socket.EAI_NONAME, "Name or service not known"))
-    with pytest.raises(ToolRefused, match="^nosuch.example does not resolve$"):
+    with pytest.raises(ToolRefused, match="^DNS failed for nosuch.example: no such host$"):
         await web._resolve_public("nosuch.example", 443)
 
 
@@ -129,7 +129,7 @@ async def test_runner_links_good_web_refs_and_marks_bad_ones(store, monkeypatch)
     assert len(b.calls) == 2                                   # no second generation
 
 
-async def test_search_down_points_at_her_browser_when_she_has_one():
+async def test_search_down_points_at_the_agents_browser_when_it_has_one():
     def down(req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused")
     cfg = load()
@@ -192,3 +192,54 @@ def test_a_part_of_a_page_that_could_not_be_read_is_said(monkeypatch):
                                b"<html><body><p>" + b"word " * 50 + b"</p></body></html>", 200))
     assert doc["problems"] == ["Its title, date and author could not be read (bad meta tag)"]
     assert "word" in doc["text"]
+
+
+async def test_searches_per_hour_refuse_before_searxng_is_asked(monkeypatch):
+    from collections import deque
+    cfg = load()
+    cfg.settings.general = {**cfg.settings.general, "web.per_hour": 1}
+    assert cfg.r("web.per_hour") == 1
+    monkeypatch.setattr(web, "_searched", deque())
+    clock = [500.0]
+    monkeypatch.setattr(web, "_now", lambda: clock[0])
+    asked = []
+
+    def counted(req):
+        asked.append(req)
+        return searx(req)
+    w = Web(cfg, transport=httpx.MockTransport(counted), check_addresses=False)
+    assert not (await w.search(_ctx(), query="keel bolt")).is_error
+    over = await w.search(_ctx(), query="keel bolt torque")
+    assert over.is_error and over.content == "Web search reached its 1 search this hour."
+    assert len(asked) == 1, "SearXNG was asked once"
+    clock[0] += 3600
+    assert not (await w.search(_ctx(), query="keel bolt torque")).is_error
+    cfg.settings.general = {**cfg.settings.general, "web.per_hour": 0}
+    for _ in range(3):
+        assert not (await w.search(_ctx(), query="keel")).is_error, "0 never refuses"
+
+
+async def test_a_long_page_reads_in_parts_that_join_to_the_page(monkeypatch):
+    """Each part passes the result backstop whole with its head and tail lines, the last
+    one too (nothing cuts a part's end and its `earlier:` line), and the parts joined
+    are the page's text."""
+    from dataclasses import replace
+    text = "\n\n".join(f"Section {i}. " + "keel bolt torque " * (i * 13 % 90) for i in range(120))
+    monkeypatch.setattr(web, "extract", lambda page: {
+        "title": "Refit log", "text": text, "date": None, "author": None, "kind": "html",
+        "problems": ["Its date could not be read"]})
+    w = Web(load(), transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, text="<html></html>",
+                                 headers={"content-type": "text/html"})),
+        check_addresses=False)
+    ctx = replace(_ctx(), max_output_tokens=ROOM)
+
+    async def read(k):
+        out = await w.read_page(ctx, "https://boats.example.com/log", part=k)
+        assert out.display["part"] == k
+        return out.content
+    whole, n = await joined(read, 'web__read_page(url="web:1"')
+    assert n > 1 and whole == text.strip(), "the parts joined are the page"
+    first = await read(1)
+    assert first.startswith("[web:1] Refit log\nhttps://boats.example.com/log\n"
+                            "Its date could not be read.\npart 1 of ")

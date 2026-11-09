@@ -1,6 +1,7 @@
 ---
 name: missions
-description: A brief from {{username}}, worked on in a conversation of its own.
+description: A brief from {{username}}, worked on in a conversation of its own. List and
+  read any mission from anywhere.
 ---
 A mission is a brief from {{username}} in your instructions, with the steps it goes by.
 Your plan is the plan skill's: plan__set writes the steps, plan__step moves one;
@@ -9,18 +10,28 @@ missions__update(status, note) records where you are; with Done, artifact names 
 delivered: artifact:<id> for a page, documents:<path> for a file in Documents. Your
 notes, your report and what you deliver hold what you found in your own words: no web
 citation marks, no "according to", no list of sources or links, a link only when it is
-what {{username}} asked for. missions__list lists every mission, from anywhere.
+what {{username}} asked for.
+
+From anywhere: missions__list(status) lists every mission, newest first: name,
+conversation id, status, the step it is on, its note and the first line of its brief.
+missions__read(mission), by name or conversation id, gives one mission whole, any
+status: status and note, brief, where it reports, time limits, what it delivered, the
+plan with each step's state, each sub-agent with its latest report, and the newest
+messages between it and {{username}}: what it asked, what they answered, what still
+waits for them. Its transcript: past_conversations__read(conversation="<its name>").
 
 missions__start(brief) starts a mission of your own, from anywhere but a sub-agent: it
 takes what {{username}}'s form takes (name, model, time_limit, min_time, check_in,
-report_to) and runs in a conversation of its own, its brief from you.
+report_to) and runs in a conversation of its own, its brief from you. A cloud model you
+pick yourself asks {{username}} first.
 
 With a minimum time, missions__update(status="Done") before it is refused with the time
 left; force=true closes it all the same.
 
 A step may name a model it runs better on; your instructions list the models you can
 name. When that step becomes doing, the mission runs on it from your next turn, and
-sub-agents you start then run on it too. Example: steps=[{"title": "Read the papers",
+sub-agents you start then run on it too. A cloud model you pick yourself asks
+{{username}} first, in the plan__set or plan__step that makes its step doing. Example: steps=[{"title": "Read the papers",
 "model": "lan/small"}, {"title": "Write the report"}].
 
 When a turn ends while the mission is Active, a step of your plan is open and nothing is

@@ -1,14 +1,14 @@
-"""She configures herself: `settings__read` shows every setting the user sees in
+"""The agent configures itself: `settings__read` shows every setting the user sees in
 Settings as data (each target's fields, current values, allowed values, version; a
 secret only as its state), and `settings__propose` changes one target. A proposal is
 checked at once by the validators a Settings save runs (settings/write.check), waits for
 the user's approval (celine/approvals.py, kind `settings`: each field's before and after,
-and her why), and once approved is saved by the same function as the Settings screen
+and its why), and once approved is saved by the same function as the Settings screen
 (celine/saves.py) against the version it was proposed on: a target that changed
 meanwhile is not overwritten.
 
-A secret is write-only: she names a file in her shellbox that holds it, and the value
-goes from there into var/secrets without passing her context, the request, an event or
+A secret is write-only: the agent names a file in its shellbox that holds it, and the
+value goes from there into var/secrets without passing its context, the request, an event or
 a log."""
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any
 
 from .. import plugins
-from ..settings import features as features_mod, form, general as general_mod
+from ..settings import features as features_mod, form, general as general_mod, agent_models
 from .. import saves
 from ..settings import kinds, mail as mail_mod, secrets as secrets_mod
 from ..settings import services as services_mod, vault as vault_mod, views, write
@@ -31,8 +31,8 @@ from . import ToolContext, ToolResult, described, guide, tool
 NOBODY = "Nothing was changed: nobody is here to approve it."
 SHOWN = 120         # characters of one value in the request
 SECRET_READ = 64 * 1024     # bytes of a secret's file read at most
-PROVIDER = {"kind": "Type", "label": "Name", "base_url": "Address", "options": "Options",
-            "models": "Models"}
+PROVIDER = {"kind": "Type", "label": "Name", "base_url": "Address", "cloud": "Cloud",
+            "options": "Options", "models": "Models"}
 
 
 @dataclass
@@ -86,8 +86,8 @@ def _form_fields(fields: list[dict], values: dict, states: dict) -> list[dict]:
     return out
 
 
-async def _hers(ctx: ToolContext) -> bool:
-    """Her own conversation (a chat, a mission, a routine's), not a sub-agent's or a
+async def _its_own(ctx: ToolContext) -> bool:
+    """The agent's own conversation (a chat, a mission, a routine's), not a sub-agent's or a
     drone's: only there does a read carry a form's lines to copy."""
     row = await ctx.store.read(lambda c: c.execute(
         "SELECT kind, agent_of FROM conversations WHERE id=?",
@@ -96,15 +96,16 @@ async def _hers(ctx: ToolContext) -> bool:
 
 
 async def _copies(app, pl) -> dict[str, Any]:
-    """What a running plugin's form shows to copy, as she may pass it on (the Mac's setup
+    """What a running plugin's form shows to copy, as the agent may pass it on (the Mac's setup
     line while it is not connected): {"copy": {label: text}, "note": text}."""
     ref = pl.form.get("copies") if pl.data is not None else None
     if not ref:
         return {}
     got = dict(await pl.attr(ref)(app, pl))
-    got.pop("address", None)        # the app's address field: the page's, not hers
-    got.pop("hide", None)           # the page's actions, not hers
-    # the page's facts and lines, for her as sentences after the note
+    got.pop("address", None)        # the app's address field: the page's, not the agent's
+    got.pop("hide", None)           # the page's actions, not the agent's
+    got.pop("badges", None)
+    # the page's facts and lines, for the agent as sentences after the note
     said = [*(f"{f['label']}: {f['value']}." for f in got.pop("facts", [])),
             *(x["text"] for x in got.pop("lines", []))]
     note = " ".join([got.pop("note"), *said] if "note" in got else said)
@@ -178,16 +179,16 @@ def target_of(app, tid: str) -> Target | str:
     if tid == "services":
         fields = [{**services_mod.FIELDS[sid][0], "key": sid,
                    "label": features_mod.get("web" if sid == "searxng" else sid).label,
-                   "value": services_mod.value(s.services, sid, "url")}
+                   "value": services_mod.shown(s.services, sid),
+                   "default": services_mod.shown({}, sid)}       # what null leaves
                   for sid in services_mod.IDS]
 
-        def merge_services(ch):
-            out = copy.deepcopy(s.services)
-            for sid, url in ch.items():
-                out[sid] = {"url": url} if url is not None else {}
-            return out
+        def merge_services(ch):     # only the services the agent changes (saves.addresses)
+            return {sid: None if url is None else {"url": url} for sid, url in ch.items()}
         return Target(tid, "Services", version(s.services), fields, merge_services,
-                      _check(cfg, "services"), lambda a, new, _, v: saves.addresses(a, new, v))
+                      lambda ch: write.check(cfg, {"services": services_mod.merged(
+                          s.services, ch)}),
+                      lambda a, new, _, v: saves.addresses(a, new, v))
     if tid == "email":
         values = {f["key"]: mail_mod.value(s.email, f["key"]) for f in mail_mod.FIELDS}
         fields = _form_fields([*mail_mod.FIELDS, {"key": "password", "label": "Password",
@@ -228,6 +229,9 @@ def target_of(app, tid: str) -> Target | str:
         fields = [{"key": k, "label": label, "value": p.get(k)} for k, label in
                   PROVIDER.items()]
         fields[0].update(type="choice", choices=[[k, k] for k in kinds.KINDS])
+        # the switch as it stands (agent_models.provider_cloud); null puts it back to the address's
+        next(f for f in fields if f["key"] == "cloud").update(
+            type="bool", value=agent_models.provider_cloud(p) if p else None)
         fields.append({"key": "key", "label": "Key", "type": "secret",
                        **({"state": secrets_mod.state(root, pid)["state"]} if p else
                           {"state": "not set"})})
@@ -322,6 +326,15 @@ def _after(f: dict[str, Any], v: Any) -> Any:
     return v
 
 
+def _cloud_row(old: dict | None, new: dict) -> list[dict]:
+    """The Cloud row of a provider's change: the switch after it (its own, else its
+    address's), for a new provider or when it changes."""
+    was = None if old is None else agent_models.provider_cloud(old)
+    now = agent_models.provider_cloud(new)
+    word = {True: "On", False: "Off"}
+    return [] if was == now else [row("Cloud", word.get(was), word[now])]
+
+
 def _filled_roles(s, pid: str, new: dict) -> list[dict]:
     """A row per empty role saving provider `pid` as `new` fills (saves.provider)."""
     filled = views.fill_roles(s, pid, saves.provider_clean(pid, new)) or {}
@@ -402,10 +415,11 @@ class Settings:
             return ToolResult(content=t, is_error=True)
         view = t.view()
         kind, _, pid = t.id.partition(".")
-        if kind == "forms" and await _hers(ctx):
+        if kind == "forms" and await _its_own(ctx):
             view.update(await _copies(self.app, plugins.get(pid)))
         return ToolResult(content=self.cfg.substitute(
-            json.dumps(view, ensure_ascii=False, default=str)), display={"target": t.id})
+            json.dumps(view, ensure_ascii=False, default=str)),
+            display={"target": t.id, "label": t.label})
 
     @tool(read_only=False, destructive=False)
     async def propose(
@@ -446,6 +460,8 @@ class Settings:
                     rows.append(row(f["label"], "Saved" if f["state"] == "set" else None,
                                     "Removed" if v is None else "New value"))
                     continue
+                if k == "cloud" and t.id.startswith("providers."):
+                    continue            # _cloud_row: what the switch says after
                 before = None if f.get("value") is None else shown(f, f["value"])
                 after = shown(f, _after(f, v))
                 if before != after:
@@ -454,7 +470,9 @@ class Settings:
             if values:
                 t.check(new)
             if values and t.id.startswith("providers."):
-                rows += _filled_roles(self.cfg.settings, t.id.removeprefix("providers."), new)
+                pid = t.id.removeprefix("providers.")
+                rows += _cloud_row(self.cfg.settings.providers.get(pid), new)
+                rows += _filled_roles(self.cfg.settings, pid, new)
         except Invalid as e:
             return ToolResult(content=f"{e.field}: {e.message}", is_error=True)
         if not rows:
@@ -466,9 +484,11 @@ class Settings:
         pid = t.id.removeprefix("providers.")
         action = f"add the model provider {pid}" if t.id.startswith("providers.") and \
             pid not in self.cfg.settings.providers else f"change the {t.label} settings"
-        if no := await approvals.ask(action, [], ctx.conversation_id, why, action,
-                                     kind="settings", call=ctx.tool_call_id or None,
-                                     changes=rows):
+        if no := await approvals.ask(
+                "settings", ctx.conversation_id, action,
+                facts=[(r["label"], f"{r['before']} \u2192 {r['after']}" if "before" in r
+                        else r["after"]) for r in rows],
+                why=why, call=ctx.tool_call_id or None):
             return ToolResult(content=no, is_error=True)
         try:        # a secret's value is read now, once approved, and only kept here
             secrets = {k: None if p is None else await _secret_from(

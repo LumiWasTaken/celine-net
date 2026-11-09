@@ -21,10 +21,12 @@ from . import ToolContext, ToolResult, guide, knob, tool, described
 # (turns/context.py) shortens old results.
 KNOBS = (
     knob("chat_archive.search_max_tokens", "Search result length", "tokens", 100,
-         10_000_000, 7000),
+         10_000_000, 7000, "How long one search result in Messages may be."),
     knob("chat_archive.search_max_tokens_all", "Search result length, all matches",
-         "tokens", 100, 10_000_000, 14_000),
-    knob("chat_archive.candidates", "Reranked per search", None, 1, 10_000, 50),
+         "tokens", 100, 10_000_000, 14_000,
+         "How long a search result may be when it asks for every match."),
+    knob("chat_archive.candidates", "Reranked per search", None, 1, 10_000, 50,
+         "How many matches the reranker sorts in one search."),
     knob("chat_archive.rerank_floor", "Rerank floor", None, -1000.0, 1000.0, -4.0,
          "A match the reranker scores below this is not about the search."),
     knob("chat_archive.episode_gap_minutes", "Episode gap", "minutes", 1, 100_000, 30,
@@ -34,13 +36,13 @@ KNOBS = (
     knob("chat_archive.period_max_tokens", "Date range length", "tokens", 100, 10_000_000,
          40_000, "A date range up to this comes back whole."),
     knob("chat_archive.max_tokens_cap", "Longest read", "tokens", 100, 10_000_000,
-         100_000, "The most one read may ask for."),
+         100_000, "The most one read of Messages may ask for."),
     knob("chat_archive.scroll_max_messages", "Messages per scroll", None, 1, 10_000, 20,
-         "On each side, in one call."),
+         "How many messages one scroll brings on each side of a message."),
     knob("chat_archive.scroll_max_tokens", "Scroll length", "tokens", 100, 10_000_000,
-         4000),
+         4000, "How long one scroll through Messages may be."),
     knob("chat_archive.get_max_refs", "Messages per lookup", None, 1, 10_000, 50,
-         "By reference, in one call."),
+         "The most messages one lookup by reference brings."),
 )
 
 

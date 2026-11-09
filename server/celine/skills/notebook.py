@@ -1,4 +1,4 @@
-"""The notebook: its own space, as files, `var/notebook/` (her.notebook).
+"""The notebook: its own space, as files, `var/notebook/` (agent.notebook).
 
 A sub-agent's conversation may be limited to one folder (`conversations.notebook_folder`,
 set by sub_agents/skill.py). The limit is enforced here, in every tool and in the index,
@@ -25,8 +25,9 @@ from ..errors import ToolRefused
 # ways, and both caps are told to it
 KNOBS = (
     knob("notebook.index_max_entries", "Notes in the index", None, 1, 10_000, 10,
-         "The index of its notebook in every system prompt."),
-    knob("notebook.index_max_chars", "Index length", "characters", 100, 1_000_000, 4000),
+         "How many notes the notebook index in every system prompt lists."),
+    knob("notebook.index_max_chars", "Index length", "characters", 100, 1_000_000, 4000,
+         "How long the notebook index in every system prompt may be."),
 )
 # the seeds ship as config/notebook_seed/<rel>, copied once, its own from then on; it reads
 # them and never writes or deletes them (owner "config")
@@ -70,7 +71,7 @@ class Notebook:
     @property
     def root(self) -> Path:
         """The agent's notebook, the one notebook."""
-        return self.cfg.her.notebook
+        return self.cfg.agent.notebook
 
     async def message_context(self, ctx: ToolContext, message: dict):
         """`[your memory]`: the sections of its notes a new user message brings up,

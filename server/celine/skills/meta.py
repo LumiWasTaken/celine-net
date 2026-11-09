@@ -24,7 +24,7 @@ from . import CORE, META, SEP, ToolContext, ToolResult, guide_text, tool
 
 def skill_note_path(cfg, skill_name: str):
     """The conventional notebook path for a skill's personal notes."""
-    return cfg.her.notebook / "skills" / f"{skill_name}.md"
+    return cfg.agent.notebook / "skills" / f"{skill_name}.md"
 
 
 def read_skill_note(cfg, skill_name: str) -> str | None:
@@ -33,7 +33,7 @@ def read_skill_note(cfg, skill_name: str) -> str | None:
     Returns the file text, or None when there is no note; a note it cannot read says
     why. Path traversal is blocked: the resolved path must stay inside the notebook.
     """
-    root = cfg.her.notebook.resolve()
+    root = cfg.agent.notebook.resolve()
     p = skill_note_path(cfg, skill_name).resolve()
     if not p.is_relative_to(root) or not p.is_file():
         return None

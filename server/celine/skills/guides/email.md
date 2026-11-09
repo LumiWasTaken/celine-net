@@ -17,10 +17,11 @@ A message id is `<folder>:<number>`, such as `INBOX:4521`. The tools show the id
    such as 2026-01-01. Example: email__search(from="anna", since="2026-01-01")
 3. `email__read(id)` returns the headers, the attachments by name, and the text, and
    marks the message read. HTML comes as plain text with its links listed after it. A
-   long message comes in parts, with a `later:` line.
+   long message comes in parts: the `earlier:` and `later:` lines after the text read
+   the part before and after.
 4. `email__get_attachment(id, name)` attaches the file to this conversation, so
-   {{username}} can open it, and returns its text (text, PDF, Word, HTML) or a
-   description of an image.
+   {{username}} can open it, and returns its text (text, PDF, Word, HTML), a long one in
+   parts the same way, or a description of an image.
 5. `email__list_folders()` lists the folders with their message and unread counts. The
    other tools take `folder` with one of these names; INBOX is the default.
 6. `email__mark(ids, state)` marks messages `read`, `unread`, `flagged` or `unflagged`.

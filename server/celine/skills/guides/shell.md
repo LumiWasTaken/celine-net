@@ -40,7 +40,8 @@ Not for their chats (the Messages archive tools) or your own notes.
 - **shell__run(command, terminal)** runs a command in your shell and waits for its end. The
   result says the exit status and how long it took, shows the output, and names its log,
   /var/lib/shellbox/cmd/<id>.log. The shell keeps its directory, variables and venv
-  between runs.
+  between runs. `about` is the row {{username}} sees for the run ("List the mycelium
+  folder"); without it the row shows the command's first line.
 - **shell__wait(terminal)** waits for the end of the latest run in a terminal, one still
   running after its shell__run, and answers as shell__run does.
 - **shell__type(terminal, text, keys)** types into the program in front, like at a keyboard: ssh,

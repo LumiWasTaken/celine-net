@@ -1,10 +1,10 @@
 """The agent's self: `me__read` shows its persona, its
-talk and its slop list (its row, celine/her.py); `me__edit` changes its persona, its
+talk and its slop list (its row, celine/agent.py); `me__edit` changes its persona, its
 talk and its slop list (banned words, phrases, patterns). They are in every chat, so
-every change waits for the user's approval first (celine/approvals.py, kind `her`),
+every change waits for the user's approval first (celine/approvals.py, kind `agent`),
 whatever the guard is. Every change goes through
-her.write_sync as written by it, so it is in the text's History (her:persona, her:talk,
-her:voice; Settings, It) and in Events (the `her` source, events.py).
+agent.write_sync as written by it, so it is in the text's History (agent:persona, agent:talk,
+agent:voice; Settings, the agent's page) and in Events (the `agent` source, events.py).
 `me__whoami` says where it is, every line read when it is called (whoami_lines)."""
 from __future__ import annotations
 
@@ -12,19 +12,17 @@ import json
 import re
 from typing import Annotated, Literal
 
-from .. import her
+from .. import agent
 from ..settings.files import Invalid
 from . import ToolContext, ToolResult, guide, tool, described
-from ..core.event_types import HER_CHANGED
+from ..core.event_types import AGENT_CHANGED
 
 LISTS = {"banned": "banned", "phrases": "phrases", "patterns": "patterns"}
 # what an edit changes, as Settings and Events name it (the approval's words)
 NAMES = {"persona": "Persona", "talk": "Example lines", "banned": "Banned words",
          "phrases": "Banned words", "patterns": "Banned words"}
 ASK = "change the {name}"
-WHY = "It changes how {{name}} comes across in every chat from now on."
 NOBODY = "Nothing was changed: nobody is here to approve it."
-FACT = 200          # characters of one argument in the request
 
 
 def _numbered(items: list[str]) -> str:
@@ -33,11 +31,11 @@ def _numbered(items: list[str]) -> str:
 
 def read_text(cfg) -> str:
     """The agent's persona, talk and slop list as it reads them."""
-    h = cfg.her
+    h = cfg.agent
     v = h.voice
     return "\n\n".join([
         "## persona (who you are; yours to change, and you tell {{username}} when you do)\n"
-        + her.shown(cfg, h).strip(),
+        + agent.shown(cfg, h).strip(),
         "## talk (yours: how you talk, in every chat)\n" + h.talk_text,
         f"## slop list (yours; {'on' if v['on'] else 'off'})\n"
         f"banned words, steered away from as you write ({len(v['banned'])}):\n"
@@ -78,11 +76,11 @@ def replaced(cfg, kept: str, old: str, new: str) -> str:
 
 def edited(cfg, what: str, old: str, new: str, add: list[str],
            remove: list[str]) -> tuple[dict, str] | str:
-    """(the body for her.write_sync, what changed in words), or the sentence why not.
+    """(the body for agent.write_sync, what changed in words), or the sentence why not.
     The persona and the talk are matched as it reads them, the placeholders filled in,
     and changed in the text as kept: what it writes is stored as written, and a
     placeholder outside the change stays one."""
-    h = cfg.her
+    h = cfg.agent
     if what in ("persona", "talk"):
         text = h.talk_text if what == "talk" else h.persona
         if add or remove:
@@ -115,9 +113,9 @@ def edited(cfg, what: str, old: str, new: str, add: list[str],
 
 
 def feature_words(p: dict) -> str:
-    """A feature's probe as she reads it: the probe's own words for her (`why`), its
-    detail while it is ready, else its state; a page's detail tells the user what to
-    type, and that is not hers."""
+    """A feature's probe as the agent reads it: the probe's own words for it (`why`),
+    its detail while it is ready, else its state; a page's detail tells the user what
+    to type, and that is not the agent's."""
     if p.get("why"):
         return p["why"]
     if p["state"] == "ready":
@@ -184,7 +182,7 @@ async def whoami_lines(app, cfg, ctx: ToolContext) -> list[str]:
     guard_probe = probes.get("guard") or {}
     lines.append(f"Guard: {switch.mode(cfg, cid)}." + (
         f" {guard_probe['detail']}" if guard_probe.get("state") == "ready" else ""))
-    if held := await hold.her_hold(store, llm):
+    if held := await hold.agent_hold(store, llm):
         lines.append(f"House: {held}." + (" Your chat and tasks models do not answer; a "
                      "sub-agent on a model that answers goes on." if held == "paused" else ""))
     return [cfg.substitute(x) for x in lines]
@@ -253,14 +251,14 @@ class Me:
             return ToolResult(content=no, is_error=True)
 
         def fn(c) -> None:
-            her.write_sync(c, cfg, body, "her")
-            events.added(store, c, "her")
+            agent.write_sync(c, cfg, body, "agent")
+            events.added(store, c, "agent")
         try:
             await store.write(fn)
         except Invalid as e:
             return ToolResult(content=str(e), is_error=True)
-        await her.refresh(store, cfg)
-        store.emit_global({"type": HER_CHANGED})
+        await agent.refresh(store, cfg)
+        store.emit_global({"type": AGENT_CHANGED})
         return ToolResult(content=said, display={"what": what})
 
     async def _approved(self, ctx: ToolContext, what: str, old: str, new: str,
@@ -270,10 +268,9 @@ class Me:
         approvals = getattr(self.app, "approvals", None)
         if approvals is None:
             return NOBODY
-        facts = [f"{k}: {v[:FACT]}" for k, v in (("old", old), ("new", new)) if v] + \
-            [f"{k}: {', '.join(v)[:FACT]}" for k, v in (("add", add), ("remove", remove))
-             if v]
-        action = ASK.format(name=NAMES[what])
-        return await approvals.ask(action, facts, ctx.conversation_id,
-                                   self.cfg.substitute(WHY), action, kind="her",
+        text = "\n\n".join(f"{k}\n{v}" for k, v in (
+            ("Old", old), ("New", new), ("Add", "\n".join(add)),
+            ("Remove", "\n".join(remove))) if v)
+        return await approvals.ask("agent", ctx.conversation_id, ASK.format(name=NAMES[what]),
+                                   detail=(NAMES[what], text) if text else None,
                                    call=ctx.tool_call_id or None)

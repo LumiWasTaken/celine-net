@@ -31,8 +31,9 @@ fraction of a fresh start. Open a new session for a new folder or an unrelated j
 Pick the model per task: `models__list` names the models you may use and their refs,
 and the ref is what you pass as `model` (such as `openrouter/provider/model`).
 A strong cloud model through the proxy is fine for hard work: a tangled bug, a design
-change, a big refactor. A small local model does for a rename or a one-line fix. An
-unknown ref is refused with the list.
+change, a big refactor. A cloud model you pick yourself asks {{username}} at each
+code__start; once approved, the box serves it to that work. A small local model does for
+a rename or a one-line fix. An unknown ref is refused with the list.
 
 ## How it runs
 
@@ -54,7 +55,9 @@ unknown ref is refused with the list.
   session runs, and the box starts it again within seconds, on your settings.
 - You may run opencode by hand too, in a terminal: `opencode` there (through
   shell__type), or `opencode run -m celine/<ref> "task"`, or `agent opencode` (the shell
-  guide). It reads the same config.
+  guide). It reads the same config. By hand, use a local model or one in {{username}}'s
+  role lists: another cloud model works only for work {{username}} approved, and the
+  proxy refuses it otherwise (403).
 
 ## The tools
 

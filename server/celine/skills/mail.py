@@ -28,13 +28,12 @@ import anyio
 from ..settings.mail import Account, account
 from ..triggers import Event
 from .. import vision
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, parts, tool, described
 
 TIMEOUT = 30            # seconds: the connection and each command of one call
 FRAGMENT_TIMEOUT = 5    # the unread count in its prompt must not hold up a turn
 UNREAD_TTL = 60         # seconds the unread count is kept
 LIST_DEFAULT, LIST_MAX = 20, 100
-READ_TOKENS = 6000      # one part of a long body or attachment
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
            "Dec")
 _HEADERS = "BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE CONTENT-TYPE)]"
@@ -89,7 +88,7 @@ def _text(data: Any) -> str:
 def _ok(res: tuple, what: str) -> list:
     typ, data = res
     if typ != "OK":
-        raise MailError(f"The mail server refused {what}: {_text(data) or typ}.")
+        raise MailError(f"The IMAP server refused {what}: {_text(data) or typ}.")
     return data
 
 
@@ -108,19 +107,19 @@ def session(a: Account, fn: Callable[[imaplib.IMAP4], Any], timeout: float = TIM
     try:
         m = _open(a, timeout)
     except socket.gaierror:
-        raise MailError(f"The app cannot find the mail server {a.host}.") from None
+        raise MailError(f"The app cannot find the IMAP server {a.host}.") from None
     except ConnectionRefusedError:
-        raise MailError(f"The mail server at {where} refused the connection.") from None
+        raise MailError(f"The IMAP server at {where} refused the connection.") from None
     except TimeoutError:
-        raise MailError(f"The mail server at {where} did not answer within "
+        raise MailError(f"The IMAP server at {where} did not answer within "
                         f"{timeout:.0f} seconds.") from None
     except ssl.SSLError:
         raise MailError(f"The secure connection to {where} failed: check the port and "
                         f"the encryption.") from None
     except imaplib.IMAP4.error as e:
-        raise MailError(f"The mail server at {where} answered: {e}.") from None
+        raise MailError(f"The IMAP server at {where} answered: {e}.") from None
     except OSError as e:
-        raise MailError(f"The app could not reach the mail server at {where}: "
+        raise MailError(f"The app could not reach the IMAP server at {where}: "
                         f"{e.strerror or e}.") from None
     try:
         try:
@@ -129,13 +128,13 @@ def session(a: Account, fn: Callable[[imaplib.IMAP4], Any], timeout: float = TIM
             else:           # LOGIN is ASCII only; PLAIN carries UTF-8
                 m.authenticate("PLAIN", lambda _: f"\0{a.user}\0{a.password}".encode())
         except imaplib.IMAP4.error:
-            raise MailError(f"The mail server at {a.host} refused the login for "
+            raise MailError(f"The IMAP server at {a.host} refused the login for "
                             f"{a.user}: check the password in Settings, Email.") from None
         return fn(m)
     except TimeoutError:
-        raise MailError(f"The mail server at {where} stopped answering.") from None
+        raise MailError(f"The IMAP server at {where} stopped answering.") from None
     except imaplib.IMAP4.error as e:
-        raise MailError(f"The mail server at {where} answered: {e}.") from None
+        raise MailError(f"The IMAP server at {where} answered: {e}.") from None
     except OSError as e:
         raise MailError(f"The connection to {where} broke: {e.strerror or e}.") from None
     finally:
@@ -304,7 +303,7 @@ def _criteria(query: str | None, from_: str | None, since: str | None
         elif wide is None:
             wide = (key, v)
         else:
-            raise MailError("The mail server takes one value with letters beyond ASCII per "
+            raise MailError("The IMAP server takes one value with letters beyond ASCII per "
                             "search: search by the words or by the sender.")
     if wide is None:
         return crit or ["ALL"], None
@@ -415,13 +414,6 @@ def _split_id(mid: str) -> tuple[str, int]:
     return folder, int(uid)
 
 
-def _paged(text: str, part: int | None, budget: int) -> tuple[str, int, int]:
-    from .web import split_parts
-    parts = split_parts(text, budget) if text else [""]
-    k = max(1, min(int(part or 1), len(parts)))
-    return parts[k - 1], k, len(parts)
-
-
 # ---- the skill ---------------------------------------------------------------------------
 
 _unread: dict[tuple, tuple[float, int | None]] = {}     # account -> (when, unread)
@@ -436,7 +428,7 @@ class Email:
     app = None
     triggers = (Event(
         "mail.new", source="new_mail", every=300, label="New email",
-        about="Reads new mail and asks you only when something needs you.",
+        about="Reads new emails and asks you only when one needs your answer.",
         outside=("from", "subject"),
         prompt="New mail in the inbox: {id}, from {from}, \"{subject}\", {date}. Read it "
                "with email__read if the subject is not enough to judge it."),)
@@ -481,11 +473,6 @@ class Email:
         from ..clock import zone
         return zone(self.cfg)
 
-    def _budget(self, ctx: ToolContext) -> int:
-        if ctx.max_output_tokens:
-            return max(800, min(READ_TOKENS, int(ctx.max_output_tokens) - 300))
-        return READ_TOKENS
-
     async def _run(self, fn: Callable[[imaplib.IMAP4], Any]) -> Any:
         a = account(self.cfg)
         if a is None:
@@ -507,7 +494,7 @@ class Email:
                 n = None
             hit = _unread[key] = (time.monotonic(), n)
         if hit[1] is None:
-            return f"Email: {a.user} on {a.host}, the mail server did not answer just now."
+            return f"Email: {a.user} on {a.host}, the IMAP server did not answer just now."
         return f"Email: {a.user} on {a.host}, {hit[1]} unread."
 
     def _lines(self, folder: str, rows: list[tuple[bytes, bytes]]) -> list[str]:
@@ -636,8 +623,8 @@ class Email:
         """Read one message: its headers, its attachments by name, type and size, and its
         text. HTML comes as plain text with its links listed after it (`links:` then one
         `text: href` line each). Reading marks it read; email__mark sets it unread
-        again. Returns: the headers, then one part of the text with an `earlier:` and
-        `later:` line."""
+        again. Returns: the headers, then the text; a long one in parts, with an
+        `earlier:` and `later:` line."""
         try:
             folder, uid, info, msg = await self._message(id, mark_read=True)
         except MailError as e:
@@ -653,17 +640,9 @@ class Email:
                   f"Subject: {_h(msg, 'subject') or '(no subject)'}"]
         if files:
             lines.append("Attachments: " + "; ".join(_file_line(p) for p in files))
-        text, k, total = _paged(_body(msg), part, self._budget(ctx))
-        if total > 1:
-            lines.append(f"(part {k} of {total})")
-        lines += ["", text or "(no text)"]
-        if total > 1:
-            lines.append("")
-            if k > 1:
-                lines.append(f"earlier: email__read(id=\"{folder}:{uid}\", part={k - 1})")
-            lines.append(f"later: email__read(id=\"{folder}:{uid}\", part={k + 1})"
-                         if k < total else "end of the message")
-        return ToolResult(content="\n".join(lines),
+        out, k, total = parts.read(_body(msg) or "(no text)", part, ctx, head=lines,
+                                   call=f"email__read(id=\"{folder}:{uid}\"")
+        return ToolResult(content=out,
                           display={"id": f"{folder}:{uid}", "part": k, "parts": total,
                                    "attachments": len(files)})
 
@@ -837,17 +816,9 @@ class Email:
         if not text:
             why = got.error or "the app cannot read text out of this kind of file"
             return ToolResult(content=f"{head}\n\nNo text: {why}.", display=display)
-        body, k, total = _paged(text, part, self._budget(ctx))
-        lines = [head + (f" (part {k} of {total})" if total > 1 else ""), "", body]
-        if total > 1:
-            lines.append("")
-            ref = f"id=\"{folder}:{uid}\", name={p.get_filename()!r}"
-            if k > 1:
-                lines.append(f"earlier: email__get_attachment({ref}, part={k - 1})")
-            lines.append(f"later: email__get_attachment({ref}, part={k + 1})"
-                         if k < total else "end of the attachment")
-        return ToolResult(content="\n".join(lines), display={**display, "part": k,
-                                                             "parts": total})
+        out, k, total = parts.read(text, part, ctx, head=[head], call=(
+            f"email__get_attachment(id=\"{folder}:{uid}\", name={p.get_filename()!r}"))
+        return ToolResult(content=out, display={**display, "part": k, "parts": total})
 
 
 async def probe(cfg, services) -> dict[str, str]:

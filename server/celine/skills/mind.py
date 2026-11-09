@@ -12,7 +12,7 @@
   jobs, and never with automatic context off (`conversations.auto_context`). The agent's notes
   come back in their own block, `[your memory]` (skills/recall.py).
 - The agent's mood: the `moods` rows (append-only), each a word of PAD with a strength;
-  `current_mood` decays toward its baseline by real hours (her.toml). After each
+  `current_mood` decays toward its baseline by real hours (agent.toml). After each
   finished chat turn the `small` role appraises the exchange; `mind__feel` in that turn
   wins over it.
 - The agent's mood on screen: `mind__set_status(text)` sets the 1 to 24 emojis or the kaomoji next
@@ -109,18 +109,18 @@ def mood_words(m, baseline) -> tuple[str, str]:
 
 
 @functools.cache
-def _knobs_of_her() -> tuple[tuple[float, ...], float]:
-    """(mood_baseline, mood_half_life_h) from the shipped her.toml (config/her/), read
+def _knobs() -> tuple[tuple[float, ...], float]:
+    """(mood_baseline, mood_half_life_h) from the shipped agent.toml (config/agent/), read
     once. A broken value is the package's bug: it raises, naming the file."""
-    from ..her import BASE
-    raw = tomllib.loads((BASE / "her.toml").read_text())
+    from ..agent import BASE
+    raw = tomllib.loads((BASE / "agent.toml").read_text())
     base = raw.get("mood_baseline", BASELINE)
     half = raw.get("mood_half_life_h", HALF_LIFE_H)
     if not (isinstance(base, (list, tuple)) and len(base) == 3 and all(
             isinstance(x, (int, float)) and -1 <= x <= 1 for x in base)):
-        raise ValueError(f"{BASE / 'her.toml'}: mood_baseline is three numbers from -1 to 1")
+        raise ValueError(f"{BASE / 'agent.toml'}: mood_baseline is three numbers from -1 to 1")
     if not (isinstance(half, (int, float)) and half > 0):
-        raise ValueError(f"{BASE / 'her.toml'}: mood_half_life_h is a number of hours over 0")
+        raise ValueError(f"{BASE / 'agent.toml'}: mood_half_life_h is a number of hours over 0")
     return tuple(float(x) for x in base), float(half)
 
 
@@ -134,7 +134,7 @@ def describe_mood(rows, tz, now_: datetime) -> str:
     """"mood: hostile, strong. annoyed since 21:10: why", "" without any row."""
     if not rows:
         return ""
-    base, half = _knobs_of_her()
+    base, half = _knobs()
     word, how = mood_words(current_mood(rows, base, half, now_), base)
     out = f"mood: {word}, {how}."
     for r in reversed(rows):
@@ -386,7 +386,7 @@ class Mind:
         local = datetime.now(timezone.utc).astimezone(tz)
         folder = await folder_of(ctx)
         rel = (f"{folder.rstrip('/')}/" if folder else "") + f"thoughts/{local:%Y-%m-%d}.md"
-        root = self.cfg.her.notebook
+        root = self.cfg.agent.notebook
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         line = f"- {local:%H:%M} {' '.join(text.split())}\n"
@@ -422,7 +422,7 @@ class Mind:
         mid = await ctx.store.read(lambda c: (c.execute(
             "SELECT message_id FROM tool_calls WHERE id=?", (ctx.tool_call_id,)).fetchone()
             or [None])[0])
-        await feel(ctx.store, emotion, strength, why, "her", mid)
+        await feel(ctx.store, emotion, strength, why, "agent", mid)
         mood = await _mood_now(ctx.store, self.cfg, datetime.now(timezone.utc))
         return ToolResult(content=f"Noted. {mood}" if mood else "Noted.",
                           display={"emotion": emotion, "strength": strength})

@@ -29,6 +29,8 @@ version, so nothing is ever lost.
    card that opens it. Never paste the page's text into the chat.
 3. To change it, write again with `id="7f3a9c"` and the whole new page. A new artifact
    with the title of one in this conversation is refused: that is your sign to use its id.
+   `artifacts__read` gives a long page in parts: the `earlier:` and `later:` lines after
+   the text read the part before and after; the parts joined are the page.
 4. The result may end with `hint:` lines. Each names a line of your page that will not
    work here. Fix it with a new version unless you meant it.
 5. Something to read rather than run (a plan, a guide, notes with tables): give

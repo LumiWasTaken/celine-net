@@ -27,8 +27,9 @@ How:
    `language` for results in another language.
    Example: web__search(query="sqlite json functions", time_range="month")
 2. Snippets are short and may be old. Read the one to three best results before you
-   state details: web__read_page(url="web:2") for the text. A long page comes in parts.
-   The result ends with `later: web__read_page(url="web:2", part=2)`. Open the page in
+   state details: web__read_page(url="web:2") for the text. A long page comes in parts:
+   the `earlier:` and `later:` lines after the text read the part before and after, like
+   `later: web__read_page(url="web:2", part=2)`. Open the page in
    your browser instead when it needs a login, a form, scrolling, or when the page
    itself matters.
 3. Answer in your own words with citations `[[web:<n>]]`, with the numbers the tools

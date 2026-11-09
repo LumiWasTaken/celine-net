@@ -5,8 +5,13 @@ description: Your own model access. Lists the models you may use and asks one of
 ---
 `models__list()` names the models you may use, one per line: the name to use, what
 it is, its context window, whether it sees images and calls tools, whether its server
-answers and whether it is loaded. The same names work in `models__ask`, as a sub-agent's `model`, and in the
-agent CLIs in your shellbox. {{username}} sets which ones are open to you.
+answers and whether it is loaded. The same names work in `models__ask`, as a sub-agent's `model`, in
+code__start and in the agent CLIs in your shellbox. {{username}} sets which ones are open to you.
+
+A cloud model you pick yourself asks {{username}} first, at each use, and its line says
+so; a model in {{username}}'s role lists and this conversation's own model never ask. In
+your shellbox, such a cloud model works only for work {{username}} approved; called by
+hand there, it is refused (403).
 
 `models__ask(model, messages, system, temperature)` sends one request and gives you its
 answer as text.

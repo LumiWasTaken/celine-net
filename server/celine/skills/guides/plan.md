@@ -8,7 +8,9 @@ read it at the start of every turn.
 plan__set(steps, text) writes the whole plan. Each step has a title, a state (todo,
 doing, done) and a checkpoint: ask when {{username}} decides before the next step, none
 otherwise. One step is doing at a time. A step may name a model it runs on (see the
-models skill); it switches when that step becomes doing.
+models skill); it switches when that step becomes doing. A cloud model you pick yourself
+asks {{username}} first, in the plan__set or plan__step that makes its step doing; denied,
+the plan stays as it was.
 
 plan__step(step, state) moves one step. Done starts the next open step by itself.
 

@@ -40,7 +40,7 @@ async def test_every_skills_knobs_are_advanced_fields_under_its_label(api):
     assert fields["web.page_max_mb"]["unit"] == fields["web.pdf_max_mb"]["unit"] == "MB"
     assert {k.partition(".")[0] for k in fields if "." in k} == {
         "notebook", "past_conversations", "sub_agents", "code", "chat_archive", "web"}
-    assert "group" not in fields["max_concurrent_turns"], "the app's own: no skill"
+    assert fields["max_concurrent_turns"]["group"] == "Turns", "the app's own: its own group"
 
 
 async def test_a_knob_is_saved_in_its_skills_table_checked_and_read_at_once(api):

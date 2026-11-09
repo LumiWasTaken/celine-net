@@ -1,10 +1,11 @@
-"""The agent's own model access: the models it may use (settings/her_models.py), and one
+"""The agent's own model access: the models it may use (settings/agent_models.py), and one
 request to one of them, text in and text out (models__list, models__ask).
 
 The request waits in the app's model queue like its turn's own calls, at its turn's
 priority, and runs on exactly the model it names: when it fails, the call fails with
 its error, no other model is tried. Thinking stays the model's own; the text alone
-comes back."""
+comes back. A cloud model the user did not pick waits for their approval at each call
+(agent_models.ask_cloud)."""
 from __future__ import annotations
 
 import json
@@ -13,10 +14,13 @@ from typing import Annotated, Literal, TypedDict
 
 from ..backends.base import BackendError
 from ..backends.queue import Priority
-from ..settings import her_models
+from ..settings import agent_models
 from ..turns.compact import complete
 from ..turns.prompt import model_facts
 from . import ToolContext, ToolResult, guide, tool, described
+
+
+ASK = "send messages to a cloud model"     # the approval card's action
 
 
 class Message(TypedDict):
@@ -59,24 +63,30 @@ class Models:
         """The models you may use: in models__ask, as a sub-agent's model, and in your
         shellbox's agent CLIs. Returns one line per model: its name to use, what it is,
         its context window, whether it sees images and calls tools, whether its server
-        answers and whether the model is loaded, each as its server last said."""
+        answers and whether the model is loaded, each as its server last said, and
+        whether using it asks {{username}} first (a cloud model they did not pick)."""
         s = self.cfg.settings
-        refs = her_models.allowed(s)
+        refs = agent_models.allowed(s)
         if not refs:
             return ToolResult(content="No models are open to you right now.")
+        own = s.conversation_models.get(ctx.conversation_id)
+        asks = {r: f"Using it asks {self.cfg.user} first." for r in refs
+                if agent_models.cloud(s, r) and not agent_models.picked_by_user(s, r, own)}
         llm = self.app.llm if self.app is not None else None
         if llm is None:
-            return ToolResult(content="\n".join(f"{r}: {her_models.label(s, r)}."
-                                                for r in refs), display={"models": refs})
+            return ToolResult(content="\n".join(
+                " ".join(f for f in (f"{r}: {agent_models.label(s, r)}.", asks.get(r)) if f)
+                for r in refs), display={"models": refs})
         hosts = llm.router.hosts()
         loaded = {m["ref"]: m["loaded"] for m in llm.router.loaded_view()["models"]}
         up = {"up": "Its server answers.", "down": "Its server does not answer."}
 
         def line(r: str) -> str:
-            facts = [f"{r}: {her_models.label(s, r)}.", *model_facts(llm.make(r)),
-                     up.get((hosts.get(s.split(r)[0]) or {}).get("state"), "")]
+            facts = [f"{r}: {agent_models.label(s, r)}.", *model_facts(llm.make(r)),
+                     up.get(hosts.get(s.split(r)[0]) or "", "")]
             if r in loaded:
                 facts.append("It is loaded." if loaded[r] else "It is not loaded.")
+            facts.append(asks.get(r, ""))
             return " ".join(f for f in facts if f)
         return ToolResult(content="\n".join(line(r) for r in refs), display={"models": refs})
 
@@ -95,18 +105,28 @@ class Models:
         "content": "Three names for a grey cat."}])
         Returns: the answer alone."""
         s = self.cfg.settings
-        allowed = her_models.allowed(s)
+        allowed = agent_models.allowed(s)
+        # the row names the model as Settings labels it (display); the result keeps the
+        # ref, which is what the agent calls it by
+        shown = {"model": model, "label": agent_models.label(s, model) if model in allowed
+                 else model}
         if model not in allowed:
             return ToolResult(content=f"{model} is not one of your models. Yours: "
-                                      f"{', '.join(allowed) or 'none'}.", is_error=True)
+                                      f"{', '.join(allowed) or 'none'}.", is_error=True,
+                              display=shown)
         wire = _messages(messages)
         if isinstance(wire, str):
-            return ToolResult(content=wire, is_error=True)
+            return ToolResult(content=wire, is_error=True, display=shown)
         if system:
             wire = [{"role": "system", "content": system}, *wire]
         llm = self.app.llm if self.app is not None else None
         if llm is None:
-            return ToolResult(content="The app's model layer is not running.", is_error=True)
+            return ToolResult(content="The app's model layer is not running.", is_error=True,
+                              display=shown)
+        if no := await agent_models.ask_cloud(
+                self.cfg, self.app, ctx, model, action=ASK, detail=("Messages", "\n\n".join(
+                    f"{m['role']}: {m['content']}" for m in wire))):
+            return ToolResult(content=no, is_error=True, display=shown)
         body = {"temperature": float(temperature)} if temperature is not None else None
         qb = llm.bind(llm.make(model), role="tasks", body=body,
                       priority=llm.turn_priority.get(ctx.turn_id, Priority.AGENT),
@@ -115,7 +135,8 @@ class Models:
         try:
             text = await complete(qb, wire, math.inf, errors=True) or ""
         except BackendError as e:
-            return ToolResult(content=f"{model} failed: {e}", is_error=True)
+            return ToolResult(content=f"{model} failed: {e}", is_error=True, display=shown)
         if not text.strip():
-            return ToolResult(content=f"{model} answered nothing.", is_error=True)
-        return ToolResult(content=text, display={"model": model, "chars": len(text)})
+            return ToolResult(content=f"{model} answered nothing.", is_error=True,
+                              display=shown)
+        return ToolResult(content=text, display={**shown, "chars": len(text)})

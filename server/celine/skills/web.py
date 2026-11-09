@@ -29,7 +29,7 @@ import mimetypes
 import re
 import socket
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
@@ -38,41 +38,52 @@ import anyio
 import httpx
 
 from ..turns.compact import one_line
-from . import ToolContext, ToolResult, guide, knob, tool, described
-from ..errors import ToolRefused, her_unreachable, unreachable_words
+from . import ToolContext, ToolResult, guide, knob, parts, tool, described
+from ..core.ids import hour_room
+from ..errors import ToolRefused, answered, agent_unreachable, said
 from ..settings import services as services_mod
 
 DEFAULT_UA = ("Mozilla/5.0 (compatible; Celine/0.1; self-hosted personal assistant; "
               "reads pages on request of its user)")
 MAX_REDIRECTS = 5
 SNIPPET_CHARS = 260
-PROBE_EVERY = 60.0                  # seconds a SearXNG check answers for
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
     knob("web.results", "Search results", None, 1, 20, 8,
-         "By default; it may ask for up to 20."),
-    knob("web.search_timeout", "Search time limit", "seconds", 1, 3600, 15),
+         "How many results one search brings by default. A search may ask for up to 20."),
+    knob("web.search_timeout", "Search time limit", "seconds", 1, 3600, 15,
+         "How long one search may wait for SearXNG before it fails."),
+    knob("web.per_hour", "Searches per hour", None, 0, 1_000_000, 0,
+         "The most web searches in one hour; past it a search fails with the reason. 0 "
+         "means no limit."),
     knob("web.read_tokens", "Page part", "tokens", 100, 1_000_000, 6000,
-         "A longer page is read in parts."),
+         "How much of a page one read brings; a longer page is read in parts."),
     knob("web.timeout", "Page time limit", "seconds", 1, 3600, 20,
-         "One fetch, redirects included."),
-    knob("web.page_max_mb", "Largest page", "MB", 1, 10_000, 5),
-    knob("web.pdf_max_mb", "Largest PDF", "MB", 1, 10_000, 25),
+         "How long one page fetch may take, redirects included."),
+    knob("web.page_max_mb", "Largest page", "MB", 1, 10_000, 5,
+         "A larger web page is not read."),
+    knob("web.pdf_max_mb", "Largest PDF", "MB", 1, 10_000, 25,
+         "A larger PDF from the web is not read."),
 )
+# when each search of the last hour went out (web.per_hour)
+# ponytail: in memory, a restart resets the hour; the browser and the box's curl are not
+# counted
+_searched: deque = deque()
+_now = time.monotonic           # tests: a fixed clock
 
 
-def search_down_text(endpoint: str, e: Exception | int) -> str:
-    """Why a search failed, as she reads it: one sentence that names SearXNG's address,
-    no connection or too slow (an exception), or an answer that is not its JSON (the
-    status)."""
+def search_down_text(endpoint: str, e: Exception | httpx.Response) -> str:
+    """Why a search failed, as the agent reads it: one sentence that names SearXNG's address,
+    no connection or too slow (an exception), an error answer (with SearXNG's words), or
+    an answer that is not its JSON."""
     host = urlsplit(endpoint).netloc or endpoint
-    if isinstance(e, int):
-        return f"SearXNG at {host} answered {e} instead of JSON results."
+    if isinstance(e, httpx.Response):
+        return answered(f"SearXNG at {host}", e)
     if isinstance(e, ValueError):
         return f"SearXNG at {host} answered something that is not JSON."
     if (g := _resolver_failure(e)) is not None:
         return resolver_down_text(g)
-    return her_unreachable("SearXNG", endpoint)
+    return agent_unreachable("SearXNG", endpoint)
 
 
 def _resolver_failure(e: BaseException) -> socket.gaierror | None:
@@ -88,21 +99,25 @@ def _resolver_failure(e: BaseException) -> socket.gaierror | None:
 
 
 def resolver_down_text(e: socket.gaierror) -> str:
-    return (f"name lookup failed in the app ({e.strerror}); every host fails the same way "
-            f"until its resolver answers")
+    return f"DNS failed in the app ({e.strerror}): every host fails until its DNS server answers"
 
 
-def search_down_page(endpoint: str, e: Exception | int) -> str:
+def search_down_page(endpoint: str, e: Exception | httpx.Response) -> str:
     """search_down_text as Settings says it: with what the user does about it."""
     host = urlsplit(endpoint).netloc or endpoint
-    if isinstance(e, int):
-        return (f"SearXNG at {host} answered {e} instead of JSON results: fix the address "
-                f"so it points at SearXNG, and check that its settings.yml lists json under "
+    if isinstance(e, httpx.Response):
+        return (f"{_stop(answered(f'SearXNG at {host}', e))} Fix the address so it points "
+                f"at SearXNG, and check that its settings.yml lists json under "
                 f"search.formats.")
     if isinstance(e, ValueError):
         return (f"SearXNG at {host} answered something that is not JSON: fix the address "
                 f"so it points at SearXNG.")
-    return unreachable_words("SearXNG", endpoint, e)
+    return services_mod.unreachable("SearXNG", endpoint, e, "searxng")
+
+
+def _stop(sentence: str) -> str:
+    """A sentence that ends in a full stop, for one that follows it."""
+    return sentence if sentence.endswith((".", "!", "?")) else sentence + "."
 
 
 # pages whose metadata is not the page's own: a results page carries the first hit's
@@ -275,9 +290,9 @@ async def _resolve_public(host: str, port: int) -> None:
         except socket.gaierror as e:
             if (g := _resolver_failure(e)) is not None:
                 raise ToolRefused(resolver_down_text(g)) from None
-            raise ToolRefused(f"{host} does not resolve") from None
+            raise ToolRefused(f"DNS failed for {host}: no such host") from None
         except OSError:
-            raise ToolRefused(f"{host} does not resolve") from None
+            raise ToolRefused(f"DNS failed for {host}") from None
         addrs = [i[4][0] for i in infos]
     bad = [a for a in addrs if not _public(str(a))]
     if bad or not addrs:
@@ -435,26 +450,6 @@ def _pdf(body: bytes) -> dict[str, Any]:
             "problems": problems}
 
 
-def split_parts(text: str, part_tokens: int) -> list[str]:
-    """The text in parts of about part_tokens, cut between paragraphs where possible."""
-    from ..turns import tokens
-    total = tokens.estimate(text, "prose")
-    if total <= part_tokens:
-        return [text]
-    chars = max(500, int(len(text) * part_tokens / max(1, total)))
-    out, i = [], 0
-    while i < len(text):
-        end = min(len(text), i + chars)
-        if end < len(text):
-            cut = max(text.rfind("\n\n", i + chars // 2, end),
-                      text.rfind("\n", i + chars // 2, end))
-            if cut > i:
-                end = cut
-        out.append(text[i:end].strip("\n"))
-        i = end
-    return [p for p in out if p.strip()] or [text]
-
-
 # a page read once is kept for paging (and a repeat read) for a while
 _pages: OrderedDict[str, tuple[float, dict[str, Any], str]] = OrderedDict()
 _PAGE_TTL = 900
@@ -473,34 +468,16 @@ class Web:
         self.cfg = cfg
         self.transport = transport              # tests: a fake network
         self.check_addresses = check_addresses  # tests: fake hosts do not resolve
-        self.search_down: str | None = None     # why search is down, from the last check
-        self._checked = float("-inf")
-
-    async def check(self, *, max_age: float = PROBE_EVERY) -> str | None:
-        """Whether SearXNG answers, asked again when the last answer is older than
-        `max_age` seconds. Settings, Tools shows Web under Needs setup while it does
-        not; reading pages still works, so the skill itself stays up."""
-        if time.monotonic() - self._checked < max_age:
-            return self.search_down
-        try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=False,
-                                         timeout=5.0) as client:
-                r = await client.get(f"{self.endpoint}/healthz")
-            self._note(None if r.status_code < 500
-                       else search_down_text(self.endpoint, r.status_code))
-        except httpx.HTTPError as e:
-            self._note(search_down_text(self.endpoint, e))
-        return self.search_down
+        self.search_down: str | None = None     # why search is down, from the last search
 
     def _note(self, down: str | None) -> None:
         self.search_down = down
-        self._checked = time.monotonic()
 
     def _down(self, why: str) -> str:
         """Search did not answer: where else to search, when it has a browser."""
         from ..settings import features
         if features.on(self.cfg, "browser"):
-            return why.rstrip() + " Your browser is on: search there."
+            return _stop(why.rstrip()) + " Your browser is on: search there."
         return why
 
     @property
@@ -549,6 +526,11 @@ class Web:
         if language:
             params["language"] = language.strip()
         timeout = float(self.cfg.r("web.search_timeout"))
+        cap = int(self.cfg.r("web.per_hour"))
+        if hour_room(_searched, cap, _now()):
+            return ToolResult(content=f"Web search reached its {cap} "
+                                      f"search{'' if cap == 1 else 'es'} this hour.",
+                              is_error=True)
         try:
             async with httpx.AsyncClient(transport=self.transport, trust_env=False,
                                          timeout=timeout) as client:
@@ -556,9 +538,8 @@ class Web:
                                      headers={"Accept": "application/json",
                                               "X-Forwarded-For": "127.0.0.1"})
             if r.status_code != 200:
-                return ToolResult(content=self._down(search_down_text(self.endpoint,
-                                                                      r.status_code)),
-                                  is_error=True)
+                self._note(search_down_text(self.endpoint, r))
+                return ToolResult(content=self._down(self.search_down), is_error=True)
             data = r.json()
             if not isinstance(data, dict):
                 raise ValueError("not a results object")
@@ -680,12 +661,6 @@ class Web:
 
         n = _number(table, raw)
         table.setdefault(_canon(final), n)
-        budget = int(self.cfg.r("web.read_tokens"))
-        if ctx.max_output_tokens:
-            budget = max(800, min(budget, int(ctx.max_output_tokens) - 200))
-        text = (doc.get("text") or "").strip()
-        parts = split_parts(text, budget) if text else [""]
-        k = max(1, min(int(part or 1), len(parts)))
         if label := page_label(final):
             doc = {**doc, "title": label, "date": None, "author": None}
         title = one_line(doc.get("title") or _label(final), 160)
@@ -693,25 +668,15 @@ class Web:
                              f"published {doc['date']}" if doc.get("date") else "",
                              f"by {one_line(doc['author'], 60)}" if doc.get("author") else "")
                  if x]
-        lines = [f"[web:{n}] {title}" + (f", {', '.join(about)}" if about else ""), final]
-        lines += [f"{p}." for p in doc.get("problems") or ()]
-        if len(parts) > 1:
-            lines.append(f"part {k} of {len(parts)}")
-        body = parts[k - 1] if text else "(no readable text found on this page)"
-        lines += ["", body, ""]
-        nav = []
-        if k > 1:
-            nav.append(f"earlier: web__read_page(url=\"web:{n}\", part={k - 1})")
-        nav.append(f"later: web__read_page(url=\"web:{n}\", part={k + 1})"
-                   if k < len(parts) else "end of page")
-        lines.append("; ".join(nav))
-        out = "\n".join(lines)
-        if ctx.max_output_tokens:
-            from ..turns import tokens
-            out, _, _ = tokens.cut_to(out, int(ctx.max_output_tokens))
+        head = [f"[web:{n}] {title}" + (f", {', '.join(about)}" if about else ""), final,
+                *(f"{p}." for p in doc.get("problems") or ())]
+        out, k, total = parts.read(
+            (doc.get("text") or "").strip() or "(no readable text found on this page)",
+            part, ctx, head=head, call=f"web__read_page(url=\"web:{n}\"",
+            cap=int(self.cfg.r("web.read_tokens")))
         return ToolResult(content=out, display={"ref": f"web:{n}", "url": final,
                                                 "title": title, "part": k,
-                                                "parts": len(parts)})
+                                                "parts": total})
 
     async def _get(self, raw: str, max_bytes: int, pdf_max_bytes: int) -> Page | ToolResult:
         """The page at `raw`, or the failed result that says why not."""
@@ -733,8 +698,8 @@ class Web:
             return ToolResult(content=f"could not fetch {raw}: the connection failed "
                                       f"({type(e).__name__}).", is_error=True)
         if page.status >= 400:
-            return ToolResult(content=f"could not read {raw}: HTTP {page.status}",
-                              is_error=True)
+            return ToolResult(content=f"could not read {raw}: HTTP {page.status}: "
+                                      f"{said(page.body, page.status).text}", is_error=True)
         return page
 
     async def _save(self, ctx: ToolContext, raw: str) -> ToolResult:
@@ -779,6 +744,6 @@ async def probe(cfg, services) -> dict[str, str]:
         return {"state": "missing", "detail": search_down_page(endpoint, e),
                 "why": search_down_text(endpoint, e)}
     if r.status_code >= 500:
-        return {"state": "missing", "detail": search_down_page(endpoint, r.status_code),
-                "why": search_down_text(endpoint, r.status_code)}
+        return {"state": "missing", "detail": search_down_page(endpoint, r),
+                "why": search_down_text(endpoint, r)}
     return {"state": "ready", "detail": f"SearXNG at {urlsplit(endpoint).netloc} answers."}

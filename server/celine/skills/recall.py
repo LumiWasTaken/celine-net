@@ -118,7 +118,7 @@ async def block(cfg, store, cid: str, tid: str, message: dict
     if f is None or not offered("mind", f["place"]) or not f["auto"]:
         return None
     talk = "\n".join([message.get("content") or "", f["reply"][:loads.KEY_REPLY]]).strip()
-    root, user = cfg.her.notebook, (getattr(cfg, "user", "") or "").lower()
+    root, user = cfg.agent.notebook, (getattr(cfg, "user", "") or "").lower()
     found: list[dict] = []
     for r in await notebook_index.list(store, f["folder"]):
         rel = r["path"]

@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from ..artifacts import lint
 from ..artifacts import store as artifacts
-from . import ToolContext, ToolResult, guide, tool, described
+from . import ToolContext, ToolResult, guide, parts, tool, described
 from ..core.event_types import ARTIFACT_UPDATED
 from ..clock import zone
 from ..core.ids import when
@@ -96,8 +96,11 @@ class Artifacts:
         ctx: ToolContext,
         id: Annotated[str, "The artifact's id, like 7f3a9c."],
         version: Annotated[int | None, "A version number; empty: the newest."] = None,
+        part: Annotated[int | None, "Which part of a long page, from 1; the head says how "
+                                    "many. Default 1."] = None,
     ) -> ToolResult:
-        """Read a page whole: its title, its versions and the content of one version."""
+        """Read a page: its title, its versions and the content of one version, a long one
+        in parts that joined are the content."""
         aid = id
         row = await artifacts.get(ctx.store, aid) if artifacts.ID.match(aid) else None
         v = await artifacts.version(ctx.store, aid, version) if row else None
@@ -110,7 +113,9 @@ class Artifacts:
                                          for x in row["versions"]) + "."]
         if row["trashed_at"]:
             head.append("It is in the Trash.")
-        return ToolResult(content="\n".join(head) + "\n\n" + v["content"],
+        out, _, _ = parts.read(v["content"], part, ctx, head=head,
+                               call=f"artifacts__read(id=\"{aid}\", version={v['n']}")
+        return ToolResult(content=out,
                           display={"artifact": _card({**v, "id": aid})})
 
 

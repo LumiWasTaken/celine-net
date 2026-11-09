@@ -10,8 +10,11 @@ thing Settings saves at once:
 - `features`: each feature on or off.
 - `general`: the general settings and each skill's numbers (Advanced).
 - `roles`: each role's model list, first choice first, with the models that fit it.
-- `providers.<id>`: one provider: its type, name, address, options and models, and its
-  key. `providers.<new id>` is a new provider.
+- `providers.<id>`: one provider: its type, name, address, `cloud`, options and models,
+  and its key. `providers.<new id>` is a new provider. `cloud` says its models run on a
+  server outside {{username}}'s network; while unset, it follows the address. A cloud
+  model you pick yourself asks {{username}} first at each use; one in a role's list never
+  asks.
 
   A model server you run on one of your devices is local. What such a server needs:
 

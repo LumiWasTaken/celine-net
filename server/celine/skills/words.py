@@ -4,18 +4,21 @@ could not do ("Could not read the note x") or did not run ("Not run: ..."). Buil
 from the call's name, arguments, display and result, sent as `words` beside `display`
 on every tool event and snapshot row; the client renders it as it comes.
 
-`words()` -> {running, settled, step, where}: `running` while the call is at work,
+`words()` -> {running, settled, step, where, why}: `running` while the call is at work,
 `settled` once it ended (for a call still at work: the words if it is cut off),
 `step` the tool alone at work (a sub-agent's or a routine's step, no arguments),
-`where` the places a search was kept to ("All messages"), or None.
+`where` the places a search was kept to ("All messages"), or None, `why` a failed
+call's reason (the first line of its result), or None.
 
 One sentence per tool, grouped by the skill that owns it. An MCP server's tool takes its
 sentence from its server's `[servers.<id>.words]` (mcp.toml or a plugin.toml), else it is
 "Used <skill> <tool>".
 
-A run: RUN or more calls in a row with the same `group` ("Ran {n} commands in terminal
-main"), shown as one row. The server decides the runs of a turn (`runs_of_turn`) and sends
-them with every tool event and in the snapshot; the client only draws them."""
+A run (a stretch): two or more settled calls between two texts of a reply, shown as one
+row in words, one part per `group` in the order first seen ("Read 2 notes, ran 4
+commands"), with its failed count (`runs`). A call at work, gated, not run or apart keeps
+its own row. The server decides the runs of a turn (`runs_of_turn`) and sends them with
+every tool event and in the snapshot; the client only draws them."""
 from __future__ import annotations
 
 import json
@@ -181,10 +184,10 @@ def _mails(d: dict, a: Args) -> str:
 # a tool that needs no arguments to say what it did
 VERB = {
     "skills__load": "Loaded skills",
-    "email__list_folders": "Listed the mail folders",
+    "email__list_folders": "Listed the email folders",
     "appearance__set_portrait": "Set a new portrait", "me__read": "Read the persona",
-    "me__edit": "Changed the Example lines", "me__whoami": "Checked its setup",
-    "settings__read": "Read the settings", "settings__propose": "Proposed a settings change",
+    "me__edit": "Changed the Example lines", "me__whoami": "Checked the setup",
+    "settings__propose": "Proposed a settings change",
     "image_generator__generate": "Made an image", "image_generator__read": "Checked the images",
     "image_generator__stop": "Stopped the images",
     "music_generator__generate": "Made music", "music_generator__read": "Checked the tracks",
@@ -192,6 +195,7 @@ VERB = {
     "missions__update": "Updated the mission", "intercom__send": "Sent a message",
     "intercom__cancel": "Cancelled a message", "voice__send": "Sent a voice note",
     "missions__list": "Listed the missions", "missions__wait": "Paused the mission",
+    "missions__read": "Read a mission",
     "missions__start": "Started a mission",
     "models__list": "Listed the models", "routines__list": "Listed the routines",
     "artifacts__list": "Listed the pages",
@@ -293,21 +297,18 @@ NOTEBOOK: dict[str, Sentence] = {
 
 PAST_CONVERSATIONS: dict[str, Sentence] = {
     "search": lambda a, d, r:
-        f"Searched past conversations for {quote(_str(a.get('query')) or '')}",
-    "read": lambda a, d, r: f"Read the conversation {quote(_str(d.get('title')))}"
-        if _str(d.get("title")) else "Read an earlier conversation",
-    "list_day": lambda a, d, r: f"Listed the conversations of {_str(a.get('date')) or 'a day'}",
+        f"Searched past chats for {quote(_str(a.get('query')) or '')}",
+    "read": lambda a, d, r: f"Read the chat {quote(_str(d.get('title')))}"
+        if _str(d.get("title")) else "Read an earlier chat",
+    "list_day": lambda a, d, r: f"Listed the chats of {_str(a.get('date')) or 'a day'}",
+    "list": lambda a, d, r: "Listed the newest chats",
 }
 
 
 def _agent_start(a, d, r):
-    # what the server started it with; the arguments while it starts
-    folder = _str(d.get("folder")) or _str(a.get("folder"))
-    access = _str(d.get("access")) or _str(a.get("access")) or ("work" if folder else "read")
+    # its name as the row's words; what it may touch is in the opened call
     name = _str(d.get("name")) or _str(a.get("name")) or ""
-    can = "can edit" if access == "work" else "read-only"
-    return f"{'Resumed' if d.get('resumed') is True else 'Started'} sub-agent {quote(name)} " \
-           f"({can}{f', only in {folder}' if folder else ''})"
+    return f"{'Resumed' if d.get('resumed') is True else 'Started'} the sub-agent {quote(name)}"
 
 
 SUB_AGENTS: dict[str, Sentence] = {
@@ -319,7 +320,8 @@ SUB_AGENTS: dict[str, Sentence] = {
 
 INTERCOM: dict[str, Sentence] = {
     "read": lambda a, d, r: f"Read thread #{_js(a['thread'])}"
-        if _num(a.get("thread")) is not None else "Read the Intercom threads",
+        if _num(a.get("thread")) is not None else "Listed the jobs"
+        if a.get("kind") == "job" else "Read the Intercom threads",
     "start_chat": lambda a, d, r: "Started a chat" +
         (f" {quote(_str(a.get('title')))}" if _str(a.get("title")) else ""),
 }
@@ -349,7 +351,7 @@ def _presets(a, d, r):
 
 
 IMAGE_GENERATOR: dict[str, Sentence] = {
-    "list_images": lambda a, d, r: "Listed the images in this conversation",
+    "list_images": lambda a, d, r: "Listed the images in this chat",
     "list_presets": _presets,
 }
 
@@ -375,7 +377,10 @@ def _in_terminal(a: Args, d: dict) -> str:
 
 
 def _shell_run(a, d, r):
-    # the command's first line, cut; the whole command is in the call's arguments
+    # what the agent said the command does, as it wrote it; else the command's first line, cut
+    # (the whole command is in the call's arguments)
+    if about := _str(a.get("about")):
+        return about
     cmd = _first_line(_str(a.get("command")) or "")
     return f"Ran {cmd or 'a command'}{_in_terminal(a, d)}"
 
@@ -490,12 +495,12 @@ SKILLS: dict[str, Sentence] = {
 
 def _mail_list(a, d, r):
     folder = _str(d.get("folder")) or _str(a.get("folder")) or "INBOX"
-    return "Looked at the inbox" if folder.upper() == "INBOX" else f"Looked at the mail in {folder}"
+    return "Looked at the inbox" if folder.upper() == "INBOX" else f"Looked at the emails in {folder}"
 
 
 def _mail_search(a, d, r):
     sender = _str(a.get("from_")) or _str(a.get("from"))
-    return f"Searched the mail{f' from {sender}' if sender else ''}{_q_for(a)}"
+    return f"Searched the emails{f' from {sender}' if sender else ''}{_q_for(a)}"
 
 
 def _mail_read(a, d, r):
@@ -613,8 +618,23 @@ MIND: dict[str, Sentence] = {
         (f" to {_str(a.get('text'))}" if _str(a.get("text")) else ""),
 }
 
+def _model_name(a: Args, d: dict) -> str:
+    """A model as Settings labels it (the tool's display), else the model part of its
+    ref; never the provider's address."""
+    if label := _str(d.get("label")):
+        return label
+    ref = _str(a.get("model")) or ""
+    return ref.partition("/")[2] or ref or "a model"
+
+
 MODELS: dict[str, Sentence] = {
-    "ask": lambda a, d, r: f"Asked {_str(a.get('model')) or 'a model'}",
+    "ask": lambda a, d, r: f"Asked {_model_name(a, d)}",
+}
+
+SETTINGS: dict[str, Sentence] = {
+    "read": lambda a, d, r: f"Read the {label} settings"
+    if (label := _str(d.get("label"))) else
+    "Read the settings" if _str(a.get("target")) else "Listed the settings",
 }
 
 ROUTINES: dict[str, Sentence] = {
@@ -626,7 +646,7 @@ ROUTINES: dict[str, Sentence] = {
 BUGREPORT: dict[str, Sentence] = {
     "file": lambda a, d, r: "Filed a bug" +
         (f": {_str(a.get('title'))}" if _str(a.get("title")) else ""),
-    "list": lambda a, d, r: "Read its bug reports",
+    "list": lambda a, d, r: "Read the bug reports",
 }
 
 SENTENCES: dict[str, dict[str, Sentence]] = {
@@ -636,6 +656,7 @@ SENTENCES: dict[str, dict[str, Sentence]] = {
     "shell": SHELL, "code": CODE, "web": WEB, "discord": DISCORD, "whatsapp": WHATSAPP,
     "skills": SKILLS, "email": EMAIL, "vault": VAULT, "browser": BROWSER, "plan": PLAN,
     "mind": MIND, "models": MODELS, "routines": ROUTINES, "bugreport": BUGREPORT,
+    "settings": SETTINGS,
 }
 
 
@@ -741,12 +762,13 @@ def _state_words(said: str, state: str, d: dict, result: str) -> str:
         why = re.sub(r"^Not run: ", "", _first_sentence(result))
         down = re.match(r"^Down: (.+)$", why)
         if down:
-            return f"{could_not(said)}: {_lower(down.group(1))}"
-        return f"Not run: {_lower(why)}" if why else "Not run"
+            return f"{could_not(said)}: {down.group(1)}"      # its casing: names stay names
+        return f"Not run: {why}" if why else "Not run"
     return could_not(said) if state == "error" else said
 
 
 MEDIA = ("image_generator", "music_generator")
+WHY_CHARS = 200          # the reason under a failed row; the whole result is in the call
 
 
 def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = None) -> str:
@@ -754,6 +776,9 @@ def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = 
     said = sentence(name, a, d, result, own)
     skill, _, tool = name.partition("__")
     tool = tool.split("__")[0]
+    if name == "shell__run" and (about := _str(a.get("about"))):
+        # the agent's words in every state (the icon says it), but a call not run says why
+        return _state_words(about, state, d, result) if not_run(state, d) else about
     if name == "intercom__cancel":
         said = f"Cancelled message #{'' if a.get('id') is None else _js(a['id'])}"
         return _state_words(said, state, d, result)
@@ -774,20 +799,41 @@ def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = 
     return _state_words(said, state, d, result)
 
 
+# the words of several calls of one tool in a stretch of work, {n} their count; the
+# browser's tools are one group (GROUPS_OF)
+GROUPS = {
+    "notebook__read": "Read {n} notes", "notebook__write": "Wrote {n} notes",
+    "notebook__edit": "Edited {n} notes", "notebook__search": "Searched the notebook {n} times",
+    "settings__read": "Read the settings {n} times", "routines__read": "Read {n} routines",
+    "routines__run": "Ran {n} routines", "web__search": "Searched the web {n} times",
+    "web__read_page": "Read {n} web pages", "models__ask": "Asked models {n} times",
+    "user_documents__read": "Read {n} documents",
+    "user_documents__search": "Searched the documents {n} times",
+    "chat_archive__search": "Searched the messages {n} times",
+    "chat_archive__read_period": "Read {n} chats",
+    "past_conversations__read": "Read {n} past chats",
+    "past_conversations__search": "Searched past chats {n} times",
+    "email__read": "Read {n} emails", "email__search": "Searched the emails {n} times",
+}
+GROUPS_OF = {"browser": "Used the browser {n} times"}
+
+
 def group(name: str, a: Args, own: Own | None = None) -> str | None:
-    """The words of a run of calls like this one, {n} their count; None: it stands alone.
-    From the arguments only, so a call is in the same run when it starts and once it ran."""
+    """The words of several calls like this one in a stretch, {n} their count; None: it
+    makes a part of its own. From the arguments only, so a call is in the same group when
+    it starts and once it ran."""
     if name == "shell__run":
         term = _str(a.get("terminal"))
         return f"Ran {{n}} commands in terminal {term}" if term else "Ran {n} commands"
     skill, _, tool = name.partition("__")
-    return _own(own, "groups", skill, tool)
+    return GROUPS.get(name) or GROUPS_OF.get(skill) or _own(own, "groups", skill, tool)
 
 
-# ---- runs: calls like each other in a row, one row ------------------------------------
+# ---- runs: a stretch of work as one line ----------------------------------------------
 
-RUN = 3                                         # the fewest calls a run has
 PLUMBING = ("skills__load", "skills__read_guide")   # never shown beside other calls
+# calls the user acts on or looks at as themselves: they keep their own row or block
+APART = ("sub_agents__start", "intercom__send")
 
 
 def failed(state: str, exit_: Any) -> bool:
@@ -801,35 +847,52 @@ def _alone(state: str, time_up: Any) -> bool:
     return state in BUSY or state == "gated" or (state == "error" and bool(time_up))
 
 
+def _apart(call: dict) -> bool:
+    """A call that keeps its own row or block: a sub-agent (Open, Stop), a message it sent
+    (Cancel), a batch of pictures, a page, a share, files it sent."""
+    if call["name"] in APART:
+        return True
+    d = _dict(_args(call.get("display")))
+    return isinstance(d.get("items"), list) or bool(d.get("artifact")) or \
+        bool(d.get("share")) or isinstance(d.get("blocks"), list)
+
+
+def _stretch_words(calls: list[dict], own: Own | None) -> str:
+    """A stretch in words: one part per group, in the order first seen ("Read 2 notes,
+    read the settings 4 times, ran 4 commands"); a group of one, or a call of no group,
+    says its own sentence."""
+    parts: dict[str, list[dict]] = {}
+    for c in calls:
+        a = _args(c["arguments"])
+        key = group(c["name"], a if c["name"] == "shell__run" else {}, own) or f"\0{c['id']}"
+        parts.setdefault(key, []).append(c)
+    out: list[tuple[str, bool]] = []      # (words, as_written: its own words keep their casing)
+    for key, members in parts.items():
+        if len(members) > 1:
+            out.append((key.replace("{n}", f"{len(members):,}"), False))
+        else:
+            c = members[0]
+            a = _args(c["arguments"])
+            out.append((sentence(c["name"], a, _dict(_args(c.get("display"))), "", own),
+                        c["name"] == "shell__run" and bool(_str(a.get("about")))))
+    return ", ".join([out[0][0], *(p if as_written else _lower(p) for p, as_written in out[1:])])
+
+
 def runs(blocks: list[list[dict]], own: Own | None = None) -> list[dict]:
     """The runs among `blocks`, each the calls between two texts of a reply, in order
-    (each {id, name, arguments, state, exit, time_up}): RUN or more calls in a row with the
-    same group. Plumbing sits between them unseen and breaks nothing.
-    -> [{ids, words, failed}]"""
+    (each {id, name, arguments, state, exit, time_up, display}): every settled call of a
+    block that is not plumbing, at work or apart is one stretch, in words, when there are
+    two or more. A call at work, gated, not run or apart keeps its own row and cuts
+    nothing. -> [{ids, words, failed}]"""
     out: list[dict] = []
     for block in blocks:
-        cur: list[dict] = []
-        key = None
-
-        def close() -> None:
-            if len(cur) >= RUN:
-                out.append({"ids": [c["id"] for c in cur],
-                            "words": key.replace("{n}", f"{len(cur):,}"),
-                            "failed": sum(failed(c["state"], c.get("exit")) for c in cur)})
-
-        for call in block:
-            name = call["name"]
-            if name in PLUMBING:
-                continue
-            # only the box's run reads its arguments (its terminal)
-            g = None if _alone(call["state"], call.get("time_up")) else \
-                group(name, _args(call["arguments"]) if name == "shell__run" else {}, own)
-            if g is not None and g == key:
-                cur.append(call)
-                continue
-            close()
-            cur, key = ([call], g) if g is not None else ([], None)
-        close()
+        members = [c for c in block if c["name"] not in PLUMBING
+                   and not _alone(c["state"], c.get("time_up")) and not _apart(c)]
+        if len(members) < 2:
+            continue
+        out.append({"ids": [c["id"] for c in members],
+                    "words": _stretch_words(members, own),
+                    "failed": sum(failed(c["state"], c.get("exit")) for c in members)})
     return out
 
 
@@ -839,7 +902,7 @@ def _blocks(c, turn_id: str) -> list[list[dict]]:
     last = None
     for r in c.execute(
             "SELECT m.id AS mid, m.content != '' AND trim(m.content) != '' AS said, "
-            "tc.id, tc.name, tc.arguments, tc.state, "
+            "tc.id, tc.name, tc.arguments, tc.state, tc.display, "
             "json_extract(tc.display, '$.exit') AS exit, "
             "json_extract(tc.display, '$.time_up') AS time_up "
             "FROM messages m LEFT JOIN tool_calls tc ON tc.message_id = m.id "
@@ -894,13 +957,17 @@ def step(name: str, own: Own | None = None) -> str:
 
 def words(name: str, arguments: Any, state: str, display: Any = None,
           result: str | None = None, own: Own | None = None) -> dict:
-    """The row's words: {running, settled, step, where} (the module's docstring)."""
+    """The row's words: {running, settled, step, where, why} (the module's docstring).
+    `why`: a failed call's reason, the first line of its result as it came (a server's
+    own words, errors.said), else None."""
     a, d, r = _args(arguments), _dict(display), result or ""
     where = scope_words(d, a)
+    failed = state == "error" and not not_run(state, d)
     return {"running": row(name, a, d, r, "running", own),
             "settled": row(name, a, d, r, "interrupted" if state in BUSY else state, own),
             "step": step(name, own),
-            "where": where[:1].upper() + where[1:] if where else None}
+            "where": where[:1].upper() + where[1:] if where else None,
+            "why": _first_line(r, WHY_CHARS) or None if failed else None}
 
 
 def of_call(c, call_id: str, state: str, display: Any = None,
@@ -913,7 +980,7 @@ def of_call(c, call_id: str, state: str, display: Any = None,
 
 _FIELD = {k: re.compile(rf'"{k}"\s*:\s*"((?:[^"\\]|\\.)*)"')
           for k in ("path", "name", "title", "query", "url", "terminal", "command", "to",
-                    "folder", "text", "file_path", "input", "element", "key")}
+                    "folder", "text", "file_path", "input", "element", "key", "about")}
 
 
 def forming(name: str, partial: str, own: Own | None = None) -> str:
@@ -924,4 +991,35 @@ def forming(name: str, partial: str, own: Own | None = None) -> str:
         m = rx.search(partial)
         if m:
             a[k] = re.sub(r"\\(.)", r"\1", m.group(1))
+    if name == "shell__run" and a.get("about"):
+        return a["about"]               # the agent's words as it wrote them
     return ongoing(sentence(name, a, {}, "", own))
+
+
+def prompt_of(arguments: str | None, tool_name: str = "") -> str | None:
+    """What a call was asked, when its arguments say so in one field: a command's
+    `command`, a sub-agent's `name` or `brief`, the `prompt` or `style` of a batch's
+    first item. A shell call: the first line of what it typed (a pasted heredoc
+    stays one line in the jobs list), else its keys, else its terminal. None for
+    every other tool."""
+    try:
+        a = json.loads(arguments or "")
+    except ValueError:
+        return None
+    if not isinstance(a, dict):
+        return None
+    if tool_name.startswith("shell__"):
+        text = next((a[k] for k in ("command", "text") if isinstance(a.get(k), str)), "")
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if lines:
+            return lines[0]
+        if isinstance(a.get("keys"), str) and a["keys"].strip():
+            return a["keys"].strip()
+        return str(a.get("terminal") or "main")
+    items = a.get("items")
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        a = items[0]
+    for key in ("command", "name", "brief", "prompt", "style"):
+        if isinstance(a.get(key), str) and a[key].strip():
+            return a[key].strip()
+    return None

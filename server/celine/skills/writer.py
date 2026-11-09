@@ -1,6 +1,6 @@
 """The agent's words in its own voice (writer__draft): one request on the writer role (Settings,
 Models, Writing) with who it is (its persona, identity.md), how it talks (its talk,
-her.py, and the "Love this" samples: conversations/samples.py), its brief
+agent.py, and the "Love this" samples: conversations/samples.py), its brief
 and what it answers; the text alone comes back.
 
 It runs in its turn on exactly the role's first model: when that model fails, the call
@@ -30,8 +30,8 @@ KINDS = {"post": "a post: its title on the first line, a blank line, then the bo
 def voice_notes(cfg) -> list[tuple[str, str]]:
     """How it talks: its talk, then it "Love this" samples when it has any."""
     from ..conversations.samples import PATH
-    out = [("how you talk", cfg.her.talk_text)]
-    if samples := carried_text(read_note(cfg.her.notebook, PATH) or ""):
+    out = [("how you talk", cfg.agent.talk_text)]
+    if samples := carried_text(read_note(cfg.agent.notebook, PATH) or ""):
         out.append((PATH, samples))
     return out
 
@@ -39,8 +39,8 @@ def voice_notes(cfg) -> list[tuple[str, str]]:
 def messages(cfg, brief: str, kind: str, context: str) -> list[dict]:
     """The request: its persona, identity.md, its talk and samples in the system prompt, the
     brief and its context as the user message."""
-    root = cfg.her.notebook
-    parts = [prompts.fill(cfg, __file__, "writer.md"), cfg.substitute(cfg.her.persona).strip()]
+    root = cfg.agent.notebook
+    parts = [prompts.fill(cfg, __file__, "writer.md"), cfg.substitute(cfg.agent.persona).strip()]
     if identity := read_note(root, "identity.md"):
         parts.append("identity.md:\n" + cfg.substitute(identity))
     parts += [f"### {rel}\n{cfg.substitute(text)}" for rel, text in voice_notes(cfg)]

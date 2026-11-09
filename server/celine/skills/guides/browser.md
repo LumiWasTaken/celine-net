@@ -175,8 +175,8 @@ browser__look changes nothing. Which one:
   lines of the whole page that have them, a line around each, gaps as "...".
   wait="words" first waits for them.
 - what="page": the whole page as text, in parts of about 6000 tokens: a thread with
-  its comments, an article, a README. part=2 for the next part, with the tab's
-  name as tab=; find="..." for the part that has those words.
+  its comments, an article, a README. The `earlier:` and `later:` lines after the text
+  read the part before and after; find="..." gives the part that has those words.
 - what="html": the page's HTML as it is now, shadow roots included, in parts.
 - what="source": the document as the server sent it, before any script ran, in parts:
   a JSON answer reads byte for byte.

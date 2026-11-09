@@ -1,5 +1,5 @@
-"""Voice notes: her text spoken by the Read aloud role's model (speech.py), an audio file
-on her message, played where the message shows. From elsewhere she sends one on with
+"""Voice notes: the agent's text spoken by the Read aloud role's model (speech.py), an
+audio file on its message, played where the message shows. From elsewhere it sends one on with
 intercom__send(attachments=...)."""
 from __future__ import annotations
 

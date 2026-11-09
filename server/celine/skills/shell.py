@@ -32,8 +32,8 @@ from ..core.ids import now, when
 from ..terminals import store as terminals
 from . import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
-from ..errors import (CelineError, ToolRefused, TooLarge, bad_key, her_bad_key,
-                      her_not_set_up, her_unreachable, not_set_up, unreachable_words)
+from ..errors import (CelineError, ToolRefused, TooLarge, answered, bad_key, agent_bad_key,
+                      agent_not_set_up, agent_unreachable, not_set_up)
 from .. import devices, shares, shellbox, vision
 from ..settings import services as services_mod
 from ..guard import sources
@@ -66,7 +66,6 @@ APT_ERROR = re.compile(r"^E:", re.M)      # apt failed, whatever exit a pipe rep
 FULL_LINE = ("A disk is full: `df -h ~ /tmp` shows which. Delete what you do not need; if your "
              "home needs more room, ask for it.")
 SHARE_ASK = "make \"{title}\" a public share anyone with the link opens"
-SHARE_WHY = "Anyone with the link opens it, not only {{username}}."
 SHARE_NOBODY = "Nothing was shared: nobody is here to approve a public share."
 NO_RUN_LINE = ("The shell there did not start it: shell__run needs bash with its run function "
                "(/etc/shellbox/run.sh, read by /etc/bash.bashrc). shell__type works in any "
@@ -178,7 +177,7 @@ def program_of(res: dict) -> tuple[str | None, int | None]:
 
 
 def _shown(port: int | None, path: str | None, device: str | None, cfg=None) -> str:
-    """What a share shows, in her words: a port or a path, in her box or on a device."""
+    """What a share shows, in the agent's words: a port or a path, in its box or on a device."""
     what = f"port {port}" if port is not None else \
         path if device is not None else shellbox.home_short(path)
     return what if device is None else f"{what} on {devices.label(device, cfg)}"
@@ -443,7 +442,7 @@ class Shell:
     @property
     def error(self) -> str | None:
         if not shellbox.url(self.cfg):
-            return her_not_set_up("the shellbox")
+            return agent_not_set_up("the shellbox")
         return None
 
     # ---- the tools ------------------------------------------------------------------------
@@ -461,6 +460,9 @@ class Shell:
         timeout: Annotated[float | None, TIMEOUT_HELP + " The command keeps running "
                                                         "after it."] = None,
         background: Annotated[bool, BACKGROUND_HELP] = False,
+        about: Annotated[str | None, "What the command does, in a few words, as the row "
+                                     "{{username}} sees it, like \"List the mycelium "
+                                     "folder\"."] = None,
     ) -> ToolResult:
         """Run a command in your shell, in a terminal of your shellbox, and wait for its
         end, at most the timeout. The shell keeps its directory and variables between
@@ -477,7 +479,7 @@ class Shell:
             seconds = self._seconds(ctx, timeout, as_bool(background, "background"))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
-        if (refused := await self._not_hers(ctx, name)) is not None:
+        if (refused := await self._not_own(ctx, name)) is not None:
             return refused
         if self.wedged.get(ctx.conversation_id, 0) >= WEDGE_MAX and (
                 ctx.store is None or await terminals.open_by_name(ctx.store, name) is None):
@@ -587,7 +589,7 @@ class Shell:
             press = as_bool(enter, "enter")
         except ToolRefused as e:
             return self._refused(f"{e} Nothing was typed.", terminal)
-        if (refused := await self._not_hers(ctx, name)) is not None:
+        if (refused := await self._not_own(ctx, name)) is not None:
             return refused
         notes = []
         if text.endswith("\\n"):
@@ -618,7 +620,7 @@ class Shell:
             name = check_name(str(terminal))
         except ToolRefused as e:
             return self._refused(str(e), terminal)
-        if (refused := await self._not_hers(ctx, name)) is not None:
+        if (refused := await self._not_own(ctx, name)) is not None:
             return refused
         try:
             status, res = await self._post("/stop", {"terminal": name,
@@ -857,8 +859,8 @@ class Shell:
         h = shares.PUBLIC_HOURS if hours is None else hours
         action = SHARE_ASK.format(title=title)
         return await approvals.ask(
-            action, [what, f"for {h:g} hour" + ("" if h == 1 else "s")],
-            ctx.conversation_id, self.cfg.substitute(SHARE_WHY), action, kind="share",
+            "share", ctx.conversation_id, action,
+            facts=[("What", what), ("For", f"{h:g} hour" + ("" if h == 1 else "s"))],
             call=ctx.tool_call_id or None)
 
     @tool(read_only=False, destructive=False, open_world=True)
@@ -899,7 +901,7 @@ class Shell:
         "started" line; a /wait's at once): None, and the box stops watching when the
         connection closes."""
         if not shellbox.url(self.cfg):
-            raise ToolRefused(her_not_set_up("the shellbox"))
+            raise ToolRefused(agent_not_set_up("the shellbox"))
         async with shellbox.client(self.cfg, None, self.transport) as client, \
                 client.stream("POST", shellbox.url(self.cfg) + path, json=body) as r:
             if r.status_code != 200:
@@ -948,7 +950,7 @@ class Shell:
                           display={"terminal": str(terminal) if terminal else None,
                                    "refused": True})
 
-    async def _not_hers(self, ctx: ToolContext, name: str) -> ToolResult | None:
+    async def _not_own(self, ctx: ToolContext, name: str) -> ToolResult | None:
         """The user's own terminal: its own to read, to touch only while they allow it."""
         if ctx.store is None:
             return None
@@ -973,7 +975,7 @@ class Shell:
         sentence that names its address."""
         if isinstance(e, (httpx.ConnectError, httpx.TimeoutException,
                           httpx.UnsupportedProtocol)):
-            content = her_unreachable("the shellbox", shellbox.url(self.cfg))
+            content = agent_unreachable("the shellbox", shellbox.url(self.cfg))
         else:
             what = f"terminal {name} and what ran in it are" if name else \
                 "your terminals and what ran in them are"
@@ -1267,20 +1269,30 @@ async def probe(cfg, services) -> dict[str, str]:
     saved = services_mod.url(cfg, "shellbox")
     url = saved or services_mod.default("shellbox")
     host = urlsplit(url).netloc
+    failed: httpx.HTTPError | None = None
+    health: str | None = None           # the box's words when /health is an error answer
     try:
         async with shellbox.client(cfg, PROBE_WAIT) as c:
-            (await c.get(url + "/health", timeout=PROBE_WAIT)).raise_for_status()
-            r = await c.get(url + "/status", timeout=PROBE_WAIT)
+            r = await c.get(url + "/health", timeout=PROBE_WAIT)
+            if r.is_error:
+                health = answered(f"The shellbox at {host}", r)
+            else:
+                r = await c.get(url + "/status", timeout=PROBE_WAIT)
     except httpx.HTTPError as e:
-        if not saved:
-            return {"state": "unset", "detail": not_set_up("the shellbox"),
-                    "why": her_not_set_up("the shellbox")}
-        return {"state": "missing", "detail": unreachable_words("the shellbox", url, e),
-                "why": her_unreachable("the shellbox", url)}
+        failed = e
+    if not saved and (failed or health):
+        return {"state": "unset", "detail": not_set_up("the shellbox"),
+                "why": agent_not_set_up("the shellbox")}
+    if failed:
+        return {"state": "missing", "detail": services_mod.unreachable("the shellbox", url, failed,
+                                                                    "shellbox"),
+                "why": agent_unreachable("the shellbox", url)}
+    if health:
+        return {"state": "missing", "detail": health, "why": health}
     found = {} if saved else {"url": url}
     if r.status_code in (401, 403):
         return {"state": "missing", "detail": bad_key("the shellbox", url),
-                "why": her_bad_key("the shellbox", url), "key": True, **found}
+                "why": agent_bad_key("the shellbox", url), "key": True, **found}
     if saved:
         return {"state": "ready", "detail": f"The shellbox at {host} answers."}
     return {"state": "ready", "detail": f"Found at {url}.", "url": url}

@@ -1,4 +1,4 @@
-"""The agent's portrait, set by it (her.set_portrait): one of its images, or one the user attached here (by its short id, as image_generator's edits
+"""The agent's portrait, set by it (agent.set_portrait): one of its images, or one the user attached here (by its short id, as image_generator's edits
 take it), or an image in Documents (by its id, path or title, as user_documents__read
 takes it)."""
 from __future__ import annotations
@@ -9,9 +9,9 @@ from typing import Annotated
 import anyio
 
 from .. import attachments
-from .. import her
+from .. import agent
 from . import ToolContext, ToolResult, guide, tool, described
-from ..core.event_types import HER_CHANGED
+from ..core.event_types import AGENT_CHANGED
 
 
 class Appearance:
@@ -40,19 +40,19 @@ class Appearance:
             return ToolResult(content=got, is_error=True)
         data, name = got
         try:
-            await her.set_portrait(ctx.store, self.cfg, data)
+            await agent.set_portrait(ctx.store, self.cfg, data)
         except ValueError as e:
             return ToolResult(content=f"{name} cannot be your portrait. {e}",
                               is_error=True)
         if ctx.store is not None:
-            ctx.store.emit_global({"type": HER_CHANGED})
+            ctx.store.emit_global({"type": AGENT_CHANGED})
         return ToolResult(content=f"Your portrait is now {name}.",
-                          display={"portrait": her.portrait_view(self.cfg.her)})
+                          display={"portrait": agent.portrait_view(self.cfg.agent)})
 
     async def _image(self, ctx: ToolContext, ref: str) -> tuple[bytes, str] | str:
         """(the image's bytes, how to name it), or the sentence why there is none."""
         ref = ref.strip()
-        row = await attachments.her_image(ctx.store, ref, ctx.conversation_id,
+        row = await attachments.agent_image(ctx.store, ref, ctx.conversation_id,
                                           self.cfg.user)
         if not isinstance(row, str):
             data = attachments.blob_path(self.cfg, row["sha256"]).read_bytes()
