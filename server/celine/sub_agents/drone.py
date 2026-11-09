@@ -1,5 +1,5 @@
 """Drones: sub-agents whose briefs opencode works on in `opencode serve` on a device
-(sub_agents__start with `device`), close to the machine, while she supervises.
+(sub_agents__start with `device`), close to the machine, while the agent supervises.
 
 A device is a plugin that is on with a [drones] block (celine/devices.py). The one
 opencode client is the box's, shellbox/agents/opencode.py, loaded from here.
@@ -196,7 +196,7 @@ class DroneBackend:
             elif self.model not in have:
                 raise BackendError(
                     f"{self.model} is not in the opencode config on {dev.label} yet, and it "
-                    f"changes only while no drone works there ({len(working)} working now); "
+                    f"changes only while no sub-agent works there ({len(working)} working now); "
                     f"start this one when they are done.", retryable=False)
 
     async def stream(self, messages, tools, body=None):
@@ -207,7 +207,7 @@ class DroneBackend:
         if dev.why:
             raise BackendError(dev.why, retryable=False)
         if self.model is None:
-            raise BackendError("This drone has no model to run on.", retryable=False)
+            raise BackendError("This sub-agent has no model to run on.", retryable=False)
         server = oc.Server(dev.url, dev.password, f"{dev.log} on {dev.label}")
         store = self.services.store
         row = await store.read(lambda c: _row(c, self.cid))

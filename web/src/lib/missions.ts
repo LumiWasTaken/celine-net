@@ -4,7 +4,6 @@
    (docs/ARCHITECTURE.md). A mission is its instructions: it writes the plan, works with its
    sub-agents and delivers an artifact. */
 import { del, json, post, request, type PlanStep } from './api'
-import { useResource } from './useResource'
 
 export type MissionStatus = 'active' | 'needs_you' | 'done' | 'stopped'
 
@@ -24,8 +23,10 @@ export type Mission = {
   report_to: string | null
   /** the time limit as a time, null without one */
   until: string | null
-  /** the minimum time as a time: before it she closes it as done only with force */
+  /** the minimum time as a time: before it the agent closes it as done only with force */
   min_until: string | null
+  /** minutes between two check-ins (a notice to you, or a report to whoever it reports to); null: none */
+  check_in: number | null
   status: MissionStatus
   note: string | null
   /** its plan's steps, each with the model it runs on (null: the mission's own) */
@@ -50,10 +51,11 @@ type MissionCounts = Record<MissionStatus | 'all' | 'archived' | 'trashed', numb
 
 export const missionsApi = {
   /** the brief; with no name it names it; `model`: its chat model, else the default;
-      `minTime` how long it runs at least ("2 h", "08:00") */
-  start: (brief: string, name?: string, model?: string | null, minTime?: string) =>
+      `minTime` how long it runs at least ("2 h", "08:00"); `checkIn` how often it checks in ("30 min") */
+  start: (brief: string, name?: string, model?: string | null, minTime?: string, checkIn?: string) =>
     request<{ conversation_id: string }>('/missions', json('POST', {
       brief, ...(name ? { name } : {}), ...(model ? { model } : {}), ...(minTime ? { min_time: minTime } : {}),
+      ...(checkIn ? { check_in: checkIn } : {}),
     })),
   /** the archived or the trashed ones instead */
   list: (which?: 'archived' | 'trashed') =>
@@ -81,13 +83,6 @@ export const isMissionEvent = (ev: { type: string }) =>
   || ev.type === 'conversation.archived' || ev.type === 'conversation.unarchived'
   || ev.type === 'conversation.auto_context' || ev.type === 'approvals.changed'
 
-/** how many missions wait for you (the server's count), for the rail's dot */
-export function useMissionsWaiting(): number {
-  const res = useResource(() => missionsApi.list().then(r => r.counts.needs_you), [],
-                          { events: ev => ev.type === 'mission.state' || ev.type.startsWith('conversation.') })
-  return res.data ?? 0
-}
-
 /** a mission still at work: active or waiting for you */
 export const isOpen = (status: string | null | undefined) => status === 'active' || status === 'needs_you'
 
@@ -96,7 +91,3 @@ export const STATE_WORD: Record<MissionStatus, string> = {
   active: 'Running', needs_you: 'Waiting for you', done: 'Done', stopped: 'Stopped',
 }
 
-/** the dot's colour for a status */
-export function stateTone(status: string): 'running' | 'warn' | 'ok' | 'off' {
-  return status === 'needs_you' ? 'warn' : status === 'done' ? 'ok' : status === 'stopped' ? 'off' : 'running'
-}

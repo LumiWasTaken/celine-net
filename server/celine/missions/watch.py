@@ -10,7 +10,8 @@ is not locked (conversations/store.locked), its plan (plans/) decides:
 - past the time limit: one line OVER, whatever the plan; after it, Needs you, the note
   PAST;
 - it asked at a checkpoint (the plan waits): Needs you, the note WAITING;
-- every step is done, or no line follows: Needs you, the note NOTE.
+- every step is done, or no line follows: Needs you, the note NOTE, or FAILED with the
+  first line of its reason when that turn failed (`_note`).
 A turn a freeze cut (guard/freeze.py) is no Stop: with Continue missions after Unfreeze
 (Settings, Advanced, on by default) the mission stays active, and after the unfreeze
 that turn goes on (`go_on`, looked at every LOOK seconds; a turn that cannot be
@@ -26,11 +27,15 @@ seconds), as a routine past its own.
 
 The house's hold (hold.py: frozen, or paused with no model answering) is no time of a
 mission's: when a hold ends, every mission still open gets its length (`credit`): its
-ceiling counts it off, and its time limit and minimum time move later by it.
+ceiling counts it off, and its time limit and minimum time move later by it. A request
+that waits for the user inside a turn of the mission or of a sub-agent under it
+(approvals.py) is no time of its either: meanwhile its ceiling does not stop it, and
+once the request closes the mission gets the wait the same way (`asking`).
 
 Check-ins: every `check_in` minutes while a mission is active, a short line on where it
-stands (the step of its plan, its note) goes where it reports, else to the user
-(check_ins). It is the app's, not its own: it costs its no turn.
+stands (the step of its plan, its note) goes where it reports, else to the user as a
+notice that opens the mission's page (check_ins). It is the app's, not its own: it costs
+its no turn.
 """
 from __future__ import annotations
 
@@ -41,6 +46,7 @@ from datetime import datetime, timedelta, timezone
 
 import anyio
 
+from .. import homes
 from ..core import ids
 from . import store as missions
 from ..plans import flow, store as plans
@@ -49,13 +55,14 @@ from .skill import record, stop
 log = logging.getLogger("celine.missions")
 LOOK = 60.0         # seconds between two looks for a check-in that is due
 NOTE = "The mission stopped without saying whether it is done."
+FAILED = "Its last turn failed: {reason}"
 PAST = "The time limit passed before the mission was closed."
 WAITING = "A question for you at step {n}: {title}."
 KEEP_GOING = ("The mission is still active and nothing is set to wake you. Do the next "
               "step; when you wait on something, missions__wait until the time to look "
               "again; or close it with missions__update(status=\"Done\").")
-OVER = ("The time limit has passed. Deliver what you have, report, and close the mission "
-        "with missions__update(status=\"Done\") and a note on what is still open.")
+OVER = ("The time limit has passed. Deliver what you have and close the mission with "
+        "missions__update(status=\"Done\") and a note on what is still open.")
 
 
 def stuck(c: sqlite3.Connection, cid: str) -> bool:
@@ -98,11 +105,7 @@ async def check(app, cid: str, turn_id: str | None) -> str | None:
     from ..conversations.store import locked
     if turn_id is None or await app.store.read(lambda c: locked(c, cid)):
         return None                  # a locked mission is left as it stands
-    row = await missions.get(app.store, cid)
-    if row is not None and row["status"] == "needs_you" and await app.store.read(
-            lambda c: c.execute("SELECT origin FROM turns WHERE id=?", (turn_id,))
-            .fetchone()[0] == "user"):
-        row = await record(app, app.store, cid, "active", None)   # the user answered
+    row = await missions.get(app.store, cid)     # the user's answer made it active (plans.answered_sync)
     if row is None or row["status"] != "active" or \
             not await app.store.read(lambda c: stuck(c, cid)):
         return None
@@ -126,8 +129,20 @@ async def check(app, cid: str, turn_id: str | None) -> str | None:
                                 kind="notice", data={"mission": cid, "keep_going": True,
                                                      **({"over": True} if past else {})})
         return "line"
-    await record(app, app.store, cid, "needs_you", NOTE)
+    await record(app, app.store, cid, "needs_you", await app.store.read(
+        lambda c: _note(c, turn_id)))
     return "needs_you"
+
+
+def _note(c: sqlite3.Connection, turn_id: str) -> str:
+    """FAILED with the first line of turn `turn_id`'s reason when it failed (or a cut
+    other than a restart's ended it), else NOTE (a Stop included)."""
+    r = c.execute("SELECT state, reason, reason_code FROM turns WHERE id=?",
+                  (turn_id,)).fetchone()
+    reason = ((r["reason"] or "").strip().split("\n")[0].strip()) if r else ""
+    failed = r is not None and (r["state"] == "failed" or (
+        r["state"] == "interrupted" and r["reason_code"] != "restart"))
+    return FAILED.format(reason=reason) if failed and reason else NOTE
 
 
 def _told_over(c: sqlite3.Connection, cid: str) -> bool:
@@ -147,23 +162,32 @@ def progress(row: dict) -> str:
 
 async def check_ins(app, at: datetime) -> list[str]:
     """Every active mission whose check-in is due at `at` (its cadence since the last
-    one, else since it started) sends it. -> the missions that did."""
+    one, else since it started) sends it: a report to the conversation it reports to,
+    else a notice to the user (events.notice, Notifications: Missions) that opens the
+    mission's page. -> the missions that did."""
+    from ..events import notice
     from ..intercom.addresses import Refused
     out = []
     for row in await missions.list(app.store, "active"):
         if not row.get("check_in"):
             continue
         cid = row["conversation_id"]
-        last = await app.store.read(lambda c: c.execute(
-            "SELECT max(created_at) FROM intercom WHERE from_addr=? AND "
-            "json_extract(data, '$.check_in')", (f"agent:{cid}",)).fetchone()[0])
-        since = datetime.fromisoformat(last or row["created_at"])
+        since = datetime.fromisoformat(row["checked_in_at"] or row["created_at"])
         if at - since < timedelta(minutes=row["check_in"]):
             continue
-        to = f"agent:{row['report_to']}" if row["report_to"] else "user"
+        # the app's own mark: the mission's updated_at stays
+        await app.store.write(lambda c: c.execute(
+            "UPDATE missions SET checked_in_at=? WHERE conversation_id=?", (ids.iso(at), cid)))
+        if not row["report_to"]:
+            await app.store.write(lambda c: notice(
+                app.store, c, "mission", row["name"], progress(row),
+                homes.of(c, cid)["link"], f"mission:{cid}"))
+            out.append(cid)
+            continue
         try:
-            await app.intercom.send(f"agent:{cid}", to, progress(row), kind="report",
-                                    wake=False, created_at=ids.iso(at),
+            await app.intercom.send(f"agent:{cid}", f"agent:{row['report_to']}",
+                                    progress(row), kind="report", wake=False,
+                                    created_at=ids.iso(at),
                                     data={"mission": cid, "check_in": True})
         except Refused:
             continue                   # that chat is locked: it takes no check-in
@@ -172,17 +196,20 @@ async def check_ins(app, at: datetime) -> list[str]:
 
 
 def _over(hours: int) -> str:
-    return f"Ran over {hours} hour{'' if hours == 1 else 's'}"
+    return f"Stopped at its time limit of {hours} hour{'' if hours == 1 else 's'}."
 
 
-async def ceilings(app, at: datetime) -> list[str]:
+async def ceilings(app, at: datetime, asking: frozenset[str] = frozenset()) -> list[str]:
     """Every active mission that started more than the Mission time limit before `at`,
-    the time the house held it aside, stops, its note why. -> the missions stopped."""
+    the time the house held it aside, stops, its note why; one a request waits under
+    (`asking`) waits for the answer. -> the missions stopped."""
     hours = app.cfg.r("mission_max_hours")
     if not hours:
         return []
     out = []
     for row in await missions.list(app.store, "active"):
+        if row["conversation_id"] in asking:
+            continue
         ran = at - datetime.fromisoformat(row["created_at"]) - \
             timedelta(seconds=row["held_seconds"])
         if ran > timedelta(hours=hours):
@@ -193,13 +220,16 @@ async def ceilings(app, at: datetime) -> list[str]:
     return out
 
 
-async def credit(app, seconds: int) -> list[str]:
-    """The house held every mission `seconds` (hold.py): each one active or needing the
-    user gets them; its time limit and minimum time move later by them, the time
-    limit's notice with it. -> the missions credited."""
+async def credit(app, seconds: int, only: str | None = None) -> list[str]:
+    """The house held every mission `seconds` (hold.py), or a request held mission
+    `only`: each one active or needing the user gets them; its time limit and minimum
+    time move later by them, the time limit's notice with it. -> the missions
+    credited."""
     out = []
     for status in ("active", "needs_you"):
         for row in await missions.list(app.store, status):
+            if only is not None and row["conversation_id"] != only:
+                continue
             cid, later = row["conversation_id"], timedelta(seconds=seconds)
             changes = {"held_seconds": row["held_seconds"] + seconds}
             for key in ("until", "min_until"):
@@ -219,12 +249,24 @@ async def credit(app, seconds: int) -> list[str]:
 async def held(app, at: datetime, since: datetime | None) -> datetime | None:
     """A look at the house's hold at `at`: -> when the hold standing now began, None
     when none stands. A hold that ended (`since` given, none now) is credited."""
-    from ..hold import her_hold
-    if await her_hold(app.store, getattr(app, "llm", None)):
+    from ..hold import agent_hold
+    if await agent_hold(app.store, getattr(app, "llm", None)):
         return since or at
     if since is not None:
         await credit(app, round((at - since).total_seconds()))
     return None
+
+
+async def asking(app, at: datetime, since: dict[str, datetime]) -> dict[str, datetime]:
+    """A look at the requests that wait inside turns (approvals.roots) at `at`: -> each
+    root one waits under now, with when that wait was first seen. A root in `since`
+    that no request waits under any more is credited the wait (a mission's only)."""
+    a = getattr(app, "approvals", None)
+    roots = a.roots() if a is not None else frozenset()
+    for root, t in since.items():
+        if root not in roots:
+            await credit(app, round((at - t).total_seconds()), only=root)
+    return {r: since.get(r, at) for r in roots}
 
 
 async def go_on(app) -> list[str]:
@@ -261,25 +303,30 @@ async def go_on(app) -> list[str]:
 
 async def run(app) -> None:
     """The app's loop: every LOOK seconds a look for due check-ins, for the house's hold
-    (no ceiling counts while it stands), for missions past their ceiling and for
-    missions a restart or a freeze cut."""
+    (no ceiling counts while it stands), for the requests that wait inside turns, for
+    missions past their ceiling and for missions a restart or a freeze cut."""
     since = None
+    asked: dict[str, datetime] = {}
 
     async def hold(app, at) -> None:
         nonlocal since
         # the hold's start is kept in memory, a restart during one credits none
         since = await held(app, at, since)
 
+    async def ask(app, at) -> None:
+        nonlocal asked
+        asked = await asking(app, at, asked)
+
     async def ceiling(app, at) -> None:
         if since is None:
-            await ceilings(app, at)
+            await ceilings(app, at, frozenset(asked))
 
     async def cut(app, _at) -> None:
         await go_on(app)
     while True:
         at = datetime.now(timezone.utc)
-        for look, what in ((check_ins, "check_in"), (hold, "hold"), (ceiling, "ceiling"),
-                           (cut, "go_on")):
+        for look, what in ((check_ins, "check_in"), (hold, "hold"), (ask, "asking"),
+                           (ceiling, "ceiling"), (cut, "go_on")):
             try:
                 await look(app, at)
             except Exception:
@@ -298,10 +345,7 @@ def start(app) -> None:
             return
         # a sub-agent's end can be what leaves its mission quiet: look at the mission,
         # after its own latest turn
-        parent = await app.store.read(lambda c: (c.execute(
-            "WITH RECURSIVE up(id, p) AS (SELECT id, agent_of FROM conversations WHERE id=? "
-            "UNION ALL SELECT s.id, s.agent_of FROM conversations s JOIN up ON s.id = up.p) "
-            "SELECT id FROM up WHERE p IS NULL", (cid,)).fetchone() or [cid])[0])
+        parent = await app.store.read(lambda c: (homes.root(c, cid) or {"id": cid})["id"])
         if parent != cid:
             cid, turn_id = parent, await app.store.read(lambda c: (c.execute(
                 "SELECT id FROM turns WHERE conversation_id=? ORDER BY created_at DESC "

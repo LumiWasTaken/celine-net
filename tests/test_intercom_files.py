@@ -32,8 +32,8 @@ def test_at_reads_a_day_with_a_time_in_the_app_zone():
                                                             tzinfo=timezone.utc)
 
 
-async def _her_file(store, cid: str) -> str:
-    """A voice note on her message in `cid`. -> its attachment id."""
+async def _agent_file(store, cid: str) -> str:
+    """A voice note on the agent's message in `cid`. -> its attachment id."""
     _, tid, _ = await user_says(store, cid, "say it")
     mid = await tree.start_assistant_message(store, cid, None, tid)
     row = await attachments.add(store, "ab" * 32, 1200, "audio/mpeg", "voice-note.mp3",
@@ -43,12 +43,13 @@ async def _her_file(store, cid: str) -> str:
     return row["id"]
 
 
-async def test_she_sends_a_file_of_hers_along(store):
+async def test_the_agent_sends_a_file_of_its_own_along(store):
     cfg = load()
     skill = IntercomSkill(cfg)
     skill.app = Services(intercom=Intercom(store))
-    chat, other = await conversations.create(store), await conversations.create(store)
-    aid = await _her_file(store, chat)
+    # a mission's message to the user goes as written (a chat's is its reply there)
+    chat, other = await conversations.create(store, kind="mission"), await conversations.create(store)
+    aid = await _agent_file(store, chat)
     ctx = ToolContext(chat, "t", "k", store, cfg, None)
 
     out = await skill.send(ctx, to="user", text="listen", attachments=[aid[:8]])
@@ -68,12 +69,27 @@ async def test_she_sends_a_file_of_hers_along(store):
     bad = await skill.send(ctx, to="user", text="x", attachments=["nothing!"])
     assert bad.is_error and "short id" in bad.content
     elsewhere = await conversations.create(store)
-    mine = await _her_file(store, elsewhere)
+    mine = await _agent_file(store, elsewhere)
     await store.write(lambda c: c.execute(
         "UPDATE messages SET role='user' WHERE id=(SELECT message_id FROM attachments "
         "WHERE id=?)", (mine,)))
     refused = await skill.send(ctx, to="user", text="x", attachments=[mine[:8]])
     assert refused.is_error and refused.content.startswith("There is no file")
+
+
+async def test_a_file_from_a_background_task_is_on_the_chat_it_starts(store):
+    cfg = load()
+    skill = IntercomSkill(cfg)
+    skill.app = Services(intercom=Intercom(store))
+    task = await conversations.for_trigger(store, "trigger:mail.new", "mail.new")
+    aid = await _agent_file(store, task)
+    ctx = ToolContext(task, "t", "k", store, cfg, None)
+    out = await skill.send(ctx, to="user", text="listen", attachments=[aid[:8]])
+    assert not out.is_error, out.content
+    [m] = (await view.snapshot(store, out.display["chat"]))["messages"]
+    assert (m["role"], [a["filename"] for a in m["attachments"]]) == ("assistant", ["voice-note.mp3"])
+    msg = await store.read(lambda c: rows.view(c, out.display["id"]))
+    assert [a["filename"] for a in msg["attachments"]] == ["voice-note.mp3"]
 
 
 async def test_a_message_lands_on_a_day(store):

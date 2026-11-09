@@ -96,7 +96,7 @@ def _check_in(text: str | None) -> int | None:
 async def _conversation_exists(store, cid: str | None) -> None:
     if cid and await store.read(lambda c: c.execute(
             "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
 
 
 async def _mission(request: Request, cid: str) -> dict:
@@ -127,15 +127,15 @@ async def start_mission(request: Request, body: MissionIn) -> dict:
 
 
 async def start(services, body: MissionIn, by: str | None = None) -> str:
-    """A mission from its brief, the user's (the route) or hers (missions__start, `by`
-    the conversation she started it from): its conversation (kind mission), the row,
+    """A mission from its brief, the user's (the route) or the agent's (missions__start, `by`
+    the conversation it started it from): its conversation (kind mission), the row,
     the time limit, the brief as its first message, from whoever started it. -> the
     conversation."""
     store, cfg = services.store, services.cfg
     tz = zone(cfg)
     brief = body.brief.strip()
     if not brief:
-        raise CelineError("bad_request", "Brief is required.", 400)
+        raise CelineError("bad_request", "Instructions are required.", 400)
     await _conversation_exists(store, body.report_to)
     from ..settings import conversations as conv_settings
     chosen = conv_settings.validate(cfg.settings, getattr(services, "registry", None),
@@ -156,7 +156,7 @@ async def start(services, body: MissionIn, by: str | None = None) -> str:
     if chosen:                          # before the brief: its first turn runs on it
         await conv_settings.apply(store, cid, chosen)
     await store.write(lambda c: record(c, f"mission:{cid}:brief", brief,
-                                       "her" if by else "user"))
+                                       "agent" if by else "user"))
     if until:
         await missions.update(store, cid, {
             "wake_id": await book_time_limit(services.intercom, cid, until)})
@@ -216,7 +216,7 @@ async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
         value = getattr(body, key) or ""
         value = " ".join(value.split()) if key == "name" else value.strip()
         if key == "brief" and not value:
-            raise CelineError("bad_request", "Brief is required.", 400)
+            raise CelineError("bad_request", "Instructions are required.", 400)
         if key == "name" and not value:
             continue
         if key == "report_to":
@@ -228,7 +228,8 @@ async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
         from ..plans import flow, store as plans
         old = await plans.get(store, cid) or {"text": "", "waiting": False, "steps": []}
         try:
-            steps = plans.clean([s.model_dump() for s in body.steps or []], old["steps"])
+            steps = plans.clean([s.model_dump() for s in body.steps or []], old["steps"],
+                                by="user")
             flow.check_models(getattr(cfg, "settings", None), steps)
         except plans.Refused as e:
             raise CelineError("bad_request", str(e), 400) from None

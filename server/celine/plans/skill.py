@@ -1,12 +1,18 @@
 """The agent's tools for its plan: plan__set writes it, plan__step moves one step. The rules are
-plans/store.py's; this module only turns them into its words."""
+plans/store.py's; this module only turns them into its words. A step it would then be on
+that runs on a cloud model the user did not pick waits for their approval first
+(agent_models.ask_cloud); denied, the plan stays as it was."""
 from __future__ import annotations
 
 from typing import Annotated, Literal, NotRequired, Required, TypedDict
 
+from ..settings import agent_models
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from . import flow
 from . import store as plans
+
+
+ASK = "run a plan step on a cloud model"   # the approval card's action
 
 
 class Step(TypedDict):
@@ -32,6 +38,15 @@ class Plan:
 
     app = None      # the running app (core/services.py), from skills.build
 
+    async def _ask(self, ctx: ToolContext, steps: list[dict]) -> str | None:
+        """The user's approval when the step it would be on runs on a cloud model they
+        did not pick, nor set on that step (agent_models.ask_cloud): None, or why the plan
+        stays as it was."""
+        to = await flow.switch(ctx.store, self.cfg, ctx.conversation_id, steps)
+        return await agent_models.ask_cloud(self.cfg, self.app, ctx, to[0], action=ASK,
+                                          facts=[("Step", to[1])],
+                                          plan={"steps": steps}) if to else None
+
     def _said(self, plan: dict, head: str) -> ToolResult:
         text = flow.block(plan) or ""
         return ToolResult(content=self.cfg.substitute(f"{head}\n{text}".strip()),
@@ -55,6 +70,8 @@ class Plan:
             flow.check_models(getattr(self.cfg, "settings", None), clean)
         except plans.Refused as e:
             return ToolResult(content=f"Plan not saved: {e}", is_error=True)
+        if no := await self._ask(ctx, clean):
+            return ToolResult(content=f"Plan not saved: {no}", is_error=True)
         plan = await plans.save(ctx.store, ctx.conversation_id, text.strip(), clean)
         model = await flow.follow_model(ctx.store, self.cfg, ctx.conversation_id, plan)
         head = f"Plan saved, {len(clean)} steps." + (
@@ -79,6 +96,8 @@ class Plan:
             steps, waiting = plans.move(plan, step, state)
         except plans.Refused as e:
             return ToolResult(content=f"Not moved: {e}", is_error=True)
+        if no := await self._ask(ctx, steps):
+            return ToolResult(content=f"Not moved: {no}", is_error=True)
         plan = await plans.save(ctx.store, ctx.conversation_id, plan["text"], steps, waiting)
         model = await flow.follow_model(ctx.store, self.cfg, ctx.conversation_id, plan)
         head = f"Step {step} is {state}." + (

@@ -13,7 +13,7 @@ from chat_fixtures import user_says
 
 from celine.backends.base import Done, TextDelta
 from celine.boot import load
-from celine.conversations import store as conversations
+from celine.conversations import store as conversations, tree
 from celine.core.bus import EventBus
 from celine.core.ids import iso
 from celine.intercom import Intercom
@@ -70,7 +70,7 @@ async def _sent(store, cid: str) -> list[tuple[str, dict]]:
         "json_extract(data, '$.time_limit') IS NULL ORDER BY id", (f"agent:{cid}",))])
 
 
-async def test_a_mission_with_a_time_limit_still_goes_on_when_she_stops(store):
+async def test_a_mission_with_a_time_limit_still_goes_on_when_the_agent_stops(store):
     """The time limit's notice waits hours away: it is no wake that keeps it quiet."""
     intercom = Intercom(store)
     app = SimpleNamespace(store=store, intercom=intercom)
@@ -82,7 +82,7 @@ async def test_a_mission_with_a_time_limit_still_goes_on_when_she_stops(store):
     assert (await missions.get(store, cid))["status"] == "active"
 
 
-async def test_the_time_limit_tells_her_to_wrap_up_before_it(store):
+async def test_the_time_limit_tells_the_agent_to_wrap_up_before_it(store):
     intercom = Intercom(store)
     until = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=2)
     cid = await _mission(store, intercom, until=iso(until))
@@ -121,7 +121,7 @@ async def test_past_the_time_limit_one_line_says_close_it_then_it_needs_you(stor
     assert len(await _sent(store, cid)) == 1, "no second line past the limit"
 
 
-async def test_she_waits_until_a_time_and_nothing_wakes_her_before(store):
+async def test_the_agent_waits_until_a_time_and_nothing_wakes_it_before(store):
     cfg = load()
     intercom = Intercom(store)
     app = SimpleNamespace(store=store, intercom=intercom)
@@ -160,7 +160,7 @@ async def test_she_waits_until_a_time_and_nothing_wakes_her_before(store):
     assert "The time limit's notice wakes you first" in out.content
 
 
-async def test_a_wait_ends_her_turn(store):
+async def test_a_wait_ends_its_turn(store):
     cfg = load()
     intercom = Intercom(store)
     cid = await _mission(store, intercom)
@@ -227,6 +227,33 @@ async def test_check_ins_go_where_it_reports_on_its_cadence(store):
     assert quiet not in await watch.check_ins(app, start + timedelta(hours=5))
 
 
+async def test_a_check_in_to_the_user_is_a_notice_that_opens_the_mission(store):
+    intercom = Intercom(store)
+    app = SimpleNamespace(store=store, intercom=intercom)
+    cid = await _mission(store, intercom, check_in=30)
+    await plans.save(store, cid, "", plans.clean(["Read the docs", "Build"]))
+    start = datetime.fromisoformat((await missions.get(store, cid))["created_at"])
+    updated = (await missions.get(store, cid))["updated_at"]
+
+    assert await watch.check_ins(app, start + timedelta(minutes=30)) == [cid]
+    assert await watch.check_ins(app, start + timedelta(minutes=45)) == [], "its cadence"
+    assert await watch.check_ins(app, start + timedelta(minutes=60)) == [cid]
+    notices = await store.read(lambda c: [json.loads(r[0]) for r in c.execute(
+        "SELECT data FROM global_events WHERE type='notice' ORDER BY id")])
+    assert [(n["kind"], n["title"], n["body"], n["link"]) for n in notices] == [
+        ("mission", "Night", "Mission Night: step 1 of 2, Read the docs.", f"/mission/{cid}")] * 2
+    assert await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM intercom WHERE from_addr=?", (f"agent:{cid}",)).fetchone()[0]) == 0, \
+        "no Intercom thread"
+    assert (await missions.get(store, cid))["updated_at"] == updated, "the app's, not the mission's"
+
+    # done: the user is told too, with its note
+    await store.write(lambda c: missions.set_status_sync(c, store, cid, "done", "The page is up."))
+    last = await store.read(lambda c: json.loads(c.execute(
+        "SELECT data FROM global_events WHERE type='notice' ORDER BY id DESC").fetchone()[0]))
+    assert (last["kind"], last["body"], last["link"]) == ("mission", "The page is up.", f"/mission/{cid}")
+
+
 async def test_past_the_mission_time_limit_of_advanced_it_stops_with_the_reason(store):
     intercom = Intercom(store)
     cfg = load()
@@ -242,7 +269,7 @@ async def test_past_the_mission_time_limit_of_advanced_it_stops_with_the_reason(
     assert await watch.ceilings(app, start + timedelta(hours=2)) == []
     assert await watch.ceilings(app, start + timedelta(hours=2, seconds=1)) == [cid]
     row = await missions.get(store, cid)
-    assert (row["status"], row["note"]) == ("stopped", "Ran over 2 hours")
+    assert (row["status"], row["note"]) == ("stopped", "Stopped at its time limit of 2 hours.")
     assert aborted == [cid], "its turn and its sub-agents are stopped"
     assert await watch.ceilings(app, start + timedelta(hours=3)) == [], "once"
 
@@ -287,15 +314,22 @@ async def test_a_mission_a_freeze_cut_goes_on_after_the_unfreeze(store):
     assert await watch.go_on(app) == []
 
 
-async def test_a_reply_of_the_user_makes_a_waiting_mission_active_again(store):
+async def test_the_users_message_makes_a_waiting_mission_active_at_once(store):
+    """The user answered: Active from their message on, while the turn that reads it runs."""
     intercom = Intercom(store)
-    app = SimpleNamespace(store=store, intercom=intercom)
     cid = await _mission(store, intercom)
     await store.write(lambda c: missions.set_status_sync(c, store, cid, "needs_you", "x"))
-    tid = await _ended_turn(store, intercom, cid, tool=True)
-    await store.write(lambda c: c.execute("UPDATE turns SET origin='user' WHERE id=?", (tid,)))
-    assert await watch.check(app, cid, tid) == "line", "active again, so it goes on"
-    assert (await missions.get(store, cid))["status"] == "active"
+    await store.write(lambda c: tree.queue_turn(c, store, cid, None))
+    row = await missions.get(store, cid)
+    assert (row["status"], row["note"]) == ("active", None)
+    other = await _mission(store, intercom)
+    await store.write(lambda c: missions.set_status_sync(c, store, other, "needs_you", "x"))
+    later = iso(datetime.now(timezone.utc) + timedelta(hours=3))
+    await intercom.send("user", f"agent:{other}", "Ping me then.", due_at=later)
+    assert (await missions.get(store, other))["status"] == "needs_you", \
+        "a message for later: they speak when it lands"
+    await intercom.send("user", f"agent:{other}", "The meetup is on the 20th.")
+    assert (await missions.get(store, other))["status"] == "active", "an intercom reply too"
 
 
 async def test_a_stopped_sub_agent_lets_the_watch_move_its_mission_on(store):
@@ -396,3 +430,45 @@ async def test_a_held_mission_whose_notice_landed_gets_a_new_one(store):
     due = await store.read(lambda c: c.execute(
         "SELECT due_at FROM intercom WHERE id=?", (int(row["wake_id"]),)).fetchone()[0])
     assert due == iso(until + timedelta(minutes=10) - timedelta(minutes=15))
+
+
+async def test_a_mission_whose_turn_failed_names_the_reason_in_its_note(store):
+    intercom = Intercom(store)
+    app = SimpleNamespace(store=store, intercom=intercom)
+    cid = await _mission(store, intercom)
+    await plans.save(store, cid, "", plans.clean([{"title": "Read", "state": "done"}]))
+    tid = await _ended_turn(store, intercom, cid, tool=True)
+    await store.write(lambda c: c.execute(
+        "UPDATE turns SET state='failed', reason=? WHERE id=?",
+        ("5090 returned 503: The model server is paused.\nmore", tid)))
+    assert await watch.check(app, cid, tid) == "needs_you"
+    assert (await missions.get(store, cid))["note"] == \
+        "Its last turn failed: 5090 returned 503: The model server is paused."
+
+
+async def test_a_request_that_waits_in_a_mission_moves_its_limit_and_holds_its_ceiling(store):
+    intercom = Intercom(store)
+    cfg = load()
+    cfg.settings.general["mission_max_hours"] = 1
+
+    async def abort(_cid):
+        pass
+    roots = {"now": frozenset()}
+    app = SimpleNamespace(store=store, intercom=intercom, cfg=cfg,
+                          approvals=SimpleNamespace(roots=lambda: roots["now"]), llm=None,
+                          terminals=None,
+                          dispatcher=SimpleNamespace(abort_conversation=abort))
+    t0 = datetime.now(timezone.utc).replace(microsecond=0)
+    until = t0 + timedelta(hours=3)
+    cid = await _mission(store, intercom, until=iso(until))
+    other = await _mission(store, intercom)
+    roots["now"] = frozenset({cid})
+    asked = await watch.asking(app, t0, {})
+    assert asked == {cid: t0}
+    start = datetime.fromisoformat((await missions.get(store, cid))["created_at"])
+    assert await watch.ceilings(app, start + timedelta(hours=2), frozenset(asked)) == [other], \
+        "the one a request waits in waits for the answer"
+    roots["now"] = frozenset()
+    assert await watch.asking(app, t0 + timedelta(seconds=3600), asked) == {}
+    row = await missions.get(store, cid)
+    assert (row["held_seconds"], row["until"]) == (3600, iso(until + timedelta(hours=1)))

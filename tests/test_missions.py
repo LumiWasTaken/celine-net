@@ -170,7 +170,7 @@ async def test_done_cancels_what_the_mission_scheduled_and_stopped_takes_no_retr
 
 
 @pytest.mark.anyio
-async def test_a_reply_to_her_message_resumes_a_stopped_mission(store):
+async def test_a_reply_to_the_agents_message_resumes_a_stopped_mission(store):
     """The user's reply to what it sent from a stopped mission makes it active again,
     wakes it and puts its time limit back; a message without reply_to wakes nothing."""
     intercom = Intercom(store)
@@ -215,7 +215,7 @@ async def test_only_a_mission_carries_missions_update(store):
 
 
 @pytest.mark.anyio
-async def test_she_plans_then_records_what_she_delivered(store):
+async def test_the_agent_plans_then_records_what_it_delivered(store):
     cfg = load()
     cid = await conversations.create(store, "Prices")
     await missions.create(store, cid, {"name": "Prices", "terminal": "prices",

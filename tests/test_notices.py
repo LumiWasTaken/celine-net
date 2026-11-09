@@ -34,7 +34,7 @@ async def _reply(store, cfg, cid: str, text: str) -> None:
                    EventBus(), Token(turn["id"]), Registry())
 
 
-async def test_her_finished_reply_in_a_chat_is_one_notice_and_a_missions_none(store, cfg):
+async def test_the_agents_finished_reply_in_a_chat_is_one_notice_and_a_missions_none(store, cfg):
     cid = await conversations.create(store)
     await _reply(store, cfg, cid, "\nit went fine\nthe rest of it")
     [n] = await _notices(store)
@@ -74,7 +74,9 @@ async def test_an_approval_opens_where_it_is_answered(store):
     a = Approvals(SimpleNamespace(user="sam", name="Celine"), store=store)
     fut = asyncio.get_running_loop().create_future()
     for kind in ("vault", "gate"):
-        await a._notice(Ask(id=kind, kind=kind, action="do it", facts=[], why="", short="it",
-                            conversation=cid, read=None, expires=0, answer=fut))
-    assert [(n["title"], n["link"], n["tag"]) for n in await _notices(store)] == [
-        ("Vault", "/settings/vault", "ask:vault"), ("Bastet", f"/chat/{cid}", "ask:gate")]
+        await a._notice(Ask(id=kind, kind=kind, title="Celine asks to do it.", facts=[],
+                            detail=None, help="", conversation=cid, expires=0, answer=fut,
+                            where="Chat Untitled"))
+    assert [(n["title"], n["body"], n["link"], n["tag"]) for n in await _notices(store)] == [
+        ("Celine asks to do it.", "Chat Untitled", "/settings/vault", "ask:vault"),
+        ("Celine asks to do it.", "Chat Untitled", f"/chat/{cid}", "ask:gate")]

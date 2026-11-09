@@ -1,6 +1,6 @@
 """Who a message goes to. Stored addresses: `user`, `agent:<conversation id>`,
 `team:<conversation id>` (that conversation and its sub-agents), `all` (everyone
-working), `system:guard` (Bastet, the guard: she answers her, guard/talk.py),
+working), `system:guard` (Bastet, the guard: she answers the agent, guard/talk.py),
 `system:<name>` (a sender only: a host script of the user's, so writing to it, by that
 address or its token's name, reaches the user).
 
@@ -133,7 +133,7 @@ def resolve(c: sqlite3.Connection, to: str, sender: str,
         elif addr == "team":
             addr = f"team:{me['id']}"
         elif addr in GUARD_NAMES and sender.startswith("agent:"):
-            addr = GUARD                 # she talks to Bastet; anyone else's reply is the user's
+            addr = GUARD                 # the agent talks to Bastet; anyone else's reply is the user's
         elif addr.startswith("system:") or c.execute(
                 "SELECT 1 FROM intercom_tokens WHERE name=?", (addr,)).fetchone():
             addr = "user"

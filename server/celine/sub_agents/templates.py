@@ -1,8 +1,8 @@
-"""Her agent templates: the sub-agents she reuses, one note each in FOLDER of her notebook,
+"""The agent's templates: the sub-agents it reuses, one note each in FOLDER of its notebook,
 in the shape of Claude Code's `.claude/agents/*.md` and opencode's `agent/*.md`: a `---`
 frontmatter with `name`, `description`, optional `model`, `access` (read or work),
 `tools` (skill names, comma separated or a YAML list) and `device`, then the body, that
-agent's prompt. She writes them with her notebook tools; the user sees them in the
+agent's prompt. The agent writes them with its notebook tools; the user sees them in the
 Notebook. `sub_agents__start(template=...)` starts one (the arguments given win over the
 template's), the conversation keeps the template's name (`agent_template`) and every
 turn reads the note again: its body is the start of the sub-agent's system prompt
@@ -78,9 +78,9 @@ def parse(text: str) -> Template:
 
 
 def scan(cfg) -> tuple[dict[str, Template], list[str]]:
-    """Her templates by casefolded name, from FOLDER, and one line for each file that
+    """The agent's templates by casefolded name, from FOLDER, and one line for each file that
     is no template and each name two files share (neither of them starts)."""
-    root = cfg.her.notebook
+    root = cfg.agent.notebook
     base = root / FOLDER
     found: dict[str, list[tuple[str, Template]]] = {}
     problems: list[str] = []
@@ -127,8 +127,8 @@ def find(cfg, name: str) -> Template | None:
 
 
 def listing(cfg) -> str | None:
-    """The templates she has, one line each, and the files that are none, for the tail
-    of her turns."""
+    """The templates the agent has, one line each, and the files that are none, for the
+    tail of its turns."""
     got, problems = scan(cfg)
     if not got and not problems:
         return None

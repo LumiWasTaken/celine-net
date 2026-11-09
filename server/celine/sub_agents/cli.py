@@ -16,7 +16,7 @@ import anyio
 
 from .. import metrics
 from ..backends.base import BackendError, Done, TextDelta
-from ..settings import CONVERSATION_MODELS, her_models
+from ..settings import CONVERSATION_MODELS, agent_models
 
 CLIS = ("opencode",)    # the one list; shellbox/agent.py and the guides match
 ANSWER_MAX = 256 * 1024     # bytes of answer.md read
@@ -41,7 +41,7 @@ class CliBackend:
         self.services, self.cid, self.cli, self.clock = services, cid, cli, clock
         s = services.cfg.settings
         own = CONVERSATION_MODELS.get(cid)
-        self.model = own if own in her_models.allowed(s) else "default"
+        self.model = own if own in agent_models.allowed(s) else "default"
         self.name = f"cli:{cli}"
 
     @property

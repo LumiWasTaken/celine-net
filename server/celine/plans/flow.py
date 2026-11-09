@@ -66,16 +66,26 @@ def check_models(settings, steps: list[dict]) -> None:
                                 f"models are: {', '.join(known) or 'none'}.")
 
 
+async def switch(store, cfg, cid: str, steps: list[dict]) -> tuple[str, str] | None:
+    """(model, title) of the step it is on when that step names a model the conversation
+    does not run on now, else None."""
+    from ..settings import conversations as conv
+    n = plans.doing({"steps": steps})
+    model = steps[n - 1]["model"] if n else None
+    if not model or getattr(cfg, "settings", None) is None or \
+            (await conv.get(store, cid) or {}).get("model") == model:
+        return None
+    return model, steps[n - 1]["title"]
+
+
 async def follow_model(store, cfg, cid: str, plan: dict) -> str | None:
     """The step it is on names a model: the conversation runs on it from its next turn
     (its `conversation.settings` event). -> the model switched to, None."""
     from ..settings import conversations as conv
-    n = plans.doing(plan)
-    model = plan["steps"][n - 1]["model"] if n else None
-    settings = getattr(cfg, "settings", None)
-    if not model or settings is None or (await conv.get(store, cid) or {}).get("model") == model:
+    to = await switch(store, cfg, cid, plan["steps"])
+    if to is None:
         return None
-    await conv.apply(store, cid, {"model": model})
+    await conv.apply(store, cid, {"model": to[0]})
     await store.append_event(cid, CONVERSATION_SETTINGS,
-                             conv.view(settings, cid, await conv.get(store, cid)))
-    return model
+                             conv.view(cfg.settings, cid, await conv.get(store, cid)))
+    return to[0]

@@ -40,8 +40,9 @@ async def test_a_step_with_a_model_switches_the_mission_to_it(tmp_path, monkeypa
     assert "[>] 1. Read the docs (model lan/small)" in out.content
     row = await missions.get(store, cid)
     assert row["steps"][1] == {"title": "Build it", "state": "todo", "checkpoint": "none",
-                               "model": None, "started_at": None, "done_at": None} \
-        and row["step"] == 1
+                               "model": None, "by": None, "started_at": None,
+                               "done_at": None} and row["step"] == 1
+    assert row["steps"][0]["by"] == "agent"
     assert row["plan"] == "read, then build"
     assert (await conv.get(store, cid))["model"] == "lan/small", "step 1 runs on its model"
     fragment = await skill.prompt_fragment(ctx)
@@ -205,3 +206,92 @@ async def test_the_user_edits_the_steps_and_moves_the_step(tmp_path, monkeypatch
         assert (await c.get("/api/missions")).json()["missions"] == []
         assert [m["conversation_id"] for m in (await c.get("/api/missions?trashed=1")
                                                ).json()["missions"]] == [cid]
+
+
+async def test_a_step_on_a_cloud_model_the_agent_picked_asks_first(tmp_path, monkeypatch, store):
+    """plan__set and plan__step ask before the step they would be on switches to a cloud
+    model nobody listed; denied, the plan stays as it was and the model too."""
+    from settings_fixtures import PROVIDERS, ROLES
+    scratch(tmp_path, monkeypatch, providers={**PROVIDERS, "or": {
+        "kind": "openai", "label": "Far", "base_url": "https://api.example.com/v1",
+        "models": {"glm": {"label": "GLM", "caps": ["chat", "tools"]}}}}, roles=ROLES)
+    cfg = boot.load()
+    cid = await _mission(store)
+    asked, answer = [], ["Lumi denied it; nothing was done."]
+
+    class Approvals:
+        async def ask(self, kind, conversation, action, *, facts=(), detail=None, **kw):
+            asked.append((action, list(facts)))
+            return answer[0]
+    plan = Plan(cfg)
+    plan.app = SimpleNamespace(approvals=Approvals(), llm=None)
+    ctx = ToolContext(cid, "t", "k", store, cfg, None)
+    out = await plan.set(ctx, steps=[{"title": "Dig", "model": "or/glm"}])
+    assert out.is_error and out.content == f"Plan not saved: {answer[0]}"
+    assert asked == [("run a plan step on a cloud model",
+                      [("Step", "Dig"), ("Model", "GLM"), ("Provider", "Far")])]
+    assert await plans.get(store, cid) is None and \
+        (await conv.get(store, cid) or {}).get("model") is None, "nothing changed"
+
+    out = await plan.set(ctx, steps=[{"title": "Read", "model": "main/big"},
+                                     {"title": "Dig", "model": "or/glm"}])
+    assert not out.is_error and len(asked) == 1, "a local model asks nothing"
+    out = await plan.step(ctx, step=1, state="done")
+    assert out.is_error and out.content == f"Not moved: {answer[0]}" and len(asked) == 2
+    assert (await plans.get(store, cid))["steps"][0]["state"] == "doing"
+    answer[0] = None
+    assert not (await plan.step(ctx, step=1, state="done")).is_error
+    assert (await conv.get(store, cid))["model"] == "or/glm"
+
+
+async def test_a_step_model_the_user_set_on_the_missions_page_asks_nothing(
+        tmp_path, monkeypatch, store):
+    """A cloud model the user set on a step (PATCH /api/missions/{cid}) is theirs: the
+    step stores `by` user, plan__step onto it asks nothing, and the agent's plan__set that
+    keeps it keeps theirs; a model the agent changes it to is its own and asks."""
+    import httpx
+    from fastapi import FastAPI
+
+    from celine.core.services import Services
+    from celine.errors import install_error_handler
+    from celine.missions import api as missions_api
+    from settings_fixtures import PROVIDERS, ROLES
+    scratch(tmp_path, monkeypatch, providers={**PROVIDERS, "or": {
+        "kind": "openai", "label": "Far", "base_url": "https://api.example.com/v1",
+        "models": {"glm": {"label": "GLM", "caps": ["chat", "tools"]},
+                   "kimi": {"label": "Kimi", "caps": ["chat", "tools"]}}}}, roles=ROLES)
+    cfg = boot.load()
+    app = FastAPI()
+    install_error_handler(app)
+    app.include_router(missions_api.router)
+    app.state.services = Services(cfg=cfg, store=store, intercom=Intercom(store))
+    cid = await _mission(store)
+    asked = []
+
+    class Approvals:
+        async def ask(self, kind, conversation, action, *, facts=(), detail=None, **kw):
+            asked.append(action)
+            return "Lumi denied it; nothing was done."
+    plan = Plan(cfg)
+    plan.app = SimpleNamespace(approvals=Approvals(), llm=None)
+    ctx = ToolContext(cid, "t", "k", store, cfg, None)
+    assert not (await plan.set(ctx, steps=[{"title": "Read"}, {"title": "Dig"}])).is_error
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://t") as c:
+        r = await c.patch(f"/api/missions/{cid}", json={"steps": [
+            {"title": "Read", "state": "doing"},
+            {"title": "Dig", "state": "todo", "model": "or/glm"}]})
+        assert r.json() == {"ok": True}, r.text
+    steps = (await plans.get(store, cid))["steps"]
+    assert [(s["model"], s["by"]) for s in steps] == [(None, None), ("or/glm", "user")]
+    out = await plan.set(ctx, steps=[{"title": "Read"}, {"title": "Dig", "model": "or/glm"},
+                                     {"title": "Write"}])
+    assert not out.is_error and (await plans.get(store, cid))["steps"][1]["by"] == "user"
+    assert not (await plan.step(ctx, step=1, state="done")).is_error and asked == []
+    assert (await conv.get(store, cid))["model"] == "or/glm"
+
+    out = await plan.set(ctx, steps=[{"title": "Read", "state": "done"},
+                                     {"title": "Dig", "state": "done"},
+                                     {"title": "Write", "model": "or/kimi"}])
+    assert out.is_error and asked == ["run a plan step on a cloud model"], \
+        "a model the agent set asks"

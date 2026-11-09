@@ -127,7 +127,7 @@ async def test_an_ask_checkpoint_ends_the_turn_and_your_answer_goes_on(store):
     assert not (await plans.get(store, cid))["waiting"], "your answer lifts the wait"
 
 
-async def test_her_other_conversations_working_now_are_named(store):
+async def test_the_agents_other_conversations_working_now_are_named(store):
     chat = await conversations.create(store, "Groceries")
     mission = await conversations.create(store, "m", kind="mission")
     await store.write(lambda c: c.execute(
@@ -139,7 +139,7 @@ async def test_her_other_conversations_working_now_are_named(store):
     assert "the mission Prices" in await store.read(lambda c: here.busy(c, chat))
 
 
-async def test_her_routine_writes_and_runs_are_hers(tmp_path, monkeypatch, store):
+async def test_the_agents_routine_writes_and_runs_are_its_own(tmp_path, monkeypatch, store):
     from celine.intercom.addresses import resolve
     from celine.schedules.runs import Scheduler
     from celine.schedules.skill import Routines
@@ -161,7 +161,7 @@ async def test_her_routine_writes_and_runs_are_hers(tmp_path, monkeypatch, store
     assert bad.is_error and bad.content == "Not saved (time): The time is HH:MM, such as 02:00."
     by = await store.read(lambda c: c.execute(
         "SELECT by FROM text_versions WHERE of='routine:morning:prompt'").fetchone()[0])
-    assert by == "her", "its change is its own in the routine's history"
+    assert by == "agent", "its change is its own in the routine's history"
     assert "- morning: Morning, every day at 07:30, on, no runs yet" in \
         (await skill.list(ctx)).content
 
@@ -169,7 +169,7 @@ async def test_her_routine_writes_and_runs_are_hers(tmp_path, monkeypatch, store
     rid = out.display["run"]
     row = await store.read(lambda c: dict(c.execute(
         "SELECT started_by, conversation_id FROM runs WHERE id=?", (rid,)).fetchone()))
-    assert row["started_by"] == "her"
+    assert row["started_by"] == "agent"
     with pytest.raises(ValueError, match="has not started"):
         await store.read(lambda c: resolve(c, f"run:{rid}", f"agent:{cid}"))
     run_conv = await conversations.create(store, "Morning", kind="background")
@@ -181,7 +181,7 @@ async def test_her_routine_writes_and_runs_are_hers(tmp_path, monkeypatch, store
     assert f"run:{rid}" in (await skill.read(ctx, name="morning")).content
 
 
-async def test_her_routine_change_keeps_what_she_left_out_and_names_a_bad_field(
+async def test_the_agents_routine_change_keeps_what_it_left_out_and_names_a_bad_field(
         tmp_path, monkeypatch, store):
     from celine.schedules.runs import Scheduler
     from celine.schedules.skill import Routines
@@ -221,7 +221,7 @@ async def test_her_routine_change_keeps_what_she_left_out_and_names_a_bad_field(
             f"{args}: nothing half-saved"
 
 
-async def test_her_answer_finishes_only_the_last_step(store):
+async def test_the_agents_answer_finishes_only_the_last_step(store):
     cfg = load()
     cid = await conversations.create(store)
     await plans.save(store, cid, "", plans.clean([{"title": "Design", "state": "done"},

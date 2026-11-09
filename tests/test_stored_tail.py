@@ -107,7 +107,8 @@ async def test_live_state_between_two_turns_leaves_the_prefix_as_it_was(store):
                                kind="notice", until_at=until)
     await user_says(store, scout, "work")
     await turns.claim(store, "w2")                  # the sub-agent's turn runs: working
-    await store.write(lambda c: missions.set_status_sync(c, store, cid, "needs_you", "?"))
+    # Done: a state the user's next message leaves as it is (Needs you it makes Active)
+    await store.write(lambda c: missions.set_status_sync(c, store, cid, "done", "?"))
     await turn("and now?")
 
     one, two = backend.calls

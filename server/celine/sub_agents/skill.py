@@ -14,11 +14,11 @@ message to it, and `start` with the name of one that is done sends the new brief
 Its turns run at agent priority on their own dispatcher worker. It gets its persona,
 not the parent conversation. When it is done, its report comes back as an intercom
 `report` (report.py). `start` returns at once; `read` looks at one, and waits for it
-when asked. `model` picks its model among its own (settings/her_models.py), kept as its
-conversation's model; a cloud model (her_models.cloud) waits for the user's approval at
-every start. `cli` hands its briefs to an agent CLI in its shellbox instead (`agent_cli`,
-cli.py); `device` to opencode on one of its devices, a drone (`agent_device`,
-drone.py).
+when asked. `model` picks its model among its own (settings/agent_models.py), kept as its
+conversation's model; a cloud model the user did not pick waits for their approval at
+every start and resume (agent_models.ask_cloud). `cli` hands its briefs to an agent CLI in
+its shellbox instead (`agent_cli`, cli.py); `device` to opencode on one of its devices,
+a drone (`agent_device`, drone.py).
 
 A sub-agent starts sub-agents of its own, down to MAX_DEPTH levels below the top of
 the chain (conversations/store.depth reads the agent_of chain); each reports to the one
@@ -36,7 +36,7 @@ from .. import homes, metrics, prompts
 from ..conversations import store as conversations, tree
 from ..core.ids import now
 from ..skills import ToolContext, ToolResult, guide, knob, tool, described
-from ..settings import her_models
+from ..settings import agent_models
 from ..skills import words
 from ..skills.gating import overrides_for
 from . import report, templates
@@ -50,16 +50,16 @@ MIN_NAME = 5
 MAX_NAME = 60
 MAX_WAIT = 600      # seconds `read` waits for a sub-agent at most
 MAX_DEPTH = 3       # levels of sub-agents below the top conversation
-BRIEF_FACT = 160    # characters of the brief on a cloud model's approval
 READ_PARENT = ("You have read access, so your sub-agents have read access too and run "
                "on a model, not a CLI or a device.")
-CLOUD_ASK = "start the sub-agent {name} on the cloud model {model}"
+CLOUD_ASK = "start a sub-agent on a cloud model"
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
     knob("sub_agents.max_running", "Sub-agents at once", None, 1, 1000, 4,
-         "Per conversation; a start over it waits its turn."),
+         "How many sub-agents of one conversation work at once; a start over it waits "
+         "its turn."),
     knob("sub_agents.cli_minutes", "Agent CLI time limit", "minutes", 1, 100_000, 120,
-         "One sub-agent that works through an agent CLI in its shellbox."),
+         "The longest one sub-agent may work through an agent CLI in the shellbox."),
 )
 
 
@@ -250,37 +250,10 @@ class SubAgents:
         model = model or (await model_for_sub_agent(store, parent))["model"]
         return model or next(iter(s.chain(role_of("agent")) or s.chain("chat")), None)
 
-    async def _cloud_approval(self, ctx: ToolContext, brief: str, name: str,
-                              model: str | None) -> str | None:
-        """The user's approval when the sub-agent runs on a cloud model (`model`, from
-        _model). None when it may start, else the sentence for its result."""
-        s = self.cfg.settings
-        if not model or not her_models.cloud(s, model):
-            return None
-        llm = getattr(self.app, "llm", None)
-        if llm is not None:             # known down: nothing to ask the owner about
-            st = llm.router.provider_state(s.split(model)[0])
-            if st.reachable is False:
-                return (f"{' '.join(name.split())} did not start: "
-                        f"{her_models.label(s, model)} does not answer."
-                        + (f" {st.error}" if st.error else ""))
-        approvals = getattr(self.app, "approvals", None)
-        if approvals is None:
-            return "Nobody can approve a cloud model here: it did not start."
-        action = CLOUD_ASK.format(name=" ".join(name.split()),
-                                  model=her_models.label(s, model))
-        summary = " ".join(brief.split())
-        if len(summary) > BRIEF_FACT:
-            summary = summary[:BRIEF_FACT - 1].rstrip() + "\u2026"
-        return await approvals.ask(action, [f"Instructions: {summary}"], ctx.conversation_id,
-                                   short=action, kind="model",
-                                   call=ctx.tool_call_id or None)
-
-
     def _folder(self, folder: str, create: bool) -> tuple[str | None, str | None]:
         """A relative notebook folder; one that does not exist only for a sub-agent that
         writes (`create`), made by begin. (folder, refusal)."""
-        root = self.cfg.her.notebook.resolve()
+        root = self.cfg.agent.notebook.resolve()
         rel = plain_folder(folder) or ""
         p = (root / rel).resolve()
         if rel in ("", ".") or not p.is_relative_to(root) or p == root:
@@ -333,9 +306,10 @@ class SubAgents:
         """Start a sub-agent of `parent`, in the parent's mode: its conversation,
         settings and brief; the name of one that is done gives that one the brief,
         refused when a given access or folder is not its own. The agent's tool and the API
-        share it; the tool's call (`asker`) asks the user first for a cloud model
-        (_cloud_approval). `template`: one of its agent templates (templates.py), whose
-        access, model and device count where none is given. -> (its conversation id,
+        share it; the tool's call (`asker`) asks the user first for a cloud model they
+        did not pick, a resume too (agent_models.ask_cloud). `template`: one of its agent
+        templates (templates.py), whose access, model and device count where none is
+        given. -> (its conversation id,
         None, resumed, its brief's number) or (None, the refusal, False, None)."""
         name = " ".join(name.split())
         if template is not None:
@@ -390,8 +364,8 @@ class SubAgents:
             return None, "access is read or work.", False, None
         if reading and (access == "work" or cli is not None or device is not None):
             return None, (READ_PARENT), False, None
-        if model is not None and model not in her_models.allowed(self.cfg.settings):
-            yours = ", ".join(her_models.allowed(self.cfg.settings)) or "none"
+        if model is not None and model not in agent_models.allowed(self.cfg.settings):
+            yours = ", ".join(agent_models.allowed(self.cfg.settings)) or "none"
             return None, f"{model} is not one of your models. Yours: {yours}.", False, None
         if cli is not None and cli not in CLIS:
             return None, f"cli is one of {', '.join(CLIS)}.", False, None
@@ -417,8 +391,9 @@ class SubAgents:
             return None, READ_PARENT, False, None     # a resume gives no more either
         # the user's answer may take minutes: asked outside the lock, checked again in it
         model = await self._model(store, parent, model, known)
-        if asker is not None and (no := await self._cloud_approval(
-                asker, brief, name, model)):
+        if asker is not None and (no := await agent_models.ask_cloud(
+                self.cfg, self.app, asker, model, action=CLOUD_ASK,
+                facts=[("Sub-agent", name)], detail=("Instructions", brief))):
             return None, no, False, None
         async with self._queueing:
             mine, known, folder, refusal = await self._check(
@@ -432,7 +407,7 @@ class SubAgents:
                     await conv.apply(store, sub, {"model": model})
             else:
                 if folder is not None and access == "work":
-                    (self.cfg.her.notebook.resolve() / folder).mkdir(parents=True,
+                    (self.cfg.agent.notebook.resolve() / folder).mkdir(parents=True,
                                                                      exist_ok=True)
                 sub = await conversations.create(
                     store, title=name, agent_of=parent, agent_name=name,
@@ -583,33 +558,62 @@ ENDED = {"aborted": "stopped", "failed": "failed", "interrupted": "failed",
 
 
 def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
-    """Every sub-agent under the top of `cid`'s chain, each before its own and siblings
-    oldest first: id, parent, depth, name, state (queued, working, done, stopped, failed,
-    paused), step_words, model (the newest that answered, else its own), what all its
-    turns took (report.work) and link. None: no such conversation."""
+    """Everything under the top of `cid`'s chain, each before its own and siblings
+    oldest first: `agents`, its sub-agents, and `missions`, the missions it or they
+    started (their sub-agents in `agents`, under them). Each: id, kind (agent, mission),
+    parent, depth, name, state (queued, working, done, stopped, failed, paused; a
+    mission's status: active, needs_you, done, stopped), reason (why it failed, stopped
+    or paused; a mission's note), step_words, model (the newest that answered, else its
+    own), what all its turns took (report.work) and link. `origin`: where the top came
+    from (homes.path above it: the run that started a mission); `total`: tokens and
+    seconds of the top and everything under it. None: no such conversation."""
     top = homes.root(c, cid)
     if top is None:
         return None
     out: list[dict] = []
+    seen = {top["id"]}
+    total = {"prompt_tokens": 0, "completion_tokens": 0, "seconds": 0}
+
+    def add(w: dict) -> None:
+        for k in total:
+            total[k] += w[k]
+
+    def node(r, parent: str, depth: int, kind: str, name: str, state: str,
+             reason: str | None, step: str | None) -> None:
+        w = report.work(c, r["id"], whole=True)
+        add(w)
+        out.append({"id": r["id"], "kind": kind, "parent": parent, "depth": depth,
+                    "name": name, "state": state, "reason": reason, "step_words": step,
+                    "model": (w["models"] or [r["model_id"]])[-1],
+                    "prompt_tokens": w["prompt_tokens"],
+                    "completion_tokens": w["completion_tokens"],
+                    "seconds": w["seconds"], "link": homes.of(c, r["id"])["link"]})
+        walk(r["id"], depth + 1)
 
     def walk(parent: str, depth: int) -> None:
         for r in c.execute("SELECT id, agent_name, model_id FROM conversations WHERE "
                            "agent_of=? ORDER BY created_at, id", (parent,)).fetchall():
-            f, w = _look(c, r["id"], own), report.work(c, r["id"], whole=True)
-            last = c.execute("SELECT state FROM turns WHERE conversation_id=? ORDER BY "
-                             "created_at DESC LIMIT 1", (r["id"],)).fetchone()
-            state = "queued" if f["queued"] else "working" if f["working"] else \
-                ENDED.get(last[0] if last else "", "done")
-            out.append({"id": r["id"], "parent": parent, "depth": depth,
-                        "name": r["agent_name"], "state": state,
-                        "step_words": f["step_words"] if f["working"] else None,
-                        "model": (w["models"] or [r["model_id"]])[-1],
-                        "prompt_tokens": w["prompt_tokens"],
-                        "completion_tokens": w["completion_tokens"],
-                        "seconds": w["seconds"], "link": homes.of(c, r["id"])["link"]})
-            walk(r["id"], depth + 1)
+            if r["id"] in seen:
+                continue
+            seen.add(r["id"])
+            f = _look(c, r["id"], own)
+            node(r, parent, depth, "agent", r["agent_name"], f["state"], f["reason"],
+                 f["step_words"] if f["working"] else None)
+        for r in c.execute("SELECT cv.id, cv.model_id, m.name, m.status, m.note FROM "
+                           "missions m JOIN conversations cv ON cv.id = m.conversation_id "
+                           "WHERE m.started_by=? ORDER BY cv.created_at, cv.id",
+                           (parent,)).fetchall():
+            if r["id"] in seen:
+                continue
+            seen.add(r["id"])
+            node(r, parent, depth, "mission", r["name"], r["status"],
+                 _first_line(r["note"]) if r["status"] in ("needs_you", "stopped") else None,
+                 None)
+    add(report.work(c, top["id"], whole=True))
     walk(top["id"], 1)
-    return {"top": top["id"], "agents": out}
+    return {"top": top["id"], "origin": homes.path(c, top["id"])[:-1],
+            "agents": [n for n in out if n["kind"] == "agent"],
+            "missions": [n for n in out if n["kind"] == "mission"], "total": total}
 
 
 def queued_sql(conversation: str = "?") -> str:
@@ -695,11 +699,24 @@ def _look(c: sqlite3.Connection, sub: str, own: dict) -> dict:
     queued = waiting(c, sub) is not None
     # a queued one is working too: it has a brief to do (release)
     flown = flown[0] if flown else None
+    last = c.execute("SELECT state, reason FROM turns WHERE conversation_id=? ORDER BY "
+                     "created_at DESC LIMIT 1", (sub,)).fetchone()
+    state = "queued" if queued else "working" if not quiet else \
+        ENDED.get(last["state"] if last else "", "done")
+    top = homes.root(c, sub)
     return {"quiet": quiet, "queued": queued, "working": queued or not quiet,
+            "state": state, "reason": _first_line(last["reason"])
+            if last and state in ("failed", "stopped", "paused") else None,
+            "root": top["id"] if top is not None else None,
             "step": step["name"] if step else flown,
             "step_words": words.step(step["name"], own) if step else flown,
             "report": dict(rep) if rep else None,
             "last": report.last_answer(c, sub)}
+
+
+def _first_line(text: str | None) -> str | None:
+    s = (text or "").strip().split("\n")[0].strip()
+    return s or None
 
 
 def _error(text: str) -> ToolResult:

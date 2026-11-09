@@ -1,10 +1,12 @@
 """Plan rows (table `plans`): {text, steps, waiting, updated_at}, each step
-{title, state, checkpoint, model, started_at, done_at}. The rules live here, nowhere
+{title, state, checkpoint, model, by, started_at, done_at}. The rules live here, nowhere
 else: at most one step `doing`; while a step is open one is doing (the first open one
 when none is said); `waiting` is set when an `ask` step is done, and cleared by the next
 change. A step's times: started_at when it becomes doing, done_at when it becomes done,
 both gone when it is todo again; a step plan__set writes again under the same title
-keeps them.
+keeps them. `by`: who set its model, "user" (the Missions page) or "agent" (plan__set),
+None without one; a step written again under the same title with the same model keeps
+it (agent_models.picked_by_user reads it).
 
 Every change is one write that appends `plan.state` {plan} to the conversation (the
 transcript pins it) and, for a mission, its `mission.state` on the global feed."""
@@ -66,9 +68,10 @@ def _mark(s: dict, state: str) -> None:
         s["done_at"] = now()
 
 
-def clean(steps, before: list[dict] = ()) -> list[dict]:
+def clean(steps, before: list[dict] = (), by: str = "agent") -> list[dict]:
     """Steps as stored, the rules applied; a step whose title is in `before` (the plan
-    this one replaces) keeps its times. Refused with the sentence to show."""
+    this one replaces) keeps its times, and its `by` while its model stays; `by` ("user"
+    or "agent") wrote the rest. Refused with the sentence to show."""
     if not isinstance(steps, list):
         raise Refused("steps is a list of steps.")
     if len(steps) > STEPS_MAX:
@@ -92,8 +95,9 @@ def clean(steps, before: list[dict] = ()) -> list[dict]:
         if checkpoint not in CHECKPOINTS:
             raise Refused(f"Step {n}: checkpoint is none or ask.")
         was = kept.get(title, {})
-        step = {"title": title, "state": state, "checkpoint": checkpoint,
-                "model": str(s.get("model") or "").strip() or None,
+        model = str(s.get("model") or "").strip() or None
+        step = {"title": title, "state": state, "checkpoint": checkpoint, "model": model,
+                "by": was.get("by") if model == was.get("model") else by if model else None,
                 "started_at": was.get("started_at"), "done_at": was.get("done_at")}
         _mark(step, state)
         out.append(step)
@@ -127,7 +131,9 @@ def save_sync(c: sqlite3.Connection, store, cid: str, text: str, steps: list[dic
 
 def answered_sync(c: sqlite3.Connection, store, cid: str) -> None:
     """Inside a write: the user spoke in `cid` (a message, a reply on the intercom): a
-    plan waiting at a checkpoint goes on."""
+    plan waiting at a checkpoint goes on, a mission waiting for them is active again."""
+    from ..missions.store import set_status_sync
+    set_status_sync(c, store, cid, "active", None, "needs_you")
     plan = get_sync(c, cid)
     if plan is not None and plan["waiting"]:
         save_sync(c, store, cid, plan["text"], plan["steps"], False)

@@ -20,7 +20,7 @@ async def _replied(store, ic, cid):
     """The agent wrote to the user; the user replied in that thread: one queued turn."""
     first = await ic.send(f"agent:{cid}", "user", "the download stopped", subject="videos")
     reply = await ic.send("user", "", "why?", reply_to=first["intercom_id"])
-    assert reply["turn_id"], "the reply wakes her"
+    assert reply["turn_id"], "the reply wakes the agent"
     return first["intercom_id"], reply
 
 
@@ -34,7 +34,7 @@ async def _answers(store, cid, turn_id, text):
     await store.write(fn)
 
 
-async def test_her_answer_to_the_users_reply_lands_in_the_thread(store):
+async def test_the_agents_answer_to_the_users_reply_lands_in_the_thread(store):
     ic = Intercom(store)
     cid = await conversations.create(store, title="downloads")
     first, reply = await _replied(store, ic, cid)
@@ -45,11 +45,11 @@ async def test_her_answer_to_the_users_reply_lands_in_the_thread(store):
     msgs = await store.read(lambda c: rows.thread(c, first))
     assert [(m["from"], m["to"], m["text"]) for m in msgs] == [
         (f"agent:{cid}", "user", "the download stopped"), ("user", f"agent:{cid}", "why?"),
-        (f"agent:{cid}", "user", "i killed it, sorry [[web:2]]")], "as she wrote it"
+        (f"agent:{cid}", "user", "i killed it, sorry [[web:2]]")], "as the agent wrote it"
     assert msgs[2]["reply_to"] == reply["intercom_id"] and msgs[2]["subject"] == "videos"
 
 
-async def test_only_her_final_answer_goes_in_and_a_later_one_of_hers_does_not_count(store):
+async def test_only_its_final_answer_goes_in_and_a_later_one_of_its_own_does_not_count(store):
     """Words between tool calls are no answer; a message it scheduled for later, or one
     it cancelled, is not its answer; citation marks go."""
     ic = Intercom(store)
@@ -78,7 +78,7 @@ async def test_only_her_final_answer_goes_in_and_a_later_one_of_hers_does_not_co
         "the disk was full [web:2]【1†a】, fixed"
 
 
-async def test_a_message_she_sends_from_that_turn_answers_in_the_thread(store, cfg):
+async def test_a_message_the_agent_sends_from_that_turn_answers_in_the_thread(store, cfg):
     """The agent's instructions name the thread; no reply_to needed; one it meant as new starts
     its own; another turn under the same subject starts its own too (no endless thread
     on a word like "update")."""
@@ -142,6 +142,7 @@ async def test_bastets_threads_wait_on_their_own_tab_not_waiting_for_you(store):
         insert(c, f"agent:{cid}", "user", "message", "hi", store=store)
         waiting = rows.threads(c, "user", unread=True, reader="user", received=True)
         guard = rows.threads(c, None, reader="user", with_=rows.GUARD)
-        return [t["name"] for t in waiting], [t["name"] for t in guard], rows.waiting(c, "user")
+        return ([t["name"] for t in waiting], [t["name"] for t in guard],
+                sum(t["unread"] for t in waiting))
     waiting, guard, n = await store.write(fn)
     assert waiting == ["Celine"] and guard == ["Bastet"] and n == 1

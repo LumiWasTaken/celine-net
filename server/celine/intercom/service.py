@@ -9,7 +9,6 @@ import anyio
 
 from ..core.ids import now
 from ..missions import store as missions
-from ..plans import store as plans
 from . import deliver
 from .store import insert, read
 from ..core.event_types import INTERCOM_STATE
@@ -52,8 +51,6 @@ async def send(store, from_addr: str, to: str, text: str, *, kind: str = "messag
                                 "intercom_id=? AND conversation_id IS NOT NULL",
                                 (iid,)).fetchall():
             out["conversations"].append(cid)
-            if from_addr == "user":
-                plans.answered_sync(c, store, cid)
             # the user's reply to its message resumes a stopped mission
             if from_addr == "user" and reply_to is not None and \
                     (row := missions.set_status_sync(c, store, cid, "active", None, "stopped")):

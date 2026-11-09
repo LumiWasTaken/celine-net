@@ -1,7 +1,8 @@
 /* The Intercom: messages between you, its conversations and the app, in threads. The list:
    Waiting for you, All and Guard (Bastet's threads, the server's) with their counts, Type
    and From to narrow it, Sort, Group by whom it is with (Show more for the rest), job results as one line, Search, Select to dismiss many, Dismiss all in More.
-   Each row says where it came from (the server's source). A thread is a chat history,
+   Each row says where it came from (the server's source); what a mission wrote you waits
+   on the mission's page, not in Waiting for you (the server's). A thread is a chat history,
    oldest first, your lines on the right, where each came from under it, the reply pinned
    at its foot; replying marks it read, Dismiss does too. Continue in a chat takes any thread
    into a new chat with it (the server carries its messages); a bug report's thread shows
@@ -27,8 +28,8 @@ import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Avatar, Button, Choice, ComposerBox, copied, cx, Dialog, Divider, Dot, EventLine, Field, GroupHead, ICON, InlineError, Input,
-  ListRow, Loaded, LoadingRow, MenuButton, Message, PlaceHead, Segmented, SelectBar, TextArea, Toolbar, useContextMenu, usePicker,
+  Avatar, Button, Choice, ComposerBox, copied, cx, Dialog, Divider, EventLine, Field, GroupHead, ICON, InlineError, Input,
+  ListRow, Loaded, LoadingRow, MenuButton, Message, PlaceHead, Segmented, SelectBar, StateWord, TextArea, Toolbar, useContextMenu, usePicker,
   coarse, VirtualList, type BulkResult, type MenuItem, type PickProps,
 } from '../ui'
 import './Intercom.css'
@@ -272,7 +273,7 @@ function ThreadRow({ t, waiting, under, pick, menu, onOpen, onMenu }: {
              subtitle={<>{who !== titleOf(t) && who !== under && <span className="intercom-who">{who}: </span>}{firstLine(t.last.text)}</>}
              column={source !== under ? source : ''} cell={what}
              meta={<span className="intercom-meta"><span title={fullDate(t.last.created_at)}>{listTime(t.last.created_at)}</span>
-               {waiting && <Dot tone="accent" label={`${t.unread} waiting for you`} />}</span>}
+               {waiting && <StateWord tone="warn">{`${t.unread} waiting`}</StateWord>}</span>}
              trailing={!pick.checked && <MenuButton icon={MoreHorizontal} label="More" items={menu} size="sm" />} />
   )
 }
@@ -324,11 +325,13 @@ function ThreadPage({ id }: { id: number }) {
                  actions={<>
                    {unread.length > 0 && <Button variant="ghost" icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}
                    {bug?.state === 'open' && <Button variant="ghost" icon={CircleCheck} loading={close.busy} onClick={() => void close.run()}>Close</Button>}
+                   {/* a mission's thread: the mission is its home */}
+                   {src?.kind === 'mission' && src.link && <Button variant="ghost" icon={Flag} onClick={() => nav.goPath(src.link!)}>Open mission</Button>}
                    {msgs.length > 0 && <Button variant="ghost" icon={MessageSquarePlus} loading={toChat.busy} onClick={() => void toChat.run()}>Continue in a chat</Button>}
                  </>}
                  more={[
-                   ...(src?.link ? [{ label: src.kind === 'mission' ? 'Open mission' : 'Open', detail: src.kind === 'mission' ? undefined : src.title ?? undefined,
-                                      icon: SOURCE_ICON[src.kind], onSelect: () => nav.goPath(src.link!) }] : []),
+                   ...(src?.link && src.kind !== 'mission' ? [{ label: 'Open', detail: src.title ?? undefined,
+                                                                 icon: SOURCE_ICON[src.kind], onSelect: () => nav.goPath(src.link!) }] : []),
                    { label: 'Copy link', icon: Link, onSelect: () => copyLink(id) },
                  ]} />
       <div className="page intercom-thread__scroll">
@@ -371,9 +374,9 @@ function ThreadMessage({ m, onCancel }: { m: IntercomMessage; onCancel: () => vo
   const scheduled = isScheduled(m)
   // where it came from, unless that is the sender its name already says
   const from = m.source && m.source.title !== senderName(m) ? m.source : null
-  // a mission writing to its own team: "to the team", its name is beside it already
+  // a mission writing to its own sub-agents: "to its sub-agents", its name is beside it already
   const own = `team:${m.from.split(':')[1]}`
-  const to = m.to.split(', ').filter(a => a !== 'user').map(a => (a === own ? 'the team' : addressName(a, m.to_names))).join(', ')
+  const to = m.to.split(', ').filter(a => a !== 'user').map(a => (a === own ? 'its sub-agents' : addressName(a, m.to_names))).join(', ')
   const when = m.state === 'cancelled' ? 'Cancelled'
     : scheduled ? `Scheduled ${dueTime(m.due_at)}`
     : m.until_at ? `${stamp(m.created_at)}, until ${stamp(m.until_at)}`
@@ -384,7 +387,7 @@ function ThreadMessage({ m, onCancel }: { m: IntercomMessage; onCancel: () => vo
              head={<>
                {to && <span title={`to ${to}`}>to {to}</span>}
                {m.kind !== 'message' && <span>{KIND_WORD[m.kind]}</span>}
-               {m.unread && <Dot tone="accent" label="Waiting for you" />}
+               {m.unread && <StateWord tone="warn">Waiting for you</StateWord>}
              </>}
              time={<span title={fullDate(m.until_at ?? m.due_at ?? m.created_at)}>{when}</span>}
              source={(from || scheduled) && <>
@@ -401,11 +404,11 @@ function ThreadMessage({ m, onCancel }: { m: IntercomMessage; onCancel: () => vo
 
 type When = 'now' | 'in' | 'at' | 'until'
 /* the To that stands for all its conversations */
-const HER = 'her'
+const AGENT = 'agent'
 
 function NewMessage({ onClose, onSent }: { onClose: () => void; onSent: (thread: number) => void }) {
   const online = useOnline()
-  const her = useName()
+  const agentName = useName()
   const recipients = useResource(() => intercomApi.recipients(), [])
   const [to, setTo] = useState('all')
   const [subject, setSubject] = useState('')
@@ -414,9 +417,9 @@ function NewMessage({ onClose, onSent }: { onClose: () => void; onSent: (thread:
   const [whenText, setWhenText] = useState('')
   const all = recipients.data ?? [{ to: 'all', name: 'Everyone', line: null }]
   // its own: its chats and tasks and their sub-agents, newest first, picked in a second step
-  const hers = all.filter(r => r.line)
-  const options = [...all.filter(r => !r.line).map(r => ({ value: r.to, label: r.name })), ...(hers.length ? [{ value: HER, label: her || 'Celine' }] : [])]
-  const inHers = hers.some(r => r.to === to)
+  const chats = all.filter(r => r.line)
+  const options = [...all.filter(r => !r.line).map(r => ({ value: r.to, label: r.name })), ...(chats.length ? [{ value: AGENT, label: agentName || 'Your agent' }] : [])]
+  const inChats = chats.some(r => r.to === to)
   const whens: { value: When; label: string }[] = [
     { value: 'now', label: 'Now' }, { value: 'in', label: 'In' }, { value: 'at', label: 'At' },
     ...(to === 'all' ? [{ value: 'until' as const, label: 'Until' }] : []),
@@ -437,11 +440,11 @@ function NewMessage({ onClose, onSent }: { onClose: () => void; onSent: (thread:
             </>}>
       <div className="intercom-form">
         <Field label="To" group>
-          <Choice list label="To" value={inHers ? HER : to} onChange={v => setTo(v === HER ? hers[0]!.to : v)} options={options} />
+          <Choice list label="To" value={inChats ? AGENT : to} onChange={v => setTo(v === AGENT ? chats[0]!.to : v)} options={options} />
         </Field>
-        {inHers && (
+        {inChats && (
           <Field label="Chat" group>
-            <Choice list label="Chat" value={to} onChange={setTo} options={hers.map(r => ({ value: r.to, label: r.line! }))} />
+            <Choice list label="Chat" value={to} onChange={setTo} options={chats.map(r => ({ value: r.to, label: r.line! }))} />
           </Field>
         )}
         <Field label="Subject"><Input value={subject} onChange={e => setSubject(e.target.value)} /></Field>

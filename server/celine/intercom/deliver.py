@@ -2,12 +2,14 @@
 due (no due time, or one that passed). Then:
 
 1. The conversation is idle (no live turn): `deliver_idle` appends every due delivery
-   under the active leaf, one message each, and when one of them wakes and the
+   under the active leaf, one message each (the agent's own message for the user, from
+   a chat with a due time, as its reply there), and when one of them wakes and the
    conversation may wake (not a stopped mission), queues one turn rooted at the last.
    It runs in the send itself, at every turn end and when a due time passes.
 2. A turn is live: nothing outside the runner touches the tree. The runner calls `take`
    before each model request; it appends the due deliveries under the runner's own tail,
-   with this turn's id, and returns them for the request.
+   with this turn's id, and returns them for the request. The agent's own message for
+   the user waits for rule 1.
 
 The delivery row records what happened in the same write that appends the message, so
 nothing lands twice and a restart carries on from the table."""
@@ -17,10 +19,11 @@ import json
 import sqlite3
 
 from ..conversations import store as conversations, tree
+from ..plans import store as plans
 from ..core.ids import now
 from ..core.states import LIVE_SQL
 from ..core.event_types import INTERCOM_STATE
-from .store import notice_user
+from .store import NAMES, notice_user
 
 
 def author_of(row) -> str:
@@ -57,15 +60,31 @@ def _live(c: sqlite3.Connection, cid: str) -> bool:
                      "LIMIT 1", (cid,)).fetchone() is not None
 
 
+def _says(row) -> bool:
+    """Its own message for the user that lands in its chat as its reply there
+    (store.SAY)."""
+    return bool(json.loads(row["data"] or "{}").get("say"))
+
+
 def land(c, store, row, cid: str, parent: str | None, turn_id: str | None) -> dict:
-    """One delivery as a message of `cid`. A message to an archived conversation
+    """One delivery as a message of `cid`: a user-role line, or (store.SAY) the agent's
+    own message with the notice of a reply. A message to an archived conversation
     brings it back to the list (with Lock archived chats only the user's get there:
     _due)."""
     conversations.set_archived(c, store, cid, False)
+    if row["from_addr"] == "user":         # the user spoke here now, not when they sent it
+        plans.answered_sync(c, store, cid)
     data = json.loads(row["data"] or "{}")
-    m = tree.append(c, store, cid, parent, "user", row["text"], author_of(row), row["id"],
+    says = bool(data.get("say"))
+    m = tree.append(c, store, cid, parent, "assistant" if says else "user", row["text"],
+                    "model" if says else author_of(row), row["id"],
                     turn_id, attachments=data.get("attachments") or (),
                     mid=data.get("message_id"))
+    if says:
+        from .. import homes
+        from ..events import notice
+        notice(store, c, "reply", NAMES["agent"], row["text"], homes.of(c, cid)["link"],
+               f"reply:{cid}")
     c.execute("UPDATE intercom_deliveries SET state='delivered', message_id=?, turn_id=?, "
               "delivered_at=? WHERE intercom_id=? AND conversation_id=? AND state='pending'",
               (m["id"], turn_id, m["created_at"], row["id"], cid))
@@ -86,7 +105,8 @@ def deliver_idle_sync(c: sqlite3.Connection, store, cid: str) -> dict | None:
     leaf = c.execute("SELECT active_leaf_id FROM conversations WHERE id=?",
                      (cid,)).fetchone()["active_leaf_id"]
     landed = {}
-    for r in rows:
+    # its own messages for the user first: a turn roots at a line it answers
+    for r in sorted(rows, key=lambda r: not _says(r)):
         leaf = land(c, store, r, cid, leaf, None)["id"]
         landed[r["id"]] = leaf
     out = {"messages": landed, "turn_id": None, "seq": None}
@@ -149,10 +169,14 @@ async def next_due(store) -> str | None:
 
 async def take(store, cid: str, turn_id: str, parent: str | None) -> list[dict]:
     """Rule 2: the due deliveries, appended under the turn's tail `parent` with this
-    turn's id. -> the messages, oldest first ([] when nothing is due)."""
+    turn's id; its own message for the user (store.SAY) waits for the turn's end, as a
+    reply of its own in the middle of a turn would break it. -> the messages, oldest
+    first ([] when nothing is due)."""
     def fn(c: sqlite3.Connection) -> list[dict]:
         out, leaf = [], parent
         for r in _due(c, store, cid):
+            if _says(r):
+                continue
             m = land(c, store, r, cid, leaf, turn_id)
             leaf = m["id"]
             out.append(m)

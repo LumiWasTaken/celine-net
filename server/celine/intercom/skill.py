@@ -1,5 +1,6 @@
 """The agent's intercom tools: write to {{username}}, itself, its parent, its team, everyone
-working, or a conversation, now or later; read its threads; cancel what it scheduled.
+working, or a conversation, now or later; read its threads (and every thread between the
+user and any of its conversations, and its jobs everywhere); cancel what it scheduled.
 A message to itself with a time is a reminder. The agent's instructions list what waits for
 it, the announcements standing now, what it scheduled, and its sub-agents."""
 from __future__ import annotations
@@ -8,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from .. import homes
-from ..attachments import draft_of, her_file
+from ..attachments import draft_of, agent_file
 from ..core.ids import clock, iso, parse_when, when
-from ..skills import ToolContext, ToolResult, guide, tool, described
+from ..skills import ToolContext, ToolResult, guide, tool, described, words
 from ..clock import zone
 from . import store as rows
 from .addresses import GUARD, GUARD_NAMES, Refused
@@ -76,7 +77,8 @@ class IntercomSkill:
         if pending:
             items = []
             for r in pending[:LISTED]:
-                to = "you" if r["to"] == me else r["to"]
+                to = f"{self.cfg.user}, in this chat" if r["data"].get("say") else \
+                    "you" if r["to"] == me else r["to"]
                 at = clock(datetime.fromisoformat(r["due_at"]), self.tz, now_)
                 items.append(f"#{r['id']} {at} to {to}: {_short(r['text'])}")
             if len(pending) > LISTED:
@@ -143,7 +145,10 @@ class IntercomSkill:
         your instructions name); reply_to answers another message in its thread,
         new_thread starts one. With in or at it lands
         later; to "me" that is a reminder that starts your turn then, or joins the one
-        running."""
+        running. To "user" from a chat with them: what you write in the chat reaches
+        them, and with in or at your text lands in the chat then, as your message. From a
+        background task or a Routine's run: it starts a chat for them with your text as
+        its first message (subject: its name), and their answer comes to you there."""
         if not text.strip():
             return ToolResult(content="text is the message.", is_error=True)
         if not to.strip() and reply_to is None:
@@ -167,10 +172,18 @@ class IntercomSkill:
             return ToolResult(content="Bastet is off; nobody reads this.", is_error=True)
         files = []
         for ref in attachments or []:
-            row = await her_file(ctx.store, ref.strip(), ctx.conversation_id, self.cfg.user)
+            row = await agent_file(ctx.store, ref.strip(), ctx.conversation_id, self.cfg.user)
             if isinstance(row, str):
                 return ToolResult(content=row, is_error=True)
             files.append(row["id"])
+        words = [w.strip() for w in to.split(",") if w.strip()]
+        told = await self._to_user(ctx, text, subject, due, files) \
+            if "user" in words and reply_to is None else None
+        if told is not None:
+            words = [w for w in words if w != "user"]
+            if not words:
+                return told
+            to = ", ".join(words)
         drafts = [await draft_of(ctx.store, aid) for aid in files]
         try:
             out = await self.app.intercom.send(
@@ -199,8 +212,85 @@ class IntercomSkill:
             f"#{iid} lands {clock(due, self.tz, now_)}, in {where}."
         if wait and due is None and "user" in [w.strip() for w in to.split(",")]:
             said += await self._wait_for_user(ctx, iid)
+        if told is not None:
+            said = f"{told.content} {said}"
         return ToolResult(content=said, display={
             "id": iid, "to": to, "text": text, "due_at": iso(due) if due else None})
+
+    async def _to_user(self, ctx: ToolContext, text: str, subject: str | None,
+                       due: datetime | None, files: list[str]) -> ToolResult | None:
+        """A message to the user, by where it is sent from. A chat is where the user reads
+        it already: with no time, nothing is sent (its reply in the chat reaches them),
+        unless its turn answers their reply in a thread (it goes into that thread);
+        with one, the text lands in the chat at that time as its own message (store.SAY).
+        A background task or a run starts a chat for them (_chat), titled with the
+        subject or else the run's own title, so their answer comes to a chat. None: it goes as written (a mission's waits on the mission's page)."""
+        cid, user = ctx.conversation_id, self.cfg.user
+        kind = await ctx.store.read(lambda c: (c.execute(
+            "SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
+        shown = {"to": "user", "text": text, "due_at": iso(due) if due else None}
+        if kind == "chat" and due is None and ctx.turn_id and await ctx.store.read(
+                lambda c: (rows.answering(c, cid, ctx.turn_id) or {"from_addr": ""})
+                ["from_addr"] == "user"):
+            return None         # this turn answers their reply in a thread: it goes there
+        if kind == "chat" and due is None:
+            return ToolResult(content=f"This chat is where {user} reads you: what you write "
+                                      f"here reaches them, and their answer comes here.",
+                              display=shown)
+        if kind == "chat":
+            drafts = [await draft_of(ctx.store, aid) for aid in files]
+            out = await self.app.intercom.send(
+                f"agent:{cid}", f"agent:{cid}", text, subject=subject, wake=False,
+                due_at=iso(due), data={"say": True}, attachments=drafts or None)
+            at = clock(due, self.tz, datetime.now(timezone.utc))
+            return ToolResult(content=f"#{out['intercom_id']} lands {at} in this chat as "
+                                      f"your message to {user}.",
+                              display={**shown, "id": out["intercom_id"]})
+        if kind == "background":
+            # named after its source when the message has no subject ("Radar, Mon 9 Nov")
+            title = subject or await ctx.store.read(lambda c: c.execute(
+                "SELECT title FROM conversations WHERE id=?", (cid,)).fetchone()[0]) or ""
+            new, iid, has = await self._chat(ctx, title, text, files, due)
+            when = (f"; the chat is in their list now, and its notice reaches them "
+                    f"{clock(due, self.tz, datetime.now(timezone.utc))} as #{iid}" if due
+                    else f"; it waits for them as #{iid}")
+            return ToolResult(content=f"Started a chat for {user} (/chat/{new}) with your "
+                                      f"text as your first message there{when}, and their "
+                                      f"answer comes to you in that chat.{self._had(has)}",
+                              display={**shown, "id": iid, "chat": new})
+        return None
+
+    async def _chat(self, ctx: ToolContext, title: str, text: str, files=(),
+                    due: datetime | None = None) -> tuple[str, int, list[str]]:
+        """A chat for the user (start_chat, and send to "user" from a background task or
+        a run): the agent's text is its first message, the chat knows where it came from
+        (opening), and the text waits for the user on the intercom from that chat, so
+        their answer lands there. -> (the chat, the message's number, what the user had
+        from the same source in the last 24 h: covered)."""
+        from ..conversations import store as conversations, tree
+        src = ctx.conversation_id
+        since = iso(datetime.now(timezone.utc) - COVERS)
+        has = await ctx.store.read(lambda c: covered(c, src, since, self.tz))
+        new = await conversations.create(ctx.store, title=title)
+        mine = [await draft_of(ctx.store, aid) for aid in files]
+
+        def first(c):
+            # where it came from, for it in the new chat (turns/context.py opening)
+            c.execute("INSERT INTO kv(k, v) VALUES(?, ?)",
+                      (rows.OPENING + new, opening(c, src, ctx.tool_call_id, has, self.cfg.user)))
+            tree.append(c, ctx.store, new, None, "assistant", text, "model", attachments=mine)
+        await ctx.store.write(first)
+        theirs = [await draft_of(ctx.store, aid) for aid in files]
+        # from the new chat, so the user's answer lands there
+        out = await self.app.intercom.send(f"agent:{new}", "user", text, subject=title or None,
+                                           data={"chat": new, "from": src},
+                                           due_at=iso(due) if due else None,
+                                           attachments=theirs or None)
+        return new, out["intercom_id"], has
+
+    def _had(self, has: list[str]) -> str:
+        return (f"\nIn the last 24 h {self.cfg.user} also got this from here:\n- "
+                + "\n- ".join(has)) if has else ""
 
     async def _wait_for_user(self, ctx: ToolContext, iid: int) -> str:
         """send(wait=true): the turn holds until the user writes to this conversation
@@ -228,16 +318,22 @@ class IntercomSkill:
         self,
         ctx: ToolContext,
         thread: Annotated[int | None, "A thread's number: the whole thread."] = None,
-        unread: Annotated[bool, "Only threads with messages waiting for you."] = False,
+        unread: Annotated[bool, 'Only threads with messages waiting for you; with '
+                                'with="user", those still waiting for {{username}}.'] = False,
         kind: Annotated[Literal["message", "brief", "report", "job", "notice", "trigger"]
-                        | None, 'Only messages of this kind. "job": your job results.'
+                        | None, 'Only messages of this kind. "job": your jobs instead, '
+                                'running and recently ended, in every conversation.'
                         ] = None,
         with_: Annotated[str | None, 'Only the threads with someone: a name, "user" '
-                                     'for {{username}}, or a conversation id.'] = None,
+                                     'for {{username}} (from every conversation of yours), '
+                                     'or a conversation id.'] = None,
         limit: Annotated[int, "At most this many threads."] = 20,
     ) -> ToolResult:
         """Your threads by who they are with, newest activity first, or one whole thread
-        by its number."""
+        by its number. with="user": every thread between {{username}} and any of your
+        conversations, each with where it lives (kind, title, conversation id) and
+        whether it waits for them. kind="job": your jobs, each with its conversation, its
+        state and its result's first line."""
         cid = ctx.conversation_id
         if thread is not None:
             msgs = await ctx.store.read(lambda c: rows.thread(c, thread, cid))
@@ -252,7 +348,12 @@ class IntercomSkill:
                 out.append(f"[{at}] to {m['to']}{gone}\n{head}{m['text']}")
             return ToolResult(content="\n\n".join(out),
                               display={"thread": thread, "count": len(msgs)})
-        me, limit = f"agent:{cid}", max(1, limit)
+        limit = max(1, limit)
+        if kind == "job":
+            return await self._jobs(ctx, limit)
+        if with_ == "user":
+            return await self._with_user(ctx, unread, kind, limit)
+        me = f"agent:{cid}"
         # one counterpart: its threads up to the limit; else each counterpart's newest few
         per = limit if with_ else PER_COUNTERPART
 
@@ -269,7 +370,7 @@ class IntercomSkill:
                 lines.append("Also threads with " + ", ".join(
                     f"{r['name']} ({r['threads']})" for r in rest) + ".")
                 break
-            # one name over several addresses (her chats): the group names them all and
+            # one name over several addresses (the agent's chats): the group names them all and
             # each thread says which it is with
             many = len(g["addresses"]) > 1
             peer = f"{g['name']} ({', '.join(g['addresses'])})" if many else g["name"]
@@ -298,6 +399,82 @@ class IntercomSkill:
                               else "No threads yet.", display={"threads": 0})
         return ToolResult(content="\n".join(lines), display={"threads": len(found)})
 
+    async def _with_user(self, ctx: ToolContext, unread: bool, kind: str | None,
+                         limit: int) -> ToolResult:
+        """read(with="user"): the threads between the user and any of the agent's
+        conversations, newest activity first, each with its home and whether it waits
+        for the user (`unread`: only those)."""
+        user = self.cfg.user
+
+        def fn(c):
+            # its own filter: rows.threads' unread leaves out what waits on a mission
+            found = [t for t in rows.threads(c, "user", kind=kind)
+                     if any(a.startswith("agent:") for a in t["with"])
+                     and (t["unread"] or not unread)]
+            out = []
+            for t in found[:limit]:
+                home = next(a for a in t["with"] if a.startswith("agent:"))
+                out.append({**rows.thread_view(c, t), "home": home[6:],
+                            "src": rows.source_of(c, home) or {}})
+            return len(found), out
+        total, shown = await ctx.store.read(fn)
+        if not shown:
+            return ToolResult(content=f"No threads waiting for {user}." if unread
+                              else f"No threads with {user} yet.", display={"threads": 0})
+        lines = []
+        for t in shown:
+            last, src = t["last"], t["src"]
+            subject = f' "{t["subject"]}"' if t["subject"] else ""
+            by = "you" if last["from"].startswith("agent:") else who(last, user)
+            waits = f", waits for {user}" if t["unread"] else ""
+            lines.append(f"#{t['thread']}{subject} in {src.get('kind', 'conversation')} "
+                         f"\"{src.get('title') or 'Untitled'}\" ({t['home']}): {t['count']} "
+                         f"message{'s' if t['count'] != 1 else ''}{waits}, last from {by} "
+                         f"{when(last['created_at'], self.tz)}: {_short(last['text'])}")
+        if total > len(shown):
+            lines.append(f"and {total - len(shown)} older.")
+        return ToolResult(content="\n".join(lines), display={"threads": total})
+
+    async def _jobs(self, ctx: ToolContext, limit: int) -> ToolResult:
+        """read(kind="job"): the jobs of every conversation, running first, then the
+        newest ended, each with its conversation and its result message's number."""
+
+        def fn(c):
+            got = []
+            for j in c.execute(
+                    "SELECT j.id, j.conversation_id, j.tool_name, j.state, j.result, "
+                    "j.created_at, j.finished_at, tc.arguments FROM jobs j LEFT JOIN "
+                    "tool_calls tc ON tc.id = j.tool_call_id ORDER BY (j.state = "
+                    "'running') DESC, j.created_at DESC LIMIT ?", (limit,)).fetchall():
+                said = c.execute("SELECT i.id FROM intercom i, json_each(i.data, '$.jobs') "
+                                 "je WHERE i.kind = 'job' AND je.value = ? LIMIT 1",
+                                 (j["id"],)).fetchone()
+                got.append({**dict(j), "said": said[0] if said else None,
+                            "src": rows.source_of(c, f"agent:{j['conversation_id']}") or {}})
+            return got
+        found = await ctx.store.read(fn)
+        if not found:
+            return ToolResult(content="No jobs yet.", display={"jobs": 0})
+        lines = []
+        for j in found:
+            asked = " ".join((words.prompt_of(j["arguments"], j["tool_name"]) or "").split())
+            if len(asked) > TEXT_MAX:
+                asked = asked[:TEXT_MAX - 1].rstrip() + "\u2026"
+            what = j["tool_name"] + (f" `{asked}`" if asked else "")
+            src = j["src"]
+            where = (f"{src.get('kind', 'conversation')} \"{src.get('title') or 'Untitled'}\" "
+                     f"({j['conversation_id'][:8]})")
+            if j["state"] == "running":
+                lines.append(f"- job {j['id'][:8]} {what} in {where}: running since "
+                             f"{when(j['created_at'], self.tz)}")
+                continue
+            first = next((x for x in (j["result"] or "").splitlines() if x.strip()), "")
+            lines.append(f"- job {j['id'][:8]} {what} in {where}: {j['state']} "
+                         f"{when(j['finished_at'] or j['created_at'], self.tz)}" +
+                         (f", result #{j['said']}" if j["said"] else "") +
+                         (f": {_short(first)}" if first else ""))
+        return ToolResult(content="\n".join(lines), display={"jobs": len(found)})
+
     async def offered_in(self, store, cid: str) -> bool | set[str]:
         """start_chat only away from the user: a background task or run, a mission."""
         kind = await store.read(lambda c: (c.execute(
@@ -318,28 +495,12 @@ class IntercomSkill:
         Check intercom__read first: when they have it already (a thread, an open bug
         report), add to that thread instead. Your text is your first message in the new
         chat and waits for them on the intercom; when they answer, you go on there."""
-        from ..conversations import store as conversations, tree
         if not title.strip() or not text.strip():
             return ToolResult(content="title and text are both needed.", is_error=True)
-        src = ctx.conversation_id
-        since = iso(datetime.now(timezone.utc) - COVERS)
-        has = await ctx.store.read(lambda c: covered(c, src, since, self.tz))
-        new = await conversations.create(ctx.store, title=title)
-
-        def first(c):
-            # where it came from, for it in the new chat (turns/context.py opening)
-            c.execute("INSERT INTO kv(k, v) VALUES(?, ?)",
-                      (rows.OPENING + new, opening(c, src, ctx.tool_call_id, has, self.cfg.user)))
-            tree.append(c, ctx.store, new, None, "assistant", text, "model")
-        await ctx.store.write(first)
-        # from the new chat, so the user's answer lands there
-        out = await self.app.intercom.send(f"agent:{new}", "user", text, subject=title,
-                                           data={"chat": new, "from": src})
-        listed = (f"\nIn the last 24 h {self.cfg.user} also got this from here:\n- "
-                  + "\n- ".join(has)) if has else ""
+        new, iid, has = await self._chat(ctx, title, text)
         return ToolResult(content=f"Started the chat \"{title}\" (/chat/{new}); it waits "
-                                  f"for {self.cfg.user} as #{out['intercom_id']}.{listed}",
-                          display={"chat": new, "id": out["intercom_id"]})
+                                  f"for {self.cfg.user} as #{iid}.{self._had(has)}",
+                          display={"chat": new, "id": iid})
 
     @tool(read_only=False, destructive=True)
     async def cancel(
@@ -426,12 +587,18 @@ def covered(c, cid: str, since: str, tz) -> list[str]:
 
 
 def opening(c, src: str, call_id: str, has: list[str], user: str) -> str:
-    """What it reads before its first message in a chat start_chat made: where it came
-    from with its link, that source's last tool calls, and what the user had from there
-    already. Fixed when the chat starts, so the request stays the same."""
+    """What it reads before its first message in a chat it started for the user (_chat):
+    where it came from with its link and the id past_conversations__read takes (a run's
+    `run:<id>`, else the conversation's), that source's last tool calls, and what the
+    user had from there already. Fixed when the chat starts, so the request stays the
+    same."""
     s = rows.source_of(c, f"agent:{src}") or {}
+    key = (c.execute("SELECT trigger_key FROM conversations WHERE id=?",
+                     (src,)).fetchone() or [None])[0] or ""
+    ref = key if key.startswith("run:") else src[:8]
     lines = [f"You started this chat from a {s.get('kind', 'conversation')} "
-             f"\"{s.get('title') or 'Untitled'}\" ({s.get('link') or src}); your first "
+             f"\"{s.get('title') or 'Untitled'}\" ({s.get('link') or src}); "
+             f"past_conversations__read(conversation=\"{ref}\") reads it. Your first "
              f"message below is what {user} read on the intercom."]
     calls = c.execute(
         "SELECT tc.name, tc.arguments FROM tool_calls tc JOIN messages m ON m.id = "

@@ -1,4 +1,5 @@
-"""The agent's own past conversations in this app: search them, list a day of them, read one,
+"""The agent's own past conversations in this app: search them, list the newest or a day of
+them (of one kind or all), read one (by id, run:<id>, a mission's or a trigger's name),
 read one tool call raw. A whole day fits its context this way: the day is an index
 first (one entry per conversation), a read is a slice of one conversation with each
 tool call one line, and a raw call is read only when it matters."""
@@ -14,16 +15,28 @@ from ..conversations import store as conversations, tree
 from ..core.ids import iso
 from ..conversations.store import locked_sql
 from ..turns.compact import one_line
-from . import ToolContext, ToolResult, guide, knob, tool, described
+from . import ToolContext, ToolResult, guide, knob, parts, tool, described
 from ..clock import zone
 
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
-    knob("past_conversations.max_results", "Matches per search", None, 1, 1000, 20),
-    knob("past_conversations.snippet_chars", "Snippet length", "characters", 40, 10_000, 240),
+    knob("past_conversations.max_results", "Matches per search", None, 1, 1000, 20,
+         "The most matches one search of past conversations brings."),
+    knob("past_conversations.snippet_chars", "Snippet length", "characters", 40, 10_000, 240,
+         "How much text each match shows around the words found."),
 )
 READ_TOKENS = 8000          # one read, before the result cap
 LINE = 120                  # characters of a first or last line in the day's index
+LISTED = 50                 # conversations past_conversations__list gives at most
+
+# a conversation's kind as the agent reads it: chat, mission, run (a Routine's), task (a
+# background task, a trigger's), sub-agent
+KIND_SQL = ("(CASE WHEN c.agent_of IS NOT NULL THEN 'sub-agent' WHEN c.kind = 'background' "
+            "THEN CASE WHEN c.trigger_key LIKE 'run:%' THEN 'run' ELSE 'task' END "
+            "ELSE c.kind END)")
+Kind = Literal["chat", "mission", "run", "task", "sub-agent"]
+KIND_HELP = "Only conversations of this kind: chat, mission, run (a Routine's), task (a " \
+            "background task, one per trigger), sub-agent."
 
 
 def _items(c: sqlite3.Connection, cid: str) -> list[dict]:
@@ -53,8 +66,8 @@ CUT = ("failed", "interrupted", "aborted")
 
 
 def _ended(c: sqlite3.Connection, cid: str, key: str | None) -> str:
-    """How a conversation ended, when that makes its words a draft: a run's is
-    "run World news, failed: Ran over 3 hours (a draft, not a source)" (or "..., done";
+    """How a conversation ended, when that makes its words a draft: a run's is "run World
+    news, failed: Stopped at its time limit of 3 hours. (a draft, not a source)" (or "..., done";
     a run that wrote nothing gets no draft mark). Any other one whose last turn ended
     failed, interrupted or aborted is "last turn failed", no more: a chat the user
     stopped holds their words and its own, real ones (such chats can be whole talks). "" for
@@ -135,13 +148,14 @@ class PastConversations:
         self,
         ctx: ToolContext,
         date: Annotated[str, "The day, such as 2026-01-09, in the app's time zone."],
+        kind: Annotated[Kind | None, KIND_HELP] = None,
     ) -> ToolResult:
         """Every conversation of yours with messages on one day, as an index: id, kind,
         title, the message numbers of that day, turns, the tool calls with their names
         and the ones that failed, a run's try with its outcome (a failed one is a draft,
         not a source), a last turn that failed or was cut, the first and the last line.
-        The current conversation and the archived ones are left out. Read one further with
-        past_conversations__read."""
+        The current conversation is left out, and the archived ones while Lock archived
+        chats is on. Read one further with past_conversations__read."""
         try:
             day = dt.date.fromisoformat(str(date).strip())
         except ValueError:
@@ -150,9 +164,10 @@ class PastConversations:
         tz = zone(self.cfg)
         lo, hi = (iso(dt.datetime.combine(d, dt.time(), tz))
                   for d in (day, day + dt.timedelta(days=1)))
-        rows = await ctx.store.read(lambda c: self._day(c, lo, hi, ctx.conversation_id))
+        rows = await ctx.store.read(lambda c: self._day(c, lo, hi, ctx.conversation_id, kind))
         if not rows:
-            return ToolResult(content=f"No conversation of yours has messages on {day}.")
+            of = f" {kind}" if kind else ""
+            return ToolResult(content=f"No{of} conversation of yours has messages on {day}.")
         out = [f"{day}: {len(rows)} conversation{'s' if len(rows) != 1 else ''}"]
         for r in rows:
             calls = r["calls"]
@@ -176,16 +191,56 @@ class PastConversations:
             cut += "\n[the rest of the day did not fit: give parts of it to sub-agents]"
         return ToolResult(content=cut, display={"day": str(day), "conversations": len(rows)})
 
-    def _day(self, c: sqlite3.Connection, lo: str, hi: str, here: str) -> list[dict]:
+    @tool()
+    async def list(
+        self,
+        ctx: ToolContext,
+        kind: Annotated[Kind | None, KIND_HELP] = None,
+        limit: Annotated[int, f"How many, at most {LISTED}."] = 10,
+    ) -> ToolResult:
+        """Your newest conversations by their last activity, of every kind or one.
+        Returns: one line each: id, kind, title, when it started and when it last moved,
+        a mission's status, a run's outcome, a last turn that failed or was cut, and its
+        last line. The current conversation is left out, and the archived ones while Lock
+        archived chats is on. Read one with past_conversations__read."""
+        from ..conversations.store import last_line
+        n = min(max(int(limit or 10), 1), LISTED)
+
+        def fn(c):
+            rows = c.execute(
+                f"SELECT c.id, c.title, {KIND_SQL} AS kind, c.trigger_key, c.created_at, "
+                "c.updated_at, c.active_leaf_id, mi.status FROM conversations c LEFT JOIN "
+                "missions mi ON mi.conversation_id = c.id WHERE c.id != ? AND NOT "
+                f"{locked_sql()} AND {KIND_SQL} = coalesce(?, {KIND_SQL}) AND "
+                "c.active_leaf_id IS NOT NULL ORDER BY c.updated_at DESC, c.id DESC LIMIT ?",
+                (ctx.conversation_id, kind, n)).fetchall()
+            return [{**dict(r), "ended": _ended(c, r["id"], r["trigger_key"]),
+                     "last": last_line(c, r["active_leaf_id"])} for r in rows]
+        rows = await ctx.store.read(fn)
+        if not rows:
+            return ToolResult(content=f"No {kind + ' ' if kind else ''}conversations yet.",
+                              display={"conversations": 0})
+        lines = []
+        for r in rows:
+            facts = [f"started {self._at(r['created_at'])}", f"last {self._at(r['updated_at'])}"]
+            facts += [f"mission {r['status'].replace('_', ' ')}"] if r["status"] else []
+            facts += [r["ended"]] if r["ended"] else []
+            lines.append(f"- {r['id'][:8]} {r['kind']} \"{r['title'] or 'Untitled'}\": "
+                         f"{', '.join(facts)}" + (f"\n  last: {r['last']}" if r["last"] else ""))
+        return ToolResult(content=self.cfg.substitute("\n".join(lines)),
+                          display={"conversations": len(rows)})
+
+    def _day(self, c: sqlite3.Connection, lo: str, hi: str, here: str,
+             kind: str | None = None) -> list[dict]:
         out = []
         for r in c.execute(
-                "SELECT c.id, c.title, c.kind, c.trigger_key FROM messages m "
+                f"SELECT c.id, c.title, {KIND_SQL} AS kind, c.trigger_key FROM messages m "
                 "JOIN conversations c ON c.id = m.conversation_id "
                 "WHERE m.created_at >= ? AND m.created_at < ? "
                 "AND m.role IN ('user', 'assistant') AND c.id != ? "
-                f"AND NOT {locked_sql()} "
+                f"AND NOT {locked_sql()} AND {KIND_SQL} = coalesce(?, {KIND_SQL}) "
                 "GROUP BY c.id "
-                "ORDER BY min(m.created_at)", (lo, hi, here)).fetchall():
+                "ORDER BY min(m.created_at)", (lo, hi, here, kind)).fetchall():
             items = [i for i in _items(c, r["id"])
                      if lo <= i["message"]["created_at"] < hi]
             if not items:
@@ -206,25 +261,45 @@ class PastConversations:
         return out
 
     async def _find(self, ctx: ToolContext, key: str):
+        """The conversation `key` names: run:<id> (a Routine's run), a mission's name, a
+        trigger's name (its background task), else the start of a conversation id."""
         key = str(key or "").strip()
-        rows = await ctx.store.read(lambda c: c.execute(
-            "SELECT id, title, created_at, archived_at, trigger_key FROM conversations "
-            "WHERE id LIKE ? || '%' AND trashed_at IS NULL LIMIT 2",
-            (key,)).fetchall()) if key else []
+        cols = ("SELECT id, title, created_at, archived_at, trigger_key FROM conversations "
+                "WHERE trashed_at IS NULL AND ")
+
+        def fn(c):
+            if key.lower().startswith("run:"):
+                return c.execute(cols + "id IN (SELECT conversation_id FROM runs WHERE id "
+                                 "LIKE ? || '%') LIMIT 2", (key[4:].strip(),)).fetchall()
+            name = " ".join(key.split())          # a mission's name, as missions__list shows it
+            ids = [r[0] for r in c.execute(
+                "SELECT m.conversation_id FROM missions m JOIN conversations c ON c.id = "
+                "m.conversation_id WHERE c.trashed_at IS NULL AND (lower(m.name) = lower(?) "
+                "OR lower(c.title) = lower(?))",
+                (name, name))] or [
+                r[0] for r in c.execute("SELECT id FROM conversations WHERE trigger_key = ?",
+                                        (f"trigger:{key}",))]
+            if ids:
+                return c.execute(cols + f"id IN ({','.join('?' * len(ids))}) LIMIT 2",
+                                 ids).fetchall()
+            return c.execute(cols + "id LIKE ? || '%' LIMIT 2", (key,)).fetchall()
+        rows = await ctx.store.read(fn) if key else []
         if len(rows) == 1:
             return rows[0], None
-        what = "matches more than one conversation" if rows else "is no conversation"
-        return None, ToolResult(content=f"{key!r} {what}. past_conversations__search and "
-                                        f"past_conversations__list_day give the ids.",
-                                is_error=True)
+        what = "matches more than one conversation" if rows else "names no conversation"
+        return None, ToolResult(
+            content=f"{key!r} {what}. It takes a conversation id (past_conversations__list, "
+                    f"past_conversations__search, past_conversations__list_day), run:<id> "
+                    f"(routines__read), a mission's name (missions__list) or a trigger's "
+                    f"name (routines__list).", is_error=True)
 
     @tool()
     async def read(
         self,
         ctx: ToolContext,
-        conversation: Annotated[str, "The conversation id from past_conversations__search "
-                                     "or past_conversations__list_day. 8 characters are "
-                                     "enough."],
+        conversation: Annotated[str, "A conversation id (8 characters are enough), "
+                                     "run:<id> for a Routine's run, a mission's name, or "
+                                     "a trigger's name for its background task."],
         start: Annotated[int | None, "The first message number to read, reading on from "
                                      "it. Left out: the end of the conversation, read "
                                      "back from `end`."] = None,
@@ -294,10 +369,11 @@ class PastConversations:
         ctx: ToolContext,
         id: Annotated[str, "A tool call's id, from a `call <id>` line of "  # noqa: A002
                            "past_conversations__read."],
+        part: Annotated[int | None, "Which part of a long call, from 1; the last line says "
+                                    "when another follows. Default 1."] = None,
     ) -> ToolResult:
         """One tool call of an earlier conversation, raw: its tool, how it ended, its
-        arguments and its whole result."""
-        from ..turns import tokens
+        arguments and its whole result, a long one in parts that joined are the call."""
         r = await ctx.store.read(lambda c: c.execute(
             "SELECT tc.id, tc.name, tc.state, tc.arguments, tc.started_at, tc.display, "
             "m.content AS result, a.conversation_id FROM tool_calls tc JOIN messages a ON "
@@ -316,10 +392,8 @@ class PastConversations:
         text = (f"call {r['id']} {r['name']} {r['state']}, conversation "
                 f"{r['conversation_id'][:8]}, {self._at(r['started_at'])}"
                 f"\narguments:\n{args}\nresult:\n{r['result'] or '(none)'}")
-        budget = int(ctx.max_output_tokens or READ_TOKENS)
-        cut, shown, total = tokens.cut_to(text, budget, "tool")
-        if shown < total:
-            cut += f"\n[the result goes on: {total - shown} more tokens did not fit]"
+        cut, _, _ = parts.read(text, part, ctx, cap=READ_TOKENS,
+                               call=f"past_conversations__read_tool_call(id=\"{r['id']}\"")
         # an outside call read again is outside text again, with its label (guard/)
         label = json.loads(r["display"] or "{}").get("outside")
         return ToolResult(content=cut, display={"tool_call": r["id"], "name": r["name"],

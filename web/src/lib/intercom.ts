@@ -100,6 +100,9 @@ export const intercomApi = {
   /** a thread's messages, oldest first, and where it comes from */
   thread: (id: number, signal?: AbortSignal) =>
     request<{ messages: IntercomMessage[]; source: Source | null }>(`/intercom?thread=${id}`, { signal }),
+  /** what `from` (a stored address, like a mission's) wrote that waits for you, oldest first */
+  waitingFrom: (from: string, signal?: AbortSignal) =>
+    request<{ messages: IntercomMessage[] }>(`/intercom?from=${encodeURIComponent(from)}&waiting=1`, { signal }).then(r => r.messages),
   /** the bug report a thread is, or null */
   bugOf: (thread: number, signal?: AbortSignal) =>
     request<{ reports: BugReport[] }>(`/bugreports?thread=${thread}`, { signal }).then(r => r.reports[0] ?? null),
@@ -140,9 +143,9 @@ export const isScheduled = (m: Pick<IntercomMessage, 'due_at' | 'state'>) => !!m
 
 /** an address as you read it (the server names it) */
 export function addressName(addr: string, names: Record<string, string | null>): string {
-  if (addr === 'all') return 'everyone'
+  if (addr === 'all') return 'Everyone'
   const name = names[addr] ?? addr
-  return addr.startsWith('team:') ? `the team of ${name}` : name
+  return addr.startsWith('team:') ? `${name} and its sub-agents` : name
 }
 
 /** your own messages read "You", in the list and in the thread */

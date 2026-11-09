@@ -1,11 +1,12 @@
 """A mission: a brief from the user that it works on in a conversation of its own
 (missions/store.py holds the rows, missions/api.py starts, edits and stops one). It
 plans first, executes with sub-agents, reviews the result against the brief, delivers
-an artifact and reports on the intercom. The brief sits in its instructions there; its
+an artifact and closes it with a note (missions/steps.md). The brief sits in its instructions there; its
 plan is the conversation's (plans/: plan__set, plan__step, a step's model);
-missions__update records where it stands and what it delivered. missions__list is
-offered everywhere, missions__start everywhere but in a sub-agent, the rest only in the
-mission's own conversation."""
+missions__update records where it stands and what it delivered. missions__list and
+missions__read are offered everywhere, missions__start everywhere but in a sub-agent, the
+rest only in the mission's own conversation. missions__start on a cloud model the user did not pick waits
+for their approval (agent_models.ask_cloud)."""
 from __future__ import annotations
 
 import re
@@ -14,17 +15,39 @@ from typing import Annotated, Literal
 
 from .. import prompts
 from ..core import ids
-from ..core.ids import clock, iso, parse_when
+from ..core.ids import clock, iso, parse_when, when
 from . import store as missions
 from ..plans.flow import chat_models
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
+from ..turns.compact import one_line
 
 STATUS = {"Active": "active", "Needs you": "needs_you", "Done": "done"}
 WORDS = {"active": "active", "needs_you": "needs you", "done": "done",
          "stopped": "stopped by {{username}}"}
 ARTIFACT = re.compile(r"(artifact|documents):\S.*")
+ASK = "start a mission on a cloud model"   # the approval card's action (agent_models.ask_cloud)
+BRIEF_LINE = 120        # characters of a brief in missions__list
+REPORT_LINE = 300       # characters of a sub-agent's report in missions__read
+TALK_LINE = 300         # characters of a message in missions__read
+TALK_SHOWN = 10         # the newest messages between a mission and the user it reads
 # how a mission goes: missions/steps.md
+
+
+def _talk(c, cid: str) -> list[dict]:
+    """The newest TALK_SHOWN messages between mission `cid` and the user, oldest first:
+    what it sent them and what they wrote to it (its brief left out), each with
+    `waits` while it waits for them."""
+    rows = c.execute(
+        "SELECT i.id, i.from_addr, i.text, i.created_at, EXISTS (SELECT 1 FROM "
+        "intercom_deliveries d WHERE d.intercom_id = i.id AND d.to_addr = 'user' AND "
+        "d.state = 'pending') AS waits FROM intercom i WHERE i.cancelled_at IS NULL AND "
+        "i.kind <> 'brief' AND ((i.from_addr = ? AND EXISTS (SELECT 1 FROM "
+        "intercom_deliveries d WHERE d.intercom_id = i.id AND d.to_addr = 'user')) OR "
+        "(i.from_addr = 'user' AND EXISTS (SELECT 1 FROM intercom_deliveries d WHERE "
+        "d.intercom_id = i.id AND d.conversation_id = ?))) ORDER BY i.id DESC LIMIT ?",
+        (f"agent:{cid}", cid, TALK_SHOWN)).fetchall()
+    return [dict(r) for r in reversed(rows)]
 
 
 async def record(app, store, cid: str, word: str, note: str | None) -> dict | None:
@@ -121,17 +144,17 @@ class Missions:
     app = None      # the running app (core/services.py), from skills.build
 
     async def offered_in(self, store, cid: str) -> bool | set[str]:
-        """Everything in the mission's own conversation; elsewhere list and start, in a
-        sub-agent only list (a sub-agent working in a mission is not the mission
-        itself)."""
+        """Everything in the mission's own conversation; elsewhere list, read and start,
+        in a sub-agent list and read (a sub-agent working in a mission is not the
+        mission itself)."""
         if store is None:
-            return {"list", "start"}
+            return {"list", "read", "start"}
         if await missions.get(store, cid) is not None:
             return True
         sub = await store.read(lambda c: c.execute(
             "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone())
-        # sub-agents start no missions, only she does
-        return {"list"} if sub and sub[0] else {"list", "start"}
+        # sub-agents start no missions, only the agent does
+        return {"list", "read"} if sub and sub[0] else {"list", "read", "start"}
 
     async def prompt_fragment(self, ctx: ToolContext) -> str | None:
         """The brief, where it reports and the models a step can run on, only in the
@@ -174,7 +197,8 @@ class Missions:
                           "Only the missions in this status."] = "all",
     ) -> ToolResult:
         """List the missions, newest first: name, status, the step of the plan it is on,
-        and its conversation id (an intercom address)."""
+        its conversation id (an intercom address) and the first line of its brief.
+        missions__read gives one whole."""
         rows = await missions.list(ctx.store, None if status == "all" else status)
         if not rows:
             return ToolResult(content="No missions." if status == "all"
@@ -185,9 +209,71 @@ class Missions:
             where = f", step {n} of {len(r['steps'])}: {r['steps'][n - 1]['title']}" \
                 if n else (f", {len(r['steps'])} steps" if r["steps"] else "")
             lines.append(f"- {r['name']} ({r['conversation_id']}): {WORDS[r['status']]}"
-                         f"{where}" + (f". {r['note']}" if r.get("note") else ""))
+                         f"{where}" + (f". {r['note']}" if r.get("note") else "") +
+                         f"\n  brief: {one_line(r['brief'], BRIEF_LINE)}")
         return ToolResult(content=self.cfg.substitute("\n".join(lines)),
                           display={"missions": len(rows)})
+
+    @tool()
+    async def read(
+        self,
+        ctx: ToolContext,
+        mission: Annotated[str, "Its name, as missions__list gives it, or its "
+                                "conversation id."],
+    ) -> ToolResult:
+        """Read one mission, any status, from anywhere.
+        Returns: its status and note, the brief, where it reports, its time limits,
+        what it delivered, its plan with each step's state, its sub-agents with their
+        latest report, and the newest messages between it and {{username}} (what it
+        asked, what they answered)."""
+        from ..sub_agents.skill import agents_of
+        store = ctx.store
+
+        def fn(c):
+            found = missions.find_sync(c, mission)
+            if len(found) != 1:
+                return found, None, None, None
+            row = found[0]
+            cid = row["conversation_id"]
+            where = c.execute("SELECT title FROM conversations WHERE id=?",
+                              (row["report_to"],)).fetchone() if row["report_to"] else None
+            return found, where, agents_of(c, cid, own=store.tool_words), _talk(c, cid)
+        found, where, subs, talk = await store.read(fn)
+        if len(found) != 1:
+            what = "matches more than one mission" if found else "is no mission"
+            return ToolResult(content=f"{mission!r} {what}. missions__list gives the names.",
+                              is_error=True)
+        row = found[0]
+        cid, tz = row["conversation_id"], self.tz
+        lines = [f"{head(row)[:-1]} ({cid}): {WORDS[row['status']]}" +
+                 (f". {row['note']}" if row.get("note") else "."),
+                 *[x for x in brief_lines(row, None, tz) if not x.startswith("Report in:")],
+                 f"Reports in: \"{where['title'] or 'Untitled'}\" ({row['report_to']})."
+                 if where else "Reports to {{username}}."]
+        if row["artifact"]:
+            lines.append(f"Delivered: {row['artifact']}.")
+        mark = {"done": "[x]", "doing": "[>]", "todo": "[ ]"}
+        lines.append("Plan:" if row["steps"] else "No plan yet.")
+        lines += [f"{mark[s['state']]} {n}. {s['title']}" +
+                  (" (ask {{username}} when done)" if s.get("checkpoint") == "ask" else "")
+                  for n, s in enumerate(row["steps"], 1)]
+        if subs:
+            lines.append("Sub-agents:")
+            for a in subs:
+                said = f"report #{a['report']['id']}: {one_line(a['report']['text'], REPORT_LINE)}" \
+                    if a["report"] else f"last words: {one_line(a['last'], REPORT_LINE)}" \
+                    if a["last"] else "no report yet"
+                lines.append(f"- {a['name']} ({a['state']}, conversation {a['id'][:8]}): {said}")
+        if talk:
+            lines.append("With {{username}}, newest last:")
+            for m in talk:
+                by = "{{username}}" if m["from_addr"] == "user" else "you"
+                waits = " (waits for {{username}})" if m["waits"] else ""
+                lines.append(f"- #{m['id']} {when(m['created_at'], tz)} {by}: "
+                             f"{one_line(m['text'], TALK_LINE)}{waits}")
+        lines.append(f"Its conversation: past_conversations__read(conversation=\"{cid[:8]}\").")
+        return ToolResult(content=self.cfg.substitute("\n".join(lines)),
+                          display={"mission": cid, "name": row["name"]})
 
     @tool(read_only=False, destructive=False)
     async def start(
@@ -210,7 +296,13 @@ class Missions:
         own plan and sub-agents, until it is done.
         Returns: its name and its conversation id (an intercom address)."""
         from ..errors import CelineError
-        from .api import MissionIn, start
+        from ..settings import agent_models
+        from .api import MissionIn, start, title_of
+        if no := await agent_models.ask_cloud(
+                self.cfg, self.app, ctx, model, action=ASK,
+                facts=[("Mission", " ".join((name or "").split()) or title_of(brief))],
+                detail=("Instructions", brief)):
+            return ToolResult(content=no, is_error=True)
         body = MissionIn(brief=brief, name=name, model=model, time_limit=time_limit,
                          min_time=min_time, check_in=check_in, report_to=report_to)
         try:

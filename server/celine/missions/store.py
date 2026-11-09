@@ -1,6 +1,7 @@
 """Mission rows: plain functions over the store (docs/ARCHITECTURE.md)."""
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -81,7 +82,7 @@ def state_event(row: dict) -> dict:
     return {"type": MISSION_STATE, "conversation_id": row["conversation_id"],
             "name": row.get("name"), "status": row.get("status"), "note": row.get("note"),
             "until": row.get("until"), "min_until": row.get("min_until"),
-            "artifact": row.get("artifact"),
+            "check_in": row.get("check_in"), "artifact": row.get("artifact"),
             "steps": row.get("steps") or [], "step": row.get("step"),
             "auto_context": bool(row.get("auto_context", True))}
 
@@ -122,9 +123,10 @@ def set_status_sync(c: sqlite3.Connection, store, cid: str, status: str, note: s
     row = _row(c, cid)
     event = state_event(row)
     store.global_event(c, event.pop("type"), event)
-    if status == "needs_you":
+    if status in ("needs_you", "done"):
         from ..events import notice
-        notice(store, c, "mission", row.get("name"), note or "Waiting for you",
+        notice(store, c, "mission", row.get("name"),
+               note or ("Waiting for you" if status == "needs_you" else "Done"),
                homes.of(c, cid)["link"], f"mission:{cid}")
     return row
 
@@ -158,12 +160,27 @@ def _row(c: sqlite3.Connection, cid: str) -> dict | None:
     return _view(r) if r else None
 
 
+def find_sync(c: sqlite3.Connection, key: str) -> builtins.list[dict]:
+    """The missions not in the trash called `key` (case folded: the name missions__list
+    shows, or the one it was started with), else those whose conversation id starts
+    with it."""
+    k = " ".join((key or "").split())
+    if not k:
+        return []
+    named = [_view(r) for r in c.execute(
+        f"{_SELECT}WHERE c.trashed_at IS NULL AND (lower(m.name) = lower(?) OR "
+        "lower(c.title) = lower(?))", (k, k))]
+    return named or [_view(r) for r in c.execute(
+        f"{_SELECT}WHERE c.trashed_at IS NULL AND m.conversation_id LIKE ? || '%' "
+        "LIMIT 2", (k,))]
+
+
 # the time limit's notice lands WRAP_UP before it, or a fifth of the time left when that
 # is shorter
 WRAP_UP = timedelta(minutes=15)
-WAKE_TEXT = ("The time limit is in {n} min. Wrap up now: deliver what you have, report, "
-             "and close the mission with missions__update(status=\"Done\") and a note on "
-             "what is still open.")
+WAKE_TEXT = ("The time limit is in {n} min. Wrap up now: deliver what you have and close "
+             "the mission with missions__update(status=\"Done\") and a note on what is "
+             "still open.")
 
 
 async def book_time_limit(intercom, cid: str, until: datetime) -> int:

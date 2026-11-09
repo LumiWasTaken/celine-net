@@ -73,7 +73,7 @@ async def send(request: Request, body: MessageIn) -> dict:
             due_at=iso(due) if due else None,
             until_at=iso(until_at) if until_at else None)
     except KeyError:
-        raise NotFound("conversation or message") from None
+        raise NotFound("chat or message") from None
     except ValueError as e:
         raise CelineError("bad_request", str(e), 400) from None
     if sender == "user" and body.reply_to is not None and due is None and out:
@@ -86,15 +86,18 @@ async def send(request: Request, body: MessageIn) -> dict:
 async def list_messages(request: Request, to: str | None = None,
                         from_: str | None = Query(None, alias="from"),
                         thread: int | None = None, scheduled: bool = False,
+                        waiting: bool = False,
                         after: int = 0, limit: int = Query(200, ge=1, le=1000)) -> dict:
     """Messages to `to` and from `from` (stored addresses), in `thread`, above id
     `after`, oldest first, each with its state (pending, sent, cancelled) and whether it
     waits for the user (`unread`) and where it came from (`source`); `scheduled`: only
-    those with a due time. With `thread`, also where the thread comes from (`source`);
+    those with a due time; `waiting`: only those that wait for the user (a mission's
+    page: what it asked). With `thread`, also where the thread comes from (`source`);
     the bug report it is: GET /api/bugreports?thread=."""
     def fn(c):
         out = {"messages": rows.listed(c, to=to, from_addr=from_, scheduled=scheduled,
-                                       thread=thread, after=after, limit=limit)}
+                                       thread=thread, after=after, limit=limit,
+                                       waiting=waiting)}
         if thread is not None:
             out["source"] = rows.thread_source(c, thread)
         return out
@@ -188,7 +191,7 @@ async def to_chat(request: Request, tid: int) -> dict:
     for m in msgs:
         if not m["cancelled"]:
             # its own conversations' lines are its own: "From you"
-            mine = m["from"].startswith("agent:") and m["from_name"] == rows.NAMES["her"]
+            mine = m["from"].startswith("agent:") and m["from_name"] == rows.NAMES["agent"]
             head = header({**m, "mine": mine}, cfg.user, tz) or \
                 f"[From {cfg.user} (#{m['id']})]\n"     # their own first line, as typed
             lines.append(head + m["text"])
@@ -264,9 +267,9 @@ async def cancel(request: Request, iid: int) -> dict:
         frm = await request.app.state.services.store.read(lambda c: c.execute(
             "SELECT from_addr FROM intercom WHERE id=?", (iid,)).fetchone())
         if frm is None or frm[0] != sender:
-            raise CelineError("not_found", "This message already landed or was cancelled.", 404)
+            raise CelineError("not_found", "This message was already delivered or cancelled.", 404)
     if not await request.app.state.services.intercom.cancel(iid):
-        raise CelineError("not_found", "This message already landed or was cancelled.", 404)
+        raise CelineError("not_found", "This message was already delivered or cancelled.", 404)
     return {"ok": True}
 
 

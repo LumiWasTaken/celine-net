@@ -17,7 +17,7 @@ class AgentIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     access: str | None = None        # read | work
     folder: str | None = None
-    model: str | None = None         # one of its models (settings/her_models.py)
+    model: str | None = None         # one of its models (settings/agent_models.py)
     cli: str | None = None           # an agent CLI in its shellbox (cli.py CLIS)
     device: str | None = None        # a device it runs on, a drone (drone.py devices)
 
@@ -26,7 +26,7 @@ def _skill(request: Request):
     reg = request.app.state.services.registry
     skill = reg.skills.get("sub_agents") if reg is not None else None
     if skill is None:
-        raise CelineError("unavailable", "Sub-agents are switched off.", 409)
+        raise CelineError("unavailable", "Sub-agents are off.", 409)
     return skill
 
 
@@ -42,13 +42,16 @@ async def list_agents(request: Request, conversation: str | None = None) -> dict
 
 @router.get("/conversations/{cid}/sub-agents")
 async def agent_tree(request: Request, cid: str) -> dict:
-    """The sub-agents under the top of `cid`'s chain, as a tree (skill.tree_of): {top,
-    agents}, each with its depth, state, model (its label), tokens, seconds and link."""
+    """The sub-agents under the top of `cid`'s chain, and the missions they started, as
+    a tree (skill.tree_of): {top, origin, agents, missions, total}, each with its depth,
+    state, reason, model (its label), tokens, seconds and link."""
     services = request.app.state.services
     out = await services.store.read(lambda c: tree_of(c, cid, services.store.tool_words))
     if out is None:
-        raise NotFound("conversation")
-    return {**out, "agents": labelled(getattr(services.cfg, "settings", None), out["agents"])}
+        raise NotFound("chat")
+    settings = getattr(services.cfg, "settings", None)
+    return {**out, "agents": labelled(settings, out["agents"]),
+            "missions": labelled(settings, out["missions"])}
 
 
 @router.post("/conversations/{cid}/sub-agents")
@@ -59,7 +62,7 @@ async def start_agent(request: Request, cid: str, body: AgentIn) -> dict:
     store = request.app.state.services.store
     if await store.read(lambda c: c.execute(
             "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     sub, refusal, resumed, _ = await _skill(request).begin(
         store, cid, body.brief, body.name, body.access, body.folder, body.model, body.cli,
         body.device)
