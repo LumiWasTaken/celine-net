@@ -16,8 +16,9 @@ from ..core.ids import now
 from . import ToolSpec
 from ..core.event_types import OVERRIDES_CHANGED
 
-# A tool that is off, or of a skill that is down, is not in its list (turns/prompt.py);
-# the skill index says so, and a call to it is refused with OFF or down_sentence.
+# A tool that is off is not in its list (turns/prompt.py wire_tools); the tail says so
+# and a call to it is refused with OFF. A skill that is down keeps its tools listed; the
+# tail says it is down and a call is refused with down_sentence.
 OFF = "{name} is off here."
 # A sub-agent with read access (sub_agents/skill.py) has only read-only tools, the
 # intercom and its own sub-agents (they start with read access too) in its list. A call to another one is refused with this and what it has of

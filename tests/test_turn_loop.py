@@ -73,7 +73,7 @@ class Web:
 class Browser:
     name = "browser"
     description = "A browser."
-    status = "down"
+    status = "unset"
     error = "Not set up: see Settings, Tools."
 
     @tool()
@@ -140,7 +140,23 @@ async def test_a_step_runs_every_call(store, cfg):
     assert [r[1] for r in rows] == ["ok"] * 30
 
 
-async def test_a_down_skill_sends_no_tool_and_says_why(store, cfg):
+async def test_a_skill_that_is_down_right_now_keeps_its_tools_and_a_call_says_why(store, cfg):
+    """A set-up skill whose server does not answer: its tools stay in the list (the
+    same list when it is back), the tail says it is down, a call is refused with why."""
+    gone = Browser()
+    gone.status, gone.error = "down", "The server at 10.0.0.5 does not answer."
+    reg = _registry(cfg, gone, Notebook())
+    cid = await conversations.create(store)
+    b = Replies([_calls(("browser__open", {})), [TextDelta("ok"), Done(reason="stop")]])
+    await _run(store, cfg, reg, cid, b)
+    assert [t["function"]["name"] for t in b.offered[0]
+            if t["function"]["name"].startswith("browser__")] == ["browser__open"]
+    why = "browser is down: The server at 10.0.0.5 does not answer. Work without it."
+    assert (await _results(store))[0][2] == why
+    assert why in b.calls[0][-1]["content"]
+
+
+async def test_a_skill_that_is_not_set_up_sends_no_tool_and_says_why(store, cfg):
     reg = _registry(cfg, Browser(), Notebook())
     cid = await conversations.create(store)
     b = Replies([_calls(("browser__open", {})), [TextDelta("ok"), Done(reason="stop")]])

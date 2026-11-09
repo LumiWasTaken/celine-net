@@ -129,9 +129,9 @@ B_AGENT_NOT_SET_UP = "The browser is not set up."
 B_AGENT_REFUSED = "The browser at browser:8771 does not answer."
 
 
-async def test_browser_without_an_address_is_down_with_the_variable_named(monkeypatch):
+async def test_browser_without_an_address_is_not_set_up_with_the_variable_named(monkeypatch):
     b = Browser(SimpleNamespace(user="Joe", settings=SimpleNamespace(services={})))
-    assert (b.status, b.error) == ("down", B_AGENT_NOT_SET_UP)
+    assert (b.status, b.error) == ("unset", B_AGENT_NOT_SET_UP)
     with pytest.raises(OSError, match="has no address"):
         await browser_sync.screen(b.cfg)
 

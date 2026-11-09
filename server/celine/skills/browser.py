@@ -348,7 +348,7 @@ class Browser:
 
     @property
     def status(self) -> str:
-        return "up" if sync.url(self.cfg) else "down"
+        return "up" if sync.url(self.cfg) else "unset"
 
     @property
     def error(self) -> str | None:

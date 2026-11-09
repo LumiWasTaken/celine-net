@@ -446,7 +446,7 @@ class Registry:
     def down(self, skill_name: str) -> str | None:
         """Why a skill is not up (a connector that is starting or dead, image generation
         without a preset, a device that lacks a permission: BLOCKED), or None while it
-        is up. Its tools stay in its list as stubs that say so. A look while it is up
+        is up. `listed` says whether its tools go in a request. A look while it is up
         is told to its ASK."""
         skill = self.skills.get(skill_name)
         status = getattr(skill, "status", "up")
@@ -455,6 +455,16 @@ class Registry:
                 ask(skill_name)
             return BLOCKED.get(skill_name)
         return " ".join(str(getattr(skill, "error", None) or f"it is {status}").split())[:200]
+
+    def listed(self, skill_name: str) -> bool:
+        """Whether a skill's tools go in a request's tool list: it is set up (its status
+        is anything but "unset": no preset, no address) and nothing holds it (BLOCKED).
+        A skill that is set up and down right now (an MCP server that starts, or does
+        not answer) keeps its tools there, so the list is the same when it is back and
+        a model server's cached prompt holds; a call meanwhile is refused with why
+        (turns/tools.py)."""
+        status = getattr(self.skills.get(skill_name), "status", "up")
+        return status != "unset" and skill_name not in BLOCKED
 
     def index(self, cfg, carried) -> str | None:
         """The skill index for the system prompt: one line per skill offered here, what

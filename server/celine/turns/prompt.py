@@ -50,15 +50,16 @@ async def tool_specs(registry, store, cid: str, carried, without=frozenset()
 
 def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
     """The tools it gets in this request: those of `specs` that are on (skills/
-    gating.py) and whose skill is up, a core skill's with their parameters, every
-    other by name and one line (skills.ToolSpec.as_name). Loads never change it: only
-    the switches and a skill going down or up do. A tool that is off or down is not
-    sent at all (an empty stub got called with no arguments in a loop): the skill index
-    says so (unusable), and a call to it is refused with why (turns/tools.py).
-    Descriptions are filled in at registration (skills.Registry.add_specs)."""
+    gating.py) and whose skill is set up (skills.Registry.listed), a core skill's with
+    their parameters, every other by name and one line (skills.ToolSpec.as_name). Loads
+    never change it, and neither does a skill that goes down and comes back: only the
+    switches and its setup do. The tools of a skill that is down right now go as they
+    are; the tail says it is down (unusable), and a call to it is refused with why
+    (turns/tools.py). Descriptions are filled in at registration
+    (skills.Registry.add_specs)."""
     return [s.as_wire() if s.skill in CORE else s.as_name()
             for s in specs.values()
-            if registry.down(s.skill) is None and is_enabled(s, overrides, cfg)]
+            if registry.listed(s.skill) and is_enabled(s, overrides, cfg)]
 
 
 def unusable(specs, registry, overrides, cfg) -> list[str]:

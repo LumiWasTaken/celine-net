@@ -106,7 +106,6 @@ async def test_the_process_restarts(chat):
     chat.held()
 
 
-@pytest.mark.xfail(strict=True, reason="2.5: a down skill's tools leave the list")
 async def test_a_skill_goes_down_and_comes_back(chat):
     await chat.say("one")
     web = chat.reg.skills["web"]
@@ -126,16 +125,20 @@ async def test_the_chat_grows_long(chat):
 
 
 async def test_a_reply_cites_a_ref_an_older_shortened_result_holds(chat):
-    """Seven searches fill the window, so the oldest results go as stubs (a large step,
+    """Searches fill the window until the oldest results go as stubs (a large step,
     once). A later reply then cites a line of the first result: that stub stays as it
     went."""
     chat.reg.add(Arch(lines=100))
     chat.backend = Searching(window=60_000)
-    for n in range(7):
+
+    def stubs() -> list[str]:
+        return [m["content"] for m in chat.turns[-1][0]
+                if m["role"] == "tool" and m["content"].startswith(compact.STUB_HEAD)]
+    for n in range(20):
         await chat.say(f"search {n}")
-    stubs = [m["content"] for m in chat.turns[-1][0]
-             if m["role"] == "tool" and m["content"].startswith(compact.STUB_HEAD)]
-    assert stubs and "[wa:6003]" in stubs[0], "the first result is a stub that names the ref"
+        if stubs():
+            break
+    assert "[wa:6003]" in stubs()[0], "the first result is a stub that names the ref"
     chat.backend.answer = "It is in [wa:6003]."
     await chat.say("which one")
     chat.held()
