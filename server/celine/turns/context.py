@@ -285,12 +285,16 @@ def _kept(call: dict, policy: Policy) -> bool:
     return any((call.get("name") or "").startswith(p) for p in policy.never_age)
 
 
-def _agable(call: dict, policy: Policy, counter) -> bool:
+def _agable(call: dict, policy: Policy) -> bool:
+    """Whether an aged call's result goes as a stub. The size is the plain estimate
+    (tokens.Counter(), as compact.stub's): a model's learned scale moves with every
+    reply, and a result near the threshold would change its bytes with it."""
     if _kept(call, policy):
         return False
     if call.get("attachments") or (call.get("display") or {}).get("shot"):
         return True                     # an image goes with its result
-    return counter.estimate(call.get("result") or "", "tool") >= policy.never_age_below
+    return tokens.Counter().estimate(call.get("result") or "", "tool") >= \
+        policy.never_age_below
 
 
 class _Plan:
@@ -321,9 +325,12 @@ class _Plan:
         self.mark = self.pos.get(view["aged"] or "", -1)
         self.limit = limit
         self.opening = ""           # what goes before its first message (history)
-        # the refs it cited in its replies: an aged result keeps those lines whole
-        self.cited = frozenset(r for it in items if it.role == "assistant"
-                               for r in compact.refs_in(it.content))
+        # the refs each turn's replies cited: an aged result keeps the lines its own
+        # turn cited whole (a later turn's citation leaves an old stub's bytes as they are)
+        self.cited: dict[str | None, set[str]] = {}
+        for it in items:
+            if it.role == "assistant":
+                self.cited.setdefault(it.turn, set()).update(compact.refs_in(it.content))
         self._select()
 
     def _select(self) -> None:
@@ -445,12 +452,13 @@ def calls_wire(cfg, it: _Item, guarded: bool, plan: _Plan | None = None) -> list
         came = origin(it.cid, turn=it.turn, message=c.get("result_message_id"),
                       call=c["id"])
         res = c["result"] if c["result"] is not None else "result unavailable"
-        stubbed = aged and _agable(c, plan.policy, plan.counter)
+        stubbed = aged and _agable(c, plan.policy)
         if not stubbed:
             res = mark.shown(res, c.get("display"), guarded)  # guard/mark.py
         images: list[dict] = []
         if stubbed:
-            res = compact.stub(c["name"], c["arguments"], c["result"], plan.cited)
+            res = compact.stub(c["name"], c["arguments"], c["result"],
+                               plan.cited.get(it.turn, ()))
         elif c.get("attachments"):
             # the result's files (shell__look): their notes stay in the tool
             # message, the image parts go below
@@ -594,7 +602,7 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
     est = counter.request(msgs, tools)
 
     aged_n = sum(1 for it in plan.items if plan.aged(it)
-                 for c in it.calls or [] if _agable(c, policy, counter))
+                 for c in it.calls or [] if _agable(c, policy))
     verb = sum(plan.cost(it) for it in plan.items if not plan.aged(it))
     aged_t = sum(plan.cost(it) for it in plan.items if plan.aged(it))
     summary_t = counter.estimate(plan.system(system)) - counter.estimate(system) \
@@ -694,7 +702,7 @@ def _pick_mark(plan: _Plan, rule: Rule, used: int, win: int,
             continue
         mark = it.id
         saved += gain
-        n += sum(1 for c in it.calls or [] if _agable(c, policy, plan.counter))
+        n += sum(1 for c in it.calls or [] if _agable(c, policy))
         if used - saved <= target:
             break
     return mark, saved, n

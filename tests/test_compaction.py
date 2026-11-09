@@ -170,6 +170,17 @@ def test_a_summary_lists_the_refs_it_dropped():
         assert again == "found [wa:3].\n\n" + compact.DROPPED_HEAD + "[wa:1] [wa:9]"
 
 
+def test_whether_a_result_ages_to_a_stub_is_the_plain_estimate_of_its_size():
+    """The same result is a stub or whole on every build: its size is estimated without
+    the scale a model's replies teach the counter."""
+    policy = context.Policy()
+    at = policy.never_age_below
+    chars = next(n for n in range(1, 10_000)
+                 if tokens.Counter().estimate("x" * n, "tool") >= at)
+    assert context._agable({"name": "t__find", "result": "x" * chars}, policy)
+    assert not context._agable({"name": "t__find", "result": "x" * (chars - 1)}, policy)
+
+
 async def test_aged_results_keep_cited_lines_and_a_full_window_warns(store, cfg):
     cid = await long_conversation(store)
     await store.write(lambda c: c.execute(
