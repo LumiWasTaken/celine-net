@@ -90,9 +90,9 @@ back, press Sync now to catch up.
 
 ### Images from a registry
 
-To pull prebuilt images instead of building: set `CELINE_IMAGES` (for example
-`registry.example.net/you/celine-net`) and `CELINE_TAG` in `.env`, `docker login`, then
-`docker compose pull && docker compose up -d --no-build`. The machine then needs only
+To pull prebuilt images instead of building: set
+`CELINE_IMAGES=ghcr.io/lumiwastaken/celine-net` (a fork: its own `ghcr.io/<owner>/<repo>`)
+and `CELINE_TAG` in `.env`, then `docker compose pull && docker compose up -d --no-build`. The machine then needs only
 `docker-compose.yml`, `.env` and `config/searxng/settings.yml`.
 
 ## Where the data lives
@@ -501,28 +501,26 @@ process keeps running when the app stops. In Docker they are services of their o
 
 ## CI
 
-GitLab CI: `.gitlab-ci.yml` runs on master (and on "Run pipeline" by hand); pushes to
-other branches build nothing. A push runs only the jobs whose files changed.
+GitHub Actions, `.github/workflows/test.yml`: every push and pull request runs the gates
+(the Python tests and ruff, the web build, the WhatsApp connector's tests). When all
+three pass on master or on a `v*` tag, the `images` job builds the six images and pushes
+them to `ghcr.io/<owner>/celine-net/celine-*`:
 
-- Tests: `test:python` (pytest, the app and discord-link), `test:wa-link` (`go test ./...`)
-  and `test:web` (the web build, which type checks first).
-- Images: `build:app`, `build:discord-link`, `build:wa-link`, `build:shellbox`,
-  `build:shellbox-manager` and `build:browser` build one image per Dockerfile, each after
-  the tests of what it ships, and push it to the project's registry as
-  `$CI_REGISTRY_IMAGE/celine-*`, tagged with the branch or tag slug and `:latest` on
-  master.
+| Pushed | Tags |
+|---|---|
+| master | `latest`, the short commit |
+| a `v*` tag | `stable`, the tag as pushed (`v2.1.0`), the short commit |
 
-GitHub Actions: `.github/workflows/test.yml` runs the gates on every push and pull
-request; `images.yml` builds the six images on master and on a `v*` tag and pushes them
-to `ghcr.io/<owner>/celine-net/celine-*`, tagged `latest` (master), the tag as pushed
-(`v1.2`) and the commit. `CELINE_TAG=v1.2` keeps a machine on a release; `CHANGELOG.md`
-says what each one changed.
+`CELINE_TAG=stable` keeps a machine on releases, `CELINE_TAG=v2.1.0` on one release;
+`CHANGELOG.md` says what each one changed.
 
-To pull them, set `CELINE_IMAGES=<registry>` in `.env` (the project's
-`$CI_REGISTRY_IMAGE`, for example `registry.example.net/you/celine-net`) and
-`CELINE_TAG` when not `latest`, then `docker login <registry>`. To build one yourself
-from the repository root: `docker build -f wa-link/Dockerfile .`. After changing the
-dependencies of discord-link, run `uv lock` in `connectors/discord`.
+When a run fails for a reason outside the code (an outage), run it again: Actions, the
+run, "Re-run all jobs". The build needs nothing from the registry, so the machine itself
+is the other way: in a checkout of the tag or commit, `docker compose build` then
+`docker compose up -d` makes the same images under the same names.
+
+To build one image from the repository root: `docker build -f wa-link/Dockerfile .`.
+After changing the dependencies of discord-link, run `uv lock` in `connectors/discord`.
 
 ## Monitoring
 

@@ -1,6 +1,11 @@
 # The gates (AGENT.md "Gates") on every push and pull request: the Python tests (in
 # parallel, then in one process) and ruff, the web build (useReveal check, eslint, tsc,
-# vite) and the WhatsApp connector's tests. images.yml builds the images.
+# vite) and the WhatsApp connector's tests. After all three pass on master or on a v*
+# tag, `images` builds one image per Dockerfile and pushes it to
+# ghcr.io/<owner>/<repo>/<name>:
+#   master:  latest and the short commit
+#   v* tag:  stable, the tag (v2.1.0) and the short commit
+# docker-compose.yml takes them with CELINE_IMAGES=ghcr.io/<owner>/<repo> and CELINE_TAG.
 name: test
 on:
   push:
@@ -57,3 +62,54 @@ jobs:
           cache-dependency-path: wa-link/go.sum
       - run: go test ./...
       - run: go vet ./...
+  images:
+    needs: [python, web, wa-link]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: celine-app, file: Dockerfile}
+          - {name: celine-shellbox, file: shellbox/Dockerfile}
+          - {name: celine-browser, file: browser/Dockerfile}
+          - {name: celine-shellbox-manager, file: shellbox-manager/Dockerfile}
+          - {name: celine-discord-link, file: connectors/discord/Dockerfile}
+          - {name: celine-wa-link, file: wa-link/Dockerfile}
+    steps:
+      - uses: actions/checkout@v5
+      - id: img
+        run: echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.ref }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable=${{ github.ref_type == 'tag' }}
+            type=ref,event=tag
+            type=sha,format=short,prefix=
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CELINE_COMMIT=${{ github.sha }}
+            SHELLBOX_COMMIT=${{ github.sha }}
+            CELINE_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
