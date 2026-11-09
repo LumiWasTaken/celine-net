@@ -299,13 +299,13 @@ function Shell() {
 
       {sheet === 'waiting' && (
         <Sheet title="Waiting for you" size="lg" onClose={() => setSheet(null)}>
-          <div>
+          <div className="waits">
             {(waits.data?.items ?? []).map((w, i, all) => (
               <Fragment key={w.kind === 'approval' ? `a:${w.approval.id}` : `${w.kind}:${w.id}`}>
                 {w.group !== all[i - 1]?.group && <ListSection label={w.group} />}
                 {w.kind === 'approval'
                   ? <ApprovalCard ask={w.approval} onOpen={openWait} />
-                  : <ListRow density="lg" icon={WAIT_ICON[w.kind]} title={w.title} subtitle={w.line || undefined}
+                  : <ListRow density="lg" icon={WAIT_ICON[w.kind]} title={w.title} body={w.line || undefined}
                              href={w.link ?? undefined}
                              onClick={w.link ? e => { e.preventDefault(); openWait(w.link!) } : undefined} />}
               </Fragment>
