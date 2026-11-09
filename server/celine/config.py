@@ -28,7 +28,9 @@ def build() -> dict:
     """Which build this is, for the rail's brand mark and Settings, General (GET
     /api/status `build`): the image's CELINE_COMMIT and CELINE_BUILT (Dockerfile, its last
     layer), else git's commit in a checkout and the time of the web build in STATIC_DIR;
-    `source`, its code: REPOSITORY at that commit when there is one."""
+    `version`, the release tag an image was built from (CELINE_VERSION, "v2.1.0"), None
+    for a build of master or a checkout; `source`, its code: REPOSITORY at that commit
+    when there is one."""
     commit = os.environ.get("CELINE_COMMIT")
     if not commit:
         try:
@@ -43,6 +45,7 @@ def build() -> dict:
     commit = commit or "dev"
     known = re.fullmatch(r"[0-9a-f]{7,40}", commit)
     return {"commit": commit, "built": built,
+            "version": os.environ.get("CELINE_VERSION") or None,
             "source": f"{REPOSITORY}/tree/{commit}" if known else REPOSITORY}
 
 

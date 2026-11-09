@@ -24,8 +24,8 @@ export type ConfigStatus = {
   places_off: string[]
   /** the onboarding finished (the features were saved once) */
   setup: boolean
-  /** this build: its commit, when it was built (null: unknown) and its code (the repository at that commit) */
-  build: { commit: string; built: string | null; source: string }
+  /** this build: its commit, when it was built (null: unknown), the release it is (null: a build of master) and its code (the repository at that commit) */
+  build: { commit: string; built: string | null; version: string | null; source: string }
   /** the vault is set up and locked */
   vault_locked: boolean
 }

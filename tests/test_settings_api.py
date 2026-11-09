@@ -255,6 +255,10 @@ async def test_status_links_the_source_of_this_build(api, monkeypatch):
             config_mod.build.cache_clear()
             build = (await api.get("/api/status")).json()["build"]
             assert build["commit"] == commit and build["source"] == source
+            assert build["version"] is None
+        monkeypatch.setenv("CELINE_VERSION", "v2.1.0")
+        config_mod.build.cache_clear()
+        assert (await api.get("/api/status")).json()["build"]["version"] == "v2.1.0"
     finally:
         config_mod.build.cache_clear()
 

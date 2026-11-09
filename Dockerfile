@@ -98,8 +98,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=1s -
 
 CMD ["celine"]
 
-# the commit and the time of this build, for the rail's brand mark (GET /api/status
-# `build`); CI passes both, a local build has neither
+# the commit, the time and the release tag of this build, for the rail's brand mark (GET
+# /api/status `build`); CI passes the commit, and the tag on a release
 ARG CELINE_COMMIT=dev
 ARG CELINE_BUILT=
-ENV CELINE_COMMIT=$CELINE_COMMIT CELINE_BUILT=$CELINE_BUILT
+ARG CELINE_VERSION=
+ENV CELINE_COMMIT=$CELINE_COMMIT CELINE_BUILT=$CELINE_BUILT CELINE_VERSION=$CELINE_VERSION

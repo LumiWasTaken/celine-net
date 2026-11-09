@@ -42,7 +42,7 @@ export function General({ status }: { status: ConfigStatus | null }) {
       {status && (
         <Section title="Source code"
                  action={<Button variant="ghost" size="sm" icon={ArrowUpRight} href={status.build.source} target="_blank" rel="noopener">
-                   {status.build.commit}
+                   {status.build.version ? `${status.build.version}, ${status.build.commit}` : status.build.commit}
                  </Button>} />
       )}
     </Page>
