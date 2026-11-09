@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 from chat_fixtures import user_says
+from compaction_fixtures import Arch, Model
 from notes_fixtures import write_notes
 from settings_fixtures import make_app
 from test_turn_loop import Replies
@@ -14,7 +15,7 @@ from celine.backends.base import Done, TextDelta
 from celine.boot import load
 from celine.conversations import store as conversations
 from celine.core.bus import EventBus
-from celine.turns import store as turns, tokens
+from celine.turns import compact, store as turns, tokens
 from celine.turns.cancel import Token
 from celine.turns.runner import run_turn
 
@@ -49,6 +50,20 @@ class Chat:
         for i, (a, b) in enumerate(zip(before, after)):
             assert a == b, f"message {i} ({a.get('role')}) changed"
         assert len(after) > len(before)
+
+
+class Searching(Model):
+    """Calls arch__find once per turn, then answers `answer`; records the tools."""
+
+    def __init__(self, window: int):
+        super().__init__(tools=["arch__find"], window=window)
+        self.offered: list[list[dict]] = []
+
+    async def stream(self, messages, tools):
+        if not messages[0]["content"].startswith("You write the memory"):
+            self.offered.append(list(tools or []))
+        async for ev in super().stream(messages, tools):
+            yield ev
 
 
 @pytest.fixture
@@ -108,4 +123,22 @@ async def test_the_chat_passes_200_messages(chat):
     chat.cfg.settings.general["history_messages"] = 4
     for text in ("one", "two", "three", "four"):
         await chat.say(text)
+    chat.held()
+
+
+async def test_a_reply_cites_a_ref_an_older_shortened_result_holds(chat):
+    """Seven searches fill the window, so the oldest results go as stubs (a large step,
+    once). A later reply then cites a line of the first result: that stub stays as it
+    went."""
+    chat.reg.add(Arch(lines=100))
+    chat.backend = Searching(window=60_000)
+    for n in range(7):
+        await chat.say(f"search {n}")
+    stubs = [m["content"] for m in chat.turns[-1][0]
+             if m["role"] == "tool" and m["content"].startswith(compact.STUB_HEAD)]
+    assert stubs and "[wa:6003]" in stubs[0], "the first result is a stub that names the ref"
+    chat.backend.answer = "It is in [wa:6003]."
+    await chat.say("which one")
+    chat.held()
+    await chat.say("thanks")
     chat.held()
