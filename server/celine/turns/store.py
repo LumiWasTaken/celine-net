@@ -457,8 +457,9 @@ async def resume_point(store, turn_id: str) -> dict:
                 out["complete"] = {"message_id": last["id"], "text": last["content"],
                                    "reasoning": last["reasoning"]}
                 return out
-            # cut off: the row holds the text streamed so far
-            out["reopen"] = {"message_id": last["id"], "text": last["content"] or ""}
+            # cut off: the row holds the text and the thinking streamed so far
+            out["reopen"] = {"message_id": last["id"], "text": last["content"] or "",
+                             "reasoning": last["reasoning"] or ""}
             out["parent"] = last["parent_id"]
             out["iteration"] = max(out["iteration"], sum(
                 1 for m in tail[1:] if m["role"] == "assistant"))

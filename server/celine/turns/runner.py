@@ -533,7 +533,8 @@ async def _stream_one(store, cid, tid, parent, backend, messages, tools, token,
         # a reply continued in place: a prefill, thinking off
         backend = backend.for_message(mid, thinking="off" if prefix else None)
     parts: list[str] = [prefix] if prefix else []
-    thinking: list[str] = []
+    # the thinking a continued reply already has stays with it
+    thinking: list[str] = [reopen["reasoning"]] if reopen and reopen.get("reasoning") else []
     acc: dict[int, dict] = {}
     shown: dict[int, tuple[float, int]] = {}  # per call: when tool.forming last went out, at what length
 

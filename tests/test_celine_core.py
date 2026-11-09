@@ -196,6 +196,8 @@ async def test_continue_extends_a_cut_reply_in_place(store, cfg):
     await run_turn(turn, store, cfg, Scripted(answer="Hello wor", finish="length"),
                    EventBus(), Token(tid), None, None)
     mid = (await view.snapshot(store, cid))["messages"][-1]["id"]
+    await store.write(lambda c: c.execute(
+        "UPDATE messages SET reasoning='two words, a greeting' WHERE id=?", (mid,)))
     await turns.continue_turn(store, cid, tid)
     turn = await turns.claim(store, "w2")
     backend = Scripted(answer="ld.", prefill=True)
@@ -205,6 +207,9 @@ async def test_continue_extends_a_cut_reply_in_place(store, cfg):
     msgs = (await view.snapshot(store, cid))["messages"]
     assert msgs[-1]["id"] == mid and msgs[-1]["content"] == "Hello world."
     assert [m["role"] for m in msgs].count("assistant") == 1
+    assert await store.read(lambda c: c.execute(
+        "SELECT reasoning FROM messages WHERE id=?", (mid,)).fetchone()[0]) == \
+        "two words, a greeting", "its thinking stays"
     rows = await store.read(lambda c: c.execute(
         "SELECT data FROM events WHERE conversation_id=? AND type='message.delta'",
         (cid,)).fetchall())
