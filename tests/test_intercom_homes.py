@@ -190,3 +190,21 @@ async def test_the_users_stop_ends_what_a_mission_asks_and_tells_the_chat_that_s
         "SELECT text FROM intercom WHERE from_addr=? AND kind='report'",
         (f"agent:{night}",)).fetchall())
     assert told[0].startswith("Mission Night stopped by ")
+
+
+async def test_a_mission_stopped_at_its_time_limit_tells_the_user_and_the_chat_that_started_it(
+        store):
+    from celine.missions.skill import record
+    chat = await conversations.create(store, "Plans")
+    night = await conversations.create(store, "Night", kind="mission")
+    await missions.create(store, night, {"name": "Night", "terminal": "n", "brief": "b",
+                                         "started_by": chat})
+    await record(SimpleNamespace(intercom=Intercom(store), cfg=boot.load()), store, night,
+                 "stopped", "It reached its time limit of 2 hours.")
+    told = await store.read(lambda c: [r[0] for r in c.execute(
+        "SELECT text FROM intercom WHERE from_addr=? AND kind='report'", (f"agent:{night}",))])
+    assert told == ["Mission Night stopped: It reached its time limit of 2 hours."]
+    notices = await store.read(lambda c: [json.loads(r[0]) for r in c.execute(
+        "SELECT data FROM global_events WHERE type='notice' ORDER BY id")])
+    assert [(n["title"], n["body"]) for n in notices] == [
+        ("Night", "It reached its time limit of 2 hours.")]

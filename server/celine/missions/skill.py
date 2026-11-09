@@ -55,9 +55,9 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
     user's Stop; a user's reply resumes a stopped one inside its send, with nothing to
     follow): the row and the feed (missions.set_status_sync); done or stopped cancels what
     it scheduled; stopped reads what it asked the user, so nothing of it waits for them;
-    any status but active is reported in the conversation it reports to, and the user's
-    Stop also in the conversation that started it. -> the row, None when there is no such
-    mission."""
+    any status but active is reported in the conversation it reports to, and a stop
+    (the user's, or the app's at its time limit) in the conversation that started it. ->
+    the row, None when there is no such mission."""
     row = await store.write(lambda c: missions.set_status_sync(c, store, cid, word, note))
     if row is None or app is None:
         return row
@@ -74,8 +74,8 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
                                                        "conversation_id": None})
         await store.write(close)
     to = row["report_to"]
-    if word == "stopped" and not note and not to and row["started_by"] not in (None, "user"):
-        to = row["started_by"]          # the user's Stop: the chat that started it hears
+    if word == "stopped" and not to and row["started_by"] not in (None, "user"):
+        to = row["started_by"]          # a stop: the chat that started it hears
     if word != "active" and to:
         # a report the user reads in that conversation; it starts no turn there
         from ..intercom.addresses import Refused

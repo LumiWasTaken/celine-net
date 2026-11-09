@@ -123,7 +123,9 @@ def set_status_sync(c: sqlite3.Connection, store, cid: str, status: str, note: s
     row = _row(c, cid)
     event = state_event(row)
     store.global_event(c, event.pop("type"), event)
-    if status in ("needs_you", "done"):
+    # the user hears of it: it waits for them, it is done, or the app stopped it (its
+    # time limit, the note why); their own Stop has no note
+    if status in ("needs_you", "done") or (status == "stopped" and note):
         from ..events import notice
         notice(store, c, "mission", row.get("name"),
                note or ("Waiting for you" if status == "needs_you" else "Done"),
