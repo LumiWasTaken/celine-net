@@ -379,10 +379,6 @@ class _Plan:
                            ORIGIN: origin(self.cid, note="opening")})
         return out
 
-    def history_tokens(self) -> int:
-        """The history part: the messages after its summary, as they are sent."""
-        return sum(self.cost(it) for it in self.items)
-
     def hidden(self) -> list[dict]:
         """Every stored tool result on the path that is not sent verbatim: shown to
         its earlier, so a citation of it is not 'not shown' (verify.shown_refs)."""

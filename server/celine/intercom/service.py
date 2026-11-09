@@ -164,18 +164,6 @@ class Intercom:
             (cid, f"agent:{cid}"))])
         return [iid for iid in ids if await self.cancel(iid)]
 
-    async def cancel_waiting(self, cid: str) -> None:
-        """Every message still waiting to land in conversation `cid`, due or not (a
-        sub-agent's report, a notice): its delivery there is cancelled, other
-        recipients keep theirs. For a conversation that must not wake again."""
-        def fn(c: sqlite3.Connection) -> None:
-            for r in c.execute("UPDATE intercom_deliveries SET state='cancelled' WHERE "
-                               "conversation_id=? AND state='pending' RETURNING intercom_id",
-                               (cid,)).fetchall():
-                _changed(c, self.store, r[0], [cid])
-
-        await self.store.write(fn)
-
     async def deliver_idle(self, cid: str) -> None:
         out = await deliver.deliver_idle(self.store, cid)
         if out and out["turn_id"]:

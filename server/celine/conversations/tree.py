@@ -308,20 +308,6 @@ def again_as(c: sqlite3.Connection, turn_id: str | None, message_id: str | None)
     return {"again": message_id}
 
 
-def _insert_under(c: sqlite3.Connection, cid: str, parent: str, role: str, text: str,
-                  meta: dict) -> str:
-    """A plain row under `parent` (no event: the caller says the path changed)."""
-    mid = new_id()
-    ordinal = c.execute("SELECT coalesce(max(ordinal), -1) + 1 FROM messages WHERE "
-                        "parent_id=?", (parent,)).fetchone()[0]
-    c.execute("INSERT INTO messages(id,conversation_id,parent_id,role,content,ordinal,author,"
-              "created_at,meta) VALUES(?,?,?,?,?,?,'model',?,?)",
-              (mid, cid, parent, role, text, ordinal, now(),
-               json.dumps(meta, ensure_ascii=False)))
-    c.execute("UPDATE messages SET preferred_child_id=? WHERE id=?", (mid, parent))
-    return mid
-
-
 # ---- the runner's reply ---------------------------------------------------------------
 
 async def start_assistant_message(store, cid: str, parent_id: str | None,

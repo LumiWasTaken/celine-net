@@ -15,7 +15,6 @@
 /* its face, its name in the display serif, and its last line from the latest evening */
 .greeting { max-width: var(--bleed); width: 100%; margin: 0 auto; padding: 0 var(--s-4) var(--s-5);
   display: grid; justify-items: center; gap: var(--s-3); text-align: center; }
-.greeting__face { margin-bottom: var(--s-1); }
 .greeting__name { font-size: var(--t-2xl); line-height: var(--lh-title);
   font-weight: var(--fw-medium); letter-spacing: var(--tracking-display); color: var(--text-primary); }
 
@@ -43,7 +42,6 @@
 /* Tools: the exceptions, then "All tools" opening the whole list under it */
 /* Context: the window as one bar split by block (2 px gaps), a legend, the notes */
 .ctx { display: grid; gap: var(--s-5); align-content: start; }
-.greeting__note { max-width: var(--bleed); width: 100%; margin: 0 auto; padding: 0 var(--s-4) var(--s-3); }
 
 
 .send-btn svg { animation: fade var(--dur-fast) var(--ease); }

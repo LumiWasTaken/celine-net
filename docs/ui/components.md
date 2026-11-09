@@ -184,9 +184,7 @@ sits in, drawn as a line to it), `trailing` (actions, shown on hover, focus or t
 `onContextMenu`, `press` (a long press opens the menu: useContextMenu's `press`, for a
 row with no "..." on touch), `tooltip`, `pick` (the check box while selecting), `muted` (ended or
 settled: the title quiet), `body` (text that wraps under the title, at most three lines: a
-lore entry, a found passage as a Snippet),
-`checked` with `onCheck` (a check that is always there, outside Select: a channel to
-include; the row toggles it), `progress` (0 to 1, null while unknown: a file on its way).
+lore entry, a found passage as a Snippet), `progress` (0 to 1, null while unknown: a file on its way).
 With `column` or `cell` it is a wide row: the column, the cell and the time each keep their
 column, so rows line up; a list whose rows have a cell only sometimes passes `cell={null}`
 on the others. The row's own width decides (a container query): from 60rem every column,

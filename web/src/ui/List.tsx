@@ -15,7 +15,7 @@ import type { useContextMenu } from './Menu'
 /* ── ListRow ── */
 export function ListRow({
   leading, running = false, icon: Icon, iconAccent = false, title, subtitle, detail, body, meta, aside, column, cell, depth = 0, trailing, trailingAlways = false, selected = false, muted = false,
-  checked, onCheck, progress, density = 'md', href, onClick, onContextMenu, press: hold, tooltip, className, style, pick,
+  progress, density = 'md', href, onClick, onContextMenu, press: hold, tooltip, className, style, pick,
 }: {
   leading?: ReactNode
   /** at work: the kit's spinner in the icon tile (as EventLine's), never a dot */
@@ -32,9 +32,6 @@ export function ListRow({
   detail?: ReactNode
   /** text that wraps under the title (a lore entry, a found passage), at most three lines */
   body?: ReactNode
-  /** a check that is always there (a channel to include, a model to add): the row toggles it */
-  checked?: boolean
-  onCheck?: (checked: boolean) => void
   /** a file on its way (0 to 1, null while unknown): a bar under the text */
   progress?: number | null
   /** on the title's line, flush right, small and muted: a time, a count */
@@ -68,12 +65,8 @@ export function ListRow({
   /** the list's Select (ui/Select usePicker): a check before the row while selecting */
   pick?: PickProps
 }) {
-  if (onCheck && checked !== undefined && !pick) {
-    const flip = onCheck, on = checked
-    onClick = () => flip(!on)
-  }
   const picking = pick?.checked !== undefined
-  const box = picking ? pick!.checked : onCheck ? checked : undefined
+  const box = picking ? pick!.checked : undefined
   const wide = column !== undefined || cell !== undefined
   const cls = cx('list-row', density !== 'md' && `list-row--${density}`, wide && 'list-row--wide', picking && 'list-row--picking',
                  muted && 'list-row--muted', body != null && 'list-row--body', className)
@@ -86,8 +79,7 @@ export function ListRow({
   }
   const press = pick ? { onPointerDown: pick.onPointerDown, onPointerUp: pick.onPointerUp,
                          onPointerCancel: pick.onPointerCancel, onPointerLeave: pick.onPointerLeave } : hold
-  const aria = { 'aria-current': current, 'aria-selected': picking ? pick!.checked : undefined,
-                 ...(onCheck && !picking ? { role: 'checkbox', 'aria-checked': !!checked } : {}) }
+  const aria = { 'aria-current': current, 'aria-selected': picking ? pick!.checked : undefined }
   const inner = (
     <>
       {box !== undefined && <span className={cx('list-row__pick', box && 'is-on')} aria-hidden>{box && <Check size={ICON.sm} />}</span>}
@@ -131,7 +123,7 @@ export function ListRow({
   // a row with its own buttons cannot itself be a <button>
   return (
     <div className={cls} style={style} title={tooltip} {...aria} onContextMenu={onContextMenu} {...press}
-         role={onCheck && !picking ? 'checkbox' : onClick ? 'button' : undefined} tabIndex={onClick || onContextMenu ? 0 : undefined} onClick={onClick}
+         role={onClick ? 'button' : undefined} tabIndex={onClick || onContextMenu ? 0 : undefined} onClick={onClick}
          onKeyDown={onClick ? e => {
            if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); e.currentTarget.click() }
          } : undefined}>

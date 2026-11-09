@@ -189,12 +189,6 @@ input[type='file']::file-selector-button:hover { background: var(--surface-4); }
   :root[data-keyboard] .rail { display: none; }
   .split { grid-template-columns: minmax(0, 1fr); }
   .bubble { max-width: 86%; }
-  .search__filters { display: none; }
-  .search__sheet-btn { display: inline-flex; }
-  /* the order says its word in its tooltip; a row with no chips takes no room */
-  .search__sort { width: var(--h-md); padding: 0; }
-  .search__sort .btn__label { display: none; }
-  .search__chips:empty { display: none; }
 }
 
 /* the server is gone (components/ServerDown): the whole window, nothing else */

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 
-from . import guide_text
 
 
 def _kind(p: dict) -> str:
@@ -47,7 +46,7 @@ def reference(registry, skill_name: str, cfg) -> str:
     skill = registry.skills.get(skill_name)
     g = getattr(skill, "guide", None)
     lines = [f"# {skill_name}", ""]
-    lines += [guide_text(cfg, g.body), ""] if g is not None \
+    lines += [g.body, ""] if g is not None \
         else [str(getattr(skill, "description", "")), ""]
     status = getattr(skill, "status", None)
     if status and status != "up":

@@ -743,9 +743,8 @@ Image captions and the topic search index keep their own schedulers.
 
 The seam for its own machine. The house holds its memory (database, notebook, archive,
 documents, vault), the guard, the model gateway and the work queue; only the house reads
-and writes the database. The agent's body runs its turns and its own tools. Every tool says where
-it runs (`ToolSpec.runs`, `skills/__init__.py` BODY): `body` for the shell, the coding
-agent (`code`) and the browser, `house` for every other. Today both are this one process.
+and writes the database. The agent's body runs its turns and its own tools: the shell,
+the coding agent (`code`) and the browser. Today both are this one process.
 
 ### Abort
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import sqlite3
 
-HOMES = ("agent", "missions", "routines")
 _COLS = "id, kind, trigger_key, created_at"
 
 

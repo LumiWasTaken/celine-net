@@ -15,7 +15,7 @@ import json
 import sqlite3
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from ..conversations.store import set_auto_context
 from ..errors import NotFound
@@ -27,11 +27,6 @@ router = APIRouter(prefix="/api")
 class On(BaseModel):
     model_config = ConfigDict(extra="forbid")
     on: bool
-
-
-class NotePath(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    path: str = Field(min_length=1, max_length=500)
 
 
 async def _exists(store, cid: str) -> bool:

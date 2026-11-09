@@ -42,11 +42,6 @@ def network(command: str) -> bool:
     return bool(NETWORK.search(command or ""))
 
 
-def is_outside(name: str) -> bool:
-    """The skill-level list: a tool of a skill whose results others wrote."""
-    return name.split("__")[0] in OUTSIDE
-
-
 def label(name: str, args: dict, result, mcp=None) -> dict | None:
     """The outside label of `name`'s result, None when the text is its own. `mcp`: its
     server's mcp.toml block (facts.mcp_of); one with `outside = "shell"` (its own

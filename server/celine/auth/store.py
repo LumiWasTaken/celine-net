@@ -39,7 +39,6 @@ USER_AGENT_MAX = 200             # characters of a browser's user agent kept wit
 FREE_TRIES = 5                   # wrong tries of one kind before its lock
 FIRST_LOCK = 6 * 3600            # the first lock: 6 hours
 MAX_LOCK = 30 * 86400            # each further failure doubles it, up to 30 days
-LOCKS = ("code", "secret")
 PIN_FAILS = 20                   # wrong PINs from any address within PIN_WINDOW pause PIN login for all
 PIN_WINDOW = 3600
 PIN_PAUSE = 3600

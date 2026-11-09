@@ -73,7 +73,6 @@
 .chat-ctx__total b { color: var(--text-primary); font-weight: var(--fw-medium); }
 /* its notes and the loaded tools: a name over its tokens, apart from the next */
 .chat-ctx__list { display: grid; gap: var(--s-2); }
-.chat-ctx__add { justify-self: start; }
 /* the conversation's list in the place sidebar */
 .chat-list { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 

@@ -31,7 +31,6 @@ log = logging.getLogger("celine.skills")
 
 SEP = "__"          # skill__tool. Double, so split("__", 1) round-trips.
 META = "skills"     # the skill that shows the guides: skills__read_guide
-BODY = {"shell", "code", "browser"}     # the skills that run on its body (ToolSpec.runs)
 LINE_MAX = 200      # characters of a tool's line in its name entry (ToolSpec.as_name)
 
 
@@ -118,13 +117,6 @@ class ToolSpec:
     # False: ran ok beside an answer, it needs none of its own (the turn ends with its
     # step, turns/runner.py)
     needs_answer: bool = True
-
-    @property
-    def runs(self) -> str:
-        """Where it runs: "body" (its own machine: the shell, the browser) or "house"
-        (its memory and sending, behind the guard). Today both are this app; the seam
-        for its own machine later (docs/ARCHITECTURE.md "House and body")."""
-        return "body" if self.skill in BODY else "house"
 
     @property
     def mutating(self) -> bool:
@@ -281,11 +273,6 @@ def check_guides() -> str | None:
         except (OSError, ValueError) as e:
             return f"{g._rel}: {e}"
     return None
-
-
-def guide_text(cfg, body: str) -> str:
-    """A guide's body as it reads it."""
-    return body
 
 
 def _filled(value: Any, cfg) -> Any:

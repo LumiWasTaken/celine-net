@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from . import CORE, META, SEP, ToolContext, ToolResult, guide_text, tool
+from . import CORE, META, SEP, ToolContext, ToolResult, tool
 
 
 def skill_note_path(cfg, skill_name: str):
@@ -227,7 +227,7 @@ class Skills:
         s = self.registry.skills[skill]
         if (g := getattr(s, "guide", None)) is None:
             return None
-        body = self.cfg.substitute(guide_text(self.cfg, g.body))
+        body = self.cfg.substitute(g.body)
         for text in (getattr(s, "docs", None) or {}).values():
             body += f"\n\n{self.cfg.substitute(text.strip())}"
         return body
