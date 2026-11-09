@@ -16,7 +16,7 @@ import anyio
 
 from ..backends.base import ORIGIN, BackendError
 from ..backends.queue import Priority
-from ..core.states import LIVE
+from ..core.states import LIVE_SQL
 from . import context
 from .compact import complete
 from .prompt import request_parts
@@ -38,19 +38,22 @@ async def run(services) -> None:
 
 
 async def once(services, at: datetime | None = None) -> str | None:
-    """Sends the newest chat's request once while its last reply is recent enough.
-    -> the conversation it went for, None when nothing went."""
+    """Sends the newest chat's request once while its last reply is recent enough and
+    no turn is live anywhere: a mission, a sub-agent or a run at work has the model
+    server, and its cache, to itself. -> the conversation it went for, None when nothing
+    went."""
     cfg, store = services.cfg, services.store
     minutes = float(cfg.r("keep_warm_minutes") or 0)
     if not minutes:
         return None
     row = await store.read(lambda c: c.execute(
-        "SELECT t.conversation_id, t.state, t.finished_at FROM turns t "
+        "SELECT t.conversation_id, t.finished_at, "
+        f"(SELECT count(*) FROM turns WHERE state IN {LIVE_SQL}) AS live FROM turns t "
         "JOIN conversations c ON c.id = t.conversation_id "
         "WHERE c.kind = 'chat' AND c.agent_of IS NULL ORDER BY t.rowid DESC LIMIT 1"
     ).fetchone())
     since = (at or datetime.now(timezone.utc)) - timedelta(minutes=minutes)
-    if row is None or row["state"] in LIVE or not row["finished_at"] or \
+    if row is None or row["live"] or not row["finished_at"] or \
             datetime.fromisoformat(row["finished_at"]) < since:
         return None
     cid = row["conversation_id"]

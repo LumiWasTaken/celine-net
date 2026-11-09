@@ -333,6 +333,11 @@ async def test_keep_the_chat_ready_sends_the_start_of_the_next_turns_request(sto
     cfg.settings.general["keep_warm_minutes"] = 10
     assert await warm.once(services, at=ended + timedelta(minutes=11)) is None
     assert await warm.once(services, at=ended + timedelta(minutes=9)) == cid
+    mission = await conversations.create(store, "Night", kind="mission")
+    await user_says(store, mission, "go")
+    assert await warm.once(services, at=ended + timedelta(minutes=9)) is None, \
+        "a turn is live elsewhere"
+    await store.write(lambda c: c.execute("DELETE FROM turns WHERE conversation_id=?", (mission,)))
     await user_says(store, cid, "and now")
     turn = await turns.claim(store, "w")
     await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), reg)
