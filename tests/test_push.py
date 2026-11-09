@@ -16,7 +16,7 @@ from chat_fixtures import until
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from celine import boot, push
+from celine import boot, events, push
 from celine.conversations import store as conversations
 from celine.core.bus import EventBus
 from celine.core.services import Services
@@ -155,6 +155,29 @@ async def test_an_approval_ask_is_urgent(store):
     assert sender.urgency == ["high", "normal"]
 
 
+async def test_an_approvals_closing_notice_is_pushed_while_a_page_is_focused(db_path):
+    cfg = boot.load()
+    sender = FakeSender()
+    bus = EventBus()
+    async with anyio.create_task_group() as tg:
+        store = Store(db_path, bus=bus)
+        await store.start(tg)
+        p = push.Push(cfg, store, bus, send=sender)
+        tg.start_soon(p.run)
+        await until(lambda: bus._subs["global"])
+        _, _, sub = _browser()
+        await _subscribe(store, {**sub, "kinds": ["approval"]})
+        p.focus(object(), True)
+        await store.write(lambda c: events.notice(store, c, "approval", "Celine asks to x.",
+                                                   "Approved.", "/chat/1", "ask:1",
+                                                   closed=True))
+        await until(lambda: sender.sent)
+        [(_, body)] = sender.sent
+        assert (body["body"], body["tag"], body["closed"]) == ("Approved.", "ask:1", True)
+        assert sender.urgency == ["normal"]
+        tg.cancel_scope.cancel()
+
+
 async def test_a_subscription_ends_with_its_session(store):
     """Logout, a session ended from another, the login's expiry: each takes its devices
     along; a row made while the login was off ends once it is on."""
@@ -222,4 +245,5 @@ async def test_the_push_is_encrypted_for_the_browser_and_signed(store, monkeypat
     assert r.headers["authorization"].startswith("vapid t=") and \
         f"k={p.public_key}" in r.headers["authorization"]
     plain = http_ece.decrypt(r.content, private_key=key, auth_secret=auth, version="aes128gcm")
-    assert json.loads(plain) == {"title": "Celine", "body": "hi", "link": "/c/1", "tag": "reply:1"}
+    assert json.loads(plain) == {"title": "Celine", "body": "hi", "link": "/c/1", "tag": "reply:1",
+                                 "closed": False}

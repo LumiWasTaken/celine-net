@@ -1,0 +1,6 @@
+/* A request's card (ApprovalCard.tsx) on Bastet's banner row (GuardBanner.css): alone (the
+   Vault page, Waiting for you) it starts at the edge, not past the agent's face; its long text
+   keeps its lines */
+.approval--alone { margin-left: 0; }
+.approval__facts { padding-top: var(--s-1); }
+.approval__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--lh-body); }

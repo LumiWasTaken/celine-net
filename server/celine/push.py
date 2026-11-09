@@ -6,9 +6,11 @@ raw, base64url). GET /api/push/key gives a page its public half; the page subscr
 browser (the service worker, web/public/sw.js) and posts the subscription to
 /api/push-subscriptions: one row per device, with the notice kinds it takes. Every `notice`
 on the global feed goes to each subscription that takes its kind, unless a page is open and
-focused (its socket says so: api/ws.py `focus`). The payload is the notice as the page
-shows it: {title, body, link, tag}, urgent for an approval ask (RFC 8030 Urgency). A push
-service's 404 or 410 means the subscription ended: its row is deleted.
+focused (its socket says so: api/ws.py `focus`); a closed notice (an approval's end,
+events.notice) goes even then, so the device's notification of the ask is replaced. The
+payload is the notice as the page shows it: {title, body, link, tag, closed}, urgent for
+an approval ask (RFC 8030 Urgency). A push service's 404 or 410 means the subscription
+ended: its row is deleted.
 
 A subscription belongs to the login session that made it (session_id) and ends with it:
 the routes that end sessions call `forget_ended`, and every push and every listing calls it
@@ -96,7 +98,8 @@ class Push:
                 try:
                     async with rx:
                         async for ev in rx:
-                            if ev["type"] == NOTICE and not self.focused:
+                            if ev["type"] == NOTICE and (not self.focused
+                                                         or ev.get("closed")):
                                 tg.start_soon(self.push, ev)
                 finally:
                     self.bus.unsubscribe("global", tx)
@@ -118,11 +121,12 @@ class Push:
     async def push(self, notice: dict) -> None:
         """One notice to every subscription that takes its kind."""
         await self.forget_ended()
-        urgency = "high" if notice["kind"] == "approval" else "normal"
+        closed = bool(notice.get("closed"))
+        urgency = "high" if notice["kind"] == "approval" and not closed else "normal"
         rows = await self.store.read(lambda c: c.execute(
             "SELECT * FROM push_subscriptions").fetchall())
-        body = json.dumps({k: notice[k] for k in ("title", "body", "link", "tag")},
-                          ensure_ascii=False).encode()
+        body = json.dumps({**{k: notice[k] for k in ("title", "body", "link", "tag")},
+                           "closed": closed}, ensure_ascii=False).encode()
         for r in rows:
             if notice["kind"] not in json.loads(r["kinds"]):
                 continue

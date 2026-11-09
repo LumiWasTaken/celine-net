@@ -168,7 +168,7 @@ def test_changes_says_what_moved_while_away(db_path):
             "since": since, "conversations": f"{a}:0,{b}:0"}).json()
         assert [(r["id"], r["title"]) for r in out["conversations"]] == [(a, "a")]
         assert out["gone"] == [b] and out["global"] > since and not out["resync"]
-        assert out["unread"] == 0 and out["jobs"] == [] and out["agents"] == []
+        assert out["jobs"] == [] and out["agents"] == []
 
 
 def test_changes_names_an_archive_and_a_job_after_a_pruned_since(db_path):

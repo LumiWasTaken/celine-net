@@ -57,13 +57,15 @@ async def _open(store, cid):
 async def test_an_ask_lands_in_its_chat_and_approve_takes_it_away(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, mid = await _chat(store)
-    task = asyncio.create_task(a.ask("change the Persona", ["new: I garden.", "old: x"], cid,
-                                     "why", "change the Persona", kind="her", call="k1"))
+    task = asyncio.create_task(a.ask("agent", cid, "change the Persona",
+                                     detail=("Persona", "New\nI garden."), call="k1"))
     await until(lambda: a.waiting)
     [ask] = await _open(store, cid)
     [aid] = a.waiting
-    assert ask == {"id": aid, "kind": "her", "label": "Persona", "tool_call_id": "k1",
-                   "message_id": mid, "line": "Celine asks to change the Persona. New: I garden.; old: x"}
+    assert ask == {"id": aid, "kind": "agent", "title": "Celine asks to change the Persona.",
+                   "facts": [], "detail": {"title": "Persona", "text": "New\nI garden."},
+                   "help": ap.HELP["agent"], "where": "Chat Untitled", "home": "agent",
+                   "link": f"/chat/{cid}", "tool_call_id": "k1", "message_id": mid}
     assert await _events(store, cid) == [("approval.asked", {"approval": ask})]
     assert a.decide(aid, True, OWNER)
     assert await task is None
@@ -74,7 +76,7 @@ async def test_an_ask_lands_in_its_chat_and_approve_takes_it_away(store, monkeyp
 async def test_deny_is_the_tools_plain_denial_and_takes_it_away(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, _ = await _chat(store)
-    task = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her", call="k1"))
+    task = asyncio.create_task(a.ask("agent", cid, "change the Persona", call="k1"))
     await until(lambda: a.waiting)
     [aid] = a.waiting
     assert a.decide(aid, False, OWNER)
@@ -90,7 +92,7 @@ async def test_a_stop_ends_the_wait_and_takes_it_away(store, monkeypatch):
     waits = waiting.TURN.set(waiting.Turn(interactive=True, clock=clock, token=token))
     try:
         stop = asyncio.create_task(until_stop(
-            lambda: a.ask("change the Persona", [], cid, kind="her", call="k1"), token))
+            lambda: a.ask("agent", cid, "change the Persona", call="k1"), token))
         await until(lambda: a.waiting)
         token.cancel()
         stopped, out = await stop
@@ -110,35 +112,98 @@ async def test_in_a_turn_the_user_waits_on_it_has_no_time_and_holds_the_clock(st
     before = clock.deadline
     waits = waiting.TURN.set(waiting.Turn(interactive=True, clock=clock, token=Token("t1")))
     try:
-        task = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her"))
+        task = asyncio.create_task(a.ask("agent", cid, "change the Persona"))
         await until(lambda: a.waiting)
         await until(lambda: clock.deadline == float("inf"))
-        [view_] = a.view()
-        assert view_["expires_in"] is None
-        assert a.decide(view_["id"], True, OWNER)
+        [aid] = a.waiting
+        assert a.decide(aid, True, OWNER)
         assert await task is None
     finally:
         waiting.TURN.reset(waits)
     assert before <= clock.deadline < float("inf")
 
 
-async def test_a_background_turn_keeps_its_time(store, monkeypatch):
+async def test_a_background_turn_waits_past_ask_for_and_holds_its_clock(store, monkeypatch):
+    """ASK_FOR 0 would end a request outside a turn at once; a mission's or a routine's
+    turn waits for the user as theirs does, its wall clock held."""
     a = _approvals(store, monkeypatch, ask_for=0)
     cid, _ = await _chat(store)
     clock = anyio.CancelScope(deadline=anyio.current_time() + 600)
     waits = waiting.TURN.set(waiting.Turn(interactive=False, clock=clock, token=Token("t1")))
     try:
-        got = await a.ask("change the Persona", [], cid, kind="her")
+        task = asyncio.create_task(a.ask("agent", cid, "change the Persona"))
+        await until(lambda: clock.deadline == float("inf"))
+        assert not task.done() and a.roots() == {cid} and a.in_turns() == 1
+        [aid] = a.waiting
+        assert a.decide(aid, True, OWNER)
+        assert await task is None
     finally:
         waiting.TURN.reset(waits)
+    assert clock.deadline < float("inf")
+
+
+async def test_outside_a_turn_silence_ends_it_after_ask_for(store, monkeypatch):
+    a = _approvals(store, monkeypatch, ask_for=0)
+    cid, _ = await _chat(store)
+    got = await a.ask("agent", cid, "change the Persona")
     assert got == "sam did not answer in 1 minute; nothing was done."
     assert await _open(store, cid) == []
+
+
+async def _notices(store):
+    return await store.read(lambda c: [json.loads(r[0]) for r in c.execute(
+        "SELECT data FROM global_events WHERE type='notice' ORDER BY id")])
+
+
+async def test_the_notice_says_who_asks_and_where_and_its_close_replaces_it(store, monkeypatch):
+    a = _approvals(store, monkeypatch)
+    cid, _ = await _chat(store)
+    task = asyncio.create_task(a.ask("agent", cid, "change the Persona", call="k1"))
+    await until(lambda: a.waiting)
+    [aid] = a.waiting
+    assert a.decide(aid, False, OWNER)
+    await task
+    asked, closed = await _notices(store)
+    assert asked == {"kind": "approval", "title": "Celine asks to change the Persona.",
+                     "body": "Chat Untitled", "link": f"/chat/{cid}", "tag": f"ask:{aid}"}
+    assert closed == {**asked, "body": "Denied.", "closed": True}
+
+
+async def test_a_stop_closes_the_notice_with_no_answer(store, monkeypatch):
+    a = _approvals(store, monkeypatch)
+    cid, _ = await _chat(store)
+    token = Token("t1")
+    clock = anyio.CancelScope(deadline=anyio.current_time() + 600)
+    waits = waiting.TURN.set(waiting.Turn(interactive=False, clock=clock, token=token))
+    try:
+        stop = asyncio.create_task(until_stop(
+            lambda: a.ask("agent", cid, "change the Persona", call="k1"), token))
+        await until(lambda: a.waiting)
+        token.cancel()
+        await stop
+    finally:
+        waiting.TURN.reset(waits)
+    assert [(n["body"], n.get("closed")) for n in await _notices(store)] == [
+        ("Chat Untitled", None), ("No answer.", True)]
+
+
+async def test_a_run_whose_time_ran_out_names_the_request_that_waited(store, monkeypatch):
+    a = _approvals(store, monkeypatch)
+    top = await conversations.for_trigger(store, "run:r1", "Radar")
+    task = asyncio.create_task(a.ask("agent", top, "change the Persona"))
+    await until(lambda: a.waiting)
+    assert a.lapsed(top) == ("The time limit ran out before your answer. "
+                             "Celine asks to change the Persona.")
+    assert a.lapsed("other") is None
+    [aid] = a.waiting
+    a.decide(aid, True, OWNER)
+    await task
 
 
 async def test_a_gate_is_asked_on_bastets_banner_not_twice(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, _ = await _chat(store)
-    task = asyncio.create_task(a.ask("run me__edit", [], cid, kind="gate", call="k1"))
+    task = asyncio.create_task(a.ask("gate", cid, "run me__edit", call="k1"))
     await until(lambda: a.waiting)
     assert await _open(store, cid) == [] and await _events(store, cid) == []
     [aid] = a.waiting
@@ -150,11 +215,11 @@ async def test_asks_in_two_chats_wait_side_by_side(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     one, _ = await _chat(store)
     two = await conversations.create(store)
-    first = asyncio.create_task(a.ask("a", [], one, kind="her"))
+    first = asyncio.create_task(a.ask("agent", one, "a"))
     await until(lambda: a.waiting)
-    second = asyncio.create_task(a.ask("b", [], two, kind="her"))
+    second = asyncio.create_task(a.ask("agent", two, "b"))
     await until(lambda: len(a.waiting) == 2)
-    assert (await a.ask("c", [], one, kind="her")).startswith("Another request waits")
+    assert (await a.ask("agent", one, "c")).startswith("Another request waits")
     for aid in list(a.waiting):
         a.decide(aid, True, OWNER)
     assert await first is None and await second is None
@@ -163,7 +228,7 @@ async def test_asks_in_two_chats_wait_side_by_side(store, monkeypatch):
 async def test_a_restart_closes_what_the_last_run_left_open(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, _ = await _chat(store)
-    task = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her", call="k1"))
+    task = asyncio.create_task(a.ask("agent", cid, "change the Persona", call="k1"))
     await until(lambda: a.waiting)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -174,6 +239,7 @@ async def test_a_restart_closes_what_the_last_run_left_open(store, monkeypatch):
     assert len(await _open(store, cid)) == 1
     assert await ap.close_left(store) == 1
     assert await _open(store, cid) == []
+    assert (await _notices(store))[-1]["body"] == "No answer."
 
 
 # ---- a public share waits for the user, guard or no guard ------------------------------
@@ -184,9 +250,9 @@ class Answers:
     def __init__(self, ok: bool):
         self.ok, self.asked = ok, []
 
-    async def ask(self, action, facts, conversation, why="", short="", kind="vault",
+    async def ask(self, kind, conversation, action, *, facts=(), detail=None, why="",
                   ref=None, call=None):
-        self.asked.append((kind, action, facts, call))
+        self.asked.append((kind, action, list(facts), call))
         return None if self.ok else "sam denied it; nothing was done."
 
 
@@ -226,7 +292,7 @@ async def test_a_public_share_waits_for_the_user_and_runs_on_approve(shared):
     [(kind, action, facts, call)] = yes.asked
     assert (kind, call) == ("share", "k1")
     assert action == 'make "Snake" a public share anyone with the link opens'
-    assert facts == ["port 8000", "for 2 hours"]
+    assert facts == [("What", "port 8000"), ("For", "2 hours")]
 
 
 async def test_a_denied_public_share_is_not_made_and_says_so(shared):
@@ -249,7 +315,7 @@ async def test_a_public_share_with_nobody_to_ask_is_not_made(shared):
     assert out.is_error and "nobody" in out.content and shared == []
 
 
-def test_she_knows_shares_are_private_and_a_public_one_waits_for_the_user():
+def test_the_agent_knows_shares_are_private_and_a_public_one_waits_for_the_user():
     from celine.skills.shell import Shell as S
     guide = S.guide.body
     doc = S.share.__doc__ + str(S.share.__annotations__["public"])
@@ -260,16 +326,16 @@ def test_she_knows_shares_are_private_and_a_public_one_waits_for_the_user():
 async def test_an_ask_marks_its_place_and_its_row_until_answered(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, _ = await _chat(store)
-    task = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her", call="k1"))
+    task = asyncio.create_task(a.ask("agent", cid, "change the Persona", call="k1"))
     await until(lambda: a.waiting)
     [view] = a.view()
-    assert (view["home"], view["link"], a.count()) == ("her", f"/chat/{cid}", 1)
+    assert (view["home"], view["link"]) == ("agent", f"/chat/{cid}")
     [row] = await conversations.list(store, asked=a.conversations())
     assert row["state"] == {"tone": "warn", "words": "Waiting for you"}
     [aid] = a.waiting
     assert a.decide(aid, True, OWNER)
     await task
-    assert a.count() == 0 and a.conversations() == frozenset()
+    assert a.view() == [] and a.conversations() == frozenset()
     [row] = await conversations.list(store, asked=a.conversations())
     assert row["state"] != {"tone": "warn", "words": "Waiting for you"}
 
@@ -277,8 +343,8 @@ async def test_an_ask_marks_its_place_and_its_row_until_answered(store, monkeypa
 async def test_two_asks_at_once_in_one_conversation_make_one_card(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, _ = await _chat(store)
-    first = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her"))
-    second = asyncio.create_task(a.ask("change the Persona", [], cid, kind="her"))
+    first = asyncio.create_task(a.ask("agent", cid, "change the Persona"))
+    second = asyncio.create_task(a.ask("agent", cid, "change the Persona"))
     await until(lambda: a.waiting and (first.done() or second.done()))
     assert len(a.waiting) == 1
     assert (first.result() if first.done() else second.result()).startswith(
@@ -289,17 +355,17 @@ async def test_two_asks_at_once_in_one_conversation_make_one_card(store, monkeyp
     assert len(await _open(store, cid)) == 0
 
 
-async def test_an_ask_in_a_conversation_that_is_gone_is_not_counted(store, monkeypatch):
+async def test_an_ask_in_a_conversation_that_is_gone_has_no_home(store, monkeypatch):
     # a purge is refused while a turn in it waits; a gate asks without a chat line, so a
     # conversation gone before it asked is the one way an ask has no home
     a = _approvals(store, monkeypatch)
     gone = await conversations.create(store)
     assert await conversations.delete(store, gone)
     assert await conversations.purge(store, load(), gone) == [gone]
-    task = asyncio.create_task(a.ask("run shell__exec", [], gone, kind="gate"))
+    task = asyncio.create_task(a.ask("gate", gone, "run shell__exec"))
     await until(lambda: a.waiting)
     [view] = a.view()
-    assert (view["home"], view["link"], a.count()) == (None, None, 0)
+    assert (view["home"], view["link"]) == (None, None), "Waiting for you lists it still"
     [aid] = a.waiting
     assert a.decide(aid, False, OWNER)
     await task
@@ -309,7 +375,7 @@ async def test_an_ask_in_a_sub_agent_marks_its_root_too(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     top = await conversations.for_trigger(store, "run:r1", "Radar")
     sub = await conversations.create(store, agent_of=top, kind="agent")
-    task = asyncio.create_task(a.ask("run shell__exec", [], sub, kind="gate"))
+    task = asyncio.create_task(a.ask("gate", sub, "run shell__exec"))
     await until(lambda: a.waiting)
     assert a.conversations() == {sub, top} and ap.asked(SimpleNamespace(approvals=a)) == {sub, top}
     assert ap.asked(SimpleNamespace()) == frozenset()

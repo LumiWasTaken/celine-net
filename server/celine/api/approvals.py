@@ -1,34 +1,24 @@
-"""The approvals over HTTP (celine/approvals.py): every request that waits (the
-vault's taps, Bastet's confirm asks) and the user's answer. A logged-in session only;
-the answer is made as the Owner the session makes (guard/owner.py)."""
+"""The user's answer to an approval (celine/approvals.py) over HTTP; Waiting for you
+(api/waits.py) lists the cards. A logged-in session only; the answer is made as the
+Owner the session makes (guard/owner.py)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
 from ..errors import NotFound
 from ..guard import owner
-from .deps import json_body, person_only
+from .deps import json_body
 
 router = APIRouter(prefix="/api")
 
 
-@router.get("/approvals")
-async def list_approvals(request: Request) -> dict:
-    """{"approvals": every request that waits, vault and gate, each with the `home` and
-    `link` of its conversation; "count": how many wait in a conversation that is there}."""
-    person_only(request)
-    a = request.app.state.services.approvals
-    if a is None:
-        return {"approvals": [], "count": 0}
-    return {"approvals": a.view(), "count": a.count()}
-
-
 @router.post("/approvals/{aid}/answer")
 async def answer_approval(aid: str, request: Request) -> dict:
-    """{"ok": true | false}: the user's answer. -> {"approvals": what still waits}."""
+    """{"ok": true | false}: the user's answer. -> {"ok": true}; the card goes by the
+    events approval.closed and approvals.changed."""
     by = owner.session(request)
     body = await json_body(request, need=("ok",), allow=("ok",))
     a = request.app.state.services.approvals
     if a is None or not a.decide(aid, body["ok"] is True, by):
         raise NotFound("request")
-    return {"approvals": a.view()}
+    return {"ok": True}
