@@ -67,6 +67,7 @@ class Daemon:
         self.down = self.log_down = False
         self.logs: dict[str, bytes] = {}
         self.per_answer = 1_000_000
+        self.read: httpx.Response | None = None      # what /read answers instead
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -83,6 +84,8 @@ class Daemon:
             log, start = self.logs[body["id"]], int(body["from"])
             return httpx.Response(200, content=log[start:start + self.per_answer],
                                   headers={"X-Log-Size": str(len(log))})
+        if path == "/read" and self.read is not None:
+            return self.read
         if path == "/read":
             return httpx.Response(200, json={
                 "terminals": self.terminals, "boot_id": self.boot_id, "fresh": False,
@@ -129,6 +132,19 @@ async def _rows(store) -> dict[str, dict]:
     return {t["id"]: t for t in await terminals.list_terminals(store)}
 
 
+async def test_a_listing_the_daemon_refuses_says_its_words(store, stack_key):
+    stack_key("shell", "k" * 24)
+    daemon = Daemon()
+    sync = _app(store, daemon).state.services.terminals
+    daemon.read = httpx.Response(404, json={"error": "No such endpoint."})
+    await sync.refresh()
+    assert sync.down == ("The shellbox at shellbox:8770 answered 404 instead of its "
+                         "terminal list: No such endpoint.")
+    daemon.read = httpx.Response(500, text="Traceback: boom")
+    await sync.refresh()
+    assert sync.down == "The shellbox returned 500: Traceback: boom"
+
+
 async def test_the_sync_keeps_rows_with_the_key_and_tells_pages_once_per_change(
         store, stack_key):
     stack_key("shell", "k" * 24)
@@ -159,7 +175,7 @@ async def test_the_sync_keeps_rows_with_the_key_and_tells_pages_once_per_change(
     assert sync.live == {} and (await _rows(store))["ab12cd"]["ended_at"] is None
 
 
-async def test_her_terminal_history_is_appended_packed_at_the_end_and_never_lost(store):
+async def test_the_agents_terminal_history_is_appended_packed_at_the_end_and_never_lost(store):
     daemon = Daemon(term("build", "ab12cd"), term("main", "zz9999"))
     daemon.logs = {"ab12cd": b"$ make\r\n"}
     daemon.per_answer = 4
@@ -298,7 +314,7 @@ async def test_a_refused_control_is_one_sentence_as_200(store):
         assert (r.status_code, r.json()) == (200, {"refused": "build has ended."})
 
 
-async def test_a_known_secret_is_blanked_in_her_stored_history_also_split_in_two(store):
+async def test_a_known_secret_is_blanked_in_its_stored_history_also_split_in_two(store):
     """`cat ~/.vault/example-shop/password` in its terminal: the stored copy has stars for it,
     byte for byte, when it comes in one answer, split across two answers of a round, or
     split across two rounds. The stored size stays the daemon's offset. After a start,

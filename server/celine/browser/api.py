@@ -14,8 +14,9 @@ from pydantic import BaseModel
 from ..api.origin import ws_origin_ok
 from ..api.deps import GONE, page_frames
 from .. import homes
-from ..errors import CelineError, not_set_up, unreachable_words
-from ..skills import ToolContext
+from ..errors import CelineError, not_set_up
+from ..settings.services import unreachable
+from ..skills import ToolContext, words
 from . import sync, tabs
 from .sync import BrowserRefused
 from ..core.event_types import BROWSER_STATE
@@ -43,7 +44,8 @@ async def browser(request: Request) -> dict:
     try:
         out = await sync.status(cfg)
     except httpx.HTTPError as e:
-        return {"state": "unreachable", "reason": unreachable_words("the browser", sync.url(cfg), e),
+        return {"state": "unreachable",
+                "reason": unreachable("the browser", sync.url(cfg), e, "browser"),
                 "taken": None, "tabs": []}
     except BrowserRefused as e:
         raise _refused(e) from None
@@ -72,7 +74,8 @@ async def control(request: Request, body: Control) -> dict:
     try:
         res = await sync.control(cfg, body.action, body.tab if on_tab else None)
     except httpx.HTTPError as e:
-        raise CelineError("browser_down", unreachable_words("the browser", sync.url(cfg), e),
+        raise CelineError("browser_down",
+                          unreachable("the browser", sync.url(cfg), e, "browser"),
                           502) from None
     except BrowserRefused as e:
         code = e.facts.get("error")
@@ -104,7 +107,7 @@ async def call(request: Request, body: Call) -> dict:
     message, which the next cleanup removes}."""
     skill = request.app.state.services.registry.skills.get("browser")
     if skill is None:
-        raise CelineError("unavailable", "The browser skill is off.", 409)
+        raise CelineError("unavailable", "The browser is off.", 409)
     if body.tool not in TOOLS:
         raise CelineError("bad_request", f"tool is one of {', '.join(TOOLS)}.", 400)
     args = dict(body.args)
@@ -172,14 +175,19 @@ async def history(request: Request, q: str = "", failed: bool = False,
     """The agent's browser calls, newest first: {calls: [{id, tool, tab, line, state (running,
     done, failed, cancelled), at, shots, display, conversation: {id, title, link}}], total,
     failed (how many failed), next (the `before` of the next page)}. `q` looks in the
-    line, `failed` keeps the failed ones."""
+    line, `failed` keeps the failed ones. The calls an MCP server shows here (mcp.placed,
+    the Mac's browser) come with their row's sentence as the line."""
+    services = request.app.state.services
+    placed = [w for w, p in services.store.tool_places.items() if p["place"] == "browser"]
+
     def fn(c) -> tuple[list, dict]:
         rows = c.execute(
             "SELECT t.id, t.name, t.arguments, t.display, t.state, "
             "coalesce(t.started_at, m.created_at) AS at, m.conversation_id, v.title "
             "FROM tool_calls t JOIN messages m ON m.id = t.message_id "
             "JOIN conversations v ON v.id = m.conversation_id "
-            "WHERE t.name LIKE 'browser\\_\\_%' ESCAPE '\\' ORDER BY at DESC, t.id DESC").fetchall()
+            "WHERE t.name LIKE 'browser\\_\\_%' ESCAPE '\\' OR t.name IN (SELECT value FROM "
+            "json_each(?)) ORDER BY at DESC, t.id DESC", (json.dumps(placed),)).fetchall()
         # where each of their conversations opens, the server's
         return rows, {cid: homes.of(c, cid)["link"] for cid in {r["conversation_id"] for r in rows}}
 
@@ -189,9 +197,12 @@ async def history(request: Request, q: str = "", failed: bool = False,
     for r in rows:
         args, display = _loads(r["arguments"]), _loads(r["display"])
         state = "failed" if display.get("refused") else STATE.get(r["state"], "done")
-        calls.append({"id": r["id"], "tool": r["name"].removeprefix("browser__"),
+        box = r["name"].startswith("browser__")
+        calls.append({"id": r["id"], "tool": r["name"].partition("__")[2],
                       "tab": display.get("tab") or args.get("tab"),
-                      "line": call_line(r["name"], args), "state": state, "at": r["at"],
+                      "line": call_line(r["name"], args) if box else services.cfg.substitute(
+                          words.sentence(r["name"], args, {}, own=services.store.tool_words)),
+                      "state": state, "at": r["at"],
                       "shots": len(display.get("steps") or []), "display": display,
                       "conversation": {"id": r["conversation_id"], "title": r["title"],
                                        "link": links[r["conversation_id"]]}})
@@ -203,8 +214,8 @@ async def history(request: Request, q: str = "", failed: bool = False,
 
 
 def _refused(e: BrowserRefused) -> CelineError:
-    return CelineError("refused", f"The browser box answered {e.status}: "
-                                  f"{e.facts.get('error') or 'no reason'}.", 502)
+    return CelineError("refused", f"The browser returned {e.status}: "
+                                  f"{e.words or e.facts.get('error') or 'no reason'}", 502)
 
 
 @ws_router.websocket("/ws/browser")

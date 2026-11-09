@@ -8,6 +8,7 @@ A stored history holds no known secret (errors.blank): a vault password it print
 cat is stars there, byte for byte. The live view to an open page is not blanked."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -19,7 +20,7 @@ import httpx
 
 from .. import errors, shellbox
 from ..core.ids import iso
-from ..errors import ToolRefused, unreachable_words
+from ..errors import ToolRefused, said, unreachable_words
 from ..turns.dispatcher import READY_SECONDS
 from . import store as terminals
 from ..core.event_types import TERMINAL_STATE
@@ -78,8 +79,10 @@ class TerminalSync:
                 self.down = str(e)
             if status != 200 or not isinstance(listing.get("terminals"), list):
                 if status:
+                    words = said(json.dumps(listing), status).text if status != 200 else ""
                     self.down = (f"The shellbox at {urlsplit(self.url).netloc} answered "
-                                 f"{status} instead of its terminal list.")
+                                 f"{status} instead of its terminal list"
+                                 f"{': ' + words if words else '.'}")
                 self.misses += 1
                 if self.misses >= MISSES:
                     self.live, self.names = {}, set()

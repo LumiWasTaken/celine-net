@@ -48,8 +48,11 @@ SHELL_CALLS = "tc.name LIKE 'shell\\_\\_%' ESCAPE '\\'"
 # The agent's commands: one row per shell tool call (a run's text is its command, a stop's keys C-c). The terminal id comes from the result's
 # display; a call still at work has no result yet, so it is the open terminal of that
 # name. A shell__read without a terminal lists the terminals: terminal {null, ""}.
+# The calls an MCP server shows here (the ? : a JSON list of their wire names, mcp.placed,
+# such as the Mac's shell) come with their command or typed input and no terminal: the
+# row names where they ran (commands `where`).
 _HERS = f"""
-SELECT tc.id AS id,
+SELECT tc.id AS id, tc.name AS tool,
        CASE WHEN tc.name IN ('shell__read', 'shell__wait') THEN 'read'
             ELSE 'command' END AS kind,
        coalesce(tc.started_at, a.created_at) AS at,
@@ -59,7 +62,8 @@ SELECT tc.id AS id,
                  WHERE tc.state IN ('pending', 'running', 'detached')
                    AND t.ended_at IS NULL AND t.name = CASE WHEN json_valid(tc.arguments)
                      THEN json_extract(tc.arguments, '$.terminal') END)) AS terminal_id,
-       CASE WHEN json_valid(tc.arguments)
+       CASE WHEN NOT {SHELL_CALLS} THEN NULL
+            WHEN json_valid(tc.arguments)
                  AND json_extract(tc.arguments, '$.terminal') IS NOT NULL
                  AND json_extract(tc.arguments, '$.terminal') <> ''
             THEN json_extract(tc.arguments, '$.terminal')
@@ -71,7 +75,8 @@ SELECT tc.id AS id,
        c.id AS conversation_id, c.agent_of AS agent_of, c.title AS title,
        CASE WHEN json_valid(tc.arguments)
             THEN coalesce(json_extract(tc.arguments, '$.command'),
-                          json_extract(tc.arguments, '$.text')) END AS text,
+                          json_extract(tc.arguments, '$.text'),
+                          json_extract(tc.arguments, '$.input')) END AS text,
        CASE WHEN tc.name = 'shell__stop' THEN 'C-c'
             WHEN json_valid(tc.arguments) THEN json_extract(tc.arguments, '$.keys') END AS keys,
        tc.display AS display, tc.state AS state, r.content AS result, NULL AS note,
@@ -81,12 +86,12 @@ JOIN messages a ON a.id = tc.message_id
 JOIN conversations c ON c.id = a.conversation_id
 LEFT JOIN missions mi ON mi.conversation_id = c.id
 LEFT JOIN messages r ON r.id = tc.result_message_id
-WHERE {SHELL_CALLS}
+WHERE {SHELL_CALLS} OR tc.name IN (SELECT value FROM json_each(?))
 """
 
 # The user's commands: what they typed (line) and the buttons on its terminals (control).
 _YOURS = """
-SELECT k.id AS id, k.kind AS kind, k.created_at AS at, k.terminal_id AS terminal_id,
+SELECT k.id AS id, NULL AS tool, k.kind AS kind, k.created_at AS at, k.terminal_id AS terminal_id,
        t.name AS terminal_name, 'you' AS from_kind, NULL AS conversation_id,
        NULL AS agent_of, NULL AS title, k.text AS text, NULL AS keys, NULL AS display,
        NULL AS state, k.result AS result, k.note AS note, NULL AS job_id
@@ -292,15 +297,16 @@ async def default_terminal(store, conversation_id: str) -> str:
 
 async def commands(store, terminal_id: str | None = None, kind: str | None = None,
                    q: str | None = None, mission: str | None = None, limit: int = 100,
-                   before: str | None = None,
-                   live: dict | None = None) -> tuple[list[dict], int]:
+                   before: str | None = None, live: dict | None = None,
+                   places: dict[str, str] | None = None) -> tuple[list[dict], int]:
     """The agent's shell calls and the user's lines and controls as one list, newest first.
     `kind` is command, read, line or control; `q` is looked for in the text; `mission`
     keeps the rows of that conversation and of its sub-agents; `before` is the `at` of
     the last row of the previous page. The total counts what the filters match without
     the page. Each row's `from` carries its conversation's `link` (homes.of). `live`
     is the sync's live state by terminal id: a call that returned
-    while its program ran is settled with it."""
+    while its program ran is settled with it. `places`: the calls an MCP server shows
+    here, by wire name, and where each ran (the Mac's name), its row's terminal name."""
     where, args = [], []
     if terminal_id is not None:
         where.append("terminal_id = ?")
@@ -315,6 +321,8 @@ async def commands(store, terminal_id: str | None = None, kind: str | None = Non
         where.append("(conversation_id = ? OR agent_of = ?)")
         args += [mission, mission]
     match = (" WHERE " + " AND ".join(where)) if where else ""
+    placed = places or {}
+    args = [json.dumps(list(placed)), *args]          # _HERS's ? comes first
     page_where, page_args = match, list(args)
     if before:
         page_where += (" AND " if where else " WHERE ") + "at < ?"
@@ -337,7 +345,7 @@ async def commands(store, terminal_id: str | None = None, kind: str | None = Non
             if cid not in links:
                 links[cid] = homes.of(c, cid)["link"]
             return links[cid]
-        rows = [_command(r, live, link(r["conversation_id"])) for r in c.execute(
+        rows = [_command(r, live, link(r["conversation_id"]), placed) for r in c.execute(
             f"{union}SELECT * FROM cmds{page_where} ORDER BY at DESC, id DESC LIMIT ?",
             [*page_args, limit])]
         return rows, int(total)
@@ -356,7 +364,7 @@ def _view(r: sqlite3.Row) -> dict:
     return d
 
 
-def _command(r: sqlite3.Row, live: dict, link: str | None) -> dict:
+def _command(r: sqlite3.Row, live: dict, link: str | None, placed: dict[str, str]) -> dict:
     display = _dict(r["display"])
     outcome = None
     if r["kind"] == "line":         # a line the user typed: settled like its own
@@ -371,7 +379,8 @@ def _command(r: sqlite3.Row, live: dict, link: str | None) -> dict:
     if keys is not None and not isinstance(keys, str):
         keys = str(keys)
     return {"id": r["id"], "kind": r["kind"], "at": r["at"],
-            "terminal": {"id": r["terminal_id"], "name": r["terminal_name"]},
+            "terminal": {"id": r["terminal_id"],
+                         "name": r["terminal_name"] or placed.get(r["tool"]) or ""},
             "from": {"kind": r["from_kind"], "conversation_id": r["conversation_id"],
                      "title": r["title"], "link": link},
             "text": r["text"] or "", "keys": keys or "", "outcome": outcome,

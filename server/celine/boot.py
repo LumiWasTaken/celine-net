@@ -7,13 +7,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from . import config, her, keys, plugins, schedules, settings
+from . import config, agent, keys, plugins, schedules, settings
 from .backends.llm import QUEUE_KEYS
 from .comfyui import presets
 from .config import Config, Problem, shown_path, read_toml, tables
 from .db.migrate import read_only
 from .kb import read_config as read_kb
-from .mcp import read_servers, row_words
+from .mcp import placed, read_servers, row_words
 from .settings import features, seed
 from .skills import BUILTIN
 from .turns import loads
@@ -36,6 +36,7 @@ def load() -> Config:
 
     cfg.mcp = read_servers(*file("mcp.toml"), p, keys.env(cfg.data_dir))
     cfg.tool_words = row_words(cfg, plugins.all())
+    cfg.tool_places = placed(cfg, plugins.all())
     kb = read_kb(*file("kb.toml"), p)
     cfg.embeddings = kb.pop("embeddings", {})
     cfg.media = kb.pop("media", {})
@@ -48,8 +49,8 @@ def load() -> Config:
         p += found
     settings.apply(cfg)      # var/settings: providers, model roles, tools, general
     # its row, read only: the database is migrated at startup and the row written
-    # through the Store (her.seed, her.refresh); none yet before the first start
-    her.apply(cfg, _rows(cfg.db_path, her.read_row), p)
+    # through the Store (agent.seed, agent.refresh); none yet before the first start
+    agent.apply(cfg, _rows(cfg.db_path, agent.read_row), p)
     root = settings.files.settings_dir(cfg)
     cfg.schedules = schedules.load(seed.schedules_dir(root), p, cfg.substitute)
     cfg.context = loads.read_shares(seed.context_path(root), p)

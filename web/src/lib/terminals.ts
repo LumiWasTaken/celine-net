@@ -2,6 +2,7 @@
    rules the Terminals page, the terminal page and the mission bar share
    (docs/ARCHITECTURE.md). */
 import { del, json, post, query, request, requestBytes } from './api'
+import type { WordTone } from '../ui'
 
 /** what the daemon says about an open terminal, null once ended or while the shellbox
  *  is unreachable */
@@ -88,7 +89,7 @@ type CommandsQuery = {
 export const terminalsApi = {
   /** with `trashed` the trashed ones instead */
   list: (mission?: string, trashed = false) =>
-    request<{ terminals: TerminalRow[]; down: string | null }>(`/terminals${query({ mission, trashed })}`),
+    request<{ terminals: TerminalRow[]; down: string | null; /** false: no shellbox, the place shows Commands only */ set_up: boolean }>(`/terminals${query({ mission, trashed })}`),
   /** a new terminal of your own */
   create: () => refusable(post<{ id: string; name: string; refused?: string }>('/terminals')),
   get: (id: string) => request<TerminalRow>(`/terminals/${id}`),
@@ -119,7 +120,6 @@ export const terminalsApi = {
 /* ── state words: one set everywhere ── */
 
 type StateWord = 'Running' | 'Idle' | 'Waiting for you' | 'Paused' | 'Ended'
-export type Tone = 'ok' | 'error' | 'warn' | 'accent' | 'running' | 'muted' | 'you' | 'off'
 
 export const isYours = (t: TerminalRow) => t.owner !== 'celine'
 
@@ -133,14 +133,12 @@ export function stateWord(t: TerminalRow): StateWord {
   return 'Idle'
 }
 
-/** the colour of a state word: the dot in the list and on the page */
-export function stateTone(word: StateWord): Tone {
+/** the tone of a state word, in the list and on the page */
+export function stateTone(word: StateWord): WordTone {
   switch (word) {
     case 'Running': return 'running'
-    case 'Idle': return 'ok'
-    case 'Waiting for you': return 'warn'
-    case 'Paused': return 'you'
-    case 'Ended': return 'off'
+    case 'Waiting for you': case 'Paused': return 'warn'
+    case 'Idle': case 'Ended': return 'muted'
   }
 }
 
@@ -178,14 +176,14 @@ export function keysAndText(keys: string | null | undefined, text: string): stri
 /** a log row's result: Running, Done, or Failed with its exit (the server settles a call
  *  that returned while its program ran); a control of yours says its short word, a line
  *  nothing */
-export function outcomeWords(c: CommandRow): { words: string; tone: Tone } {
+export function outcomeWords(c: CommandRow): { words: string; tone: WordTone } {
   const o = c.outcome
   if (!o) return { words: c.kind === 'control' ? c.result ?? '' : '', tone: 'muted' }
   const failed = (exit: number | null) => ({ words: exit ? `Failed, exit ${exit}` : 'Failed', tone: 'error' as const })
   switch (o.state) {
     case 'pending': case 'running': case 'detached': return { words: 'Running', tone: 'running' }
     case 'error': case 'gated': return failed(o.exit)
-    default: return o.exit && c.kind !== 'read' ? failed(o.exit) : { words: 'Done', tone: 'ok' }
+    default: return o.exit && c.kind !== 'read' ? failed(o.exit) : { words: 'Done', tone: 'success' }
   }
 }
 
@@ -204,6 +202,6 @@ async function refusable<T extends { refused?: string }>(p: Promise<T>): Promise
 }
 
 /** a shell tool call started, ended or went on in the background */
-export const isShellEvent = (ev: { type: string; name?: unknown }) =>
-  (ev.type === 'tool.started' || ev.type === 'tool.done' || ev.type === 'tool.detached') &&
-  typeof ev.name === 'string' && ev.name.startsWith('shell__')
+/** a call that shows in Terminals: the box's shell, or what a server shows there (the Mac's); the server stamps its `place` */
+export const isShellEvent = (ev: { type: string; place?: unknown }) =>
+  (ev.type === 'tool.started' || ev.type === 'tool.done' || ev.type === 'tool.detached') && ev.place === 'terminals'

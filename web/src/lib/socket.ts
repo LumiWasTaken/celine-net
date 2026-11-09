@@ -31,7 +31,7 @@ import {
 } from './api'
 import { emit, type ServerEvent } from './bus'
 import type { GuardBanner } from './guard'
-import type { ChatApproval, ConversationSettings } from './settingsApi'
+import type { Approval, ConversationSettings } from './settingsApi'
 import {
   createContext, createElement, useContext, useEffect, useState, type ReactNode,
 } from 'react'
@@ -69,8 +69,6 @@ export type Changes = {
   /** the given ids that no longer exist */
   gone: string[]
   jobs: { id: string; conversation_id: string; tool: string; state: string; finished_at: string }[]
-  /** intercom messages that wait for you */
-  unread: number
   agents: Record<string, unknown>[]
 }
 
@@ -85,6 +83,8 @@ export const changesApi = {
 
 /** a frame of one conversation, as useConversation applies it (server/celine/conversations) */
 type Of = { conversation: string; seq?: number; ts?: string }
+/** on the global feed: the place a tool call shows in (core/bus.py place_of) */
+type Place = 'terminals' | 'browser'
 export type Frame =
   | ({ type: 'snapshot' } & Snapshot)
   | ({ type: 'resync' } & Of)
@@ -92,7 +92,7 @@ export type Frame =
   | ({ type: 'version.changed' | 'message.purged' } & Of)
   | ({ type: 'images.notice' } & ImageNotice & Of)
   | ({ type: 'guard.banner'; banner: GuardBanner } & Of)
-  | ({ type: 'approval.asked'; approval: ChatApproval } & Of)
+  | ({ type: 'approval.asked'; approval: Approval } & Of)
   | ({ type: 'approval.closed'; id: string } & Of)
   | ({ type: 'attachment.described'; message_id: string; attachment_id: string } & Pick<Attachment, 'description' | 'described_by' | 'described_for'> & Of)
   | ({ type: 'message.attachments'; message_id: string; attachments: Attachment[] } & Of)
@@ -103,10 +103,10 @@ export type Frame =
   | ({ type: 'message.done' | 'message.rewritten'; message_id: string; text: string } & Of)
   | ({ type: 'conversation.notes_off'; notes_off?: string[] } & Of)
   | ({ type: 'tool.forming'; message_id: string; index: number; name: string; chars: number; lines: number; preview: string; words: string } & Of)
-  | ({ type: 'tool.started'; message_id: string; tool_call_id: string; name: string; arguments: string; words: ToolWords; started_at?: string | null } & Of)
+  | ({ type: 'tool.started'; message_id: string; tool_call_id: string; name: string; arguments: string; words: ToolWords; started_at?: string | null; place?: Place } & Of)
   | ({ type: 'tool.done' | 'tool.gated'; tool_call_id: string; state?: ToolCall['state']; ok?: boolean; display?: ToolCall['display']; words?: ToolWords
-       result?: string | null; job_id?: string | null; finished_at?: string | null; runs?: TurnRuns | null } & Of)
-  | ({ type: 'tool.detached'; tool_call_id: string; job_id: string; name: string } & Of)
+       result?: string | null; job_id?: string | null; finished_at?: string | null; runs?: TurnRuns | null; place?: Place } & Of)
+  | ({ type: 'tool.detached'; tool_call_id: string; job_id: string; name: string; place?: Place } & Of)
   | ({ type: 'images.batch' | 'music.batch'; batch: unknown } & Of)
   | ({ type: 'tool.progress'; tool_call_id: string; note: string } & Of)
   | ({ type: 'tool.reset'; tool_call_id: string; runs?: TurnRuns | null } & Of)

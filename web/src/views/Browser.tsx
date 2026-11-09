@@ -17,8 +17,8 @@ import { backoffMs, keepAlive } from '../lib/socket'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Button, ConfirmDialog, Dialog, Dot, GroupHead, InlineError, ListRow, ListSection, Loaded, MenuButton, Notice, Place,
-  PlaceHead, Screen, Section, Segmented, TextArea, Toolbar, VirtualList, useContextMenu, type MenuItem, copied
+  Button, ConfirmDialog, Dialog, GroupHead, InlineError, ListRow, ListSection, Loaded, MenuButton, Notice, Place,
+  PlaceHead, Screen, Section, Segmented, StateWord, TextArea, Toolbar, VirtualList, useContextMenu, type MenuItem, copied
 } from '../ui'
 import './Browser.css'
 
@@ -35,13 +35,18 @@ const hostOf = (url: string) => { try { return new URL(url).host } catch { retur
 const tabTitle = (t: Tab) => t.title || hostOf(t.url) || 'New tab'
 
 type Page = { kind: 'tabs' } | { kind: 'history' } | { kind: 'tab'; name: string }
+/** a finished call History lists: the box's, or one a server shows here (the Mac's browser); the server stamps its `place` */
+const isBrowserCall = (ev: { type: string; place?: unknown }) => ev.type === 'tool.done' && ev.place === 'browser'
 
 export function Browser({ active }: { active: boolean }) {
   const box = useResource(() => browserApi.get(), [], { events: isBrowserEvent })
-  const calls = useResource(() => browserHistory({ limit: 1 }), [], { events: ev => ev.type === 'tool.done' && typeof ev.name === 'string' && ev.name.startsWith('browser__') })
-  const [page, setPage] = useState<Page>({ kind: 'tabs' })
+  const calls = useResource(() => browserHistory({ limit: 1 }), [], { events: isBrowserCall })
+  const [chosen, setPage] = useState<Page>({ kind: 'tabs' })
   const [restarting, setRestarting] = useState(false)
   const b = box.data
+  // no browser box: the place is the history of what is there (the Mac's browser)
+  const boxless = b?.state === 'off'
+  const page: Page = boxless ? { kind: 'history' } : chosen
   const tabs = b?.tabs ?? []
   const yours = b?.state === 'up' && !!b.taken
   const control = useAction(async (action: 'take' | 'give') => { await browserApi.control(action); box.reload() })
@@ -58,12 +63,12 @@ export function Browser({ active }: { active: boolean }) {
   return (
     <Place title="Browser"
            side={<>
-             <ListRow density="sm" icon={Globe} title="Tabs" meta={b && b.state !== 'off' ? tabs.length : undefined} selected={page.kind === 'tabs'}
-                      onClick={() => setPage({ kind: 'tabs' })} />
+             {!boxless && <ListRow density="sm" icon={Globe} title="Tabs" meta={b ? tabs.length : undefined} selected={page.kind === 'tabs'}
+                                   onClick={() => setPage({ kind: 'tabs' })} />}
              <ListRow density="sm" icon={History} title="History" meta={calls.data?.total} selected={page.kind === 'history'} onClick={() => setPage({ kind: 'history' })} />
              {tabs.length > 0 && <ListSection label="Recent" />}
              {tabs.map(t => (
-               <ListRow key={t.name} density="sm" leading={t.busy ? <Dot tone="running" pulse /> : <Globe size={16} aria-hidden />} title={tabTitle(t)}
+               <ListRow key={t.name} density="sm" running={t.busy} icon={Globe} title={tabTitle(t)}
                         tooltip={t.url} selected={page.kind === 'tab' && page.name === t.name} onClick={() => openTab(t)} />
              ))}
            </>}>
@@ -71,7 +76,7 @@ export function Browser({ active }: { active: boolean }) {
       {page.kind === 'history' ? <HistoryList />
         : page.kind === 'tab' && b && tab ? (
           <TabPage b={b} tab={tab} last={calls.data?.calls[0]} active={active} take={take} yours={yours} onBack={() => setPage({ kind: 'tabs' })}
-                   more={[{ label: 'Copy', icon: Copy, detail: tab.url, onSelect: () => copied(tab.url) }, restart,
+                   more={[{ label: 'Copy link', icon: Copy, detail: tab.url, onSelect: () => copied(tab.url) }, restart,
                           'sep', { label: 'Close tab', icon: X, danger: true, onSelect: () => { void onTab.run('close', tab.name); setPage({ kind: 'tabs' }) } }]}
                    onConnect={box.reload} />
         ) : <TabsList box={box} take={take} restart={restart} onOpen={openTab} onClose={t => void onTab.run('close', t.name)} />}
@@ -100,8 +105,8 @@ function TabsList({ box, take, restart, onOpen, onClose }: {
   const tabs = (b?.tabs ?? []).filter(t => `${t.title} ${t.url}`.toLowerCase().includes(q.trim().toLowerCase()))
   const menu = (t: Tab): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => onOpen(t) },
-    { label: 'Copy', icon: Copy, detail: t.url, onSelect: () => copied(t.url) },
-    ...(t.conversation ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
+    { label: 'Copy link', icon: Copy, detail: t.url, onSelect: () => copied(t.url) },
+    ...(t.conversation ? [{ label: 'Open chat', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
     'sep', { label: 'Close tab', icon: X, danger: true, onSelect: () => onClose(t) },
   ]
   const waiting = b && notUp(b)
@@ -121,7 +126,7 @@ function TabsList({ box, take, restart, onOpen, onClose }: {
                          renderRow={t => (
                            <ListRow icon={Globe} iconAccent={t.name === b.front} title={tabTitle(t)} subtitle={t.url} tooltip={t.url} onClick={() => onOpen(t)}
                                     column={t.conversation ? <span>{t.conversation.title}</span> : ''}
-                                    cell={t.busy ? <Dot tone="running" pulse text="Running" /> : t.name === b.front ? 'Current tab' : ''}
+                                    cell={t.busy ? <StateWord tone="running">Running</StateWord> : t.name === b.front ? 'Current tab' : ''}
                                     onContextMenu={e => ctx.open(e, menu(t), tabTitle(t))}
                                     trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(t)} size="sm" />} />
                          )} />
@@ -150,7 +155,7 @@ function HistoryList() {
       out.next = r.next
     }
     return out
-  }, [q, failed, pages], { debounce: q ? 250 : 0, events: ev => ev.type === 'tool.done' && typeof ev.name === 'string' && ev.name.startsWith('browser__') })
+  }, [q, failed, pages], { debounce: q ? 250 : 0, events: isBrowserCall })
   const calls = list.data?.calls ?? []
   const dayOf = (c: BrowserCall) => dayLabel(Date.parse(c.at))
   const perDay = new Map<string, number>()
@@ -162,11 +167,11 @@ function HistoryList() {
   ])
   const menu = (c: BrowserCall): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => setOpened(c) },
-    { label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(c.conversation.link) },
+    { label: 'Open chat', icon: MessageCircle, onSelect: () => nav.goPath(c.conversation.link) },
   ]
-  const tone = (c: BrowserCall) => (c.state === 'failed' ? 'error' : c.state === 'running' ? 'running' : c.state === 'cancelled' ? 'muted' : 'ok') as 'error' | 'running' | 'muted' | 'ok'
   const draw = (r: Row) => 'day' in r ? <GroupHead title={r.day} count={count(perDay.get(r.day) ?? 0, 'call')} /> : (
-    <ListRow dot={tone(r.c)} title={r.c.line} tooltip={r.c.line} subtitle={r.c.conversation.title} column={<span className="mono">{r.c.tool}</span>}
+    <ListRow running={r.c.state === 'running'} icon={Globe} title={r.c.line}
+             aside={r.c.state === 'failed' ? <StateWord tone="error">Failed</StateWord> : r.c.state === 'cancelled' ? <StateWord>Stopped</StateWord> : undefined} tooltip={r.c.line} subtitle={r.c.conversation.title} column={<span className="mono">{r.c.tool}</span>}
              cell={r.c.shots ? count(r.c.shots, 'screenshot') : ''} meta={clock(Date.parse(r.c.at))} onClick={() => setOpened(r.c)}
              onContextMenu={e => ctx.open(e, menu(r.c), r.c.line)} trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(r.c)} size="sm" />} />
   )
@@ -193,7 +198,7 @@ function HistoryList() {
       {ctx.menu}
       {opened && (
         <Dialog title={opened.line} size="lg" onClose={() => setOpened(null)}
-                actions={<Button href={opened.conversation.link}>Open conversation</Button>}>
+                actions={<Button href={opened.conversation.link}>Open chat</Button>}>
           <BrowserShots display={opened.display} />
           {!opened.shots && <p className="brw-quiet">{opened.conversation.title}</p>}
         </Dialog>

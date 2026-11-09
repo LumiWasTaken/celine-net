@@ -55,6 +55,6 @@ export const browserHistory = (p: { q?: string; failed?: boolean; before?: strin
   request<{ calls: BrowserCall[]; total: number; failed: number; next: string | null }>(
     `/browser/calls${query({ q: p.q || undefined, failed: p.failed || undefined, before: p.before ?? undefined, limit: p.limit })}`)
 
-export const isBrowserEvent = (ev: { type: string; name?: unknown }) =>
-  ev.type === 'browser.state' ||
-  ((ev.type === 'tool.started' || ev.type === 'tool.done') && typeof ev.name === 'string' && ev.name.startsWith('browser__'))
+/** the box's state, or a call that shows in Browser (the box's, or what a server shows there, the Mac's); the server stamps its `place` */
+export const isBrowserEvent = (ev: { type: string; place?: unknown }) =>
+  ev.type === 'browser.state' || ((ev.type === 'tool.started' || ev.type === 'tool.done') && ev.place === 'browser')

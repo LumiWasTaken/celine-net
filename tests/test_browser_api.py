@@ -45,7 +45,7 @@ def test_front_and_close_forward_and_refuse_in_a_sentence(monkeypatch):
     assert sent == [("front", "b"), ("close", "busy"), ("close", "gone")]
 
 
-def test_the_console_runs_her_tool_and_answers_her_text(monkeypatch):
+def test_the_console_runs_its_tool_and_answers_its_text(monkeypatch):
     """POST /api/browser/calls: its tool by name, its arguments, its text back; the tab
     in front when none is named."""
     from celine.skills.browser import Browser
@@ -83,7 +83,7 @@ def test_the_console_runs_her_tool_and_answers_her_text(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_her_browser_calls_list_newest_first_with_their_line_and_state(store):
+async def test_the_agents_browser_calls_list_newest_first_with_their_line_and_state(store):
     """GET /api/browser/calls: every browser call of its own with its line as the tool
     row says it, a state word, the shots it has and its conversation; `failed` and `q`
     narrow it, `before` pages it."""
@@ -124,3 +124,37 @@ async def test_her_browser_calls_list_newest_first_with_their_line_and_state(sto
         assert [x["id"] for x in page["calls"]] == ["d", "c"] and page["next"] == "2026-10-01T10:02:00+00:00"
         rest = (await c.get("/api/browser/calls", params={"before": page["next"]})).json()
         assert [x["id"] for x in rest["calls"]] == ["b", "a"]
+
+
+@pytest.mark.anyio
+async def test_the_macs_browser_calls_join_the_history_in_their_own_words(store):
+    """A server's calls for the Browser place (mcp.placed: the Mac's browser) list with
+    the box's, their line their row's sentence."""
+    import httpx
+    from celine.conversations import store as conversations, tree
+    cid = await conversations.create(store, title="tickets")
+    words = {"macbrowser": {"words": {"browser_navigate": "Opened {url|a page} in a browser on the Mac"},
+                            "groups": {}}}
+    store.cfg = SimpleNamespace(tool_words=words, tool_places={
+        "macbrowser__browser_navigate": {"place": "browser", "where": "{{name}}'s Mac"}})
+
+    def add(c):
+        m = tree.append(c, store, cid, None, "assistant", "on it", "model")
+        for id_, name, args, at in (
+                ("a", "browser__open", '{"url": "https://x.org"}', "2026-10-01T10:00:00+00:00"),
+                ("b", "macbrowser__browser_navigate", '{"url": "https://tix.example"}',
+                 "2026-10-01T10:01:00+00:00"),
+                ("c", "macbrowser__browser_click", '{"element": "Buy"}', "2026-10-01T10:02:00+00:00")):
+            c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state, started_at) "
+                      "VALUES(?, ?, ?, ?, 'ok', ?)", (id_, m["id"], name, args, at))
+    await store.write(add)
+    app = FastAPI()
+    app.state.services = Services()
+    app.state.services.store = store
+    app.state.services.cfg = SimpleNamespace(substitute=lambda text: text.replace("{{name}}", "Celine"))
+    app.include_router(api.router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        got = (await c.get("/api/browser/calls")).json()
+    assert [(x["id"], x["tool"], x["line"]) for x in got["calls"]] == [
+        ("b", "browser_navigate", "Opened https://tix.example in a browser on the Mac"),
+        ("a", "open", "open x.org")], "a call it does not list stays out"

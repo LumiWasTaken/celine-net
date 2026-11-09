@@ -23,6 +23,7 @@ from ..core.ids import now
 from ..errors import (CelineError, NotFound, TooLarge, ToolRefused, not_set_up,
                       unreachable_words)
 from ..clock import zone
+from ..settings import features
 from . import store as terminals
 from .sync import MISSES
 from ..core.event_types import TERMINAL_STATE
@@ -94,10 +95,13 @@ async def list_terminals(request: Request, mission: str | None = None,
         if mission is not None and (c is None or mission not in (c["id"], c["agent_of"])):
             continue
         out.append(row)
-    # the shellbox: not set up, or not answering for a few rounds
+    # the shellbox: not set up, or not answering for a few rounds; `set_up` False: the
+    # place shows the commands only (the Mac's, mcp.placed)
     down = (not_set_up("the shellbox") if not sync.url
             else sync.down if sync.misses >= MISSES else None)
-    return {"terminals": out, "down": down}
+    cfg = request.app.state.services.cfg
+    return {"terminals": out, "down": down,
+            "set_up": features.set_up(cfg, features.get("shellbox"))}
 
 
 @router.post("/terminals")
@@ -237,7 +241,8 @@ async def commands(request: Request, terminal: str | None = None,
                    from_: str = Query("all", alias="from"), result: str = "all",
                    q: str = "", mission: str | None = None, limit: int = 100,
                    before: str | None = None) -> dict:
-    """The agent's shell calls and the user's lines and controls, newest first. `total` counts
+    """The agent's shell calls (and the calls an MCP server shows here, such as the Mac's
+    shell, mcp.placed) and the user's lines and controls, newest first. `total` counts
     what the filters match; `next` is the `before` of the next page."""
     if from_ not in FROM:
         raise CelineError("bad_request",
@@ -245,15 +250,19 @@ async def commands(request: Request, terminal: str | None = None,
     if result not in RESULTS:
         raise CelineError("bad_request", "result is all, failed or in_progress.", 400)
     store, live = store_of(request), _sync(request).live
+    services = request.app.state.services
+    places = {w: services.cfg.substitute(p["where"]) for w, p in store.tool_places.items()
+              if p["place"] == "terminals"}
     limit = max(1, min(limit, 500))
     kind = FROM[from_]
     if kind is None and result == "all":
         rows, total = await terminals.commands(store, terminal_id=terminal, q=q or None,
                                                mission=mission, limit=limit, before=before,
-                                               live=live)
+                                               live=live, places=places)
     else:
         rows, _ = await terminals.commands(store, terminal_id=terminal, q=q or None,
-                                           mission=mission, limit=EVERYTHING, live=live)
+                                           mission=mission, limit=EVERYTHING, live=live,
+                                           places=places)
         rows = [r for r in rows if (kind is None or r["from"]["kind"] == kind)
                 and _matches(r, result)]
         total = len(rows)
@@ -353,7 +362,7 @@ async def message(request: Request, id: str, body: TerminalMessage) -> dict:
     if cid == "new":
         cid = await conversations.create(store, "")
     elif await conversations.title(store, cid) is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     await request.app.state.services.intercom.send("user", f"agent:{cid}",
                                           f"{text}\n{line}" if text else line)
     return {"conversation_id": cid, "title": await conversations.title(store, cid)}

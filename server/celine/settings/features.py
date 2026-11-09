@@ -1,11 +1,11 @@
-"""Features: what of Celine is switched on (var/settings/features.toml, Settings,
+"""Features: what of the app and the agent is switched on (var/settings/features.toml, Settings,
 Features). While no file is saved, what needs a service (`needs_service`: the boxes,
 ComfyUI, SearXNG, the connectors, email, the vault) is off and the rest on (`seed`);
 once saved, every feature is on until the file says otherwise, but one with `start_on`
 False (shares, guard), which is on only once the file says so. `done` is False until a
 PUT says the onboarding finished (config status `setup`).
 
-Three tiers (TIERS): core, what she is made of, with no switch (CORE: the chat and each
+Three tiers (TIERS): core, what the agent is made of, with no switch (CORE: the chat and each
 core skill of skills.CORE that no feature owns); base, what ships in the repo (BASE, and
 the plugins in plugins/) or has a place of its own; user, a plugin from <data>/plugins
 with no place, whose removal leaves at most its data behind.
@@ -36,6 +36,7 @@ from typing import Any
 import anyio
 
 from .. import plugins
+from . import services as services_mod
 from .files import Invalid
 
 log = logging.getLogger("celine.features")
@@ -89,22 +90,22 @@ TIERS = {"core": "Core", "base": "Base modules", "user": "User modules"}
 # The core, with no switch: the chat, and each core skill no feature owns (skills.CORE; a
 # test holds them equal). id, label, about (cfg.substitute fills the names).
 CORE: tuple[tuple[str, str, str], ...] = (
-    ("chat", "Chat", "Conversations with {{name}}, with branches, files and pictures."),
-    ("notebook", "Notebook", "{{Her}} own notes, kept as files and carried into every conversation."),
-    ("mind", "Mind", "{{Her}} mood and thoughts between conversations."),
-    ("plan", "Plan", "The steps of a bigger job, pinned at the top of its conversation."),
+    ("chat", "Chat", "Chats with {{name}}, with branches, files and images."),
+    ("notebook", "Notebook", "{{name}}'s own notes, kept as files and carried into every chat."),
+    ("mind", "Mood and thoughts", "How {{name}} feels and what {{name}} thinks between chats."),
+    ("plan", "Plan", "The steps of a bigger task, pinned at the top of its chat."),
     ("intercom", "Intercom", "Messages between you, {{name}}, missions and sub-agents, and reminders."),
-    ("past_conversations", "Past conversations", "Your earlier conversations, searched by word."),
-    ("bugreport", "Bug reports", "Problems {{she}} finds in the app, sent to you in the Intercom."),
-    ("skills", "Skills", "The guide to each tool, read before {{she}} uses it."),
+    ("past_conversations", "Past chats", "Your earlier chats, searched by word."),
+    ("bugreport", "Bugs", "Problems {{name}} finds in the app, sent to you in the Intercom."),
+    ("skills", "Skills", "The guide to each tool, read before {{name}} uses it."),
 )
 
 
 # The order is the UI's; the plugins come after.
 BASE: tuple[Feature, ...] = (
     Feature("shellbox", "Shellbox", "Turns on once the shellbox answers.",
-            "A Linux computer of {{her}} own in a container, with a terminal, files and programs. It does not touch your machine.",
-            "Turn it off if you don't run the shellbox container.",
+            "A Linux computer of {{name}}'s own in a container, with a terminal, files and programs, apart from your machine.",
+            "Turn it off if you do not run the shellbox container.",
             skills=("shell", "code"), places=("terminals",), probe="celine.skills.shell:probe",
             setup="service", group="computer", choice="Container"),
     Feature("shares", "Shares", "Turns on once the shellbox is on.",
@@ -118,12 +119,12 @@ BASE: tuple[Feature, ...] = (
                  "share opens for anyone."),
     Feature("browser", "Browser", "Turns on once the browser answers.",
             "An isolated Brave browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch.",
-            "Turn it off if you don't run the browser container.",
+            "Turn it off if you do not run the browser container.",
             skills=("browser",), places=("browser",), probe="celine.browser.sync:probe",
             setup="service"),
     Feature("images", "Images", "Turns on once ComfyUI answers.",
-            "Pictures made with ComfyUI, in the styles of your presets.",
-            "Turn it off if you have no ComfyUI, or no GPU time for pictures.",
+            "Images made with ComfyUI, in the styles of your presets.",
+            "Turn it off if you have no ComfyUI, or no GPU time for images.",
             skills=("image_generator",), probe="celine.comfyui.server:probe_images",
             pages=("media",), setup="comfyui"),
     Feature("music", "Music", "Turns on once ComfyUI answers.",
@@ -131,45 +132,45 @@ BASE: tuple[Feature, ...] = (
             "Turn it off if you have no ComfyUI, or no GPU time for music.",
             skills=("music_generator",), probe="celine.comfyui.server:probe_music",
             pages=("media",), setup="comfyui"),
-    Feature("speech_input", "Dictation", "Pick a Dictation model first.",
+    Feature("speech_input", "Dictation", "Turns on once a Dictation model is picked.",
             "Speak a message, read it over, then send it.",
             "Turn it off if you only want to type.",
             probe="celine.speech:probe_input", setup="speech", start_on=False),
-    Feature("speech_output", "Read aloud", "Pick a Read aloud model first.",
+    Feature("speech_output", "Read aloud", "Turns on once a Read aloud model is picked.",
             "Replies read out loud, in a voice you pick.",
             "Turn it off if replies should stay text.",
-            probe="celine.speech:probe_output", setup="speech", start_on=False),
-    Feature("web", "Web search", "Turns on once SearXNG answers.",
+            skills=("voice",), probe="celine.speech:probe_output", setup="speech", start_on=False),
+    Feature("web", "Web", "Turns on once SearXNG answers.",
             "Web search through your own SearXNG, with the pages found read as text or in the browser.",
             "Turn it off if nothing should be looked up on the internet.",
             skills=("web",), probe="celine.skills.web:probe", setup="address"),
     Feature("discord", "Discord", "Turns on once the Discord connector answers.",
             "Your Discord history in Messages, and {{name}} can read your Discord live.",
-            "Turn it off if you don't use Discord.",
+            "Turn it off if you do not use Discord.",
             pages=("source:discord",), mcp=("discord",), kbs=("discord",),
             probe="celine.mcp:probe_discord", archive="messages"),
     Feature("whatsapp", "WhatsApp", "Turns on once the WhatsApp connector answers.",
             "Your WhatsApp history in Messages, and {{name}} can read your WhatsApp live.",
-            "Turn it off if you don't use WhatsApp.",
+            "Turn it off if you do not use WhatsApp.",
             pages=("source:whatsapp",), mcp=("whatsapp",), kbs=("whatsapp",),
             probe="celine.mcp:probe_whatsapp", archive="messages"),
     Feature("email", "Email", "Turns on once the account is filled in.",
-            "{{Name}} reads your mailbox for you: new mail, search and summaries.",
-            "Turn it off if your mail should stay out of reach.",
+            "{{name}} reads your inbox for you: new emails, search and summaries.",
+            "Turn it off if your email should stay out of reach.",
             skills=("email",), pages=("email",), probe="celine.skills.mail:probe",
             setup="email"),
     Feature("vault", "Vault", "Turns on once the Vaultwarden details are filled in.",
-            "Logins from your Vaultwarden, which {{she}} types into websites in the browser for you.",
+            "Logins from your Vaultwarden, which {{name}} types into websites in the browser for you.",
             "Turn it off if you have no Vaultwarden, or no password should be stored.",
             skills=("vault",), pages=("vault",), probe="celine.vault:probe", setup="vault"),
     Feature("guard", "Guard", "Turns on once a decision model is picked.",
-            "Bastet, a second model that checks risky actions before they run and asks you "
+            "Bastet, a second model that checks risky steps before they run and asks you "
             "when unsure.",
-            "Turn it off if you want no second check before risky actions.",
+            "Turn it off if you want no second check before risky steps.",
             probe="celine.guard.rules:probe", setup="guard", start_on=False),
     Feature("documents", "Documents", "",
             "A folder of your documents, searched, read and cited.",
-            "Turn it off if you have no documents to share.",
+            "Turn it off if you have no documents for {{name}} to read.",
             skills=("user_documents",), places=("documents",), kbs=("documents",)),
     Feature("messages", "Messages", "Turns on once Discord or WhatsApp is connected.",
             "Your chat history in one archive, searched by word or by topic.",
@@ -177,20 +178,20 @@ BASE: tuple[Feature, ...] = (
             skills=("chat_archive",), places=("chats", "search"), pages=("people", "search"),
             probe="celine.kb:probe", setup="search"),
     Feature("artifacts", "Pages", "",
-            "Pages {{she}} builds for you, like a chart, a table or a small app, with every version kept.",
+            "Pages {{name}} builds for you, like a chart, a table or a small app, with every version kept.",
             "Turn it off if replies should only be text.",
             skills=("artifacts",)),
     Feature("routines", "Routines", "",
-            "Jobs that run on a schedule, like a morning summary or a nightly tidy of {{her}} notes.",
+            "Work {{name}} does on a schedule, like a morning summary or a nightly tidy of the notebook.",
             "Turn it off if nothing should run on a schedule, only when you write.",
             skills=("routines",), places=("routines",), setup="routines"),
     Feature("missions", "Missions", "",
-            "Long jobs {{she}} works on over days, with updates as {{she}} goes.",
+            "Long tasks {{name}} works on over days, with updates along the way.",
             "Turn it off if you only ask short questions.",
             skills=("missions",), places=("missions",)),
     Feature("sub_agents", "Sub-agents", "",
-            "{{She}} hands parts of a big job to helpers and collects their results.",
-            "Turn it off if your model server handles only one conversation at a time.",
+            "{{name}} hands parts of a big task to sub-agents and collects their results.",
+            "Turn it off if your model server handles only one chat at a time.",
             skills=("sub_agents",)),
 )
 
@@ -259,10 +260,15 @@ def view(f: Feature, fill=lambda text: text) -> dict[str, Any]:
     """The static shape the client gets (no probe); `fill` puts its name and pronouns in
     (cfg.substitute)."""
     return {"id": f.id, "label": fill(f.label), "needs": fill(f.needs), "about": fill(f.about),
-            "off_when": fill(f.off_when), "places": list(f.places), "pages": list(f.pages),
+            "off_when": fill(f.off_when), "help": fill(help_of(f)), "places": list(f.places), "pages": list(f.pages),
             "setup": f.setup, "form": f.form, "kbs": list(f.kbs), "archive": f.archive,
             "warn": fill(f.warn), "after": f.after, "group": f.group, "choice": fill(f.choice), "tier": f.tier,
             "step": has_step(f)}
+
+
+def help_of(f: Feature) -> str:
+    """Its "?" on Settings, Features: what it gives, then when to turn it off."""
+    return " ".join(x for x in (f.about, f.off_when) if x)
 
 
 def has_step(f: Feature) -> bool:
@@ -289,6 +295,31 @@ def effective(saved: dict[str, bool] | None) -> dict[str, bool]:
     is off is off."""
     out = {f.id: (saved or {}).get(f.id, f.start_on) for f in catalog()}
     return {f.id: out[f.id] and (not f.after or out[f.after]) for f in catalog()}
+
+
+def set_up(cfg, f: Feature) -> bool:
+    """What a feature works with is there, judged from the settings alone (no probe): a
+    service's address (Settings, Features, or the compose's), a plugin's values its
+    servers need; the rest is always set up. The demo has everything."""
+    if DEMO:
+        return True
+    if f.setup == "service":
+        return bool(services_mod.url(cfg, f.id))
+    if plugins.get(f.id) is not None and not f.probe:
+        return _plugin_state(cfg, f.id)["state"] != "unset"
+    return True
+
+
+def places_off(cfg) -> list[str]:
+    """The UI places that leave the rail: those no feature that owns them has on and set
+    up (the shellbox's Terminals stay while the Mac's are there)."""
+    live = effective(cfg.settings.features)
+    owners: dict[str, list[Feature]] = {}
+    for f in catalog():
+        for place in f.places:
+            owners.setdefault(place, []).append(f)
+    return [place for place, fs in owners.items()
+            if not any(live[f.id] and set_up(cfg, f) for f in fs)]
 
 
 def done(saved: dict[str, bool] | None) -> bool:
@@ -340,7 +371,7 @@ def shown(p: dict[str, Any]) -> dict[str, Any]:
 async def probe(cfg, services, feature: str) -> dict[str, Any]:
     """One feature's state now: {"state", "detail"}, with "url" when the probe found the
     service at its default address while none is saved (the setup form prefills it), and
-    "why" when what she reads differs from the page's words (errors.her_*).
+    "why" when what the agent reads differs from the page's words (errors.agent_*).
     "none" when it has nothing to detect; a probe that does not answer within
     PROBE_SECONDS, or raises, is "missing"."""
     f = get(feature)
@@ -365,7 +396,7 @@ async def probe(cfg, services, feature: str) -> dict[str, Any]:
     # the reason its Dot shows: what the probe said, else what turns it on
     detail = result.get("detail") or (f.needs if result["state"] in ("missing", "unset") else "")
     out = {"state": result["state"], "detail": detail}
-    # why: what she reads (me__whoami), when it differs; key: the box refused the app's key
+    # why: what the agent reads (me__whoami), when it differs; key: the box refused the app's key
     for key in ("url", "why", "key"):
         if result.get(key):
             out[key] = result[key]

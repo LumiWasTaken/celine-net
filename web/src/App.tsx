@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { DoorOpen, Ellipsis, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
+import { DoorOpen, Ellipsis, Flag, Hand, Mail, PauseCircle, Plug, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
 import './components/Shell.css'
 import './components/App.css'
 import { api, authApi, type ConfigStatus } from './lib/api'
@@ -9,18 +9,15 @@ import { fullDate } from './lib/format'
 import { useFocusHandback, useGlobalKeys, useWindowTitle } from './lib/shell'
 import { useNotices } from './lib/notify'
 import { knowBuild } from './lib/health'
-import { HerContext } from './lib/her'
-import { NameContext, PronounsContext } from './lib/name'
+import { AgentContext } from './lib/agent'
+import { NameContext } from './lib/name'
 import { AppearanceContext, useAppearanceSettings } from './lib/appearance'
 import { SpeechProvider } from './components/Speech'
 import { NavProvider, format, useNav, type Section } from './lib/nav'
-import { ConnectionProvider, changesApi } from './lib/socket'
-import { useLostLogins } from './lib/sources'
-import { useRoutinesAttention } from './lib/routines'
-import { useMissionsWaiting } from './lib/missions'
-import type { RowState, Work } from './components/ConversationList'
-import { WaitingCount, isIntercomEvent } from './lib/intercom'
-import { useResource } from './lib/useResource'
+import { ConnectionProvider } from './lib/socket'
+import { useWaits } from './lib/waits'
+import { ApprovalCard } from './components/ApprovalCard'
+import { WaitingCount } from './lib/intercom'
 import { useSlide } from './ui/slide'
 import { SectionBoundary } from './components/SectionBoundary'
 import { ServerDown } from './components/ServerDown'
@@ -29,7 +26,6 @@ import { Shortcuts, Switcher } from './components/Switcher'
 import { isTyping } from './lib/keys'
 import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
-import { settingsApi, type Home } from './lib/settingsApi'
 import { usePageName } from './lib/title'
 import { BAR, TITLE, VIEWS, Welcome, sectionHref, shownPlaces, type RailEntry } from './routes'
 
@@ -44,9 +40,8 @@ export function App() {
   )
 }
 
-const WORK_WORD: Record<RowState, string> = { running: 'Running', failed: 'Failed', needs_you: 'Waiting for you' }
-/** the rail entry of each place a conversation lives in (server/celine/homes.py) */
-const HOME_SECTION: Record<Home, Section> = { her: 'celine', missions: 'missions', routines: 'routines' }
+/** a row of Waiting for you, by what waits */
+const WAIT_ICON = { mission: Flag, login: Plug, thread: Mail } as const
 
 function Shell() {
   const nav = useNav()
@@ -103,13 +98,13 @@ function Shell() {
   }, [])
   useEffect(() => { void loadStatus().catch(() => undefined).finally(() => setStatusIn(true)) }, [loadStatus])
   // a settings file fixed or broken on disk shows on General at once
-  useServerEvents(ev => { if (ev.type === 'settings.changed' || ev.type === 'her.changed') void loadStatus().catch(() => undefined) })
+  useServerEvents(ev => { if (ev.type === 'settings.changed' || ev.type === 'agent.changed' || ev.type === 'agent.hold') void loadStatus().catch(() => undefined) })
   // the onboarding, until it was finished once: every other URL lands there
   useEffect(() => {
     if (status?.setup === false && section !== 'welcome') nav.go({ section: 'welcome' }, { replace: true })
   }, [status?.setup, section, nav])
   // the places of the features that are on (the server's list); none yet: all of them
-  const places = shownPlaces(status?.catalog, status?.features)
+  const places = shownPlaces(status?.places_off)
   const bar = BAR.filter(id => places.some(p => p.id === id))
 
   // the door out shows only while the login is on (never on a local run without one)
@@ -121,47 +116,40 @@ function Shell() {
     securityApi.logout().catch(() => location.replace('/'))
   }
 
-  // the rail's count of what waits for you, the server's: asked again on intercom.state,
-  // taken from `changes` after a reconnect
-  const waiting = useResource(() => changesApi.get(null).then(c => c.unread), [], { events: isIntercomEvent })
-  useServerEvents(ev => { if (ev.type === 'changes') waiting.set(ev.unread as number) })
-  const unread = waiting.data ?? 0
-  // the approvals that wait, the server's: a dot on the place each one's conversation lives
-  // in (unless it is the page on screen), which opens it, and the count in the window's title
-  const asks = useResource(() => settingsApi.approvals(), [], { events: ev => ev.type === 'approvals.changed' })
-  const asked = asks.data?.count ?? 0
-  const onScreen = format(nav.route)
-  const askedIn = (id: Section) =>
-    asks.data?.approvals.find(a => a.home && a.link && HOME_SECTION[a.home] === id && a.link !== onScreen)
+  // everything that waits for you, the server's (lib/waits.ts): the rail's Waiting, its
+  // sheet, the window's title; the Intercom's Waiting for you counts its threads
+  const waits = useWaits()
+  const waiting = waits.data?.count ?? 0
+  const threads = waits.data ? waits.data.items.filter(i => i.kind === 'thread').length : null
 
   // the window's title, on every page: the waiting count first (not in Setup, which has no
   // rail), then the page's own name (a terminal, an artifact: lib/title; Celine's place: its
   // name, views/Celine) or the section's
   const pageName = usePageName()
   const own = terminal || artifact || section === 'celine' ? pageName : ''
-  useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : unread + asked)
-
-  // a source that lost its login: a dot on Settings
-  const lost = useLostLogins()
-  // a run at work or one that failed in the last two nights: a dot on Routines (the server's)
-  const routines = useRoutinesAttention()
-  const missionsWaiting = useMissionsWaiting()
-  // what each place has going on, from its list: a dot on the other place's rail item
-  const [work, setWork] = useState<Work>({})
-  const onWork = useCallback((w: Work) => setWork(was => (JSON.stringify(was) === JSON.stringify(w) ? was : w)), [])
+  useWindowTitle(own || (section === 'celine' ? name : `${TITLE[section]}${name ? ` - ${name}` : ''}`), section === 'welcome' ? 0 : waiting)
 
   // its place's list beside the chat; its toggle is in the list's head. A phone lands
   // on the list when no conversation is open; a narrow window starts with it closed.
   const [list, setList] = useState(() =>
     isPhone() ? !(nav.route.section === 'celine' && nav.route.conversation) : !isNarrow())
 
-  // Bastet froze her (or you did): one state in the rail, on every place, with Unfreeze
+  // Bastet froze the agent (or you did): one state in the rail, on every place, with Unfreeze;
+  // paused (no model of the agent's answers): one more, which opens Settings, Models and its words
   const frozen = useFrozen()
+  const paused = !frozen && status?.hold === 'paused'
 
   // the keys of the whole app: Ctrl+K, Ctrl+Shift+O, ?
-  const [sheet, setSheet] = useState<'switch' | 'keys' | 'more' | 'frozen' | null>(null)
+  const [sheet, setSheet] = useState<'switch' | 'keys' | 'more' | 'frozen' | 'waiting' | null>(null)
   useGlobalKeys(nav, { goTo: () => setSheet(s => (s === 'switch' ? null : 'switch')), keys: () => setSheet('keys') })
   useEffect(() => { setSheet(s => (s === 'more' ? null : s)) }, [section])
+  // Open in Waiting for you: the page changing closes the sheet (closing it first would take
+  // its history step back after the new page's step)
+  const at = format(nav.route)
+  useEffect(() => { setSheet(s => (s === 'waiting' ? null : s)) }, [at])
+  // the last item answered: nothing waits, the sheet closes
+  const none = waiting === 0
+  useEffect(() => { if (none) setSheet(s => (s === 'waiting' ? null : s)) }, [none])
 
   useFocusHandback()
   // system notifications while the tab is hidden (lib/notify.ts)
@@ -192,40 +180,29 @@ function Shell() {
   const go = (id: Section) => (e: React.MouseEvent) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
     e.preventDefault()
-    const at = askedIn(id)?.link
-    if (at) nav.goPath(at)
-    else nav.goSection(id)
+    nav.goSection(id)
   }
-  const badge = (id: Section) => {
-    if (id === 'intercom' && unread > 0) return <span className="rail__count" aria-hidden>{unread > 99 ? '99+' : unread}</span>
-    if (askedIn(id)) return <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
-    if (id === 'settings' && lost.length > 0) return <span className="rail__dot" aria-label={`${lost.length} to fix`} />
-    if (id === 'routines' && routines && id !== section) return <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} />
-    const w = id === section ? undefined : id === 'celine' ? work.celine : id === 'missions' && missionsWaiting ? 'needs_you' : undefined
-    return w ? <span className={`rail__dot rail__dot--${w}`} aria-label={WORK_WORD[w]} /> : null
-  }
+  const count = (n: number) => <span className="rail__count" aria-hidden>{n > 99 ? '99+' : n}</span>
+  const openWait = (link: string) => { if (link === at) setSheet(null); else nav.goPath(link) }
   const railItem = (s: RailEntry, cls?: string) => (
     <a key={s.id} className={cx('rail__item', cls)} href={sectionHref(s.id)}
-       aria-label={s.id === 'intercom' && unread > 0 ? `${labelOf(s.id)}, ${unread} waiting` : undefined}
        aria-current={section === s.id ? 'page' : undefined} onClick={go(s.id)}>
       <s.icon size={ICON.lg} aria-hidden />
       <span className="rail__label">{labelOf(s.id) || (!statusIn && <span className="rail__wait" />)}</span>
-      {badge(s.id)}
     </a>
   )
   const moreHere = !bar.includes(section) && section !== 'artifact'
   const shown = {
     status, name, terminal: shownTerminal.current, reply, artifact,
-    celine: { sidebarOpen: list, onSidebar: setList, onWork },
+    celine: { sidebarOpen: list, onSidebar: setList },
     onStatus: () => void loadStatus().catch(() => undefined),
   }
 
   return (
-    <HerContext.Provider value={status?.owner ?? null}>
+    <AgentContext.Provider value={status?.owner ?? null}>
     <NameContext.Provider value={name}>
-    <PronounsContext.Provider value={status?.owner.pronouns ?? 'she'}>
     <AppearanceContext.Provider value={appearance}>
-    <WaitingCount.Provider value={waiting.data ?? null}>
+    <WaitingCount.Provider value={threads}>
     <SpeechProvider features={status?.features}>
     <div className="app">
       {section === 'welcome' ? (
@@ -246,6 +223,21 @@ function Shell() {
               <span className="rail__label">Frozen</span>
             </Button>
           )}
+          {paused && (
+            <Button variant="ghost" className="rail__item" href="/settings/models"
+                    onClick={e => { e.preventDefault(); nav.goPath('/settings/models') }}>
+              <PauseCircle size={ICON.lg} aria-hidden />
+              <span className="rail__label">Paused</span>
+            </Button>
+          )}
+          {waiting > 0 && (
+            <Button variant="ghost" className="rail__item rail__item--more" title="Waiting for you"
+                    aria-label={`Waiting, ${waiting}`} aria-haspopup="dialog" onClick={() => setSheet('waiting')}>
+              <Hand size={ICON.lg} aria-hidden />
+              <span className="rail__label">Waiting</span>
+              {count(waiting)}
+            </Button>
+          )}
           <div className="rail__spacer" />
           {railItem({ id: 'settings', icon: SettingsIcon }, 'rail__item--more')}
           {login && (
@@ -259,10 +251,7 @@ function Shell() {
                   aria-haspopup="dialog" onClick={() => setSheet('more')}>
             <Ellipsis size={ICON.lg} aria-hidden />
             <span className="rail__label">More</span>
-            {places.some(p => !bar.includes(p.id) && askedIn(p.id))
-              ? <span className="rail__dot rail__dot--needs_you" aria-label={WORK_WORD.needs_you} />
-              : lost.length > 0 ? <span className="rail__dot" aria-label={`${lost.length} to fix`} />
-              : routines && section !== 'routines' ? <span className={`rail__dot rail__dot--${routines}`} aria-label={routines === 'running' ? 'Running' : 'Failed'} /> : null}
+            {waiting > 0 && count(waiting)}
           </Button>
         </nav>
 
@@ -290,10 +279,13 @@ function Shell() {
       {sheet === 'more' && (
         <Sheet title="More" onClose={() => setSheet(null)}>
           <nav className="more" aria-label="More sections">
+            {waiting > 0 && (
+              <ListRow leading={<Hand size={ICON.lg} aria-hidden />} title="Waiting" meta={count(waiting)}
+                       onClick={() => setSheet('waiting')} />
+            )}
             {[...places.filter(p => !bar.includes(p.id)), { id: 'settings' as const, icon: SettingsIcon }].map(p => (
               <ListRow key={p.id} href={sectionHref(p.id)} selected={section === p.id}
                        leading={<p.icon size={ICON.lg} aria-hidden />} title={labelOf(p.id)}
-                       meta={badge(p.id)}
                        // the place changing closes the sheet (the effect above): closing it first
                        // would take its history step back after the new place's step
                        onClick={e => { if (p.id !== section) go(p.id)(e); else { e.preventDefault(); setSheet(null) } }} />
@@ -305,6 +297,17 @@ function Shell() {
         </Sheet>
       )}
 
+      {sheet === 'waiting' && (
+        <Sheet title="Waiting for you" onClose={() => setSheet(null)}>
+          <div>
+            {(waits.data?.items ?? []).map(w => w.kind === 'approval'
+              ? <ApprovalCard key={`a:${w.approval.id}`} ask={w.approval} onOpen={openWait} />
+              : <ListRow key={`${w.kind}:${w.id}`} icon={WAIT_ICON[w.kind]} title={w.title} subtitle={w.line || undefined}
+                         href={w.link ?? undefined}
+                         onClick={w.link ? e => { e.preventDefault(); openWait(w.link!) } : undefined} />)}
+          </div>
+        </Sheet>
+      )}
       {/* the one tooltip layer: every title and data-tip in the app */}
       <TipLayer />
       <ToastHost />
@@ -314,8 +317,7 @@ function Shell() {
     </SpeechProvider>
     </WaitingCount.Provider>
     </AppearanceContext.Provider>
-    </PronounsContext.Provider>
     </NameContext.Provider>
-    </HerContext.Provider>
+    </AgentContext.Provider>
   )
 }

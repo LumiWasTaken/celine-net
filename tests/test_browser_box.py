@@ -261,7 +261,7 @@ def probe(case: str) -> dict:
 def box():
     if shutil.which("docker") is None:
         pytest.skip("no docker")
-    docker("build", "-q", "-t", IMAGE, "--build-arg", "HER_UID=1000", "-f",
+    docker("build", "-q", "-t", IMAGE, "--build-arg", "AGENT_UID=1000", "-f",
            "browser/Dockerfile", str(ROOT))
     docker("rm", "-f", BOX, check=False)
     docker("volume", "rm", HOME, check=False)

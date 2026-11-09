@@ -108,6 +108,13 @@ def test_the_stream_applies_from_the_cursor_and_a_cancel_keeps_what_was_applied(
     assert current_seq(other) == 10
 
 
+def test_a_feed_error_answer_says_the_connections_words(tmp_path):
+    ctx = ImportContext(progress=lambda *a: None, cancelled=lambda: False)
+    with pytest.raises(Unreachable, match="^The link connection returned 500: journal locked$"):
+        Consumer(_kb(tmp_path), name="link").run(ctx, "http://link", "k1", transport=httpx.MockTransport(
+            lambda r: httpx.Response(500, json={"error": "journal locked"})))
+
+
 def test_a_failing_feed_backs_off_and_a_refused_key_waits(tmp_path, monkeypatch):
     kb = ChatKB(id="d", title="Discord", platform="discord", path=tmp_path / "d.db")
     answer = [503]

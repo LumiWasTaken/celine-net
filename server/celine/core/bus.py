@@ -59,15 +59,26 @@ MIRRORED = frozenset({
     TURN_STATE, JOB_STATE, CONVERSATION_TITLE, LLM_QUEUE, ARTIFACT_UPDATED,
     VERSION_CHANGED, MESSAGE_PURGED, IMAGES_BATCH, MUSIC_BATCH,
 })
-# and its shell and browser calls, so the terminal pages refetch their commands and the
-# browser page its busy tabs as they happen
+# and the tool calls a place lists, so its page refetches them as they happen: the box's
+# shell (Terminals) and browser calls, and what an MCP server shows there (mcp.placed)
 TOOL_EVENTS = frozenset({TOOL_STARTED, TOOL_DONE, TOOL_DETACHED})
+BOX_PLACES = {"shell__": "terminals", "browser__": "browser"}
 
 
-def for_pages(ev: dict) -> bool:
+def place_of(name: str, placed: dict) -> str | None:
+    """The UI place a tool call shows in: the box's shell and browser, else what its server
+    says (`placed`, Config.tool_places); None for the rest."""
+    for prefix, place in BOX_PLACES.items():
+        if name.startswith(prefix):
+            return place
+    return (placed.get(name) or {}).get("place")
+
+
+def for_pages(ev: dict, place: str | None = None) -> bool:
+    """A conversation event the global feed carries too: MIRRORED, and the tool events of
+    a call that shows in a place (`place`, place_of)."""
     t = ev.get("type")
-    return t in MIRRORED or (
-        t in TOOL_EVENTS and str(ev.get("name", "")).startswith(("shell__", "browser__")))
+    return t in MIRRORED or (t in TOOL_EVENTS and place is not None)
 
 
 # The conversation events that mean a row of Events (server/celine/events.py) landed or

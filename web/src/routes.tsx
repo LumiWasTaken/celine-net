@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import type { ConfigStatus } from './lib/api'
 import type { Section } from './lib/nav'
-import type { Feature } from './lib/settingsApi'
 
 export const Celine = lazy(() => import('./views/Celine').then(m => ({ default: m.Celine })))
 export const Missions = lazy(() => import('./views/Missions').then(m => ({ default: m.Missions })))
@@ -38,11 +37,9 @@ export const PLACES: RailEntry[] = [
   { id: 'intercom', icon: Mail }, { id: 'terminals', icon: Terminal }, { id: 'browser', icon: Globe }, { id: 'events', icon: Activity },
   { id: 'search', icon: Search },
 ]
-/** the places on now: a place a feature owns (`catalog[].places`) leaves the rail, the bar
-    and More while that feature is off (GET /status `features`); no catalog yet: all */
-export function shownPlaces(catalog: Feature[] | null | undefined, features: Record<string, boolean> | undefined): RailEntry[] {
-  const off = new Set((catalog ?? []).filter(f => features?.[f.id] === false).flatMap(f => f.places ?? []))
-  return PLACES.filter(p => !off.has(p.id))
+/** the places on now: the server's `places_off` (GET /status) leave the rail, the bar and More; no status yet: all */
+export function shownPlaces(off: string[] | undefined): RailEntry[] {
+  return PLACES.filter(p => !off?.includes(p.id))
 }
 /** the phone's bottom bar, before More */
 export const BAR: Section[] = ['celine', 'missions', 'notebook', 'intercom']

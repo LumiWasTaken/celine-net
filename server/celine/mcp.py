@@ -47,7 +47,7 @@ from . import attachments
 from .config import ROOT, Problem, checked
 from .core.ids import now
 from .kb.identity import REF
-from .errors import TooLarge, her_unreachable
+from .errors import TooLarge, answered, agent_unreachable
 from .skills import BUILTIN, GUIDES_DIR, META, Annotations, ToolContext, ToolResult, ToolSpec, guide
 
 log = logging.getLogger("celine.mcp")
@@ -59,7 +59,7 @@ KEYS = {                    # mcp.toml [servers.<id>]: McpServerConfig
     "enabled": "bool", "transport": "str", "command": "str", "args": "list", "env": "dict",
     "url": "str", "headers": "dict", "startup_timeout_seconds": "num", "max_restarts": "int",
     "kb": "str", "class": CLASSES, "sends": SENDS, "outside": OUTSIDE,
-    "words": "dict", "groups": "dict",
+    "words": "dict", "groups": "dict", "place": "str", "place_tools": "list",
 }
 
 
@@ -89,6 +89,10 @@ class McpServerConfig:
     # and the words of a run of them ("Used the shell on the Mac {n} times")
     words: dict[str, str] = field(default_factory=dict)
     groups: dict[str, str] = field(default_factory=dict)
+    # the UI place its calls show in besides the chat ("terminals": Commands, "browser":
+    # History), `place_tools` of them, else every tool of its `words` (placed)
+    place: str | None = None
+    place_tools: list[str] = field(default_factory=list)
 
 
 _ENV_REF = re.compile(r"\$\{(\w+)(?:(:?)-([^}]*))?\}")
@@ -150,6 +154,28 @@ def row_words(cfg, plugins) -> dict[str, dict[str, dict[str, str]]]:
         return {k: t for k, t in v.items() if isinstance(t, str)} if isinstance(v, dict) else {}
     return {sid: {"words": texts(s.get("words")), "groups": texts(s.get("groups"))}
             for sid, s in raw.items()}
+
+
+def placed(cfg, plugins) -> dict[str, dict[str, str]]:
+    """The tool calls a server shows in a UI place (its `place`, mcp.toml's and the
+    plugins', on or off): {wire name: {"place", "where": the plugin's label, else the
+    server's id}}, Config.tool_places (core/store.py stamps their events, the places
+    list them)."""
+    raw = {sid: ({"place": s.place, "place_tools": s.place_tools, "words": s.words}, sid)
+           for sid, s in cfg.mcp.items()}
+    for p in plugins:
+        servers = p.manifest.get("servers")
+        raw |= {sid: (s, str(p.manifest.get("label") or p.id))
+                for sid, s in (servers if isinstance(servers, dict) else {}).items()
+                if isinstance(s, dict)}
+    out = {}
+    for sid, (s, where) in raw.items():
+        if not isinstance(s.get("place"), str):
+            continue
+        words = s.get("words") if isinstance(s.get("words"), dict) else {}
+        for tool in s.get("place_tools") or list(words):
+            out[f"{sid}__{tool}"] = {"place": s["place"], "where": where}
+    return out
 
 
 def plugin_servers(cfg, p) -> tuple[dict[str, McpServerConfig], dict[str, str]]:
@@ -363,7 +389,7 @@ class Supervisor:
                 # a server of ours that quit says so; anything else is the server at its
                 # address not answering (a connect error, a timeout, an ExceptionGroup)
                 skill.error = str(e) if isinstance(e, RuntimeError) else \
-                    her_unreachable(f"the {skill.name} server", skill.cfg.url)
+                    agent_unreachable(f"the {skill.name} server", skill.cfg.url)
                 log.warning("mcp server failed", extra={"event": "mcp.failed",
                                                         "server": skill.name,
                                                         "error": skill.error})
@@ -456,7 +482,7 @@ class Supervisor:
                                       f"this call and is reconnecting (config/mcp.toml names "
                                       f"its address).",
                               is_error=True)
-        text = _text(res)
+        text = result_text(res)
         # a file part (an image, audio, a resource) is kept for the call, as a browser
         # shot is (skills/browser.py _keep), and its row shows it; the model gets an
         # image with the result (turns/context.py), any other file as a line
@@ -503,7 +529,8 @@ class Supervisor:
 _FILES = ("image", "audio", "resource")      # the parts that carry a file (_file)
 
 
-def _text(res) -> str:
+def result_text(res) -> str:
+    """An MCP tool result's text parts, a file part as its kind in brackets."""
     parts = []
     for c in getattr(res, "content", None) or []:
         kind = getattr(c, "type", "")
@@ -705,9 +732,7 @@ async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
                                               f"accept this app's key. Give it the same key "
                                               f"as this app, then press Check."}
     if r.status_code != 200:
-        return {"state": "missing", "detail": f"The {label} connector at {host} answered "
-                                              f"with error {r.status_code}. Restart it and "
-                                              f"press Check."}
+        return {"state": "missing", "detail": answered(f"The {label} connector at {host}", r)}
     try:
         state = (r.json().get("connection") or {}).get("state") or "running"
     except ValueError:

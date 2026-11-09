@@ -18,7 +18,7 @@ from typing import Any, TypeVar
 import anyio
 
 from ..db.migrate import BUSY_MS, log_path, notebook_db
-from .bus import for_pages, lands
+from .bus import TOOL_EVENTS, for_pages, lands, place_of
 from .ids import now
 from .event_types import EVENTS_ADDED
 
@@ -105,6 +105,12 @@ class Store:
     def tool_words(self) -> dict:
         """Every MCP server's own row words (Config.tool_words, skills/words.py)."""
         return self.cfg.tool_words if self.cfg is not None else {}
+
+    @property
+    def tool_places(self) -> dict:
+        """The tool calls MCP servers show in a place (Config.tool_places, mcp.placed)."""
+        return self.cfg.tool_places if self.cfg is not None else {}
+
     def _stop(self) -> None:
         """No write is taken after this; the writer ends after the ones queued."""
         if not self._closed and self._jobs is not None:
@@ -256,12 +262,15 @@ class Store:
         )
         event = {"seq": seq, "type": type_, "ts": ts, **data}
         self._pending.append((conversation_id, event))
-        # what every page needs (turn and job states, titles, its shell and browser
-        # calls) goes on the global feed too; deltas and the like stay off it
-        if for_pages(event):
+        # what every page needs (turn and job states, titles, the calls a place lists,
+        # with that place) goes on the global feed too; deltas and the like stay off it
+        place = (place_of(str(data.get("name", "")), self.tool_places)
+                 if type_ in TOOL_EVENTS else None)
+        if for_pages(event, place):
             self.global_event(conn, type_, {
                 **{k: v for k, v in data.items() if k not in _HEAVY},
-                "conversation": conversation_id, "seq": seq})
+                "conversation": conversation_id, "seq": seq,
+                **({"place": place} if place else {})})
         if kind := lands(event):
             self.global_event(conn, EVENTS_ADDED, {"kind": kind, "conversation": conversation_id})
         return seq

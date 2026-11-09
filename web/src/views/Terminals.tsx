@@ -20,14 +20,14 @@ import {
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Button, ConfirmDialog, copied, Dialog, Dot, GroupHead, IconButton, InlineError, ListRow, ListSection, Loaded, MenuButton, Notice, Place,
-  PlaceHead, SelectBar, ShelfRow, Toolbar, useContextMenu, usePicker, VirtualList, type BulkAction, type MenuItem, type Shelf,
+  Button, ConfirmDialog, copied, Dialog, GroupHead, IconButton, InlineError, ListRow, ListSection, Loaded, MenuButton, Notice, Place,
+  PlaceHead, SelectBar, ShelfRow, StateWord, Toolbar, useContextMenu, usePicker, VirtualList, type BulkAction, type MenuItem, type Shelf,
 } from '../ui'
 import './Terminals.css'
 
 const terminalsNoun = (n: number) => count(n, 'terminal')
 const commandsNoun = (n: number) => count(n, 'command')
-const FROM: Record<Exclude<From, 'all'>, string> = { conversations: 'Conversations', missions: 'Missions', sub_agents: 'Sub-agents', you: 'You' }
+const FROM: Record<Exclude<From, 'all'>, string> = { conversations: 'Chats', missions: 'Missions', sub_agents: 'Sub-agents', you: 'You' }
 const KIND: Record<string, Exclude<From, 'all'>> = { conversation: 'conversations', mission: 'missions', sub_agent: 'sub_agents' }
 /** who a terminal is from: yours, else the kind of conversation that opened it */
 const fromOf = (t: TerminalRow): Exclude<From, 'all'> | null => (isYours(t) ? 'you' : t.conversation ? KIND[t.conversation.kind] ?? 'conversations' : null)
@@ -49,6 +49,8 @@ export function TerminalsPlace({ page, onPage, open, children }: {
   const list = useResource(() => terminalsApi.list(), [], { events: ev => ev.type === 'terminal.state' })
   const log = useResource(() => terminalsApi.commands({ limit: 1 }), [], { events: isShellEvent })
   const rows = list.data?.terminals ?? []
+  // no shellbox: the place is the commands of what is there (the Mac's)
+  const boxless = list.data?.set_up === false
   const create = useAction(async () => { const r = await terminalsApi.create(); nav.go({ section: 'terminals', terminal: r.id }) })
   const go = (p: 'terminals' | 'commands') => {
     if (onPage) onPage(p)
@@ -56,14 +58,15 @@ export function TerminalsPlace({ page, onPage, open, children }: {
   }
   return (
     <Place title="Terminals"
-           action={<IconButton icon={Plus} label="New terminal" disabled={!!list.data?.down || create.busy}
-                               title={list.data?.down ?? create.error ?? undefined} onClick={() => void create.run()} />}
+           action={!boxless && <IconButton icon={Plus} label="New terminal" disabled={!!list.data?.down || create.busy}
+                                           title={list.data?.down ?? create.error ?? undefined} onClick={() => void create.run()} />}
            side={<>
-             <ListRow density="sm" icon={SquareTerminal} title="Terminals" meta={list.data && rows.length} selected={page === 'terminals'} onClick={() => go('terminals')} />
+             {!boxless && <ListRow density="sm" icon={SquareTerminal} title="Terminals" meta={list.data && rows.length} selected={page === 'terminals'} onClick={() => go('terminals')} />}
              <ListRow density="sm" icon={ScrollText} title="Commands" meta={log.data?.total} selected={page === 'commands'} onClick={() => go('commands')} />
              {rows.some(t => !t.ended_at) && <ListSection label="Recent" />}
              {rows.filter(t => !t.ended_at).map(t => (
-               <ListRow key={t.id} density="sm" leading={<Dot tone={stateTone(stateWord(t))} />} title={t.name} selected={t.id === open}
+               <ListRow key={t.id} density="sm" icon={SquareTerminal} title={t.name} selected={t.id === open}
+                        meta={stateWord(t) === 'Idle' ? undefined : <StateWord tone={stateTone(stateWord(t))}>{stateWord(t)}</StateWord>}
                         href={format({ section: 'terminals', terminal: t.id })} />
              ))}
            </>}>
@@ -78,9 +81,12 @@ export function Terminals() {
   const last = useRef<string | undefined>(undefined)
   if (nav.route.section === 'terminals') last.current = nav.route.mission
   const mission = last.current
-  const [page, setPage] = useState<'terminals' | 'commands'>(() => (mission ? 'commands' : startOn))
+  const [chosen, setPage] = useState<'terminals' | 'commands'>(() => (mission ? 'commands' : startOn))
   useEffect(() => { startOn = 'terminals' }, [])
   useEffect(() => { if (mission) setPage('commands') }, [mission])
+  // no shellbox: Commands only (TerminalsPlace)
+  const list = useResource(() => terminalsApi.list(), [], { events: ev => ev.type === 'terminal.state' })
+  const page = list.data?.set_up === false ? 'commands' : chosen
   return (
     <TerminalsPlace page={page} onPage={p => { setPage(p); if (mission) nav.go({ section: 'terminals' }) }}>
       {page === 'commands' ? <Commands mission={mission} /> : <TerminalsList />}
@@ -91,7 +97,7 @@ export function Terminals() {
 /* ── its terminals and yours, the ended ones day by day; the Trash as a shelf ── */
 function TerminalsList() {
   const nav = useNav()
-  const her = useName()
+  const agentName = useName()
   const [shelf, setShelf] = useState<Shelf>('list')
   const [q, setQ] = useState('')
   const [state, setState] = useState('all')
@@ -119,7 +125,7 @@ function TerminalsList() {
   const ended = shown.filter(t => t.ended_at)
   const days = [...new Set(ended.map(t => dayLabel(Date.parse(t.ended_at!))))]
   const rows: Row[] = [
-    ...group(her || 'Celine', SquareTerminal, shown.filter(t => !t.ended_at && !isYours(t))),
+    ...group(agentName || 'Your agent', SquareTerminal, shown.filter(t => !t.ended_at && !isYours(t))),
     ...group('You', User, shown.filter(t => !t.ended_at && isYours(t))),
     ...days.flatMap(d => group(`Ended ${d === 'Today' || d === 'Yesterday' ? d.toLowerCase() : d}`, History, ended.filter(t => dayLabel(Date.parse(t.ended_at!)) === d))),
   ]
@@ -128,7 +134,7 @@ function TerminalsList() {
 
   const menu = (t: TerminalRow): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => nav.go({ section: 'terminals', terminal: t.id }) },
-    ...(t.conversation && !isYours(t) ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
+    ...(t.conversation && !isYours(t) ? [{ label: 'Open chat', icon: MessageCircle, onSelect: () => nav.goPath(t.conversation!.link) }] : []),
     ...(!t.ended_at && !isYours(t) && stateWord(t) === 'Running'
       ? [{ label: 'Stop', icon: CircleStop, detail: t.live?.program ?? undefined, onSelect: () => void act.run(() => terminalsApi.control(t.id, 'stop')) }] : []),
     'sep',
@@ -141,7 +147,8 @@ function TerminalsList() {
        { label: 'Delete permanently', icon: Trash2, danger: true, done: 'deleted', run: keys => bulk_('purge', keys),
          ask: n => ({ title: `Delete ${terminalsNoun(n)} permanently?`, confirm: 'Delete permanently', body: 'This cannot be undone.' }) }]
     : [{ label: 'Move to Trash', icon: Trash2, danger: true, done: 'moved', run: keys => bulk_('trash', keys),
-         ask: n => ({ title: `Move ${terminalsNoun(n)} to Trash?`, confirm: 'Move to Trash' }) }]
+         ask: n => ({ title: `Move ${terminalsNoun(n)} to Trash?`, confirm: 'Move to Trash',
+                       body: n === 1 ? 'You can restore it from the Trash.' : 'You can restore them from the Trash.' }) }]
   async function bulk_(action: 'trash' | 'restore' | 'purge', keys: string[]) {
     const r = await bulkApi.run('terminals', action, keys)
     terminals.reload(); trashed.reload()
@@ -155,10 +162,10 @@ function TerminalsList() {
     const f = fromOf(t)
     const items = menu(t)
     return (
-      <ListRow dot={stateTone(word)} title={t.name} muted={!!t.ended_at} href={format({ section: 'terminals', terminal: t.id })}
+      <ListRow icon={SquareTerminal} title={t.name} muted={!!t.ended_at} href={format({ section: 'terminals', terminal: t.id })}
                subtitle={subtitleOf(t)}
                column={t.conversation && !isYours(t) ? <><span>{t.conversation.title}</span>{f && f !== 'conversations' && <span>{FROM[f]}</span>}</> : ''}
-               cell={word === 'Idle' || word === 'Ended' ? undefined : word} meta={t.ended_at ? clock(Date.parse(t.ended_at)) : listTime(lastAt(t))} pick={picker.row(t.id)} onContextMenu={e => ctx.open(e, items, t.name)}
+               cell={word === 'Idle' || word === 'Ended' ? undefined : <StateWord tone={stateTone(word)}>{word}</StateWord>} meta={t.ended_at ? clock(Date.parse(t.ended_at)) : listTime(lastAt(t))} pick={picker.row(t.id)} onContextMenu={e => ctx.open(e, items, t.name)}
                trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
     )
   }
@@ -211,7 +218,7 @@ function TerminalsList() {
       )}
       {ctx.menu}
       {closing && <CloseTerminal t={closing} onClose={() => setClosing(null)} onClosed={terminals.reload} />}
-      {clearing && <ConfirmDialog title="Move ended terminals to Trash?" confirmLabel="Move to Trash" danger onClose={() => setClearing(false)}
+      {clearing && <ConfirmDialog title="Move ended terminals to Trash?" confirmLabel="Move to Trash" danger body="You can restore them from the Trash." onClose={() => setClearing(false)}
                                   onConfirm={async () => { await terminalsApi.trashEnded(); setClearing(false); terminals.reload() }} />}
     </div>
   )
@@ -280,7 +287,7 @@ function Commands({ mission }: { mission?: string }) {
   ])
   const menu = (c: CommandRow): MenuItem[] => [
     ...(c.terminal.id ? [{ label: 'Open terminal', icon: SquareTerminal, onSelect: () => nav.go({ section: 'terminals', terminal: c.terminal.id! }) }] : []),
-    ...(c.from.link ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(c.from.link!) }] : []),
+    ...(c.from.link ? [{ label: 'Open chat', icon: MessageCircle, onSelect: () => nav.goPath(c.from.link!) }] : []),
     ...(c.from.kind !== 'you' && c.terminal.id ? [{ label: 'Reply', icon: CornerUpLeft, onSelect: () => nav.go({ section: 'terminals', terminal: c.terminal.id!, reply: c.id }) }] : []),
     { label: 'Copy', icon: Copy, onSelect: () => copied(c.text) },
   ]
@@ -290,10 +297,10 @@ function Commands({ mission }: { mission?: string }) {
     const out = outcomeWords(c)
     const items = menu(c)
     return (
-      <ListRow dot={out.tone === 'muted' ? 'muted' : out.tone === 'error' ? 'error' : out.tone === 'running' ? 'running' : 'ok'}
+      <ListRow running={out.tone === 'running'} icon={SquareTerminal}
                title={<span className="mono">{commandWords(c)}</span>} tooltip={commandWords(c)}
-               subtitle={`${c.terminal.name}, ${c.from.kind === 'you' ? 'You' : c.from.title ?? FROM[KIND[c.from.kind] ?? 'conversations']}`}
-               cell={out.tone === 'ok' ? undefined : out.words} meta={clock(Date.parse(c.at))} onClick={() => setOpened(c)} onContextMenu={e => ctx.open(e, items, commandWords(c))}
+               subtitle={[c.terminal.name, c.from.kind === 'you' ? 'You' : c.from.title || FROM[KIND[c.from.kind] ?? 'conversations']].filter(Boolean).join(', ')}
+               cell={out.tone === 'success' || !out.words ? undefined : <StateWord tone={out.tone}>{out.words}</StateWord>} meta={clock(Date.parse(c.at))} onClick={() => setOpened(c)} onContextMenu={e => ctx.open(e, items, commandWords(c))}
                trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
     )
   }
@@ -342,7 +349,7 @@ export function CommandDialog({ c, onClose, onReply }: {
     <Dialog size="lg" title={c.terminal.name} onClose={onClose}
             actions={<>
               {c.from.link && (
-                <Button href={c.from.link}>Open conversation</Button>
+                <Button href={c.from.link}>Open chat</Button>
               )}
               {!onReply && tid && <Button href={format({ section: 'terminals', terminal: tid })}>Open terminal</Button>}
               {reply && (onReply

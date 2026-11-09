@@ -36,7 +36,7 @@ async def test_a_terminal_ends_once_and_trash_keeps_it(store):
     assert [t["id"] for t in await terminals.list_terminals(store)] == ["ef34gh", "ab12cd"]
 
 
-async def test_commands_join_her_calls_and_the_users_lines(store):
+async def test_commands_join_its_calls_and_the_users_lines(store):
     cid = await conversations.create(store, "Build llama.cpp")
     await terminals.upsert(store, "ab12cd", "build", "celine", "2026-10-02T01:00:00.000+00:00")
     _, tid, _ = await user_says(store, cid, "go")
@@ -64,7 +64,7 @@ async def test_commands_join_her_calls_and_the_users_lines(store):
     rows, _ = await terminals.commands(store, live={"ab12cd": {"busy": False, "program": None,
                                                                "last_exit": 2}})
     assert (rows[0]["outcome"]["state"], rows[0]["outcome"]["exit"]) == ("done", 2), \
-        "a typed line settles like hers"
+        "a typed line settles like the agent's"
 
 
 async def test_default_terminal_for_a_mission_a_sub_agent_and_a_plain_conversation(store):
@@ -108,3 +108,41 @@ async def test_a_call_that_returned_while_its_program_ran_is_settled(store):
     rows, _ = await terminals.commands(store)
     assert [(r["outcome"]["state"], r["outcome"]["exit"]) for r in rows] == \
         [("done", 1), ("done", 1)], "the watch that came back done carries the exit"
+
+
+async def test_the_macs_commands_join_with_where_they_ran(store):
+    """A server's calls for Terminals (`places`, mcp.placed: the Mac's shell) list with
+    their command or typed input, no terminal, the place where they ran as its name; its
+    other calls stay out."""
+    cid = await conversations.create(store, "Mac work")
+    _, tid, _ = await user_says(store, cid, "go")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [
+        {"id": "m0", "name": "macshell__start_process", "arguments": json.dumps({"command": "brew update"})},
+        {"id": "m1", "name": "macshell__interact_with_process", "arguments": json.dumps({"pid": 7, "input": "y"})},
+        {"id": "m2", "name": "macshell__read_file", "arguments": json.dumps({"path": "/etc/hosts"})}])
+    places = {"macshell__start_process": "Celine's Mac", "macshell__interact_with_process": "Celine's Mac"}
+    rows, total = await terminals.commands(store, places=places)
+    assert total == 2 and {(r["id"], r["text"], r["kind"]) for r in rows} == {
+        ("m0", "brew update", "command"), ("m1", "y", "command")}
+    assert all(r["terminal"] == {"id": None, "name": "Celine's Mac"} for r in rows)
+    assert (await terminals.commands(store))[1] == 0, "listed only where a server says so"
+
+
+async def test_a_call_a_place_lists_reaches_the_pages_with_that_place(store):
+    """The global feed carries a tool event with the place its call shows in (core/bus.py
+    place_of), so Terminals and Browser refetch; the server's other calls stay off it."""
+    from types import SimpleNamespace
+    store.cfg = SimpleNamespace(tool_words={}, tool_places={
+        "macshell__start_process": {"place": "terminals", "where": "{{name}}'s Mac"}})
+    cid = await conversations.create(store, "Mac work")
+    _, tid, _ = await user_says(store, cid, "go")
+    mid = await tree.start_assistant_message(store, cid, None, tid)
+    await turns.record_tool_calls(store, cid, mid, [
+        {"id": "m0", "name": "macshell__start_process", "arguments": "{}"},
+        {"id": "m1", "name": "macshell__read_file", "arguments": "{}"},
+        {"id": "s0", "name": "shell__run", "arguments": "{}"}])
+    fed = await store.read(lambda c: [json.loads(d) for (d,) in c.execute(
+        "SELECT data FROM global_events WHERE type='tool.started' ORDER BY id")])
+    assert [(e["name"], e["place"]) for e in fed] == [
+        ("macshell__start_process", "terminals"), ("shell__run", "terminals")]

@@ -7,6 +7,7 @@ import pytest
 from celine import boot
 from celine import reload
 from celine.settings import features, files
+from celine.settings.services import url as services_url
 from settings_fixtures import client, make_app, scratch
 
 pytestmark = pytest.mark.anyio
@@ -84,7 +85,7 @@ async def test_a_feature_off_takes_its_skill_away_until_it_is_on_again(api):
 
 async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api):
     catalog = (await api.get("/api/features")).json()["catalog"]
-    keys = {"id", "label", "needs", "about", "off_when", "places", "pages", "setup", "form", "kbs", "archive", "warn", "after",
+    keys = {"id", "label", "needs", "about", "off_when", "help", "places", "pages", "setup", "form", "kbs", "archive", "warn", "after",
             "state", "detail", "blocks", "group", "choice", "group_label", "tier", "step"}
     assert all(set(f) == keys for f in catalog)
     by = {f["id"]: f for f in catalog}
@@ -111,7 +112,7 @@ async def test_the_tiers_come_in_order_with_the_core_and_a_group_together(api, _
     assert "skills" in {c["id"] for c in r["core"]}, "META, the guides' skill"
     assert not {c["id"] for c in r["core"]} & set(r["features"])
     assert all(c["label"] and c["about"] and "{{" not in c["about"] for c in r["core"])
-    # her computer's choices sit together, the Mac right after the shellbox
+    # its computer's choices sit together, the Mac right after the shellbox
     ids = [f["id"] for f in r["catalog"]]
     assert ids[:3] == ["shellbox", "mac", "shares"]
     assert r["catalog"][1]["group_label"] == r["catalog"][0]["group_label"] != ""
@@ -150,6 +151,16 @@ async def test_a_connector_probe_says_one_thing(api, monkeypatch):
         ".env and run docker compose up -d.")
 
 
+async def test_a_connector_error_answer_says_its_words(api, monkeypatch):
+    import httpx
+    from celine import mcp
+    monkeypatch.setattr(mcp.httpx, "AsyncClient", _answering(
+        lambda r: httpx.Response(500, json={"error": "journal locked"})))
+    said = await mcp.probe_discord(api.cfg, api.services)
+    assert said == {"state": "missing", "detail":
+                    "The Discord connector at 127.0.0.1:8768 returned 500: journal locked"}
+
+
 async def test_the_shellbox_probe_tries_the_default_address_and_hands_it_over(api, monkeypatch):
     import httpx
     from celine import shellbox
@@ -157,7 +168,7 @@ async def test_the_shellbox_probe_tries_the_default_address_and_hands_it_over(ap
     def box(handler):         # the shellbox client, answered by `handler`
         monkeypatch.setattr(shellbox, "client", lambda cfg, read, transport=None: _CLIENT(
             transport=httpx.MockTransport(handler)))
-    assert api.cfg.settings.services["shellbox"].get("url", "") == ""
+    assert services_url(api.cfg, "shellbox") == ""
     box(lambda r: httpx.Response(200, json={}))
     found = await features.probe(api.cfg, api.services, "shellbox")
     assert found == {"state": "ready", "detail": "Found at http://127.0.0.1:8770.",
@@ -173,6 +184,17 @@ async def test_the_shellbox_probe_tries_the_default_address_and_hands_it_over(ap
     assert none["state"] == "unset" and "url" not in none
 
 
+async def test_a_shellbox_health_error_says_the_boxs_words(api, monkeypatch):
+    import httpx
+    from celine import shellbox
+    api.cfg.settings.services["shellbox"] = {"url": "http://box:8770"}
+    monkeypatch.setattr(shellbox, "client", lambda cfg, read, transport=None: _CLIENT(
+        transport=httpx.MockTransport(lambda r: httpx.Response(503, text="home not mounted"))))
+    got = await features.probe(api.cfg, api.services, "shellbox")
+    assert got == {"state": "missing", "detail": "The shellbox at box:8770 returned 503: home not mounted",
+                   "why": "The shellbox at box:8770 returned 503: home not mounted"}
+
+
 async def test_the_browser_probe_reads_browserd_state(api, monkeypatch):
     import httpx
     from celine.browser import sync
@@ -182,9 +204,20 @@ async def test_the_browser_probe_reads_browserd_state(api, monkeypatch):
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json=answers))))
     said = await features.probe(api.cfg, api.services, "browser")
     assert said == {"state": "missing", "detail":
-                    "The browser box answers at box:8771 but Brave is not running: Brave could not start."}
+                    "The browser answers at box:8771 but Brave is not running: Brave could not start."}
     answers = {"state": "up", "reason": None}
     assert (await features.probe(api.cfg, api.services, "browser"))["state"] == "ready"
+
+
+async def test_a_browser_box_error_answer_says_its_words(api, monkeypatch):
+    import httpx
+    from celine.browser import sync
+    monkeypatch.setattr(sync.services_mod, "url", lambda cfg, sid: "http://box:8771")
+    monkeypatch.setattr(sync, "_client", lambda cfg, read=0: httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(
+            502, text="<html><title>502 Bad Gateway</title></html>"))))
+    said = await features.probe(api.cfg, api.services, "browser")
+    assert said == {"state": "missing", "detail": "The browser at box:8771 returned 502: 502 Bad Gateway"}
 
 
 async def test_the_guard_probe_names_its_two_models(api):
@@ -199,7 +232,7 @@ async def test_the_guard_probe_names_its_two_models(api):
     await api.put("/api/guard/rules", json={"chain": {"provider": "gone", "model": "huge"}})
     assert (await api.get("/api/features/guard/probe")).json()["detail"] == \
         "Decision model: Small. Second look: huge is not on a saved provider."
-    await api.put("/api/roles/small", json={"chain": []})
+    await api.put("/api/roles/guard", json={"chain": []})
     said = (await api.get("/api/features/guard/probe")).json()
     assert said["state"] == "unset" and said["detail"].startswith("Pick a decision model")
 
@@ -258,7 +291,7 @@ async def test_a_slow_or_broken_probe_is_missing(api, monkeypatch):
     monkeypatch.setattr(features, "PROBE_SECONDS", 0.05)
     monkeypatch.setattr(web, "probe", slow)
     assert (await api.get("/api/features/web/probe")).json() == {
-        "state": "missing", "detail": "Web search did not answer in time.", "blocks": True}
+        "state": "missing", "detail": "Web did not answer in time.", "blocks": True}
     monkeypatch.setattr(web, "probe", broken)
     assert (await api.get("/api/features/web/probe")).json()["state"] == "missing"
 
@@ -372,11 +405,11 @@ async def test_a_switch_or_an_address_change_starts_and_stops_what_runs(api, mon
     assert box.log == [] and browser.log == ["start"]
     await api.put("/api/features", json={"features": {}})
     assert box.log == ["start"]
-    r = await api.put("/api/services", json={"services": {"shellbox": {"url": "http://b:8770"}}})
+    r = await api.put("/api/services/shellbox", json={"url": "http://b:8770"})
     assert r.status_code == 200, r.text
     assert box.log == ["start", "stop", "start"] and browser.log == ["start"]
-    await api.put("/api/services", json={"services": {"shellbox": {"url": "http://b:8770"},
-                                                      "browser": {"url": "http://c:1"}}})
+    await api.put("/api/services/shellbox", json={"url": "http://b:8770"})
+    await api.put("/api/services/browser", json={"url": "http://c:1"})
     assert box.log == ["start", "stop", "start"] and browser.log == ["start", "stop", "start"]
     await api.put("/api/features", json={"features": {"shellbox": False}})
     assert box.log == ["start", "stop", "start", "stop"] and not box.running
@@ -505,55 +538,125 @@ async def test_services_hold_the_addresses_and_show_the_key_hashes(api, monkeypa
     (api.cfg.data_dir / "keys" / "shell.key").write_text("s3cret\n")
     keys.ensure(api.cfg.data_dir)
     r = (await api.get("/api/services")).json()
-    assert r["saved"] is False and r["services"]["shellbox"] == {"url": ""}
-    assert r["services"]["searxng"] == {"url": "http://127.0.0.1:8888"}, "the default"
+    assert r["saved"] is False and r["services"]["shellbox"]["url"] == ""
+    assert r["services"]["searxng"]["url"] == "http://127.0.0.1:8888", "the default"
     assert set(r["keys"]) == {"shellbox", "browser"}
     assert r["keys"]["shellbox"] == {"hash": keys.sha256("s3cret")}, "the hash, never the key"
     assert "s3cret" not in (await api.get("/api/services")).text
     assert [f["key"] for f in r["fields"]["shellbox"]] == ["url"]
-    put = await api.put("/api/services", json={"services": {"shellbox": {"url": "http://box:8770/"}}})
+    put = await api.put("/api/services/shellbox", json={"url": "http://box:8770/"})
     assert put.status_code == 200, put.text
-    assert put.json()["services"]["shellbox"] == {"url": "http://box:8770"}
+    assert put.json()["services"]["shellbox"]["url"] == "http://box:8770"
     assert services_mod.url(api.cfg, "shellbox") == "http://box:8770", "every caller reads the save"
-    assert services_mod.url(api.cfg, "searxng") == "", "a url left out is empty"
-    for body, field in (({"services": {"laser": {}}}, "services.laser"),
-                        ({"services": {"browser": {"url": "box"}}}, "services.browser.url")):
-        bad = await api.put("/api/services", json=body)
+    assert services_mod.url(api.cfg, "searxng") == "", "a service never saved has none"
+    for sid, body, field in (("browser", {"url": "box"}, "services.browser.url"),
+                             ("browser", {"url": "http://b:1", "key": "x"}, "key"),
+                             ("browser", {}, "url")):
+        bad = await api.put(f"/api/services/{sid}", json=body)
         assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == field
+    assert (await api.put("/api/services/laser", json={"url": "http://l:1"})).status_code == 404
     from celine.skills import shell
     monkeypatch.setattr(shell, "probe", _fake("missing", "The shellbox at box:8770 refused."))
     assert (await api.post("/api/services/shellbox/test")).json()["state"] == "missing"
     assert (await api.post("/api/services/laser/test")).status_code == 404
 
 
-async def test_the_environment_seeds_the_services_once(tmp_path, monkeypatch, store):
+def _saved(var) -> dict:
+    import tomllib
+    return tomllib.loads((var / "settings" / "services.toml").read_text())
+
+
+async def test_the_environment_fills_every_service_until_that_one_is_saved(
+        tmp_path, monkeypatch, store):
+    """The real case: a services.toml saved once froze SearXNG's address while compose's
+    variable moved on. Each service is saved on its own; the variable fills the rest."""
+    from celine.settings import services as services_mod
     monkeypatch.setenv("CELINE_SHELL_URL", "http://shellbox:8770/")
     monkeypatch.setenv("CELINE_SEARXNG_URL", "http://searxng:8080")
-    scratch(tmp_path, monkeypatch)
+    var = scratch(tmp_path, monkeypatch)
     cfg = boot.load()
-    assert cfg.settings.services["shellbox"] == {"url": "http://shellbox:8770"}
-    assert cfg.settings.services["searxng"] == {"url": "http://searxng:8080"}
+    assert services_mod.url(cfg, "shellbox") == "http://shellbox:8770"
+    assert services_mod.url(cfg, "searxng") == "http://searxng:8080"
     async with client(make_app(cfg, store)) as c:
-        await c.put("/api/services", json={"services": {"browser": {"url": "http://b:1"}}})
+        r = await c.get("/api/services")
+        assert r.json()["services"]["searxng"]["url"] == "http://searxng:8080"
+        put = await c.put("/api/services/shellbox", json={"url": "http://box:1"},
+                          headers={"If-Match": r.json()["version"]})
+        assert put.status_code == 200, put.text
+        assert _saved(var) == {"shellbox": {"url": "http://box:1"}}, "shellbox alone"
+        monkeypatch.setenv("CELINE_SEARXNG_URL", "http://10.0.0.9:8888")
+        assert (await c.get("/api/services")).json()["services"]["searxng"]["url"] == \
+            "http://10.0.0.9:8888", "a later change of the variable is followed"
+        await c.put("/api/services/searxng", json={"url": ""})
+        assert _saved(var) == {"shellbox": {"url": "http://box:1"}, "searxng": {"url": ""}}
+        stale = await c.put("/api/services/browser", json={"url": "http://b:1"},
+                            headers={"If-Match": r.json()["version"]})
+        assert stale.status_code == 412
     cfg = boot.load()
-    assert cfg.settings.services.get("shellbox", {}) == {}, "saved: the env is read no more"
-    assert cfg.settings.services["browser"] == {"url": "http://b:1"}
+    assert services_mod.url(cfg, "shellbox") == "http://box:1"
+    assert services_mod.url(cfg, "searxng") == "", "a cleared address stays cleared"
+    assert services_mod.default("searxng") == "http://127.0.0.1:8888", \
+        "what a probe tries then: never the variable"
 
 
-async def test_her_talk_is_stored_as_typed_and_placeholders_still_fill(api):
+def test_the_migration_drops_the_addresses_the_variables_had_filled_once(tmp_path, monkeypatch):
+    """The old save wrote every service: one that equals its variable was never typed."""
+    import importlib.util
+    from celine.db.migrate import MIGRATIONS_DIR
+    spec = importlib.util.spec_from_file_location(
+        "m0024", next(MIGRATIONS_DIR.glob("0024_*.py")))
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    db = tmp_path / "celine.db"
+    step.up(None, db)                                 # no services file: nothing to do
+    monkeypatch.setenv("CELINE_SHELL_URL", "http://shellbox:8770")
+    monkeypatch.setenv("CELINE_SEARXNG_URL", "http://10.0.0.9:8888")
+    path = tmp_path / "settings" / "services.toml"
+    path.parent.mkdir()
+    path.write_text('[shellbox]\nurl = "http://shellbox:8770/"\n\n[browser]\n\n'
+                    '[searxng]\nurl = "http://searxng:8080"\n')
+    step.up(None, db)
+    assert _saved(tmp_path) == {"browser": {}, "searxng": {"url": "http://searxng:8080"}}, \
+        "a cleared one and one that differs stay"
+    before = path.read_bytes()
+    step.up(None, db)
+    assert path.read_bytes() == before, "run again, it writes nothing"
+
+
+async def test_the_agents_skill_saves_only_the_services_it_changes(tmp_path, monkeypatch, store):
+    from celine.skills import settings as settings_skill
+    monkeypatch.setenv("CELINE_SEARXNG_URL", "http://searxng:8080")
+    var = scratch(tmp_path, monkeypatch)
+    cfg = boot.load()
+    app = make_app(cfg, store)
+    services = app.state.services
+    t = settings_skill.target_of(services, "services")
+    field = {f["key"]: f for f in t.fields}
+    assert field["searxng"]["value"] == "http://searxng:8080"
+    new = t.merge({"shellbox": "http://box:1"})
+    t.check(new)
+    await t.save(services, new, {}, t.version)
+    assert _saved(var) == {"shellbox": {"url": "http://box:1"}}, "no searxng key"
+    t = settings_skill.target_of(services, "services")
+    assert {f["key"]: f["default"] for f in t.fields}["shellbox"] == "", "what null leaves"
+    await t.save(services, t.merge({"shellbox": None}), {}, t.version)
+    assert _saved(var) == {}, "null forgets it: the variable fills it again"
+
+
+async def test_the_agents_talk_is_stored_as_typed_and_placeholders_still_fill(api):
     """The page edits the text with {{username}} and {{name}} in it; it is stored exactly
     as typed (a name typed in full stays the name), and a placeholder typed by hand is
     filled when a request is built."""
     await api.put("/api/settings", json={"general": {"user_name": "Joe"}})
     r = (await api.get("/api/agent")).json()
     assert r["talk"] is None and "{{username}}" in r["talk_shipped"]
-    typed = f"Talk to Joe like {api.cfg.her.name} would, {{{{username}}}}.\n"
+    typed = f"Talk to Joe like {api.cfg.agent.name} would, {{{{username}}}}.\n"
     put = await api.put("/api/agent", json={"talk": typed})
     assert put.status_code == 200, put.text
     assert put.json()["talk"] == typed
-    assert api.cfg.her.talk == typed
-    assert api.cfg.substitute(api.cfg.her.talk) == \
-        f"Talk to Joe like {api.cfg.her.name} would, Joe.\n"
+    assert api.cfg.agent.talk == typed
+    assert api.cfg.substitute(api.cfg.agent.talk) == \
+        f"Talk to Joe like {api.cfg.agent.name} would, Joe.\n"
 
 
 async def test_put_answers_from_the_probes_the_page_saw(api, monkeypatch):
@@ -622,3 +725,28 @@ async def test_the_guard_starts_off_until_the_user_switches_it_on(api):
     put = await api.put("/api/features", json={"features": {"guard": True}})
     assert put.json()["features"]["guard"] is True
     assert guard.mode(api.cfg) == "watch"
+
+
+async def test_terminals_and_browser_stay_while_their_box_or_the_mac_is_set_up(api, monkeypatch):
+    """A place leaves the rail when no feature of its own is on and set up: Terminals is
+    the shellbox's and the Mac's (plugins/mac/plugin.toml places)."""
+    for var in ("CELINE_SHELL_URL", "CELINE_BROWSER_URL"):
+        monkeypatch.delenv(var, raising=False)
+    mac = {"state": "unset", "detail": "Address."}
+    monkeypatch.setattr(features, "_plugin_state",
+                        lambda cfg, fid: mac if fid == "mac" else {"state": "none", "detail": ""})
+
+    async def off() -> set[str]:
+        return set((await api.get("/api/status")).json()["places_off"])
+    await api.put("/api/features", json={"features": {"shellbox": True, "browser": True,
+                                                      "mac": True}})
+    for sid in ("shellbox", "browser"):
+        await api.put(f"/api/services/{sid}", json={"url": ""})
+    assert {"terminals", "browser"} <= await off(), "no address, no Mac: gone"
+    await api.put("/api/services/shellbox", json={"url": "http://box:8770"})
+    assert "terminals" not in await off() and "browser" in await off()
+    await api.put("/api/services/shellbox", json={"url": ""})
+    mac["state"] = "ready"                          # the Mac reported its Address
+    assert not {"terminals", "browser"} & await off(), "the Mac's shell and browser"
+    await api.put("/api/features", json={"features": {"mac": False}})
+    assert {"terminals", "browser"} <= await off(), "the Mac off: gone again"
