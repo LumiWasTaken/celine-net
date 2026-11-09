@@ -3,6 +3,7 @@
    that scrolls sideways on a phone). Every section stays open: no tabs, no folds. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cx } from './cx'
+import { Help } from './Help'
 import { SearchField } from './Form'
 import type { PlaceSearch } from './Head'
 import { MenuButton, type MenuItem } from './Menu'
@@ -11,10 +12,12 @@ import { reduced } from './motion'
 import { useEdgeFade } from './Bits'
 
 /* ── Section ── */
-export function Section({ id, title, count, search, action, more, children, className }: {
+export function Section({ id, title, help, count, search, action, more, children, className }: {
   /** the PageIndex target */
   id?: string
   title?: ReactNode
+  /** what it holds, behind a "?" after the title */
+  help?: string
   count?: number
   /** a search in this section, right aligned */
   search?: PlaceSearch
@@ -31,6 +34,7 @@ export function Section({ id, title, count, search, action, more, children, clas
       {head && (
         <div className="ui-section__head">
           {title != null && <h2 className="ui-section__title">{title}</h2>}
+          {help && <Help text={help} label={typeof title === 'string' ? title : ''} />}
           {count != null && <span className="ui-section__count">{count}</span>}
           {search && (
             <SearchField value={search.value} onChange={search.onChange} placeholder={search.placeholder ?? 'Search'}
@@ -47,10 +51,17 @@ export function Section({ id, title, count, search, action, more, children, clas
 
 /* ── SubHead: a small heading inside a Section, over one group of its rows (a role's
    models, a schedule's runs); its count and one action beside it ── */
-export function SubHead({ children, count, action }: { children: ReactNode; count?: number; action?: ReactNode }) {
+export function SubHead({ children, help, count, action }: {
+  children: ReactNode
+  /** what the group is, behind a "?" after the heading */
+  help?: string
+  count?: number
+  action?: ReactNode
+}) {
   return (
     <div className="ui-subhead">
       <h3 className="ui-subhead__title">{children}</h3>
+      {help && <Help text={help} label={typeof children === 'string' ? children : ''} />}
       {count != null && <span className="ui-section__count">{count}</span>}
       {action && <div className="ui-section__action">{action}</div>}
     </div>

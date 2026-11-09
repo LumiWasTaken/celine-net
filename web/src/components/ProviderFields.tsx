@@ -1,10 +1,13 @@
 /* The fields of a model provider, the same in Setup's Connect a model step and in Settings,
-   Models (Add a provider, a provider's edit dialog): Type first (Auto-detect, then every kind
-   the server lists but ComfyUI), Address, API key, Name. A hosted kind (one address of its own:
-   OpenRouter, Anthropic) fills the address and needs a key; a local kind picked after it
-   clears that address; Auto-detect leaves the address alone. The user runs Check (its own
-   logic per place): with Auto-detect the server's answer picks the type and the address. */
-import { Choice, Field, Input } from '../ui'
+   Models (Add provider, a provider's edit dialog): Type first (Auto-detect, then every kind
+   the server lists but ComfyUI), Address, Cloud (where the caller passes `cloud`; Use the
+   default beside it while the user set it), API key,
+   Name. A hosted kind (one address of its own: OpenRouter, Anthropic) fills the address and
+   needs a key; a local kind picked after it clears that address; Auto-detect leaves the
+   address alone. The user runs Check (its own logic per place): with Auto-detect the
+   server's answer picks the type and the address. */
+import { RotateCcw } from 'lucide-react'
+import { Choice, Field, IconButton, Input, Switch } from '../ui'
 import type { KindInfo, ProviderKind } from '../lib/settingsApi'
 
 export type ProviderDraft = { kind: ProviderKind | ''; url: string; key: string; label: string }
@@ -17,10 +20,17 @@ export const kindInfo = (kinds: KindInfo[], kind: ProviderKind | '' | null) => k
 export const ready = (kinds: KindInfo[], d: ProviderDraft) =>
   !!d.url.trim() && (kindInfo(kinds, d.kind)?.key !== 'required' || !!d.key.trim())
 
-export function ProviderFields({ kinds, value: d, onChange, withKey = true, autoFocus = false }: {
+/** the Cloud switch: what the server said (ProviderView.cloud, a check's `cloud`) or the user
+    set; 'mixed' while the server has not said for this address. `onReset`, given while the
+    user set it: Use the default, back to what the address says */
+export type CloudSwitch = { checked: boolean | 'mixed'; help: string; onChange: (v: boolean) => void; onReset?: () => void }
+
+export function ProviderFields({ kinds, value: d, onChange, cloud, withKey = true, autoFocus = false }: {
   kinds: KindInfo[]
   value: ProviderDraft
   onChange: (d: ProviderDraft) => void
+  /** the Cloud switch under Address */
+  cloud?: CloudSwitch
   /** the key field; off where the key has its own section */
   withKey?: boolean
   autoFocus?: boolean
@@ -44,6 +54,12 @@ export function ProviderFields({ kinds, value: d, onChange, withKey = true, auto
         <Input value={d.url} placeholder="http://192.168.1.20:11434" spellCheck={false} autoFocus={autoFocus}
                onChange={e => onChange({ ...d, url: e.target.value })} />
       </Field>
+      {cloud && (
+        <span className="form__control">
+          <Switch label="Cloud" help={cloud.help} checked={cloud.checked} onChange={cloud.onChange} />
+          {cloud.onReset && <IconButton icon={RotateCcw} size="sm" label="Use the default" onClick={cloud.onReset} />}
+        </span>
+      )}
       {withKey && (
         <Field label={info?.key === 'required' ? 'API key' : 'API key (optional)'}>
           <Input type="password" autoComplete="off" value={d.key} placeholder={hosted ? 'sk-...' : 'Key'}

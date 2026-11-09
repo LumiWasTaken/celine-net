@@ -9,7 +9,7 @@
    one step per feature switched on there that has a setup step (`step`: a form, or a
    connection), in the catalog's order: its `about`, its state line, its setup form
    (WelcomeForms.tsx, its draft kept by feature id) whose Check saves and asks the probe
-   anew; the features of a group (`group`: the shellbox and the Mac, "Her computer") share
+   anew; the features of a group (`group`: the shellbox and the Mac) share
    one step, a SubHead and a form each (GroupStep). Next saves the forms, asks their probes
    anew and saves the features: what is blocked then is saved off unless it was saved on before (toSave). Then done (All set, what
    is on, what was switched on but did not answer or is not set up, what is off, New conversation), which PUTs `done` when it is reached: Settings stays
@@ -29,17 +29,17 @@ import { ApiError, type ConfigStatus } from '../lib/api'
 import { kbApi } from '../lib/kb'
 import { onboardingModel } from '../lib/onboardingModel'
 import { previewAppearance, saveAppearance, type Accent } from '../lib/appearance'
-import { COLORS } from '../lib/her'
+import { COLORS } from '../lib/agent'
 import { format, useNav } from '../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import {
-  herApi, settingsApi, type Available, type Feature, type FeaturesView, type KindInfo, type ModelConfig,
-  type ProviderKind,
+  agentApi, settingsApi, type Available, type Feature, type FeaturesView, type KindInfo,
+  type ProviderKind, type ProviderView,
 } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useServerEvents, type ServerEvent } from '../lib/bus'
-import { Button, Chip, Choice, Dot, Field, InlineError, Input, LoadingRow, Progress, Section, SubHead, TextArea } from '../ui'
+import { Button, Chip, Choice, Field, InlineError, Input, LoadingRow, Progress, Section, StateWord, SubHead, TextArea } from '../ui'
 import { FeatureSwitch, FeatureTiers, reprobe } from './settings/Features'
 import { blocked, firstTime, landing, stepping, stepsOf, toSave } from '../lib/featureSteps'
 import { useConnector } from './settings/Connector'
@@ -47,7 +47,7 @@ import { LoginProblem } from './settings/DiscordSource'
 import { TaskLine } from './settings/parts'
 import { useTasks } from './settings/SourcePage'
 import { Pairing } from './settings/WhatsAppSource'
-import { PRONOUNS } from './settings/Her'
+import { PRONOUNS } from './settings/Agent'
 import { slug } from './settings/Models'
 import { EMPTY_PROVIDER, ProviderFields, host, kindInfo, ready, type ProviderDraft } from '../components/ProviderFields'
 import { formOf, type SaveRef } from './WelcomeForms'
@@ -68,7 +68,7 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
   const stored = useRef<Record<string, boolean> | null>(null)
   const view = local ?? (res.data ? firstTime(res.data) : null)
   const steps = stepsOf(view)
-  const found = steps.indexOf(step ?? 'her')
+  const found = steps.indexOf(step ?? 'agent')
   // a step not on (a feature switched off, a group's feature): the URL is replaced by where
   // it lands; before the catalog came it may be a feature's: wait for it
   const lands = found < 0 && view && step ? landing(view, step) : null
@@ -102,7 +102,7 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
       <div className="page onb__page">
         <div className="page__col onb__col">
           {waiting ? <Pending error={res.error} reload={res.reload} />
-            : id === 'her' ? <HerStep key="her" {...nav2} />
+            : id === 'agent' ? <AgentStep key="agent" {...nav2} />
             : id === 'you' ? <YouStep key="you" {...nav2} />
             : id === 'model' ? <ModelStep key="model" {...nav2} />
             : members.length ? (
@@ -165,23 +165,23 @@ function StepCard({ title, head, back, skip, onNext, disabled, children }: StepN
 
 /* ── it: name, pronouns, colour, its persona and how it talks (the shipped text until
    it has its own) ── */
-type HerDraft = { name: string; pronouns: string; color: string; persona: string; talk: string }
+type AgentDraft = { name: string; pronouns: string; color: string; persona: string; talk: string }
 
-function HerStep({ back, next }: StepNav) {
-  const her = useResource(() => herApi.get(), [])
-  const [draft, setDraft] = useState<HerDraft | null>(null)
+function AgentStep({ back, next }: StepNav) {
+  const agent = useResource(() => agentApi.get(), [])
+  const [draft, setDraft] = useState<AgentDraft | null>(null)
   const [field, setField] = useState<string | undefined>()
   const [error, setError] = useState<string | null>(null)
-  const h = her.data
+  const h = agent.data
   const d = draft ?? (h ? { name: h.name, pronouns: h.pronouns, color: h.color, persona: h.persona, talk: h.talk ?? h.talk_shipped } : null)
-  const set = (k: keyof HerDraft, v: string) => d && setDraft({ ...d, [k]: v })
-  // her colour is the app's accent: shown at once, saved with Appearance's own path
+  const set = (k: keyof AgentDraft, v: string) => d && setDraft({ ...d, [k]: v })
+  // its colour is the app's accent: shown at once, saved with Appearance's own path
   useEffect(() => { if (draft) previewAppearance({ accent: draft.color as Accent }) }, [draft?.color]) // eslint-disable-line react-hooks/exhaustive-deps
   const onNext = async () => {
     if (!h || !d) return
     setField(undefined); setError(null)
     try {
-      await herApi.put(d, h.version)
+      await agentApi.put(d, h.version)
       await saveAppearance({ accent: d.color as Accent })
     } catch (e) {
       setField(fieldOf(e)); setError(e instanceof Error ? e.message : String(e))
@@ -191,16 +191,16 @@ function HerStep({ back, next }: StepNav) {
   }
   const err = (k: string) => (field === k ? error : null)
   return (
-    <StepCard title={h?.name ?? ''} back={back} next={next} onNext={onNext} disabled={!d && (her.error ?? 'Loading')}>
-      {!d ? (her.error ? <InlineError compact message={her.error} onRetry={her.reload} /> : <LoadingRow label="Loading" />) : <>
+    <StepCard title={h?.name ?? ''} back={back} next={next} onNext={onNext} disabled={!d && (agent.error ?? 'Loading')}>
+      {!d ? (agent.error ? <InlineError compact message={agent.error} onRetry={agent.reload} /> : <LoadingRow label="Loading" />) : <>
         <Field label="Name" error={err('name')}>
           <Input value={d.name} maxLength={40} invalid={!!err('name')} onChange={e => set('name', e.target.value)} autoFocus />
         </Field>
         <Field label="Pronouns" group error={err('pronouns')}>
           <Choice label="Pronouns" value={d.pronouns} options={PRONOUNS} onChange={v => set('pronouns', v)} />
         </Field>
-        <Field label="Colour" group error={err('color')}>
-          <Choice label="Colour" value={d.color} onChange={v => set('color', v)}
+        <Field label="Face colour" group error={err('color')}>
+          <Choice label="Face colour" value={d.color} onChange={v => set('color', v)}
                   options={COLORS.map(k => ({ value: k, label: k[0]!.toUpperCase() + k.slice(1), swatch: `var(--char-${k})` }))} />
         </Field>
         <div className="onb__texts">
@@ -264,7 +264,7 @@ function YouStep({ back, next }: StepNav) {
    address, when there is one: no second provider for the same server); its chat models, one
    picked. Run again: the first saved provider with a chat model fills the step (its address,
    its name, that model), Next ready ── */
-type Saved = { id: string; kind: ProviderKind; label: string; base_url: string; models: Record<string, ModelConfig> }
+type Saved = { id: string } & ProviderView['provider']
 
 /** the same server: scheme, host and path alike, case and a trailing slash aside */
 const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, '').toLowerCase() === b.trim().replace(/\/+$/, '').toLowerCase()
@@ -290,12 +290,12 @@ function ModelStep({ back, next }: StepNav) {
     const chat: Available[] = Object.entries(have.provider.models).filter(([, m]) => !m.caps || m.caps.includes('chat'))
       .map(([mid, m]) => ({ id: mid, name: m.label, caps: m.caps, context: m.context, thinking_levels: m.thinking_levels, added: true }))
     setD({ kind: have.provider.kind, url: have.provider.base_url, key: '', label: have.provider.label })
-    setSaved({ id: have.id, kind: have.provider.kind, label: have.provider.label, base_url: have.provider.base_url, models: have.provider.models })
+    setSaved({ id: have.id, ...have.provider })
     setModels(chat)
     setModel(chat[0]!.id)
   }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
   const check = useAction(async () => {
-    setChecked(null); setSaved(null); setModels(null); setModel('')
+    setChecked(null); setSaved(null); setModels(null)
     const r = await settingsApi.testNew({ kind: d.kind || undefined, base_url: d.url.trim(), key: d.key.trim() || undefined })
     setChecked(r)
     if (!r.kind) return
@@ -306,7 +306,7 @@ function ModelStep({ back, next }: StepNav) {
     let id: string
     if (have) {
       id = have.id
-      setSaved({ id, kind: have.provider.kind, label: have.provider.label, base_url: have.provider.base_url, models: have.provider.models })
+      setSaved({ id, ...have.provider })
     } else {
       const name = d.label.trim() || host(r.base_url)
       id = slug(name, all.map(p => p.id))
@@ -318,33 +318,43 @@ function ModelStep({ back, next }: StepNav) {
     const list = await settingsApi.available(id)
     const chat = list.models.filter(m => !m.caps || m.caps.includes('chat'))
     setModels(chat)
-    if (chat.length === 1) setModel(chat[0]!.id)
+    // the model chosen before stays chosen while the server still has it
+    setModel(m => chat.some(x => x.id === m) ? m : chat.length === 1 ? chat[0]!.id : '')
   })
+  // the model list, once the check found one: brought into view, it is what comes next
+  const picker = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (models?.length) picker.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [models])
   const onNext = async () => {
-    if (!saved || !model) return
+    // Next with an address and no check yet checks it: the model list (or the reason) comes next
+    if (!saved) { await check.run(); return }
+    if (!model) return
     const m = models?.find(x => x.id === model)
     const cfg = onboardingModel(model, m, saved.models[model])
-    await settingsApi.putProvider(saved.id, { kind: saved.kind, label: saved.label, base_url: saved.base_url, models: { ...saved.models, [model]: cfg } })
+    const { id, ...provider } = saved
+    await settingsApi.putProvider(id, { ...provider, models: { ...provider.models, [model]: cfg } })
+    // a cloud provider fills no empty role by itself: the model picked here is the chat model
+    if (!(await settingsApi.roles()).roles.chat?.chain.length) await settingsApi.putRole('chat', [`${id}/${model}`])
     next()
   }
   return (
-    <StepCard title="Connect a model" back={back} next={next} onNext={onNext} disabled={!model && 'Choose a model'}>
+    <StepCard title="Connect a model" back={back} next={next} onNext={onNext}
+              disabled={saved ? !model && 'Choose a model' : (!online && OFFLINE_TITLE) || (!ready(kinds, d) && 'Type an address first.') || (check.busy && 'Checking')}>
       <ProviderFields kinds={kinds} value={d} onChange={edit} autoFocus />
       <div className="onb__check">
         <Button loading={check.busy} disabled={!online || !ready(kinds, d)} title={online ? undefined : OFFLINE_TITLE}
                 onClick={() => void check.run()}>Check</Button>
         <span className="onb__state">
-          {checked && <Dot tone={checked.ok ? 'ok' : 'warn'} text={[kindLabel(checked.kind), checked.sentence].filter(Boolean).join(': ')} />}
+          {checked && <StateWord tone={checked.ok ? 'muted' : 'warn'}>{[kindLabel(checked.kind), checked.sentence].filter(Boolean).join(': ')}</StateWord>}
         </span>
       </div>
       {check.error && <InlineError compact message={check.error} />}
       {saved && (
-        <Field label="Model" group>
+        <div ref={picker}><Field label="Model" group>
           {!models ? <LoadingRow label="Loading" />
             : models.length === 0 ? <InlineError compact message="This server has no chat model. Load one on the server, then press Retry." onRetry={() => void check.run()} />
             : <Choice list label="Model" value={model} onChange={setModel}
-                      options={models.map(m => ({ value: m.id, label: m.name || m.id }))} />}
-        </Field>
+                      options={models.map(m => ({ value: m.id, label: m.name || m.id, meta: m.loaded ? 'Loaded' : undefined }))} />}
+        </Field></div>
       )}
     </StepCard>
   )
@@ -432,7 +442,7 @@ function SetupState({ feature: f }: { feature: Feature }) {
   return word && <Chip tone={ready ? 'accent' : 'neutral'} icon={ready ? CircleCheck : CircleDashed} className="onb__status">{word}</Chip>
 }
 
-/* ── a group's step ("Her computer": Container and Own computer): each feature of the group
+/* ── a group's step (the computer: Container and Own computer): each feature of the group
    switched on, under its `choice` as a SubHead: its state line and its setup form. Next
    saves every form, asks their probes anew, then saves the features ── */
 function GroupStep({ members, view, error, reload, update, save, back, next, forms, setForm }: Shared & {
@@ -552,7 +562,7 @@ function FeaturesStep({ view, error, reload, update, save, back, next }: Shared)
   )
 }
 
-/* ── done: All set, what is on and off, New conversation. Reaching it finishes the setup
+/* ── done: All set, what is on and off, New chat. Reaching it finishes the setup
    (PUT /features with done), so Settings opens from here on ── */
 function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & { name: string; onSaved: () => void }) {
   const finish = useAction(async () => {
@@ -563,8 +573,8 @@ function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & {
   const ready = !!view
   useEffect(() => { if (ready && !view.done) void finish.run() }, [ready]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Section title="All set">
-      {!view ? <Pending error={error} reload={reload} /> : <>
+    <Section title="All set" className="onb__card">
+      <div className="onb__body">{!view ? <Pending error={error} reload={reload} /> : <>
         <p className="onb__line">{name} is ready.</p>
         <p className="onb__line">On: {labels(view, f => switched(view, f, 'on'))}</p>
         {labels(view, f => switched(view, f, 'missing')) !== 'None' && (
@@ -576,11 +586,11 @@ function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & {
         <p className="onb__line">Off: {labels(view, f => view.features[f.id] === false)}</p>
         <p className="onb__line">You can change all of this later in Settings.</p>
         {finish.error && <InlineError compact message={finish.error} onRetry={() => void finish.run()} />}
-      </>}
+      </>}</div>
       <div className="onb__foot ui-section__foot">
         <Button variant="ghost" icon={ArrowLeft} onClick={back}>Back</Button>
         <span className="onb__gap" />
-        <Button variant="primary" iconEnd={ArrowRight} href="/new_chat" disabled={finish.busy || !view?.done}>New conversation</Button>
+        <Button variant="primary" iconEnd={ArrowRight} href="/new_chat" disabled={finish.busy || !view?.done}>New chat</Button>
       </div>
     </Section>
   )

@@ -1,5 +1,5 @@
 /* A line of the transcript that comes and goes while you watch it (a call at work, a call
-   being written, Bastet's banner, a request of hers): one fade in, one fade out (useLeave).
+   being written, Bastet's banner, a request of the agent's): one fade in, one fade out (useLeave).
    A conversation that loads shows its lines at once and another one replaces them at once:
    the transcript says `data-watching` from its first drawn frame on, and `data-cid`. */
 import { useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'

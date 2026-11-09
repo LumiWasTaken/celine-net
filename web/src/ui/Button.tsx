@@ -22,6 +22,8 @@ type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & Li
   wide?: boolean
   /** a toggle that is on (Archive or Trash open): aria-pressed and the accent wash */
   pressed?: boolean
+  /** a badge at its top-right corner (an update waits); the words are read after its label */
+  badge?: string
   onClick?: (e: MouseEvent<HTMLElement>) => void
 }
 
@@ -52,7 +54,7 @@ function Press({ href, target, rel, download, type, inner, forward, ...rest }: L
    (everything else), ghost (quiet in-row actions), danger (tonal red, only in a dialog
    that destroys and a menu's last item). */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'md', icon: Icon, iconEnd: End, loading = false, wide = false, pressed,
+  { variant = 'secondary', size = 'md', icon: Icon, iconEnd: End, loading = false, wide = false, pressed, badge,
     className, children, disabled, type = 'button', onClick, ...rest },
   ref,
 ) {
@@ -68,6 +70,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
                : Icon ? <Icon size={s} aria-hidden /> : null}
              {children != null && children !== false && <span className="btn__label">{children}</span>}
              {End && <End size={s} aria-hidden />}
+             {badge && <><span className="btn__badge" aria-hidden /><span className="sr-only">{badge}</span></>}
              {overlay && <span className="btn__overlay"><LoaderCircle size={s} className="spin" aria-hidden /></span>}
            </>} />
   )

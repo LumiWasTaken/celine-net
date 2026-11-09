@@ -13,9 +13,10 @@ import { clock } from '../lib/format'
 import { eventsApi, isEventsEvent, type EventRow, type EventsState, type EventsTab } from '../lib/events'
 import { useResource } from '../lib/useResource'
 import {
-  Button, GroupHead, ListRow, Loaded, MenuButton, PlaceHead, Segmented, Toolbar, useContextMenu, VirtualList, type MenuItem,
+  Button, GroupHead, ListRow, Loaded, MenuButton, PlaceHead, Segmented, StateWord, Toolbar, useContextMenu, VirtualList, type MenuItem,
 } from '../ui'
-import { ACTION_ICONS, ACTION_WORDS, EventDecision, answer } from './EventDecision'
+import { ACTION_ICONS, ACTION_WORDS } from '../lib/guard'
+import { EventDecision, answer } from './EventDecision'
 
 const PAGE = 100
 const MOST = 500       // the server's most per request
@@ -23,7 +24,7 @@ type Bastet = { decision: string | null; rule: string | null; mode: string | nul
 const NO_BASTET: Bastet = { decision: null, rule: null, mode: null }
 
 export function Events({ active }: { active: boolean }) {
-  const [tab, setTabRaw] = useState<EventsTab>('celine')
+  const [tab, setTabRaw] = useState<EventsTab>('agent')
   const [kind, setKindRaw] = useState<string | null>(null)
   const [day, setDay] = useState<string | null>(null)
   const [state, setState] = useState<EventsState | null>(null)
@@ -63,8 +64,8 @@ export function Events({ active }: { active: boolean }) {
   const draw = (r: Row) => {
     if ('day' in r) return <GroupHead title={r.day} />
     const e = r.e
-    const common = { dot: e.tone, title: e.title, tooltip: e.title, subtitle: e.detail || undefined, column: <span>{e.where ?? ''}</span>,
-                     cell: e.tone === 'ok' ? undefined : e.outcome, meta: clock(Date.parse(e.at)) }
+    const common = { running: e.tone === 'running', title: e.title, tooltip: e.title, subtitle: e.detail || undefined, column: <span>{e.where ?? ''}</span>,
+                     cell: e.tone === 'ok' ? undefined : <StateWord tone={e.tone}>{e.outcome}</StateWord>, meta: clock(Date.parse(e.at)) }
     if (!e.guard) return <ListRow {...common} href={e.links.open ?? undefined} />
     return <ListRow {...common} onClick={() => setShown(e)} onContextMenu={ev => ctx.open(ev, menu(e), e.title)}
                     trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(e)} size="sm" />} />

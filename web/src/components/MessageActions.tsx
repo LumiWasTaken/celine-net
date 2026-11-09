@@ -20,7 +20,7 @@ import { useNav } from '../lib/nav'
 import { KeepPlace } from '../lib/useStickToBottom'
 import { ConfirmDialog, Drawer, IconButton, InlineError, Thoughts, useCopied, type MenuItem } from '../ui'
 import { ToolGroup } from './ToolRow'
-import { WhatSheSaw } from './WhatSheSaw'
+import { WhatItSaw } from './WhatItSaw'
 import './Transcript.css'
 import { useReplySpeech } from './Speech'
 
@@ -39,7 +39,7 @@ type Props = {
   /** the conversation's latest turn (Continue when it can be carried on) */
   turn: Turn | null
   onEdit: () => void
-  /** "What it saw", in its pronouns */
+  /** "What Celine saw", by the agent's name */
   sawTitle: string
   /** read-only: no Regenerate, Edit, Continue or Branch */
   closed?: boolean
@@ -77,9 +77,9 @@ export function useMessageActions(
   const [made, setMade] = useState<Set<Panel>>(new Set())
   const show = (p: Panel) => { setMade(m => (m.has(p) ? m : new Set(m).add(p))); setPanel(p) }
   const [refused, setRefused] = useState<string | null>(null)
-  const hers = message.role === 'assistant'
-  const speechAction = useReplySpeech(message.id, conversationId, hers ? message.content : '',
-    running, hers && turn?.state === 'done', last && hers)
+  const fromAgent = message.role === 'assistant'
+  const speechAction = useReplySpeech(message.id, conversationId, fromAgent ? message.content : '',
+    running, fromAgent && turn?.state === 'done', last && fromAgent)
   // More like this: the server says whether it is a sample now
   const [sample, setSample] = useState(!!message.sample)
   useEffect(() => setSample(!!message.sample), [message.sample])
@@ -87,7 +87,7 @@ export function useMessageActions(
 
   // the versions; its last reply asks again once its turn ends, so Regenerate's new
   // version counts without a reload (the new message arrives as the only one it knows)
-  const settled = last && hers && !running
+  const settled = last && fromAgent && !running
   useEffect(() => {
     if (!conversationId || (message.siblings < 2 && !settled)) { setSib(null); return }
     let live = true
@@ -110,14 +110,14 @@ export function useMessageActions(
 
   if (writing || !conversationId) return { overlays: null }
   // a background job's result is the app's message, not yours to edit
-  const editable = !closed && !running && ((hers && !!message.content.trim()) || (message.role === 'user' && message.intercom?.kind !== 'job'))
+  const editable = !closed && !running && ((fromAgent && !!message.content.trim()) || (message.role === 'user' && message.intercom?.kind !== 'job'))
   // the server makes a new version beside a message under another; its first message (a
   // chat it started) has none to answer
-  const regen = hers && !closed && !running && message.parent_id !== null
+  const regen = fromAgent && !closed && !running && message.parent_id !== null
   const regenerate = () => { keep(message.id); tryIt(() => conversationApi.retry(conversationId, message.id)) }
   // a turn that stopped or was cut off picks up where it ended
-  const canContinue = hers && !closed && last && !running && !!turn?.continuable?.ok
-  const lovable = hers && !!message.content.trim()
+  const canContinue = fromAgent && !closed && last && !running && !!turn?.continuable?.ok
+  const lovable = fromAgent && !!message.content.trim()
   const work = calls.filter(c => !c.name.startsWith('skills__')).length > 0 ? calls : []
 
   const all: MenuItem[] = [
@@ -131,7 +131,7 @@ export function useMessageActions(
     ...(!closed && !running && message.content.trim() ? [{ label: 'Branch from here', icon: GitBranch, onSelect: branch }] : []),
     ...(lovable ? [{ label: 'More like this', icon: Heart, current: sample, title: 'Keep it as a sample, so more replies sound like this',
                      onSelect: () => tryIt(async () => setSample((await conversationApi.sample(conversationId, message.id, !sample)).sample)) }] : []),
-    ...(hers && work.length ? [{ label: 'Activity', icon: Activity, onSelect: () => show('activity') }] : []),
+    ...(fromAgent && work.length ? [{ label: 'Activity', icon: Activity, onSelect: () => show('activity') }] : []),
     ...(thoughts ? [{ label: thoughts.title, icon: Brain, onSelect: () => show('thoughts') }] : []),
     ...(steps ? [{ label: sawTitle, icon: Eye, onSelect: () => setSaw(true) }] : []),
     ...(!running && !closed ? ['sep' as const, { label: 'Delete', icon: Trash2, danger: true, onSelect: () => setConfirming(true) }] : []),
@@ -141,7 +141,7 @@ export function useMessageActions(
   return {
     versions: sib ? { at: sib.index + 1, total: sib.count, onPrev: () => go(-1), onNext: () => go(1) } : undefined,
     actions: <>
-      {hers && !running && !!message.content.trim() && speechAction}
+      {fromAgent && !running && !!message.content.trim() && speechAction}
       {regen && <IconButton icon={RefreshCw} label="Regenerate" size="sm" onClick={regenerate} />}
       {editable && <IconButton icon={Pencil} label="Edit" size="sm" onClick={onEdit} />}
       <IconButton icon={copied ? Check : Copy} label={copied ? 'Copied' : 'Copy'} size="sm" onClick={() => void copy()} />
@@ -153,7 +153,7 @@ export function useMessageActions(
           <InlineError compact message={refused} />
         </div>
       )}
-      {saw && steps && <WhatSheSaw conversationId={conversationId} steps={steps} title={sawTitle} onClose={() => setSaw(false)} />}
+      {saw && steps && <WhatItSaw conversationId={conversationId} steps={steps} title={sawTitle} onClose={() => setSaw(false)} />}
       {thoughts && made.has('thoughts') && <Side open={panel === 'thoughts'} title={thoughts.title} onClose={() => setPanel(null)}>
         <Thoughts className="thoughts">{thoughts.text}</Thoughts>
       </Side>}
@@ -162,7 +162,7 @@ export function useMessageActions(
       </Side>}
       {confirming && (
         <ConfirmDialog title="Delete this message?" danger confirmLabel="Delete"
-                       body="This deletes the message and every message after it. You can't undo this."
+                       body="This deletes the message and every message after it. This cannot be undone."
                        onClose={() => setConfirming(false)}
                        onConfirm={async () => {
                          await conversationApi.remove(conversationId, message.id)

@@ -130,8 +130,8 @@ export function Viewer({ src, name, caption, more = [], actions, panel, onClose,
   })
 
   const items: MenuItem[] = [
-    { label: 'Copy picture', icon: Copy, onSelect: () => void copyPicture(src).catch(() => undefined) },
-    { label: 'Save', icon: Download, onSelect: () => save(src, name) },
+    { label: 'Copy image', icon: Copy, onSelect: () => void copyPicture(src).catch(() => undefined) },
+    { label: 'Download', icon: Download, onSelect: () => save(src, name) },
     { label: 'Open original', icon: ExternalLink, onSelect: () => window.open(src, '_blank', 'noopener') },
     ...(more.length ? ['sep' as const, ...more] : []),
   ]
@@ -155,7 +155,7 @@ export function Viewer({ src, name, caption, more = [], actions, panel, onClose,
       <div className="viewer__stage">
         {state === 'failed' ? (
           <div className="viewer__failed" role="alert">
-            <span>Couldn't load the picture.</span>
+            <span>Could not load the image.</span>
             <Button size="sm" variant="secondary" onClick={() => setAttempt(n => n + 1)}>Retry</Button>
           </div>
         ) : (
@@ -173,9 +173,9 @@ export function Viewer({ src, name, caption, more = [], actions, panel, onClose,
                onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
                onContextMenu={e => ctx.open(e, items, name)} />
         )}
-        {many && <IconButton icon={ChevronLeft} label="Previous picture" className="viewer__nav viewer__nav--prev" variant="secondary"
+        {many && <IconButton icon={ChevronLeft} label="Previous image" className="viewer__nav viewer__nav--prev" variant="secondary"
                              disabled={!onPrev} onClick={() => onPrev?.()} />}
-        {many && <IconButton icon={ChevronRight} label="Next picture" className="viewer__nav viewer__nav--next" variant="secondary"
+        {many && <IconButton icon={ChevronRight} label="Next image" className="viewer__nav viewer__nav--next" variant="secondary"
                              disabled={!onNext} onClick={() => onNext?.()} />}
       </div>
       {panel && <aside className="viewer__panel">{panel}</aside>}

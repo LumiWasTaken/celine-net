@@ -3,7 +3,6 @@
    you in to a private one; each runs until its end time (ends_at) unless it ended before. */
 import { post, request } from './api'
 import type { ServerEvent } from './bus'
-import type { DotTone } from '../ui'
 
 export type ShareState = 'live' | 'down' | 'ended'
 
@@ -20,6 +19,9 @@ export type Share = {
   ends_at: string
   /** the server's word: it answers, nothing answers, or it ended */
   state: ShareState
+  /** the card's words, from the server: what is shared and from where while it runs
+   *  ("Port 8000 in the shellbox"), else "Not running" or "Ended" */
+  line: string
   /** where it opens, in a tab of its own */
   url: string
 }
@@ -40,13 +42,6 @@ export const sharesApi = {
 /** its share or its end (any, without a token) */
 export const shareEvent = (token?: string) => (ev: ServerEvent) =>
   ev.type === 'share.updated' && (token === undefined || ev.token === token)
-
-/** a share's state as its dot */
-export const SHARE_DOT: Record<ShareState, { tone: DotTone; label: string }> = {
-  live: { tone: 'ok', label: 'Running' },
-  down: { tone: 'off', label: 'Not running' },
-  ended: { tone: 'off', label: 'Ended' },
-}
 
 /** the card's data in a call's display, if it shared something */
 export function shareOf(display: Record<string, unknown> | null | undefined): ShareCardData | null {

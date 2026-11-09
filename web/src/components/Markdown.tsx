@@ -233,7 +233,7 @@ export function RefChip({ refId }: { refId: string }) {
   if (entry.state !== 'ok') {
     return (
       <span className="refchip refchip--quiet" title={entry.state === 'error' ? entry.error : undefined}>
-        {entry.state === 'missing' ? 'a message not in the archive' : 'a message'}
+        {entry.state === 'missing' ? 'a message not in Messages' : 'a message'}
         {entry.state === 'error' && (
           <IconButton className="refcard__retry" size="sm" icon={RefreshCw} label="Retry" onClick={() => retryRef(refId)} />
         )}
@@ -264,7 +264,7 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
     const refId = decodeURIComponent(href.slice(INVALID.length))
     return (
       <span className="refchip refchip--invalid"
-            title="This citation failed the check: the message was never shown in the conversation, or it does not say what the reply says.">
+            title="This citation failed the check: the message was never shown in the chat, or it does not say what the reply says.">
         <Link2Off size={ICON.sm} aria-hidden />
         <span>{refId}</span>
         <span>Invalid</span>
@@ -295,7 +295,7 @@ function RefCard({ refId, preview = false }: { refId: string; preview?: boolean 
     return <span className="refcard refcard--loading"><MessageSquareQuote size={ICON.sm} aria-hidden /> {refId}</span>
   }
   if (entry.state === 'missing') {
-    return <span className="refcard refcard--missing" title="Not in the archive">{refId}</span>
+    return <span className="refcard refcard--missing" title="Not in Messages">{refId}</span>
   }
   if (entry.state === 'error') {
     return (

@@ -2,7 +2,7 @@
    `agent.state` on the feed replaces its row, and `changes` (after a reconnect) brings
    them all again. Stop is POST /api/sub-agents/{id}/stop. */
 import { createContext, useState } from 'react'
-import { post, request, type Home } from './api'
+import { post, request, type Crumb, type Home } from './api'
 import { useServerEvents } from './bus'
 import { useResource } from './useResource'
 
@@ -29,14 +29,17 @@ export type Agent = {
   link: string
 }
 
-/** one sub-agent in the tree under a conversation's top (GET /api/conversations/{id}/sub-agents) */
+/** one sub-agent in the tree under a conversation's top (GET /api/conversations/{id}/sub-agents,
+    server/celine/sub_agents/skill.py tree_of) */
 export type TreeAgent = {
   id: string
   parent: string
-  /** 1: started by the top conversation, 3 at most */
+  /** 1: started by the top conversation */
   depth: number
   name: string
   state: 'queued' | 'working' | 'done' | 'stopped' | 'failed' | 'paused'
+  /** why it failed, stopped or paused, the server's words */
+  reason: string | null
   step_words: string | null
   model: string | null
   prompt_tokens: number
@@ -45,9 +48,20 @@ export type TreeAgent = {
   link: string
 }
 
+/** a mission the top or one of its sub-agents started, in the same tree: its status,
+    and its note as the reason while it waits for you or stopped */
+export type TreeMission = Omit<TreeAgent, 'state' | 'step_words'> & {
+  state: 'active' | 'needs_you' | 'done' | 'stopped'
+}
+
 export const agentsApi = {
   list: () => request<{ agents: Agent[] }>('/sub-agents').then(r => r.agents),
-  tree: (cid: string) => request<{ top: string; agents: TreeAgent[] }>(`/conversations/${encodeURIComponent(cid)}/sub-agents`),
+  /** `origin`: where the top came from (the run that started a mission); `total`: what the
+      top and everything under it took */
+  tree: (cid: string) => request<{
+    top: string; origin: Crumb[]; agents: TreeAgent[]; missions: TreeMission[]
+    total: { prompt_tokens: number; completion_tokens: number; seconds: number }
+  }>(`/conversations/${encodeURIComponent(cid)}/sub-agents`),
   stop: (id: string) => post<{ stopped: boolean }>(`/sub-agents/${encodeURIComponent(id)}/stop`),
 }
 

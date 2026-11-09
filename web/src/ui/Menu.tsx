@@ -241,7 +241,7 @@ const side = (el: HTMLElement): 'start' | 'end' => {
 }
 
 /* A button that opens a Menu under itself: an icon button, or with `text` a quiet text
-   button with a chevron (the version menu: text "v4, 18:04", one item per version). */
+   button with a chevron (the version menu: text "Version 4, 18:04", one item per version). */
 export function MenuButton({ icon, text, label, items, size = 'md', className }: {
   icon?: LucideIcon
   /** shown on the button instead of an icon */

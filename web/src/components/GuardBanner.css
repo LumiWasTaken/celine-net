@@ -1,4 +1,4 @@
-/* Bastet's banner between the messages (GuardBanner.tsx): a quiet row in her reply's
+/* Bastet's banner between the messages (GuardBanner.tsx): a quiet row in the agent's reply's
    column, past its face (Transcript.css .msg-quiet); a freeze that holds is the one with
    a tint, so it is not missed */
 .guard-banner {

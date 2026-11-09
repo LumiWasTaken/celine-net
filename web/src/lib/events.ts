@@ -3,7 +3,6 @@
 import { query, request } from './api'
 import type { ServerEvent } from './bus'
 import type { GuardAction } from './guard'
-import type { DotTone } from '../ui'
 
 export type EventRow = {
   id: string
@@ -12,7 +11,7 @@ export type EventRow = {
   title: string
   /** the state in a word: Done, Failed, Running, Stopped, ... */
   outcome: string
-  tone: Extract<DotTone, 'ok' | 'error' | 'warn' | 'running' | 'muted'>
+  tone: 'ok' | 'error' | 'warn' | 'running' | 'muted'
   failed: boolean
   /** the day head it sits under, in the app's zone */
   day: string
@@ -43,7 +42,7 @@ type EventsPage = {
 
 type Choice = { id: string; label: string }
 export type EventsState = 'failed' | 'undecided'
-export type EventsTab = 'guard' | 'celine' | 'background'
+export type EventsTab = 'guard' | 'agent' | 'background'
 
 type EventsQuery = {
   tab?: EventsTab; kind?: string | null; day?: string | null; state?: EventsState | null

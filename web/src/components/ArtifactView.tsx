@@ -1,5 +1,5 @@
 /* One artifact in the kit's detail pattern, in the side panel and as the full page: the head
-   with its title, the version menu ("v3, 14:02", each version's change note as a muted line),
+   with its title, the version menu ("Version 3, 14:02", each version's change note as a muted line),
    Restore this version for an older one, Download (what it wrote, as a file) and Ask Celine
    about this; More holds Move to Trash (or Restore). Below it the page in its sandboxed
    frame, or a document rendered as its replies are. The agent's next version replaces the one on
@@ -7,7 +7,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { AppWindow, ChevronLeft, Download, MessageSquarePlus, RotateCcw, Trash2 } from 'lucide-react'
 import { ApiError } from '../lib/api'
-import { artifactEvent, artifactsApi, kindWord, sourceUrl, type Artifact } from '../lib/artifacts'
+import { artifactEvent, artifactsApi, sourceUrl, type Artifact } from '../lib/artifacts'
 import { stamp } from '../lib/format'
 import { format } from '../lib/nav'
 import { useAction } from '../lib/useAction'
@@ -51,7 +51,9 @@ export function ArtifactView({ id, assistant, onAsk, onBack, extra, onLoaded }: 
       <div className="art">
         {back && <PlaceHead level={1} lead={back} title="" />}
         <div className="art__empty">
-          <EmptyState icon={AppWindow} title="Not found" action={!back && <Button href={format({ section: 'celine' })}>Open {assistant}</Button>} />
+          <EmptyState icon={AppWindow} title="Not found" action={!back && <Button href={format({ section: 'celine' })}>Open {assistant}</Button>}>
+            {!back && 'Nothing at this link.'}
+          </EmptyState>
         </div>
       </div>
     )
@@ -65,12 +67,11 @@ export function ArtifactView({ id, assistant, onAsk, onBack, extra, onLoaded }: 
     )
   }
   const n = picked ?? a.n
-  const word = kindWord(a.kind)
-  const file = `${a.title.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || word}.${a.kind === 'html' ? 'html' : 'md'}`
+  const file = `${a.title.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'page'}.${a.kind === 'html' ? 'html' : 'md'}`
   const failed = restore.error ?? trash.error
   // the full page leads back to the conversation it was made in
   const lead = back || (a.link
-    ? <IconButton icon={ChevronLeft} label="Open conversation" href={a.link} />
+    ? <IconButton icon={ChevronLeft} label="Open chat" href={a.link} />
     : undefined)
   return (
     <div className="art">
@@ -83,9 +84,9 @@ export function ArtifactView({ id, assistant, onAsk, onBack, extra, onLoaded }: 
                                  label: version(v.n, a), detail: v.note || undefined, title: v.note || undefined, current: v.n === n,
                                  onSelect: () => setPicked(v.n === a.n ? null : v.n),
                                }))} />
-                   <IconButton icon={Download} label={`Download v${n}`} href={sourceUrl(a.id, n)} download={file} />
+                   <IconButton icon={Download} label={`Download version ${n}`} href={sourceUrl(a.id, n)} download={file} />
                    <IconButton icon={MessageSquarePlus} label={`Ask ${assistant} about this`}
-                               onClick={() => onAsk(`About this ${word}: `, [`artifact:${a.id}`])} />
+                               onClick={() => onAsk('About this page: ', [`artifact:${a.id}`])} />
                    {extra}
                  </>}
                  more={a.trashed_at
@@ -99,10 +100,10 @@ export function ArtifactView({ id, assistant, onAsk, onBack, extra, onLoaded }: 
   )
 }
 
-/* "v4, 18:04": the version and when it was made */
+/* "Version 4, 18:04": the version and when it was made */
 function version(n: number, a: Artifact): string {
   const v = a.versions.find(x => x.n === n)
-  return v ? `v${n}, ${stamp(v.created_at)}` : `v${n}`
+  return v ? `Version ${n}, ${stamp(v.created_at)}` : `Version ${n}`
 }
 
 /* a markdown document: its text, rendered by the app as its replies are; no frame, no script */

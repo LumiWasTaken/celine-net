@@ -19,22 +19,21 @@
    `ModelRow` is the model alone with a button that opens the chooser, for the heads of
    places that talk without this panel (a mission). */
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeftRight } from 'lucide-react'
-import { conversationApi, type ContextView, type Job, type NewConversationSettings } from '../lib/api'
+import { ArrowLeftRight, Bot } from 'lucide-react'
+import { conversationApi, request, type ContextView, type Job, type NewConversationSettings } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
 import { duration, errorText, num } from '../lib/format'
 import { agentsApi, type TreeAgent } from '../lib/agents'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useFeatureOn } from '../lib/features'
 import { format } from '../lib/nav'
-import { usePronouns } from '../lib/name'
 import { SETTINGS_EVENTS, settingsApi, type ConversationSettings } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useConversationSettings } from '../lib/useConversationSettings'
 import {
-  Button, Choice, cx, Drawer, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Switch, Tabs,
-  type DotTone,
+  Button, Choice, cx, Drawer, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Sheet, StateWord, Switch, Tabs, TextArea, useCopied,
+  type WordTone,
 } from '../ui'
 import { ModelChooser, findModel, modelName } from './ModelChooser'
 import { ToolList } from './ToolList'
@@ -87,7 +86,7 @@ export function ConversationPanel({
           {conversationId
             ? <ModelTab key={conversationId} cid={conversationId} enabled={open} live={live} />
             : <DraftModel draft={draft} onDraft={onDraft} enabled={open} />}
-          {conversationId && <Jobs jobs={jobs.data ?? []} error={jobs.error} reload={jobs.reload} active={open} />}
+          {conversationId && <Jobs jobs={jobs.data ?? []} error={jobs.error} reload={jobs.reload} />}
         </div>
       )}
       {tab === 'tools' && (conversationId
@@ -108,18 +107,18 @@ export function ConversationPanel({
 const AGENT_WORD: Record<TreeAgent['state'], string> = {
   queued: 'Queued', working: 'Running', done: 'Done', stopped: 'Stopped', failed: 'Failed', paused: 'Paused',
 }
-const AGENT_DOT: Record<TreeAgent['state'], DotTone> = {
-  queued: 'running', working: 'running', done: 'ok', stopped: 'muted', failed: 'error', paused: 'warn',
+const AGENT_TONE: Record<TreeAgent['state'], WordTone> = {
+  queued: 'running', working: 'running', done: 'success', stopped: 'muted', failed: 'error', paused: 'warn',
 }
 
 function AgentsTab({ agents, here }: { agents: TreeAgent[]; here: string | null }) {
   return (
     <div className="chat-panel" role="list" aria-label="Sub-agents">
       {agents.map(a => (
-        <ListRow key={a.id} density="md" depth={a.depth - 1} dot={AGENT_DOT[a.state]} title={a.name}
-                 subtitle={a.state === 'working' ? a.step_words ?? AGENT_WORD.working : AGENT_WORD[a.state]}
+        <ListRow key={a.id} density="md" depth={a.depth - 1} running={a.state === 'working' || a.state === 'queued'} icon={Bot} title={a.name}
+                 subtitle={a.state === 'working' ? a.step_words ?? AGENT_WORD.working : <StateWord tone={AGENT_TONE[a.state]}>{AGENT_WORD[a.state]}</StateWord>}
                  meta={duration(a.seconds * 1000)} aside={a.model ?? undefined}
-                 detail={`${num(a.prompt_tokens)} in, ${num(a.completion_tokens)} out`}
+                 detail={`${num(a.prompt_tokens)} tokens in, ${num(a.completion_tokens)} out`}
                  muted={a.state !== 'working' && a.state !== 'queued'} selected={a.id === here} href={a.link} />
       ))}
     </div>
@@ -262,30 +261,37 @@ export function ModelRow({ cid, enabled = true, live, head = false }: {
   )
 }
 
-/* ── Context: the tokens of the window in use, per block; its notes, each with its state
-   and a switch that leaves it out of this conversation (PATCH notes_off, the whole list).
-   Measured again after every turn state and every change of the list. Tokens only. ── */
+/* ── Context: the tokens of the window in use, per block, each row opening its text as the
+   next request carries it (GET /conversations/{cid}/context/{block}) with Copy; its notes,
+   each with its state and a switch that leaves it out of this conversation (PATCH
+   notes_off, the whole list). Measured again after every turn state and every change of
+   the list. ── */
 type Block = ContextView['blocks'][number]['name']
-const BLOCK: Record<Exclude<Block, 'persona' | 'talk'>, string> = {
-  about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Conversation',
+const BLOCK: Record<Block, string> = {
+  persona: 'Persona', talk: 'Example lines', about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Chat',
 }
-/** a block's name, the ones about it in its pronouns ("Who he is", "How they talk") */
-function blockWord(b: Block, subject: string): string {
-  const they = subject === 'they'
-  if (b === 'persona') return `Who ${subject} ${they ? 'are' : 'is'}`
-  if (b === 'talk') return `How ${subject} ${they ? 'talk' : 'talks'}`
-  return BLOCK[b]
+
+/** one block's text as it goes out, with Copy */
+function BlockText({ cid, block, title, onClose }: { cid: string; block: Block; title: string; onClose: () => void }) {
+  const res = useResource(() => request<{ name: string; text: string }>(
+    `/conversations/${encodeURIComponent(cid)}/context/${block}`), [cid, block])
+  const [copied, copyIt] = useCopied()
+  return (
+    <Sheet title={title} size="lg" onClose={onClose}
+           actions={res.data && <Button onClick={() => void copyIt(res.data!.text)}>{copied ? 'Copied' : 'Copy'}</Button>}>
+      {res.data ? <TextArea readOnly mono rows={12} max={40} value={res.data.text} aria-label={title} /> : <Loaded res={res} />}
+    </Sheet>
+  )
 }
 
 function noteWord(n: ContextView['notes'][number], off: boolean): string {
-  if (off) return 'Off in this conversation'
+  if (off) return 'Off in this chat'
   return `${num(n.tokens)} tokens`
 }
 
 function ContextTab({ cid, notesOff, turnKey, enabled }: {
   cid: string; notesOff: string[]; turnKey: string; enabled: boolean
 }) {
-  const { subject } = usePronouns()
   const ctx = useResource(() => conversationApi.context(cid), [cid, turnKey, notesOff.join('\n')],
     { enabled, events: ev => ev.type === 'conversation.auto_context' && ev.id === cid })
   const [error, setError] = useState<string | null>(null)
@@ -293,6 +299,7 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
   const sent = useRef(notesOff)
   useEffect(() => { sent.current = notesOff }, [notesOff])
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(cid, on); ctx.reload() })
+  const [open, setOpen] = useState<Block | null>(null)
   const c = ctx.data
   if (!c) return <Loaded res={ctx} compact inline />
   const used = c.blocks.reduce((n, b) => n + b.tokens, 0)
@@ -313,8 +320,11 @@ function ContextTab({ cid, notesOff, turnKey, enabled }: {
           <span className={cx('chat-ctx__total', used > c.window && 'chat-ctx__total--over')}><b>{num(used)}</b> of {num(c.window)} tokens</span>
           <Progress value={used} max={c.window} label="Context" />
         </div>
-        {c.blocks.filter(b => b.tokens > 0).map(b => <ListRow key={b.name} density="sm" title={blockWord(b.name, subject)} meta={num(b.tokens)} />)}
+        {c.blocks.filter(b => b.tokens > 0).map(b => (
+          <ListRow key={b.name} density="sm" title={BLOCK[b.name]} meta={num(b.tokens)} onClick={() => setOpen(b.name)} />
+        ))}
       </div>
+      {open && <BlockText cid={cid} block={open} title={BLOCK[open]} onClose={() => setOpen(null)} />}
       <div className="chat-ctx__list" role="list" aria-label="Notebook">
         <ListSection label="Notebook" />
         {error && <InlineError compact message={error} />}

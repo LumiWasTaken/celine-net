@@ -71,7 +71,7 @@ export function Picture({ src, full, name, ratio = '1', more = [], gallery, at =
       </button>
       {failed === src && (
         <div className="picture__failed">
-          <span>Couldn't load the picture.</span>
+          <span>Could not load the image.</span>
           <Button size="sm" variant="secondary" onClick={() => { setFailed(null); setAttempt(n => n + 1) }}>Retry</Button>
         </div>
       )}

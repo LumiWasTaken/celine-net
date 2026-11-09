@@ -101,12 +101,12 @@ function ModalDialog(props: DialogProps) {
     return [leave(g, OUT.fade, '--dur'), leave(panel, sheet ? OUT.down : OUT.shrink, '--dur')]
   })
 
-  // app inert while any dialog is open; focus returns to the opener on close
+  // app inert while any dialog is open; focus returns to the opener on close. The opener
+  // is read while the dialog renders: a child's autoFocus takes the focus as it mounts,
+  // before any effect of the dialog runs
   useModal()
-  useLayoutEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    return () => { if (opener && document.contains(opener)) opener.focus({ preventScroll: true }) }
-  }, [])
+  const [opener] = useState(() => document.activeElement as HTMLElement | null)
+  useLayoutEffect(() => () => { if (opener && document.contains(opener)) opener.focus({ preventScroll: true }) }, [opener])
 
   // focus in: an autoFocus child already has it; otherwise the first field or button
   // in the body, then the actions (never the close X first). On a touch screen a field

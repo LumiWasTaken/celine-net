@@ -6,7 +6,7 @@ import { Bot, CalendarClock, FileText, Mail } from 'lucide-react'
 import { api, type ConversationSummary } from '../lib/api'
 import { agentsApi, type Agent } from '../lib/agents'
 import { documentsApi } from '../lib/documents'
-import { listTime, nothingMatches, shortDate } from '../lib/format'
+import { listTime, noneMatch, shortDate } from '../lib/format'
 import { intercomApi } from '../lib/intercom'
 import { nightWords, routinesApi } from '../lib/routines'
 import { useNav, type Route } from '../lib/nav'
@@ -100,7 +100,7 @@ export function Switcher({ onClose }: { onClose: () => void }) {
       {!data.data && !data.error && <LoadingRow />}
       {data.data && (
         <div ref={list} className="switcher" id="switcher-list" role="listbox" aria-label="Results">
-          {items.length === 0 && <EmptyState compact>{nothingMatches(q)}</EmptyState>}
+          {items.length === 0 && <EmptyState compact>{noneMatch('items')}</EmptyState>}
           {items.slice(0, 80).map((i, n) => (
             <div key={i.key} id={`sw-${i.key}`} role="option" aria-selected={n === at} onMouseEnter={() => setAt(n)}>
               <ListRow className="switcher__row" title={i.title} subtitle={i.detail || undefined} selected={n === at}
@@ -115,9 +115,9 @@ export function Switcher({ onClose }: { onClose: () => void }) {
 }
 
 const KEYS: [string, string][] = [
-  ['Ctrl K', 'Go to a conversation, a document, a thread, a schedule or a day of Routines'],
-  ['Ctrl Shift O', 'New conversation here'],
-  ['Alt Up, Alt Down', 'Go to the conversation above or below'],
+  ['Ctrl K', 'Go to a chat, a document, a thread, a schedule or a day of Routines'],
+  ['Ctrl Shift O', 'New chat here'],
+  ['Alt Up, Alt Down', 'Go to the chat above or below'],
   ['Enter', 'Send'],
   ['Shift Enter', 'New line'],
   ['Esc', 'Stop the reply when the message box is empty, or close an open run or schedule'],
@@ -130,7 +130,7 @@ const KEYS: [string, string][] = [
 
 export function Shortcuts({ onClose }: { onClose: () => void }) {
   return (
-    <Sheet title="Shortcuts" onClose={onClose}>
+    <Sheet title="Keyboard shortcuts" onClose={onClose}>
       <dl className="shortcuts">
         {KEYS.map(([k, what]) => (
           <div key={k}><dt>{k.split(', ').map((c, i) => <span key={c}>{i > 0 && ' or '}{c.split(' ').map(x => <kbd key={x}>{x}</kbd>)}</span>)}</dt><dd>{what}</dd></div>

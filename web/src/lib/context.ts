@@ -4,7 +4,7 @@
 import { json, request } from './api'
 
 /** its mood and the time since the last talk, for the message a reply answers (skills/mind.py) */
-export type OnHerMind = {
+export type OnItsMind = {
   mood: string | null
   gap: string | null
 }
@@ -17,7 +17,7 @@ export const contextApi = {
     request<{ on: boolean }>(`/conversations/${e(cid)}/auto-context`, json('PUT', { on })),
   /** the context block of the message a reply (`mid`, its first step) answers */
   ofReply: (cid: string, mid: string) =>
-    request<{ text: string; report: { mind?: OnHerMind } }>(`/conversations/${e(cid)}/messages/${e(mid)}/context`),
+    request<{ text: string; report: { mind?: OnItsMind } }>(`/conversations/${e(cid)}/messages/${e(mid)}/context`),
 }
 
 /** the switch's label, where the server offers it (missions) */

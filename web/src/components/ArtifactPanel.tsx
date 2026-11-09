@@ -2,8 +2,8 @@
    (a page whose conversation was deleted is in All); Trash shows the trashed ones instead,
    each with Restore and Delete permanently. One picked shows beside the chat (ArtifactView);
    Ask Celine about this adds to the open conversation's draft. Below its pages, under
-   Shared from its box, what it shares from its box that runs (lib/shares), as the cards
-   under its replies: each opens in a new tab. ConversationPanel imports it with
+   Shares, what it shares that runs (lib/shares), as the cards under its replies: each
+   opens in a new tab. ConversationPanel imports it with
    these props. */
 import { useState } from 'react'
 import { AppWindow, ExternalLink, FileText, MoreHorizontal, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
@@ -11,7 +11,6 @@ import { draftToCeline } from '../lib/ask'
 import { artifactEvent, artifactsApi, type ArtifactRow } from '../lib/artifacts'
 import { shareEvent, sharesApi } from '../lib/shares'
 import { stamp } from '../lib/format'
-import { useOwner } from '../lib/name'
 import { format } from '../lib/nav'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
@@ -47,7 +46,6 @@ function ArtifactList({ conversationId, onPick, active }: {
   conversationId: string | null; onPick: (id: string) => void; active: boolean
 }) {
   const [chosen, setScope] = useState<Scope>('here')
-  const owner = useOwner()
   const scope = !conversationId && chosen === 'here' ? 'all' : chosen
   const [trashed, setTrashed] = useState(false)
   const ctx = useContextMenu()
@@ -70,7 +68,7 @@ function ArtifactList({ conversationId, onPick, active }: {
       <div className="artlist__bar">
         <Choice label="Which pages" value={scope} onChange={setScope}
                 options={[
-                  ...(conversationId ? [{ value: 'here' as const, label: 'This conversation' }] : []),
+                  ...(conversationId ? [{ value: 'here' as const, label: 'This chat' }] : []),
                   { value: 'all', label: 'All' },
                 ]} />
         <ShelfButton shelf="trash" on={trashed} onChange={setTrashed} />
@@ -93,7 +91,7 @@ function ArtifactList({ conversationId, onPick, active }: {
                        trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(r)} size="sm" />} />
             )
           })}
-          {shares.length > 0 && <ListSection label={`Shared from ${owner} box`} />}
+          {shares.length > 0 && <ListSection label="Shares" />}
           <ShareCards cards={shares} />
         </div>
       )}

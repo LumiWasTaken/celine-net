@@ -3,7 +3,7 @@
    it ("Creating image" while the prompt is still being written, the server's line above
    it while it waits) and Stop; when it failed, the same shape, still, with the server's
    line in plain words and Retry, the item made again as it was asked (Open Settings too
-   when it needs the user; stopped, "Paused." and Regenerate); done, the
+   when it needs the user; stopped, "Stopped." and Retry); done, the
    picture fills it and a click opens the Viewer, titled by what it shows, its prompt under
    it, preset, size and seed in "...". Under a done picture, on hover,
    focus or tap, a row of reserved height with "..."; a right-click or a long press opens
@@ -40,7 +40,7 @@ export function PictureBlock({ pic, onStop, onRetry, className }: {
   const w = pic.picture?.width ?? pic.width ?? 1, h = pic.picture?.height ?? pic.height ?? 1
   const shape = { '--shape': `${w} / ${h}` } as CSSProperties
   const failed = pic.status === 'failed'
-  const paused = failed && pic.line === 'Paused.'
+  const stopped = failed && pic.line === 'Stopped.'
   const making = pic.status === 'running'
   const setting = failed && pic.line ? settingOf(pic.line) : null
   const owner = failed && needsOwner(pic.line)
@@ -69,7 +69,7 @@ export function PictureBlock({ pic, onStop, onRetry, className }: {
         <div className={cx('picture-block__box', making && 'is-making')} title={pic.prompt || undefined}>
           {making && <span className="picture-block__shade" aria-hidden />}
           <div className="picture-block__say">
-            {failed && pic.line && !paused
+            {failed && pic.line && !stopped
               ? <Notice compact tone="error">{pic.line}</Notice>
               : pic.line && <span className="picture-block__line" role="status">{pic.line}</span>}
             {(making || pic.prompt) && (
@@ -84,7 +84,7 @@ export function PictureBlock({ pic, onStop, onRetry, className }: {
               )}
               {failed && onRetry && (
                 <Button size="sm" variant={owner ? 'ghost' : 'secondary'} icon={RefreshCw} loading={retry.busy}
-                        onClick={() => void retry.run()}>{paused ? 'Regenerate' : 'Retry'}</Button>
+                        onClick={() => void retry.run()}>Retry</Button>
               )}
             </span>
             {(retry.error || portrait.error) && <InlineError compact message={retry.error ?? portrait.error} />}

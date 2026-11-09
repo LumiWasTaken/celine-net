@@ -20,9 +20,11 @@ import './editor.css'
     what it is for Celine's drafts (`of`, else the editor's) */
 export type EditorText = { key: string; label?: string; value: string; of?: TextOf }
 
-export function LongEditor({ crumbs, title, of, history, more = [], top, texts, after, hint, onSave, onCancel, dirty: outside = false, autosave = false }: {
+export function LongEditor({ crumbs, title, help, of, history, more = [], top, texts, after, hint, onSave, onCancel, dirty: outside = false, autosave = false }: {
   crumbs: Crumb[]
   title: string
+  /** what the item is, behind a "?" after the title (the server's words) */
+  help?: string
   /** what the texts are (History, Ask Celine); a new item has none yet */
   of?: TextOf
   /** the History page of this item, the caller's route; a new item has none */
@@ -71,7 +73,7 @@ export function LongEditor({ crumbs, title, of, history, more = [], top, texts, 
 
   return (
     <div className="page page--fill led">
-      <PlaceHead level={1} crumbs={crumbs} title={title}
+      <PlaceHead level={1} crumbs={crumbs} title={title} help={help}
                  actions={history && <Button icon={History} href={history}>History</Button>} more={more} />
       <div className="led-body">
         <div className="led-main">

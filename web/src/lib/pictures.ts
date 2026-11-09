@@ -33,7 +33,7 @@ export function pictureOf(i: BatchItem): PictureState {
   const status = done ? 'done' : i.state === 'failed' || i.state === 'stopped' ? 'failed' : 'running'
   return {
     status, prompt: i.prompt ?? null, picture: done ? i.attachment! : null,
-    line: i.state === 'stopped' ? 'Paused.' : i.state === 'failed' ? i.error ?? null : i.note ?? null,
+    line: i.state === 'stopped' ? 'Stopped.' : i.state === 'failed' ? i.error ?? null : i.note ?? null,
     preset: i.preset ?? null, width: i.attachment?.width ?? i.width ?? null, height: i.attachment?.height ?? i.height ?? null,
     seed: i.seed ?? null,
   }

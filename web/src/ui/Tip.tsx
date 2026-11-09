@@ -6,7 +6,8 @@
    it. A touch screen has no hover: a long press on an icon button (or a head's button that
    lost its words) shows its tip, and the tap that ends the press does nothing else (a
    row's long press is its menu, so not in a row). A disabled kit button is aria-disabled, so the reason in its tip still shows.
-   Text: starts with a verb, about 70 characters at most. */
+   Text: starts with a verb, about 70 characters at most; a name or the reason a control
+   is off, never an explanation (that is the "?", Help). */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { leave, ms, OUT, useLeave } from './motion'
@@ -114,6 +115,19 @@ export function TipLayer() {
   return tip ? createPortal(<TipBox key={tip.text} id={id} text={tip.text} el={tip.el} />, document.body) : null
 }
 
+/** where a box of `w` by `h` goes beside the control at `r`: on the `prefer`red side,
+    the other when it would leave the window there; always 8 px inside the window.
+    The tip and the "?" (Help) place their boxes with it. */
+export function placeNear(r: DOMRect, w: number, h: number, prefer: 'above' | 'below'): { left: number; top: number } {
+  const gap = 6
+  const above = r.top - h - gap, below = r.bottom + gap
+  const top = prefer === 'above'
+    ? (above < 8 ? below : above)
+    : (below + h > window.innerHeight - 8 ? Math.max(8, above) : below)
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8)
+  return { left, top }
+}
+
 /* above the control, below it at the top edge, always inside the window */
 function TipBox({ id, text, el }: { id: string; text: string; el: HTMLElement }) {
   const box = useRef<HTMLDivElement>(null)
@@ -122,10 +136,7 @@ function TipBox({ id, text, el }: { id: string; text: string; el: HTMLElement })
   useLayoutEffect(() => {
     const b = box.current
     if (!b) return
-    const r = el.getBoundingClientRect(), w = b.offsetWidth, h = b.offsetHeight, gap = 6
-    const top = r.top - h - gap < 8 ? r.bottom + gap : r.top - h - gap
-    const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8)
-    setPos({ left, top })
+    setPos(placeNear(el.getBoundingClientRect(), b.offsetWidth, b.offsetHeight, 'above'))
   }, [el, text])
   return (
     <div ref={box} id={id} role="tooltip" className="tip" style={pos ?? { left: -9999, top: -9999 }}>{text}</div>

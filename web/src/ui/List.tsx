@@ -4,8 +4,8 @@ import {
   useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Key, type ReactNode, type Ref,
 } from 'react'
 import { measureElement, useVirtualizer } from '@tanstack/react-virtual'
-import { Check, type LucideIcon } from 'lucide-react'
-import { DisclosureArrow, Dot, Progress, type DotTone } from './Bits'
+import { Check, LoaderCircle, type LucideIcon } from 'lucide-react'
+import { DisclosureArrow, Progress } from './Bits'
 import { cx } from './cx'
 import { ICON } from './icons'
 import { useMove } from './motion'
@@ -14,12 +14,12 @@ import type { useContextMenu } from './Menu'
 
 /* ── ListRow ── */
 export function ListRow({
-  leading, dot, icon: Icon, iconAccent = false, title, subtitle, detail, body, meta, aside, column, cell, depth = 0, trailing, trailingAlways = false, selected = false, muted = false,
-  unread = false, checked, onCheck, progress, density = 'md', href, onClick, onContextMenu, press: hold, tooltip, className, style, pick,
+  leading, running = false, icon: Icon, iconAccent = false, title, subtitle, detail, body, meta, aside, column, cell, depth = 0, trailing, trailingAlways = false, selected = false, muted = false,
+  checked, onCheck, progress, density = 'md', href, onClick, onContextMenu, press: hold, tooltip, className, style, pick,
 }: {
   leading?: ReactNode
-  /** a state dot before the name (instead of `leading`) */
-  dot?: DotTone
+  /** at work: the kit's spinner in the icon tile (as EventLine's), never a dot */
+  running?: boolean
   /** a glyph on a tile before the name (instead of `leading`): a folder */
   icon?: LucideIcon
   /** the tile in the accent wash: the one that is home (Real life) */
@@ -32,8 +32,6 @@ export function ListRow({
   detail?: ReactNode
   /** text that wraps under the title (a lore entry, a found passage), at most three lines */
   body?: ReactNode
-  /** new to you: the title strong, an accent dot at the end of its line */
-  unread?: boolean
   /** a check that is always there (a channel to include, a model to add): the row toggles it */
   checked?: boolean
   onCheck?: (checked: boolean) => void
@@ -78,7 +76,7 @@ export function ListRow({
   const box = picking ? pick!.checked : onCheck ? checked : undefined
   const wide = column !== undefined || cell !== undefined
   const cls = cx('list-row', density !== 'md' && `list-row--${density}`, wide && 'list-row--wide', picking && 'list-row--picking',
-                 muted && 'list-row--muted', unread && 'list-row--unread', body != null && 'list-row--body', className)
+                 muted && 'list-row--muted', body != null && 'list-row--body', className)
   const hasMeta = meta != null && meta !== false
   const current = selected && !picking ? 'true' as const : undefined
   if (pick) {
@@ -94,13 +92,12 @@ export function ListRow({
     <>
       {box !== undefined && <span className={cx('list-row__pick', box && 'is-on')} aria-hidden>{box && <Check size={ICON.sm} />}</span>}
       {depth > 0 && <span className="list-row__tree" style={{ '--d': depth } as CSSProperties} aria-hidden />}
-      {dot ? <Dot tone={dot} />
+      {running ? <span className="list-row__icon" aria-hidden><LoaderCircle size={ICON.md} className="spin" /></span>
         : Icon ? <span className={cx('list-row__icon', iconAccent && 'list-row__icon--accent')} aria-hidden><Icon size={ICON.md} /></span>
         : leading}
       <span className="list-row__main">
         <span className="list-row__line">
           <span className="list-row__title">{title}</span>
-          {unread && <Dot tone="accent" label="Unread" />}
           {hasMeta && <span className={cx('list-row__meta', wide && 'list-row__meta--line')}>{meta}</span>}
         </span>
         {(subtitle || aside) && (

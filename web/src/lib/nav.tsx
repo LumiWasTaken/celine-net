@@ -32,6 +32,7 @@
    /settings/agent/edit/<key>[/history]   one of its long texts (persona, talk, banned) in the
                                       large editor, or its History
    /settings/guard/edit/<key>[/history]   one of Bastet's (persona, talk, note), the same way
+   /settings/prompts/edit/<id>[/history]  one text a model reads (Settings, Prompts), the same way
    /search?q=…&source=…&chat=…&person=…   the Search page
    /welcome  /welcome/<step>            the onboarding (it, you, model, features, done), shown
                                       without the rail until the features were saved once
@@ -154,8 +155,8 @@ function parse(pathname: string, search = ''): Parsed {
       return { route: { section: 'documents', item: num(a), folder } }
     }
     case 'settings':
-      // her page's and Bastet's long texts: /settings/agent|guard/edit/<key>[/history]
-      if ((a === 'agent' || a === 'guard') && b === 'edit' && c) return { route: { section: 'settings', page: a, ...editing(c, d) }, redirect: !!d && d !== 'history' }
+      // the agent's page's and Bastet's long texts, and the prompts: /settings/agent|guard|prompts/edit/<key>[/history]
+      if ((a === 'agent' || a === 'guard' || a === 'prompts') && b === 'edit' && c) return { route: { section: 'settings', page: a, ...editing(c, d) }, redirect: !!d && d !== 'history' }
       return { route: { section: 'settings', page: a, sub: b } }
     case 'welcome':
       return { route: { section: 'welcome', step: a }, redirect: !!b }
@@ -174,11 +175,11 @@ function parse(pathname: string, search = ''): Parsed {
 }
 
 /* where you left off, on this device: the place on screen and each place's last route
-   (a rail click goes back there, also after a reload). Setup and an artifact page are
-   never a place to come back to. */
+   (a rail click goes back there, also after a reload). Setup, an artifact page and
+   Settings are never a place to come back to: Settings always opens at its start. */
 const LEFT_OFF = 'nav'
 type LeftOff = { at?: string; places?: Partial<Record<Section, string>> }
-const stay = (r: Route) => r.section !== 'welcome' && r.section !== 'artifact'
+const stay = (r: Route) => r.section !== 'welcome' && r.section !== 'artifact' && r.section !== 'settings'
 
 /** a path kept on this device as its route, or null (not a path, the root, a place not to come back to) */
 function kept(path: unknown): Route | null {
@@ -274,8 +275,10 @@ export function refHref(ref: string): string | null {
 export type Nav = {
   route: Route
   go: (r: Route, opts?: { replace?: boolean }) => void
-  /** a rail click: back to where you last were in that section */
+  /** a rail click: back to where you last were in that section (Settings: its start) */
   goSection: (s: Section) => void
+  /** the page this one was opened from (history.back), else `fallback` in its place */
+  back: (fallback: Route) => void
   /** navigate to an in-app path string ('/chats/…') */
   goPath: (path: string, opts?: { replace?: boolean }) => void
   openRef: (ref: string) => void
@@ -318,7 +321,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
     const here = location.pathname + location.search
     if (url === here) return
     if (replace) history.replaceState(history.state, '', url)
-    else history.pushState(null, '', url)
+    else history.pushState({ from: here }, '', url)
   }, [])
 
   const go = useCallback((r: Route, opts?: { replace?: boolean }) => {
@@ -336,7 +339,13 @@ export function NavProvider({ children }: { children: ReactNode }) {
 
   const goSection = useCallback((s: Section) => {
     if (routeRef.current.section === s) return
-    go(last.current[s] ?? { section: s } as Route)
+    const r = last.current[s]
+    go(r && stay(r) ? r : { section: s } as Route)
+  }, [go])
+
+  const back = useCallback((fallback: Route) => {
+    if ((history.state as { from?: string } | null)?.from) history.back()
+    else go(fallback, { replace: true })
   }, [go])
 
   const openRef = useCallback((ref: string) => {
@@ -377,8 +386,8 @@ export function NavProvider({ children }: { children: ReactNode }) {
   }, [goPath])
 
   const value = useMemo<Nav>(() => ({
-    route, go, goSection, goPath, openRef, openDocument,
-  }), [route, go, goSection, goPath, openRef, openDocument])
+    route, go, goSection, back, goPath, openRef, openDocument,
+  }), [route, go, goSection, back, goPath, openRef, openDocument])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

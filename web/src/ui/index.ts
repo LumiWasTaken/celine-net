@@ -7,6 +7,7 @@ export { Notice, InlineError, StatusLine, LoadingRow, EmptyState, Loaded, type N
 export { Dialog, ConfirmDialog, CloseButton, Sheet, useModal } from './Dialog'
 export { Menu, MenuButton, useContextMenu, type MenuItem } from './Menu'
 export { TipLayer } from './Tip'
+export { Help } from './Help'
 export { leave, ms, curve, reduced, OUT, useLeave, useMove, glideAfter, type Exit } from './motion'
 export { Face, type FaceSize } from './Face'
 export { Viewer } from './Viewer'
@@ -19,7 +20,7 @@ export { toast, copy, copied, useCopied, ToastHost } from './Toast'
 export { PlaceHead, Toolbar, GroupHead, type Crumb, type ToolChoice } from './Head'
 export { SelectBar, usePicker, type BulkAction, type BulkResult, type PickProps, type Picker } from './Select'
 export {
-  Chip, Dot, Dots, type DotTone, EventLine, Step, Divider, Quote, Snippet, Thoughts, Fold, Facts, SourceGlyph, sourceIcon, sourceLabel, Avatar, Segmented, Filters, Tabs, type Option, Progress, DisclosureArrow,
+  Chip, Dots, StateWord, type WordTone, EventLine, Step, Divider, Quote, Snippet, Thoughts, Fold, Facts, SourceGlyph, sourceIcon, sourceLabel, Avatar, Segmented, Filters, Tabs, type Option, Progress, DisclosureArrow,
 } from './Bits'
 export { Message, ComposerBox, isSendKey } from './Message'
 export { Place, usePlace } from './Place'

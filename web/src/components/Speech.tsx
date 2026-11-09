@@ -143,15 +143,15 @@ export function SpeechControls({ conversation, active, disabled, onTranscript }:
   const busy = state !== 'idle'
   return <div className="speech-controls">
     {speech.input && <IconButton icon={state === 'recording' ? Square : Mic}
-      label={state === 'recording' ? 'Finish recording' : state === 'idle' ? 'Dictate' : 'Cancel dictation'}
+      label={state === 'recording' ? 'Stop recording' : state === 'idle' ? 'Dictate' : 'Cancel dictation'}
       variant={state === 'recording' ? 'danger' : 'ghost'} disabled={disabled || !active}
       onClick={() => state === 'recording' ? capture.current?.stop() : busy ? cancel() : void start()} />}
     {busy && <IconButton icon={X} label="Cancel dictation" onClick={cancel} />}
-    {speech.playing && <IconButton icon={Square} label="Stop playback" onClick={speech.stop} />}
-    {speech.resume && <IconButton icon={Volume2} label="Play audio" onClick={speech.resume} />}
+    {speech.playing && <IconButton icon={Square} label="Stop" onClick={speech.stop} />}
+    {speech.resume && <IconButton icon={Volume2} label="Read aloud" onClick={speech.resume} />}
     <IconButton icon={Settings2} label="Speech options" pressed={open} onClick={() => setOpen(v => !v)} />
     {(busy || speech.playing || error || speech.error) && <div className="speech-controls__status" role="status">
-      {error || speech.error || (state === 'recording' ? 'Recording' : state === 'permission' ? 'Allow the microphone in your browser' : state === 'transcribing' ? 'Transcribing' : speech.resume ? 'Press Play audio to listen' : 'Reading aloud')}
+      {error || speech.error || (state === 'recording' ? 'Recording' : state === 'permission' ? 'Allow the microphone in your browser.' : state === 'transcribing' ? 'Transcribing' : speech.resume ? 'Press Read aloud to listen.' : 'Reading aloud')}
     </div>}
     {open && <Dialog title="Speech options" onClose={() => setOpen(false)}>
       {speech.input && <>
@@ -180,6 +180,6 @@ export function useReplySpeech(id: string, cid: string, text: string, running: b
     if (newlyDone && last && speech?.output && speech.prefs.autoRead && speech.visible(cid)) speech.read(text, id)
   }, [running, done, last, speech, text, id, cid])
   return speech?.output ? <IconButton icon={speech.playing === id ? Square : Volume2} size="sm"
-    label={speech.playing === id ? 'Stop playback' : 'Read aloud'}
+    label={speech.playing === id ? 'Stop' : 'Read aloud'}
     onClick={() => speech.playing === id ? speech.stop() : speech.read(text, id)} /> : null
 }

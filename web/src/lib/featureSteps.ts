@@ -15,7 +15,7 @@ export const flip = (view: FeaturesView, id: string, on: boolean) => ({
 })
 
 /** the onboarding's steps before the features' own */
-const FIXED = ['her', 'you', 'model', 'features']
+const FIXED = ['agent', 'you', 'model', 'features']
 
 /** a feature switched on that has a setup step: its own step, or its group's */
 export const stepping = (view: FeaturesView) => (f: Feature) => f.step && view.features[f.id] !== false

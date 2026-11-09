@@ -25,6 +25,8 @@
 .onb__card > .onb__body { flex: 1 1 auto; }
 .onb__body { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-4); }
 .onb__body > * { flex: none; }
+/* the card body is the one scroller: a long list (a server's models) shows whole in it */
+.onb__body .choice-list { max-height: none; overflow: visible; }
 .onb__body > .onb__texts { flex: 1 1 auto; min-height: calc(3lh + var(--s-6)); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4); }
 .onb__textfield { grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .onb__texts .onb__text { height: 100%; min-height: 0; resize: none; padding-block: var(--s-2); line-height: var(--lh-body); }

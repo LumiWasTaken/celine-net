@@ -19,6 +19,7 @@ import { Segmented, useEdgeFade } from './Bits'
 import { Button, IconButton } from './Button'
 import { cx } from './cx'
 import { SearchField } from './Form'
+import { Help } from './Help'
 import { ICON } from './icons'
 import { coarse } from './phone'
 import { usePush } from './motion'
@@ -66,11 +67,13 @@ const NARROW = 640
 export type Crumb = { label: string; href?: string; onClick?: (e: React.MouseEvent<HTMLElement>) => void }
 
 export function PlaceHead({
-  title, count, detail, titleAttr, level = 2, back, crumbs, lead, search, picker, shelf, more = [], actions,
+  title, help, count, detail, titleAttr, level = 2, back, crumbs, lead, search, picker, shelf, more = [], actions,
   newLabel, onNew, newHref, newPressed, newDisabled, tools, className,
 }: {
   /** left out in a sidebar that is the place's list (Celine's conversations) */
   title?: ReactNode
+  /** what the place is, behind a "?" after the title */
+  help?: string
   /** the server's number of things in the place (or on the open shelf) */
   count?: number
   /** a state beside the title, muted (a terminal's program, "Deleted") */
@@ -164,7 +167,8 @@ export function PlaceHead({
     .map(s => ({ label: SHELF[s].label, icon: SHELF[s].icon, current: shelf!.value === s, onSelect: () => toggle(s) }))
   const moreItems: MenuItem[] = shelvesInMore ? [selectItem, ...shelfItems].filter((x): x is MenuItem => !!x) : []
   const allMore = [...moreItems, ...(moreItems.length && more.length ? ['sep' as const] : []), ...more]
-  // a More of one plain item with an icon is that item's own button: no menu for one choice
+  // a More of one plain item with an icon is that item's own button, labelled like Select and
+  // Archive while there is room (an icon alone beside Archive read as a second Archive): no menu for one choice
   // (one that destroys stays in the menu, its last item)
   const only = allMore.length === 1 ? allMore[0] : undefined
   const lone = only && only !== 'sep' && !('heading' in only) && only.icon && typeof only.label === 'string'
@@ -210,6 +214,7 @@ export function PlaceHead({
             {open && <IconButton icon={ChevronLeft} label="Back to the list" size="sm" iconSize="md" onClick={() => shelf!.onChange('list')} />}
             <span className="place-head__name">{open ? SHELF[open].label : title}</span>
             {count != null && <span className="place-head__count">{count}</span>}
+            {help && !open && <Help text={help} label={typeof title === 'string' ? title : ''} />}
             {detail && <span className="place-head__detail">{detail}</span>}
           </H>
         )}
@@ -219,7 +224,7 @@ export function PlaceHead({
           {!shelvesInMore && (['archive', 'trash'] as const).filter(s => shelf?.[s])
             .map(s => <span key={s} className="place-head__slot">{act(SHELF[s].icon, SHELF[s].label, shelf!.value === s, () => toggle(s))}</span>)}
           {!actsBelow && actions}
-          {lone ? <IconButton icon={lone.icon!} label={lone.label as string} disabled={lone.disabled} title={lone.title} onClick={lone.onSelect} />
+          {lone ? act(lone.icon!, lone.label as string, false, () => lone.onSelect?.(), { disabled: lone.disabled, title: lone.title })
             : allMore.length > 0 && (
             <IconButton icon={MoreHorizontal} label="More" pressed={!!moreAt} aria-haspopup="menu" aria-expanded={!!moreAt}
                         onClick={e => setMoreAt(moreAt ? null : e.currentTarget)} />

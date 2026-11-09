@@ -14,6 +14,6 @@ export function VaultBanner({ locked }: { locked: boolean }) {
   return (
     <Notice tone="warn" icon={LockKeyhole} className="vault-banner" title="Vault locked"
             action={{ label: 'Unlock', onClick: () => nav.go({ section: 'settings', page: 'vault' }) }}
-            onDismiss={() => setUntil(Date.now() + DAY)} dismissLabel="Dismiss for a day" />
+            onDismiss={() => setUntil(Date.now() + DAY)} dismissLabel="Not now" />
   )
 }

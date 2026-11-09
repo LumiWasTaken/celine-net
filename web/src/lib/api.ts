@@ -1,25 +1,27 @@
 import type { GuardBanner } from './guard'
-import type { Her } from './her'
+import type { Agent } from './agent'
 import { reportApi } from './health'
-import type { ChatApproval, ConversationSettings, Feature } from './settingsApi'
+import type { Approval, ConversationSettings, Feature } from './settingsApi'
 import type { Kind } from './intercom'
 import type { BulkResult } from '../ui'
 
 type Problem = { file: string; message: string; fatal: boolean }
 
-/** GET /status: it, your name, the config's problems, each model host as the
- *  gateway's ping sees it, and its hold (paused while no chat host answers; event her.hold) */
+/** GET /status: it, your name, the config's problems, each model host as the app
+ *  last learned it (up, down, or null: not asked yet), and its hold (paused while no chat host answers; event agent.hold) */
 export type ConfigStatus = {
-  owner: Her
+  owner: Agent
   user: string
   problems: Problem[]
-  hosts: Record<string, { state: 'up' | 'down' | null; since: number | null }>
-  hold: { state: 'paused'; since: number } | null
+  hosts: Record<string, 'up' | 'down' | null>
+  hold: 'paused' | null
   /** every feature's on/off (server/celine/settings features); a place or page of a feature
    *  that is off is left out of the rail and Settings */
   features: Record<string, boolean>
   /** the feature catalog: what each feature owns and says about itself */
   catalog: Feature[]
+  /** the places that leave the rail, the bar and More: no feature of theirs is on and set up (Terminals stays while the Mac is) */
+  places_off: string[]
   /** the onboarding finished (the features were saved once) */
   setup: boolean
   /** this build: its commit, when it was built (null: unknown) and its code (the repository at that commit) */
@@ -81,7 +83,11 @@ export type ConversationSummary = {
 }
 
 /** where a conversation lives: with it, under Missions or under Routines (homes.py) */
-export type Home = 'her' | 'missions' | 'routines'
+/** one conversation of a chain as the server names it (homes.path): its kind, its name
+    (a mission's, a run's label, a sub-agent's, else its title) and the link that opens it */
+export type Crumb = { id: string; kind: 'chat' | 'mission' | 'run' | 'background' | 'agent'; name: string; link: string | null }
+
+export type Home = 'agent' | 'missions' | 'routines'
 
 /** a page of a list; `next` goes back as `cursor` for the following one (null: the end) */
 type Page<K extends string, T> = { [k in K]: T[] } & { next: string | null }
@@ -210,7 +216,7 @@ function parseBody(text: string): unknown {
 }
 
 function httpMessage(status: number): string {
-  if (status === 502 || status === 503 || status === 504) return `The server didn't answer in time (HTTP ${status}). Try again in a moment.`
+  if (status === 502 || status === 503 || status === 504) return `The server did not answer in time (HTTP ${status}). Try again in a moment.`
   if (status === 404) return 'Not found (HTTP 404).'
   return `The server returned an error (HTTP ${status}). Try again in a moment.`
 }
@@ -488,7 +494,9 @@ export type ToolCall = {
 /** a call in words: `running` while it is at work ("Reading the note x"), `settled` once
  *  it ended ("Read the note x", "Could not read the note x", "Not run: ..."), `step` the
  *  tool alone at work ("Reading the note"), `where` the places a search was kept to */
-export type ToolWords = { running: string; settled: string; step: string; where: string | null }
+/** a call's words from the server (skills/words.py words); `why`: a failed call's reason,
+ *  its result's first line in the server's own words */
+export type ToolWords = { running: string; settled: string; step: string; where: string | null; why: string | null }
 
 /** calls alike in a row, shown as one row (skills/words.py runs): its calls, its words
  *  ("Ran 8 commands in terminal main"), how many of them failed */
@@ -516,14 +524,18 @@ export type Snapshot = {
     agent_of: string | null; agents: SubAgent[]
     /** a sub-agent's name, null for any other */
     agent_name?: string | null
-    /** a sub-agent's parent: its name and the path that opens it; null for any other */
-    started_by?: { name: string; link: string | null } | null
+    /** where it sits, from the top down to itself (server/celine/homes.py path): a
+        mission a run started begins with that run */
+    path: Crumb[]
     /** what it is: the place that shows it */
     kind?: ConversationSummary['kind']
     /** the app path that shows it: a chat, a mission, a task's or a run's page */
     link?: string | null
     /** the notes left out here (PATCH notes_off) */
     notes_off?: string[]
+    /** the hold that keeps a queued turn of it aside now (server/celine/hold.py): frozen,
+        or paused while none of the agent's models answers; null when its turns may run */
+    held: 'frozen' | 'paused' | null
   }
   messages: Message[]
   tool_calls: Record<string, ToolCall[]>
@@ -539,8 +551,8 @@ export type Snapshot = {
   image_notices: ImageNotice[]
   /** Bastet's banners (lib/guard.ts) */
   guard: GuardBanner[]
-  /** her requests that wait for you here, after the messages that made their calls */
-  approvals: ChatApproval[]
+  /** the agent's requests that wait for you here, after the messages that made their calls */
+  approvals: Approval[]
   /** its plan here (event plan.state), null when it has none */
   plan: Plan | null
   seq: number

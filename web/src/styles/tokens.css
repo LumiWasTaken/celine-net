@@ -79,7 +79,6 @@
   --hit-min: 24px;                                   /* the floor for anything clickable */
   --icon-xs: 12px; --icon-sm: 14px; --icon-md: 16px; --icon-lg: 20px; /* mirrored in ui/icons.ts */
   --icon-stroke: 1.7;
-  --dot: 8px;                                        /* the state dot */
   --face-sm: 28px; --face-md: 40px; --face-lg: 96px; /* in a message; in a row or head; on a card */
 
   --rail-w:    clamp(88px, 56px + 2vw, 96px);
@@ -87,7 +86,7 @@
   --drawer-w:  clamp(380px, 220px + 10vw, 420px);
   /* reading widths in em of the prose size, so a line holds about 66 characters at every
      text size; forms and card grids are not reading widths and stay in rem */
-  --measure:        calc(32 * var(--t-lg) + 2 * var(--s-4));   /* the chat column: her bubble, its padding outside the 32 em */
+  --measure:        calc(32 * var(--t-lg) + 2 * var(--s-4));   /* the chat column: the agent's bubble, its padding outside the 32 em */
   --chat-col:       calc(var(--measure) + var(--s-6) + var(--s-3)); /* the chat column and its face: the box's width */
   --measure-prose:  calc(32 * var(--t-lg));                   /* notes, documents, the large editor */
   --measure-form:   35rem;                               /* settings forms */
@@ -95,6 +94,7 @@
   --measure-wide:   75rem;                               /* a page of cards */
   --card-min:       clamp(10rem, 4rem + 12vw, 20rem);    /* the narrowest card in a grid: two on a phone, larger on a wide screen */
   --dialog-sm: 440px; --dialog-md: 560px; --dialog-lg: 720px;   /* Dialog and Sheet widths */
+  --head-row:       20rem;                               /* a row in a head's actions (the model): the title's state word keeps its room */
 
   /* ── radii ── */
   --r-sm: 6px;     /* chips, small marks */

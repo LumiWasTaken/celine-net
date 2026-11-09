@@ -65,7 +65,7 @@ export function AskCeline({ of, text, label, hint, onInsert, onReplace }: {
                 <span className="led-grow" />
                 <IconButton icon={RefreshCw} label="Regenerate" size="sm" disabled={busy} onClick={() => void send(asked)} />
               </>}>
-          {error ? <Notice tone="error" action={{ label: 'Try again', onClick: () => void send(asked) }}>{error}</Notice>
+          {error ? <Notice tone="error" action={{ label: 'Retry', onClick: () => void send(asked) }}>{error}</Notice>
             : <div className="led-draft__text">{draft}{busy && <Dots className="led-dots" />}</div>}
         </Card>
       )}

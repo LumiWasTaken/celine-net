@@ -1,6 +1,6 @@
 // node --experimental-strip-types src/lib/useStickToBottom.check.mjs (runs before every build)
 import assert from 'node:assert/strict'
-import { FAR, REPIN, gapOf, glide, scrolledUp } from './useStickToBottom.ts'
+import { FAR, REPIN, gapOf, glide, said, scrolledUp } from './useStickToBottom.ts'
 
 // the two thresholds: pin again close to the bottom, "New messages" only far above it
 assert.ok(REPIN <= 32 && FAR >= 200 && FAR > REPIN)
@@ -20,5 +20,10 @@ while (top < 3000 && frames < 100) { top = glide(top, 3000); frames++ }
 assert.equal(top, 3000)
 assert.ok(frames > 5 && frames < 40, `${frames} frames`)
 assert.equal(glide(2999, 3000), 3000)
+
+// "New messages" counts what says something: a round of tool calls with no text does not
+assert.equal(said([{ role: 'user', content: 'hi' }, { role: 'assistant', content: '' },
+                   { role: 'tool', content: 'result' }, { role: 'assistant', content: ' ' }]), 1)
+assert.equal(said([{ role: 'assistant', content: 'Done.' }]), 1)
 
 console.log('useStickToBottom: ok')

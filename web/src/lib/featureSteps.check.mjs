@@ -4,7 +4,7 @@ import { firstTime, flip, landing, stepsOf, toSave, waits } from './featureSteps
 // `blocks` as the server sends it: missing or unset blocks, but a plugin waiting for its own form
 const f = (id, more = {}) => ({ id, label: id, step: false, state: 'none', warn: '', after: '', group: '', group_label: '',
   blocks: more.state === 'missing' || more.state === 'unset', ...more })
-const computer = { group: 'computer', group_label: 'Her computer' }
+const computer = { group: 'computer', group_label: 'Computer' }
 const catalog = [
   f('shellbox', { step: true, state: 'unset', ...computer }),
   f('mac', { step: true, state: 'unset', blocks: false, ...computer }),
@@ -21,17 +21,17 @@ const fresh = { catalog, saved: false, done: false, version: '', tiers: [], core
 // defaults: a fresh install; the browser answers, so it is on; nothing blocked starts on
 const start = firstTime(fresh)
 assert.deepEqual(Object.keys(start.features).filter(id => start.features[id]), ['browser', 'missions', 'routines'])
-assert.deepEqual(stepsOf(start), ['her', 'you', 'model', 'features', 'browser', 'routines', 'done'])
+assert.deepEqual(stepsOf(start), ['agent', 'you', 'model', 'features', 'browser', 'routines', 'done'])
 
-// the Mac on: her computer's step comes first, once, for the Mac alone or with the shellbox
+// the Mac on: the computer's step comes first, once, for the Mac alone or with the shellbox
 const mac = { ...start, features: { ...start.features, mac: true } }
-assert.deepEqual(stepsOf(mac), ['her', 'you', 'model', 'features', 'computer', 'browser', 'routines', 'done'])
+assert.deepEqual(stepsOf(mac), ['agent', 'you', 'model', 'features', 'computer', 'browser', 'routines', 'done'])
 const both = { ...mac, features: { ...mac.features, shellbox: true } }
 assert.deepEqual(stepsOf(both), stepsOf(mac))
 
 // a blocked feature switched on keeps its step (its setup is in it); a plain one has none
 const more = { ...start, features: { ...start.features, email: true, guard: true, missions: false, browser: false, routines: false } }
-assert.deepEqual(stepsOf(more), ['her', 'you', 'model', 'features', 'email', 'guard', 'done'])
+assert.deepEqual(stepsOf(more), ['agent', 'you', 'model', 'features', 'email', 'guard', 'done'])
 
 // run again after a save: what is saved, a blocked one too, nothing turned on by its probe
 const stored = { ...fresh.features, browser: false, shellbox: true }
@@ -54,7 +54,7 @@ assert.equal(landing(start, 'computer'), 'browser')
 assert.equal(landing(start, 'email'), 'routines')
 assert.equal(landing(more, 'routines'), 'features')
 assert.equal(landing(start, 'nonsense'), 'features')
-assert.deepEqual(stepsOf(null), ['her', 'you', 'model', 'features', 'done'])
+assert.deepEqual(stepsOf(null), ['agent', 'you', 'model', 'features', 'done'])
 // shares come after the shellbox: greyed while its switch, as flipped, is off; off with it
 const shareOf = v => waits(v, v.catalog.find(x => x.id === 'shares'))
 assert.equal(shareOf(start), true)

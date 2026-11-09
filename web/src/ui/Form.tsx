@@ -3,7 +3,7 @@
    field schema, server/celine/settings/form.py). No dropdowns anywhere: a choice is a
    segmented row or a list. */
 import {
-  forwardRef, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type InputHTMLAttributes, type ReactNode, type Ref,
+  createContext, forwardRef, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type InputHTMLAttributes, type ReactNode, type Ref,
   type TextareaHTMLAttributes,
 } from 'react'
 import { Check, Copy, LoaderCircle, Search, X, type LucideIcon } from 'lucide-react'
@@ -11,14 +11,23 @@ import { num } from '../lib/format'
 import { Button, IconButton } from './Button'
 import { Filters, Segmented, moveRadio } from './Bits'
 import { cx } from './cx'
+import { Help } from './Help'
 import { coarse } from './phone'
 import { ICON } from './icons'
 import { InlineError } from './Notice'
 import { copied } from './Toast'
 
 /* ── Field ── */
-export function Field({ label, hint, error, children, className, group = false }: {
+/** the id a Field with help gives its control (Input and TextArea take it) */
+const FieldId = createContext<string | undefined>(undefined)
+
+/** a label as the words of a Help's name ("About Context") */
+const named = (label: ReactNode) => (typeof label === 'string' ? label : '')
+
+export function Field({ label, help, hint, error, children, className, group = false }: {
   label?: ReactNode
+  /** what it does, behind a "?" after the label (Help) */
+  help?: string
   hint?: ReactNode
   /** shown under the control, replaces nothing, never a toast */
   error?: string | null
@@ -28,11 +37,29 @@ export function Field({ label, hint, error, children, className, group = false }
       the label picks nothing */
   group?: boolean
 }) {
+  const id = useId()
+  const tail = <>
+    {hint && <span className="field-group__hint">{hint}</span>}
+    {error && <InlineError compact message={error} />}
+  </>
+  // with help the label names its control by id: a "?" inside a <label> would be what it labels
+  if (help && label) {
+    return (
+      <div role={group ? 'group' : undefined} aria-labelledby={group ? id : undefined} className={cx('field-group', className)}>
+        <span className="field-group__head">
+          {group ? <span id={id} className="field-group__label">{label}</span>
+            : <label htmlFor={id} className="field-group__label">{label}</label>}
+          <Help text={help} label={named(label)} />
+        </span>
+        {group ? children : <FieldId.Provider value={id}>{children}</FieldId.Provider>}
+        {tail}
+      </div>
+    )
+  }
   const inner = <>
     {label && <span className="field-group__label">{label}</span>}
     {children}
-    {hint && <span className="field-group__hint">{hint}</span>}
-    {error && <InlineError compact message={error} />}
+    {tail}
   </>
   // a <label> wrapper names the control inside it without ids
   return group
@@ -49,7 +76,8 @@ type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & {
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   { size = 'md', mono, invalid, className, ...rest }, ref,
 ) {
-  return <input ref={ref} className={cx('input', size === 'sm' && 'input--sm', mono && 'input--mono', className)}
+  const id = useContext(FieldId)
+  return <input ref={ref} id={id} className={cx('input', size === 'sm' && 'input--sm', mono && 'input--mono', className)}
                 aria-invalid={invalid || undefined} {...rest} />
 })
 
@@ -118,6 +146,7 @@ const SIZES_ITSELF = typeof CSS !== 'undefined' && CSS.supports('field-sizing', 
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea(
   { rows = 3, max = 20, bare, fill, mono, invalid, className, style, ...rest }, ref,
 ) {
+  const id = useContext(FieldId)
   const own = useRef<HTMLTextAreaElement | null>(null)
   // a browser without field-sizing (Safari): size it from its text after each render
   useLayoutEffect(() => {
@@ -131,7 +160,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
     if (typeof ref === 'function') ref(el)
     else if (ref) ref.current = el
   }
-  return <textarea ref={setRef} rows={rows} aria-invalid={invalid || undefined}
+  return <textarea ref={setRef} id={id} rows={rows} aria-invalid={invalid || undefined}
                    className={cx(!fill && 'textbox', !fill && !bare && 'input', mono && 'input--mono', className)}
                    style={fill ? style : { '--rows': rows, '--max': Math.max(rows, max), ...style } as CSSProperties}
                    {...rest} />
@@ -174,7 +203,7 @@ export function SearchField({
                else if (e.key === 'Escape') e.currentTarget.blur()
              }} />
       {value && (
-        <button type="button" className="field__clear" aria-label="Clear" title="Clear"
+        <button type="button" className="field__clear" aria-label="Clear search" title="Clear search"
                 onClick={() => onChange('')}>
           <X size={ICON.sm} aria-hidden />
         </button>
@@ -196,6 +225,8 @@ type ChoiceOption<V extends string = string> = {
   face?: ReactNode
   /** a picture option (a variant, a portrait): its src; the label is its name and tip */
   picture?: string
+  /** a list option: a quiet word at its end, a state from the server ("Loaded") */
+  meta?: string
 }
 /** a labelled group of options, a small heading in the list */
 type ChoiceGroup<V extends string = string> = { group: string; options: ChoiceOption<V>[] }
@@ -229,11 +260,14 @@ export function Choice<V extends string = string>({
     <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className="choice-list__item"
             tabIndex={o.value === value ? 0 : -1} disabled={disabled || o.disabled} onClick={() => onChange(o.value)}>
       <span>{o.label}</span>
+      {o.meta && <span className="choice-list__meta">{o.meta}</span>}
       {o.value === value && <Check size={ICON.sm} aria-hidden />}
     </button>
   )
+  // a short list shows whole; only a long one (a provider's models, in groups) scrolls in place
+  const whole = flat.length <= 12 && options.every(o => !('group' in o))
   return (
-    <div className={cx('choice-list', className)} role="radiogroup" aria-label={label} title={title}
+    <div className={cx('choice-list', whole && 'choice-list--whole', className)} role="radiogroup" aria-label={label} title={title}
          onKeyDown={e => { if (!disabled) moveRadio(e, flat.map(o => o.value), value, onChange) }}>
       {options.map(o => 'group' in o ? (
         <div key={o.group} role="presentation" className="choice-list__group-wrap">
@@ -326,8 +360,10 @@ export function FileButton({ accept, multiple = false, onFiles, children, icon, 
 
 /* ── Slider: a value on a range (Bias). The label on the left, the track, the
    value in tabular figures at the right. ── */
-export function Slider({ label, value, onChange, min = 0, max = 1, step = 0.01, format, disabled, className }: {
+export function Slider({ label, help, value, onChange, min = 0, max = 1, step = 0.01, format, disabled, className }: {
   label: ReactNode
+  /** what it does, behind a "?" after the label */
+  help?: string
   value: number
   onChange: (value: number) => void
   min?: number
@@ -338,22 +374,25 @@ export function Slider({ label, value, onChange, min = 0, max = 1, step = 0.01, 
   disabled?: boolean
   className?: string
 }) {
+  const id = useId()
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0
   return (
-    <label className={cx('slider', className)}>
-      <span className="slider__label">{label}</span>
-      <input type="range" className="slider__track" min={min} max={max} step={step} value={value} disabled={disabled}
+    <div className={cx('slider', className)}>
+      <span className="slider__label"><label htmlFor={id}>{label}</label>{help && <Help text={help} label={named(label)} />}</span>
+      <input id={id} type="range" className="slider__track" min={min} max={max} step={step} value={value} disabled={disabled}
              style={{ '--p': `${pct}%` } as CSSProperties} onChange={e => onChange(Number(e.target.value))} />
       <span className="slider__value">{format ? format(value) : value}</span>
-    </label>
+    </div>
   )
 }
 
 /* ── NumberField: one number. The label on the left at t-md, then one box of the same
    width everywhere: the value right-aligned in tabular figures, the unit after it inside
    the box. ── */
-export function NumberField({ label, value, onChange, min, max, step = 1, unit, disabled, className, hint, onBlur, invalid }: {
+export function NumberField({ label, help, value, onChange, min, max, step = 1, unit, disabled, className, hint, onBlur, invalid, placeholder }: {
   label: ReactNode
+  /** what it does, behind a "?" after the label */
+  help?: string
   value: number | string | null
   onChange: (text: string) => void
   min?: number
@@ -366,17 +405,23 @@ export function NumberField({ label, value, onChange, min, max, step = 1, unit, 
   hint?: ReactNode
   onBlur?: () => void
   invalid?: boolean
+  /** shown while the field is empty: the words for 0 ("No limit") */
+  placeholder?: string
 }) {
+  const id = useId()
   return (
-    <label className={cx('number-field', className)}>
-      <span className="number-field__label">{label}{hint && <span className="field-group__hint">{hint}</span>}</span>
-      <span className="field number-field__box">
-        <input className="input--num" type="number" inputMode="decimal" min={min} max={max} step={step}
-               disabled={disabled} value={value ?? ''} aria-invalid={invalid || undefined}
-               onChange={e => onChange(e.target.value)} onBlur={onBlur} />
-        {unit && <span className="number-field__unit">{unit}</span>}
+    <div className={cx('number-field', className)}>
+      <span className="number-field__label">
+        <span><label htmlFor={id}>{label}</label>{help && <Help text={help} label={named(label)} />}</span>
+        {hint && <span className="field-group__hint">{hint}</span>}
       </span>
-    </label>
+      <span className="field number-field__box">
+        <input id={id} className="input--num" type="number" inputMode="decimal" min={min} max={max} step={step}
+               disabled={disabled} value={value ?? ''} aria-invalid={invalid || undefined} placeholder={placeholder}
+               onChange={e => onChange(e.target.value)} onBlur={onBlur} />
+        {unit && !(placeholder && (value ?? '') === '') && <span className="number-field__unit">{unit}</span>}
+      </span>
+    </div>
   )
 }
 
@@ -400,12 +445,17 @@ export function Checkbox({ checked, indeterminate = false, onChange, disabled, c
     : <span className={cx('checkbox', className)}>{box}</span>
 }
 
-/* ── Switch: for settings that are on or off. The whole row is the button. ── */
-export function Switch({ checked, onChange, label, disabled, hideLabel = false, className, title }: {
-  /** 'mixed' when some of a group are on (a skill with some tools off) */
+/* ── Switch: for settings that are on or off. The whole row is the button; with help the
+   track and the label are the button and the "?" sits after it, outside, while a click on
+   the rest of the row still flips it. ── */
+export function Switch({ checked, onChange, label, help, disabled, hideLabel = false, className, title }: {
+  /** 'mixed' when some of a group are on (a skill with some tools off), or while the server
+      has not said the value yet (a provider's Cloud before its check) */
   checked: boolean | 'mixed'
   onChange: (next: boolean) => void
   label: ReactNode
+  /** what it does, behind a "?" after the label */
+  help?: string
   disabled?: boolean
   /** the label is still the accessible name, just not drawn */
   hideLabel?: boolean
@@ -413,6 +463,20 @@ export function Switch({ checked, onChange, label, disabled, hideLabel = false, 
   title?: string
 }) {
   const state = checked === 'mixed' ? 'mixed' : checked ? 'true' : 'false'
+  if (help && !hideLabel) {
+    // the button's own click (a tap, Enter, Space) reaches the row, which flips it once
+    return (
+      <div className={cx('switch-row', 'switch-row--help', className)} aria-disabled={disabled || undefined}
+           onClick={() => { if (!disabled) onChange(checked !== true) }}>
+        <button type="button" role={checked === 'mixed' ? 'checkbox' : 'switch'} aria-checked={state}
+                disabled={disabled} title={title} className="switch-row__button">
+          <span className="switch" data-checked={state} aria-hidden />
+          <span className="switch-row__text">{label}</span>
+        </button>
+        <Help text={help} label={named(label)} />
+      </div>
+    )
+  }
   return (
     <button type="button" role={checked === 'mixed' ? 'checkbox' : 'switch'} aria-checked={state}
             disabled={disabled} title={title}
@@ -458,7 +522,7 @@ export function InlineEdit({ value, label, placeholder, onSave, onCancel, classN
    choices change at once; numbers, text and lists when you leave the field or press
    Enter. A secret is write-only: "Saved" with Remove once stored (onChange(key, null)),
    else a password field (onChange(key, text)). A copy is read-only with Copy. `config`
-   fields are read-only. A field's help is its tooltip. `plain`: a number is laid out like
+   fields are read-only. A field's help is its Help (a "?" after its label). `plain`: a number is laid out like
    every other field (the onboarding's cards), not as the NumberField with its label at
    the left. ── */
 export type FormField = {
@@ -484,6 +548,10 @@ export type FormField = {
   placeholder?: string
   /** a copy field's text, filled by the server */
   value?: string
+  /** a number's words for 0 ("No limit"): shown while the field holds 0; an empty field saves 0 */
+  zero?: string
+  /** the key of the field that must be set (not 0, not off) for this one to apply; off until it is */
+  needs?: string
 }
 export type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 
@@ -498,7 +566,8 @@ export function Form({ fields, values, secrets = {}, onChange, disabled = false,
   return (
     <div className="form">
       {fields.map(f => <FormRow key={f.key} f={f} value={values[f.key] ?? f.default} secret={secrets[f.key]}
-                                onChange={onChange} disabled={disabled} plain={plain} />)}
+                                onChange={onChange} plain={plain}
+                                disabled={disabled || (f.needs != null && !(values[f.needs] ?? fields.find(x => x.key === f.needs)?.default))} />)}
     </div>
   )
 }
@@ -509,32 +578,32 @@ function FormRow({ f, value, secret, onChange, disabled, plain }: {
   const readOnly = f.where === 'config'
   const help = f.help || undefined
   if (f.type === 'bool') {
-    return <Switch label={f.label} title={help} checked={!!value} disabled={disabled || readOnly}
+    return <Switch label={f.label} help={help} checked={!!value} disabled={disabled || readOnly}
                    onChange={v => onChange(f.key, v)} />
   }
   if (f.type === 'choice') {
     return (
-      <Field label={f.label} group>
-        <Choice label={f.label} value={String(value ?? '')} disabled={disabled || readOnly} title={help}
+      <Field label={f.label} help={help} group>
+        <Choice label={f.label} value={String(value ?? '')} disabled={disabled || readOnly}
                 options={(f.choices ?? []).map(([v, l]) => ({ value: v, label: l }))} onChange={v => onChange(f.key, v)} />
       </Field>
     )
   }
   if (f.type === 'copy') {
     return (
-      <Field label={f.label}>
+      <Field label={f.label} help={help}>
         <span className="form__copy">
-          <Input value={f.value ?? ''} readOnly mono spellCheck={false} title={help} />
-          <Button icon={Copy} title={help} onClick={() => copied(f.value ?? '')}>Copy</Button>
+          <Input value={f.value ?? ''} readOnly mono spellCheck={false} />
+          <Button icon={Copy} onClick={() => copied(f.value ?? '')}>Copy</Button>
         </span>
       </Field>
     )
   }
   if (f.type === 'secret' && secret?.state === 'set') {
     return (
-      <Field label={f.label} group>
+      <Field label={f.label} help={help} group>
         <span className="form__control">
-          <span className="form__saved" title={help}>Saved</span>
+          <span className="form__saved">Saved</span>
           <Button variant="ghost" size="sm" disabled={disabled || readOnly} onClick={() => onChange(f.key, null)}>Remove</Button>
         </span>
       </Field>
@@ -550,7 +619,7 @@ function TextRow({ f, value, help, disabled, plain, onChange }: {
   f: FormField; value: unknown; help?: string; disabled: boolean; plain: boolean; onChange: (key: string, value: unknown) => void
 }) {
   const numeric = f.type === 'number' || f.type === 'duration'
-  const text = shown(f, value)
+  const text = f.zero && Number(value) === 0 ? '' : shown(f, value)
   const [draft, setDraft] = useState(text)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { setDraft(text) }, [text])
@@ -558,7 +627,7 @@ function TextRow({ f, value, help, disabled, plain, onChange }: {
     if (draft === text) return
     if (numeric) {
       const n = Number(draft)
-      if (!draft.trim() || !Number.isFinite(n)) { setError('Enter a number.'); return }
+      if ((!draft.trim() && !f.zero) || !Number.isFinite(n)) { setError('Enter a number.'); return }
       if (f.min != null && n < f.min) { setError(`At least ${num(f.min)}${f.unit ? ` ${f.unit}` : ''}.`); return }
       if (f.max != null && n > f.max) { setError(`At most ${num(f.max)}${f.unit ? ` ${f.unit}` : ''}.`); return }
       setError(null); onChange(f.key, n)
@@ -572,7 +641,8 @@ function TextRow({ f, value, help, disabled, plain, onChange }: {
   if (numeric && !plain) {
     return (
       <div>
-        <NumberField label={f.label} value={draft} disabled={disabled} unit={f.unit ?? undefined} step={f.step} invalid={!!error}
+        <NumberField label={f.label} help={help} value={draft} disabled={disabled} unit={f.unit ?? undefined} step={f.step} invalid={!!error}
+                     placeholder={f.zero}
                      onChange={setDraft} onBlur={commit} />
         {error && <InlineError compact message={error} />}
       </div>
@@ -580,17 +650,17 @@ function TextRow({ f, value, help, disabled, plain, onChange }: {
   }
   if ((f.long && !numeric) || f.type === 'list') {
     return (
-      <Field label={f.label} error={error}>
-        <TextArea rows={3} value={draft} disabled={disabled} title={help} mono={f.mono} placeholder={f.placeholder}
+      <Field label={f.label} help={help} error={error}>
+        <TextArea rows={3} value={draft} disabled={disabled} mono={f.mono} placeholder={f.placeholder}
                   onChange={e => setDraft(e.target.value)} onBlur={commit} />
       </Field>
     )
   }
   const secret = f.type === 'secret'
   return (
-    <Field label={f.label} error={error}>
+    <Field label={f.label} help={help} error={error}>
       <span className="form__control">
-        <Input value={draft} disabled={disabled} title={help} invalid={!!error} mono={f.mono} placeholder={f.placeholder}
+        <Input value={draft} disabled={disabled} invalid={!!error} mono={f.mono} placeholder={f.placeholder}
                {...(secret ? { type: 'password', autoComplete: 'off', spellCheck: false } : {})}
                onChange={e => setDraft(e.target.value)} onBlur={commit}
                onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setDraft(text) }} />

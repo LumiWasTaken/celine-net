@@ -1,20 +1,17 @@
 /* One decision of Bastet's on the Events page (GET /api/guard/decisions/{id}): her line,
-   then the question the small role was asked, its score, the model, how long it took,
-   the call's arguments, the quote and the piece. Allow once and Pass answer it as its
+   then the question the decision model was asked, its score, the model, how long it took,
+   the call's arguments, the quote and the piece. Allow once and Pass on this answer it as its
    banner's buttons do (POST /guard/banners/{id}/replies); Open goes where it happened. Its title is Details (its line wraps
    to four lines at 400 px), its line the first fact. Every
    word of the row is the server's. server/celine/guard/store.py one, api.py. */
-import { Check, TicketCheck } from 'lucide-react'
 import { Markdown } from '../components/Markdown'
 import { errorText } from '../lib/format'
-import { guardApi, type GuardAction } from '../lib/guard'
+import { ACTION_ICONS, ACTION_WORDS, guardApi, type GuardAction } from '../lib/guard'
 import { useResource } from '../lib/useResource'
 import { Button, Dialog, Facts, InlineError, LoadingRow, Quote, toast } from '../ui'
 
-export const ACTION_WORDS: Record<GuardAction, string> = { once: 'Allow once', pass: 'Pass' }
 const LEVEL_WORDS: Record<string, string> = { L1: 'First look', L2: 'Second look' }
 const VERDICT_WORDS: Record<string, string> = { Y: 'Yes', N: 'No', unreachable: 'Could not decide' }
-export const ACTION_ICONS = { once: Check, pass: TicketCheck }
 
 /** answer a decision from outside its thread; Bastet's reply is the toast */
 export async function answer(id: number, action: GuardAction) {

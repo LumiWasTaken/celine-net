@@ -62,9 +62,6 @@ export const SANDBOX = 'allow-scripts allow-forms'
 export const artifactEvent = (id?: string) => (ev: ServerEvent) =>
   ev.type === 'artifact.updated' && (id === undefined || ev.id === id)
 
-/** "page" or "document", for the words around one */
-export const kindWord = (kind: string) => (kind === 'markdown' ? 'document' : 'page')
-
 /** In the Celine view: shows an artifact in the side panel. Elsewhere there is none, and
     a chip or card opens the full page in a new tab. */
 export const ShowArtifact = createContext<((id: string) => void) | null>(null)

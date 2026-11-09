@@ -14,16 +14,23 @@ import { json, request } from './api'
 import { useResource, type Resource } from './useResource'
 import type { FormField, SecretState } from '../ui'
 
-export type FormAction = { id: string; label: string; /** the label of the one text it asks for */ input?: string }
+export type FormAction = {
+  id: string
+  label: string
+  /** the label of the one text it asks for */
+  input?: string
+  /** the words of its badge, from the server (Update available) */
+  badge?: string
+}
 export type FormView = {
   fields: FormField[]
   actions: FormAction[]
   note?: string
-  /** what the plugin knows of its device, as labels and values (her Mac's chip, memory) */
+  /** what the plugin knows of its device, as labels and values (the chip and memory of the agent's Mac) */
   facts?: { label: string; value: string }[]
-  /** what is off on it now, one Dot each (a macOS permission) */
+  /** what is off on it now, one line each (a macOS permission) */
   lines?: FormLine[]
-  /** the app's own address belongs on this form now (her Mac's while it is localhost) */
+  /** the app's own address belongs on this form now (the agent's Mac, while the address is localhost) */
   address?: boolean
   values: Record<string, unknown>
   secrets: Record<string, SecretState>
@@ -32,7 +39,7 @@ export type FormView = {
   /** its actions can run now (a plugin's code runs only while it is on) */
   running: boolean
 }
-/** `lines`: what it found, one Dot each (the Mac's Check: each server, each permission) */
+/** `lines`: what it found, one line each (the Mac's Check: each server, each permission) */
 /** one line the server says of a form's device, in words: how it went */
 export type FormLine = { text: string; tone: 'ok' | 'warn' | 'error' }
 export type ActionResult = { ok: boolean; sentence: string; lines?: FormLine[] }

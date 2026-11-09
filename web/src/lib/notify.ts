@@ -159,15 +159,16 @@ export async function allow() {
 /** the Check again of a blocked permission */
 export const checkAgain = recheck
 
-type Notice = { kind: string; title: string; body: string; link: string | null; tag: string }
+/** `closed`: the closing notice of an ask; it replaces the ask's notification without a sound */
+type Notice = { kind: string; title: string; body: string; link: string | null; tag: string; closed?: boolean }
 
 async function show(n: Notice, open: (link: string) => void, icon: string) {
   if (permission !== 'granted' || !prefs.on || !prefs[n.kind as Kind]) return
   if (document.visibilityState === 'visible' && document.hasFocus()) return
   const reg = await worker
   // its click: the service worker's notificationclick, which posts {open} to the page
-  if (reg) { await reg.showNotification(n.title, { body: n.body, tag: n.tag, icon, data: { link: n.link } }); return }
-  const shown = new Notification(n.title, { body: n.body, tag: n.tag, icon })
+  if (reg) { await reg.showNotification(n.title, { body: n.body, tag: n.tag, icon, silent: !!n.closed, data: { link: n.link } }); return }
+  const shown = new Notification(n.title, { body: n.body, tag: n.tag, icon, silent: !!n.closed })
   shown.onclick = () => {
     window.focus()
     if (n.link) open(n.link)

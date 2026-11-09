@@ -7,6 +7,7 @@
    The switches show what the caller says is on: the server's answer. */
 import { PenLine, RotateCcw } from 'lucide-react'
 import { OFFLINE_TITLE } from '../lib/socket'
+import { count } from '../lib/format'
 import { SKILL_WORD, type SkillView } from '../lib/settingsApi'
 import { Fold, ICON, IconButton, Switch } from '../ui'
 import './ToolBlock.css'
@@ -78,7 +79,7 @@ export function ToolBlock({ skill: s, place, writable, open, onSet, onReset, onR
       </div>
       {s.summary && <p className="tool-block__line">{line(s.summary)}</p>}
       {usable && s.tools.length > 0 && (open ? rows : (
-        <Fold title={`${s.tools.length} tools`} className="tool-block__fold" remember={`${place}:${s.name}`}>{rows}</Fold>
+        <Fold title={count(s.tools.length, 'tool')} className="tool-block__fold" remember={`${place}:${s.name}`}>{rows}</Fold>
       ))}
     </div>
   )

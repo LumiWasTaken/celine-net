@@ -1,7 +1,7 @@
 /* A conversation inside another place (a mission's) on screen: its transcript and the chat's
    composer under it, the same box as its place's. What you send shows at once until the
    server's copy lands; the view stays at the bottom while lines arrive, and "New messages"
-   brings you back down after you scrolled up. `HerFace` and `MoodText` are the chat head's
+   brings you back down after you scrolled up. `AgentFace` and `MoodText` are the chat head's
    parts (its face, its mood beside its name) for any head that shows it. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
@@ -9,11 +9,11 @@ import { conversationApi, type Attachment } from '../lib/api'
 import { errorText } from '../lib/format'
 import { useOnline } from '../lib/socket'
 import type { useConversation } from '../lib/useConversation'
-import { KeepPlace, useStickToBottom } from '../lib/useStickToBottom'
+import { KeepPlace, said, useStickToBottom } from '../lib/useStickToBottom'
 import { Composer, NewMessages, type ComposerHandle, type ComposerTag, type Note } from './Composer'
 import { Transcript, type Pending } from './Transcript'
 import { waitWords } from './Status'
-import { colorOf, type Her } from '../lib/her'
+import { colorOf, type Agent } from '../lib/agent'
 import type { Mood } from '../lib/chat'
 import { Face, IconButton, InlineError, StatusLine } from '../ui'
 
@@ -24,10 +24,10 @@ export function MoodText({ mood }: { mood: Mood | null }) {
 }
 
 /** its face */
-export function HerFace({ who, size, speaking = false }: { who: Her | null; size: 'sm' | 'lg'; speaking?: boolean }) {
-  const her = colorOf(who)
+export function AgentFace({ who, size, speaking = false }: { who: Agent | null; size: 'sm' | 'lg'; speaking?: boolean }) {
+  const color = colorOf(who)
   return <Face name={who?.name ?? ''} src={who?.portrait?.url} size={size} speaking={speaking}
-               bg={`color-mix(in oklch, ${her} 22%, var(--surface-2))`} fg={her} />
+               bg={`color-mix(in oklch, ${color} 22%, var(--surface-2))`} fg={color} />
 }
 
 type Convo = ReturnType<typeof useConversation>
@@ -63,7 +63,7 @@ export function Talk({ cid, convo, active, name, user, send, placeholder, noTool
   const offline = convo.reconnecting || !online
 
   const { onScroll, unseen, jump, keep } = useStickToBottom(
-    transcript, [convo.messages.length, convo.live?.message_id], [cid], [cid, convo.messages.length > 0])
+    transcript, [said(convo.messages)], [cid], [cid, convo.messages.length > 0])
   useEffect(() => {
     setPending(null)
     setNote(null)
@@ -105,7 +105,7 @@ export function Talk({ cid, convo, active, name, user, send, placeholder, noTool
   const noteLine = note && (
     <div className="chat-note">
       {note.tone === 'error' ? <InlineError message={note.text} compact /> : <StatusLine tone="success">{note.text}</StatusLine>}
-      <IconButton icon={X} size="sm" label="Dismiss" onClick={() => setNote(null)} />
+      <IconButton icon={X} size="sm" label="Close" onClick={() => setNote(null)} />
     </div>
   )
 
@@ -118,7 +118,7 @@ export function Talk({ cid, convo, active, name, user, send, placeholder, noTool
                     onRetry={() => conversationApi.regenerate(cid).then(() => undefined)}
                     live={convo.live} switched={convo.switched} imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
                     waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue} swaps={convo.swaps}
-                    note={null} assistant={name} user={user} closed={!!closed} />
+                    note={null} assistant={name} user={user} closed={!!closed} held={convo.conversation?.held} />
         </KeepPlace.Provider>
       </div>
       <Composer handle={composer} conversationId={cid} exists active={active} name={name}

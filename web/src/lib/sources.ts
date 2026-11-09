@@ -1,5 +1,5 @@
-/* Sources for Settings: one entry per chat source, with its state for the left list (the
-   dot and "n to fix"), put together from the endpoints that know it: the connections'
+/* Sources for Settings: one entry per chat source, with its state for the left list (its
+   level word and "n to fix"), put together from the endpoints that know it: the connections'
    records (GET /api/connectors) and the task list. Only real problems count: a login
    to redo, a failed task to retry. A connection that does not answer is a state, not a problem. */
 import { kbApi, type ConnectionRecord, type ConnectorSummary, type Kb, type Task } from './kb'
@@ -21,14 +21,6 @@ export type Source = {
 type SourcesData = { kbs: Kb[]; sources: Source[] }
 
 const EVENTS = new Set(['kb.changed', 'kb.task', 'kb.task.removed', 'kb.job', 'source.state', 'settings.changed'])
-
-/** the sources whose login was lost and is not back (WhatsApp unlinked the phone,
- *  Discord refused the login): the rail's dot on Settings */
-export function useLostLogins(): ConnectorSummary[] {
-  const r = useResource(() => kbApi.connectors().then(x => x.connectors), [],
-                        { events: ev => ev.type === 'source.state' })
-  return (r.data ?? []).filter(c => c.login_lost_at && c.connection.state === 'needs_login')
-}
 
 export function useSources() {
   return useResource(loadSources, [], { events: (ev: ServerEvent) => EVENTS.has(ev.type) })
@@ -80,7 +72,7 @@ export function connectionState(platform: string, c: ConnectionRecord, account: 
       }
     }
     case 'needs_login':
-      return { level: 'needs_you', sentence: wa ? 'Not connected to your phone. Log in with QR code in Settings, WhatsApp.' : 'Not logged in to Discord. Log in again in Settings, Discord.' }
+      return { level: 'needs_you', sentence: wa ? 'Not connected to WhatsApp. Log in with QR code in Settings, WhatsApp.' : 'Not connected to Discord. Log in again in Settings, Discord.' }
     default:
       // calm: the archive picks up where it stopped as soon as the connection answers again
       return { level: 'off', sentence: c.error ?? `${LINK.down}.` }

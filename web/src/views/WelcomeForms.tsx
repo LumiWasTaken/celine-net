@@ -4,7 +4,7 @@
    (the account, Check email logs in), vault (the server fields and the client secret), search
    (what an embedding and a reranker model give and how to run one, then the Topic search and
    Reranking models out of what the saved providers offer, a pick saves at once), guard (Bastet's
-   Decision model, the `small` role, and its Second look model, PUT /guard/rules, each with what
+   Decision model, the `guard` role, and its Second look model, PUT /guard/rules, each with what
    it does and what happens without it; a pick saves at once; no chat model at all: the way to
    one), service (the shellbox and its browser: Address and the
    read-only Key hash with Copy, what the box's key.hash file holds, shown while the box
@@ -16,7 +16,7 @@
    the caller's state (so Back keeps what was typed) and hands its save to `saveRef`, which
    the onboarding's Next runs before it saves the features. All through the Settings
    endpoints. */
-import { Copy } from 'lucide-react'
+import { Copy, RotateCcw } from 'lucide-react'
 import { useEffect, useState, type MutableRefObject, type ReactElement } from 'react'
 import { format, useNav } from '../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
@@ -24,7 +24,7 @@ import { routinesApi, type Schedule } from '../lib/routines'
 import { LINK, settingsApi, type Available, type Cap, type Feature, type ProviderView, type RoleView } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
-import { Button, Choice, Dot, Field, Form, InlineError, Input, LoadingRow, Switch, copied } from '../ui'
+import { Button, Choice, Field, Form, IconButton, InlineError, Input, LoadingRow, StateWord, Switch, copied } from '../ui'
 import { reach, slug } from './settings/Models'
 import './Welcome.css'
 import { SPEECH_ROLE, type Direction } from '../lib/speechApi'
@@ -79,7 +79,7 @@ export const FORMS: Record<string, (p: FormProps<any>) => ReactElement> = {
 
 /* ── speech: the Dictation (transcription) or Read aloud (speech) model, out of what the
    saved providers offer (any of their models: speech servers seldom say what a model does);
-   a pick saves at once (PUT /roles/{role}). Add a provider: a speech server beside the chat
+   a pick saves at once (PUT /roles/{role}). Add provider: a speech server beside the chat
    one, checked and saved like Connect a model's, then its models are in the list. Then a
    real try of the picked model ── */
 function SpeechForm({ feature, value, onChange, saveRef, reprobe }: FormProps<string>) {
@@ -229,7 +229,7 @@ function EmailForm({ value, onChange, saveRef, reprobe }: FormProps<Mail>) {
         <Button loading={test.busy} disabled={!online || !(d.password || set)} title={online ? undefined : OFFLINE_TITLE}
                 onClick={() => void test.run()}>Check email</Button>
         <span className="onb__state">
-          {d.checked && <Dot tone={d.checked.ok ? 'ok' : 'error'} text={d.checked.ok ? LINK.up : d.checked.sentence || LINK.down} />}
+          {d.checked && <StateWord tone={d.checked.ok ? 'muted' : 'error'}>{d.checked.ok ? LINK.up : d.checked.sentence || LINK.down}</StateWord>}
         </span>
       </div>
       {test.error && <InlineError compact message={test.error} />}
@@ -289,7 +289,7 @@ const useOffers = () => useResource(async () => {
 const modelOptions = (offers: Offer[], cap: Cap, none: boolean, any = false) => [
   ...(none ? [{ value: '', label: 'None' }] : []),
   ...offers.flatMap(({ p, available }) => {
-    const saved = p.models.filter(m => m.offered && m.caps_now.includes(cap)).map(m => ({ value: m.ref, label: m.name }))
+    const saved = p.models.filter(m => m.offered && m.caps_now.includes(cap)).map(m => ({ value: m.ref, label: m.label || m.name }))
     const have = new Set(p.models.map(m => m.ref.slice(p.id.length + 1)))
     const more = available.filter(a => !a.added && !have.has(a.id) && (any || (a.caps ?? []).includes(cap)))
       .map(a => ({ value: `+${p.id}/${a.id}`, label: a.name || a.id }))
@@ -356,22 +356,22 @@ function SearchForm({ value, onChange, saveRef, reprobe }: FormProps<Picks>) {
   )
 }
 
-/* ── guard: Bastet's Decision model (the `small` role: PUT /roles/small) and her Second look
+/* ── guard: Bastet's Decision model (the `guard` role: PUT /roles/guard) and her Second look
    model (guard.toml [chain]: PUT /guard/rules {chain: {provider, model}}, "" for None), each
-   out of the chat models the saved providers offer, with two sentences under each (what it
-   does, what Bastet does without it) and the state of its provider; a pick saves at once,
+   out of the chat models the saved providers offer, each with the server's help and the
+   state of its provider; a pick saves at once,
    then the card's state line is asked anew. With no chat model saved at all: a line and
    the way to one (Connect a model in the onboarding, Open Models in Settings) ── */
-type Guard = { small: string; chain: string }
+type Guard = { decision: string; chain: string }
 
 /** the picked model's state: its provider's reach, or that it is gone */
 function ModelState({ offers, value }: { offers: Offer[]; value: string }) {
   if (!value) return null
   const ref = value.replace(/^\+/, '')
   const o = offers.find(x => ref.startsWith(`${x.p.id}/`))
-  if (!o || (!value.startsWith('+') && !o.p.models.some(m => m.ref === ref))) return <Dot tone="warn" text="This model is no longer on its provider. Pick another one." />
+  if (!o || (!value.startsWith('+') && !o.p.models.some(m => m.ref === ref))) return <StateWord tone="warn">This model is no longer on its provider. Pick another one.</StateWord>
   const { tone, word } = reach(o.p)
-  return <Dot tone={tone} text={`${o.p.provider.label}: ${word}`} />
+  return <StateWord tone={tone}>{`${o.p.provider.label}: ${word}`}</StateWord>
 }
 
 function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
@@ -380,15 +380,16 @@ function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
   const roles = useResource(() => settingsApi.roles(), [])
   const rules = useResource(() => settingsApi.guardRules(), [])
   const offers = useOffers()
-  const small = roles.data?.roles.small?.chain[0] ?? ''
+  const guard = roles.data?.roles.guard?.chain ?? []
+  const decision = guard[0] ?? ''
   const chain = rules.data?.chain?.model ? `${rules.data.chain.provider}/${rules.data.chain.model}` : ''
-  const d = value ?? { small, chain }
+  const d = value ?? { decision, chain }
   // the saved picks fill the draft once, so Back shows them as they are
-  useEffect(() => { if (!value && roles.data && rules.data !== undefined) onChange({ small, chain }) }, [roles.data, rules.data]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!value && roles.data && rules.data !== undefined) onChange({ decision, chain }) }, [roles.data, rules.data]) // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (want: Guard) => {
-    if (want.small !== small) {
-      const ref = await addPick(offers.data, want.small, 'chat')
-      await settingsApi.putRole('small', ref ? [ref] : [])
+    if (want.decision !== decision) {
+      const ref = await addPick(offers.data, want.decision, 'chat')
+      await settingsApi.putRole('guard', ref ? [ref, ...guard.filter(r => r !== ref)] : [])
     }
     if (want.chain !== chain) {
       const ref = await addPick(offers.data, want.chain, 'chat')
@@ -406,7 +407,7 @@ function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
   // Guard is on once a decision model exists: with none saved, the first chat model is picked and saved
   const first = offers.data ? modelOptions(offers.data, 'chat', false).flatMap(o => ('options' in o ? o.options : [o]))[0]?.value : undefined
   useEffect(() => {
-    if (roles.data && !small && first && !pick.busy) void pick.run({ small: first, chain: value?.chain ?? chain })
+    if (roles.data && !decision && first && !pick.busy) void pick.run({ decision: first, chain: value?.chain ?? chain })
   }, [roles.data, first]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!roles.data || !offers.data || rules.data === undefined) {
     const err = roles.error ?? offers.error ?? rules.error
@@ -424,18 +425,12 @@ function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
   }
   return (
     <>
-      <Field label="Decision model" group hint={<>
-        A small, fast model that decides whether a risky step needs a check. It also writes titles and descriptions.
-        Without it, Watch lets every step run, and On holds risky steps until this model answers.
-      </>}>
-        <Choice list label="Decision model" value={d.small} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', false)}
-                onChange={v => void pick.run({ ...d, small: v })} />
-        <ModelState offers={offers.data} value={d.small} />
+      <Field label="Decision model" group help={rules.data.help.decision}>
+        <Choice list label="Decision model" value={d.decision} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', false)}
+                onChange={v => void pick.run({ ...d, decision: v })} />
+        <ModelState offers={offers.data} value={d.decision} />
       </Field>
-      <Field label="Second look model" group hint={<>
-        A stronger model checks again what the decision model stopped, before Bastet writes you a note. If it disagrees, you get no note and any freeze is lifted.
-        With None, or when it does not answer, the first decision stands and her note says why.
-      </>}>
+      <Field label="Second look model" group help={rules.data.help.second_look}>
         <Choice list label="Second look model" value={d.chain} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', true)}
                 onChange={v => void pick.run({ ...d, chain: v })} />
         <ModelState offers={offers.data} value={d.chain} />
@@ -447,8 +442,11 @@ function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
 
 /* ── service: the shellbox and its browser (Address, and the Key hash the box's key.hash
    file must hold, read-only with Copy), SearXNG (the address alone): Check saves (PUT
-   /services) and asks the probe; Next saves the same way. The address starts as the saved
-   one, else the one the probe found the service at (`feature.url`) ── */
+   /services/{id}, this service alone) and asks the probe; Next saves the same way. The
+   address starts as the server's (saved, else compose's variable), else the one the probe
+   found the service at (`feature.url`). While a saved address hides the variable or the
+   field's default (the view's `default`), Use the default beside it forgets the saved one
+   (PUT {url: null}) and asks the probe ── */
 const SERVICE: Record<string, string> = { shellbox: 'shellbox', browser: 'browser', web: 'searxng' }
 /** an example address per service, on its own port (docker-compose.yml) */
 const EXAMPLE: Record<string, string> = { shellbox: 'http://192.168.1.20:8770', browser: 'http://192.168.1.20:8771', searxng: 'http://192.168.1.20:8888' }
@@ -458,6 +456,7 @@ function ServiceForm(p: FormProps<Service>) { return <ServiceFields {...p} withK
 function AddressForm(p: FormProps<Service>) { return <ServiceFields {...p} withKey={false} /> }
 
 function ServiceFields({ feature, value, onChange, saveRef, reprobe, withKey }: FormProps<Service> & { withKey: boolean }) {
+  const online = useOnline()
   const id = SERVICE[feature.id] ?? feature.id
   const res = useResource(() => settingsApi.services(), [])
   const saved = res.data?.services[id]
@@ -466,20 +465,32 @@ function ServiceFields({ feature, value, onChange, saveRef, reprobe, withKey }: 
   const d = value ?? (res.data !== undefined ? { url: saved?.url || feature.url || '' } : null)
   const save = async () => {
     if (!d) return
-    const view = res.data ?? await settingsApi.services()
     if (d.url.trim() === (saved?.url ?? '')) return
-    await settingsApi.putServices(view, id, d.url.trim())
+    await settingsApi.putService(id, d.url.trim())
     res.reload()
   }
   const check = useAction(async () => { await save(); await reprobe() })
+  const reset = useAction(async () => {
+    const r = await settingsApi.putService(id, null)
+    onChange({ url: r.services[id]?.url ?? '' })
+    res.reload()
+    await reprobe()
+  })
   saveRef.current = save
   if (!d) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : <LoadingRow label="Loading" />
   return (
     <>
       <Field label="Address">
-        <Input value={d.url} placeholder={EXAMPLE[id]} spellCheck={false}
-               onChange={e => onChange({ url: e.target.value })} />
+        <span className="form__control">
+          <Input value={d.url} placeholder={EXAMPLE[id]} spellCheck={false}
+                 onChange={e => onChange({ url: e.target.value })} />
+          {saved?.default != null && (
+            <IconButton icon={RotateCcw} size="sm" label={`Use the default: ${saved.default}`} loading={reset.busy}
+                        disabled={!online} title={online ? undefined : OFFLINE_TITLE} onClick={() => void reset.run()} />
+          )}
+        </span>
       </Field>
+      {reset.error && <InlineError compact message={reset.error} />}
       {withKey && feature.key && (
         <Field label="Key hash">
           <span className="onb__hash">
@@ -521,9 +532,9 @@ function RoutinesForm({ value, onChange, saveRef }: FormProps<Rows>) {
   const list = res.data
   const rows = value ?? (list ? rowsOf(list) : null)
   const put = (s: Schedule, r: Rows[string]) => {
-    const { label, summary, prompt, after, partner, partner_prompt, rounds, note, role, idle_only, wall_minutes, daytime } = s
-    return routinesApi.put(s.name, { label, summary, prompt, after, partner, partner_prompt, rounds, note, role, idle_only,
-                                     wall_minutes, daytime, cron: cronOf(s.cron, r.time), on: r.on })
+    const { label, summary, prompt, after, reviewer, reviewer_prompt, turns, note, role, idle_only, wall_minutes, daytime, on_fail } = s
+    return routinesApi.put(s.name, { label, summary, prompt, after, reviewer, reviewer_prompt, turns, note, role, idle_only,
+                                     wall_minutes, daytime, on_fail, cron: cronOf(s.cron, r.time), on: r.on })
   }
   /** every changed row (or `only` that one, as `row` says it now) is PUT; throws on a refusal */
   const saveAll = async (only?: string, row?: Rows[string]) => {

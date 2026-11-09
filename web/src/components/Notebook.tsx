@@ -168,6 +168,9 @@ export function Notebook({ active, note, edit, history }: { active: boolean; not
                 }} />
   )
 
+  // the newest notes; two of one name (two README) show their folder
+  const recent = [...notes].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 8)
+  const twice = new Set(recent.map(n => leaf(n.path)).filter((x, i, all) => all.indexOf(x) !== i))
   const side = (
     <>
       <ListRow density="sm" icon={NotebookPen} title="Notes" meta={tree.data && notes.length} selected={!note && view === 'notes' && folder === null}
@@ -181,8 +184,9 @@ export function Notebook({ active, note, edit, history }: { active: boolean; not
               onSelect={id => goList(id)} menu={n => folderMenu(n.id)} onMove={(id, into) => void move([id], into)} />
       </>}
       {notes.length > 0 && <ListSection label="Recent" />}
-      {[...notes].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 8).map(n => (
+      {recent.map(n => (
         <ListRow key={n.path} density="sm" leading={<FileText size={16} aria-hidden />} title={bare(leaf(n.path))} tooltip={n.path} selected={n.path === note}
+                 meta={twice.has(leaf(n.path)) ? parentOf(n.path) || undefined : undefined}
                  href={format({ section: 'notebook', note: n.path })} />
       ))}
     </>
@@ -289,7 +293,7 @@ function NotesList({ notes, folder, shelf, onShelf, picker, tree, menu, folderMe
          run: keys => bulkApi.run('notes', 'purge', keys).then(r => { trash.reload(); return r }) }]
     : [{ label: 'Move to', icon: FolderInput, done: 'moved', run: async keys => { onAsk({ kind: 'move', paths: keys }); return { done: [], skipped: [] } } },
        { label: 'Move to Trash', icon: Trash2, danger: true, done: 'moved',
-         ask: n => ({ title: `Move ${notesNoun(n)} to Trash?`, confirm: 'Move to Trash' }),
+         ask: n => ({ title: `Move ${notesNoun(n)} to Trash?`, confirm: 'Move to Trash', body: `You can restore ${n === 1 ? 'it' : 'them'} from the Trash.` }),
          run: keys => bulkApi.run('notes', 'trash', keys).then(r => { onChanged(); return r }) }]
 
   const draw = (r: Row) => {
@@ -415,7 +419,7 @@ function NotePage({ path, note, name, menu, onEdit, onFolder, onOpenEditor, want
                         ...(doc ? [{ label: 'Download', icon: Download, onSelect: () => download(leaf(path), doc.content) }] : [])]} />
       <div className="page">
         <div className="page__col page__col--prose">
-          {file.missing ? <EmptyState icon={NotebookPen} title="Not found" />
+          {file.missing ? <EmptyState icon={NotebookPen} title="Not found">Nothing at this link.</EmptyState>
             : file.error ? <InlineError message={file.error} onRetry={file.reload} />
             : !doc ? <LoadingRow />
             : <Section><div className="prose nb-read">{doc.shown.trim() ? <Markdown text={doc.shown} /> : <p className="nb-quiet">Empty.</p>}</div></Section>}
@@ -480,7 +484,7 @@ function Asked({ ask, folders, onClose, onDone, onCreated, onMoved }: {
   }
 
   if (ask.kind === 'trash') {
-    return <ConfirmDialog title={`Move ${leaf(ask.path)} to Trash?`} confirmLabel="Move to Trash" danger onClose={onClose}
+    return <ConfirmDialog title={`Move ${leaf(ask.path)} to Trash?`} body="You can restore it from the Trash." confirmLabel="Move to Trash" danger onClose={onClose}
                           onConfirm={async () => { try { await notebookApi.remove(ask.path); onDone() } catch (e) { return errorText(e) } }} />
   }
   if (ask.kind === 'move') {

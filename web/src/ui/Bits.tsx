@@ -1,4 +1,4 @@
-/* Small pieces: Chip (always filled), Dot, EventLine, SourceGlyph (a source is a glyph, not a
+/* Small pieces: Chip (always filled), StateWord, EventLine, SourceGlyph (a source is a glyph, not a
    coloured pill), Avatar, Segmented, Filters, Tabs, Progress,
    DisclosureArrow. */
 import { forwardRef, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
@@ -48,21 +48,11 @@ export function Chip({ children, tone = 'neutral', icon: Icon, onRemove, removeL
   )
 }
 
-/* ── Dot: the one state mark. Beside a name, never beside a word that says the same. ── */
-export type DotTone = 'ok' | 'error' | 'warn' | 'accent' | 'running' | 'muted' | 'you' | 'off'
-
-export function Dot({ tone, label, pulse = false, text }: {
-  tone: DotTone
-  /** the state in words, for screen readers and the tooltip; leave it out when text beside says it */
-  label?: string
-  /** working right now */
-  pulse?: boolean
-  /** the server's word beside it ("Connected", "No API key"): a provider's or an app's health */
-  text?: ReactNode
-}) {
-  const dot = <span className={cx('dot', `dot--${tone}`, pulse && 'dot--pulse')}
-                    {...(label && !text ? { role: 'img', 'aria-label': label, title: label } : { 'aria-hidden': true })} />
-  return text == null ? dot : <span className="dot-word">{dot}<span>{text}</span></span>
+/* ── StateWord: a state as the server's word in a text tone ("Not connected" in warn,
+   "3 problems", "Off"). Muted unless something needs a look. ── */
+export type WordTone = 'muted' | 'warn' | 'error' | 'success' | 'running'
+export function StateWord({ tone = 'muted', children, title }: { tone?: WordTone; children: ReactNode; title?: string }) {
+  return <span className={cx('state-word', `state-word--${tone}`)} title={title}>{children}</span>
 }
 
 /* ── Step: the number of a step in a list of steps (a mission's sub-tasks, a setup in

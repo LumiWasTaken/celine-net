@@ -476,7 +476,7 @@ function ChatMessage({ m, kb, group, highlight, onOriginal, onPerson, onVersions
   const items: MenuItem[] = [
     { label: 'Copy', icon: Copy, onSelect: () => copied(m.text) },
     { label: 'Copy message link', icon: Link, onSelect: () => void copyMessageLink(m.ref).then(ok => ok && toast({ text: 'Copied' })) },
-    { label: `Ask ${name || 'Celine'}`, icon: BookHeart, onSelect: () => askCeline(nav, '', [m.ref]) },
+    { label: `Ask ${name || 'your agent'}`, icon: BookHeart, onSelect: () => askCeline(nav, '', [m.ref]) },
     ...(m.reply_to ? [{ label: 'Go to the original message', icon: CornerUpLeft, onSelect: () => onOriginal(m.reply_to!.id) }] : []),
     ...(m.edited ? [{ label: 'Versions', icon: History, onSelect: () => onVersions(m) }] : []),
     ...(m.sender && !m.from_me ? ['sep' as const, { label: `Rename ${m.sender.name}`, icon: Pencil, onSelect: () => onPerson({ id: m.sender!.id, name: m.sender!.name }) }] : []),

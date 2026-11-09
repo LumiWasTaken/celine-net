@@ -6,7 +6,7 @@
    URL: /terminal/<id>, ?reply=<command id>. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useName } from '../lib/name'
-import { CircleStop, CornerUpLeft, MessageCircle, Pause, SearchX, X } from 'lucide-react'
+import { CircleStop, CornerUpLeft, MessageCircle, Pause, Play, SearchX, SquareTerminal, X } from 'lucide-react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { format, useNav } from '../lib/nav'
@@ -20,7 +20,7 @@ import { backoffMs, keepAlive } from '../lib/socket'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Button, EmptyState, IconButton, InlineError, ListRow, LoadingRow, MenuButton, PlaceHead, Screen, SearchField, Section, SendButton, StatusLine,
+  Button, EmptyState, IconButton, InlineError, ListRow, LoadingRow, MenuButton, PlaceHead, Screen, SearchField, Section, SendButton, StateWord, StatusLine,
   Switch, TextArea, cx, isSendKey,
 } from '../ui'
 import { CloseTerminal, CommandDialog, TerminalsPlace } from './Terminals'
@@ -43,7 +43,7 @@ export function Terminal({ id, reply }: { id: string; reply?: string }) {
 }
 
 function TerminalPage({ id, reply }: { id: string; reply?: string }) {
-  const her = useName()
+  const agentName = useName()
   const nav = useNav()
   const t = useResource(() => terminalsApi.get(id), [id], { events: ev => ev.type === 'terminal.state' })
   const detail = t.data
@@ -81,9 +81,9 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
   const own = detail?.conversation ?? null
   // its own, then the few conversations used most lately
   const options = useMemo(() => [
-    { value: '', label: her },
+    { value: '', label: agentName },
     ...(targets.data?.targets ?? []).filter(c => c.id !== own?.id).slice(0, RECENT).map(c => ({ value: c.id, label: c.name })),
-  ], [targets.data, own?.id, her])
+  ], [targets.data, own?.id, agentName])
   const target = options.some(o => o.value === to) ? to : ''
   const doReply = (c: CommandRow) => {
     setQuote(c)
@@ -133,16 +133,16 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
       <PlaceHead level={1} crumbs={crumbs} title={name} detail={stateDetail(detail) || undefined}
                  actions={<>
                    {!yours && !ended && <>
-                     <Button icon={Pause} pressed={paused} loading={control.busy} disabled={!canPause}
-                             onClick={() => void control.run(paused ? 'resume' : 'pause')}>Pause</Button>
+                     <Button icon={paused ? Play : Pause} pressed={paused} loading={control.busy} disabled={!canPause}
+                             onClick={() => void control.run(paused ? 'resume' : 'pause')}>{paused ? 'Resume' : 'Pause'}</Button>
                      <Button icon={CircleStop} disabled={!canStop || control.busy} onClick={() => void control.run('stop')}>Stop</Button>
                    </>}
                    {yours && !ended && (
-                     <Switch checked={detail.may_type} label={`${her} may type`} disabled={mayType.busy} onChange={v => void mayType.run(v)} />
+                     <Switch checked={detail.may_type} label={`${agentName} may type`} disabled={mayType.busy} onChange={v => void mayType.run(v)} />
                    )}
                  </>}
                  more={[
-                   ...(own && !yours ? [{ label: 'Open conversation', icon: MessageCircle, onSelect: () => nav.goPath(own.link) }] : []),
+                   ...(own && !yours ? [{ label: 'Open chat', icon: MessageCircle, onSelect: () => nav.goPath(own.link) }] : []),
                    ...(!ended ? ['sep' as const, { label: 'Close terminal', icon: X, danger: true, onSelect: () => setClosing(true) }] : []),
                  ]} />
       {error && <StatusLine className="term-note" tone="error">{error}</StatusLine>}
@@ -157,8 +157,8 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
           <Section>
             <div className="term-send">
               {quote && (
-                <ListRow dot={outcomeWords(quote).tone === 'error' ? 'error' : 'ok'} title={<span className="mono">{commandWords(quote)}</span>}
-                         subtitle={spaced(outcomeWords(quote).words)} trailingAlways
+                <ListRow icon={SquareTerminal} title={<span className="mono">{commandWords(quote)}</span>}
+                         subtitle={<StateWord tone={outcomeWords(quote).tone}>{spaced(outcomeWords(quote).words)}</StateWord>} trailingAlways
                          trailing={<IconButton icon={X} label="Remove quoted command" size="sm" onClick={() => setQuote(null)} />} />
               )}
               {options.length > 1 && (
@@ -167,8 +167,8 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
               )}
               <div className="term-box-line">
                 <div className="term-box-line__text">
-                  <TextArea ref={textarea} rows={1} max={6} value={draft} placeholder={`Message ${her} about ${name}`}
-                            aria-label={`Message ${her} about ${name}`} onChange={e => setDraft(e.target.value)}
+                  <TextArea ref={textarea} rows={1} max={6} value={draft} placeholder={`Message ${agentName} about ${name}`}
+                            aria-label={`Message ${agentName} about ${name}`} onChange={e => setDraft(e.target.value)}
                             onKeyDown={e => { if (isSendKey(e)) { e.preventDefault(); void send.run() } }} />
                 </div>
                 <SendButton ready={!send.busy && (!!draft.trim() || !!quote)} onSend={() => void send.run()} />
@@ -185,7 +185,8 @@ function TerminalPage({ id, reply }: { id: string; reply?: string }) {
               {rows.map(c => {
                 const out = outcomeWords(c)
                 return (
-                  <ListRow key={c.id} dot={out.tone === 'error' ? 'error' : out.tone === 'running' ? 'running' : 'ok'}
+                  <ListRow key={c.id} running={out.tone === 'running'} icon={SquareTerminal}
+                           aside={out.tone === 'error' ? <StateWord tone="error">{out.words}</StateWord> : undefined}
                            title={<span className="mono">{commandWords(c)}</span>} tooltip={commandWords(c)}
                            subtitle={c.from.kind === 'you' ? 'You' : c.from.title ?? undefined} meta={listTime(c.at)} onClick={() => setOpened(c)}
                            trailing={c.from.kind !== 'you' && <IconButton icon={CornerUpLeft} label="Reply" size="sm" onClick={e => { e.stopPropagation(); doReply(c) }} />} />

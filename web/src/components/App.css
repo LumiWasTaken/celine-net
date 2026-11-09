@@ -50,12 +50,6 @@
 /* the phone's More: only in the bottom bar */
 .rail__more { display: none; }
 .rail__frozen.btn, .rail__frozen.btn:hover:not([aria-disabled='true']) { color: var(--error); }
-/* something to fix (a lost login): one dot, on Settings and on More */
-.rail__dot { position: absolute; top: var(--s-2); right: calc(50% - var(--s-4)); width: var(--dot); height: var(--dot);
-  border-radius: var(--r-full); background: var(--warn); }
-/* the other place at work, failed or waiting for you */
-.rail__dot--running { background: var(--running); animation: pulse var(--dur-pulse) linear infinite; }
-.rail__dot--failed { background: var(--error); }
 .rail__label { font-size: var(--t-xs); line-height: var(--lh-ui); font-weight: var(--fw-medium); white-space: nowrap; }
 .rail__spacer { flex: 1; min-height: var(--s-2); }
 .rail__count {
@@ -69,6 +63,9 @@
   animation: skeleton calc(var(--dur-pulse) * 4 / 3) var(--ease) infinite; }
 /* a short screen (a 1366x768 laptop): every place still fits, each as tall as a touch target */
 @media (max-height: 860px) { .rail__item { min-height: var(--h-lg); } }
+/* shorter still (a 768 px laptop under its browser bars): the mark goes, so every place
+   and Waiting fit without the rail scrolling */
+@media (max-height: 760px) { .rail__brand { display: none; } .rail { padding-block: var(--s-2); } }
 /* a phone on its side: icons only, a narrower rail */
 @media (pointer: coarse) and (max-height: 500px) and (min-width: 768px) {
   .app { --rail-w: var(--header-h); }
@@ -102,7 +99,7 @@ kbd { display: inline-block; min-width: 1.75em; padding: 0 0.4em; margin-right: 
   line-height: var(--lh-body); text-align: center; color: var(--text-primary); }
 .more { display: grid; margin: 0 calc(-1 * var(--s-2)); }
 /* in the More sheet a mark sits on its row, at its right end */
-.more :is(.rail__dot, .rail__count) { position: static; }
+.more .rail__count { position: static; }
 .muted { color: var(--text-muted); }
 /* a row of buttons under a form or a card */
 .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }

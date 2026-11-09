@@ -53,21 +53,25 @@
 .btn { position: relative; }
 .btn__overlay { position: absolute; inset: 0; display: grid; place-items: center; }
 .btn--loading > :not(.btn__overlay) { visibility: hidden; }
+/* a badge: an accent mark on the top-right corner (an update waits) */
+.btn__badge {
+  position: absolute; top: calc(-1 * var(--s-1)); right: calc(-1 * var(--s-1));
+  width: var(--s-3); height: var(--s-3); border-radius: var(--r-full); background: var(--accent);
+}
 .btn[aria-busy='true'] { cursor: progress; }
 
 /* ── Field / Input / SearchField / Select ────────────────────────────────── */
 .field-group { display: grid; gap: var(--s-2); min-width: 0; }
 .field-group__label { font-size: var(--t-md); font-weight: var(--fw-medium); color: var(--text-muted); }
+.field-group__head { display: flex; align-items: center; min-width: 0; }
 .field-group__hint { font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-muted); }
 .form { display: grid; gap: var(--s-4); }
 .form__control { display: flex; align-items: center; gap: var(--s-2); }
 .form__unit { font-size: var(--t-md); color: var(--text-muted); }
 .form__saved { font-size: var(--t-md); color: var(--text-primary); }
 .form__copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-2); }
-/* an action's lines (the Mac's Check): one Dot each, a long one wraps */
+/* an action's lines (the Mac's Check): one compact Notice each, a long one wraps */
 .form__lines { display: grid; gap: var(--s-2); }
-.form__lines .dot-word { align-items: baseline; }
-.form__lines .dot-word > span { white-space: normal; line-height: var(--lh-body); }
 
 /* the one input look (the composer's): surface-2, an inset hairline; the hairline
    strengthens on hover and turns its colour with a halo on focus */
@@ -134,6 +138,7 @@
 .choice-list {
   display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; max-height: calc(var(--h-md) * 6.5); overflow-y: auto;
 }
+.choice-list--whole { max-height: none; overflow: visible; }
 .choice-list__group-wrap { display: grid; grid-template-columns: minmax(0, 1fr); }
 .choice-list__group { padding: var(--s-2) var(--s-3) var(--s-1); font-size: var(--t-xs); line-height: var(--lh-ui);
   font-weight: var(--fw-medium); color: var(--text-muted); letter-spacing: var(--tracking-meta); }
@@ -142,10 +147,11 @@
   border-radius: var(--r-sm); text-align: left; color: var(--text-secondary);
 }
 .choice-list__item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.choice-list__item > .choice-list__meta { flex: none; font-size: var(--t-xs); font-weight: var(--fw-regular); color: var(--text-muted); }
 .choice-list__item:hover:not(:disabled, [aria-disabled='true']) { background: var(--surface-3); color: var(--text-primary); }
 .choice-list__item[aria-checked='true'] { background: var(--accent-wash); color: var(--accent); font-weight: var(--fw-medium); }
-/* a phone's dialog scrolls as one: no second scroll inside it */
-@media (max-width: 767px) { .dialog .choice-list { max-height: none; overflow: visible; } }
+/* a dialog scrolls as one: no second scroll inside it */
+.dialog .choice-list { max-height: none; overflow: visible; }
 
 /* ── Checkbox / Switch ───────────────────────────────────────────────────── */
 .checkbox { display: inline-flex; align-items: flex-start; gap: var(--s-2); cursor: pointer; min-height: var(--hit-min); }
@@ -180,6 +186,13 @@
   transition: background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
 .switch-row:not(.switch-row--bare):hover:not(:disabled, [aria-disabled='true']) { background: var(--surface-2);
   box-shadow: calc(-1 * var(--s-2)) 0 0 var(--surface-2), var(--s-2) 0 0 var(--surface-2); }
+/* with help: the track and the label are the button, the "?" right after the label */
+.switch-row--help { gap: 0; }
+.switch-row--help[aria-disabled='true'] { cursor: default; }
+.switch-row__button { display: flex; align-items: center; gap: var(--s-3); min-width: 0; min-height: inherit;
+  text-align: left; color: inherit; cursor: pointer; }
+/* its words as wide as they are, the "?" right after them; they wrap in the room the track leaves */
+.switch-row__button > .switch-row__text { flex: 0 1 auto; min-width: 0; }
 /* touch: every small control at least 44 px each way (--h-md is 44 there) */
 @media (pointer: coarse) {
   .switch-row { min-height: var(--h-md); }
@@ -250,6 +263,12 @@
 .status-line--error { color: var(--error); }
 .status-line--warn { color: var(--warn); }
 .status-line--success { color: var(--success); }
+/* StateWord: a state in words, coloured only by its tone */
+.state-word { min-width: 0; color: var(--text-muted); }
+.state-word--warn { color: var(--warn); }
+.state-word--error { color: var(--error); }
+.state-word--success { color: var(--success); }
+.state-word--running { color: var(--running); }
 
 /* ── Empty / LoadingRow (skeleton) ──────────────────────────────────────── */
 /* the one EmptyState: an icon on a round surface, one line, one action, in the middle
@@ -268,6 +287,9 @@
   padding: var(--s-4) var(--s-5); color: var(--text-muted);
 }
 .empty--compact .empty__head { font-size: var(--t-md); margin-bottom: var(--s-1); }
+.empty--compact .empty__action { margin-top: var(--s-3); }
+/* a card's own padding is its edge: an empty list in a Section starts where its title does */
+.ui-section > .empty--compact { padding-inline: 0; }
 
 .skeleton { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-2); animation: fade var(--dur) var(--ease) var(--dur-wait) both; }
 .skeleton > i {
@@ -298,14 +320,20 @@
 .dialog--md { width: min(var(--dialog-md), 100%); }
 .dialog--lg { width: min(var(--dialog-lg), 100%); }
 .dialog:focus { outline: none; }
-/* the one dialog header: the title left, on the X's line; the X pinned top right */
-.dialog__head { position: relative; display: flex; align-items: center; gap: var(--s-3); min-height: var(--h-md); }
-.dialog__head--x { padding-right: calc(var(--h-md) + var(--s-2)); }
+/* the one dialog header: the title left, on the X's line; the X pinned top right. It stays
+   in view while a long dialog scrolls, as the buttons do at the bottom */
+.dialog__head { position: sticky; top: calc(-1 * var(--s-4)); z-index: 1; display: flex; align-items: center; gap: var(--s-3);
+  min-height: var(--h-md); background: var(--surface-2);
+  margin: calc(-1 * var(--s-4)) calc(-1 * var(--dialog-pad)) calc(-1 * var(--s-2));
+  padding: var(--s-4) var(--dialog-pad) var(--s-2); box-sizing: content-box; }
+.dialog__head--x { padding-right: calc(var(--dialog-pad) + var(--h-md) + var(--s-2)); }
+/* under a sheet's grabber (a phone) the head takes only the gap, not the grabber's room */
+.sheet__grab + .dialog__head { margin-top: calc(-1 * var(--s-3)); padding-top: var(--s-3); }
 .dialog__title { margin: 0; min-width: 0; font-size: var(--t-xl); line-height: var(--lh-title); font-weight: var(--fw-medium); letter-spacing: var(--tracking-title); }
 /* the one close: 36 px, --s-4 from the top right of the surface it closes */
 .close-x { position: absolute; top: var(--s-4); right: var(--s-4); width: var(--h-md); height: var(--h-md); z-index: var(--z-sticky); }
 /* centred by `translate`, so the press's scale(.98) never drops it half its height from under the pointer */
-.dialog__head > .close-x { top: 50%; translate: 0 -50%; right: 0; }
+.dialog__head > .close-x { top: calc(50% + (var(--s-4) - var(--s-2)) / 2); translate: 0 -50%; right: var(--dialog-pad); }
 /* in a head the close X stays in the row, inset like every other head action */
 :is(.place-head__acts, .drawer__head) > .close-x:last-child { position: static; }
 /* a sheet: a list to pick from; from the bottom edge on a phone */
@@ -387,7 +415,6 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .list-row--muted :is(.face) { opacity: 0.7; }
 /* a deleted one (ShelfRow in the Trash), with Restore */
 .list-row--gone .list-row__title { color: var(--text-secondary); }
-.list-row--unread .list-row__title { font-weight: var(--fw-bold); }
 /* the open one: a step up; a picked one while selecting: the accent wash */
 .list-row[aria-current='true'], .list-row[aria-current='page'] { background: var(--surface-2); }
 .list-row[aria-selected='true'] { background: var(--selected); }
@@ -533,17 +560,6 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
   :root[data-keyboard] .toasts { bottom: var(--s-4); }
 }
 
-/* ── Dot: one size, one meaning per colour ─────────────────────────────── */
-.dot { display: inline-block; flex: none; width: var(--dot); height: var(--dot); border-radius: var(--r-full);
-  background: var(--border-strong); vertical-align: middle; }
-.dot--ok { background: var(--success); }
-.dot--error { background: var(--error); }
-.dot--warn { background: var(--warn); }
-.dot--accent { background: var(--accent); }
-.dot--running { background: var(--running); }
-.dot--you { background: var(--ansi-blue); }
-.dot--off { background: none; box-shadow: inset 0 0 0 1.5px var(--text-muted); }
-.dot--pulse { animation: pulse var(--dur-pulse) linear infinite; }
 
 /* ── Dots: it is at work and has nothing to say yet ─────────────────────── */
 .dots { display: inline-flex; align-items: center; gap: var(--s-1); height: 1lh; vertical-align: middle; }
@@ -645,12 +661,14 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .place-head__title > .btn { margin-left: 0; }
 .place-head__count, .place-head__detail { flex: none; font-size: var(--t-md); font-weight: var(--fw-regular); letter-spacing: normal;
   color: var(--text-muted); font-variant-numeric: tabular-nums; }
-/* short of room the state beside the name gives way first, down to its dot; the name keeps a few words */
+/* short of room the state beside the name gives way first, cut at its end; the name keeps a few words */
 .place-head__detail { display: inline-flex; align-items: center; gap: var(--s-2); flex-shrink: 1000; min-width: 0; overflow: hidden; white-space: nowrap; }
-.place-head__detail:has(> .dot-word:first-child, > .dot:first-child) { min-width: var(--dot); }
 .place-head__title--clip > .place-head__name { min-width: min(6rem, 100%); }
 .place-head__row > .place-head__search { flex: 0 1 460px; min-width: 200px; }
 .place-head__acts { flex: none; display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
+.place-head__acts > .list-row { min-width: 0; max-width: var(--head-row); }
+/* no room for words: a row in the actions (the model) keeps only its button; its name is the row's tip */
+.place-head--icons .place-head__acts > .list-row > .list-row__main { display: none; }
 .place-head__slot { display: contents; }
 .place-head--narrow .place-head__acts { gap: var(--s-1); }
 /* no room for words: a page's own buttons with an icon keep only the icon (the words in the tip) */
@@ -892,9 +910,6 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .slider__track:focus-visible::-webkit-slider-thumb { box-shadow: var(--focus-ring); }
 @media (max-width: 767px) { .slider { grid-template-columns: minmax(0, 1fr) 3rem; } .slider__track { grid-column: 1 / -1; grid-row: 2; } }
 
-/* ── Dot with its word: a provider's or an app's health ── */
-.dot-word { display: inline-flex; align-items: center; gap: var(--s-2); min-width: 0; color: var(--text-secondary); font-size: var(--t-md); }
-.dot-word > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Step: a ui-step's number in a circle ── */
 .ui-step { flex: none; display: inline-grid; place-items: center; width: var(--h-sm); height: var(--h-sm); border-radius: var(--r-full);
@@ -958,7 +973,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
   -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer var(--dur-shimmer) linear infinite; }
 .event-line--running > .event-line__head > .spin { color: var(--running); }
 
-/* ── ListRow: wrapping text, unread, a kept check, a file on its way ── */
+/* ── ListRow: wrapping text (its face, icon or check at the top), a file on its way ── */
 .list-row--body { align-items: flex-start; padding-block: var(--s-2); }
 .list-row--body > :is(.face, .list-row__icon, .list-row__pick) { margin-top: var(--s-0); }
 .list-row__body { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
@@ -1219,3 +1234,22 @@ span.picture__fav { display: grid; place-items: center; width: var(--h-sm); heig
 /* the sidebar's own head in the phone's drawer: the drawer's title already names the place */
 .place-side--drawer > .place-head { padding-left: var(--s-3); }
 .place-side--drawer > .place-head .place-head__title { display: none; }
+
+/* ── Help: the "?" after a name, opening what it does (a native popover, top layer) ── */
+.help {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; flex: none;
+  padding: var(--s-1); margin: calc(-1 * var(--s-1)) 0 calc(-1 * var(--s-1)) var(--s-0);
+  border-radius: var(--r-full); color: var(--text-muted); cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+.help:hover, .help:focus-visible, .help:has(+ .help__pop:popover-open) { color: var(--text-primary); }
+@media (pointer: coarse) {
+  .help { padding: calc((var(--h-md) - var(--icon-sm)) / 2); margin-block: calc(-1 * (var(--h-md) - var(--icon-sm)) / 2); }
+}
+.help__pop {
+  position: fixed; inset: auto; margin: 0; border: 0;
+  max-width: min(20rem, calc(100vw - 2 * var(--s-2)));
+  padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--surface-4); box-shadow: var(--e-float);
+  font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-primary);
+}
+.help__pop:popover-open { animation: fade var(--dur-fast) var(--ease); }

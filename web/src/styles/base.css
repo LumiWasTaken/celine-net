@@ -93,7 +93,7 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
    fade      a word of a reply, a tip, a body that loads, a status changing words
    rise      what arrives in a list while you look: a message, a row, a toast
    grow      from its origin (the pointer, the trigger, the picture): menus, cards, dialogs, the Viewer
-   pulse     the one working mark: the typing dots, a running dot, a speaking face's ring
+   pulse     the working mark: the typing dots, a speaking face's ring, a picture or a bar on its way
    sheet-up  a phone sheet from the bottom edge
    spin, skeleton, highlight   a busy button, a loading row, the message you jumped to
    Exits play on a copy of the element (ui/motion.ts useLeave), never by keyframes here; a
@@ -134,7 +134,7 @@ details[open]::details-content { height: auto; }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .spin, .dot--pulse, .dots i, .face.is-speaking::after, .progress__bar--indeterminate, .chip--busy > svg:first-child, .rail__dot--running, .nmark--running, .event-line--running .event-line__text {
+  .spin, .dots i, .face.is-speaking::after, .progress__bar--indeterminate, .chip--busy > svg:first-child, .event-line--running .event-line__text {
     animation-duration: calc(2 * var(--dur-pulse)) !important; animation-iteration-count: infinite !important;
   }
 }

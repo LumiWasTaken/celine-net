@@ -13,7 +13,7 @@ const TONE_ICON: Record<Tone, LucideIcon> = { info: Info, warn: TriangleAlert, e
 
 export type NoticeAction = { label: string; onClick: () => void; icon?: LucideIcon; busy?: boolean }
 
-export function Notice({ tone = 'info', title, children, action, compact = false, className, icon, onDismiss, dismissLabel = 'Dismiss' }: {
+export function Notice({ tone = 'info', title, children, action, compact = false, className, icon, onDismiss, dismissLabel = 'Close' }: {
   tone?: Tone
   title?: ReactNode
   children?: ReactNode
@@ -145,7 +145,7 @@ export function Loaded<T>({ res, page = false, icon, label, inline, compact, emp
     page ? <div className="list-page__empty"><EmptyState icon={Icon} title={title} action={action}>{line}</EmptyState></div>
       : <EmptyState compact icon={Icon} title={title} action={action}>{line}</EmptyState>
   )
-  if (res.missing) return state('Not found')
+  if (res.missing) return state('Not found', undefined, icon, page ? 'Nothing at this link.' : undefined)
   if (res.data === undefined) {
     if (!res.error) return <LoadingRow label={label} inline={inline} />
     return page ? state(res.error, <Button onClick={res.reload}>Retry</Button>)

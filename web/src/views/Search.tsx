@@ -33,7 +33,7 @@ import './Search.css'
 const PAGE = 50
 const RECENTS_KEY = 'search:recent'
 type Sort = 'best' | 'recent' | 'oldest'
-const SORT_LABEL: Record<Sort, string> = { best: 'Best matches', recent: 'Newest', oldest: 'Oldest' }
+const SORT_LABEL: Record<Sort, string> = { best: 'Best matches', recent: 'Recent', oldest: 'Oldest' }
 /** its own conversations, the one source that is not the archive */
 const OWN = 'conversations'
 const TYPES: [MediaType, string][] = [['photo', 'Photo'], ['video', 'Video'], ['voice', 'Voice message'], ['audio', 'Audio'], ['document', 'File'],
@@ -166,7 +166,7 @@ export function Search({ active }: { active: boolean }) {
   const hitMenu = (h: SearchHit): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => open(h) },
     { label: 'Copy message link', icon: Copy, onSelect: () => void copyMessageLink(h.ref).then(ok => ok && toast({ text: 'Copied' })) },
-    { label: `Ask ${name || 'Celine'}`, icon: BookHeart, onSelect: () => askCeline(nav, '', [h.ref]) },
+    { label: `Ask ${name || 'your agent'}`, icon: BookHeart, onSelect: () => askCeline(nav, '', [h.ref]) },
   ]
 
   // Group: Chat puts a head over each run of results from one chat
@@ -194,7 +194,7 @@ export function Search({ active }: { active: boolean }) {
     else if (e.key === 'Enter' && hits[cursor]) { e.preventDefault(); open(hits[cursor]!) }
   }
 
-  const sourceWord = own ? (name ? `${name}'s conversations` : 'Conversations') : kb ? kbs.find(k => k.id === kb)?.title ?? kb : undefined
+  const sourceWord = own ? (name ? `${name}'s chats` : 'Chats') : kb ? kbs.find(k => k.id === kb)?.title ?? kb : undefined
   const typed = parsed?.has[0] as MediaType | undefined
   const typeWord = TYPES.find(([t]) => t === typed)?.[1]
   const dated = DATES.find(([d]) => q.includes(`during:${d}`))
@@ -204,7 +204,7 @@ export function Search({ active }: { active: boolean }) {
       items: [{ label: 'All', current: !kb, detail: facets ? `${num(facets.total)} results` : undefined, onSelect: () => setKb('') },
               ...chatKbs.map(k => ({ label: k.title, current: kb === k.id, detail: count(k.id) !== undefined ? `${num(count(k.id))} results` : undefined,
                                      onSelect: () => { setKb(k.id); if (chat && !chat.ref.startsWith(`${k.id}:`)) setChat(null) } })),
-              { label: name ? `${name}'s conversations` : 'Conversations', current: own, onSelect: () => { setKb(OWN); setChat(null); setPerson(null) } }] },
+              { label: name ? `${name}'s chats` : 'Chats', current: own, onSelect: () => { setKb(OWN); setChat(null); setPerson(null) } }] },
     ...(own ? [] : [
       { label: 'Person', icon: User, picked: person?.name, onClear: () => setPerson(null),
         items: (facets?.people ?? []).filter(p => p.ref).map(p => ({ label: p.name, face: <Avatar name={p.name} size={28} />, detail: num(p.count),
@@ -223,13 +223,18 @@ export function Search({ active }: { active: boolean }) {
   // before you type: only what you search in (and what is picked), no Sort or Group
   const offered = filters.filter(f => (f.items.length || f.picked) && (!typedNothing || f.label === 'Source' || f.picked))
   const ordered = !typedNothing && !own
+  // the archive found nothing: its chats may still hold the words (they are a Source of their own)
+  const archiveEmpty = !own && !typedNothing && !loading && !error && hits.length === 0
+  const ownHits = useResource(() => (archiveEmpty ? api.search(q.trim()) : Promise.resolve(null)), [archiveEmpty, q], { debounce: 150 })
+  const ownCount = new Set((ownHits.data?.hits ?? []).map(h => h.conversation_id)).size
+  const ownWord = name ? `${name}'s chats` : 'your chats'
 
   return (
     <div className="list-page">
       <PlaceHead level={1} title="Search" count={!typedNothing && total !== null && !own ? total : undefined}
                  search={{ value: q, onChange: v => { setQ(v); setLiteral(false) }, placeholder: 'Search', label: 'Search',
                            loading, inputRef: input, onKeyDown: onKey }}
-                 actions={hits.length > 0 && <IconButton icon={BookHeart} label={`Ask ${name || 'Celine'}`} onClick={askAll} />}
+                 actions={hits.length > 0 && <IconButton icon={BookHeart} label={`Ask ${name || 'your agent'}`} onClick={askAll} />}
                  more={[{ label: 'Clear recent searches', icon: Eraser, disabled: !recents.length, onSelect: () => { setRecents([]); saveRecents([]) } }]} />
       <div className="list-page__top">
         <Toolbar filters={offered}
@@ -267,7 +272,7 @@ export function Search({ active }: { active: boolean }) {
               <VirtualList items={recents} estimate={48} getKey={r => r} label="Recent" before={<ListSection label="Recent" />}
                            renderRow={r => {
                              const items: MenuItem[] = [{ label: 'Search', icon: SearchIcon, onSelect: () => setQ(r) }, 'sep',
-                               { label: 'Delete', icon: Eraser, danger: true, onSelect: () => setRecents(x => { const n = x.filter(y => y !== r); saveRecents(n); return n }) }]
+                               { label: 'Remove', icon: Eraser, danger: true, onSelect: () => setRecents(x => { const n = x.filter(y => y !== r); saveRecents(n); return n }) }]
                              return <ListRow icon={History} title={r} onClick={() => setQ(r)} onContextMenu={e => ctx.open(e, items, r)}
                                              trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
                            }} />
@@ -276,8 +281,11 @@ export function Search({ active }: { active: boolean }) {
         )
         : !loading && !error && hits.length === 0 ? (
           <div className="list-page__empty">
-            <EmptyState icon={SearchX} title="No results match" action={<Button onClick={() => setQ('')}>Clear search</Button>}>
-              {indexing ? 'Search is still indexing your messages, so some results may be missing.' : undefined}
+            <EmptyState icon={SearchX} title="No results match"
+                        action={ownCount > 0 ? <Button onClick={() => { setKb(OWN); setChat(null); setPerson(null) }}>{`Search ${ownWord}`}</Button>
+                          : <Button onClick={() => setQ('')}>Clear search</Button>}>
+              {ownCount > 0 ? `${ownCount === 1 ? 'One' : num(ownCount)} of ${ownWord} ${ownCount === 1 ? 'matches' : 'match'}.`
+                : indexing ? 'Search is still indexing your messages, so some results may be missing.' : undefined}
             </EmptyState>
           </div>
         ) : (

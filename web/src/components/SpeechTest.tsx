@@ -99,11 +99,11 @@ export function SpeechTest({ direction, identity, ready, save }: {
     <div className="onb__check">
       <Button disabled={!ready || (busy && state !== 'recording') || (direction === 'output' && !text.trim())}
         onClick={() => state === 'recording' ? recorder.current?.stop() : void begin()}>
-        {state === 'recording' ? 'Done' : direction === 'input' ? 'Try it' : 'Listen'}
+        {state === 'recording' ? 'Stop recording' : direction === 'input' ? 'Try it' : 'Read aloud'}
       </Button>
       {(busy || audio) && <Button onClick={stop}>Stop</Button>}
     </div>
-    {busy && <p role="status">{state === 'recording' ? 'Recording' : state === 'permission' ? 'Allow the microphone in your browser' : state === 'saving' ? 'Saving' : direction === 'input' ? 'Transcribing' : 'Reading aloud'}</p>}
+    {busy && <p role="status">{state === 'recording' ? 'Recording' : state === 'permission' ? 'Allow the microphone in your browser.' : state === 'saving' ? 'Saving' : direction === 'input' ? 'Transcribing' : 'Reading aloud'}</p>}
     {transcript !== null && <Field label="Transcript"><p role="status">{transcript}</p></Field>}
     {audio && <Field label="Sample"><audio key={audio} controls autoPlay src={audio} onError={() => setError('The browser could not play this audio.')} /></Field>}
     {error && <InlineError compact message={error} />}

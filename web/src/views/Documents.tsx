@@ -34,7 +34,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
 }
 /* a type as a filter and a column says it */
 const TYPE_WORD: Record<string, string> = {
-  note: 'Notes', text: 'Text', pdf: 'PDF', image: 'Images', docx: 'Word', epub: 'Books', code: 'Code', data: 'Data',
+  note: 'Markdown', text: 'Text', pdf: 'PDF', image: 'Images', docx: 'Word', epub: 'Books', code: 'Code', data: 'Data',
   html: 'Web pages', subtitles: 'Subtitles', file: 'Other',
 }
 const SORTS: { value: Sort; label: string }[] = [
@@ -282,7 +282,7 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
   const [sort, setSort] = useState<Sort>('changed')
   const [shelf, setShelf] = useState<Shelf>('list')
   const ctx = useContextMenu()
-  const headMenu: MenuItem[] = [{ label: 'New note', icon: NotebookPen, onSelect: () => onAsk({ kind: 'new-note' }) },
+  const headMenu: MenuItem[] = [{ label: 'New document', icon: NotebookPen, onSelect: () => onAsk({ kind: 'new-note' }) },
                                 { label: 'New folder', icon: FolderPlus, onSelect: () => onAsk({ kind: 'new-folder' }) },
                                 { label: 'Upload folder', icon: FolderUp, onSelect: onUploadFolder }]
   const needle = q.trim()
@@ -328,7 +328,8 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
          run: keys => both('purge', keys).then(r => { onChanged(); return r }) }]
     : [{ label: 'Move to', icon: FolderInput, done: 'moved', run: async keys => { onAsk({ kind: 'move', keys }); return { done: [], skipped: [] } } },
        { label: 'Move to Trash', icon: Trash2, danger: true, done: 'moved',
-         ask: n => ({ title: `Move ${itemsNoun(n)} to Trash?`, confirm: 'Move to Trash' }),
+         ask: n => ({ title: `Move ${itemsNoun(n)} to Trash?`, confirm: 'Move to Trash',
+                       body: n === 1 ? 'You can restore it from the Trash.' : 'You can restore them from the Trash.' }),
          run: keys => both('trash', keys).then(r => { onChanged(); return r }) }]
 
   // the types this folder holds (from its unfiltered page), and the one picked
@@ -365,7 +366,7 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
                      cell={u.error ? 'Failed' : undefined} trailingAlways={!!(u.error || u.result)}
                      trailing={(u.error || u.result) && <>
                        {u.retry && <Button size="sm" variant="ghost" icon={RotateCcw} onClick={u.retry}>Retry</Button>}
-                       <IconButton icon={X} label="Dismiss" size="sm" onClick={() => onUploadDone(u.key)} />
+                       <IconButton icon={X} label="Close" size="sm" onClick={() => onUploadDone(u.key)} />
                      </>} />
           ))}
         </div>
@@ -615,7 +616,7 @@ function Details({ item, onSaved, onRewrite, rewriting }: { item: ItemDetail; on
             <span className="doc-ai__row">
               {ai.model && ai.generated_at && <StatusLine>{`${ai.model}, ${stamp(ai.generated_at)}`}</StatusLine>}
               {ai.stale && <StatusLine tone="warn">Out of date</StatusLine>}
-              <Button size="sm" variant={ai.stale ? 'secondary' : 'ghost'} icon={RefreshCw} loading={rewriting} onClick={onRewrite}>Regenerate</Button>
+              <Button size="sm" variant={ai.stale ? 'secondary' : 'ghost'} icon={RefreshCw} loading={rewriting} onClick={onRewrite}>Extract text</Button>
             </span>
           )}
         </Field>
@@ -650,6 +651,7 @@ function Asked({ ask, folder, tree, onClose, onDone, onMove }: {
 
   if (ask.kind === 'trash') {
     return <ConfirmDialog title={`Move ${ask.keys.length === 1 ? ask.name : itemsNoun(ask.keys.length)} to Trash?`} confirmLabel="Move to Trash" danger
+                          body={ask.keys.length === 1 ? 'You can restore it from the Trash.' : 'You can restore them from the Trash.'}
                           onClose={onClose}
                           onConfirm={async () => { try { await both('trash', ask.keys); onDone() } catch (e) { return errorText(e) } }} />
   }
@@ -664,7 +666,7 @@ function Asked({ ask, folder, tree, onClose, onDone, onMove }: {
     )
   }
   const a = ask
-  const title = a.kind === 'new-folder' ? 'New folder' : a.kind === 'new-note' ? 'New note' : 'Rename'
+  const title = a.kind === 'new-folder' ? 'New folder' : a.kind === 'new-note' ? 'New document' : 'Rename'
   const ok = !!value.trim()
   const submit = () => void go.run(async () => {
     const v = value.trim()
@@ -682,7 +684,7 @@ function Asked({ ask, folder, tree, onClose, onDone, onMove }: {
       <form onSubmit={e => { e.preventDefault(); if (ok) submit() }}>
         <Field label="Name" error={go.error}>
           <Input autoFocus value={value} onChange={e => setValue(e.target.value)} spellCheck={false}
-                 placeholder={a.kind === 'new-note' ? join(folder, 'notes.md') : undefined} />
+                 placeholder={a.kind === 'new-note' ? join(folder, 'document.md') : undefined} />
         </Field>
       </form>
     </Dialog>

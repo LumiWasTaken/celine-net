@@ -4,7 +4,7 @@
    name, what it does or the name Celine calls it by, and shows the tools it found unfolded. */
 import { useMemo, useState } from 'react'
 import { conversationApi, type SkillInfo } from '../lib/api'
-import { errorText, nothingMatches } from '../lib/format'
+import { errorText, noneMatch } from '../lib/format'
 import { useOnline } from '../lib/socket'
 import { TOOL_GROUPS, settingsApi, toolGroup, toolOrder, type SkillView } from '../lib/settingsApi'
 import { useResource } from '../lib/useResource'
@@ -156,7 +156,7 @@ export function ToolList({ conversationId, draft }: {
     <div className="tools">
       <SearchField value={q} onChange={setQ} placeholder="Search tools" />
       {error && <InlineError compact message={error} />}
-      {groups.length === 0 ? <EmptyState compact>{nothingMatches(q)}</EmptyState> : groups.map(({ g, label, skills }) => (
+      {groups.length === 0 ? <EmptyState compact>{noneMatch('tools')}</EmptyState> : groups.map(({ g, label, skills }) => (
         <div key={g} className="tool-blocks">
           <ListSection label={label} />
           {skills.map(s => (
