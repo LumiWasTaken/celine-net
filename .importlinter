@@ -18,6 +18,7 @@ source_modules =
     celine.plugins
 forbidden_modules =
     celine.__main__
+    celine.agent
     celine.api
     celine.approvals
     celine.artifacts
@@ -34,7 +35,6 @@ forbidden_modules =
     celine.devices
     celine.events
     celine.guard
-    celine.her
     celine.hold
     celine.homes
     celine.image_catalog
@@ -64,6 +64,7 @@ forbidden_modules =
     celine.turns
     celine.vault
     celine.vision
+    celine.waits
     celine.work
 allow_indirect_imports = True
 

@@ -2,7 +2,7 @@
 
 Dictation (speech to text) and Read aloud (text to speech) are two optional features, off
 until you switch them on. Each runs on a model role, like Topic search or Reranking: pick
-the model in the onboarding, in Settings, Features, or in Settings, Models. No speech
+the model in Setup, in Settings, Features, or in Settings, Models. No speech
 engine ships with the app.
 
 ## Providers
@@ -28,13 +28,13 @@ refused and a provider's error text is never passed on.
 
 ## Dictation
 
-The microphone beside Send records; Done writes the text into your draft. Speech options
+The microphone beside Send records; Stop recording writes the text into your draft. Speech options
 has a language and Send when done (off). A recording stops at two minutes or 12 MB. The
 microphone needs HTTPS or localhost.
 
 ## Read aloud
 
-Read aloud on a finished reply reads its answer, without thinking, tool output, code or
-links, in pieces of up to 900 characters, the next one made while one plays. Speech
+Read aloud on a finished reply reads its text, without thinking, tool output, code or
+links, in pieces of up to 900 characters, the next one made while one plays; Stop ends it. Speech
 options has the voice and Read new replies aloud (off). Voice, language and the two
 switches are this device's.

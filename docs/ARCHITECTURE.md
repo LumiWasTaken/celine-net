@@ -2,7 +2,7 @@
 
 ## Shape
 
-One Python process. Celine's state is one SQLite file with one writer thread; every
+One Python process. The app's state is one SQLite file with one writer thread; every
 knowledge base is another SQLite file of its own (see Knowledge bases). A React app served as static
 files from the same process, or by Vite in dev. Turns run server side and survive the
 browser going away. The WebSocket is a tail of a durable event log; closing it changes
@@ -17,7 +17,7 @@ celine-net/
 │   ├── log.db                  the logs: events, the global feed, requests, raw responses
 │   ├── settings/, secrets/     what Settings writes; API keys, mode 600
 │   ├── blobs/                  attachments, content-addressed
-│   ├── notebook/, documents/   her notebook (its index .index.db in it); your Documents
+│   ├── notebook/, documents/   its notebook (its index .index.db in it); your Documents
 │   ├── kb/<id>.db              one SQLite file per knowledge base
 │   └── logs/celine.log         json lines, rotated at 10 MB
 ├── server/celine/              the app (module table in AGENT.md)
@@ -48,7 +48,7 @@ query file.
    parse (any `config/*.toml`, any `var/settings/*.toml`) is one line naming the file,
    line and column, and exit 2; a missing optional file is its defaults. An unknown table
    or key, or a value of the wrong type, is a `Problem` naming the file and the key
-   (Settings, General "To fix", the log at start, `celine doctor`); the key is dropped and
+   (Settings, General "A setting needs a fix", the log at start, `celine doctor`); the key is dropped and
    the reader's default counts. The key lists live in `config.py` beside the comments that
    name their readers. Logging starts and every known secret goes on the redaction list.
 3. The login: with `[server] login = "off"` the host must be loopback; with
@@ -77,13 +77,13 @@ Flags: `--dev` accepts the Vite origin, `--port`, `--verbose`.
 TOML under `config/`: hand-written, the app only reads it (read-only in Docker).
 Providers, models, the model roles (which model does what), tool defaults, the time zone
 and API keys are Settings, written to `var/settings/*.toml` and `var/secrets/`; a fresh
-install has none of them (nothing shipped);. A conversation's own model, thinking level
+install has none of them (nothing shipped). A conversation's own model, thinking level
 and tool switches live in the database.
 
 `context.toml` is a shipped default: it is copied once into `var/settings/` when its
 place there does not exist (`settings/seed.py`), then only `var/settings/` is read.
-`her/` (her.toml, persona.md, owner.md, voice.toml, talk.md) is its shipped base: a
-fresh install's row starts from it (`her.seed`). The agent's name (`{{name}}` in prompt text)
+`agent/` (agent.toml, persona.md, owner.md, voice.toml, talk.md) is the agent's shipped base:
+a fresh install's row starts from it (`agent.seed`). The agent's name (`{{name}}` in prompt text)
 and pronouns are its row's; your name (`{{username}}`) is Settings, General.
 
 `celine.toml` is how the app is served, read at start: `[server] host`, `port`
@@ -96,30 +96,50 @@ file's keys checked against the table of its owner (`mcp.KEYS`, `kb.TABLES`,
 seeded settings are made once by `__main__.preflight`, before the first full load.
 
 The Advanced settings (Settings, Advanced; `settings/general.py` FIELDS, saved in
-`var/settings/general.toml`) are the time limits and sizes, each defined once with its
-type, range and default and read where it is used with `cfg.r(key)`, so a save
-applies at once:
+`var/settings/general.toml`) are the time limits, sizes and switches, each defined once
+with its label, type, range and default and read where it is used with `cfg.r(key)`, so
+a save applies at once. They are listed here in the page's sections (`general.GROUPS`):
 
-| Key | Default | Meaning |
-|---|---|---|
-| `max_concurrent_turns` | 6 | conversations generating at once (the dispatcher's workers follow it) |
-| `max_tool_iterations` | 0 | model/tool round trips per turn; 0 means no cap, the wall clock is the limit |
-| `tool_timeout_seconds` | 180 | a blocking tool past this is cancelled |
-| `job_timeout_seconds` | 3600 | must exceed `tool_timeout_seconds` |
-| `turn_wall_clock_seconds` | 1800 | its work time in one turn, tools included |
-| `last_step_seconds` | 180 | after the work time: the step under way may still finish |
-| `events_keep` | 500 | log entries kept per conversation once it is idle |
-| `history_messages` | 200 | transcript sent to the model; 0 means no cap |
-| `backup_keep_days` | 7 | nights of backups kept |
-| `max_message_bytes` | 1000000 | enforced on POST |
-| `max_attachment_bytes` | 20000000 | refused during upload |
-| `max_attachments` | 10 | per message |
-| `inline_text_max_bytes` | 200000 | larger text attachments become a note |
-| `requests_keep` | 0 | days a model request body is kept in log.db; 0 keeps it forever |
-| `document_part_mb` | 256 | an EPUB or DOCX part that unpacks larger is not read |
-| `document_html_mb` | 64 | a larger HTML document is stored, not read |
-| `document_pdf_pages` | 5000 | pages read of one PDF |
-| `document_pdf_seconds` | 600 | time spent reading one PDF, looked at between pages |
+| Key | Label | Default | Meaning |
+|---|---|---|---|
+| `max_concurrent_turns` | Turns at once | 6 | conversations generating at once (the dispatcher's workers follow it, plus one for each turn that waits for your answer) |
+| `max_tool_iterations` | Tool rounds per turn | 0 | model/tool round trips per turn; 0 means no cap, the wall clock is the limit |
+| `turn_wall_clock_seconds` | Turn time limit | 1800 | its work time in one turn, tools included |
+| `last_step_seconds` | Last answer time | 180 | after the work time: the step under way may still finish |
+| `tool_timeout_seconds` | Tool time limit | 180 | a blocking tool past this is cancelled |
+| `job_timeout_seconds` | Job time limit | 3600 | a background job is stopped after this; must exceed `tool_timeout_seconds` |
+| `history_messages` | Messages per request | 200 | transcript sent to the model; 0 means no cap |
+| `verify_citations` | Check citations | on | the citation check of a reply (`turns/reply.py`): every message or document it cites must be one a tool showed |
+| `embed_query_timeout_seconds` | Search embedding time limit | 60 | how long a search waits for the Topic search model (`kb/semantic.py`) |
+| `busy_retry_seconds` | Busy model wait | 10 | agent and background work asks a busy model again after this, doubled at each try |
+| `busy_retry_max_seconds` | Longest busy model wait | 600 | the longest wait between two asks of a busy model; at least `busy_retry_seconds` |
+| `routine_max_minutes` | Routine time limit | 180 | the most minutes one routine run may work; 0 means no limit (Schedules, When a run fails) |
+| `routines_wait_for_missions` | Routines wait for missions | off | a routine run starts only while no turn of a mission is live (Schedules, When a run starts) |
+| `mission_max_hours` | Mission time limit | 0 | the most hours one mission may take from its start; 0 means no limit (`missions/watch.py`) |
+| `mission_max_sub_agents` | Sub-agents per mission | 0 | the most sub-agents one mission may start; 0 means no limit |
+| `missions_resume_after_unfreeze` | Continue missions after Unfreeze | on | a mission a freeze stopped continues by itself after Unfreeze |
+| `max_attachments` | Attachments per message | 10 | per message |
+| `max_upload_mb` | Largest upload | 512 | MB of one file added to Documents |
+| `max_attachment_bytes` | Largest attachment | 20000000 | refused during upload |
+| `inline_text_max_bytes` | Largest text read inline | 200000 | larger text attachments become a note |
+| `max_message_bytes` | Largest message | 1000000 | enforced on POST |
+| `document_part_mb` | Largest part in a document | 256 | an EPUB or DOCX part that unpacks larger is not read |
+| `document_html_mb` | Largest web page document | 64 | a larger HTML document is stored, not read |
+| `document_pdf_pages` | PDF pages read | 5000 | pages read of one PDF |
+| `document_pdf_seconds` | PDF read time limit | 600 | time spent reading one PDF, looked at between pages |
+| `events_keep` | Log entries per chat | 500 | log entries kept per conversation once it is idle |
+| `backup_keep_days` | Backups kept | 7 | nights of backups kept |
+| `requests_keep` | Model requests kept | 0 | days a model request body is kept in log.db; 0 keeps it forever |
+
+FIELDS also holds the settings shown on other pages: `user_name` (Your name, default
+"User"), `timezone` (Time zone, UTC) and `user_bio` (About you) in General's You section
+and the onboarding; `lock_archived` (Lock archived chats, on) and `image_captions_auto`
+(Describe new photos in Messages, off) on General; `smart_search_refresh_minutes` (Update
+the search index every, 15 minutes) on Search index; `ask_before_setup` (Ask before
+setting up services, on) and `ask_listed_cloud` (Ask before cloud models from your lists,
+off) in the agent page's Behaviour section; `guard` (Guard mode, Warn) on Guard; and
+`code_websearch` (Web search for the coding agent, off), which no page shows (general.toml
+or `settings__propose`).
 
 A skill's own numbers are declared beside its code: its module (the one `BUILTIN` names)
 has `KNOBS`, a tuple of `skills.knob(key, label, unit, min, max, default, help)` with keys
@@ -136,8 +156,8 @@ gone. Sizes are in MB (1024 * 1024 bytes). The knobs: `notebook.index_max_entrie
 `chat_archive.search_max_tokens`, `search_max_tokens_all`, `candidates`, `rerank_floor`,
 `episode_gap_minutes`, `session_max_tokens`, `period_max_tokens`, `max_tokens_cap`,
 `scroll_max_messages`, `scroll_max_tokens`, `get_max_refs`; `web.results`,
-`search_timeout`, `read_tokens`, `timeout`, `page_max_mb`, `pdf_max_mb`. The citation
-check (`turns/reply.py`) is the app's own: `verify_citations`, a switch.
+`search_timeout`, `per_hour`, `read_tokens`, `timeout`, `page_max_mb`, `pdf_max_mb`. Each
+has its help, the "?" on Advanced.
 
 `skills.toml` holds one section per skill with `enabled` and nothing else. `build`, the
 reload and the knobs all walk `skills.BUILTIN` and skip a skill whose module is gone
@@ -146,7 +166,7 @@ a skill's module or folder removed takes the skill, its tools and its knobs with
 
 Models: `var/settings/providers.toml` (providers and their models) and `roles.toml`
 (an ordered list of models per role), kept as `cfg.settings`. Which model answers a call
-is decided at call time by the Router (`backends/router.py`, "The model queue" below)..
+is decided at call time by the Router (`backends/router.py`, "The model queue" below).
 A `.env` at the project root is loaded before the config (`KEY=VALUE`, quotes
 optional, variables already set win, never logged); `mcp.toml` reads it through
 `${VAR}`, `${VAR:-default}` and `${VAR-default}`. `.env.example` lists the names. API
@@ -156,31 +176,59 @@ second instance beside the real one. `CELINE_CONFIG_DIR` does the same for `conf
 The chat model is the Chat role in Settings (`PUT /api/roles/chat`). A
 conversation can pick its own (`PATCH /api/conversations/{cid}/settings`).
 
+Service addresses (`settings/services.py`, `var/settings/services.toml`; each service's
+form in Settings, Features and Setup): the shellbox, the browser and web search, one
+`url` each, saved on its own with `PUT /api/services/{id}` `{url}`. A saved address wins
+over the compose's variable (`CELINE_SHELL_URL`, `CELINE_BROWSER_URL`,
+`CELINE_SEARXNG_URL`), an empty one too; a service with none saved takes the variable,
+read on every call. `{url: null}` forgets the saved address (Use the default), so the
+variable applies again. `GET /api/services` gives each service as `{url, source,
+default}`: `source` saved, environment or default, and `default` the address Use the
+default puts back while a saved one hides it, else null. While `default` is set, the
+service's form shows a Use the default icon button. Migration 0024 dropped each saved address equal to its
+variable (DEPLOY.md, Updating).
+
 Who it is and how it sounds are fields of its row (Settings, the agent's page): `persona`, `talk`
-(null: the shipped `config/her/talk.md`) and its Banned words (`voice`). Every turn of
+(null: the shipped `config/agent/talk.md`) and its Banned words (`voice`). Every turn of
 its own gets all of it, whatever the kind: a chat, a mission, a sub-agent,
 a background run (`prompt.system_blocks`, the one assembly). It reads them with
-`me__read` and changes its talk and its banned words with `me__edit` (`skills/me.py`);
-the persona stays yours. Every edit waits for your approval first (`approvals.py`, kind
-`her`), whether the guard is on or not. Every change goes through `her.write_sync` into `text_versions`
-as `her:persona`, `her:talk` and `her:voice`, and `POST /api/text-versions/{vid}/revert`
+`me__read` and changes its persona, its talk and its banned words with `me__edit`
+(`skills/me.py`). Every edit waits for your approval first (`approvals.py`, kind
+`agent`), whether the guard is on or not. Every change goes through `agent.write_sync` into
+`text_versions` as `agent:persona`, `agent:talk` and `agent:voice`, and `POST /api/text-versions/{vid}/revert`
 makes a version the text again.
 
-Settings are hers to read and to propose (`skills/settings.py`): `settings__read` gives
+Settings, Advanced, Prompts (`settings/prompts.py`, `api/prompts.py`) edits every package text a
+model reads, each skill guide and Bastet's judges. `GET /api/prompts` gives the groups
+(its name, App, Skill guides, Guard; the persona, example lines, banned words and
+Bastet's three texts are rows that open their own page; a guide's row says its
+frontmatter description) with `help`; `GET /api/prompts/{id}` one text; `PUT
+/api/prompts/{id}` `{text}` saves the user's edit as `var/prompts/<id>.md`, which
+`prompts.text` (and `guard/prompts.py` for a judge) reads before the shipped file, at its
+next use. A save is checked first (`settings/prompts.py problem`, else 400 with the
+sentence): a judge keeps the slots of its shipped text, and a guide keeps `name: <stem>`
+in its frontmatter. `{text: null}`, or a text equal to the shipped one, removes the edit
+(Use the default). Every save is kept in the text's History (`texts.py`, `prompt:<id>`,
+the shipped text its first version), drops that text's "nothing fills" problem
+(`prompts.settled`) and sends `settings.changed` (`what: ["prompts"]`). The page opens a
+text at `/settings/prompts/edit/<id>`, its History at `.../history`. An app update
+changes only the shipped files, so an edited text stays as the user wrote it.
+
+It reads Settings and proposes changes to them (`skills/settings.py`): `settings__read` gives
 every target Settings saves at once (features, general, roles, a provider, tools,
 services, email, the vault, the context shares, a plugin's form) as fields with values,
 allowed values and a version, a secret only as its state. `settings__propose` checks a
 change with the validators of a save (`settings/write.check`), waits for your approval
-(kind `settings`: each field before and after, and her why) and saves it with the
+(kind `settings`: each field before and after, and its why) and saves it with the
 Settings screen's own function (`saves.py`) on the version it was proposed
 against; a target that changed meanwhile is not overwritten. A secret comes from a file
-in her shellbox, so its value never passes her context, the request, an event or a log.
+in its shellbox, so its value never passes its context, the request, an event or a log.
 The skill is not core: its tools go by name, so their parameters cost nothing in the
 turns that do not touch Settings.
 
 A llama-swap, tabby or llama-server model's `llama` block in Settings goes into the
 request body; `llama.grammar.file` (relative to `config/`) is sent as `grammar`. The
-Banned words (its row's `voice`, shipped `config/her/voice.toml`) are the list of words
+Banned words (its row's `voice`, shipped `config/agent/voice.toml`) are the list of words
 its turns are pushed away from. `LLM.make` puts them on the BackendConfig for its turns
 and `LlamaServerBackend.request_body` sends them: as `banned_strings` on tabbyAPI, as
 `logit_bias` on llama-swap or llama-server. Tool, vision and embedding calls never carry
@@ -202,7 +250,7 @@ and the last good values stay. No model roles is not a problem.
 
 ## Database
 
-Two files. `var/celine.db` is the state: `db/migrations/0001_schema.sql` is its whole
+Three files. `var/celine.db` is the state: `db/migrations/0001_schema.sql` is its whole
 schema. `var/log.db` is the append-only part, pruned by count: `events`
 (each conversation's log), `global_events` (the feed every page follows), `requests` and
 `raw_responses` (what went to and came from the model), `terminal_commands`;
@@ -223,8 +271,8 @@ Main tables: `conversations`, `messages`, `tool_calls`, `turns`, `events`,
 `global_events`, `jobs`, `compactions`, `context_state`, `attachments`, `blobs`,
 `notebook_index`, `terminals`, `missions`, `artifacts`, `intercom` and its deliveries,
 `requests` (every model request a reply's steps sent, zlib-compressed, with the server's
-token counts and the known secrets masked; `GET .../messages/{mid}/requests`), and `her`
-(its one row). Each module keeps its rows next to its code as plain functions over the
+token counts and the known secrets masked; `GET .../messages/{mid}/requests`), and `agent`
+(the agent's one row). Each module keeps its rows next to its code as plain functions over the
 core `Store`.
 
 `messages.author` is `user` (the user's own message as typed), `model` or `intercom`
@@ -308,7 +356,8 @@ said something, Continue can pick it up (`view.continuable`) and the conversatio
 model continues a reply in place (`tree.prefills`, set at start to
 `conversations/api.prefills`); the transcript then shows Continue beside Regenerate.
 
-Workers (`max_concurrent_turns` of them) lease conversations: `turns.claim` picks a
+Workers (`max_concurrent_turns` of them, plus one for each turn that waits for your
+answer to a request: a waiting turn takes no slot) lease conversations: `turns.claim` picks a
 queued turn whose conversation has nothing in `preparing`, `streaming` or `tools`: the
 user's turns (`origin='user'`) first, then the oldest. A worker sleeps until `notify()`,
 which every write that queues a turn calls (no poll). When `turn_wall_clock_seconds` of
@@ -473,7 +522,7 @@ Every user-role message goes on the wire with its time first: the line `[Fri 2 O
 in square brackets: the send time, the intercom headers, `[your mind]`, `[your memory]`,
 `[your notes]`, shortened and cut results (`[earlier result, shortened to save room]`,
 `[cut: ...]`) and a screen. The one exception is
-outside text inside `<outside>` tags while Bastet is on. The legend under her persona
+outside text inside `<outside>` tags while Bastet is on. The legend under its persona
 (`turns/legend.py`) names each mark; `tests/test_self.py` checks it names the marks the
 code writes. The stored row stays bare. The agent's clock is the newest message's line, and
 today's date ends its system prompt (`clock.today`).
@@ -558,32 +607,59 @@ runner streams (Chat), titles and document descriptions
 (Titles and descriptions), photo descriptions. Embeddings and the reranker pick their model
 through the same Router (below) but do not queue here.
 
-- **Router.** `backends/router.py` knows each provider's state: reachable or since when
-  not (and why, one sentence), which models are loaded and which are starting (llama-swap
-  `/running`, Ollama `/api/ps`, else `/models`; at most 3 s old, "Check again" asks now).
+- **Router.** `backends/router.py` knows each provider's state: reachable or not (and
+  why, the server's or the connection's sentence), which models are loaded and which are
+  starting (llama-swap `/running`, Ollama `/api/ps`, else `/models`), as it last learned
+  them.
   `order(task)` gives the task's models that can answer now, in order, and a sentence for
   each one left out: no key yet, provider unreachable, could not be loaded (left out
-  until the set of loaded models on that server changes, "Check again", or a change of
+  until the set of loaded models on that server changes, Check provider, or a change of
   the model's settings). A cloud model is an
-  entry like any other. Every change goes out once as
+  entry like any other: a model in a role's list is the user's pick, fallback included. Every change goes out once as
   `models.state` on the global feed and is logged once.
-- **Host ping.** In the app (`Router.watch`) every provider with an
-  address is probed every 10 s with a 2 s timeout by its own cheap GET. A provider is up
-  or down with `since`; a model whose provider is down is left out of every list. Any
-  HTTP answer but a 502 means up; down is a refused connection, a timeout, a rejected
-  key or a 502 (a proxy whose model server is down; a model call that gets a 502 marks
-  the provider unreachable the same way, so the probe and the call agree). An up
-  host counts as down only after `SLOW_PINGS` (3) timeouts in a row. The state is in
-  `GET /api/status` (`hosts`) and the metric `celine_host_up`.
-- **Paused.** While every model of the chat and tasks roles is on a provider the ping
-  sees down, it is paused: the dispatcher claims no turn (`hold.her_hold`; frozen wins
+- **Health from requests.** What a server is like comes from the requests the app
+  sends anyway: a request that lands says up; a refused connection, a timeout or a 502
+  (a proxy whose model server is down) says down; a busy answer or an error is the
+  model's state, in the server's words (`Router.problem`). A server is asked directly
+  (its own cheap GET, 2 s timeout) only:
+  1. once each at startup (`check_all`);
+  2. on Check provider, and once when a new provider is saved or a provider's key is
+     stored (`saves.provider_key`);
+  3. once after a request landed on a model the server did not list as loaded (a swap),
+     and once after a GPU lease unloaded its models;
+  4. when a request got no event for 180 s on a server that lists what it loads
+     (`_first_event`): once, strict; while it shows the model starting, and once when it
+     shows it loaded, again after the next 180 s;
+  5. once more, fresh (`max_age=0`), before a call the user waits on fails because its
+     provider is seen down (`asked_again`: the state may be stale);
+  6. when work needs a server known to be failing, at most every 10 s (`RETRY_DOWN`):
+     a call's `order`; a work item through `revisit` (a deferred one among them); a
+     waiting run through `can_answer`; and while it is paused, `revisit` only while a
+     turn of its own is held.
+  Nothing polls, and no time of how long anything was down is kept. A probe that times out keeps a server seen up as up (a busy box lists its
+  models late); a strict probe or a failed request marks it down. A server's model list
+  (context, caps) is read when it first answers and on Check provider. The state is in
+  `GET /api/status` (`hosts`) and the metrics `celine_host_up` and
+  `celine_host_down_total`.
+- **Paused.** While every model of the chat and tasks roles is on a provider seen
+  down, it is paused: the dispatcher claims no turn (`hold.agent_hold`; frozen wins
   over paused), routines and messages still queue theirs, and it resumes by itself.
-  The state is `hold` in `GET /api/status`, the global event `her.hold` and the
+  The state is `hold` in `GET /api/status`, the global event `agent.hold` and the
   metric `celine_paused`.
 
 - **Slots.** One slot = one request in flight on one model: its `slots` in Settings, else
   one. Optional cap per provider (`max_concurrent`). A llama-swap provider runs one model
   at a time.
+- **Requests per hour.** A provider's Requests per hour (`max_per_hour`, 0, no limit, by
+  default) counts the requests to that provider (by its id) in the last hour, each as it
+  is about to wait for its slot (`Router.take`, keyed by the provider; the reranker,
+  embeddings and speech count too). The count is in memory, since the app started. Over
+  it, a call the user waits on fails with code `busy` and "<provider> reached its <n>
+  requests this hour."; a call with a fallback passes over that provider to the next
+  model of its list while the provider's Next model at the hourly limit (`next_when_full`, on by
+  default) is on; any other waits, holding no slot, until the hour has room; the box's
+  model proxy answers 429 with the same sentence and a Retry-After. Models, a waiting
+  run's reason and `models.state` show the sentence while it holds.
 - **Order.** Strict priority: `interactive` (the user's turn) > `agent` (triggers, jobs,
   sub-agents) > `background` (titles, descriptions, photos). Round-robin between
   conversations inside a priority; on a llama-swap provider a call for the model that ran
@@ -604,16 +680,21 @@ through the same Router (below) but do not queue here.
   the last one; when they were unreachable, the call waits and tries whatever the Router
   offers next. A request that gets no event for `FIRST_EVENT` (180 s) fails with
   "<model> produced nothing for 180 s." like any other error: a server that sends
-  keepalives or empty chunks never trips the HTTP read timeout. While llama-swap shows
-  the model starting, and once it shows it loaded, the 180 s start again, so a cold
-  load is not cut. A busy provider (status 429, 503 or 529; never a sentence in the body)
+  keepalives or empty chunks never trips the HTTP read timeout. A request for a model
+  its server did not list as loaded says "loading" once; at 180 s with no event that
+  server is asked once, strict: while it shows the model starting, and once when it
+  shows it loaded, the 180 s start again, so a cold load is not cut. A busy provider (status 429, 503 or 529; never a sentence in the body)
   never moves to the next model. A call the user waits on fails with code `busy`, and
   so does a model that could not be loaded: the chat offers Switch provider (the
   conversation's model chooser, then Regenerate) and Keep waiting (Continue with
   `wait`). Every other call, and a Keep waiting turn with every model call its tools
-  make (bound with its turn id), waits for Retry-After (at most
-  120 s; 10 s without one), emits `waiting` with reason `busy` ("Waiting for <model>."),
-  and asks the same model again until Stop. The wait counts neither against the turn's
+  make (bound with its turn id), emits `waiting` with reason `busy` ("Waiting for
+  <model>. <the provider's words>"), waits and asks the same model again until Stop. At
+  interactive priority (Keep waiting) it waits for the answer's Retry-After (at most
+  120 s; 10 s without one); at agent and background priority it backs off: Busy model
+  wait (`busy_retry_seconds`, 10 s) doubled at each try, Longest busy model wait
+  (`busy_retry_max_seconds`, 600 s) at most, never shorter than the Retry-After
+  (`backends/llm.py backoff`). The wait counts neither against the turn's
   clock nor against the time limit of the tool that waits. A 402 or an out-of-credits body fails the turn with code
   `out_of_credits`.
 
@@ -625,11 +706,11 @@ through the same Router (below) but do not queue here.
 - **No model.** When no model of the task can answer, a turn waits with a `waiting` event
   (reason `no_model`), rechecks on every change and every 5 s. Stop always works. A
   wait under `MODEL_WAIT_FRESH` (300 s) goes on with the request as built; a longer
-  one ends the call with a retryable error ("The model came back after N minutes; the
-  turn's request is stale."): the request carries the clock line of the turn's start,
+  one ends the call with a retryable error ("The model is back, but the turn's request
+  is stale."): the request carries the clock line of the turn's start,
   and the turn ends failed and retryable, so Regenerate builds a new one. A Routine's
   run never waits here: its turn runs on exactly its first model and fails at once,
-  and the run waits in the scheduler (Routines, One try).
+  and the run waits in the scheduler (Schedules, When a run fails).
   Background work raises `NoModel`; its work item is deferred.
 - **Stop / timeout.** A stopped turn's waiting request leaves the queue at once
   (`QueueCancelled`); the turn ends `aborted`. Background work gives up after
@@ -643,15 +724,17 @@ through the same Router (below) but do not queue here.
 ### The work queue
 
 Background model jobs that nobody waits on are rows of `work` (`work.py`): `title`,
-`appraisal` (its mood after a chat turn, `skills/mind.py`) and `documents.describe`.
+`appraisal` (its mood after a chat turn, `skills/mind.py`), `documents.describe` and
+`bastet.answer` (Bastet's reply on the Intercom, `guard/talk.py`, on the guard role).
 Image captions and the topic search index keep their own schedulers.
 
 - **Shape.** An item: kind, priority, state (queued, running, done, deferred, failed),
   payload, not_before, a lease (worker, until), error, conversation_id. A worker
   makes five calls: `claim(worker, kinds)` (under a 120 s lease), `heartbeat`, `finish`,
   `defer(why, until)` and `fail(error)`; `put_down` at a stop.
-- **The pool.** Two workers in the app (`work.Pool`). When every model an item's kind
-  asks for is on a provider the ping sees down, it is deferred without a call; a
+- **The pool.** Two workers in the app (`work.Pool`). A server of an item's roles known
+  to be down is asked again first (`revisit`); when every model the kind asks for is
+  still on a provider seen down, it is deferred without a call; a
   `NoModel` or unreachable error defers it for 60 s. Any other error fails it with its
   reason: one try. Done and failed rows are deleted after 7 days.
 - **Admission stays** with the model queue; the work queue only decides what is due.
@@ -661,8 +744,8 @@ Image captions and the topic search index keep their own schedulers.
 The seam for its own machine. The house holds its memory (database, notebook, archive,
 documents, vault), the guard, the model gateway and the work queue; only the house reads
 and writes the database. The agent's body runs its turns and its own tools. Every tool says where
-it runs (`ToolSpec.runs`, `skills/__init__.py` BODY): `body` for the shell and the
-browser, `house` for every other. Today both are this one process.
+it runs (`ToolSpec.runs`, `skills/__init__.py` BODY): `body` for the shell, the coding
+agent (`code`) and the browser, `house` for every other. Today both are this one process.
 
 ### Abort
 
@@ -681,11 +764,13 @@ frozen, offered, valid, Bastet, the call. A call's
 arguments are parsed once (`run_tool_calls`). Paths: frozen (state `gated`, in any mode
 of the guard), unknown tool, not in this request's list (`gated`), a skill that is down,
 off (`gating.off_sentence` by `gating.reason`), arguments not JSON, arguments the wrong
-shape (`tools.mistyped`: nothing is converted, the call fails with the reason),
+shape (`tools.mistyped`, the call fails with the reason; before it, `tools._lenient`
+reads a plain value written as a string as the type the schema asks for: "true" or
+"false" for a boolean, "10" for a number, and converts nothing else),
 raised, timed out, cancelled, cancelled but finished, journal replay, detached, not run.
 `turns.finish_tool_call` writes the `role=tool` row for every one of them.
 
-Every call she makes runs, a repeated one too. Not run: a call after the turn's work time
+Every call it makes runs, a repeated one too. Not run: a call after the turn's work time
 is up (`display.time_up`).
 
 ### Bastet (the guard)
@@ -694,12 +779,14 @@ is up (`display.time_up`).
 (`guard/calls.py`: `frozen`, then `at_call`, which asks `guard.closed` and `guard.on_call`)
 are in `guard/__init__.py`; this section is the contract with the rest of the app.
 
-Bastet's character is the user's to edit on Settings, Guard (`guard/persona.py`: her persona, her replies on the Intercom and her notes to the user, kv `bastet:<field>` with History, the shipped `config/guard/bastet.md`, `talk.md`, `note.md` the defaults; `GET /api/guard/texts`, `PUT /api/guard/texts/{field}`); her Intercom address is `system:guard`. In `_resolve`, after
-the argument check and before the time check (`guard/calls.at_call`), it answers its rule set on the call. The
-General switch `guard` is the one switch (`guard/switch.py`, asked through the port in
-`guard/__init__.py`): `off` (nothing runs, no gate, no patrol, no answer on the
-intercom), `watch` (the call runs at once, the rules are answered in the background and
-only write rows; a closed gate still holds), `on`.
+Bastet's character is the user's to edit on Settings, Guard (`guard/persona.py`: Bastet's Persona, Replies to {name} on the Intercom and Messages to you, kv `bastet:<field>` with History, the shipped `config/guard/bastet.md`, `talk.md`, `note.md` the defaults; `GET /api/guard/texts`, `PUT /api/guard/texts/{field}`); Bastet's Intercom address is `system:guard`. In `_resolve`, after
+the argument check and before the time check (`guard/calls.at_call`), Bastet answers the rule set on the call. The
+one switch is `guard/switch.py`, asked through the port in `guard/__init__.py`: `off`
+while the Guard feature is off (Settings, Features) or in a chat that turned the guard
+off for itself (`conversations.guard_off`): nothing runs, no gate, no patrol, no answer
+on the intercom. While the feature is on, the General setting `guard` (Guard mode on
+Settings, Guard) is `watch` (Warn: the call runs at once, the rules are answered in the
+background and only write rows; a closed gate still holds) or `on` (Enforce).
 
 - **Rules** (`var/settings/guard.toml`, `guard/rules.py`, read at call time): each has
   `on` and `does` (`watch` writes a row only, `stop` does not run the call, `freeze` stops
@@ -709,10 +796,20 @@ only write rows; a closed gate still holds), `on`.
   one row of `rules.TABLE`. The rules: `escape`, `hijack`, `leak`, `damage`, `confirm`, `sites`, `stops`,
   `persist`, `injection`.
 - **Gates** (`[gates]` in guard.toml, `rules.gate`): per data class and sink, `open`,
-  `judge` or `closed`. A closed gate is plain code (`guard.closed`), the same in Watch and
-  On: no model is asked and nothing opens it but the file.
-- **The judge** (`guard/questions.py`): the small role answers named questions with
-  `{verdict, quote, why}`. Questions and frames are files (`config/guard/`). A second look by a big model is `guard/chain.py`.
+  `judge` or `closed`. A closed gate is plain code (`guard.closed`), the same in Warn and
+  Enforce: no model is asked and nothing opens it but the file.
+- **The judge** (`guard/questions.py`): the guard role (Decision model) answers named
+  questions with `{verdict, quote, why}`. Questions and frames are files (`config/guard/`).
+  A second look by the Second look model (`[chain]` in guard.toml) is `guard/chain.py`.
+  No judge asks for a JSON mode. An answer without a verdict in the letters it was asked
+  for (`small_role.Unreadable`) never passes, in Warn or Enforce: the row keeps what the
+  model wrote, and Enforce refuses the call ("Not run: Bastet could not read her decision
+  model's answer."). A model error a retry cannot change (`small_role.Unanswerable`: the
+  request does not fit, an input it does not take, no credits, a non-retryable status) fails
+  the call with its words. No model now, a timeout or a busy server
+  (`small_role.Unavailable`): Enforce holds the step, its line "Waiting for Bastet. {why}" once
+  per new why, and reads the switch again before every ask; turned to Warn or off, the
+  wait ends, the step runs and its rows are `unreachable`. No duration is shown.
 - **Page check** (`guard/page.py`): every outside result is checked as it is received
   (`turns/tools.py` `checked`); a hit is a mark for the hijack check and never blocks
   reading.
@@ -720,31 +817,47 @@ only write rows; a closed gate still holds), `on`.
   and reports findings on the Intercom.
 - **What the agent reads**: every stop, freeze, confirm and pass is one line from Bastet in
   the tool result (`bastet.py`), in plain words and never a rule name, threshold or
-  score. The agent's chat (`guard/talk.py`) is `intercom__send(to="bastet")`, answered by the
-  `bastet.answer` work item; it never grants anything.
-- **Rows**: `guard_decisions`, one per rule that had a reason.
+  score. An Allow once or an Allow for 7 days on a stop's banner is Bastet's line on the Intercom that
+  wakes the agent (`talk.to_agent`), so it does the step again now. The agent's chat
+  (`guard/talk.py`) is `intercom__send(to="bastet")`, answered by the `bastet.answer` work
+  item; its reply is sent as the model wrote it, and it never grants anything.
+- **Rows**: `guard_decisions`, one per rule that had a reason. A check stopped while the
+  judge works fails its row with why `stopped`; a restart fails what the last run left
+  waiting (`store.close_asked`). A stop the second look overruled counts as none: not
+  for the stops rule, not as a stop persist tries again, not as a message to you already sent.
 - **Freeze** (`guard/freeze.py`, kv `frozen`): every live turn ends `aborted` with
-  `reason_code` `frozen`, every job is stopped, no worker claims a turn (`hold.her_hold`)
+  `reason_code` `frozen`, every job is stopped, no worker claims a turn (`hold.agent_hold`)
   or work item, no tool runs, the model proxy answers its shellbox 403, and a named token
   only reads the intercom. Global event `frozen.changed`.
 - **Passes** (`guard/passes.py`, `guard_passes`): a rule (or `all`) in one conversation
-  (or everywhere) until a time. Global event `guard.passes`.
+  (or everywhere) until a time; with a `piece` (Allow for 7 days on a banner), only
+  calls whose evidence for that rule is that exact piece. A pass on the rule that stopped
+  something covers a try again at it (persist). Global event `guard.passes`.
 - **Banners** (`guard/banners.py`, `guard/view.py`): what acted in mode On shows in its
   conversation as the `guard` list of the snapshot; every change is the conversation
-  event `guard.banner`.
+  event `guard.banner`. A stop or a freeze carries its `actions` (`once`, and `pass` when
+  it has a piece) and the `help` of its "?".
 
 **Routes** (logged-in session only; a request with a token or key gets 403
 `passkey_only`):
 - `GET /api/guard/decisions` (filters `decision`, `rule`, `mode`, `source`, `turn`,
-  `limit`, `before`), `GET /api/guard/decisions/{id}`,
-  `POST /api/guard/decisions/{id}/grant`
+  `limit`, `before`), `GET /api/guard/decisions/{id}`
+- `GET /api/guard/passes` (each with its rule's `label` and a `line`), `DELETE
+  /api/guard/passes/{id}`
+- `GET /api/guard/rules` (the rule set, its `rows`, `acts` and the page's `help`), `PUT
+  /api/guard/rules` (the tables to change)
 - `GET /api/guard/freeze`, `POST /api/guard/freeze` `{why}`, `DELETE /api/guard/freeze`
 - `POST /api/guard/banners/{id}/replies` `{text}` or `{button: approve | deny | unfreeze | once |
   pass}`; 503 `bastet_away` when the reader cannot answer
-- `GET /api/approvals`, `POST /api/approvals/{id}/answer` `{ok}` (`api/approvals.py`); every request but a
-  gate also waits in its chat, after the message that made the call, with Approve and Deny
-  (snapshot `approvals`, events `approval.asked`, `approval.closed`); in your own turn it
-  waits for your answer or Stop and holds the turn's clock, elsewhere `ASK_FOR` seconds
+- `POST /api/approvals/{id}/answer` `{ok}` → `{"ok": true}` (`api/approvals.py`; the
+  cards are listed by `GET /api/waits`); every request but a gate also waits in its chat, after the message that made the call, with Approve and Deny
+  (snapshot `approvals`, events `approval.asked`, `approval.closed`). Inside any turn the
+  call waits for your answer or Stop, and the turn's wall clock and the tool's time do
+  not run meanwhile: a chat or a mission waits until you answer (a mission's time limit
+  counts the wait off), a routine's run ends at its own time limit (reason
+  `ASK_LAPSED`). Only a request outside a turn waits `ASK_FOR` seconds (120).
+- `GET /api/waits` `{items, count}` (`api/waits.py`, `waits.py`): everything that waits
+  for you (Waiting for you)
 
 **What code enforces** (`tests/test_gates_hold.py`): the floor under Bastet's judgement.
 - A closed gate never opens.
@@ -820,14 +933,17 @@ holds the table and checks every built-in tool against it. Labels and summaries 
 UI live apart (`settings/tools_meta.py`). Descriptions and schemas have `{{username}}`
 and `{{name}}` filled in once, when a skill registers (`Registry.add_specs`).
 
-**The agent's** (`celine/her.py`). Celine is the one agent, and its identity is the one row of
-`her`: name, pronouns, colour, portrait, persona, talk, voice (its Banned words,
-`settings/voice.py`), `updated_at` and `named`. `cfg.her` is the live row, read by every
-`boot.load` and again through the Store after every write (`her.refresh`); her.py opens
-no connection. The shipped base is `config/her/`; a fresh install seeds the row from it
-(`her.seed`). Settings, the agent's page edits every field (`GET`/`PUT /api/agent`; the global event
-`her.changed` follows every write); the editors keep a History (`texts.KINDS`: `her`,
-`routine`, `mission`, `lyrics`).
+**The agent's** (`celine/agent.py`). The app has one agent, the one each user creates and
+names (a new install prefills Celine, she), and its identity is the one row of `agent`:
+name, pronouns, colour, portrait, persona, talk, voice (its Banned words,
+`settings/voice.py`), `updated_at` and `named`. `cfg.agent` is the live row, read by every
+`boot.load` and again through the Store after every write (`agent.refresh`); agent.py opens
+no connection. The shipped base is `config/agent/`; a fresh install seeds the row from it
+(`agent.seed`). Its name is `{{name}}` in every text and prompt; a prompt that tells a model
+its pronouns uses `{{pronouns}}` (she/her, he/him, they/them or it/its), and its own
+system prompt says them in one line. Settings, the agent's page edits every field (`GET`/`PUT /api/agent`; the global event
+`agent.changed` follows every write); the editors keep a History (`texts.KINDS`: `agent`,
+`bastet`, `routine`, `mission`, `lyrics`, `prompt`).
 
 **Migrations run once, at startup** (`__main__.preflight`, and the doctor, export and
 purge commands): boot.load never migrates, so a Settings save or the file watcher
@@ -860,7 +976,8 @@ device its tools run on, its model role, who started it, who it reports to and i
 in the chain of agents), its `talk`, the **notes block** (`skills/notebook.py`
 `notes_block`), the **skill index** (`Registry.index`: one line per skill offered here,
 the core ones marked `[core]`), then each core skill's fragment (`prompt_fragment`: what
-holds for the whole conversation, such as a mission's brief) and the sub_agents
+holds for the whole conversation, such as a mission's Instructions or the notebook's
+`identity.md`) and the sub_agents
 fragment.
 
 **The tail** of a turn (`prompt.tail_text`): the date and the time now, the fallback
@@ -906,18 +1023,40 @@ body (how its tools go together, examples). `skills__read_guide(name)` returns t
 of a skill offered here and its notes on it (`skills/<name>.md` in its notebook);
 `name="skills"` returns the skill index.
 
-`sub_agents` (`sub_agents/`): `start(brief, name, access, folder, model, cli)` starts a
-sub-agent, a conversation of kind `agent` on the tasks role, with `agent_of`,
-`agent_name` (unique among the parent's sub-agents), `notebook_folder` and `access`
-(read or work; read by default) and an intercom `brief`. The name of a sub-agent that is
-done sends the brief to it instead. At most `sub_agents.max_running` of a parent's sub-agents work at
-once; the rest are queued, and `release` starts them oldest brief first. With `cli`
+`sub_agents` (`sub_agents/`): `start(brief, name, access, folder, model, cli, device,
+template)` starts a sub-agent, a conversation of kind `agent` on the tasks role, with
+`agent_of`, `agent_name` (unique among the parent's sub-agents), `notebook_folder` and
+`access` (read or work; read by default) and its Instructions as an intercom `brief`. The
+name of a sub-agent that is done sends the new Instructions to it instead. At most
+`sub_agents.max_running` of a parent's sub-agents work at once; the rest are queued, and
+`release` starts them oldest Instructions first. With `cli`
 (`agent_cli`) its turns run on `sub_agents/cli.py`'s backend in its shellbox instead of a
-model, calling its models through the model proxy (`api/llm_proxy.py`). A sub-agent
+model, calling its models through the model proxy (`api/llm_proxy.py`). With `device`
+(one of its devices, such as mac) opencode works on the Instructions there, on its model
+(`sub_agents/drone.py`). `template` names an agent template in `templates/` of its
+notebook: its prompt, tools, access, model and device, the arguments given win. A sub-agent
 starts its own, down to `MAX_DEPTH` (3) levels below the top conversation
 (`conversations.store.depth` reads the `agent_of` chain); the deepest is not offered
-the skill. A `model` on a cloud provider (`her_models.cloud`: its address is not on this network:
-not loopback, private, link-local, a single label or .local, .lan, .home.arpa, .internal) waits for the user's approval (kind `model`) at every start. A sub-agent is
+the skill. A `model` on a cloud provider (`agent_models.cloud`: the provider's Cloud switch,
+else its address is not on this network: not a global address, so Tailscale and CGNAT
+count as local, or a single label or .local, .lan, .home.arpa, .internal) that the user
+did not pick (`agent_models.picked_by_user`: not the conversation's own, not set by the
+user on a step of its plan, and in no role's list, or in one while Ask before cloud models
+from your lists, general `ask_listed_cloud`, is on) waits for the user's approval (kind
+`model`, `agent_models.ask_cloud`) at every start and resume; so do models__ask,
+code__start, missions__start and a plan step's model, and `models__list` says which ask
+first. A code__start on a model the box is served already (`granted`) asks nothing. A
+cloud model provider fills no empty role on its own (`views.fill_roles`; ComfyUI, with
+no Cloud switch, fills its preset roles). The box's model proxy serves a cloud model
+only to approved work: one in a role's list, a live CLI sub-agent's, or one code__start
+was approved on. That approval is a row of the table `model_grants` (migration 0025,
+`agent_models.grant_sync`, `keep_sync`, `granted`): it lasts `BOX_GRANT` (600 s) after the
+approval or the model's last call through the proxy, and survives a restart. Any other
+cloud model gets 403 with the way to ask: code__start, or sub_agents__start with `cli`
+(on a device, sub_agents__start with that device). code__start's `POST /code/session`
+on the shellbox restarts opencode first when the model is new to its list (a cloud model
+just approved) and starts the session in the same request; while a session works, that
+restart, or a start on a busy session, gets 409. A sub-agent is
 done when its conversation is quiet and so are its own sub-agents (`report.quiet`);
 `sub_agents/report.py` then sends one intercom `report` to `agent:<parent>`, never
 further up: a head (name, state, models, tokens, seconds, notes changed) and its final
@@ -940,7 +1079,8 @@ every anchor is checked before anything changes, a stale one refuses the call),
 `var/notebook/`, confined, any format; the index is `notebook_index` and `notebook_fts`
 in `var/notebook/.index.db`.
 Line 1 of every note is a `Last changed:` line the code keeps up to date. The index
-fragment goes into every system prompt: `map.md` first, up to `notebook.index_max_entries`
+goes into the tail of every turn (`tail_part`, `build_index_fragment`), never the system
+prompt, since it changes as it writes: `map.md` first, up to `notebook.index_max_entries`
 entries within `notebook.index_max_chars` (Settings, Advanced). `tools/` in the notebook browser is generated from the
 registry on each read (`skills/toolsdoc.py`) and is not in its notebook.
 
@@ -955,18 +1095,22 @@ not change it]` and the generated folder with `[generated, read-only]`. Three fi
 yours, `SEEDS` in `skills/notebook.py`: `identity.md`, `opinions/README.md`,
 `appearance/README.md`. They are written once at startup from `config/notebook_seed/`
 when missing, and its `write` and `delete` refuse them. `identity.md` goes into every
-system prompt in full, ahead of the index.
+system prompt in full (the skill's `prompt_fragment`).
 
 `shell` (`skills/shell.py`, guide `guides/shell.md`, on demand): its terminals in its
 shellbox (`shellbox/shellboxd.py`, DEPLOY.md "Shellbox"), reached at the address in
-Settings, Features (`settings/services.py`, seeded from `CELINE_SHELL_URL`) with
-`keys/shell.key`; without an address the skill is `down`. Six tools:
-- `run(command, timeout, terminal, background)` runs the command in the terminal's own
+Settings, Features (`settings/services.py`, `CELINE_SHELL_URL` until saved) with
+`keys/shell.key`; without an address the skill is `down`. Seven tools, and the three
+share tools (Shares, below):
+- `run(command, terminal, timeout, background, about)` runs the command in the terminal's own
   shell through a function the daemon installs (`RUN_SH`), so directory and variables
   stay. Done is the `<id>.exit` file the daemon watches; the result carries exit status,
   duration, the log path and the output cut once. A command blocked reading the terminal
   comes back `waiting`; at the timeout `running`, and it keeps running. A run while
   something runs in front comes back `busy`. `background=true` turns the wait into a job.
+  `about` is what the command does in a few words, the row the user sees.
+- `wait(terminal, timeout, background)` waits for the end of the terminal's latest run as
+  `run` waits for its own, or gives its result at once when it ended already.
 - `type(text, keys, terminal, enter)` types into the program in front and answers with the
   screen once the terminal printed nothing for 1 s.
 - `stop(terminal)` presses Ctrl-C; the next stop sends SIGTERM, then SIGKILL.
@@ -978,7 +1122,7 @@ Settings, Features (`settings/services.py`, seeded from `CELINE_SHELL_URL`) with
 Files go through the daemon's `PUT /file?path=` and `GET /file?path=` (streamed; a path
 leaving its home is refused). `box_files.py` is the app's side. Every file you upload is
 copied in the background to `~/uploads/<sha12>/<name>` while the shellbox is on
-(`<sha12>`: the start of its sha256; bytes already there are not sent again, so her edits
+(`<sha12>`: the start of its sha256; bytes already there are not sent again, so its edits
 to that copy stay); a chat attachment keeps where its copy
 landed (`attachments.box_path`) and its context names it. Every shell and browser call
 names its terminal or tab; the conversation's own (`terminals/store.default_terminal`) is
@@ -994,13 +1138,15 @@ past 64 MB and a run's log an hour after it ended are gzipped.
 
 `browser` (`skills/browser.py`, guide `guides/browser.md`, on demand): its own Brave in the
 browser box (`browser/browserd.py`, DEPLOY.md "Browser"), reached at the address in
-Settings, Features (seeded from `CELINE_BROWSER_URL`) with `keys/browser.key` through
+Settings, Features (`CELINE_BROWSER_URL` until saved) with `keys/browser.key` through
 `browser/sync.py`; without an address the skill is `down`.
 `open(url, tab, profile)` loads a page in a named tab (four at most; `profile="throwaway"`
-is a browser context of its own); `act(do, target, text, tab)` clicks a row, types, presses
-keys, goes back, answers a dialog or restarts the browser; a `locate` step is resolved app
+is a browser context of its own); `act(steps, tab, show)` runs its steps in order, each
+`{do, target, text, ...}` (`Step`): it clicks a row, types, presses keys, goes back,
+answers a dialog or restarts the browser; a `locate` step is resolved app
 side by the Screen reading model (`vision.py`, role screen) and becomes an ordinary point
-click or hover (`skills/browser.py _locating`). `look(tab)` reads the page's text, and
+click or hover (`skills/browser.py _locating`). `scroll(tab, direction, to, amount, show)` scrolls the
+page or brings a row into view, `close(tab)` closes a tab. `look(tab)` reads the page's text, and
 `look(what="locate", ...)` answers with a box and clicks nothing. open and act answer with
 the page result: tab, address, title, then the numbered rows it can click. The agent's calls on
 one tab wait for each other. While you have taken the browser from its page (`/browser`),
@@ -1016,11 +1162,11 @@ or `markdown`. Versions only grow; you restore an old one as a new version. The 
 the id and the chip `[[artifact:<id>]]`, and `hint:` lines from `artifacts/lint.py`. The
 page is served by `artifacts/page.py` with its own CSP and `sandbox allow-scripts
 allow-forms`. Every write appends `artifact.updated` `{id, n}`. `list(where)` and
-`read(id, version?)` complete it.
+`read(id, version?, part?)` complete it (`part`: one part of a long version, from 1).
 
-Shares (`shares.py`, the `shell` skill's `share(title, port | path, public, hours)`,
+Shares (`shares.py`, the `shell` skill's `share(title, port | path, public, hours, device)`,
 `unshare(id)`, `list_shares()`): a server it runs in its box, or a file or folder of its
-home, opened by you at `/share/<token>/` (table `shares`; the 24-character token is its id).
+home (or of one of its devices, `device`), opened by you at `/share/<token>/` (table `shares`; the 24-character token is its id).
 A port goes through shellboxd's `GET /forward` (a raw tunnel to `localhost:<port>` in its
 box), HTTP and WebSocket, streamed; a path through `GET /file` with its content type and
 byte ranges. A share is private unless it made it public: `/share/` passes the session gate
@@ -1046,23 +1192,33 @@ share, even one that still runs, which shows as not running.
 intercom (see Intercom). `send(text, to, subject, reply_to, in, at, until, wait)`
 writes to `user`, `me`, `parent`, `team`, `all`, a sub-agent's or mission's name or a
 conversation id; `in` or `at` make it land later (to `me`, a reminder that starts its turn);
-`until` on a message to `all` makes it an announcement. `read(thread, unread)` lists its
-threads or reads
-one; `cancel(id)` cancels a message it scheduled. Sub-agents in read mode have these tools
+`until` on a message to `all` makes it an announcement. `read(thread, unread, kind,
+with, limit)` lists its threads or reads one; `with="user"` lists every thread between
+the user and any of its conversations, each with its home (`store.source_of`: kind,
+title, conversation id) and whether it waits for the user; `kind="job"` lists the
+`jobs` rows of every conversation, running first, each with its result message's number;
+`cancel(id)` cancels a message it scheduled. Sub-agents in read mode have these tools
 too.
 
-**Missions** (`missions/skill.py`, `missions/store.py`, guide always loaded): a mission is a
-brief from you in a conversation of its own, started from the UI (`missions/api.py`) as an
-intercom `brief` from `user`. The skill's prompt fragment puts the brief, where it reports,
+**Missions** (`missions/skill.py`, `missions/store.py`, guide always loaded): a mission is
+your Instructions in a conversation of its own, started from the UI (`missions/api.py`) as an
+intercom `brief` from `user`. The skill's prompt fragment puts the Instructions, where it reports,
 the time limit and the status into the system prompt on every turn of that conversation, so
-compaction never loses it. The time limit is a `notice` from `system:app` due before the
-limit (`missions/api.book_time_limit`). `update(status, note, artifact?)` records Active,
-Needs you or Done, and what it delivered (`artifact:<id>` or `documents:<path>`);
-`mission.state` carries `artifact`. A stopped mission takes nothing new. `list(status)` is
-offered everywhere (`offered_in` gives the rest only in the mission's own conversation).
+compaction never loses them. The time limit is a `notice` from `system:app` due before the
+limit (`missions/store.book_time_limit`). `update(status, note, artifact?, force)` records
+the status `active`, `needs_you` (Waiting for you) or `done`, and what it delivered
+(`artifact:<id>` or `documents:<path>`; `force` closes it before its minimum time);
+`mission.state` carries `artifact`. A stopped mission takes nothing new. `list(status)`
+(each with the first line of its brief) and `read(mission)` are offered everywhere
+(`offered_in` gives the rest only in the mission's own conversation): `read` finds one by
+name or conversation id (`store.find_sync`) and gives its status, brief, report
+conversation, limits, artifact, plan steps, sub-agents with their latest report
+(`sub_agents/skill.agents_of`) and its newest intercom messages to and from the user.
 
 **Plans** (`plans/`, core): one plan per conversation, table `plans`: `text`, `steps` [{title,
-state todo|doing|done, checkpoint none|ask, model}], `waiting`. The rules are
+state todo|doing|done, checkpoint none|ask, model, by}], `waiting`; `by` is who set the
+step's model ("user" on the Missions page, "agent" with plan__set, None without a model).
+A cloud model the user set on a step never asks (`agent_models.picked_by_user`). The rules are
 `plans/store.py`'s only: at most one step doing; done starts the next open step, except done
 on an `ask` step, which sets `waiting` and starts nothing. `set(steps, text)` writes it
 whole, `step(n, state)` moves one. Every change appends `plan.state` {plan} to the
@@ -1073,26 +1229,38 @@ clears `waiting` (`answered_sync`). The agent's request carries the plan in its 
 `needs_answer=False` (notebook and mind writes, `skills.ToolSpec`) with answer text ends the turn only when no step is open or
 it waits; a `plan__step` that reached an ask checkpoint ends the turn at once.
 
-`routines` (`schedules/skill.py`): `list`, `read(name)`, `write(name, label, prompt,
-time|cron, on, note, after, wall_minutes)` and `run(name)`. A write goes through
+`routines` (`schedules/skill.py`): `list(night, runs)`, `read(name)`, `write(name,
+label, prompt, time|cron, role, on, note, after, wall_minutes)` and `run(name)`. `list`
+gives the routines and the triggers (`triggers.declared`, its on or off, `triggers.fired`,
+its `trigger:<name>` conversation); with `night` or `runs` it gives runs instead, every
+routine's: `run:<id>`, time, state, error or reason and the result's last line, as
+`read` gives a routine's newest. A write goes through
 `schedules/edit.save`, the same path and checks as PUT /schedules/{name}; a run it starts
-has `runs.started_by` `her`.
+has `runs.started_by` `agent`.
 
 Where it works (`conversations/here.py`): its system prompt says the conversation it is
 in (chat, mission, a Routine's run, sub-agent or background task) with its intercom address;
 the tail of a turn names the other conversations with a live turn.
 
-`conversations`: `search(query, limit)`, FTS5 over user and assistant messages on every
-conversation's active path, the current conversation left out; `read(conversation, before)`,
-one conversation's active path from the end.
+`past_conversations` (`skills/conversations.py`): `search(query, limit)`, FTS5 over user
+and assistant messages on every conversation's active path, the current conversation left
+out; `list(kind, limit)`, the newest conversations by `updated_at`; `list_day(date,
+kind)`, an index of the conversations with messages on one day (`kind`, `KIND_SQL`:
+chat, mission, run, task, sub-agent); `read(conversation, start, end,
+tools)`, one conversation's active path in slices, from the end when `start` is left out,
+the conversation by id, `run:<id>`, a mission's name or a trigger's name;
+`read_tool_call(id, part)`, one earlier tool call whole.
 
 `web` (`skills/web.py`, guide `guides/web.md`, its knobs `web.*`): `search(query,
-time_range, language, site, limit, page)` asks a self-hosted SearXNG (the address in
-Settings, Features, seeded from `CELINE_SEARXNG_URL`) and returns
-compact `[web:n]` blocks. `read(url, part)` takes a
-URL or `web:n`, fetches it (httpx, `web.timeout` 20 s, `web.page_max_mb` 5 MB HTML,
-`web.pdf_max_mb` 25 MB PDF, redirects followed by hand), extracts the main text
-(trafilatura, pypdf) and returns one part of about `web.read_tokens`.
+time_range, language, limit, page)` asks a self-hosted SearXNG (the address in
+Settings, Features, `CELINE_SEARXNG_URL` until a saved one) and returns
+compact `[web:n]` blocks. Past Searches per hour (`web.per_hour`, 0, no limit, by
+default: the searches of the last hour, counted in memory since the app started) a
+search is refused with "Web search reached its <n> searches this hour." before SearXNG
+is asked. `read_page(url, part, save)` takes a URL or `web:n`, fetches it (httpx,
+`web.timeout` 20 s, `web.page_max_mb` 5 MB HTML, `web.pdf_max_mb` 25 MB PDF, redirects
+followed by hand), extracts the main text (trafilatura, pypdf) and returns one part of
+about `web.read_tokens`; with `save` it attaches the file itself to the conversation.
 Only http(s) to global addresses is fetched: every hop's host is resolved and each address
 must be global (`ipaddress.is_global`), and the peer address is checked again before the
 body is read. Citations: it writes `[[web:n]]`; the runner's citation check
@@ -1100,7 +1268,7 @@ body is read. Citations: it writes `[[web:n]]`; the runner's citation check
 showed (marked `|invalid`, as archive refs are) and stores the good ones as Markdown links.
 Queries and fetched URLs leave the machine.
 
-`email` (`skills/mail.py`, guide `guides/email.md`, always loaded): one email account over
+`email` (`skills/mail.py`, guide `guides/email.md`, on demand): one email account over
 IMAP, set in Settings, Email (`settings/mail.py`: `var/settings/email.toml` and the
 write-only `var/secrets/email.key`). Each call opens one connection in a worker thread
 (stdlib `imaplib`), works and logs out. Listing, searching and attachments use EXAMINE and
@@ -1115,7 +1283,7 @@ sentence (`MailError`).
 a config problem, not a dead server. Skills read the running set as `self.app.kbs`
 (core/services.py), so skills rebuilt by a config reload find it. `[embeddings]` in the same file holds how
 passages are embedded (dims, prefixes, input length, workers, refresh). The model is the
-Topic Search role in Settings, and whether anything embeds is that role alone
+Topic search role in Settings, and whether anything embeds is that role alone
 (`semantic.embeddings_available`; the reranker: `rerank.reranker_available`).
 
 ### Files
@@ -1182,7 +1350,7 @@ App side:
   every Sink keeps to.
 - `mcp.py`: a block with `command` next to `url` is started only when the url does not
   answer; it outlives the app. A connector only reads: a tool of its that is not
-  read-only is never offered to Celine. Tool results' records are archived and rendered
+  read-only is never offered to the agent. Tool results' records are archived and rendered
   as Messages archive lines, so they are citable.
 - `api/connectors.py`: the source pages' routes.
 
@@ -1193,20 +1361,20 @@ media retry receipt).
 
 ### Semantic
 
-`kb/semantic.py`, built on its own every `smart_search_refresh_minutes` (Settings, General;
-0 = off) and after a settings change. Each chat is cut into sessions at pauses, sessions into overlapping passages, and
+`kb/semantic.py`, built on its own every `smart_search_refresh_minutes` (a general setting
+shown on Settings, Search index; 0 = off) and after a settings change. Each chat is cut into sessions at pauses, sessions into overlapping passages, and
 every passage without a vector is embedded (`kb/sessions.py`, `kb/passages.py`,
 `kb/embed.py`). `kv.passages_vec` records the width and the model's fingerprint; another
 fingerprint resets the index. Vectors are the first `dims` dimensions as int8 plus sign
 bits: a Hamming scan picks candidates, int8 cosine rescores them. Until a knowledge base's
-first build has finished (`kv.passages_ready`), retrieval there is words only. Celine
+first build has finished (`kv.passages_ready`), retrieval there is words only. The agent
 searches through `kb/retrieve` (word search and semantic topic search, RRF, the reranker,
 match windows).
 
 ### kind = documents
 
 `kb/documents.py` (+ `documents_extract.py`, `documents_describe.py`). Your drawer, shared
-with Celine, tied to no chat. The files under `path` are the content, kept byte for byte,
+with the agent, tied to no chat. The files under `path` are the content, kept byte for byte,
 in folders; `var/kb/documents.db` holds items (stable ids, the mode, your title and
 description, the AI description, `author`, `trashed_at`), `trashed_folders`, segments (the
 extracted text, quotable), a contentless normalised FTS (`search_fts`), the
@@ -1292,7 +1460,7 @@ text, so a reload or a switch keeps them. The bubble shows images inline and oth
 ## Images and music
 
 Everything ComfyUI makes is made in a batch (`comfyui/`): a list of items, rendered in
-order under one GPU lease. Celine starts one with `image_generator__generate` or
+order under one GPU lease. The agent starts one with `image_generator__generate` or
 `music_generator__generate`, the user with `POST /api/batches` (`kind` images or
 music). One code path for both (`batches.Batches`).
 
@@ -1335,12 +1503,12 @@ music). One code path for both (`batches.Batches`).
   the presets or a preset's models and LoRAs (`image_catalog.py`), `list_images` the images
   of the conversation.
 
-**The agent's portrait** (`her.set_portrait`): one image, a blob its row names, png, jpg or
+**The agent's portrait** (`agent.set_portrait`): one image, a blob its row names, png, jpg or
 webp, the kind read from its bytes. The user sets it (`PUT /api/agent/portrait`); it sets it itself with the `appearance` skill's
 `appearance__set_portrait(image)`: an image by its short id under the same rule as an
-edit's source (`attachments.her_image`: one it made, or one the user attached to this
+edit's source (`attachments.agent_image`: one it made, or one the user attached to this
 conversation), or a Documents image by its id, path or title. Either way
-`her.changed` goes out; `GET /api/agent/portrait` serves it.
+`agent.changed` goes out; `GET /api/agent/portrait` serves it.
 
 ## Triggers
 
@@ -1362,53 +1530,75 @@ A fire finds or creates the trigger's conversation by `trigger_key` (`trigger:<n
 kind `background`, never in the chat list) and sends it an intercom `trigger` message from
 `system:<skill>`. The text is the prompt and the rule: nothing that needs you ends the
 turn with one line for its log; something actionable becomes a chat for you with
-`intercom__start_chat(title, text)`. That tool, offered only in kinds background and
-mission, first looks for what you already have from the same source in the last 24 h (a
-bug report still open, or a thread to you); when there is one it lists each and it
-decides whether its own is another matter (`different=true`). Else it creates a chat whose
-first message is its own, keeps in kv (`chat_opening:<id>`) where it came from, and sends
-the text to `user` from that chat. The title is 2 to 4 words.
+`intercom__send(to="user", subject, text)`. From a background conversation (a trigger's
+task, a Routine's run) a message to `user` always goes this way (`intercom/skill.py
+_chat`, the one path `intercom__start_chat(title, text)` takes too; that tool is offered
+in kinds background and mission): it looks up what you already have from the same source
+in the last 24 h (a bug report still open, a thread to you) and lists it in its result;
+it creates a chat whose first message is its text, keeps in kv (`chat_opening:<id>`)
+where it came from (with the id `past_conversations__read` takes: `run:<id>` for a run,
+else the conversation's), and sends the text to `user` from that chat, so your answer
+lands there, never in the finished run. The subject (title) is 2 to 4 words.
 
 ## Schedules
 
 `schedules/`. A schedule is a job as data: `var/settings/schedules/<name>.toml`, copied
-once from `config/schedules/` at the Scheduler's first start with the partner prompts
-beside them (`*.md`), read only from there. Fields: `label`, `cron` (the app's time
-zone), `prompt`, `after` (the schedules whose runs of the same night it follows),
-`partner` (a prompt file it talks with first) and `rounds`, `note` (a notebook path the
-answer is written to), `role` (chat, tasks or small, default chat), `on`.
+once from `config/schedules/` at the Scheduler's first start with the reviewer prompts
+beside them (`*.md`), read only from there. Fields: `label`, `summary` (one sentence for
+the onboarding's list), `cron` (the app's time
+zone), `prompt`, `after` (Runs after: the schedules whose runs of the same night it follows),
+`reviewer` (the Reviewer: a prompt file it talks with first) and `turns` (Turns: the
+reviewer's lines at most), `note` (a notebook path the
+answer is written to), `role` (chat, tasks or small, default chat), `on`, `idle_only`,
+`wall_minutes`, `daytime`, `on_fail` (When a run fails: `retry`, the default, or `skip`;
+Daydream, Followed sites and Watch videos ship `skip`).
 
-**Variables.** The prompt, the partner prompt and the note are filled from the run's
-night, never from the clock (`schedules.fill`): `{{date}}`, `{{day_before}}`,
-`{{weekday}}`, `{{result:<schedule>}}` (that schedule's answer of the same night), its
-name, its pronouns and `{{username}}`.
+**Variables.** The prompt, the reviewer prompt and the note are filled from the run's
+night, never from the clock (`schedules.fill`): `{{date}}` (for a `daytime` schedule the
+calendar date of its slot), `{{day_before}}`,
+`{{weekday}}`, `{{result:<schedule>}}` (that schedule's answer of the same night), the
+agent's `{{name}}` and `{{pronouns}}`, and `{{username}}`. When the run starts, `schedules/variables.py` fills
+`{{mood}}`, `{{on_mind}}`, `{{tool_failures}}` and `{{voice_counts}}`.
 
 **Runs** (table `runs`): one schedule at one slot, its planned time (UTC); `night` is the
 night of the slot (`night_of`: before 12:00 in the app's zone belongs to that date's
 night, from 12:00 on to the next date's); `state` waiting, running, done, failed, skipped
 or stopped; `reason` why it waits; `conversation_id` its one conversation; `result`,
-`error`; `started_at`, `finished_at`; unique (schedule, slot). Every change is `run.state
-{run}` on the global feed.
+`error`; `started_at`, `finished_at`; `again_of` the run a retry retries; unique
+(schedule, slot). Every change is `run.state {run}` on the global feed; its view adds
+`retried` (the retry of this run, shown as Retried), `reason_why` (the reason without the "Waiting"
+its state word says) and reads `waiting`, its reason "Waiting for the model" (`runs.HELD`),
+while the running run's work waits for a model.
 
 **When a run exists.** At the next slot, on every `models.state` change, at the end of
 every turn and after every change to the schedules, the scheduler (`schedules/runs.py`,
 one per app) makes the run of every slot of a schedule that is on and came due since its
 last look (kv `schedules.checked`). Slots missed while the app was off are made too: those
-of the last 7 days wait like any other, older ones are written `skipped`.
+of the last 7 days wait like any other, older ones are written `skipped`. A Skip routine
+waits for its newest slot only: its new waiting run ends its older waiting ones skipped
+("The next run was due", `NEXT_DUE`). A run the user started (`started_by` user: Run now,
+Retry on its page) neither ends other runs so nor is ended by a newer one, and the idle
+rule (`idle_only`) never skips it.
 
 **When a run starts.** A run waits until all of these hold; its `reason` says the first
-that does not: every run it follows in the same night is finished; the model of its role
-can answer now (`Router.can_answer`, "Waiting for <model>"); none of your chats has a live
-turn; no other run is running. The queue is ordered by night, then by how deep the
+that does not: its slot has come (a retry waits for its time, "Retry of the 02:00
+run"); every run it follows in the same night is finished; the first model of
+its role can answer now (`Router.can_answer`, "Waiting for <model>. <why>", the why in
+the server's words; a server known to be failing is asked again at most every 10 s); no
+turn you wait on is live (a chat's, or one you started in a mission; with Routines wait
+for missions on, any turn of a mission: `runs.waited_on`); no other run is running. The queue is ordered by night, then by how deep the
 schedule follows, then by slot.
 
 **A run** is one background conversation (`trigger_key` `run:<run id>`) on the
 schedule's role, its turns bound behind every interactive request and on the role's own
-model only (`runs.binding`, the dispatcher reads it), with the filled prompt as its first
-message from `system:schedules` and a rule: you are not here, its final answer is the result, `intercom__start_chat` for what
-needs you. With a `partner`, it answers the prompt first, then the partner (on the run's
-role, outside the turn loop, with read-only tools) and it alternate up to `rounds` lines;
-its lines land as intercom messages from `system:<partner>`. Then it is asked for its
+model only (`runs.binding`, the dispatcher reads it, for the run's conversation and every
+sub-agent under it at any depth), with the filled prompt as its first
+message from `system:schedules` and a rule: you are not here, its final answer is the result, `intercom__send(to="user")` for what
+needs you, which starts a chat for you (Triggers). Its lines are .md files beside `schedules/runs.py` (background.md, final.md,
+note.md, and reviewer_first.md, asked.md, line.md, last_line.md, talk_over.md for a
+reviewer). With a `reviewer`, it answers the prompt first, then the reviewer (on the run's
+role, outside the turn loop, with read-only tools) and the two alternate up to `turns` lines;
+its lines land as intercom messages from `system:<reviewer>` (the file's name without `.md`). Then it is asked for its
 final answer. The run is over when its conversation and its sub-agents are quiet and
 every sub-agent has reported. The result is written to `note` with `notebook__write`: a
 note that was there gets the answer appended under "## <date> <label>"; a note it wrote
@@ -1419,33 +1609,56 @@ it wrote and then went on past (ok tool calls after its last write of it, the no
 than the last of them) is the result still, and the run's `error` says how many calls
 came after it.
 
-**One try.** A run is never re-asked, rewritten or retried. When its turn fails and the
+**When a run fails.** A run is never re-asked or rewritten. When its turn fails and the
 Router says the role's model cannot answer (unreachable, or none set), the run is `waiting`
 for it ("Waiting for <model>"), its conversation kept; when the Router sees the model
 answer, the failed turn is continued in that conversation (`turns.continue_turn`, the
-stored context). Any other failure fails the run with the error, once: a model error, a
-tool error that ends its turn, its turn stopped, or its ceiling (3 hours, or the schedule's
-`wall_minutes`, counted from the run's start; a run that waited for its model starts
-with a new clock). A run that was running when the app stopped is still running at the next start:
+stored context). Any other failure (a model error, a tool error that ends its turn, its
+turn stopped, its ceiling) ends it in one place, `runs._fail`, as its schedule's
+`on_fail` says. Skip: `skipped` with the error as its reason and no notice; its look back
+reads "run Daydream, skipped". Retry: `failed` with the error; a run that failed
+on an error (not its ceiling, not a stop) gets a fresh run of its prompt for the same
+night, up to three times, 15 minutes, 1 hour and then 4 hours after the try before
+(`RUN_AGAIN`), each `again_of` the one before, its dates the first try's, only when that
+is before the schedule's next slot, and the runs after it wait for it;
+the notice goes out only when no retry follows. `POST /api/runs/{id}/retry` retries a
+failed, skipped or stopped run now (400 while it has not ended, once it was retried
+or its schedule is gone). The ceiling is the Routine time limit (`routine_max_minutes`,
+Settings, Advanced: 180 minutes by default, 0 none), or the schedule's `wall_minutes`
+when that is shorter (`runs.py _start`). It
+counts work, not waits: while any call of the run, its sub-agents
+or its reviewer waits for a slot, a busy server or a GPU lease, the run's clock
+(`runs.RunClock`, an `llm.HeldClock` made at the run's start and bound with its turns)
+stands still, overlapping waits count once, and the run reads `waiting` ("Waiting for
+the model"). A missing model
+is no such wait: the run's turns, its sub-agents and its reviewer are bound with
+`fallback` False at background priority, so a call there fails at once: a turn that
+fails so makes the run wait for its model as above, and a tool's model call (vision,
+models__ask, Writing) gives its error to the turn as the tool's result. A request waiting
+for your answer does not stop the clock: it waits as long as the run's limit lets it. A run that waited for
+its model starts with a new clock. A run that was running when the app stopped is still running at the next start:
 the scheduler continues its cut turn and takes its answer once the
-conversation is quiet (a partner's talk that was cut ends there). Stop (`POST
+conversation is quiet (a reviewer's talk that was cut ends there). Stop (`POST
 /api/runs/{id}/stop`) ends a waiting or running run as stopped; deleting a schedule skips
 its runs.
 
 **Routes.** `GET /api/schedules`; `PUT /api/schedules/{name}` (the whole schedule; the
 prompts go into their history as `texts` `routine:<name>:prompt`); `DELETE
 /api/schedules/{name}` (refused while another follows it); `POST /api/schedules/{name}/run`;
-`POST /api/schedules/preview {night, text}`; `GET /api/runs?night=&schedule=&until=`; `GET
-/api/runs/{id}`; `POST /api/runs/{id}/stop`. `GET
+`POST /api/schedules/preview {night, text}`; `GET /api/runs?night=&schedule=&until=` (each
+night `{night, failed}`, failed when a schedule's newest try that night failed); `GET
+/api/runs/{id}`; `POST /api/runs/{id}/stop`; `POST /api/runs/{id}/retry`. `GET
+/api/schedules` also gives `choices` and `help` for When a run fails, Only when the app
+is idle and Time limit. `GET
 /api/background-conversations` gives a run's conversation its `run` {id, schedule, label, night}. The web
 place is Routines (`views/Routines.tsx`).
 
 ## Intercom
 
 `intercom/`. Durable, addressed, threaded text messages between you, its conversations
-(agents) and the app, like mail. Every path by which something lands in a conversation
+(agents) and the app, like email. Every path by which something lands in a conversation
 later is one intercom message: your message, a finished or stopped job, a reminder, a
-sub-agent's brief and report, a trigger, a restart notice, a mission's brief. Rows are
+sub-agent's Instructions and report, a trigger, a restart notice, a mission's Instructions. Rows are
 never deleted.
 
 Tables: `intercom` (one row per message: `from_addr`, `to_addr`, `kind`, `subject`, `text`,
@@ -1464,8 +1677,25 @@ inside the send, the sender left out.
 **Threads.** A message starts a thread (`thread` = its id) unless it has `reply_to`; then it
 joins that message's thread. A reply without `to` goes to the sender of the message it
 answers. Lists of threads (`store.threads`, `store.grouped`; `intercom__read` and `GET
-/intercom/threads`) group them by counterpart; your plain chat messages (`store.PLAIN`) are
-never threads.
+/intercom/threads`) group them by counterpart; your plain chat messages (`store.PLAIN`),
+the app's notices into a mission (`store.APP_TO_MISSION`: its keep-going line, its time
+limit, a restart; they are the mission's transcript) and what lands in a chat as the
+agent's own message (`store.SAY`) are never threads.
+
+**Every message to you has a home** (`intercom/skill.py send`, `_to_user`), by where
+`intercom__send(to="user")` is called from, and your answer goes back there:
+- a chat: you read it there, so nothing is sent with no time (the result says its words
+  in the chat reach you); with `in` or `at` the text goes to the chat itself with
+  `data.say`, and at its time it lands there as the agent's message (role assistant,
+  never mid-turn: `take` leaves it for the turn's end) with the reply notice;
+- a background conversation (a trigger's task, a run): a chat of its own (Triggers);
+- a mission: the message to `user` as written. It waits on the mission: the mission's page
+  shows what waits (`GET /intercom?from=agent:<id>&waiting=1`) in its Waiting for you,
+  whose reply box answers the newest with `reply_to` (the thread is read, a plan's
+  checkpoint and Needs you clear as with any reply), and Waiting for you lists the
+  mission once, not its thread (`store.MISSION_FROM`); the thread is in the All tab.
+The service itself sends what it is given (an answer in a thread, `answer.py`; a bug
+report).
 
 **The delivery rule** (`deliver.py`), one rule for every kind. A delivery to a conversation
 waits until it is due. Then: when the conversation is idle, `deliver_idle` appends every due
@@ -1504,16 +1734,27 @@ route and every `/ws` socket answers it the gate's 404.
 ends done or capped and nothing will wake it, one `notice` from `system:app` with
 `data.keep_going` starts its next turn, while a step of its plan is open or it has no plan
 yet. When the turn only such a line started called no tool, or ended another way, or every
-step is done, the mission moves to Needs you. `missions__wait(why, in | at)` books its wake.
+step is done, the mission moves to `needs_you` (Waiting for you). `missions__wait(why, in | at)` books its wake.
+Its result and its questions live in the mission (`missions/steps.md`): Done with its
+artifact and a note, Needs you with the question as its note; both are a `mission`
+notice to you (`missions/store.set_status_sync`) and a `report` to the conversation it
+reports to (`missions/skill.record`).
 Check-ins (`watch.run`): an active mission with `check_in` minutes sends a `report` to its
-report conversation, else to you, every `check_in` minutes; it costs its no turn.
+report conversation every `check_in` minutes, else a `mission` notice to you (toast and
+push, Notifications: Missions) that opens the mission's page, no Intercom message; the
+last one's time is `missions.checked_in_at`. The app writes it, so it costs the mission
+no turn.
 
 ## Events
 
 One list of everything it did and everything that ran (`server/celine/events.py`), built
 from the rows that exist, nothing stored twice. Each source is one SELECT with the same
 first columns and a view that gives the row its words: `turn`, `tool`, `notebook`, `job`,
-`message`, `run`, `guard`, `freeze`, `pass`, `work` and `bugreport`.
+`message`, `run`, `guard`, `freeze`, `pass`, `work`, `agent` (its own edits of its persona,
+Example lines and banned words) and `bugreport`. Each tab of the place lists its own
+sources (`events.TABS`): Guard (`guard`, `freeze`, `pass`), the agent's own tab (`agent`, labelled with its name)
+and Background tasks; a turn, a call or a notebook write lands in the agent's own tab or
+Background tasks by its conversation.
 
 `GET /api/events` merges them newest first
 by `(at, id)`; a page's `next` is that pair. `links.open` is the app path where it
@@ -1522,6 +1763,17 @@ happened (`intercom/store.py source_of` for a conversation, a note, a run, a thr
 `events.added {kind, conversation}` on the global feed says one landed: `Store.event` sends
 it in the same write for the conversation events `core/bus.py lands` names; the other
 sources call it themselves.
+
+## Waiting for you
+
+One list of everything that waits on the user (`server/celine/waits.py`, `GET /api/waits`
+`{items, count}`): every request it makes, as its card (`approvals.py`), every mission in
+`needs_you` or with a message of its own that waits for them, once (that message, else its
+note), every chat source whose login was lost, every other Intercom thread with a message
+that waits for them. A freeze and a pause have their own rail items; runs belong
+to Routines. `waits.run` turns each `approvals.changed`, `mission.state`, `source.state`,
+`intercom.state`, `conversation.deleted` and `conversation.restored` into one
+`waits.changed`, and the client asks the list again; it counts nothing itself.
 
 ## Bug reports
 
@@ -1571,9 +1823,9 @@ is in docs/DEPLOY.md.
 
 | Method, path | Does |
 |---|---|
-| `GET /status` | `owner` (it, as every page draws it: `{name, pronouns, color, portrait, named}`), `user`, `problems` (config problems), `hosts` (each provider up or down since, from the ping) |
-| `GET /agent` | its package: `name, pronouns, color, portrait, named, persona` (as shown, names filled), `talk` (null: the shipped one), `talk_shipped`, `voice {banned, bias, on}`, `version` |
-| `PUT /agent` | `If-Match: <version>`; any of `name, pronouns, color, persona, talk` (null: back to the shipped one), `voice`, checked whole before anything is written; global event `her.changed` |
+| `GET /status` | `owner` (it, as every page draws it: `{name, pronouns, color, portrait, named}`), `user`, `problems` (config problems), `hosts` (each provider up, down or null, as the app last learned it), `hold` ("paused" or null), `features`, `setup` and `catalog` (the features), `places_off` (the places that leave the rail: no feature of theirs on and set up), `build` (`{commit, built, source}`), `vault_locked` |
+| `GET /agent` | its package: `name, pronouns, color, portrait, named, persona` (as shown, names filled), `talk` (null: the shipped one), `talk_shipped`, `voice {banned, phrases, patterns, bias, on}`, `voice_text`, `voice_help`, `version` |
+| `PUT /agent` | `If-Match: <version>`; any of `name, pronouns, color, persona, talk` (null: back to the shipped one), `voice`, checked whole before anything is written; global event `agent.changed` |
 | `PUT /agent/portrait`, `DELETE /agent/portrait`, `GET /agent/portrait` | its portrait: multipart `image` (png, jpg or webp) or JSON `{attachment}` (one by its id), remove, serve |
 | `GET /conversations?limit=&cursor=&archived=&trashed=&place=` | a page: running first (a live turn in it or a sub-agent of it; a queued turn while it is frozen does not count, and its row has no `state`), then pinned, then by `updated_at` |
 | `POST /conversations/{id}/branch` | Branch from here: `{message_id}` -> `{id, title}`, a new chat of the same settings with every message of the path up to and including that one |
@@ -1593,7 +1845,7 @@ is in docs/DEPLOY.md.
 | `POST /conversations/{id}/messages/{mid}/versions` | `{text}`: a new version of the message (The message tree), the active leaf; `{message_id, turn_id, seq}`, `turn_id` null for its reply (no turn runs) |
 | `POST /conversations/{id}/messages/{mid}/continue` | its finished reply at the active leaf carried on as a new version (The message tree), which keeps the reply's time |
 | `POST /conversations/{id}/impersonate` | `{start?}`: the user's next message as the chat role writes it, beginning with what they typed (`start`), one request with thinking off |
-| `PUT\|DELETE /conversations/{id}/messages/{mid}/voice-sample` | "Love this": its reply as a voice sample in its note `samples.md` |
+| `PUT\|DELETE /conversations/{id}/messages/{mid}/voice-sample` | More like this: its reply as a voice sample in its note `samples.md` |
 | `PUT /conversations/{id}/active-version` | `{message_id}`, moves the pointer |
 | `GET /conversations/{id}/messages/{mid}/siblings` | |
 | `DELETE /conversations/{id}/messages/{mid}` | the user's delete, in every conversation kind: the message and every message after it in its branch, for good; `{message_ids, active_leaf_id}` |
@@ -1614,7 +1866,7 @@ is in docs/DEPLOY.md.
 | `POST /batches` | `{kind: "images", items: [{prompt, source?, preset?, negative?, width?, height?, seed?, model?, loras?, mode?}], count?}`: the user's batch, no conversation; `source` is an image attachment's id |
 | | `{kind: "music", items: [{style, lyrics?, title?, instrumental?, duration?}]}`: the same for music |
 | `POST /batches/{id}/stop` | `{stopped}`: false when it was not running |
-| `GET /messages?q=&limit=&place=&archived=&trashed=` | words in the conversations with Celine: `{hits, titles}`; each hit with its `message_id`, `snippet` and `marks` ([start, end) of each matched word in it), best first |
+| `GET /messages?q=&limit=&place=&archived=&trashed=` | words in the conversations with the agent: `{hits, titles}`; each hit with its `message_id`, `snippet` and `marks` ([start, end) of each matched word in it), best first |
 | `POST /attachments`, `DELETE /attachments/{id}`, `GET /attachments/{id}/file` | files for a message |
 | `GET /notebook/tree`, `GET\|PUT\|PATCH\|DELETE /notebook/entries/{path}` (PATCH `{path}` moves, `{protected}` protects), `POST /notebook/folders`, `GET /notebook/trash`, `POST /notebook/trash/{tid}/restore`, `DELETE /notebook/trash/{tid}` | the notebook browser (its one notebook); a PUT keeps the note's text before in `.versions` |
 | `GET /notebook/versions?path=&q=&before=`, `GET /notebook/versions/{vid}?path=` | a note's History (the editor's `HistorySource`): `{versions, current, total, next}`, `versions` the texts before, newest first, 50 a page (`before` the id to page from) |
@@ -1626,10 +1878,10 @@ is in docs/DEPLOY.md.
 | `POST /terminals` | a terminal of the user's own: the first free name of theirs (`name`, `name-2`) |
 | `GET /terminals/{id}` | one row, the shape of the list's |
 | `GET /terminals/{id}/log` | the terminal's whole stored history, raw bytes (`application/octet-stream`; the `.raw.gz` of an ended one unzipped); 404 for an unknown terminal |
-| `PATCH /terminals/{id}` | `{may_type}`: whether Celine may type into this terminal of the user's; 400 on one of its own |
+| `PATCH /terminals/{id}` | `{may_type}`: whether the agent may type into this terminal of the user's; 400 on one of its own |
 | `POST /terminals/{id}/control` | `{action}` stop, pause, resume or close → the daemon's `/control`; logged as a command of the user's (the button's label, the short word, on its terminals also the sentence it reads next) |
 | `DELETE /terminals?state=ended`, `DELETE /terminals/{id}`, `POST /terminals/{id}/restore` | every ended terminal, or one, into the trash (`trashed_at`), or one back; nothing is deleted: their page and the commands log still reach them; `{trashed}`, `{ok}`. `DELETE /terminals/{id}?for_good=1` removes a trashed one |
-| `GET /terminal-commands?terminal=&from=&result=&q=&mission=&limit=&before=` | the commands log, newest first: its shell calls and the user's typed lines and controls as one list |
+| `GET /terminal-commands?terminal=&from=&result=&q=&mission=&limit=&before=` | the commands log, newest first: its shell calls (and what a server shows there, `place = "terminals"`: the Mac's shell) and the user's typed lines and controls as one list |
 | `POST /terminals/{id}/messages` | `{text, conversation_id?, command_id?}`: the user's text into the terminal's last conversation, the given one, or a new one (`"new"`) |
 | `GET /artifacts` | its pages and documents, newest change first (`artifacts/api.py`): `{artifacts: [{id, kind, conversation_id, created_at, trashed_at, n, title, note, updated_at}]}` |
 | `GET /artifacts/{id}` | one of its pages |
@@ -1637,33 +1889,38 @@ is in docs/DEPLOY.md.
 | `GET /artifacts/{id}/versions/{n}/source` | what it wrote, as `text/plain` under the page's headers: the Download, and the text the app renders a document from |
 | `POST /artifacts/{id}/versions/{n}/restore` | that version copied to the top as a new one with the note `restored from v<n>`; the artifact as `GET` returns it; publishes `artifact.updated` |
 | `DELETE /artifacts/{id}`, `POST /artifacts/{id}/restore` | into the trash, or back out of it (`trashed_at`); a trashed one still opens by its id; the artifact; publishes `artifact.updated` |
-| `GET /shares?conversation=` | its shares that run, newest first (`shares.py`): `{shares: [{token, title, port, path, conversation_id, public, created_at, ends_at, state, url}]}`, `state` live or down from a probe of its box, `ends_at` when it ends (or ended), `url` its open route |
+| `GET /shares?conversation=` | its shares that run, newest first (`shares.py`): `{shares: [{token, title, port, path, device, conversation_id, public, created_at, ends_at, state, line, url}]}`, `device` the device it goes through (null: the shellbox), `state` live or down from a probe of its box or device, `ends_at` when it ends (or ended), `line` its card's words (what is shared and from where while it runs, else Not running or Ended), `url` its open route |
 | `GET /shares/{token}` | one share, `state` live, down or ended |
 | `GET /shares/{token}/open` | sets the share's cookie and redirects (303) to `/share/<token>/`; a share that does not run is a 404 page |
 | `POST /shares/{token}/stop` | ends the share for everyone; the share, `state` ended |
 | `GET /browser` | its browser box's status (`browser/api.py`): `{state, reason, started, taken, screen, tabs}`, `state` starting, up or down from the box, `unreachable` when it does not answer |
 | `POST /browser/control` | `{action}` take, give or restart → the box's `/control`: take and give answer `{taken}`, restart its status once it is up or down again (30 s at most) |
-| `GET /browser/calls?q=&failed=&before=&limit=` | its browser calls, newest first (the Browser place's History): `{calls, total, failed, next}` |
-| `GET /events?kind=&day=&state=&decision=&rule=&mode=&before=&limit=` | Events, everything it did and everything that ran, newest first (`events.py`, Events above): `{events, total, failed, undecided, next, kinds, days, guard}` |
-| `POST /missions` | `{name?, brief, report_to?, time_limit?, check_in?}` (`check_in`: `30 min` or `2 h`, the check-ins' cadence) (any other key is a 400; `missions/api.py`) |
+| `GET /browser/calls?q=&failed=&before=&limit=` | its browser calls (and what a server shows there, `place = "browser"`: the Mac's browser), newest first (the Browser place's History): `{calls, total, failed, next}` |
+| `GET /events?tab=&kind=&day=&state=&decision=&rule=&mode=&before=&limit=` | Events, everything it did and everything that ran, newest first (`events.py`, Events above): `tab` guard, celine (the default) or background, `kind` one of that tab's; `{events, total, failed, undecided, next, tabs, kinds, days, guard}` |
+| `POST /missions` | `{name?, model?, brief, report_to?, time_limit?, min_time?, check_in?}` (`brief`: its Instructions; `min_time`: its Minimum time; `check_in`: `30 min` or `2 h`, the check-ins' cadence) (any other key is a 400; `missions/api.py`) |
 | `GET /missions?status=` | every mission, newest first, with its conversation's title (`missions/store.list`), and `counts` per state, archived and trashed (`missions/store.counts`) |
 | `GET /sub-agents?conversation=` | every sub-agent (of one conversation, or all), newest first: `id, parent, name, access, folder, model, cli, working` (not `report.quiet`), `step` (the tool at work), `report` (the latest) |
 | `GET /conversations/{cid}/sub-agents` | the tree under the conversation's top: `{top, agents}`, each agent `id, parent, depth, name, state, model, prompt_tokens, completion_tokens, seconds, link`, parents before their own |
 | `POST /conversations/{cid}/sub-agents` | `{brief, name, access?, folder?, model?, cli?}` (any other key is a 400): a sub-agent of the conversation, exactly as `sub_agents__start` makes one (`skill.begin`); `{conversation_id}` |
 | `POST /sub-agents/{id}/stop` | its turn, its jobs and what it scheduled, as `sub_agents__stop` (`skill.stop_agent`); `{stopped}` |
-| `PATCH /missions/{cid}` | `{name?, brief?, report_to?, time_limit?, check_in?, steps?}`, the given fields only (any other key is a 400); the time limit's notice cancelled and scheduled again or removed |
+| `PATCH /missions/{cid}` | `{name?, brief?, report_to?, time_limit?, min_time?, check_in?, steps?}`, the given fields only (any other key is a 400); the time limit's notice cancelled and scheduled again or removed |
 | `POST /intercom` | `{to, text, subject?, reply_to?, in?, at?, until?}` (`intercom/api.py`): from `user` with the app session, from `system:<name>` with a named token |
-| `GET /intercom?to=&from=&thread=&scheduled=&after=&limit=` | messages to and from stored addresses, in a thread, above id `after`, oldest first, each with its `state` (pending, sent, cancelled) and `unread`; `scheduled=true` |
-| `GET /intercom/threads?with=&kind=&unread=&limit=&cursor=` | threads grouped by who they are with, by name (all her chats are one group), the newest activity first (`ThreadsPage`): `{groups: [{name, addresses, threads, waiting, items, more}], jobs: {count, newest}, next}` |
+| `GET /intercom?to=&from=&thread=&scheduled=&waiting=&after=&limit=` | messages to and from stored addresses, in a thread, above id `after`, oldest first, each with its `state` (pending, sent, cancelled) and `unread`; `scheduled=true`; `waiting=true` only those that wait for you |
+| `GET /intercom/threads?with=&kind=&unread=&limit=&cursor=` | threads grouped by who they are with, by name (all its chats are one group), the newest activity first (`ThreadsPage`): `{groups: [{name, addresses, threads, waiting, items, more}], jobs: {count, newest}, next}` |
 | `POST /intercom/read` | `{ids}`: the user's deliveries of these become `read`; `?all=1`: everything that waits for the user (Dismiss all); `{read}` |
 | `POST /intercom/threads/{id}/conversations` | Continue in a chat: a new chat with it (titled by the thread's subject) that carries the thread, its messages landed as one `notice` from `system:app` without waking it |
 | `GET /intercom/stream?to=&after=` | server-sent events, `id:` the message id: every message above `after` (or `Last-Event-ID`), then each new one as it is sent (woken by the send, not by the bus); a comment line every 15 s |
-| `POST /intercom/{id}/stop` | cancels a scheduled message that has not landed; `{ok}`; 404 `This message already landed or was cancelled.` |
+| `POST /intercom/{id}/stop` | cancels a scheduled message that has not landed; `{ok}`; 404 `This message was already delivered or cancelled.` |
 | `GET /tokens`, `POST /tokens`, `POST /tokens/{id}/revoke` | named tokens (Settings, Security): the list without hashes; `{name}` makes one, `{name, token}` shows it once; revoke hides it, the row stays |
+| `GET /push/key` | the VAPID public key a browser subscribes with (`push.py`): `{key}` |
+| `GET /push-subscriptions` | the devices that take pushes, oldest first (Notifications, Push): `{subscriptions: [{id, device, endpoint, kinds, created_at}]}`, `device` named by the server from the user agent; ended sessions' devices are dropped first |
+| `POST /push-subscriptions` | `{endpoint, keys: {p256dh, auth}, kinds}`, a browser's PushSubscription and the notice kinds it takes: the device takes pushes (the same endpoint again replaces its keys and kinds), tied to the login session that made it; 400 `invalid` for anything else; one subscription as in the list; global event `push.subscriptions` |
+| `DELETE /push-subscriptions/{id}` | Remove: the device takes no more pushes; `{deleted: true}`, 404 for an unknown id; global event `push.subscriptions` |
 | `POST /missions/{cid}/stop` | status `stopped`, the time limit's notice cancelled, the conversation aborted (`abort_conversation`); `{ok}` |
 
-**Slash commands** (`api/commands.py`, a small registry: `@command(name, description, args=,
-aliases=, when=)` adds one): `/compact [focus]` (summarise now), `/think [level]` and its
+**Slash commands** (`commands/`, a small registry: `command(name, description, args=,
+aliases=, when=, kinds=)` adds one, the commands are in `commands/handlers.py`, the
+routes in `api/commands.py`): `/compact [focus]` (summarise now), `/think [level]` and its
 alias `/effort`, `/model [name|provider/model|default]` and `/usage`. A command is never
 sent to the model as text: `POST /messages` refuses a text that starts with a command name
 with 400 `is_command`; `//compact` sends the literal text "/compact".
@@ -1701,8 +1958,8 @@ server, never left with a gap.
 Conversation events: `snapshot`, `turn.state`, `message.created`, `message.delta`,
 `message.reasoning`, `message.done` (once, with its text), `message.rewritten` (once, when
 the text changed after that), `message.purged`, `message.reopened`, `message.attachments`,
-`tool.started`, `tool.progress`, `tool.done`, `tool.gated`, `tool.detached`, `tool.reset`,
-`job.state`, `guard.banner`, `approval.asked`, `approval.closed`, `images.batch`,
+`tool.forming`, `tool.started`, `tool.progress`, `tool.done`, `tool.gated`, `tool.detached`,
+`tool.reset`, `job.state`, `plan.state`, `guard.banner`, `approval.asked`, `approval.closed`, `images.batch`,
 `music.batch`, `version.changed`,
 `overrides.changed`, `llm.queue`, `context.*` (see Context), `conversation.settings`,
 `citations.checked`, `terminal.state`, `error`. `turn.state` carries the conversation's live
@@ -1717,15 +1974,16 @@ bare signals such as `terminal.state` and `browser.state`; `conversation.created
 landed), `notice` (one item for a system notification while the tab is hidden: its
 reply in a chat, an Intercom message to you, a mission waiting for you, a failed run, a
 request to approve; `{kind, title, body, link, tag}`, events.py `notice`, web
-lib/notify.ts), `mood`, `her.changed`, `her.hold`, `frozen.changed`, `guard.passes`,
+lib/notify.ts), `mood`, `agent.changed`, `agent.hold`, `frozen.changed`, `guard.passes`,
+`approvals.changed`, `waits.changed`, `run.state`, `share.updated`, `push.subscriptions`,
 `models.state`, `llm.queue` and `kb.*`. The agent's shell and browser calls' `tool.started`,
 `tool.done` and `tool.detached` pass through it as ids.
 
 `GET /api/changes?since=<global id>&conversations=<id:seq,...>` is one call for a client
-coming back: `{global, resync, conversations, gone, jobs, unread, agents}`: the newest
+coming back: `{global, resync, conversations, gone, jobs, agents}`: the newest
 global id, whether `since` is below what the feed keeps, the given conversations whose seq
-moved, the ids that no longer exist, the jobs that finished since, how many intercom
-messages wait for you, and every sub-agent as `GET /sub-agents` gives it.
+moved, the ids that no longer exist, the jobs that finished since, and every sub-agent as
+`GET /sub-agents` gives it.
 
 uvicorn runs with `ws_max_size` 1 MB (a client sends only control frames) and a ping
 every 20 s (`ws_ping_interval`, `ws_ping_timeout`).
@@ -1752,8 +2010,11 @@ The layout, the component kit and every rule of the UI are in docs/ui/.
 In short: a rail (the places of `web/src/routes.tsx` in order; Settings at the bottom; under
 768 px a bottom bar of icons), and one section at a time. Sections mount on first visit and
 stay mounted, so a running answer, a scroll position or a draft survive switching. Tokens
-are in `styles/tokens.css`. The app installs as a PWA (`web/public/manifest.webmanifest`);
-there is no service worker.
+are in `styles/tokens.css`. The app installs as a PWA (`web/public/manifest.webmanifest`).
+Its service worker (`web/public/sw.js`, registered by `lib/notify.ts`) shows the server's
+web pushes (`push.py`: each `notice` goes to every device subscribed through
+`/api/push-subscriptions` while no page of the app is open and focused) and the page's own
+notices as system notifications; it has no fetch handler, so nothing is cached.
 
 One socket for the app (`lib/socket.ts`, `WS /ws/events`): the global feed (every page listens
 through `lib/bus`) and a subscription per conversation on screen (`lib/useConversation.ts`,
@@ -1768,12 +2029,12 @@ result on the bus as `changes`. Following the feed from now (the first connect, 
 sends `open` on the bus: the pages fetch again what they show. Only `/api/health` decides
 that the server is gone (`lib/health.ts`).
 
-Celine's section: the conversation list (pinned, then by date, paged with the list's
+The agent's place: the conversation list (pinned, then by date, paged with the list's
 cursor; each row's preview is the row's `last_line`), the transcript
 (`components/Transcript.tsx` on the kit's Message, with the message actions of
 `components/MessageActions.tsx`), the composer (`components/Composer.tsx`: draft per
 conversation, attachments, slash commands, Impersonate) and the side panel (Model, Tools,
-Pages, Context). `useConversation` keeps the snapshot's `queue` up to date from `turn.state`
+Pages, Context, Sub-agents). `useConversation` keeps the snapshot's `queue` up to date from `turn.state`
 so the page never reads idle while a queued turn waits; `tool.started` lands on its
 `message_id`. The side panel's Background jobs list reads `GET /jobs?conversation=`,
 reloaded on that conversation's `job.state` events. The notebook (`components/Notebook.tsx`,

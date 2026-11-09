@@ -54,8 +54,8 @@ outside `tokens.css` writes a font size, line height, weight or letter spacing a
 
 ### PlaceHead
 **When:** the head of every place, list and page. Nothing else draws a head.
-**Props:** `title` (left out in a sidebar that is the place's list: Celine's conversations),
-`count` (the server's number), `detail` (a muted state beside the
+**Props:** `title` (left out in a sidebar that is the place's list: the agent's conversations),
+`help` (the server's words on what the place is, a Help after the title), `count` (the server's number), `detail` (a muted state beside the
 title: a terminal's program, "Deleted"), `level` (1 for a page's h1), `titleAttr`,
 `back` (`label`, `onClick`: the way back to the list where list and page share one pane,
 shown on a phone only), `crumbs` (the pages above a detail page, each `label` with `href`
@@ -113,17 +113,17 @@ While selecting, the SelectBar takes its place.
 **Don't:** open or close (no fold); carry more than its "...".
 `ListSection` stays the small label in a place sidebar ("Recent", "Today"). With `onToggle`
 (and `open`, `count`) its label is a button with the DisclosureArrow (`aria-expanded`) that
-folds the group under it, and a folded one shows its count: Celine's date groups, the
+folds the group under it, and a folded one shows its count: the agent's date groups, the
 owner's explicit exception to "no folds". The rows go and come through the list's own
 `useMove`, so the rows below glide; a search shows its matches without groups.
 
 ### Section
 **When:** a block of a page: a settings group, a section of a page with an index.
-**Props:** `id` (the PageIndex target), `title`, `count`, `search` (optional, right
+**Props:** `id` (the PageIndex target), `title`, `help` (a Help after the title), `count`, `search` (optional, right
 aligned), `action` (one Button, such as "New entry"), `more` (its rare actions behind "..."
 at the head's end: Move to Trash), children.
 **Do:** sit on its own surface with `--pad-section`. A group of rows inside it gets a
-`SubHead` (`children` the heading, `count`, `action`): a small heading, never a Section.
+`SubHead` (`children` the heading, `help`, `count`, `action`): a small heading, never a Section.
 **Don't:** carry a description paragraph; collapse; nest a Section in a Section.
 
 ### PageIndex
@@ -144,7 +144,9 @@ it is a top bar that scrolls sideways.
 Save), `secondary` (everything else, the default), `ghost` (quiet in-row actions), `danger`
 (tonal red, only in a dialog that destroys); `size`: `md` (default, everywhere) or `sm`
 (in-row actions only); `icon`, `iconEnd`, `loading` (a spinner replaces the icon),
-`pressed` (Archive or Trash open), `href` (a link that looks like a button), `wide`.
+`pressed` (Archive or Trash open), `href` (a link that looks like a button), `wide`,
+`badge` (the server's words, "Update available": an accent mark on its top-right corner,
+the words read after its label; a form's action the server marks).
 **Do:** one primary per page or dialog; the same job gets the same variant in every place;
 a disabled button keeps its reason as its tip (`aria-disabled`).
 **Don't:** use `sm` in heads, sections or cards; colour a button for state; use `link`
@@ -171,7 +173,7 @@ one hidden file input.
 
 ### ListRow
 **When:** every row of every list.
-**Props:** `leading` (face, icon or glyph), `dot`, `icon` (a glyph on a tile: a folder;
+**Props:** `leading` (face, icon or glyph), `running` (the kit's spinner in the icon tile), `icon` (a glyph on a tile: a folder;
 `iconAccent` for the top one), `title`, `subtitle` (one line), `detail` (a third, smaller
 line), `meta` (time on the right), `column` (beside the text on a wide screen: a terminal's
 conversation, a folder's faces), `cell` (a short cell before the time: "Ended",
@@ -181,7 +183,7 @@ sits in, drawn as a line to it), `trailing` (actions, shown on hover, focus or t
 `onContextMenu`, `press` (a long press opens the menu: useContextMenu's `press`, for a
 row with no "..." on touch), `tooltip`, `pick` (the check box while selecting), `muted` (ended or
 settled: the title quiet), `body` (text that wraps under the title, at most three lines: a
-lore entry, a found passage as a Snippet), `unread` (the title strong, an accent dot),
+lore entry, a found passage as a Snippet),
 `checked` with `onCheck` (a check that is always there, outside Select: a channel to
 include; the row toggles it), `progress` (0 to 1, null while unknown: a file on its way).
 With `column` or `cell` it is a wide row: the column, the cell and the time each keep their
@@ -282,7 +284,7 @@ the server's error shows in the dialog above its actions.
 
 ### ConfirmDialog
 **When:** only for what destroys, or for many items at once.
-**Props:** `title` (a question with the number: "Move 3 conversations to Trash?"), `body` (one
+**Props:** `title` (a question with the number: "Move 3 chats to Trash?"), `body` (one
 short line), `confirmLabel`, `cancelLabel`, `danger`, `option` (the label of one Checkbox,
 such as "Also delete its sub-agents", off by default), `onConfirm(option)`
 (gets the Checkbox's state; returns error text or nothing).
@@ -295,13 +297,13 @@ such as "Also delete its sub-agents", off by default), `onConfirm(option)`
 **Do:** rise from the bottom edge, `--r-xl` top corners, a 36 x 5 px grabber; dragging the
 grabber down, the back gesture (the sheet is one step of history), Escape, the scrim and
 the X close it. On a desktop it renders as a Dialog near the top. A list's Sheet shows
-one thing at a time: a tool call's row opens the call, a run of calls alike ("Ran 8
-commands in terminal main") opens its rows, and a row there opens its call in the same
-Sheet with Back to the run.
-**Don't:** open a Sheet from a Sheet; unfold a run in place.
+one thing at a time: a tool call's row opens the call, a stretch of calls between two of
+its messages ("Read 2 notes, ran 4 commands") opens "Activity" with its rows, and a row
+there opens its call in the same Sheet with Back to the stretch.
+**Don't:** open a Sheet from a Sheet; unfold a stretch in place.
 
 ### Drawer
-**When:** a side panel beside the content (Celine's conversation panel, a Routine run).
+**When:** a side panel beside the content (the agent's conversation panel, Activity and the thoughts of a reply).
 **Props:** `open`, `title`, `onClose`, `actions` (head actions before the X), `label`,
 `side` (`right`, or `left` only for the place sidebar), `fill` (its body is one box a
 VirtualList fills, with no padding), `enter` (made on its first open, it still slides in), children. It is `--drawer-w` wide and stays mounted;
@@ -330,9 +332,26 @@ closed.
 (errors sit where they happened).
 
 ### Tip
-**When:** every tooltip. The one `TipLayer` reads `title` and `data-tip`.
+**When:** every tooltip: names and disabled reasons only. The one `TipLayer` reads `title`
+and `data-tip`.
 **Do:** one tip at a time, after `--tip-delay`, the next at once within `--tip-skip`; at
 most eight words.
+**Don't:** explain what something does in a tip (that is Help).
+
+### Help
+**When:** a name that does not say what it does (a setting, a role, a feature, a place):
+a small "?" after it opens the server's one or two sentences. The one place an explanation
+lives.
+**Props:** `text` (the server's words), `label` (the name: its accessible name is "About
+{label}").
+**Do:** a native popover (the top layer, over a Sheet too); Tab and Enter or a tap open it,
+Escape or a tap outside close it, a second "?" closes the first; it stays inside the window.
+Its click never reaches the row it sits in. Switch, Field, NumberField, Slider, SubHead,
+Section and PlaceHead take `help` and draw it after their label. A request's card
+(components/ApprovalCard.tsx: Bastet's banner row with a raised hand, Approve, Deny and
+Details) draws why it is asked as its Help.
+**Don't:** give a self-explaining label a "?" (Name, Key; an Address shows the form it takes, so it has one); write the text on the
+client; put explanation inline or in a tip.
 
 ### Viewer
 **When:** every picture opened big.
@@ -355,17 +374,17 @@ One height for every field, a hairline edge, a halo on focus.
 
 | Part | When | Props |
 |---|---|---|
-| `Field` | a label above one control, with its error | `label`, `error`, `group`. No hint line |
-| `SearchField` | every search box | `value`, `onChange`, `placeholder` ("Search" or "Search conversations"), `loading`, `autoFocus` |
+| `Field` | a label above one control, with its error | `label`, `help` (the label then names its control by id), `error`, `group`. No hint line |
+| `SearchField` | every search box | `value`, `onChange`, `placeholder` ("Search" or "Search chats"), `loading`, `autoFocus` |
 | `Input` | one line of text | `size`, `mono`, `invalid` |
 | `TextArea` | every text box: grows with its text, then scrolls | `rows`, `max`, `bare`, `fill`, `mono`, `invalid` |
-| `NumberField` | a number with its unit | `label`, `value`, `onChange`, `min`, `max`, `step`, `unit` |
-| `Switch` | on or off, the whole row toggles | `checked`, `onChange`, `label` |
+| `NumberField` | a number with its unit | `label`, `help`, `value`, `onChange`, `min`, `max`, `step`, `unit` |
+| `Switch` | on or off, the whole row toggles; with `help` the track and label are the button and the "?" sits after it, outside; `checked="mixed"` sits in the middle: some of a group are on, or a value the server has not said yet (Cloud before Check) | `checked`, `onChange`, `label`, `help` |
 | `Checkbox` | one of many picked, or a confirm option | `checked`, `indeterminate`, `onChange`, `label` (the whole line toggles), `ariaLabel` |
-| `Choice` | one of several: a Segmented row up to six short options, else a radio list; options with `swatch` (a colour), `face` or `picture` are tiles: round swatches, faces, thumbnails (a pick of one of four variants), the chosen one ringed and checked | `value`, `onChange`, `options`, `label`, `ratio` (pictures) |
+| `Choice` | one of several: a Segmented row up to six short options, else a radio list; options with `swatch` (a colour), `face` or `picture` are tiles: round swatches, faces, thumbnails (a pick of one of four variants), the chosen one ringed and checked; a list option's `meta` is a quiet state word at its end ("Loaded") | `value`, `onChange`, `options`, `label`, `ratio` (pictures) |
 | `Picks` | pictures chosen in order, up to `max` (the images of an edit): Choice's picture tiles, each chosen one numbered by its place, a tap takes it out | `values`, `onChange`, `options`, `label`, `max`, `ratio` |
 | `Segmented` | the state of a list in the Toolbar, a mode on a page; its options are `--h-sm` high inside a 2 px edge; one row while it fits, a second row when it has less room (in the Toolbar it stays one row that scrolls); a long or growing set of picks is a MenuButton instead (a terminal's Send to) | `value`, `onChange`, `options` (with counts) |
-| `Slider` | a value on a range (Bias): label (always whole), track, value; stacked sliders line their tracks up at the right | `value`, `onChange`, `min`, `max`, `step`, `label`, `format` |
+| `Slider` | a value on a range (Bias): label (always whole), track, value; stacked sliders line their tracks up at the right | `value`, `onChange`, `min`, `max`, `step`, `label`, `help`, `format` |
 | `PinInput` | a PIN, one box per digit: typing moves on, Backspace goes back, a paste fills from the first box, digits only | `value`, `onChange`, `length` (8), `label`, `invalid`, `autoFocus`, `disabled` |
 | `InlineEdit` | rename in place | `value`, `label`, `onSave`, `onCancel` |
 
@@ -373,13 +392,13 @@ Don't: use a dropdown `<select>` (a dropdown only for a list that can run to hun
 
 ### Form
 
-A whole form drawn from the server's field schema (server/celine/settings/form.py): one column, each field its label above its control, a switch its label beside it. A field's `help` is its tooltip.
+A whole form drawn from the server's field schema (server/celine/settings/form.py): one column, each field its label above its control, a switch its label beside it. A field's `help` is its Help, a "?" after its label; never a tooltip.
 
 | Field type | Drawn as | Changes |
 |---|---|---|
 | `bool` | `Switch` | at once |
 | `choice` | `Choice` | at once |
-| `number`, `duration` | `NumberField` with its unit (`plain`: a `Field` with an `Input`, as in the onboarding's cards) | on leaving the field or Enter |
+| `number`, `duration` | `NumberField` with its unit (`plain`: a `Field` with an `Input`, as in the cards of Setup) | on leaving the field or Enter |
 | `text` | `Input` (`mono`, `placeholder`); `long`: `TextArea` | on leaving the field or Enter |
 | `list` | `TextArea`, one entry per line | on leaving the field |
 | `secret` | a password `Input`; once stored "Saved" with Remove, never the secret | `onChange(key, text)`, Remove `onChange(key, null)` |
@@ -399,7 +418,8 @@ Don't: draw a form's fields by hand; show a stored secret or a part of one.
 | `Loaded` | a loaded resource (a `useResource` result) | `res`, `page` (a list page: centred EmptyStates), `icon`, `label`, `inline`, `compact`, `empty` (the EmptyState the caller says is due), children `(data) => ...`: Not found, the skeleton, the error with Retry while nothing came, `empty`, then the ready render; a failed reload keeps the data with its error above it. No children: only the states before the data |
 | `Notice` | a banner across the top (a lost login, the server gone) | one calm line, its fix at the end |
 | `StatusLine` | a fixed-height status where a reply lands | reserved height |
-| `Dot`, `Dots`, `Progress` | state beside a name; its typing; a bar | a Dot is never the only carrier of meaning; `Dot text` puts the server's word beside it (a provider's health: "Connected") |
+| `Dots`, `Progress` | its typing; a bar | never a state mark: a state is a StateWord |
+| `StateWord` | a state as the server's word in a text tone (`tone`: muted, warn, error, success, running): "Not connected" in warn, "3 problems", "Off"; the kit has no state dot | never a dot or a light beside it; muted unless something needs a look |
 | `Chip` | one picked filter or a search token | always with an x; never a state, never a row of them |
 | `EventLine` | one quiet line in a transcript (a delivery, a reminder, a tool call) | with `detail` a click opens it in a Sheet (`detailTitle`); it never unfolds; `running`: the words shimmer (Thinking, a call going on) |
 | `Step` | the number of a step in a list of steps | `n`, `done` (a check), `current` (the accent) |
@@ -413,10 +433,10 @@ Don't: draw a form's fields by hand; show a stored secret or a part of one.
 ## Places and conversations
 
 ### Place
-**When:** a place with sections (Documents, the Gallery, Settings, Notebook, Missions): its
+**When:** a place with sections (Documents, Notebook, Missions, Routines): its
 sidebar beside the page.
 **Props:** `title` (the place's name), `action` (New as an icon), `head` (a sidebar that is
-the place's list, such as Celine's conversations: its own PlaceHead with Search, Select,
+the place's list, such as the agent's conversations: its own PlaceHead with Search, Select,
 Archive and Trash in place of the title and action), `side` (the sections with their counts
 as `sm` ListRows, a ListSection "Recent" and its rows, or the list), `foot` (the user's own
 row), `label`, `open` with `onOpen` (the phone's drawer, when the page decides), children
@@ -432,7 +452,7 @@ its middle was on the sidebar's curve; its heads' actions on the right edge hold
 **Don't:** make it a list pane (a place's list is its page); hand-build a sidebar.
 
 ### Message
-**When:** every message of a conversation: Celine's chat, an Intercom thread.
+**When:** every message of a conversation: the agent's chat, an Intercom thread.
 **Props:** `mine`, `face`, `name`, `head` (beside the name: to whom), `before` (pictures and files above the text),
 children (the text), `time`, `versions` (`at`, `total`, `onPrev`, `onNext`), `actions` (the
 caller's buttons), `menu` (its "..." and right-click), `source` (where it came from, always
@@ -450,7 +470,7 @@ the text), `disabled` (why it cannot send: Send's tip), `inputRef`, `onKeyDown`,
 Shift+Enter is a new line; Send becomes Stop while it answers.
 
 ### Picture
-**When:** every picture shown small: on a message, a Gallery tile.
+**When:** every image shown small: on a message, in a batch it made.
 **Props:** `src`, `full` (the file the Viewer shows when `src` is a smaller copy), `name` (never a file name), `ratio`, `more` (its "...", right-click and
 the Viewer's menu), `gallery` with `at` (the Viewer flips through them), `viewer`
 (`actions`, `panel`, `caption` for the Viewer), `onOpen` (a page of its own opens it in
@@ -461,7 +481,7 @@ selecting),
 **Do:** a click opens the Viewer, growing from it.
 
 ### Player
-**When:** a track that plays while you look on (the Gallery's music, Studio).
+**When:** a track that plays while you look on (Recent on Images & Music).
 **Props:** `src`, `title`, `detail`, `onClose`. Play and Pause, its name, how far, close.
 
 ### Screen
@@ -501,12 +521,12 @@ A place switch fades the new place in over the one left (`App.tsx`). Press is
 never animates. No `width`, `height` or `margin` transitions, no `will-change`.
 
 Reduced motion (`base.css`): every duration is 0.01 ms and the JS primitives skip; the
-working marks (spin, dots, a running dot) keep moving at half speed.
+working marks (spin, dots) keep moving at half speed.
 
 ## Shell parts
 
 | Part | When |
 |---|---|
 | `Rail` | the app's left column of places; the phone's scrollable bottom bar of icons |
-| `Tabs` | only Celine's side panel (Model, Tools, Pages, Context). Nowhere else |
+| `Tabs` | only the agent's side panel (Model, Tools, Pages, Context, Sub-agents). Nowhere else |
 | `DisclosureArrow` | only in a Tree, a Fold and a folding ListSection |

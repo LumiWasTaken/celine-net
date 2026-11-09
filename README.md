@@ -1,55 +1,58 @@
-This is my personal project that I decided to publish. Celine is a self-hosted AI agent,
-but more than that it's a custom harness built around one agent who lives on your server.
-A lot of things here work differently from the usual agent setups, so it's worth reading a
-bit before you dive in.
+This is my personal project that I decided to publish. celine-net is a self-hosted app in
+which you create your own AI agent: a companion, a character or just a worker. More than
+that it's a custom harness built around one agent who lives on your server. A new install
+starts you off with an agent called Celine (she/her); you give it its own name, pronouns and
+persona in Setup. A lot of things here work differently from the usual agent setups, so it's
+worth reading a bit before you dive in.
 
 https://github.com/user-attachments/assets/f65eb1f9-9514-403d-9a4a-31c6aa1a9d41
 
 ## What's different
 
-**Her own Linux box.** Celine doesn't get a "run this command" tool. She gets a real Linux
-container with real terminals, and she types into them like you would at a keyboard. She
-can install things, write scripts and break stuff. Everything outside her home folder
-resets to a fresh Debian every morning, and her home stays. You can open any of her
-terminals, watch what she does or type along.
+**Its own Linux box.** Your agent doesn't get a "run this command" tool. It gets a real
+Linux container with real terminals, and it types into them like you would at a keyboard.
+It can install things, write scripts and break stuff. Everything outside its home folder
+resets to a fresh Debian every morning, and its home stays. You can open any of its
+terminals, watch what it does or type along.
 
-**Her own browser.** She has a full Brave browser with its own profile. You can watch it
-live while she clicks around, logs into things or reads a page.
+**Its own browser.** Your agent has a full Brave browser with its own profile. You can
+watch it live while the agent clicks around, logs into things or reads a page.
 
-**Her own memory.** She keeps a notebook of her own in whatever format she likes: notes,
-plans, a diary, what she knows about you.
+**Its own memory.** Your agent keeps a notebook of its own in whatever format it likes:
+notes, plans, a diary, what it knows about you.
 
-**She works on her own.** Routines run on a schedule (a daily diary, the news, whatever you
-set up). Missions are bigger goals she works on over hours or days, with sub-agents doing
-parts of the work. Everything you, she and her helpers say to each other goes through the
-Intercom.
+**It works on its own.** Routines run on a schedule (a daily diary, the news, whatever you
+set up). Missions are bigger goals your agent works on over hours or days, with sub-agents
+doing parts of the work. Everything you, your agent and its sub-agents say to each other
+goes through the Intercom.
 
-**A guard.** A second, smaller model called Bastet looks at risky actions before they run
+**A guard.** A second model called Bastet looks at risky steps before they run
 and can stop them or ask you first.
 
-## Other things she can do
+## Other things your agent can do
 
-- read and write email from an account you give her
+- read and write email from an account you give it
 - use a password vault (Bitwarden) to log into sites, without ever seeing the passwords
 - search your Discord and WhatsApp history and your documents
 - make images and music through ComfyUI
 - search the web through your own SearXNG
 - dictation and read aloud, if you have a speech model
 
-Every feature can be switched on or off on its own.
+Apart from the core, such as the chat, the agent's notebook and the Intercom, every feature
+can be switched on or off on its own.
 
-I'd recommend giving her her own accounts for things like email and the vault, not your
-personal ones. But it's your setup, so that's up to you.
+I'd recommend giving your agent its own accounts for things like email and the vault, not
+your personal ones. But it's your setup, so that's up to you.
 
 ## A look around
 
-| A chat | Her notebook | Everything she did |
+| A chat | Its notebook | Everything it did |
 |---|---|---|
-| ![A chat with her thoughts and tools](docs/screenshots/chat.jpg) | ![A note in her notebook](docs/screenshots/notebook.jpg) | ![Events](docs/screenshots/events.jpg) |
+| ![A chat with the agent's thoughts and tools](docs/screenshots/chat.jpg) | ![A note in the agent's notebook](docs/screenshots/notebook.jpg) | ![Events](docs/screenshots/events.jpg) |
 
 | A mission | Routines | Setting up a routine |
 |---|---|---|
-| ![A mission with its plan and sub-agents](docs/screenshots/mission.jpg) | ![The night's routine runs](docs/screenshots/routines.jpg) | ![Setting up a routine](docs/screenshots/schedule-setup.jpg) |
+| ![A mission with its plan and sub-agents](docs/screenshots/mission.jpg) | ![A day's routine runs](docs/screenshots/routines.jpg) | ![Setting up a routine](docs/screenshots/schedule-setup.jpg) |
 
 | Appearance | Features | Tools |
 |---|---|---|
@@ -75,14 +78,15 @@ docker compose up -d
 docker compose exec -u celine celine cat /data/app/setup-code.txt
 ```
 
-`.env` starts her Linux box, her browser, web search and the Discord and WhatsApp
+`.env` starts the agent's Linux box, its browser, web search and the Discord and WhatsApp
 connectors along with the app. Remove the services you don't want from `COMPOSE_PROFILES`.
 
 Open http://localhost:8766, enter the setup code (the last command above prints it) and
-pick a way to log in: a passkey, a password or a PIN. After that the setup walks you through naming her, telling her about you, connecting
-a model and turning features on.
+pick a way to log in: a passkey, a password or a PIN. After that Setup walks you through
+creating your agent (its name, pronouns and persona), telling it about you, connecting a
+model and turning features on.
 
-To use it from other machines on your network (her Mac, your phone) without a domain:
+To use it from other machines on your network (the agent's Mac, your phone) without a domain:
 put `CELINE_PUBLISH=8766` in `.env`, run `docker compose up -d` again, open
 `http://<this machine's LAN address>:8766` and enter the setup code there. The app remembers
 the address where you entered the setup code. You can change it later in Settings, General,
@@ -118,7 +122,7 @@ the WhatsApp connector.
 
 ## AI usage disclaimer
 
-Yes, I use AI. In fact I use celine-net to work on herself occasionally. All code is
+Yes, I use AI. In fact I use celine-net to work on itself occasionally. All code is
 reviewed by me, authored by me and vouched for by me. If you do not like AI being used in
 modern projects then this is not for you. I also welcome contributions drafted by AI and
 authored by other developers. I do not accept pure AI-authored contributions.
