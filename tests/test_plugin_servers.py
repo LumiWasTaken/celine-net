@@ -32,7 +32,7 @@ from settings_fixtures import client, make_app, scratch
 
 pytestmark = pytest.mark.anyio
 
-REMOTE = Path(__file__).parent / "data" / "plugins" / "remote"
+REMOTE = Path(__file__).parent.parent / "examples" / "plugins" / "remote"   # docs/plugins.md
 SERVER = Path(__file__).with_name("mcp_echo_server.py")
 
 

@@ -21,7 +21,7 @@ from settings_fixtures import client, make_app, scratch
 
 pytestmark = pytest.mark.anyio
 
-ECHO = Path(__file__).parent / "data" / "plugins" / "echo"
+ECHO = Path(__file__).parent.parent / "examples" / "plugins" / "echo"   # docs/plugins.md
 
 
 @pytest.fixture(autouse=True)
@@ -54,17 +54,17 @@ def test_scan_reads_the_base_and_the_data_dir_replaces_by_id(tmp_path, monkeypat
     mine = _echo(var)
     (mine / "plugin.toml").write_text((mine / "plugin.toml").read_text().replace(
         'label = "Echo"', 'label = "My echo"'))
-    assert plugins.scan(var, frozenset()) == [
+    assert plugins.scan(var / "plugins", frozenset()) == [
         "plugins changed on disk; restart Celine to apply it"]
     assert plugins.get("echo") is p, "a reload keeps the running record"
     monkeypatch.setattr(plugins, "_scanned", None)       # a restart
-    plugins.scan(var, frozenset())
+    plugins.scan(var / "plugins", frozenset())
     assert plugins.get("echo").dir == mine and plugins.get("echo").user
     assert features.get("echo").label == "My echo"
     assert features.get("echo").tier == "user", "from the data dir, no place: a user module"
     (mine / "plugin.toml").write_text('places = ["echo"]\n' + (mine / "plugin.toml").read_text())
     monkeypatch.setattr(plugins, "_scanned", None)
-    plugins.scan(var, frozenset())
+    plugins.scan(var / "plugins", frozenset())
     assert features.get("echo").tier == "base", "a place of its own: a base module"
 
 

@@ -48,6 +48,7 @@ services:
       CELINE_SEARXNG_URL: http://searxng:8080
       CELINE_SHELL_URL: http://shellbox:8770
       CELINE_BROWSER_URL: http://browser:8771
+      CELINE_PLUGINS_DIR: /plugins
       AGENT_UID: *agent-uid
       TZ: ${TZ:-UTC}
     # the whole volume: at its start (as root, docker-entrypoint in the Dockerfile) the app
@@ -56,6 +57,8 @@ services:
     # healthy, which is what the others wait for
     volumes:
       - data:/data
+      # your plugins (docs/plugins.md), read at start; their data goes to app/plugins/
+      - ./user-plugins:/plugins:ro
     # default: the connectors and the search engine; shellbox: its shellbox; browser: its
     # browser. Naming networks here drops the default one unless it is listed too.
     networks: [default, shellbox, browser]

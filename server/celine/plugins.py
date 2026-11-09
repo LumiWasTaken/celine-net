@@ -1,8 +1,9 @@
-"""Plugins: folders that add to the core. Base plugins ship in the repo (`plugins/<id>/`),
-user plugins live in `<data>/plugins/<id>/`; a user plugin replaces the base plugin with
-the same id.
+"""Plugins: folders that add to the core (docs/plugins.md). Base plugins ship in the repo
+(`plugins/<id>/`), yours live in the plugins folder (Config.plugins_dir: CELINE_PLUGINS_DIR,
+else `<data>/plugins/<id>/`); one of yours replaces the base plugin with the same id. A
+plugin's data is `<data>/plugins/<id>/` wherever its code is.
 
-A plugin is a folder with a `plugin.toml` (its feature and its skills), and optionally a
+A plugin is a folder with a `plugin.toml` (its feature and its skills: MANIFEST), and optionally a
 `settings.toml` (its form, settings/form.py), `migrations/` (its own SQLite file,
 `<data>/plugins/<id>/<id>.db`) and Python modules imported as `celine_plugins.<id>.<name>`.
 
@@ -30,6 +31,9 @@ from .errors import Busy
 BASE = ROOT / "plugins"
 PACKAGE = "celine_plugins"
 _ID = re.compile(r"^[a-z][a-z0-9_]*$")
+# every key a plugin.toml may hold (docs/plugins.md describes each; a test holds the two equal)
+MANIFEST = ("id", "label", "about", "needs", "off_when", "start_on", "warn", "group", "choice",
+            "places", "skills", "servers", "routes", "run", "open", "drones")
 
 
 @dataclass
@@ -85,20 +89,21 @@ class Plugin:
 
 
 LOADED: dict[str, Plugin] = {}
-_scanned: Path | None = None        # the data dir of the last scan
+_scanned: Path | None = None        # the plugins folder of the last scan
 
 
-def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
+def scan(user_dir: Path | None, reserved: frozenset[str] = frozenset(),
          check_form: Callable[[str, Any], None] | None = None) -> list[str]:
-    """Read every manifest, base then user (same id replaces), into LOADED. `reserved`:
-    the ids a plugin may not take (core features, settings sections); `check_form`
-    raises ValueError on a settings.toml (settings/form.py check_toml). Again for the same
-    data dir (a reload) only the manifests and forms of the plugins already known are read
-    again: the running ones keep their records. -> problems, one sentence each."""
+    """Read every manifest, base then yours from `user_dir` (same id replaces), into
+    LOADED. `reserved`: the ids a plugin may not take (core features, settings sections);
+    `check_form` raises ValueError on a settings.toml (settings/form.py check_toml). Again
+    for the same folder (a reload) only the manifests and forms of the plugins already
+    known are read again: the running ones keep their records. -> problems, one sentence
+    each."""
     global _scanned
     problems: list[str] = []
     found: dict[str, Plugin] = {}
-    roots = [(BASE, False)] + ([(Path(data_dir) / "plugins", True)] if data_dir else [])
+    roots = [(BASE, False)] + ([(Path(user_dir), True)] if user_dir else [])
     for root, user in roots:
         if not root.is_dir():
             continue
@@ -111,7 +116,7 @@ def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
                 problems.append(f"plugins/{d.name}: {e}")
                 continue
             found[p.id] = p
-    if data_dir is not None and _scanned == Path(data_dir):
+    if user_dir is not None and _scanned == Path(user_dir):
         if {(p.id, p.dir) for p in found.values()} != {(p.id, p.dir) for p in LOADED.values()}:
             problems.append("plugins changed on disk; restart Celine to apply it")
         for pid, p in LOADED.items():
@@ -120,7 +125,7 @@ def scan(data_dir: Path | None, reserved: frozenset[str] = frozenset(),
         return problems
     LOADED.clear()
     LOADED.update(found)
-    _scanned = Path(data_dir) if data_dir is not None else None
+    _scanned = Path(user_dir) if user_dir is not None else None
     return problems
 
 
@@ -135,6 +140,9 @@ def _read(d: Path, user: bool, reserved: frozenset[str],
         raise ValueError(f"{pid!r} cannot be a plugin id")
     if not isinstance(manifest.get("label"), str) or not manifest["label"]:
         raise ValueError("it needs a label")
+    if unknown := sorted(set(manifest) - set(MANIFEST)):
+        raise ValueError(f"plugin.toml has no key {', '.join(map(repr, unknown))} "
+                         f"(docs/plugins.md)")
     form = None
     if (d / "settings.toml").is_file():
         with (d / "settings.toml").open("rb") as f:

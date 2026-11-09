@@ -156,10 +156,11 @@ class BackendConfig:
 
 @dataclass
 class Config:
-    """config.load fills `server` and `data_dir`; boot.load the rest."""
+    """config.load fills `server`, `data_dir` and `plugins_dir`; boot.load the rest."""
 
     server: dict[str, Any]
     data_dir: Path
+    plugins_dir: Path | None = None     # your plugins (CELINE_PLUGINS_DIR, <data>/plugins)
     problems: list[Problem] = field(default_factory=list)
     name: str = ""             # its own (celine.agent)
     user: str = ""             # yours (Settings, General)
@@ -316,7 +317,7 @@ def load() -> Config:
     if not path.exists():
         raise ConfigError(f"no config/celine.toml under {ROOT}")
     main = tables(shown_path(path), read_toml(path, problems),
-                  {"server": SERVER_KEYS, "paths": {"data": "str"}}, problems)
+                  {"server": SERVER_KEYS, "paths": {"data": "str", "plugins": "str"}}, problems)
     server = {"host": "127.0.0.1", "port": 8766, **main.get("server", {})}
     for env, key in _SERVER_ENV.items():
         if os.environ.get(env):
@@ -326,4 +327,10 @@ def load() -> Config:
         data_dir = _expand(os.environ["CELINE_DATA_DIR"])     # a second instance beside the real one
     if not data_dir.is_absolute():
         data_dir = ROOT / data_dir
-    return Config(server=server, data_dir=data_dir, problems=problems)
+    # your plugins' code (docs/plugins.md); their data stays in <data>/plugins/<id>/
+    plugins_dir = Path(main.get("paths", {}).get("plugins") or data_dir / "plugins")
+    if os.environ.get("CELINE_PLUGINS_DIR"):
+        plugins_dir = _expand(os.environ["CELINE_PLUGINS_DIR"])
+    if not plugins_dir.is_absolute():
+        plugins_dir = ROOT / plugins_dir
+    return Config(server=server, data_dir=data_dir, plugins_dir=plugins_dir, problems=problems)
