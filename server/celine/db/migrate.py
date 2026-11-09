@@ -30,6 +30,21 @@ BUSY_MS = 5000          # how long a connection waits for another's lock (core/s
 COPIES_KEPT = 3         # copies made before a migration, per file
 
 
+class Failed(RuntimeError):
+    """A database this build cannot open or bring to its schema. The message is the whole
+    reason and names the copy to go back to when there is one; the file itself is as it
+    was before the step that failed (each step is one transaction)."""
+
+
+def _before(db_path: Path, version: int) -> str:
+    """A sentence naming the copy made before the first update past schema `version`
+    (`_copy`), "" without one."""
+    pattern = re.compile(re.escape(db_path.name) + r"\.pre-(\d+)\.bak$")
+    copies = sorted((int(mm.group(1)), q) for q in db_path.parent.iterdir()
+                    if (mm := pattern.match(q.name)) and int(mm.group(1)) > version)
+    return f" {copies[0][1]} is the file from before that update." if copies else ""
+
+
 def _migrations(directory: Path | None = None) -> list[tuple[int, Path]]:
     out = []
     for p in sorted((directory or MIGRATIONS_DIR).iterdir()):
@@ -48,8 +63,8 @@ def _migrations(directory: Path | None = None) -> list[tuple[int, Path]]:
 def _version(conn: sqlite3.Connection, name: str) -> int:
     v = conn.execute("PRAGMA user_version").fetchone()[0]
     if v == 0 and conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'").fetchone():
-        raise RuntimeError(f"{name} has no schema version; delete it and let Celine "
-                           f"build it again.")
+        raise Failed(f"{name} has no schema version; delete it and let Celine "
+                     f"build it again.")
     return v
 
 
@@ -101,13 +116,13 @@ def migrate(db_path: Path, migrations_dir: Path | None = None) -> int:
         conn.execute(f"PRAGMA busy_timeout={BUSY_MS}")
         current = _version(conn, db_path.name)
         if current > latest:
-            raise RuntimeError(
-                f"{db_path.name} is at schema version {current} but this build only "
-                f"knows {latest}."
+            raise Failed(
+                f"{db_path.name} is at schema version {current} and this build knows "
+                f"{latest}. Start the release that wrote it.{_before(db_path, latest)}"
             )
         baseline = migrations[0][0] if migrations else 0
         if 0 < current < baseline:
-            raise RuntimeError(
+            raise Failed(
                 f"{db_path.name} is at schema version {current}, older than "
                 f"{migrations[0][1].name} this build starts from; delete it and let Celine "
                 f"build it again."
@@ -116,7 +131,12 @@ def migrate(db_path: Path, migrations_dir: Path | None = None) -> int:
         if pending and current > 0:
             _copy(conn, db_path, latest)
         for version, path in pending:
-            _apply(conn, path, version, db_path)
+            try:
+                _apply(conn, path, version, db_path)
+            except Exception as e:
+                at = conn.execute("PRAGMA user_version").fetchone()[0]
+                raise Failed(f"{db_path.name} stays at schema version {at}: {path.name} "
+                             f"failed ({e}).{_before(db_path, at)}") from e
         return latest
     finally:
         conn.close()

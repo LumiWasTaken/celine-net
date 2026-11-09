@@ -7,6 +7,7 @@ import functools
 import logging
 import os
 import socket
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -34,7 +35,7 @@ from .backends import llm as llm_mod
 from .core.services import Services
 from .mcp import Supervisor
 from .triggers import Triggers
-from .db.migrate import migrate_all
+from .db import migrate as db_migrate
 from .core.store import Store
 from .core.bus import EventBus
 from .skills import build as build_registry
@@ -59,6 +60,15 @@ def _load_config(load=boot.load) -> config_mod.Config:
     try:
         return load()
     except config_mod.ConfigError as e:
+        _refuse(str(e))
+
+
+def migrated(db_path: Path) -> int:
+    """Every database at this build's schema (db/migrate.py migrate_all). -> celine.db's
+    version. A database it cannot bring there ends the start with the reason."""
+    try:
+        return db_migrate.migrate_all(db_path)
+    except (db_migrate.Failed, sqlite3.Error) as e:
         _refuse(str(e))
 
 
@@ -121,7 +131,7 @@ def preflight(argv: argparse.Namespace) -> config_mod.Config:
                                      "dir": str(cfg.data_dir / "keys")})
     from .settings import files as settings_files, seed
     seed.seed(settings_files.settings_dir(cfg))    # the context shares: copied once
-    version = migrate_all(cfg.db_path)
+    version = migrated(cfg.db_path)
     cfg = _load_config()                            # everything, its row too
     cfg.server.update(reload.CLI_SERVER)
     set_secrets(cfg.secrets())
@@ -585,10 +595,10 @@ def main() -> None:
         cfg = _load_config()
         set_secrets(cfg.secrets())
         set_secrets(keys.values(cfg.data_dir), "keys")
-        own_data_dir(cfg.data_dir)
-        migrate_all(cfg.db_path)
-        if argv.command == "doctor":
+        if argv.command == "doctor":                # reads only
             raise SystemExit(ops.doctor(cfg))
+        own_data_dir(cfg.data_dir)
+        migrated(cfg.db_path)
         if argv.command == "purge":
             raise SystemExit(ops.purge(cfg, argv.under, argv.dry_run))
         ops.export(cfg, argv.out)

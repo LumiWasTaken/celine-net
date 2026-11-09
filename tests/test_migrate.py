@@ -67,7 +67,7 @@ def test_a_fresh_database_gets_every_table_and_its_words_are_searchable(tmp_path
     c.execute(f"PRAGMA user_version = {LATEST + 1}")
     c.commit()
     c.close()
-    with pytest.raises(RuntimeError, match="only knows"):
+    with pytest.raises(m.Failed, match="this build knows"):
         migrate(db)                     # a database from a newer build is left alone
 
 
@@ -189,10 +189,44 @@ def test_a_retry_after_a_failed_upgrade_keeps_the_copy_from_before_it(tmp_path, 
     (d / "0002_drop.sql").write_text("DELETE FROM kv;\n")
     (d / "0003_bad.sql").write_text("INSERT INTO nope VALUES(1);\n")
     for _ in range(2):
-        with pytest.raises(sqlite3.OperationalError):
+        with pytest.raises(m.Failed) as e:
             migrate(db)
+    assert str(e.value) == (
+        "x.db stays at schema version 2: 0003_bad.sql failed (no such table: nope). "
+        f"{tmp_path / 'x.db.pre-3.bak'} is the file from before that update.")
     c = sqlite3.connect(tmp_path / "x.db.pre-3.bak")
     assert c.execute("SELECT k FROM kv").fetchall() == [("a",)]
+
+
+def test_a_database_from_a_newer_release_is_refused_with_the_copy_to_go_back_to(
+        tmp_path, monkeypatch):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("CREATE TABLE kv(k TEXT PRIMARY KEY);\n")
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "x.db"
+    assert migrate(db) == 1
+    (d / "0002_more.sql").write_text("CREATE TABLE more(k TEXT);\n")
+    assert migrate(db) == 2
+    (d / "0002_more.sql").unlink()
+    with pytest.raises(m.Failed) as e:
+        migrate(db)
+    assert str(e.value) == (
+        "x.db is at schema version 2 and this build knows 1. Start the release that "
+        f"wrote it. {tmp_path / 'x.db.pre-2.bak'} is the file from before that update.")
+
+
+def test_a_start_on_a_database_it_cannot_migrate_is_a_one_line_refusal(tmp_path, capsys):
+    from celine import __main__ as main
+    db = tmp_path / "celine.db"
+    c = sqlite3.connect(db)
+    c.execute("PRAGMA user_version = 9999")
+    c.close()
+    with pytest.raises(SystemExit) as e:
+        main.migrated(db)
+    assert e.value.code == 2
+    assert capsys.readouterr().err.startswith(
+        "celine: celine.db is at schema version 9999 and this build knows ")
 
 
 def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, monkeypatch):
