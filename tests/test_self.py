@@ -1,7 +1,7 @@
 """The agent's self: me__read and me__edit
-(skills/me.py), its talk and voice in History with a real revert (her.py,
-api/texts.py), the `her` source of Events, the slop phrases of
-validation talk and owning up (config/her/voice.toml), and the one marking
+(skills/me.py), its talk and voice in History with a real revert (agent.py,
+api/texts.py), the `agent` source of Events, the slop phrases of
+validation talk and owning up (config/agent/voice.toml), and the one marking
 style the legend names (turns/legend.py)."""
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from celine import events, her, texts
+from celine import events, agent, texts
 from celine.api import texts as texts_api
 from celine.boot import load
 from celine.core import ids
@@ -49,9 +49,9 @@ class Yes:
     def __init__(self):
         self.asked: list[tuple] = []
 
-    async def ask(self, action, facts, conversation, why="", short="", kind="vault",
+    async def ask(self, kind, conversation, action, *, facts=(), detail=None, why="",
                   ref=None, call=None):
-        self.asked.append((kind, action, facts, call))
+        self.asked.append((kind, action, detail, call))
 
 
 def _me(cfg, approvals=None):
@@ -78,8 +78,8 @@ MORNING = [
 ]
 
 
-def test_validation_talk_and_owning_up_are_slop_and_her_own_lines_are_not():
-    voice = tomllib.loads((her.BASE / "voice.toml").read_text())
+def test_validation_talk_and_owning_up_are_slop_and_its_own_lines_are_not():
+    voice = tomllib.loads((agent.BASE / "voice.toml").read_text())
     for line in MORNING:
         assert len(slop.find(line, voice)) >= 2, line
     for line in ("ugh. yeah.", "you did good", "i was right there when it broke"):
@@ -88,19 +88,19 @@ def test_validation_talk_and_owning_up_are_slop_and_her_own_lines_are_not():
 
 # ---- its voice as text, and History ------------------------------------------------------
 
-def test_her_voice_as_text_reads_back_the_same():
+def test_the_agents_voice_as_text_reads_back_the_same():
     v = {"banned": [" delve", "Moreover"], "bias": -12.5, "on": False,
          "phrases": ["you caught me"], "patterns": [r"\bheh\b"]}
-    text = her.voice_text(v)
+    text = agent.voice_text(v)
     assert text.splitlines()[:3] == ["on: false", "bias: -12.5", "banned:  delve"]
-    assert her.voice_from_text(text) == v
+    assert agent.voice_from_text(text) == v
     with pytest.raises(Invalid):
-        her.voice_from_text("on: true\nwords: delve")
+        agent.voice_from_text("on: true\nwords: delve")
 
 
 # ---- me__read, me__edit ------------------------------------------------------------------
 
-async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
+async def test_the_agent_reads_itself_and_edits_its_talk_and_slop_list(store, cfg):
     me = _me(cfg)
     seen = []
     store.emit_global = seen.append
@@ -109,24 +109,24 @@ async def test_she_reads_herself_and_edits_her_talk_and_slop_list(store, cfg):
     assert "Joe" in read and "{{" not in read
     got = await me.edit(_ctx(store, cfg), what="phrases", add=["my call was right"])
     assert not got.is_error and "1 added" in got.content
-    assert "my call was right" in cfg.her.voice["phrases"], "cfg follows the row"
-    placeholders = cfg.her.talk_text.count("{{username}}")
+    assert "my call was right" in cfg.agent.voice["phrases"], "cfg follows the row"
+    placeholders = cfg.agent.talk_text.count("{{username}}")
     got = await me.edit(_ctx(store, cfg), what="talk", old="write to Joe,",
                         new="write to Joe, plainly,")
     assert not got.is_error, got.content
-    assert "write to Joe, plainly," in cfg.her.talk, "stored as it wrote it"
-    assert cfg.her.talk.count("{{username}}") == placeholders - 1, \
+    assert "write to Joe, plainly," in cfg.agent.talk, "stored as it wrote it"
+    assert cfg.agent.talk.count("{{username}}") == placeholders - 1, \
         "only the edited one is gone; the rest stay placeholders"
     got = await me.edit(_ctx(store, cfg), what="talk", new="## how I sound\nshort.")
-    assert cfg.her.talk.rstrip().endswith("## how I sound\nshort.")
+    assert cfg.agent.talk.rstrip().endswith("## how I sound\nshort.")
     got = await me.edit(_ctx(store, cfg), what="persona", new="I keep a balcony garden.")
     assert not got.is_error and got.content == "Added to your persona. Tell Joe in one line."
-    assert cfg.her.persona.rstrip().endswith("I keep a balcony garden.")
-    assert [b for b, _ in await _versions(store, "her:persona")] == ["", "her"]
-    assert {"type": "her.changed"} in seen
-    talk = await _versions(store, "her:talk")
-    assert [b for b, _ in talk] == ["", "her", "her"]
-    rows = await store.read(lambda c: events.listing(c, cfg, kinds=["her"]))
+    assert cfg.agent.persona.rstrip().endswith("I keep a balcony garden.")
+    assert [b for b, _ in await _versions(store, "agent:persona")] == ["", "agent"]
+    assert {"type": "agent.changed"} in seen
+    talk = await _versions(store, "agent:talk")
+    assert [b for b, _ in talk] == ["", "agent", "agent"]
+    rows = await store.read(lambda c: events.listing(c, cfg, kinds=["agent"]))
     assert [e["title"] for e in rows["events"]] == [
         "Changed the Persona", "Changed the Example lines", "Changed the Example lines",
         "Changed the Banned words"]
@@ -154,7 +154,7 @@ async def test_a_wrong_edit_says_why_and_writes_nothing(store, cfg):
         "SELECT count(*) FROM text_versions").fetchone()[0]) == 0
 
 
-async def test_every_edit_of_herself_waits_for_the_owner_guard_or_not(store, cfg,
+async def test_every_edit_of_the_agent_waits_for_the_owner_guard_or_not(store, cfg,
                                                                       monkeypatch):
     """me__edit asks the owner (celine/approvals.py) before it writes, whatever the guard
     is; denied, unanswered or with nobody to ask, nothing changes. A call the owner
@@ -165,38 +165,38 @@ async def test_every_edit_of_herself_waits_for_the_owner_guard_or_not(store, cfg
     import asyncio
     yes = Yes()
     await _me(cfg, yes).edit(_ctx(store, cfg), what="persona", old="", new="I garden.")
-    [(kind, action, facts, call)] = yes.asked
-    assert (kind, action, facts, call) == ("her", "change the Persona", ["new: I garden."],
-                                           "x")
-    before = cfg.her.persona
+    [(kind, action, detail, call)] = yes.asked
+    assert (kind, action, detail, call) == ("agent", "change the Persona",
+                                            ("Persona", "New\nI garden."), "x")
+    before = cfg.agent.persona
     monkeypatch.setattr(ap, "ASK_FOR", 5)
     a = ap.Approvals(cfg)
 
-    async def answer(ok, kind="her"):
+    async def answer(ok, kind="agent"):
         await until(lambda: a.waiting)
         [ask] = a.view()
-        assert ask["kind"] == kind and (kind != "her" or "every chat" in ask["why"])
+        assert ask["kind"] == kind and (kind != "agent" or "every chat" in ask["help"])
         assert a.decide(ask["id"], ok, Owner("test", _SEAL))
     got, _ = await asyncio.gather(
         _me(cfg, a).edit(_ctx(store, cfg, "k1"), what="talk", new="short."), answer(False))
     assert got.is_error and got.content == "Joe denied it; nothing was done."
-    assert cfg.her.persona == before and "short." not in cfg.her.talk_text
+    assert cfg.agent.persona == before and "short." not in cfg.agent.talk_text
     monkeypatch.setattr(ap, "ASK_FOR", 0)
     got = await _me(cfg, a).edit(_ctx(store, cfg, "k2"), what="phrases", add=["x y"])
     assert got.is_error and got.content.startswith("Joe did not answer")
     got = await Me(cfg).edit(_ctx(store, cfg, "k3"), what="phrases", add=["x y"])
     assert got.is_error and "nobody" in got.content
-    assert "x y" not in cfg.her.voice["phrases"]
+    assert "x y" not in cfg.agent.voice["phrases"]
     # Bastet's confirm ask for this very call was approved: it is not asked again
     monkeypatch.setattr(ap, "ASK_FOR", 5)
-    gate, _ = await asyncio.gather(a.ask("run me__edit", [], "c1", kind="gate", call="k4"),
+    gate, _ = await asyncio.gather(a.ask("gate", "c1", "run me__edit", call="k4"),
                                    answer(True, "gate"))
     assert gate is None
     got = await _me(cfg, a).edit(_ctx(store, cfg, "k4"), what="phrases", add=["x y"])
-    assert not got.is_error and "x y" in cfg.her.voice["phrases"] and not a.waiting
+    assert not got.is_error and "x y" in cfg.agent.voice["phrases"] and not a.waiting
 
 
-def test_she_knows_an_edit_of_herself_waits_for_the_owner():
+def test_the_agent_knows_an_edit_of_itself_waits_for_the_owner():
     assert "approve" in Me.edit.__doc__ and "approve" in Me.guide.body
 
 
@@ -215,15 +215,15 @@ async def client(store, cfg):
         yield c
 
 
-async def test_revert_makes_an_old_version_hers_again_as_a_new_one(store, cfg, client):
-    first = cfg.her.voice
-    await her.write(store, cfg, {"voice": {**first, "banned": [" delve", " ozone"]}}, "her")
+async def test_revert_makes_an_old_version_its_own_again_as_a_new_one(store, cfg, client):
+    first = cfg.agent.voice
+    await agent.write(store, cfg, {"voice": {**first, "banned": [" delve", " ozone"]}}, "agent")
     vid = await store.read(lambda c: c.execute(
-        "SELECT min(id) FROM text_versions WHERE of='her:voice'").fetchone()[0])
+        "SELECT min(id) FROM text_versions WHERE of='agent:voice'").fetchone()[0])
     r = await client.post(f"/api/text-versions/{vid}/revert")
     assert r.status_code == 200, r.text
-    assert cfg.her.voice == first
-    assert [b for b, _ in await _versions(store, "her:voice")] == ["", "her", "user"]
+    assert cfg.agent.voice == first
+    assert [b for b, _ in await _versions(store, "agent:voice")] == ["", "agent", "user"]
     await store.write(lambda c: texts.record(c, "routine:x:prompt", "a", "user"))
     other = await store.read(lambda c: c.execute(
         "SELECT id FROM text_versions WHERE of='routine:x:prompt'").fetchone()[0])
@@ -284,7 +284,7 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
                            "detail": "The shellbox did not answer at box:8700. Start it, "
                                      "or fix the address.",
                            "why": "The shellbox at box:8700 does not answer."},
-              "browser": {"state": "unset", "detail": "Type one below, or leave it off."},
+              "browser": {"state": "unset", "detail": "The browser has no address yet."},
               "web": {"state": "ready", "detail": "SearXNG answers."},
               "guard": {"state": "ready", "detail": "Decision model: small."}}
 
@@ -306,12 +306,13 @@ async def test_whoami_says_the_fallback_with_its_reason_and_a_sub_agent_its_pare
         "model": "small", "endpoint": "gpu-box", "fallback": True, "instead_of": "big",
         "why": "llama-swap does not answer."})
     out = (await me.whoami(ctx(parent, tid))).content
-    assert "Model: lan/small for chat, a fallback. main/big: llama-swap does not answer." in out
+    assert ("Model: lan/small for chat, a fallback. main/big: llama-swap at 127.0.0.1:11434 "
+            "refused the connection.") in out, "the provider's own sentence"
     assert f"Where you are: a chat (address {parent})." in out
     assert "This turn: Joe's message." in out
-    assert "Shellbox: The shellbox at box:8700 does not answer." in out, "her words"
+    assert "Shellbox: The shellbox at box:8700 does not answer." in out, "its words"
     assert "Browser: not set up." in out and "below" not in out and "fix" not in out
-    assert "Web search: SearXNG answers." in out and out.count("Guard:") == 1
+    assert "Web: SearXNG answers." in out and out.count("Guard:") == 1
     assert "Guard: off." in out
     assert "[image]" not in out and "—" not in out
 

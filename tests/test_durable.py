@@ -328,7 +328,7 @@ async def test_a_store_error_in_the_worker_loop_leaves_the_worker_alive(
     import sqlite3
     from celine.turns import dispatcher
     monkeypatch.setattr(dispatcher, "HOLD_RECHECK", 0.05)
-    real = {"hold": dispatcher.her_hold, "claim": turns.claim}[where]
+    real = {"hold": dispatcher.agent_hold, "claim": turns.claim}[where]
     failed = []
 
     async def flaky(*a, **kw):
@@ -337,7 +337,7 @@ async def test_a_store_error_in_the_worker_loop_leaves_the_worker_alive(
             raise sqlite3.OperationalError("database is locked")
         return await real(*a, **kw)
     if where == "hold":
-        monkeypatch.setattr(dispatcher, "her_hold", flaky)
+        monkeypatch.setattr(dispatcher, "agent_hold", flaky)
     else:
         monkeypatch.setattr(turns, "claim", flaky)
     cid = await conversations.create(store)

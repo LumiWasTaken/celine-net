@@ -37,7 +37,7 @@ def home(tmp_path, monkeypatch, stack_key):
     spec.loader.exec_module(d)
     h = tmp_path / "home"
     h.mkdir()
-    d.HOME, d.USER, d.AS_HER = h, getpass.getuser(), {}
+    d.HOME, d.USER, d.AS_AGENT = h, getpass.getuser(), {}
     d.KEY_HASH = hashlib.sha256(KEY.encode()).hexdigest()
     server = ThreadingHTTPServer(("127.0.0.1", 0), d.Handler)
     threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
@@ -63,7 +63,7 @@ async def test_an_upload_lands_in_uploads_once_per_bytes(home, tmp_path):
     assert landed.read_bytes() == src.read_bytes()
     assert os.getxattr(landed, "user.celine.origin") == b"upload:game.zip"
     assert landed.stat().st_mode & 0o777 == 0o644
-    # the same bytes again: the file there stays as it is, her edits too
+    # the same bytes again: the file there stays as it is, the agent's edits too
     landed.write_bytes(b"her edit")
     assert await box_files.copy_upload(load(), src, "game.zip") == first
     assert landed.read_bytes() == b"her edit"
@@ -96,7 +96,7 @@ async def test_nasty_names_land_as_plain_files_in_uploads(home, tmp_path):
     assert not (home / ".bashrc").exists()
 
 
-async def test_a_path_out_of_her_home_is_refused(home, tmp_path):
+async def test_a_path_out_of_the_agents_home_is_refused(home, tmp_path):
     src = tmp_path / "x"
     src.write_bytes(b"x")
     with pytest.raises(RuntimeError, match="outside the home folder"):
@@ -107,7 +107,16 @@ async def test_a_path_out_of_her_home_is_refused(home, tmp_path):
     assert not (tmp_path / "escape").exists()
 
 
-async def test_her_line_says_where_it_is_in_her_box(cfg):
+async def test_a_box_error_that_is_not_json_says_the_boxs_words(monkeypatch, stack_key):
+    import httpx
+    monkeypatch.setenv("CELINE_SHELL_URL", "http://box.test")
+    stack_key("shell", KEY)
+    t = httpx.MockTransport(lambda r: httpx.Response(500, text="disk on fire"))
+    with pytest.raises(RuntimeError, match="^The shellbox returned 500: disk on fire$"):
+        await box_files.put(load(), b"x", "a.txt", transport=t)
+
+
+async def test_the_agents_line_says_where_it_is_in_its_box(cfg):
     line = attachments.render(cfg, [{"role": "user", "content": "here", "attachments": [
         {"id": "a", "filename": "game.zip", "kind": "binary", "sha256": "0" * 64,
          "bytes": 48 * 1048576, "media_type": "application/zip",
@@ -116,7 +125,7 @@ async def test_her_line_says_where_it_is_in_her_box(cfg):
                          "~/uploads/game.zip]")
 
 
-async def test_send_attaches_her_file_to_the_conversation(home, cfg, store):
+async def test_send_attaches_the_agents_file_to_the_conversation(home, cfg, store):
     data = os.urandom(2 * 1024 * 1024)
     (home / "out").mkdir()
     (home / "out" / "report.md").write_bytes(data)

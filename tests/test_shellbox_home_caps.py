@@ -23,7 +23,7 @@ def d(tmp_path, monkeypatch):
     spec.loader.exec_module(d)
     home = tmp_path / "home"
     home.mkdir()
-    d.HOME, d.USER, d.AS_HER = home, getpass.getuser(), {}
+    d.HOME, d.USER, d.AS_AGENT = home, getpass.getuser(), {}
     monkeypatch.setattr(os, "fchown", lambda *a: None)
     monkeypatch.setattr(d, "USAGE", tmp_path / "usage")
     return d

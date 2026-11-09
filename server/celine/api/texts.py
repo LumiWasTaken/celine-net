@@ -44,9 +44,9 @@ async def version(request: Request, vid: int) -> dict:
 
 @router.post("/text-versions/{vid}/revert")
 async def revert(request: Request, vid: int) -> dict:
-    """Version `vid` becomes the text again (her.revert). -> {of, text}."""
-    from .. import her
-    return await her.revert(services_of(request), vid)
+    """Version `vid` becomes the text again (agent.revert). -> {of, text}."""
+    from .. import agent
+    return await agent.revert(services_of(request), vid)
 
 
 # ---- Ask Celine -------------------------------------------------------------------------
@@ -60,7 +60,7 @@ class AskBody(BaseModel):
 def _messages(cfg, body: AskBody, lines: list[str]) -> list[dict]:
     from ..skills import guide
     system = "\n\n".join(p for p in (
-        cfg.substitute(cfg.her.persona).strip(),
+        cfg.substitute(cfg.agent.persona).strip(),
         cfg.substitute(guide("texts").body),
         "\n".join(lines),
         f"The text as it stands:\n\n{body.text}" if body.text.strip()

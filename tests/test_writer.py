@@ -45,13 +45,13 @@ def cfg(tmp_path, monkeypatch):
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles=ROLES)
     cfg = boot.load()
     cfg.llm = {"queue": {"wait_seconds": 5, "background_wait_seconds": 5}}
-    root = cfg.her.notebook
+    root = cfg.agent.notebook
     root.mkdir(parents=True, exist_ok=True)
     (root / "identity.md").write_text("# who you are\nyou are {{name}}, {{username}}'s.\n")
     (root / "samples.md").write_text(
         "load: always\nHow I talk:\n\n### 2026-10-01\nnew sample\n\n## earlier\n\n"
         "### 2026-09-01\nold sample\n")
-    cfg.her.talk = "short. lowercase.\n"
+    cfg.agent.talk = "short. lowercase.\n"
     return cfg
 
 
@@ -72,9 +72,9 @@ def _ctx(cfg):
                        config=cfg, emit=None)  # type: ignore[arg-type]
 
 
-def test_the_request_is_her_persona_identity_talk_and_samples(cfg):
+def test_the_request_is_its_persona_identity_talk_and_samples(cfg):
     system, user = messages(cfg, "say the cat is cute", "post", "r/cats: my cat")
-    me = cfg.her
+    me = cfg.agent
     s = system["content"]
     assert cfg.substitute(me.persona).strip() in s
     assert f"you are {me.name}" in s and "{{" not in s

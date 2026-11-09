@@ -1,9 +1,9 @@
-"""Her devices: each plugin that is on with a [drones] block in its plugin.toml, named
+"""The agent's devices: each plugin that is on with a [drones] block in its plugin.toml, named
 by the plugin's id. The block: `url` and `password` of its `opencode serve` (filled from
 its form, settings/form.fill), `key` (its secret that is its key to the app's model
 proxy, api/llm_proxy.py), `label`, `log` (where its server logs), `share` (its share
 server, optional: shares.py, the password its bearer) and `about` (what the device
-reported of itself, optional: its user, home, chip, memory, system, network; in her
+reported of itself, optional: its user, home, chip, memory, system, network; in its
 system prompt, `about`). Drones run there (sub_agents/drone.py)."""
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def about(cfg) -> str | None:
 
 
 def hosts(cfg) -> frozenset[str]:
-    """The hosts of every device that is on: hers, never a way out of her box."""
+    """The hosts of every device that is on: its own, never a way out of its box."""
     return frozenset().union(*(d.hosts for d in devices(cfg).values()))
 
 

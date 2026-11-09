@@ -84,7 +84,7 @@ async def test_the_restart_sweep_settles_every_job_by_its_tool(store, cfg):  # n
     assert job["result"] in shell and job["terminal"] == "build", "the jobs row says it too"
 
 
-async def test_her_tail_lists_her_jobs_still_running_here(store, cfg):  # noqa: F811
+async def test_the_agents_tail_lists_its_jobs_still_running_here(store, cfg):  # noqa: F811
     from celine.turns.prompt import tail_text
     box = Box()
     async with anyio.create_task_group() as tg:

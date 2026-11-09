@@ -1,4 +1,4 @@
-"""Her stored persona (the `her` row, config/her/persona.md and owner.md when it was
+"""The agent's stored persona (the `her` row, config/agent/persona.md and owner.md when it was
 seeded) gets what the shipped one says now: the notebook paragraph that owner.md says
 already leaves, and two lines join "How you work" after the one on a failed tool: work of
 many steps goes to an agent or a drone, and she sets her status when she starts and

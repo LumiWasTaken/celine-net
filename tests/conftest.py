@@ -47,16 +47,16 @@ def clock() -> Clock:
 
 @pytest.fixture(scope="session")
 def _template_db(tmp_path_factory) -> Path:
-    """A migrated database with a fresh install's row of it (what startup's her.seed
+    """A migrated database with a fresh install's row of it (what startup's agent.seed
     makes), made once and copied for each test."""
     import sqlite3
 
-    from celine import her
+    from celine import agent
     p = tmp_path_factory.mktemp("template") / "celine.db"
     migrate_all(p)
     c = sqlite3.connect(p)
     c.row_factory = sqlite3.Row
-    her.seed(c)
+    agent.seed(c)
     c.commit()
     c.close()
     return p
@@ -110,7 +110,7 @@ def _test_skills_core():
 def _own_names(monkeypatch):
     """Each test starts with the names a fresh load gives, not the last test's."""
     from celine.intercom import store as rows
-    monkeypatch.setattr(rows, "NAMES", {**rows.NAMES, "her": "Celine"})
+    monkeypatch.setattr(rows, "NAMES", {**rows.NAMES, "agent": "Celine"})
 
 
 @pytest.fixture(autouse=True)

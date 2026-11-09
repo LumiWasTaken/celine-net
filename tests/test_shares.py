@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -61,7 +62,7 @@ def box(tmp_path, monkeypatch, stack_key):
     spec.loader.exec_module(d)
     h = tmp_path / "home"
     h.mkdir()
-    d.HOME, d.USER, d.AS_HER = h, getpass.getuser(), {}
+    d.HOME, d.USER, d.AS_AGENT = h, getpass.getuser(), {}
     d.KEY_HASH = hashlib.sha256(KEY.encode()).hexdigest()
     d.STATUS["reset"] = "2026-10-24T04:00:00"
     server = ThreadingHTTPServer(("127.0.0.1", 0), d.Handler)
@@ -73,7 +74,7 @@ def box(tmp_path, monkeypatch, stack_key):
     server.shutdown()
 
 
-class Hers(BaseHTTPRequestHandler):
+class AgentApp(BaseHTTPRequestHandler):
     """The agent's web app: says what it got, sets a cookie, echoes a POST."""
     protocol_version = "HTTP/1.1"
 
@@ -100,7 +101,7 @@ class Hers(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def web():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Hers)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), AgentApp)
     server.daemon_threads = True
     serve_in_thread(server)
     yield server.server_port
@@ -231,6 +232,14 @@ def test_a_file_seeks_and_a_folder_serves_its_index(app, box):
         make(app, path="~/nothing.mp4")
 
 
+def test_a_path_the_box_cannot_read_says_the_boxs_words(app, monkeypatch):
+    async def head(cfg, device, path):
+        return httpx.Response(500, text="the home disk is gone")
+    monkeypatch.setattr(shares, "_file_head", head)
+    with pytest.raises(RuntimeError, match="^the home disk is gone$"):
+        make(app, path="~/a.mp4")
+
+
 def test_a_down_port_an_unknown_token_an_end_and_a_reset(app, box, web):
     c = TestClient(app)
     port = free_port()
@@ -241,10 +250,13 @@ def test_a_down_port_an_unknown_token_an_end_and_a_reset(app, box, web):
     sandboxed(r)
     s = app.state.services
     assert anyio.run(shares.state, s.cfg, s.store, down) == "down"
+    assert shares.shown(down, "down", s.cfg)["line"] == "Not running"
 
     assert c.get("/share/" + "a" * 24 + "/").status_code == 404
     up = make(app, port=web, public=True)
     assert anyio.run(shares.state, s.cfg, s.store, up) == "live"
+    assert shares.shown(up, "live", s.cfg)["line"] == f"Port {web} in the shellbox"
+    assert shares.shown(up, "ended", s.cfg)["line"] == "Ended"
     assert anyio.run(shares.end, s.store, up["token"])
     assert c.get(f"/share/{up['token']}/").status_code == 404
 
@@ -335,7 +347,7 @@ def test_the_owner_stops_a_share_for_both_sides(app, web, clock):
         f"- {t}: \"Snake\", port {web}, ended {when(iso(clock.t), zone(s.cfg))}"
 
 
-def test_her_tools_share_list_and_end(app, web, clock):
+def test_the_agents_tools_share_list_and_end(app, web, clock):
     s = app.state.services
     shell = Shell(s.cfg)
     shell.app = SimpleNamespace(approvals=SimpleNamespace(ask=_approved))   # a public one asks
@@ -406,7 +418,7 @@ def test_only_plain_headers_come_back_from_a_share(app, web, monkeypatch):
 
 @pytest.fixture
 def mac(tmp_path, monkeypatch):
-    """Her Mac's share server: share.js from setup.sh under node, its home a temp folder,
+    """The agent's Mac's share server: share.js from setup.sh under node, its home a temp folder,
     as the device mac."""
     import re
     import shutil
@@ -438,7 +450,7 @@ def mac(tmp_path, monkeypatch):
     proc.wait()
 
 
-def test_a_share_on_her_mac_goes_through_its_share_server(app, mac, web, clock):
+def test_a_share_on_its_mac_goes_through_its_share_server(app, mac, web, clock):
     data = bytes(range(256)) * 4
     (mac.home / "clip.mp4").write_bytes(data)
     (mac.home / "site").mkdir()
@@ -450,7 +462,10 @@ def test_a_share_on_her_mac_goes_through_its_share_server(app, mac, web, clock):
     assert r.status_code == 200, r.text
     sandboxed(r)
     assert r.json()["path"] == "/a.js?x=1" and r.json()["host"] == f"localhost:{web}"
-    t = make(app, path="~/clip.mp4", public=True, device="mac")["token"]
+    clip = make(app, path="~/clip.mp4", public=True, device="mac")
+    assert shares.shown(clip, "live", app.state.services.cfg)["line"] == \
+        "~/clip.mp4 on Celine's Mac"
+    t = clip["token"]
     r = c.get(f"/share/{t}/clip.mp4", headers={"range": "bytes=100-199"})
     assert r.status_code == 206 and r.content == data[100:200]
     assert c.get(f"/share/{t}/clip.mp4").content == data
@@ -462,6 +477,15 @@ def test_a_share_on_her_mac_goes_through_its_share_server(app, mac, web, clock):
         c.get(f"/share/{t}/").text
     with pytest.raises(RuntimeError, match="No file"):
         make(app, path="nothing.mp4", device="mac")
+
+    def grants():
+        r = httpx.get(mac.devices["mac"].share + "/grants",
+                      headers={"Authorization": "Bearer mac-token"})
+        return r.json()
+    assert grants() == {"full_disk_access": False, "local_network": None}, "no app address"
+    (mac.home / ".config/celine").mkdir(parents=True)
+    (mac.home / ".config/celine/app").write_text(f"http://127.0.0.1:{free_port()}\n")
+    assert grants()["local_network"] is True, "a refused connection is not a denied grant"
 
     s = app.state.services
     shell = Shell(s.cfg)

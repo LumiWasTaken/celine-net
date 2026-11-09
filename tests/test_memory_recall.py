@@ -97,7 +97,7 @@ async def test_at_most_the_cap_and_each_section_once_until_it_changes(store, tmp
     assert "on Sundays" in text, "it changed: it comes back"
 
 
-async def test_her_last_reply_counts_and_the_token_cap_holds(store, tmp_path):
+async def test_the_agents_last_reply_counts_and_the_token_cap_holds(store, tmp_path):
     cfg = _cfg(tmp_path, memory_tokens=5)
     await write_notes(store, cfg, {"people/noor.md": NOOR})
     cid = await conversations.create(store)

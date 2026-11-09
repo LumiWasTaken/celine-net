@@ -72,11 +72,11 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     && chmod -R a+rX /opt/skills
 ENV CHROME_PATH=/usr/bin/chromium PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# its uid and gid, its home's owner: docker-compose.yml names it once (x-her-uid) for
+# its uid and gid, its home's owner: docker-compose.yml names it once (x-agent-uid) for
 # this image, its browser's and the app, which gives its home to it
-ARG HER_UID=1000
-RUN groupadd --gid "$HER_UID" celine \
-    && useradd --uid "$HER_UID" --gid celine --create-home --shell /bin/bash celine \
+ARG AGENT_UID=1000
+RUN groupadd --gid "$AGENT_UID" celine \
+    && useradd --uid "$AGENT_UID" --gid celine --create-home --shell /bin/bash celine \
     && echo 'celine ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/celine \
     && chmod 440 /etc/sudoers.d/celine \
     && printf 'Defaults !use_pty\n' > /etc/sudoers.d/shellbox \

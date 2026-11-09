@@ -55,7 +55,7 @@ if [ -n "$SHELLBOX_TERMINAL" ] && [ -z "$SHELLBOX_GREETED" ]; then
             notes="boot script: ~/boot.sh"
         else
             who="${magenta}${owner}${plain} in celine's shellbox, terminal ${bold}${SHELLBOX_TERMINAL}${plain}"
-            notes="her boot script: ~/boot.sh"
+            notes="the agent's boot script: ~/boot.sh"
         fi
         swatches=
         for n in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do

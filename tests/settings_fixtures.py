@@ -35,6 +35,7 @@ PROVIDERS = {
 ROLES = {
     "chat": {"chain": ["main/big"]},
     "small": {"chain": ["lan/small", "main/big"]},
+    "guard": {"chain": ["lan/small", "main/big"]},
     "embeddings": {"chain": ["main/emb", "lan/emb8"]},
     "reranker": {"chain": ["main/rr"]},
     "vision": {"chain": ["lan/small", "main/eyes"]},
@@ -73,9 +74,9 @@ def make_app(cfg, store):
     app.include_router(conversations_api.router)
     app.include_router(settings_api.router)
     app.include_router(forms_api.router)
-    from celine.api import her as her_api
+    from celine.api import agent as agent_api
     from celine.guard import api as guard_api
-    app.include_router(her_api.router)
+    app.include_router(agent_api.router)
     app.include_router(guard_api.router)
     services = Services(cfg=cfg, store=store, bus=EventBus())
     services.registry = build_registry(services)

@@ -72,7 +72,7 @@ async def test_a_limited_conversation_stays_inside_its_folder(store, cfg):
                 f"{bad} is outside your folder agents/scout."), bad
     out = await nb.move(ctx, "agents/scout/new.md", "x.md")
     assert out.is_error and out.content == "x.md is outside your folder agents/scout."
-    assert (cfg.her.notebook / "plans/secret.md").read_text() == f"{STAMP}\nthe big plan"
+    assert (cfg.agent.notebook / "plans/secret.md").read_text() == f"{STAMP}\nthe big plan"
     assert "plans/" not in (await nb.list(ctx, None)).content
     assert "secret" not in (await nb.search(ctx, "plan")).content
     assert "plans/secret.md" not in await nb.prompt_fragment(ctx)
@@ -80,7 +80,7 @@ async def test_a_limited_conversation_stays_inside_its_folder(store, cfg):
     assert "plans/secret.md" in (await nb.list(_ctx(parent, store, cfg), None)).content
 
 
-async def test_her_notes_move_and_the_users_and_tools_stay(store, cfg):
+async def test_the_agents_notes_move_and_the_users_and_tools_stay(store, cfg):
     nb = Notebook(cfg)
     await nb.seed(store)
     ctx = _ctx("c", store, cfg)
@@ -89,14 +89,14 @@ async def test_her_notes_move_and_the_users_and_tools_stay(store, cfg):
     assert [r["path"] for r in await notebook_index.list(store, None)
             if "cars" in r["path"]] == ["scratch/cars.md"]
     assert not (await nb.move(ctx, "scratch", "sorted/")).is_error
-    assert (cfg.her.notebook / "sorted/cars.md").read_text() == f"{STAMP}\nblue ones"
-    assert list((cfg.her.notebook / ".versions/sorted/cars.md").iterdir()), \
+    assert (cfg.agent.notebook / "sorted/cars.md").read_text() == f"{STAMP}\nblue ones"
+    assert list((cfg.agent.notebook / ".versions/sorted/cars.md").iterdir()), \
         "the history follows the move"
     assert "sorted/cars.md" in (await nb.search(ctx, "blue")).content
     out = await nb.move(ctx, "sorted/cars.md", "../cars.md")
     assert out.is_error and out.content == "../cars.md is outside your notebook."
 
-    ident = (cfg.her.notebook / "identity.md").read_text()
+    ident = (cfg.agent.notebook / "identity.md").read_text()
     top = _anchors((await nb.read(ctx, "identity.md")).content)[1]
     await nb.mark(store, "sorted/cars.md", True)        # the user's now
     for out in (await nb.write(ctx, "identity.md", "mine now", "x"),
@@ -108,9 +108,9 @@ async def test_her_notes_move_and_the_users_and_tools_stay(store, cfg):
                 await nb.read(ctx, "tools/archive.md"),
                 await nb.delete(ctx, "tools/archive.md")):
         assert out.is_error, out.content
-    assert (cfg.her.notebook / "identity.md").read_text() == ident
-    assert (cfg.her.notebook / "sorted/cars.md").read_text() == f"{STAMP}\nblue ones"
-    assert not (cfg.her.notebook / "tools").exists()
+    assert (cfg.agent.notebook / "identity.md").read_text() == ident
+    assert (cfg.agent.notebook / "sorted/cars.md").read_text() == f"{STAMP}\nblue ones"
+    assert not (cfg.agent.notebook / "tools").exists()
 
 
 async def test_a_stale_anchor_is_refused_and_fresh_ones_apply(store, cfg):
@@ -123,7 +123,7 @@ async def test_a_stale_anchor_is_refused_and_fresh_ones_apply(store, cfg):
                         [{"op": "replace", "start": a[2], "text": "# FOOD"},
                          {"op": "replace", "start": a[4], "text": "- olives: fine"}])
     assert out.is_error
-    p = cfg.her.notebook / "opinions/food.md"
+    p = cfg.agent.notebook / "opinions/food.md"
     assert p.read_text() == f"{STAMP}\nupdated today\n{NOTE}", "nothing changed"
     fresh = _anchors((await nb.read(ctx, "opinions/food.md")).content)
     out = await nb.edit(ctx, "opinions/food.md", [
@@ -140,12 +140,12 @@ async def test_the_appearance_is_seeded_only_with_images_on(store, cfg):
     made = await nb.seed(store)
     assert "identity.md" in made and "curious.md" in made
     assert not any(p.startswith("appearance/") for p in made)
-    assert not (cfg.her.notebook / "appearance").exists()
+    assert not (cfg.agent.notebook / "appearance").exists()
     cfg.settings.features = {**cfg.settings.features, "images": True}
     assert sorted(await nb.seed(store)) == [
         "appearance/README.md", "appearance/body.md", "appearance/clothes.md",
         "appearance/face.md", "appearance/hair.md"], "turned on later: made at the next start"
-    (cfg.her.notebook / "appearance/body.md").unlink()
+    (cfg.agent.notebook / "appearance/body.md").unlink()
     assert await nb.seed(store) == [], "a placeholder it deleted stays deleted"
 
 
@@ -156,15 +156,15 @@ async def test_the_seed_waits_for_the_names(store, cfg):
     assert "appearance/README.md" in made and "appearance/body.md" in made
     assert not any(p.startswith("voice/") for p in made), "how it talks is its talk"
     assert not any(p.startswith("opinions/User") for p in made)
-    (cfg.her.notebook / "appearance/body.md").unlink()
+    (cfg.agent.notebook / "appearance/body.md").unlink()
     cfg.user = "Joe"                                    # named on the first run
     assert await nb.seed(store) == ["opinions/Joe.md"], "only the named one, nothing it deleted"
-    assert "what you think of Joe" in (cfg.her.notebook / "opinions/Joe.md").read_text()
+    assert "what you think of Joe" in (cfg.agent.notebook / "opinions/Joe.md").read_text()
     assert await nb.seed(store) == []
-    ident = (cfg.her.notebook / "identity.md").read_text()
+    ident = (cfg.agent.notebook / "identity.md").read_text()
     assert "swear" not in ident and "crude" not in ident
     assert "you are {{name}}." in ident
-    cfg.her.name = "Mira"           # named on the first run, after the seed
+    cfg.agent.name = "Mira"           # named on the first run, after the seed
     assert "you are Mira." in nb.identity()
     assert "you are Mira." in (await nb.read(_ctx("c", store, cfg), "identity.md")).content
 
@@ -173,10 +173,10 @@ async def test_a_dotdot_path_is_checked_where_it_lands(store, cfg):
     nb = Notebook(cfg)
     await nb.seed(store)
     ctx = _ctx("c", store, cfg)
-    ident = (cfg.her.notebook / "identity.md").read_text()
+    ident = (cfg.agent.notebook / "identity.md").read_text()
     assert (await nb.write(ctx, "opinions/../identity.md", "mine now", "x")).is_error
     assert (await nb.delete(ctx, "opinions/../identity.md")).is_error
-    assert (cfg.her.notebook / "identity.md").read_text() == ident
+    assert (cfg.agent.notebook / "identity.md").read_text() == ident
     await nb.write(ctx, "opinions/../plans/a.md", "a plan", "plan")
     paths = [r["path"] for r in await notebook_index.list(store, None)]
     assert "plans/a.md" in paths and not any(".." in p for p in paths)
@@ -189,7 +189,7 @@ async def test_a_folder_or_a_missing_note_is_said_plainly_with_near_names(store,
     for out in (await nb.read(ctx, "opinions"), await nb.delete(ctx, "opinions"),
                 await nb.delete(ctx, "nope.md")):
         assert out.is_error and "notebook__list" in out.content, out.content
-    assert (cfg.her.notebook / "opinions/README.md").exists()
+    assert (cfg.agent.notebook / "opinions/README.md").exists()
     # a missing note points at the names near it
     await nb.write(ctx, "radar/2026-10-21.md", "x", "x")
     await nb.write(ctx, "radar/2026-10-19.md", "y", "y")
@@ -270,7 +270,7 @@ async def test_the_stamp_has_no_anchor_and_text_as_a_list_is_joined(store, cfg):
     out = await nb.edit(ctx, "opinions/food.md",
                         [{"op": "insert", "after": a[2], "text": ["- apples", "- pears"]}])
     assert not out.is_error, out.content
-    body = (cfg.her.notebook / "opinions/food.md").read_text()
+    body = (cfg.agent.notebook / "opinions/food.md").read_text()
     assert "- apples\n- pears" in body and body.splitlines()[0] == STAMP
 
 
@@ -287,13 +287,13 @@ async def test_a_write_says_where_it_saved_and_the_list_has_dates(store, cfg):
     assert "diary/x.md (16 Oct) - my day" in listed
 
 
-async def test_a_web_citation_she_writes_down_is_stored_as_written(store, cfg):
+async def test_a_web_citation_the_agent_writes_down_is_stored_as_written(store, cfg):
     nb = Notebook(cfg)
     cid = await conversations.create(store)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
     await nb.write(ctx, "research/mail.md", "prices [[web:3]] and [web:9]【2†source】.\n"
                    "download: https://example.com/a.zip", "mail")
-    text = (cfg.her.notebook / "research/mail.md").read_text()
+    text = (cfg.agent.notebook / "research/mail.md").read_text()
     assert "prices [[web:3]] and [web:9]【2†source】.\ndownload: https://example.com/a.zip" in text
 
 

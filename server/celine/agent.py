@@ -1,12 +1,12 @@
-"""The agent: Celine, the one agent. Its row is the table `her`: name,
-pronouns (it, he, they), color, portrait (a blob), persona (who it is: the start of
-its system prompt), talk (how it talks, after it; NULL: config/her/talk.md; both kept
+"""The agent, the one the user makes. Its row is the table `agent`: name,
+pronouns (she, he, they, it), color, portrait (a blob), persona (who it is: the start of
+its system prompt), talk (how it talks, after it; NULL: config/agent/talk.md; both kept
 with {{name}} and {{username}}, shown and stored through `shown` and `stored`), voice
 (its Banned words: the words its turns are steered from, settings/voice.py) and
 `named` (its name was saved once, the first run's "Set its name").
 
-The shipped base is `config/her/` (her.toml, persona.md, owner.md, voice.toml,
-talk.md): a fresh install's row starts from it (`seed`). `cfg.her` is the live row:
+The shipped base is `config/agent/` (agent.toml, persona.md, owner.md, voice.toml,
+talk.md): a fresh install's row starts from it (`seed`). `cfg.agent` is the live row:
 boot.load reads it from its connection (`read_row`), `refresh` through the Store
 after every write. Every read and write here goes through the app's Store; nothing
 opens a connection of its own. The agent's name and pronouns fill the prompt text
@@ -25,7 +25,7 @@ from .config import CONFIG_DIR, PRONOUNS, Problem
 from . import texts
 from .core.ids import now
 
-BASE = CONFIG_DIR / "her"
+BASE = CONFIG_DIR / "agent"
 KEYS = {"name", "pronouns", "color"}
 COLORS = ("rose", "peach", "sage", "teal", "sky", "violet", "miku")
 TEXT_MAX = 200_000         # bytes of a persona or a talk text
@@ -33,7 +33,7 @@ MEDIA = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
 
 
 @dataclass
-class Her:
+class Agent:
     name: str
     pronouns: str
     color: str
@@ -75,54 +75,54 @@ def _invalid(field_: str, sentence: str):
 
 def read_row(c):
     """The agent's row (on any connection), None before the first start."""
-    return c.execute("SELECT * FROM her WHERE id = 1").fetchone()
+    return c.execute("SELECT * FROM agent WHERE id = 1").fetchone()
 
 
-def from_row(r, data_dir) -> Her:
+def from_row(r, data_dir) -> Agent:
     from .settings import voice as voice_mod
-    return Her(name=r["name"], pronouns=r["pronouns"], color=r["color"],
-               persona=r["persona"], talk=r["talk"],
-               voice=voice_mod.validate(json.loads(r["voice"] or "{}")),
-               notebook=Path(data_dir) / "notebook", portrait=r["portrait"],
-               updated_at=r["updated_at"], named=bool(r["named"]))
+    return Agent(name=r["name"], pronouns=r["pronouns"], color=r["color"],
+                 persona=r["persona"], talk=r["talk"],
+                 voice=voice_mod.validate(json.loads(r["voice"] or "{}")),
+                 notebook=Path(data_dir) / "notebook", portrait=r["portrait"],
+                 updated_at=r["updated_at"], named=bool(r["named"]))
 
 
 def apply(cfg, row, problems: list) -> None:
     """`row` (read_row) into cfg: it, its name and pronouns as cfg's, the names people
     read (intercom/store.py NAMES)."""
-    from .settings import compile_her
+    from .settings import compile_agent
     if row is not None:
         try:
-            cfg.her = from_row(row, cfg.data_dir)
-            cfg.name, cfg.pronouns = cfg.her.name, cfg.her.pronouns
+            cfg.agent = from_row(row, cfg.data_dir)
+            cfg.name, cfg.pronouns = cfg.agent.name, cfg.agent.pronouns
         except Exception as e:          # a row a hand edit broke
-            problems.append(Problem("her", f"her row not loaded: {e}"))
-    compile_her(cfg)
+            problems.append(Problem("agent", f"agent row not loaded: {e}"))
+    compile_agent(cfg)
 
 
 async def refresh(store, cfg) -> None:
-    """`cfg.her` again from the row, after a write."""
+    """`cfg.agent` again from the row, after a write."""
     apply(cfg, await store.read(read_row), [])
 
 
-def portrait_view(her: Her | None) -> dict | None:
+def portrait_view(agent: Agent | None) -> dict | None:
     """{url}: the url changes with every new portrait; None when it has none."""
-    return {"url": f"/api/agent/portrait?v={her.portrait[:12]}"} \
-        if her is not None and her.portrait else None
+    return {"url": f"/api/agent/portrait?v={agent.portrait[:12]}"} \
+        if agent is not None and agent.portrait else None
 
 
 def view(cfg) -> dict[str, Any]:
     """The agent, as every page knows it (GET /api/status `owner`)."""
-    h = cfg.her
+    h = cfg.agent
     return {"name": cfg.name, "pronouns": cfg.pronouns, "color": h.color if h else COLORS[0],
             "portrait": portrait_view(h), "named": bool(h and h.named)}
 
 
-def shown(cfg, her: Her, text: str | None = None) -> str:
+def shown(cfg, agent: Agent, text: str | None = None) -> str:
     """The agent's persona (or `text`: its talk) as its page shows it: {{name}} and {{username}}
     as the names."""
-    text = her.persona if text is None else text
-    for key, value in (("{{name}}", her.name), ("{{username}}", cfg.user)):
+    text = agent.persona if text is None else text
+    for key, value in (("{{name}}", agent.name), ("{{username}}", cfg.user)):
         text = text.replace(key, value)
     return text
 
@@ -131,10 +131,11 @@ def package(cfg) -> dict[str, Any]:
     """The whole of it as JSON (GET /api/agent): its persona and talk exactly as typed,
     with any {{name}} and {{username}} in them (filled when a request is built); the
     shipped talk too."""
-    h = cfg.her
+    from .settings.voice import HELP
+    h = cfg.agent
     return {**view(cfg), "persona": h.persona, "talk": h.talk,
             "talk_shipped": shipped_talk(),
-            "voice": h.voice, "voice_text": voice_text(h.voice)}
+            "voice": h.voice, "voice_text": voice_text(h.voice), "voice_help": HELP}
 
 
 # ---- checking ----------------------------------------------------------------------------
@@ -199,7 +200,7 @@ def write_sync(c, cfg, body: dict, by: str = "user") -> None:
         if talk.strip() == shipped_talk().strip():
             talk = None
     voice = voice_mod.validate(body["voice"]) if "voice" in body else h.voice
-    c.execute("UPDATE her SET name=?, pronouns=?, color=?, persona=?, talk=?, voice=?, "
+    c.execute("UPDATE agent SET name=?, pronouns=?, color=?, persona=?, talk=?, voice=?, "
               "named=?, updated_at=? WHERE id = 1",
               (values["name"], values["pronouns"], values["color"], persona, talk,
                json.dumps(voice), int(h.named or "name" in body), now()))
@@ -208,10 +209,10 @@ def write_sync(c, cfg, body: dict, by: str = "user") -> None:
                               shipped_talk().strip()),
                              ("voice", voice_text(h.voice), voice_text(voice))):
         if field in body:
-            texts.keep(c, f"her:{field}", was, text, by)
+            texts.keep(c, f"agent:{field}", was, text, by)
 
 
-# ---- its voice as text (History of her:voice) -------------------------------------------
+# ---- its voice as text (History of agent:voice) -------------------------------------------
 
 _ONE = {"banned": "banned", "phrases": "phrase", "patterns": "pattern"}
 
@@ -219,7 +220,7 @@ _ONE = {"banned": "banned", "phrases": "phrase", "patterns": "pattern"}
 def voice_text(voice: dict) -> str:
     """The agent's voice (settings/voice.py) as text, one line each: `on: true`, `bias: -8.0`,
     then `banned: <word>` (its leading space kept), `phrase: ...`, `pattern: ...`. The
-    form History keeps (her:voice) and voice_from_text reads back."""
+    form History keeps (agent:voice) and voice_from_text reads back."""
     lines = [f"on: {'true' if voice.get('on', True) else 'false'}",
              f"bias: {float(voice.get('bias', -8.0))}"]
     for key, word in _ONE.items():
@@ -291,13 +292,13 @@ async def set_portrait(store, cfg, data: bytes | None) -> None:
 
     def fn(c) -> None:
         sha = _blob(cfg, c, data) if data is not None else None
-        c.execute("UPDATE her SET portrait=?, updated_at=? WHERE id = 1", (sha, now()))
+        c.execute("UPDATE agent SET portrait=?, updated_at=? WHERE id = 1", (sha, now()))
     await store.write(fn)
 
 
 def portrait_file(cfg) -> tuple[Path, str] | None:
     """(the file, its media type), None when it has none."""
-    h = cfg.her
+    h = cfg.agent
     if h is None or not h.portrait:
         return None
     from .attachments import blob_path
@@ -312,10 +313,10 @@ def seed(c) -> bool:
     """A fresh install's row from the shipped base, when there is none. -> made."""
     if read_row(c) is not None:
         return False
-    raw = tomllib.loads((BASE / "her.toml").read_text())
+    raw = tomllib.loads((BASE / "agent.toml").read_text())
     voice = tomllib.loads((BASE / "voice.toml").read_text())
     values = parse({k: raw[k] for k in ("name", "pronouns", "color")})
-    c.execute("INSERT INTO her(id, name, pronouns, color, persona, talk, voice, named, "
+    c.execute("INSERT INTO agent(id, name, pronouns, color, persona, talk, voice, named, "
               "updated_at) VALUES(1,?,?,?,?,NULL,?,0,?)",
               (values["name"], values["pronouns"], values["color"], base_persona(),
                json.dumps(voice), now()))
@@ -331,19 +332,19 @@ async def revert(services, vid: int) -> dict:
     -> {of, text}. Another kind of text is restored in its editor (Restore this version)
     and saved there: 400."""
     from . import texts
-    from .core.event_types import HER_CHANGED
+    from .core.event_types import AGENT_CHANGED
     from .errors import CelineError, NotFound
     from .settings import write as settings_write
     store, cfg = services.store, services.cfg
     row = await store.read(lambda c: texts.raw(c, vid))
     if row is None:
         raise NotFound("version")
-    field = row["of"].removeprefix("her:")
+    field = row["of"].removeprefix("agent:")
     if field not in REVERTS:
         raise CelineError("bad_request", "Only the persona, talk and voice revert here.", 400)
     value = voice_from_text(row["text"]) if field == "voice" else row["text"]
     async with settings_write.lock():
         await write(store, cfg, {field: value})
         await refresh(store, cfg)
-    store.emit_global({"type": HER_CHANGED})
+    store.emit_global({"type": AGENT_CHANGED})
     return {"of": row["of"], "text": row["text"]}

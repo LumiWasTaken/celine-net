@@ -41,7 +41,7 @@ def test_a_mood_fades_halfway_back_in_one_half_life_and_names_its_event():
     assert mind.describe_mood([], timezone.utc, T0) == ""
 
 
-async def _her(store, cfg):
+async def _agent(store, cfg):
     skill = mind.Mind(cfg)
     skill.app = SimpleNamespace(store=store, cfg=cfg, llm=None, registry=None)
     reg = Registry()
@@ -49,11 +49,11 @@ async def _her(store, cfg):
     return skill, reg
 
 
-async def test_the_block_has_her_mood_and_no_comes_to_mind_line(store):
+async def test_the_block_has_its_mood_and_no_comes_to_mind_line(store):
     cfg = load()
-    _, reg = await _her(store, cfg)
+    _, reg = await _agent(store, cfg)
     cid = await conversations.create(store)
-    await mind.feel(store, "happy", 0.8, "a good morning", "her")
+    await mind.feel(store, "happy", 0.8, "a good morning", "agent")
     _, tid, _ = await user_says(store, cid, "hello")
     chain = await store.read(lambda c: tree.path(c, cid))
     await message_context.ensure(store, cfg, reg, cid, tid, message_context.unsent(chain))
@@ -67,9 +67,9 @@ async def test_the_block_has_her_mood_and_no_comes_to_mind_line(store):
     assert set(report["mind"]) == {"mood", "gap", "state"}
 
 
-async def test_the_block_shows_her_status_and_when_she_set_it(store):
+async def test_the_block_shows_the_agents_status_and_when_it_set_it(store):
     cfg = load()
-    _, reg = await _her(store, cfg)
+    _, reg = await _agent(store, cfg)
     cid = await conversations.create(store)
     await mind.store_mood(store, "\U0001f50d\U0001f4da")
     await store.write(lambda c: c.execute("UPDATE kv SET v=json_set(v, '$.set_at', ?) "
@@ -86,7 +86,7 @@ async def test_the_block_shows_her_status_and_when_she_set_it(store):
 
 async def test_no_block_with_automatic_context_off(store):
     cfg = load()
-    _, reg = await _her(store, cfg)
+    _, reg = await _agent(store, cfg)
     off = await conversations.create(store)
     await store.write(lambda c: c.execute(
         "UPDATE conversations SET auto_context=0 WHERE id=?", (off,)))
@@ -99,7 +99,7 @@ async def test_no_block_with_automatic_context_off(store):
 
 async def test_the_gap_line_shows_after_an_hour(store):
     cfg = load()
-    skill, _ = await _her(store, cfg)
+    skill, _ = await _agent(store, cfg)
     cid = await conversations.create(store)
     early, later = (T0 - timedelta(hours=9)).isoformat(), T0.isoformat()
 
@@ -118,19 +118,19 @@ async def test_the_gap_line_shows_after_an_hour(store):
 
 async def test_a_thought_goes_into_todays_thoughts_with_the_time(store):
     cfg = load()
-    skill, _ = await _her(store, cfg)
+    skill, _ = await _agent(store, cfg)
     cid = await conversations.create(store)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
     first = await skill.think(ctx, "the build keeps failing on the same test")
     await skill.think(ctx, "maybe he forgot")
     rel = first.content.removeprefix("Saved ").removesuffix(".")
     assert rel.startswith("thoughts/") and rel.endswith(".md")
-    text = (cfg.her.notebook / rel).read_text()
+    text = (cfg.agent.notebook / rel).read_text()
     lines = text.splitlines()
     assert lines[0].startswith("Last changed:")
     assert lines[1].endswith(" the build keeps failing on the same test") and lines[1].startswith("- ")
     assert lines[2].endswith(" maybe he forgot") and len(lines) == 3
-    assert (cfg.her.notebook / ".versions" / rel).is_dir()
+    assert (cfg.agent.notebook / ".versions" / rel).is_dir()
 
 
 async def _chat_turn(store, cid, *, feel=False):
@@ -149,7 +149,7 @@ async def _chat_turn(store, cid, *, feel=False):
     await store.write(fn)
 
 
-async def test_the_appraisal_after_a_chat_turn_sets_her_mood(store):
+async def test_the_appraisal_after_a_chat_turn_sets_its_mood(store):
     from celine.backends.llm import LLM
     cfg = load()
     cid = await conversations.create(store)
@@ -174,7 +174,7 @@ async def test_the_appraisal_after_a_chat_turn_sets_her_mood(store):
         assert mind.parse_appraisal(bad) is None, bad
 
 
-async def test_her_own_feeling_wins_over_the_appraisal(store):
+async def test_the_agents_own_feeling_wins_over_the_appraisal(store):
     from celine.backends.llm import LLM
     cfg = load()
     cid = await conversations.create(store)
@@ -256,7 +256,7 @@ async def test_a_status_set_in_a_running_run_stays_through_its_turns_until_it_en
         "created_at, started_at) VALUES('r2', 'radar', 'Radar', ?, ?, 'running', ?, ?, ?)",
         (at, at[:10], cid, at, at)))
     await mind.store_mood(store, "\U0001f440", cid)
-    assert not await mind.clear_after(store, cid)            # her turn, the partner's next
+    assert not await mind.clear_after(store, cid)            # its turn, the reviewer's next
     await mind.store_mood(store, "\U0001f50d", agent)
     assert not await mind.clear_after(store, agent)          # a sub-agent of the run
     await store.write(lambda c: runs._set(c, store, cfg, "r2", state="stopped",

@@ -4,6 +4,7 @@ away. The box's side of /code/* has its own suite (tests/test_shellboxd_code.py)
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -74,7 +75,7 @@ async def test_start_sends_dir_task_model_and_session_with_the_key(code, box):
     assert box.sent[-1][2]["session"] == "ses_1"
 
 
-async def test_a_refusal_of_the_box_is_her_whole_result(code, box):
+async def test_a_refusal_of_the_box_is_its_whole_result(code, box):
     box.answers = [(400, {"error": "No folder nope in the home folder."})]
     out = await code.start(ctx(), dir="nope", task="x", model="m")
     assert out.is_error and out.content == "No folder nope in the home folder."
@@ -190,3 +191,52 @@ async def test_the_session_terminal_is_listed_under_the_conversation_and_websear
     await code.start(c, dir="p", task="x", model="m/x")
     assert box.sent[0][2]["websearch"] is True
     assert calls == [("t1abc2", "code-abc", "celine", "c")]
+
+
+async def test_a_cloud_model_the_agent_picked_asks_first_and_once_approved_the_box_gets_it(
+        code, box, monkeypatch, store):
+    """Approved, the grant is in the database before the box is called: the box's
+    start restarts opencode on the new model list and goes on in the same call
+    (tests/test_shellboxd_code.py), so one approval is one session."""
+    from types import SimpleNamespace
+    from celine.settings import agent_models
+    s = code.cfg.settings
+    monkeypatch.setattr(s, "providers", {**s.providers, "or": {
+        "kind": "openrouter", "label": "OpenRouter", "models": {"glm": {"caps": ["chat"]}}}})
+    monkeypatch.setattr(s, "key_missing", lambda pid: False)
+    asked, answer = [], ["Joe denied it; nothing was done."]
+
+    class Approvals:
+        async def ask(self, kind, conversation, action, *, facts=(), detail=None, **kw):
+            asked.append((action, list(facts), detail))
+            return answer[0]
+    code.app = SimpleNamespace(approvals=Approvals(), llm=None)
+    c = ctx()
+    c.store = store
+    out = await code.start(c, dir="p", task="fix it", model="or/glm")
+    assert out.is_error and out.content == answer[0] and box.sent == [], "nothing started"
+    assert asked == [("start a coding session on a cloud model",
+                      [("Folder", "p"), ("Model", "glm"), ("Provider", "OpenRouter")],
+                      ("Task", "fix it"))]
+    assert await store.read(agent_models.granted) == set()
+    answer[0] = None
+    box.answers = [{"session": "ses_2", "state": "running", "dir": "/home/celine/p"}]
+    out = await code.start(c, dir="p", task="go on", model="or/glm", session_id="ses_1")
+    assert not out.is_error and len(asked) == 2, "a resumed session asks again"
+    assert out.content.startswith("Session ses_2 is running") and len(box.sent) == 1
+    assert await store.read(agent_models.granted) == {"or/glm"}, \
+        "the box's model proxy serves it"
+    box.answers = [{"session": "ses_4", "state": "running", "dir": "/home/celine/p"}]
+    await code.start(c, dir="p", task="again", model="or/glm")
+    assert len(asked) == 2, "while the box is served it (a busy box refused it), no ask"
+    real_now = agent_models._now
+    monkeypatch.setattr(agent_models, "_now",
+                        lambda: real_now() + timedelta(seconds=agent_models.BOX_GRANT + 1))
+    answer[0] = "Joe denied it; nothing was done."
+    await code.start(c, dir="p", task="again", model="or/glm")
+    assert len(asked) == 3, "its grant ended: the next start asks"
+    monkeypatch.setattr(agent_models, "_now", real_now)
+    monkeypatch.setattr(s, "roles", {**s.roles, "tasks": {"chain": ["or/glm"]}})
+    box.answers = [{"session": "ses_3", "state": "running", "dir": "/home/celine/p"}]
+    await code.start(c, dir="p", task="more", model="or/glm")
+    assert len(asked) == 3, "a model in a role's list never asks"

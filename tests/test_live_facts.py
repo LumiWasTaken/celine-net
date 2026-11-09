@@ -1,6 +1,6 @@
 """Model facts come live from the servers: the context a model runs with (the running
 numbers over the training size), the caps a server states over the saved ones, what is
-loaded as its status says; she reads them in models__list, and a sub-agent's report
+loaded as its status says; the agent reads them in models__list, and a sub-agent's report
 carries what its work took. Fake servers in the shapes the real ones answer."""
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from celine import boot
 from celine.backends.llm import LLM
 from celine.backends.router import Router
 from celine.conversations import store as conversations
-from celine.settings import her_models, kinds
+from celine.settings import agent_models, kinds
 from celine.settings.registry import backend_config
 from celine.skills import ToolContext
 from celine.skills.models import Models
@@ -113,10 +113,20 @@ def router(tmp_path, monkeypatch):
     return Router(cfg, None, transport=t, sync_transport=t)
 
 
+async def _ask_all(router) -> None:
+    """The startup check: each server asked once, and its model list read once it
+    answers."""
+    import asyncio
+    router.bind(asyncio.get_running_loop())
+    await router.check_all()
+    for task in list(router._discovering.values()):
+        await task
+
+
 async def test_the_servers_caps_count_over_the_saved_ones(router):
     s = router.s
     assert backend_config(s, "home/qwen3.5-9b").raw["images"], "nothing stated yet: saved"
-    await router.ping_once()
+    await _ask_all(router)
     assert kinds.server_caps("http://home:8080/v1", "qwen3.5-9b") == ["chat", "tools"]
     assert not backend_config(s, "home/qwen3.5-9b").raw["images"], "the server: no vision"
     assert backend_config(s, "gpu/Gemma-4-31B").raw["images"], "the server: vision"
@@ -124,7 +134,7 @@ async def test_the_servers_caps_count_over_the_saved_ones(router):
     assert kinds.server_caps("http://home:8080/v1", "qwen3-embedding") is None
     assert kinds.caps_of(s.providers["home"], "qwen3-embedding") == ["embeddings"], \
         "it states nothing: saved"
-    assert her_models.allowed(s) == ["home/qwen3.5-9b", "home/two-slots", "gpu/Gemma-4-31B"]
+    assert agent_models.allowed(s) == ["home/qwen3.5-9b", "home/two-slots", "gpu/Gemma-4-31B"]
     ordered = router._ordered("vision", ["home/qwen3.5-9b", "gpu/Gemma-4-31B"])
     assert ordered.refs == ["gpu/Gemma-4-31B"]
     assert ordered.skipped == [("home/qwen3.5-9b", "qwen3.5-9b cannot do Photo descriptions: "
@@ -146,7 +156,7 @@ async def test_a_vision_twin_sees_as_its_server_says(router):
 
 
 async def test_loaded_is_what_the_status_says_and_windows_are_the_running_ones(router):
-    await router.ping_once()
+    await _ask_all(router)
     assert router.provider_state("home").loaded == {"two-slots", "qwen3-embedding"}, \
         "a sleeping model is not loaded"
     assert {m["ref"]: m["loaded"] for m in router.loaded_view()["models"]} == {
@@ -156,8 +166,8 @@ async def test_loaded_is_what_the_status_says_and_windows_are_the_running_ones(r
     assert tokens.server_window("http://gpu:11434/v1", "Gemma-4-31B") == 65536
 
 
-async def test_her_model_list_says_window_caps_host_and_loaded(router, tmp_path):
-    await router.ping_once()
+async def test_the_agents_model_list_says_window_caps_host_and_loaded(router, tmp_path):
+    await _ask_all(router)
     cfg = router.cfg
     llm = LLM(cfg, router=router)
     skill = Models(cfg)

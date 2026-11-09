@@ -23,7 +23,7 @@ from .api import connectors as connectors_api
 from .api import identity as identity_api
 from .api import llm as llm_api
 from .api import forms as forms_api, settings as settings_api
-from .api import her as her_api
+from .api import agent as agent_api
 from .api import commands as commands_api
 from .api import attachments as attachments_api, ws
 from .api import notebook as notebook_api
@@ -147,8 +147,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from .conversations.store import keep_lock
             keep_lock(store, cfg)               # Lock archived chats, where its SQL reads it
             # a fresh install's row of it; then the config again, with it
-            from . import her
-            if await store.write(her.seed):
+            from . import agent
+            if await store.write(agent.seed):
                 reload.refill(cfg)
             # the one LLM queue and router, before anything that asks a model (document
             # descriptions start with the first scan, captions with their scheduler)
@@ -178,7 +178,11 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from .vault import Vault
             from .approvals import Approvals
             services.vault = Vault(cfg, store.emit_global)
-            services.approvals = Approvals(cfg, store.emit_global, store)
+            def approvals_changed(event: dict) -> None:
+                store.emit_global(event)
+                if services.dispatcher is not None:   # a waiting ask frees its turn's slot
+                    services.dispatcher.resize()
+            services.approvals = Approvals(cfg, approvals_changed, store)
             services.vault.forget = lambda: services.approvals.forget("vault")
 
             async def vault_run() -> None:
@@ -245,7 +249,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from .comfyui import batches as comfy_batches, server as comfy_server
             if on["images"] or on["music"]:
                 tg.start_soon(comfy_server.free_shared, cfg, llm)
-            tg.start_soon(llm.router.watch)     # the host ping; paused without one
+            tg.start_soon(llm.router.check_all)  # each provider asked once; then requests tell
 
             async def media_run() -> None:     # images and music: the batches
                 await comfy_batches.sweep(store)
@@ -272,6 +276,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             dispatcher = services.dispatcher = Dispatcher(store, cfg, bus, None,
                                                           registry, llm=llm)
             dispatcher.ready = services.vault.ready
+            dispatcher.approvals = services.approvals
             tree.prefills = lambda cid: conversations_api.prefills(services, cid)
 
             async def describe_again(p: dict) -> None:   # kb/documents_describe.py
@@ -300,6 +305,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             from .push import Push              # the notices to devices without a focused page
             push = services.push = Push(cfg, store, bus, app.state.auth)
             tg.start_soon(push.run)
+            from . import waits                 # Waiting for you: one waits.changed per change
+            tg.start_soon(waits.run, store, bus)
             from .intercom import Intercom      # messages between everyone, and their timer
             intercom = services.intercom = Intercom(store, dispatcher.notify, dispatcher.user_wrote)
             dispatcher.intercom = intercom       # a Stop's cascade cancels schedules
@@ -336,7 +343,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             async def guard_run() -> None:          # Bastet: its answers, its patrol
                 from .guard import patrol, store as guard_rows, talk
                 await guard_rows.close_asked(store)     # its asks of the last run
-                talk.start(services)                    # it answers her on the Intercom
+                talk.start(services)                    # Bastet answers the agent on the Intercom
                 dispatcher.work.notify()
                 try:
                     await patrol.run(services)
@@ -423,7 +430,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     app.include_router(forms_api.router)
     from .api import speech as speech_api
     app.include_router(speech_api.router)
-    app.include_router(her_api.router)
+    app.include_router(agent_api.router)
     app.include_router(commands_api.router)
     from .api import documents as documents_api
     app.include_router(documents_api.router)
@@ -458,10 +465,14 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     from .api import appearance as appearance_api, texts as texts_api
     app.include_router(appearance_api.router)
     app.include_router(texts_api.router)
+    from .api import prompts as prompts_api
+    app.include_router(prompts_api.router)
     from .guard import api as guard_api
     app.include_router(guard_api.router)
     from .api import approvals as approvals_api
     app.include_router(approvals_api.router)
+    from .api import waits as waits_api
+    app.include_router(waits_api.router)
     from .bugreports import api as bugreports_api
     app.include_router(bugreports_api.router)
     from . import events as events_api
@@ -552,7 +563,7 @@ def main() -> None:
     ap.add_argument("--verbose", action="store_true")
     sub = ap.add_subparsers(dest="command")
     sub.add_parser("doctor", help="check config, database and backend, then exit")
-    exp = sub.add_parser("export", help="write every conversation as JSON and Markdown")
+    exp = sub.add_parser("export", help="write every chat as JSON and Markdown")
     exp.add_argument("--out", type=Path, help="directory (default Documents/exports/export-<time>)")
     pur = sub.add_parser("purge", help="delete and ignore every chat under N messages, "
                                        "then the people nothing refers to")

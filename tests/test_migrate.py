@@ -18,12 +18,12 @@ EXPECTED_TABLES = {
     "missions", "messages_fts", "artifacts", "artifact_versions",
     "artifact_errors", "artifact_data", "shares", "intercom", "intercom_deliveries",
     "message_context", "media_batches", "context_state", "runs", "moods",
-    "guard_decisions", "her", "text_versions", "compactions", "freezes", "guard_passes", "work",
-    "tabs", "bugreports", "plans", "push_subscriptions",
+    "guard_decisions", "agent", "text_versions", "compactions", "freezes", "guard_passes", "work",
+    "tabs", "bugreports", "plans", "push_subscriptions", "model_grants",
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 19
+LATEST = 28
 
 
 def _version(db) -> int:
@@ -238,11 +238,11 @@ def test_0004_gives_each_sub_agent_call_the_link_of_its_conversation(tmp_path, m
     shown = [json.loads(r[0]) for r in c.execute(
         "SELECT display FROM tool_calls WHERE id != 'other'")]
     got = {x["conversation_id"]: x.get("link", "-") for x in shown}
-    assert got.pop("s-br") == "/chat/s-br", "a bridged chat's (a chat after 0005) opens with her"
+    assert got.pop("s-br") == "/chat/s-br", "a bridged chat's (a chat after 0005) opens with the agent's chats"
     assert got == {sub: homes.of(c, sub)["link"] for sub in subs}
     assert got["s-run"] == "/routines/2026-10-22/task/s-run" and got["gone"] is None
     assert "link" not in json.loads(c.execute(
-        "SELECT display FROM tool_calls WHERE id='other'").fetchone()[0]), "only hers"
+        "SELECT display FROM tool_calls WHERE id='other'").fetchone()[0]), "only the agent's calls"
     c.close()
 
 
@@ -391,10 +391,29 @@ def test_0015_takes_keep_thinking_out_of_the_saved_models_once(tmp_path):
     assert path.read_bytes() == before, "the runner applies it to a fresh database too"
 
 
-def test_her_stored_persona_gets_the_lines_the_shipped_one_has():
+def test_0025_makes_a_step_model_set_before_the_agents_once():
+    import importlib.util
+    import json
+    spec = importlib.util.spec_from_file_location(
+        "m0025", MIGRATIONS_DIR / "0025_model_grants.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    c = sqlite3.connect(":memory:", isolation_level=None)
+    c.execute("CREATE TABLE plans (conversation_id TEXT PRIMARY KEY, steps TEXT)")
+    c.execute("INSERT INTO plans VALUES('c', ?)", (json.dumps(
+        [{"title": "Read", "model": None}, {"title": "Dig", "model": "or/glm"}]),))
+    for _ in range(2):
+        step.up(c, None)
+        assert json.loads(c.execute("SELECT steps FROM plans").fetchone()[0]) == [
+            {"title": "Read", "model": None, "by": None},
+            {"title": "Dig", "model": "or/glm", "by": "her"}]
+    assert c.execute("SELECT count(*) FROM model_grants").fetchone() == (0,)
+
+
+def test_the_agents_stored_persona_gets_the_lines_the_shipped_one_has():
     import importlib.util
 
-    from celine.her import BASE, base_persona
+    from celine.agent import BASE, base_persona
     spec = importlib.util.spec_from_file_location(
         "m0017", MIGRATIONS_DIR / "0017_persona_lines.py")
     step = importlib.util.module_from_spec(spec)
@@ -406,10 +425,10 @@ def test_her_stored_persona_gets_the_lines_the_shipped_one_has():
     assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
 
 
-def test_her_stored_persona_gets_the_training_line_once():
+def test_the_agents_stored_persona_gets_the_training_line_once():
     import importlib.util
 
-    from celine.her import base_persona
+    from celine.agent import base_persona
     spec = importlib.util.spec_from_file_location(
         "m0019", MIGRATIONS_DIR / "0019_persona_training_line.py")
     step = importlib.util.module_from_spec(spec)
@@ -418,3 +437,131 @@ def test_her_stored_persona_gets_the_training_line_once():
     assert step.changed(old) == base_persona()
     assert step.changed(base_persona()) == base_persona(), "run again, it writes nothing"
     assert step.changed("my own persona") == "my own persona"
+
+
+def test_0026_renames_the_table_and_its_values_and_a_saved_she_becomes_its_name(
+        tmp_path, monkeypatch):
+    import json
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0026":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 25
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO her(id, name, pronouns, color, persona, talk, updated_at) "
+              "VALUES(1, 'Tink', 'they', 'rose', 'You are {{name}}. {{She}} hums.', NULL, 'x')")
+    c.execute("INSERT INTO text_versions(of, text, by, change, size, created_at) "
+              "VALUES('her:persona', 'Ask {{them}} about {{her}} day.', 'her', '', 1, 'x')")
+    c.execute("INSERT INTO kv(k, v) VALUES('bastet:talk', 'You watch {{herself}}.')")
+    c.execute("INSERT INTO moods(at, emotion, strength, by) VALUES('x', 'calm', 0.5, 'her')")
+    c.execute("INSERT INTO runs(id, schedule, label, slot, night, state, created_at, "
+              "started_by) VALUES('r1', 'diary', 'Diary', 's', 'n', 'done', 'x', 'her')")
+    c.execute("INSERT INTO conversations(id, created_at, updated_at) VALUES('c', 'x', 'x')")
+    c.execute("INSERT INTO plans(conversation_id, steps, updated_at) VALUES('c', ?, 'x')",
+              (json.dumps([{"title": "Dig", "by": "her"}, {"title": "Read", "by": "user"}]),))
+    c.commit()
+    c.close()
+    log = sqlite3.connect(log_path(db))
+    log.execute("INSERT INTO global_events(type, data, created_at) VALUES('her.hold', "
+                "'{\"hold\": null}', 'x')")
+    log.commit()
+    log.close()
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "turns.title.md").write_text("Name {{her}} chat.")
+    (tmp_path / "settings" / "schedules").mkdir(parents=True)
+    (tmp_path / "settings" / "schedules" / "diary.toml").write_text(
+        'prompt = "{{She}} writes."\n')
+    shutil.copy(MIGRATIONS_DIR / "0026_agent_word.py", d)
+    for _ in range(2):                                # run again, the same
+        assert migrate_all(db) == 26
+        c = sqlite3.connect(db)
+        assert "her" not in _tables(db)
+        assert c.execute("SELECT name, persona FROM agent").fetchone() == (
+            "Tink", "You are {{name}}. {{name}} hums.")
+        assert c.execute("SELECT of, text, by FROM text_versions").fetchone() == (
+            "agent:persona", "Ask {{name}} about {{name}} day.", "agent")
+        assert c.execute("SELECT v FROM kv WHERE k='bastet:talk'").fetchone() == (
+            "You watch {{name}}.",)
+        assert c.execute("SELECT by FROM moods").fetchone() == ("agent",)
+        assert c.execute("SELECT started_by FROM runs").fetchone() == ("agent",)
+        c.execute("UPDATE runs SET started_by='agent' WHERE id='r1'")   # the CHECK takes it
+        with pytest.raises(sqlite3.IntegrityError):
+            c.execute("UPDATE runs SET started_by='her' WHERE id='r1'")
+        assert [s["by"] for s in json.loads(c.execute("SELECT steps FROM plans").fetchone()[0])] \
+            == ["agent", "user"]
+        c.close()
+        assert sqlite3.connect(log_path(db)).execute(
+            "SELECT type FROM global_events").fetchone() == ("agent.hold",)
+        assert (tmp_path / "prompts" / "turns.title.md").read_text() == "Name {{name}} chat."
+        assert (tmp_path / "settings" / "schedules" / "diary.toml").read_text() == \
+            'prompt = "{{name}} writes."\n'
+
+
+def test_0027_names_the_reviewer_keys_and_moves_its_prompt_file(tmp_path, monkeypatch):
+    import importlib.util
+    import tomllib
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0027":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 26
+    folder = tmp_path / "settings" / "schedules"
+    folder.mkdir(parents=True)
+    (folder / "talk.toml").write_text(
+        '# kept\nlabel = "Talk"\npartner = "talk-partner.md"\nrounds = 3\nprompt = "Go."\n')
+    (folder / "talk-partner.md").write_text("You review.\n")
+    (folder / "mentor.toml").write_text(   # a prompt line that reads like a key
+        'label = "M"\npartner = "mentor.md"\nprompt = """\nrounds = 9\n"""\n')
+    (folder / "plain.toml").write_text('label = "P"\nprompt = "Go."\n')
+    shutil.copy(MIGRATIONS_DIR / "0027_reviewer_keys.py", d)
+    assert migrate_all(db) == 27
+    talk = '# kept\nlabel = "Talk"\nreviewer = "talk-reviewer.md"\nturns = 3\nprompt = "Go."\n'
+    assert (folder / "talk.toml").read_text() == talk
+    assert (folder / "talk-reviewer.md").read_text() == "You review.\n"
+    assert not (folder / "talk-partner.md").exists()
+    assert tomllib.loads((folder / "mentor.toml").read_text()) == {
+        "label": "M", "reviewer": "mentor.md", "prompt": "rounds = 9\n"}
+    assert (folder / "plain.toml").read_text() == 'label = "P"\nprompt = "Go."\n'
+    spec = importlib.util.spec_from_file_location("m0027", d / "0027_reviewer_keys.py")
+    step = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(step)
+    before = {p.name: p.stat().st_mtime_ns for p in folder.iterdir()}
+    step.up(None, db)                                 # run again, it writes nothing
+    assert {p.name: p.stat().st_mtime_ns for p in folder.iterdir()} == before
+
+
+def test_0028_keeps_a_missions_check_in_time_and_reads_its_old_check_ins(tmp_path, monkeypatch):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0028":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 27
+    at = "2026-11-01T10:00:00.000+00:00"
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO conversations(id, created_at, updated_at, kind) "
+              "VALUES('m1', ?, ?, 'mission')", (at, at))
+    c.execute("INSERT INTO missions(conversation_id, name, terminal, status, created_at, "
+              "updated_at) VALUES('m1', 'Prices', 'prices', 'needs_you', ?, ?)", (at, at))
+    for iid, data in ((1, '{"check_in": true}'), (2, '{}')):   # a check-in, a question
+        c.execute("INSERT INTO intercom(id, created_at, from_addr, to_addr, kind, text, data) "
+                  "VALUES(?, ?, 'agent:m1', 'user', 'report', 'x', ?)", (iid, at, data))
+        c.execute("INSERT INTO intercom_deliveries(intercom_id, to_addr, state) "
+                  "VALUES(?, 'user', 'pending')", (iid,))
+    c.commit()
+    c.close()
+    shutil.copy(MIGRATIONS_DIR / "0028_mission_check_ins.sql", d)
+    assert migrate_all(db) == 28
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT checked_in_at FROM missions").fetchone() == (at,)
+    assert dict(c.execute("SELECT intercom_id, state FROM intercom_deliveries")) == {
+        1: "read", 2: "pending"}, "a check-in stops waiting, a question still waits"
+    c.close()

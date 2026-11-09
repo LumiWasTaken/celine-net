@@ -22,7 +22,7 @@ CLI_SERVER: dict = {}    # --port and friends, so a reload does not read them as
 
 async def watch(app) -> None:
     """config/ and var/settings/ (what the Settings screens write, or you by hand); its
-    row is written only through the app (celine.her)."""
+    row is written only through the app (celine.agent)."""
     from .settings.files import settings_dir
     sdir = settings_dir(app.cfg)
     sdir.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-"""Her stored persona (the `her` row, seeded once from config/her/persona.md) gets the
+"""The agent's stored persona (the `her` row, seeded once from config/agent/persona.md) gets the
 line the shipped one has now in "How you work", after the one on her status: what she
 knows about models, tools and versions stops at her training (she looks up what is
 current when unsure). Inserted only after that exact line; a persona without it, or

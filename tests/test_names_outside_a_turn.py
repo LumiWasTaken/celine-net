@@ -13,7 +13,7 @@ from settings_fixtures import client, make_app, scratch
 pytestmark = pytest.mark.anyio
 
 
-async def test_a_sentence_outside_a_turn_names_her(tmp_path, monkeypatch, store):
+async def test_a_sentence_outside_a_turn_names_the_agent(tmp_path, monkeypatch, store):
     scratch(tmp_path, monkeypatch)
     cfg = boot.load()
     app = make_app(cfg, store)
@@ -21,12 +21,12 @@ async def test_a_sentence_outside_a_turn_names_her(tmp_path, monkeypatch, store)
 
     @app.post("/test/{cid}/busy")
     async def busy(cid: str):
-        raise CelineError("busy", "{{name}} is still answering.", 409, {"reason": "{{name}}"})
+        raise CelineError("busy", "{{name}} is still writing.", 409, {"reason": "{{name}}"})
 
     mine = await conversations.create(store)
     async with client(app) as c:
         err = (await c.post(f"/test/{mine}/busy")).json()["error"]
-        assert (err["message"], err["detail"]) == (f"{cfg.name} is still answering.",
+        assert (err["message"], err["detail"]) == (f"{cfg.name} is still writing.",
                                                    {"reason": cfg.name})
 
         def usage(r):

@@ -93,9 +93,9 @@ async def test_a_report_is_a_thread_he_closes_and_events_lists_it_once(store, cf
         assert msgs == [], "a report is under Bugs, not again under Messages"
 
 
-async def test_continue_in_a_chat_carries_the_thread_into_a_new_chat_with_her(
+async def test_continue_in_a_chat_carries_the_thread_into_a_new_chat_with_the_agent(
         store, cfg, monkeypatch):
-    monkeypatch.setitem(rows.NAMES, "her", "Celine")
+    monkeypatch.setitem(rows.NAMES, "agent", "Celine")
     cid = await conversations.create(store, "a chat")
     await _file(store, cfg, cid)
     ic = Intercom(store)
@@ -147,7 +147,7 @@ async def test_a_field_over_its_limit_is_refused_and_names_it_never_cut(store, c
     assert not r.is_error
 
 
-async def test_closing_with_why_tells_her_in_the_thread_and_her_list_shows_it(store, cfg):
+async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows_it(store, cfg):
     """Close with `why`: the app's line "Report #1 closed: ..." lands in the thread and in
     the conversation that filed it; bugreport__list shows each report's state and the
     last word on it, so it does not file a known or closed problem again."""

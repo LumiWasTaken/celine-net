@@ -6,9 +6,8 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { conversationApi, type Message, type SentRequest } from '../lib/api'
-import { contextApi, type OnHerMind } from '../lib/context'
-import { useOwner } from '../lib/name'
-import { errorText, num } from '../lib/format'
+import { contextApi, type OnItsMind } from '../lib/context'
+import { count, errorText, num } from '../lib/format'
 import { Button, InlineError, LoadingRow, Sheet, StatusLine, useCopied } from '../ui'
 import './Transcript.css'
 
@@ -22,7 +21,7 @@ const textOf = (c: unknown): string =>
 
 const ROLE: Record<string, string> = { user: 'User', assistant: 'Assistant', tool: 'Tool', system: 'System' }
 
-export function WhatSheSaw({ conversationId, steps, title, onClose }: {
+export function WhatItSaw({ conversationId, steps, title, onClose }: {
   conversationId: string
   /** the reply's steps, one model request each */
   steps: Message[]
@@ -30,7 +29,7 @@ export function WhatSheSaw({ conversationId, steps, title, onClose }: {
   onClose: () => void
 }) {
   const [data, setData] = useState<Step[] | null>(null)
-  const [mind, setMind] = useState<OnHerMind | null>(null)
+  const [mind, setMind] = useState<OnItsMind | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, copyIt] = useCopied()
   const ids = steps.map(m => m.id).join(' ')
@@ -67,15 +66,14 @@ export function WhatSheSaw({ conversationId, steps, title, onClose }: {
 }
 
 /* its mood, the gap */
-function MindView({ mind }: { mind: OnHerMind }) {
-  const owner = useOwner()
+function MindView({ mind }: { mind: OnItsMind }) {
   const lines = [
     // the server's line already starts with "mood:"
     ...(mind.mood ? [mind.mood.charAt(0).toUpperCase() + mind.mood.slice(1)] : []),
     ...(mind.gap ? [mind.gap] : []),
   ]
   if (!lines.length) return null
-  return <Block label={`On ${owner} mind`}>{lines.join('\n')}</Block>
+  return <Block label="Mood and thoughts">{lines.join('\n')}</Block>
 }
 
 function StepView({ n, step }: { n: number | null; step: Step }) {
@@ -84,7 +82,7 @@ function StepView({ n, step }: { n: number | null; step: Step }) {
   const system = msgs.filter(m => m.role === 'system')
   const talk = msgs.filter(m => m.role !== 'system')
   const tools = req?.body.tools ?? []
-  const facts = req && [req.model, req.prompt_tokens != null && `${num(req.prompt_tokens)} in`,
+  const facts = req && [req.model, req.prompt_tokens != null && `${num(req.prompt_tokens)} tokens in`,
     req.cache_read != null && `${num(req.cache_read)} cached`,
     req.completion_tokens != null && `${num(req.completion_tokens)} out`,
     req.first_token_ms != null && `first token ${(req.first_token_ms / 1000).toFixed(1)} s`,
@@ -93,8 +91,8 @@ function StepView({ n, step }: { n: number | null; step: Step }) {
     <section className="saw__step">
       {(n !== null || facts) && <p className="saw__head">{n !== null && <b>Step {n}</b>}{facts}</p>}
       {system.length > 0 && <Block label="System">{system.map(m => textOf(m.content)).join('\n\n')}</Block>}
-      {tools.length > 0 && <Block label={tools.length === 1 ? '1 tool' : `${tools.length} tools`}>{JSON.stringify(tools, null, 2)}</Block>}
-      {talk.length > 0 && <Block label="Conversation">{talk.map(m => `${ROLE[m.role] ?? m.role}${m.role === 'tool' && (m.name ?? m.tool_name) ? ` ${m.name ?? m.tool_name}` : ''}: ${textOf(m.content)}`).join('\n\n')}</Block>}
+      {tools.length > 0 && <Block label={count(tools.length, 'tool')}>{JSON.stringify(tools, null, 2)}</Block>}
+      {talk.length > 0 && <Block label="Chat">{talk.map(m => `${ROLE[m.role] ?? m.role}${m.role === 'tool' && (m.name ?? m.tool_name) ? ` ${m.name ?? m.tool_name}` : ''}: ${textOf(m.content)}`).join('\n\n')}</Block>}
       {step.raw !== null && <Block label="Raw response">{JSON.stringify(step.raw, null, 2)}</Block>}
     </section>
   )

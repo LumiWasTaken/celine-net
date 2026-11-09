@@ -17,7 +17,7 @@ TEXTS: dict[str, str] = {}        # what write_notes wrote, by path
 
 def notes_cfg(tmp_path, tools=None):
     return SimpleNamespace(
-        her=SimpleNamespace(notebook=tmp_path / "notebook"),
+        agent=SimpleNamespace(notebook=tmp_path / "notebook"),
         user="Joe", context=dict(loads.DEFAULTS),
         substitute=lambda t: t.replace("{{username}}", "Joe"), skill=lambda _: {}, skill_enabled=lambda _: True,
         settings=SimpleNamespace(tools=tools or {}))
@@ -25,7 +25,7 @@ def notes_cfg(tmp_path, tools=None):
 
 async def write_notes(store, cfg, files: dict[str, str]) -> None:
     for path, text in files.items():
-        p = cfg.her.notebook / path
+        p = cfg.agent.notebook / path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
         TEXTS[path] = text

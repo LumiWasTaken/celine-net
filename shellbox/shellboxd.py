@@ -154,7 +154,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-USER = "celine"                     # its uid is the image's (HER_UID, docker-compose.yml)
+USER = "celine"                     # its uid is the image's (AGENT_UID, docker-compose.yml)
 HOME = Path(os.path.expanduser(f"~{USER}"))
 # the app's key never enters the box, only its sha256, in a file compose mounts read-only
 KEY_HASH_FILE = Path("/etc/shellbox/key.hash")
@@ -228,7 +228,7 @@ AGENTS_DIR = Path("/usr/local/lib/shellbox/agents")
 CODE = None                 # the loaded backend module
 # ~/boot.sh is no login shell, so it gets those two here
 BOOT_ENV = {**ENV, "PIP_BREAK_SYSTEM_PACKAGES": "1", "NPM_CONFIG_PREFIX": f"{HOME}/.local"}
-AS_HER = {"user": USER, "group": USER, "extra_groups": []}
+AS_AGENT = {"user": USER, "group": USER, "extra_groups": []}
 
 # The agent's shell's side of the protocol, in bash. The marks: C before a command runs (PS0), D;<exit>
 # before each prompt. After the D mark, a line of spaces and a return: after output
@@ -413,7 +413,7 @@ def known(name: str) -> Terminal:
 # ---- tmux and /proc ------------------------------------------------------------------
 
 def tmux(*args: str, stdin: bytes | None = None) -> str:
-    r = subprocess.run([*TMUX, *args], input=stdin, capture_output=True, env=ENV, **AS_HER)
+    r = subprocess.run([*TMUX, *args], input=stdin, capture_output=True, env=ENV, **AS_AGENT)
     if r.returncode:
         raise Problem("tmux " + args[0] + ": " + (r.stderr.decode(errors="replace").strip()
                                                   or f"exit {r.returncode}"))
@@ -421,7 +421,7 @@ def tmux(*args: str, stdin: bytes | None = None) -> str:
 
 
 def tmux_ok(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([*TMUX, *args], capture_output=True, env=ENV, **AS_HER)
+    return subprocess.run([*TMUX, *args], capture_output=True, env=ENV, **AS_AGENT)
 
 
 def target(name: str) -> str:
@@ -717,21 +717,21 @@ def quiet_for(tid: str) -> int | None:
 def give(target: Path | int) -> None:
     """A file or folder the daemon made for it outside its home (or its open fd)
     becomes its own."""
-    her = pwd.getpwnam(USER)
-    (os.fchown if isinstance(target, int) else os.chown)(target, her.pw_uid, her.pw_gid)
+    agent = pwd.getpwnam(USER)
+    (os.fchown if isinstance(target, int) else os.chown)(target, agent.pw_uid, agent.pw_gid)
 
 
-# its side of write_hers: the folders, then the file from stdin (cat reads the pipe as it
+# its side of write_as_agent: the folders, then the file from stdin (cat reads the pipe as it
 # is; reopening /dev/stdin is refused it, root made the pipe), then its mode
 WRITE_SH = 'mkdir -p -- "$(dirname -- "$1")" && (umask 077 && cat > "$1") && chmod "$2" -- "$1"'
 
 
-def write_hers(path: Path, body, length: int, mode: int = 0o644) -> None:
+def write_as_agent(path: Path, body, length: int, mode: int = 0o644) -> None:
     """`length` bytes read from `body` as its file at `path`, folders on the way too, all
     made by it (WRITE_SH): root never writes in its home, so nothing in it is root's (its
     browser shares it). Problem when the body ends early or the write fails."""
     proc = subprocess.Popen(["sh", "-c", WRITE_SH, "sh", str(path), f"{mode:o}"],
-                            stdin=subprocess.PIPE, stderr=subprocess.PIPE, **AS_HER)
+                            stdin=subprocess.PIPE, stderr=subprocess.PIPE, **AS_AGENT)
     left = length
     try:
         while left and (chunk := body.read(min(left, 1 << 20))):
@@ -768,12 +768,12 @@ def pipe(name: str, tid: str) -> None:
     tmux("pipe-pane", "-O", "-t", target(name), f"exec cat >> {log_path(tid)}")
 
 
-def gzip_file(src: Path, hers: bool = False) -> None:
-    """src into src.gz; src goes once the .gz is whole. `hers`: the .gz is its own."""
+def gzip_file(src: Path, own: bool = False) -> None:
+    """src into src.gz; src goes once the .gz is whole. `own`: the .gz is its own."""
     tmp = src.with_name(src.name + ".gz.part")
     with open(src, "rb") as a, gzip.open(tmp, "wb") as b:
         shutil.copyfileobj(a, b)
-    if hers:
+    if own:
         give(tmp)
     tmp.rename(src.with_name(src.name + ".gz"))
     src.unlink()
@@ -982,7 +982,7 @@ def housekeep() -> None:
     for f in old:
         if str(f) not in busy:
             try:
-                gzip_file(f, hers=True)
+                gzip_file(f, own=True)
             except OSError:
                 pass
 
@@ -1225,7 +1225,7 @@ def base(t: Terminal, name: str, notes: list[str], opened: bool = False) -> dict
             "started": STATUS.get("started"), "boot": STATUS.get("boot")}
 
 
-def her_notes(name: str, notes: list[str]) -> None:
+def agent_notes(name: str, notes: list[str]) -> None:
     notes.extend(pending_notes.pop(name, []))       # what the user did meanwhile
     notes.extend(home_note())
 
@@ -1314,7 +1314,7 @@ def run_answer(t: Terminal, name: str, cid: str, state: str, notes: list[str],
     res["outside"], res["outside_from"] = outside(res["command"], res.get("cwd"))
     # the guard's egress fact: the URL or program by which it reached the net
     res["net"] = reaches_net(res["command"]) if res["command"] else None
-    her_notes(name, notes)
+    agent_notes(name, notes)
     return res
 
 
@@ -1330,7 +1330,7 @@ def screen_answer(t: Terminal, name: str, notes: list[str], opened: bool = False
                         else "waiting" if res["waiting"] else "running" if res["busy"]
                         else "prompt")
     res["cmd"] = latest(t)
-    her_notes(name, notes)
+    agent_notes(name, notes)
     return res
 
 
@@ -1391,7 +1391,7 @@ def run_call(body: dict, progress, conn) -> dict:
         if refused:
             res = {**base(t, name, notes, opened), **where(t, name), **refused,
                    "state": "busy", "running": latest(t)}
-            her_notes(name, notes)
+            agent_notes(name, notes)
             return res
         cid = new_id()
         t.cmd = {"id": cid, "command": command}
@@ -1777,16 +1777,16 @@ def view(name: str, conn: socket.socket, write) -> None:
     tmux first draws the whole screen, so a viewer joining late sees it right away. A
     viewer that stops reading for VIEW_TIMEOUT seconds is dropped; the terminal never
     waits for it."""
-    her = pwd.getpwnam(USER)
+    agent = pwd.getpwnam(USER)
     pid, fd = pty.fork()
     if pid == 0:
         # the child: become it, then tmux. Whatever fails, it must never come back here,
         # or two processes would serve one connection.
         try:
             fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
-            os.setgid(her.pw_gid)
-            os.initgroups(USER, her.pw_gid)
-            os.setuid(her.pw_uid)
+            os.setgid(agent.pw_gid)
+            os.initgroups(USER, agent.pw_gid)
+            os.setuid(agent.pw_uid)
             os.execvpe("tmux", [*TMUX, "attach-session", "-t", target(name), "-r",
                                 "-f", "ignore-size"], {**ENV, "TERM": "xterm-256color"})
         finally:
@@ -1827,7 +1827,7 @@ def install_rc() -> None:
 def start() -> None:
     if not re.fullmatch(r"[0-9a-f]{64}", KEY_HASH):
         sys.exit(f"shellboxd: {KEY_HASH_FILE} is not the key's sha256 (64 lowercase hex)")
-    her = pwd.getpwnam(USER)
+    agent = pwd.getpwnam(USER)
     # a missing home, or one that is not its own (a new volume, another uid), is given to
     # it: the folder only, what is in it keeps its owners
     # A home that cannot be written is refused, never worked around: home-disk.sh makes
@@ -1836,10 +1836,10 @@ def start() -> None:
     try:
         HOME.mkdir(parents=True, exist_ok=True)
         st = HOME.stat()
-        if (st.st_uid, st.st_gid) != (her.pw_uid, her.pw_gid):
-            os.chown(HOME, her.pw_uid, her.pw_gid)
+        if (st.st_uid, st.st_gid) != (agent.pw_uid, agent.pw_gid):
+            os.chown(HOME, agent.pw_uid, agent.pw_gid)
             print(f"shellboxd: {HOME} was {st.st_uid}:{st.st_gid}'s, now {USER}'s "
-                  f"({her.pw_uid}:{her.pw_gid})", flush=True)
+                  f"({agent.pw_uid}:{agent.pw_gid})", flush=True)
         check = HOME / ".shellboxd-write-check"
         check.touch()
         check.unlink()
@@ -1859,7 +1859,7 @@ def start() -> None:
     # .bashrc it deleted stays deleted. Copied by it, so they are its own. cp -r, not -a:
     # -a would put skel's mode on its home.
     if not any(HOME.iterdir()):
-        subprocess.run(["cp", "-r", "/etc/skel/.", str(HOME)], check=True, **AS_HER)
+        subprocess.run(["cp", "-r", "/etc/skel/.", str(HOME)], check=True, **AS_AGENT)
     make_dirs()
     install_rc()
     start_agent()
@@ -1885,7 +1885,7 @@ def start_agent() -> None:
     global CODE
     try:
         CODE = load_agent(CODING_AGENT)
-        CODE.boot(HOME, ENV, AS_HER, LLM_URL, LLM_KEY)
+        CODE.boot(HOME, ENV, AS_AGENT, LLM_URL, LLM_KEY)
         STATUS["code"] = {"agent": CODING_AGENT, "error": None}
     except Exception as e:                      # noqa: BLE001
         traceback.print_exc()
@@ -1981,11 +1981,11 @@ def run_boot_script() -> None:
     log = HOME / "boot.log"
     began = time.monotonic()
     head = f"~/boot.sh started {STATUS['started']}\n".encode()
-    write_hers(log, io.BytesIO(head), len(head))    # its own; the rest is appended to it
+    write_as_agent(log, io.BytesIO(head), len(head))    # its own; the rest is appended to it
     with open(log, "a") as f:
         rc = subprocess.call(["timeout", "-k", "10", str(BOOT_LIMIT), "bash", str(script)],
                              cwd=HOME, stdin=subprocess.DEVNULL, stdout=f,
-                             stderr=subprocess.STDOUT, env=BOOT_ENV, **AS_HER)
+                             stderr=subprocess.STDOUT, env=BOOT_ENV, **AS_AGENT)
         took = round(time.monotonic() - began)
         timed_out = took >= BOOT_LIMIT            # the exit code alone cannot tell
         f.write(f"\n~/boot.sh {'stopped after the time limit' if timed_out else 'ended'}"
@@ -1995,7 +1995,7 @@ def run_boot_script() -> None:
 
 # ---- files: the app's way in and out of its home -----------------------------------------
 
-def her_path(rel: str) -> Path:
+def agent_path(rel: str) -> Path:
     """A path in its home from one relative to it (~/ and its home's own path allowed).
     Refuses one that leaves its home, also through a symlink."""
     rel = (rel or "").strip()
@@ -2012,9 +2012,9 @@ def her_path(rel: str) -> Path:
 def put_file(rel: str, body, length: int, origin: str = "") -> dict:
     """`length` bytes of `body` as its file at `rel`:
     to a temp name, then renamed, so a broken upload never leaves half a file. Its own (it
-    writes it, write_hers), mode 0644, parent folders made. With `origin`, tagged with
+    writes it, write_as_agent), mode 0644, parent folders made. With `origin`, tagged with
     where it came from (ORIGIN)."""
-    p = her_path(rel)
+    p = agent_path(rel)
     free = shutil.disk_usage(HOME).free
     if length > free:
         raise Problem(f"The home disk has {free // 1048576} MB left and the file is "
@@ -2029,7 +2029,7 @@ def put_file(rel: str, body, length: int, origin: str = "") -> dict:
         raise Problem(f"{rel} is a folder.")
     tmp = p.with_name(f".{p.name}.part-{secrets.token_hex(3)}")
     try:
-        write_hers(tmp, body, length)
+        write_as_agent(tmp, body, length)
         if origin:
             try:
                 os.setxattr(tmp, ORIGIN, origin.encode()[:4000])
@@ -2219,7 +2219,7 @@ class Handler(BaseHTTPRequestHandler):
     def get_file(self, rel: str) -> None:
         """The agent's file, streamed, or the one byte range the Range header asks for."""
         try:
-            p = her_path(rel)
+            p = agent_path(rel)
             if p.is_dir():
                 return self.send_json({"error": f"{rel} is a folder.", "folder": True}, 400)
             f = p.open("rb")

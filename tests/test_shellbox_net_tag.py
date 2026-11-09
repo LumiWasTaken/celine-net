@@ -155,7 +155,7 @@ def test_an_upload_with_an_origin_is_tagged(work, monkeypatch):
     d = load_daemon()
     home = work / "home"
     home.mkdir()
-    d.HOME, d.USER, d.AS_HER = home, getpass.getuser(), {}
+    d.HOME, d.USER, d.AS_AGENT = home, getpass.getuser(), {}
     monkeypatch.setattr(os, "fchown", lambda *a: None)
     d.put_file("uploads/cv.pdf", io.BytesIO(b"pdf"), 3, origin="upload:cv.pdf")
     d.put_file("brief.md", io.BytesIO(b"mine"), 4)

@@ -103,7 +103,7 @@ def test_compact_now_and_busy(db_path, cfg):
             {"role": "tool", "name": "arch__find", "text": "found"}]
 
 
-def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatch):
+def test_what_the_agent_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -111,7 +111,7 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
     from celine.conversations import api as conversations_api
     import sqlite3
     cid = _seed(db_path, 2)
-    nb = cfg.her.notebook
+    nb = cfg.agent.notebook
     (nb / "voice").mkdir(parents=True, exist_ok=True)
     (nb / "voice" / "style.md").write_text("load: always\n\nshort lines")
     (nb / "voice" / "old.md").write_text("load: off\n\nold voice")
@@ -151,7 +151,7 @@ def test_what_she_sees_is_measured_without_a_model_call(db_path, cfg, monkeypatc
     assert blocks["persona"]["tokens"] > 0 and blocks["history"]["tokens"] > 0
     assert blocks["tools"]["tokens"] > 0
     assert {n["path"]: (n["state"], n["why"]) for n in got["notes"]} == {
-        "voice/draft.md": ("off", "left out in this conversation"),
+        "voice/draft.md": ("off", "left out in this chat"),
         "voice/style.md": ("included", "")}
 
     assert model.calls == [], "no model call"

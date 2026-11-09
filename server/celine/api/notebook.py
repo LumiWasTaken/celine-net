@@ -1,5 +1,5 @@
 """The notebook browser: the same files its tools see, for you. The notebook is its own,
-the one notebook (her.notebook)."""
+the one notebook (agent.notebook)."""
 from __future__ import annotations
 
 import difflib
@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from ..her import Her
+from ..agent import Agent
 from ..errors import CelineError, NotFound, TooLarge
 from ..skills import notebook_index
 from ..skills.notebook import NO_SUMMARY, is_stamp, move_note, trash, unstamped, write_note
@@ -19,9 +19,9 @@ from .deps import cfg_of, store_of
 router = APIRouter(prefix="/api")
 
 
-def _who(request: Request) -> Her:
+def _who(request: Request) -> Agent:
     """The agent's own is the one notebook."""
-    return cfg_of(request).her
+    return cfg_of(request).agent
 
 
 def _notebook_path(ch, rel: str) -> Path:

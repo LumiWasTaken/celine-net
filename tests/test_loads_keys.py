@@ -45,7 +45,7 @@ async def test_a_key_no_longer_loads_a_note_in_full(store, tmp_path):
 async def test_the_keys_are_read_again_when_the_note_changes(store, tmp_path):
     cfg = notes_cfg(tmp_path)
     await write_notes(store, cfg, {"people/noor.md": "keys: noor\n\nx"})
-    root = cfg.her.notebook
+    root = cfg.agent.notebook
     assert notebook.keys_of(root, "people/noor.md") == ["noor"]
     p = root / "people/noor.md"
     p.write_text("keys: noor, mountains\n\nx")
@@ -55,14 +55,14 @@ async def test_the_keys_are_read_again_when_the_note_changes(store, tmp_path):
     assert notebook.keys_of(root, "people/gone.md") == []
 
 
-async def test_a_routines_on_mind_names_the_notes_her_last_thoughts_key(store, tmp_path):
+async def test_a_routines_on_mind_names_the_notes_its_last_thoughts_key(store, tmp_path):
     from celine.schedules.variables import NONE, on_mind
     cfg = notes_cfg(tmp_path)
     await write_notes(store, cfg, NOTES)
     app = SimpleNamespace(cfg=cfg, store=store)
     assert await on_mind(app) == NONE
-    (cfg.her.notebook / "thoughts").mkdir()
-    (cfg.her.notebook / "thoughts" / "2026-10-16.md").write_text(
+    (cfg.agent.notebook / "thoughts").mkdir()
+    (cfg.agent.notebook / "thoughts" / "2026-10-16.md").write_text(
         "Last changed: x\n- 10:00 noor went climbing again\n")
     assert await on_mind(app) == "- people/noor.md: a note"
     many = {f"people/p{i}.md": "keys: noor\n\nx" for i in range(10)}

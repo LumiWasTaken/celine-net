@@ -4,7 +4,6 @@ where it sits, when it was recorded and what it made (docs/ARCHITECTURE.md, Dura
 execution)."""
 from __future__ import annotations
 
-import builtins
 import json
 import sqlite3
 
@@ -16,36 +15,7 @@ from ..skills import words
 from ..core.event_types import JOB_STATE, TOOL_DETACHED, TOOL_DONE
 
 
-PROMPT_SHOWN = 120      # characters of a running job's prompt in her tail
-
-
-def prompt_of(arguments: str | None, tool_name: str = "") -> str | None:
-    """What a call was asked, when its arguments say so in one field: a command's
-    `command`, a sub-agent's `name` or `brief`, the `prompt` or `style` of a batch's
-    first item. A shell call: the first line of what it typed (a pasted heredoc
-    stays one line in the jobs list), else its keys, else its terminal. None for
-    every other tool."""
-    try:
-        a = json.loads(arguments or "")
-    except ValueError:
-        return None
-    if not isinstance(a, dict):
-        return None
-    if tool_name.startswith("shell__"):
-        text = next((a[k] for k in ("command", "text") if isinstance(a.get(k), str)), "")
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        if lines:
-            return lines[0]
-        if isinstance(a.get("keys"), str) and a["keys"].strip():
-            return a["keys"].strip()
-        return str(a.get("terminal") or "main")
-    items = a.get("items")
-    if isinstance(items, builtins.list) and items and isinstance(items[0], dict):
-        a = items[0]
-    for key in ("command", "name", "brief", "prompt", "style"):
-        if isinstance(a.get(key), str) and a[key].strip():
-            return a[key].strip()
-    return None
+PROMPT_SHOWN = 120      # characters of a running job's prompt in its tail
 
 
 def terminal_of(arguments: str | None, tool_name: str) -> str | None:
@@ -118,7 +88,7 @@ def _view(r: sqlite3.Row) -> dict:
     d["display"] = (json.loads(d["display"])
                     if d["display"] and d["state"] != "running" else None)
     arguments = d.pop("arguments")
-    d["prompt"] = prompt_of(arguments, d["tool_name"])
+    d["prompt"] = words.prompt_of(arguments, d["tool_name"])
     # a shell job's terminal, also while it runs (display is empty then): the UI
     # opens the live terminal from it
     d["terminal"] = terminal_of(arguments, d["tool_name"])

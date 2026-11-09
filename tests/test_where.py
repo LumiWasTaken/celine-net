@@ -1,6 +1,6 @@
-"""Where she is (conversations/here.py where), in the system prompt from ids alone: her
-kind and address, the place, the device, the model role, who started her, who she
-reports to and her depth in the chain of agents."""
+"""Where the agent is (conversations/here.py where), in the system prompt from ids alone:
+its kind and address, the place, the device, the model role, who started it, who it
+reports to and its depth in the chain of agents."""
 from __future__ import annotations
 
 import pytest

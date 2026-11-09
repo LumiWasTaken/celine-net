@@ -1,7 +1,7 @@
 # celine-net, the browser box: Celine's own Brave on a screen of its own (the `browser`
 # service in docker-compose.yml, docs/DEPLOY.md "Browser").
 #
-# Everything runs as celine (HER_UID, as in its shellbox), with its home mounted, so its
+# Everything runs as celine (AGENT_UID, as in its shellbox), with its home mounted, so its
 # profile (~/.browser) and downloads (~/Downloads) are its own. run.sh keeps browserd.py
 # running; browserd runs Xvnc (the screen) and Brave (CDP on 127.0.0.1 only) and gives
 # the app a small API. Its sandbox needs seccomp:unconfined (compose). Brave, not Chromium:
@@ -20,10 +20,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         python3 python3-websockets python3-pil procps tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# its uid and gid, its home's owner: docker-compose.yml names it once (x-her-uid)
-ARG HER_UID=1000
-RUN groupadd --gid "$HER_UID" celine \
-    && useradd --uid "$HER_UID" --gid celine --create-home --shell /bin/bash celine
+# its uid and gid, its home's owner: docker-compose.yml names it once (x-agent-uid)
+ARG AGENT_UID=1000
+RUN groupadd --gid "$AGENT_UID" celine \
+    && useradd --uid "$AGENT_UID" --gid celine --create-home --shell /bin/bash celine
 USER celine
 WORKDIR /home/celine
 # COPY --link and nothing after it but settings: a change rebuilds only its own layer, and

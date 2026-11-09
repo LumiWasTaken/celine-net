@@ -9,7 +9,7 @@ from pathlib import Path
 AGENT = runpy.run_path(str(Path(__file__).parents[1] / "shellbox" / "agent.py"))
 
 
-def test_opencode_runs_her_model_on_the_box_config_and_answers_its_last_text():
+def test_opencode_runs_its_model_on_the_box_config_and_answers_its_last_text():
     out = "\n".join(json.dumps(e) for e in [
         {"type": "step_start"}, {"type": "text", "part": {"text": "first"}},
         {"type": "tool_use"}, {"type": "text", "part": {"text": "done"}}])

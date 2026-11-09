@@ -12,6 +12,7 @@ from celine.browser import sync
 from celine.browser.sync import BrowserRefused
 from celine.skills import browser as browser_mod
 from celine.skills.browser import Browser
+from parts_fixtures import ROOM, joined
 
 pytestmark = pytest.mark.anyio
 
@@ -67,12 +68,47 @@ async def test_the_words_match_the_box(monkeypatch):
     assert out.is_error and out.content == ("e7 is a combobox, not a select: click it and "
                                             "click the option.")
     out = await b.look(ctx, what="page", tab="jobs")
-    assert 'later: browser__look(what="page", part=2, tab="jobs")' in out.content
+    assert 'later: browser__look(what="page", tab="jobs", part=2)' in out.content
     n = len(sent)
     out = await b.scroll(ctx, to="e8", direction="top", tab="jobs")
     assert out.is_error and len(sent) == n, "refused here, not sent"
     out = await b.act(ctx, steps=[{"do": "scroll", "target": "e8", "text": "bottom"}], tab="jobs")
     assert out.is_error and len(sent) == n
+
+
+async def test_a_long_page_reads_in_parts_that_join_to_the_page(monkeypatch):
+    """A tab's text in parts: each passes the result backstop whole with the tab's head
+    and notes, the parts joined are the page, find picks the part with the words."""
+    markdown = "\n\n".join(f"Paragraph {i} " + "word " * (i * 7 % 300) for i in range(80))
+
+    async def post(cfg, body):
+        return {"tab": body["tab"], "url": "https://x/", "title": "x", "markdown": markdown,
+                "notes": ["taken:2026-11-08T10:00:00Z:2026-11-08T10:05:00Z"]}
+    monkeypatch.setattr(sync, "post", post)
+    b = Browser(SimpleNamespace(user="Joe", settings=None, timezone="UTC"))
+    ctx = SimpleNamespace(max_output_tokens=ROOM)
+
+    async def read(k):
+        return (await b.look(ctx, what="page", part=k, tab="jobs")).content
+    whole, n = await joined(read, 'browser__look(what="page", tab="jobs"')
+    assert n > 1 and whole == markdown.strip(), "the parts joined are the page"
+    assert (await read(n)).splitlines()[-1].startswith("note: Joe used the browser from ")
+    found = await b.look(ctx, what="page", find="Paragraph 79 ", tab="jobs")
+    assert found.display["part"] == n and "Paragraph 79 " in found.content
+    missing = await b.look(ctx, what="page", find="nowhere", tab="jobs")
+    assert '"nowhere" is not on this page.' in missing.content
+
+
+async def test_an_answer_with_no_code_says_the_boxs_words(monkeypatch):
+    def client(cfg, read=sync.READ):
+        return httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda r: httpx.Response(500, text="browserd: Traceback, KeyError 'tab'")))
+    monkeypatch.setattr(sync, "_client", client)
+    monkeypatch.setattr(sync, "url", lambda cfg: "http://box:8771")
+    b = Browser(SimpleNamespace(user="Joe", settings=None))
+    out = await b.scroll(SimpleNamespace(max_output_tokens=None), tab="a")
+    assert out.is_error and out.content.startswith(
+        "The browser box returned 500: browserd: Traceback, KeyError 'tab'")
 
 
 async def test_a_call_with_steps_waits_longer(monkeypatch):
@@ -492,7 +528,7 @@ def test_an_address_is_the_apps_only_when_this_machine_has_it():
         assert browser_mod.ours(ipaddress.ip_address(mine))
 
 
-async def test_the_vision_models_words_reach_her_as_it_said_them():
+async def test_the_vision_models_words_reach_the_agent_as_it_said_them():
     from celine import vision
     from celine.backends.base import Done, TextDelta
     words = "I see  no such button.\n\nOnly a  logo." + " more" * 100

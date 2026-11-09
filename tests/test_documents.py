@@ -58,7 +58,7 @@ def wait_idle(kbs, timeout=15.0):
                and not kbs.tasks.running("documents", "describe"), timeout)
 
 
-def test_edits_and_moves_keep_her_titles_and_notes(tmp_path):
+def test_edits_and_moves_keep_its_titles_and_notes(tmp_path):
     kb = mk(tmp_path)
     (kb.root / "cars").mkdir()
     f = kb.root / "cars" / "celine.md"
@@ -275,7 +275,7 @@ def test_the_drawer_folders_sort_hide_and_move_keeping_ids(tmp_path):
     assert [f["name"] for f in kb.folders_in("stories")] == ["old"]
 
 
-def test_she_writes_into_the_drawer_and_never_over_their_files(tmp_path):
+def test_the_agent_writes_into_the_drawer_and_never_over_their_files(tmp_path):
     events = []
     kb = mk(tmp_path, tasks=SimpleNamespace(emit=events.append))
     (kb.root / "mine.md").write_text("the user's")

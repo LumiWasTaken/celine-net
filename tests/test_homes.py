@@ -39,8 +39,8 @@ async def test_each_conversation_lives_where_its_root_does(store):
     ids = await _tree(store)
     got = await store.read(lambda c: {k: homes.of(c, v) for k, v in ids.items()})
     assert got == {
-        "chat": {"home": "her", "link": f"/chat/{ids['chat']}"},
-        "chat-agent": {"home": "her", "link": f"/chat/{ids['chat-agent']}"},
+        "chat": {"home": "agent", "link": f"/chat/{ids['chat']}"},
+        "chat-agent": {"home": "agent", "link": f"/chat/{ids['chat-agent']}"},
         "mission": {"home": "missions", "link": f"/mission/{ids['mission']}"},
         "mission-agent": {"home": "missions", "link": f"/mission/{ids['mission-agent']}"},
         "run": {"home": "routines", "link": "/routines/2026-10-22/run/r1"},
@@ -59,7 +59,7 @@ async def test_lists_and_senders_carry_the_same_link(store):
     assert (rows[ids["mission"]]["home"], rows[ids["mission"]]["link"]) == \
         ("missions", f"/mission/{ids['mission']}")
     agent = rows[ids["chat"]]["agents"][0]
-    assert (agent["home"], agent["link"]) == ("her", f"/chat/{ids['chat-agent']}")
+    assert (agent["home"], agent["link"]) == ("agent", f"/chat/{ids['chat-agent']}")
     every = {a["id"]: a for a in await store.read(lambda c: agents_of(c, own={}))}
     assert every[ids["run-agent"]]["link"] == f"/routines/2026-10-22/task/{ids['run-agent']}"
     for k, v in ids.items():
@@ -115,14 +115,78 @@ def test_place_of_each_kind(tmp_path):
     assert offered("some_mcp_server", "mission") and offered("some_mcp_server", "chat")
 
 
-async def test_a_sub_agents_snapshot_names_the_one_that_started_it(store):
+async def test_a_snapshot_carries_its_path_from_the_top_down(store):
     from celine.conversations import view
     chat = await conversations.create(store, "plans")
-    scout = await conversations.create(store, "scout", agent_of=chat, agent_name="scout")
-    deeper = await conversations.create(store, "counter", agent_of=scout, agent_name="counter")
-    assert (await view.snapshot(store, chat))["conversation"]["started_by"] is None
-    got = (await view.snapshot(store, scout))["conversation"]
-    assert (got["agent_name"], got["started_by"]) == ("scout", {"name": "plans",
-                                                               "link": f"/chat/{chat}"})
-    assert (await view.snapshot(store, deeper))["conversation"]["started_by"] == {
-        "name": "scout", "link": f"/chat/{scout}"}
+    scout = await conversations.create(store, "scout", agent_of=chat, agent_name="scout",
+                                       kind="agent")
+    deeper = await conversations.create(store, "counter", agent_of=scout,
+                                        agent_name="counter", kind="agent")
+    crumbs = lambda p: [(x["kind"], x["name"], x["link"]) for x in p]  # noqa: E731
+    assert crumbs((await view.snapshot(store, chat))["conversation"]["path"]) == [
+        ("chat", "plans", f"/chat/{chat}")]
+    assert crumbs((await view.snapshot(store, deeper))["conversation"]["path"]) == [
+        ("chat", "plans", f"/chat/{chat}"), ("agent", "scout", f"/chat/{scout}"),
+        ("agent", "counter", f"/chat/{deeper}")]
+
+
+async def test_the_path_of_a_runs_missions_sub_agent_starts_at_the_run(store):
+    from celine.missions import store as missions
+    ids = await _tree(store)
+    mission = await conversations.create(store, kind="mission")
+    await missions.create(store, mission, {"name": "Night", "terminal": "n", "brief": "b",
+                                           "started_by": ids["run"]})
+    sub = await conversations.create(store, agent_of=mission, agent_name="helper",
+                                     kind="agent")
+    got = await store.read(lambda c: [(x["kind"], x["name"]) for x in homes.path(c, sub)])
+    assert got == [("run", "Diary"), ("mission", "Night"), ("agent", "helper")]
+
+
+async def test_the_chain_runs_from_a_conversation_up_to_its_top(store):
+    top = await conversations.create(store, kind="mission")
+    one = await conversations.create(store, agent_of=top, agent_name="a", kind="agent")
+    two = await conversations.create(store, agent_of=one, agent_name="b", kind="agent")
+    got = await store.read(lambda c: ([r["id"] for r in homes.chain(c, two)],
+                                      homes.root(c, two)["id"], conversations.depth(c, two)))
+    assert got == ([two, one, top], top, 2)
+
+
+async def test_a_loop_in_the_chain_stops_the_walk(store):
+    a = await conversations.create(store, kind="agent")
+    b = await conversations.create(store, agent_of=a, kind="agent")
+    await store.write(lambda c: c.execute("UPDATE conversations SET agent_of=? WHERE id=?",
+                                          (b, a)))
+    assert await store.read(lambda c: [r["id"] for r in homes.chain(c, b)]) == [b, a]
+
+
+async def test_the_tree_holds_a_runs_sub_agents_and_missions_their_reasons_and_the_total(store):
+    from celine.missions import store as missions
+    from celine.sub_agents.skill import tree_of
+    ids = await _tree(store)
+    run = ids["run"]
+    deep = await conversations.create(store, agent_of=ids["run-agent"], agent_name="deep",
+                                      kind="agent")
+    mission = await conversations.create(store, kind="mission")
+    await missions.create(store, mission, {"name": "Night", "terminal": "n", "brief": "b",
+                                           "started_by": deep})
+
+    def fn(c):
+        for tid, cid, state, reason in (("t1", run, "done", None),
+                                        ("t2", deep, "failed", "5090 returned 503: busy.\nx")):
+            c.execute("INSERT INTO turns(id, conversation_id, state, reason, created_at, "
+                      "finished_at) VALUES(?, ?, ?, ?, '2026-10-22T23:00:00+00:00', "
+                      "'2026-10-22T23:00:10+00:00')", (tid, cid, state, reason))
+            c.execute("INSERT INTO requests(message_id, step, turn_id, provider, model, body, "
+                      "prompt_tokens, completion_tokens, created_at) VALUES(?, 0, ?, 'p', 'm', "
+                      "x'', 100, 10, '2026-10-22T23:00:00+00:00')", (f"m-{tid}", tid))
+    await store.write(fn)
+    got = await store.read(lambda c: tree_of(c, deep, {}))
+    assert got["top"] == run and got["origin"] == []
+    assert [(a["name"], a["depth"], a["state"]) for a in got["agents"]] == [
+        ("helper", 1, "done"), ("deep", 2, "failed")]
+    assert [(m["name"], m["parent"], m["depth"], m["state"]) for m in got["missions"]] == [
+        ("Night", deep, 3, "active")]
+    assert got["agents"][1]["reason"] == "5090 returned 503: busy."
+    assert got["total"] == {"prompt_tokens": 200, "completion_tokens": 20, "seconds": 20}
+    under = await store.read(lambda c: tree_of(c, mission, {}))
+    assert [x["kind"] for x in under["origin"]] == ["run", "agent", "agent"]

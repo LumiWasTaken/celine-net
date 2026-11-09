@@ -25,7 +25,7 @@ list and edits never see it.
 What stays (`gc`, at each start; KEEP is 30 days). A file stays while an attachment of a
 message, a tool call or a batch, or its portrait, points at it. A draft (an upload not
 sent yet) keeps its file until it is sent, discarded or KEEP old; one an intercom message
-carries (a file she sent the user there) stays. A file nothing points
+carries (a file the agent sent the user there) stays. A file nothing points
 at goes once it is KEEP old, a half-written upload once untouched for KEEP. A picture's
 smaller copies (`resized`) go with its file. A file and
 its rows are written and dropped in one writer job, so gc never sees one without the other.
@@ -459,7 +459,7 @@ async def gc(cfg, store, at: datetime | None = None) -> int:
         shas = [r["sha256"] for r in c.execute(
             "SELECT sha256 FROM blobs WHERE created_at < ? AND sha256 NOT IN "
             "(SELECT sha256 FROM attachments) AND sha256 NOT IN "
-            "(SELECT portrait FROM her WHERE portrait IS NOT NULL)", (iso(old),))]
+            "(SELECT portrait FROM agent WHERE portrait IS NOT NULL)", (iso(old),))]
         for sha in shas:
             c.execute("DELETE FROM blobs WHERE sha256=?", (sha,))
             path = blob_path(cfg, sha)
@@ -657,7 +657,7 @@ async def images(store, conversation_id: str | None = None,
 SHORT = 8           # an image's short id: the first characters of its attachment id
 
 
-async def her_image(store, ref: str, cid: str | None, user: str) -> dict | str:
+async def agent_image(store, ref: str, cid: str | None, user: str) -> dict | str:
     """An image it may use by its short id (or a longer start of its id): one it made
     (an attachment of its own message, in any conversation) or one the user attached to
     conversation `cid`. -> its attachment row, or the sentence that says why not."""
@@ -677,7 +677,7 @@ async def her_image(store, ref: str, cid: str | None, user: str) -> dict | str:
     return row
 
 
-async def her_file(store, ref: str, cid: str, user: str) -> dict | str:
+async def agent_file(store, ref: str, cid: str, user: str) -> dict | str:
     """A file it may send on by its short id (or a longer start of its id): one on its
     own message (in any conversation: a voice note, a file it sent) or one the user
     attached to conversation `cid`. -> its attachment row, or the sentence that says

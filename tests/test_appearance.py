@@ -39,7 +39,7 @@ async def api(tmp_path, monkeypatch, store):
 
 
 async def test_defaults_then_a_save_keeps_the_rest_and_tells_every_page(api):
-    assert (await api.get("/api/appearance")).json() == {"appearance": DEFAULTS}
+    assert (await api.get("/api/appearance")).json()["appearance"] == DEFAULTS
     r = await api.put("/api/appearance", json={"appearance": {"accent": "sage", "hide_thinking": True}})
     assert r.status_code == 200
     assert r.json()["appearance"] == {**DEFAULTS, "accent": "sage", "hide_thinking": True}
@@ -65,7 +65,7 @@ async def test_a_stored_key_that_is_no_setting_is_left_out_and_gone_with_the_nex
     d = api.var / "settings"
     d.mkdir(parents=True, exist_ok=True)
     (d / "appearance.toml").write_text('accent = "sage"\ndialogue = "peach"\n')
-    assert (await api.get("/api/appearance")).json() == {"appearance": {**DEFAULTS, "accent": "sage"}}
+    assert (await api.get("/api/appearance")).json()["appearance"] == {**DEFAULTS, "accent": "sage"}
     await api.put("/api/appearance", json={"appearance": {"text_size": "lg"}})
     assert tomllib.loads((d / "appearance.toml").read_text()) == {"accent": "sage", "text_size": "lg"}
 
@@ -79,4 +79,4 @@ async def test_null_puts_a_key_back_to_its_default_and_every_key_null_resets_all
     r = await api.put("/api/appearance", json={"appearance": {k: None for k in DEFAULTS}})
     assert r.json()["appearance"] == DEFAULTS
     assert tomllib.loads(f.read_text()) == {}
-    assert (await api.get("/api/appearance")).json() == {"appearance": DEFAULTS}
+    assert (await api.get("/api/appearance")).json()["appearance"] == DEFAULTS

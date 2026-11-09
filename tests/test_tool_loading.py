@@ -140,8 +140,8 @@ async def test_a_skill_loads_with_its_part_and_note_and_a_big_one_by_name(store,
     cfg = notes_cfg(tmp_path)
     reg = _registry(cfg)
     cid = await conversations.create(store)
-    (cfg.her.notebook / "skills").mkdir(parents=True)
-    (cfg.her.notebook / "skills" / "mac.md").write_text("The Mac sleeps at night.")
+    (cfg.agent.notebook / "skills").mkdir(parents=True)
+    (cfg.agent.notebook / "skills" / "mac.md").write_text("The Mac sleeps at night.")
     meta = reg.skills["skills"]
     out = await meta.load(_ctx(store, cfg, cid), names=["mac", "nope", "mac__x"])
     lines = out.content.split("\n\n")

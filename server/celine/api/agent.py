@@ -1,5 +1,5 @@
-"""The agent (celine/her.py): GET and PUT /api/agent, its portrait. A write reloads `cfg.her` and
-sends `her.changed` on the global feed."""
+"""The agent (celine/agent.py): GET and PUT /api/agent, its portrait. A write reloads `cfg.agent` and
+sends `agent.changed` on the global feed."""
 from __future__ import annotations
 
 import logging
@@ -7,43 +7,43 @@ import logging
 from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import FileResponse
 
-from .. import her
+from .. import agent
 from ..errors import NotFound
 from ..settings import files
 from ..settings.files import Invalid, version
 from ..settings import write
 from .deps import cfg_of, etag, json_body, store_of
-from ..core.event_types import HER_CHANGED
+from ..core.event_types import AGENT_CHANGED
 
 router = APIRouter(prefix="/api")
-log = logging.getLogger("celine.her")
+log = logging.getLogger("celine.agent")
 
 
 async def _changed(request: Request) -> None:
-    await her.refresh(store_of(request), cfg_of(request))
-    store_of(request).emit_global({"type": HER_CHANGED})
+    await agent.refresh(store_of(request), cfg_of(request))
+    store_of(request).emit_global({"type": AGENT_CHANGED})
 
 
 @router.get("/agent")
-async def get_her(request: Request, response: Response) -> dict:
+async def get_agent(request: Request, response: Response) -> dict:
     """The agent's plain fields, persona, talk (null: the shipped one, which is `talk_shipped`),
     voice and `voice_text` (as its History keeps it), its portrait, plus `version`."""
-    out = her.package(cfg_of(request))
+    out = agent.package(cfg_of(request))
     return {**out, "version": etag(response, version(out))}
 
 
 @router.put("/agent")
-async def put_her(request: Request, response: Response,
+async def put_agent(request: Request, response: Response,
                   if_match: str | None = Header(default=None)) -> dict:
     """Any of: name, pronouns, color, persona, talk (null: back to the shipped one),
     voice (settings/voice.py). Checked whole before anything is written."""
     body = await json_body(request)
     async with write.lock():
         cfg = cfg_of(request)
-        files.check_version("her", her.package(cfg), if_match)
-        await her.write(store_of(request), cfg, body)
+        files.check_version("agent", agent.package(cfg), if_match)
+        await agent.write(store_of(request), cfg, body)
         await _changed(request)
-    return await get_her(request, response)
+    return await get_agent(request, response)
 
 
 @router.put("/agent/portrait")
@@ -66,26 +66,26 @@ async def put_portrait(request: Request) -> dict:
         body = await json_body(request, need=("attachment",), allow=("attachment",))
         row = await get(store_of(request), str(body["attachment"]))
         if row is None or row["kind"] != "image":
-            raise NotFound("picture")
+            raise NotFound("image")
         try:
             data = blob_path(cfg_of(request), row["sha256"]).read_bytes()
         except OSError:
-            raise NotFound("picture") from None
+            raise NotFound("image") from None
         field = "attachment"
     try:
-        await her.set_portrait(store_of(request), cfg_of(request), data)
+        await agent.set_portrait(store_of(request), cfg_of(request), data)
     except ValueError as e:
         raise Invalid(field, str(e)) from None
     await _changed(request)
-    return {"portrait": her.portrait_view(cfg_of(request).her)}
+    return {"portrait": agent.portrait_view(cfg_of(request).agent)}
 
 
 @router.delete("/agent/portrait")
 async def delete_portrait(request: Request) -> dict:
     """{deleted}: false when there was none."""
-    if not (cfg_of(request).her and cfg_of(request).her.portrait):
+    if not (cfg_of(request).agent and cfg_of(request).agent.portrait):
         return {"deleted": False}
-    await her.set_portrait(store_of(request), cfg_of(request), None)
+    await agent.set_portrait(store_of(request), cfg_of(request), None)
     await _changed(request)
     return {"deleted": True}
 
@@ -93,7 +93,7 @@ async def delete_portrait(request: Request) -> dict:
 @router.get("/agent/portrait", response_model=None)
 async def get_portrait(request: Request) -> FileResponse | Response:
     """The agent's portrait; 204 when there is none (the web shows its initial)."""
-    got = her.portrait_file(cfg_of(request))
+    got = agent.portrait_file(cfg_of(request))
     if got is None:
         return Response(status_code=204, headers={"Cache-Control": "no-cache"})
     return FileResponse(got[0], media_type=got[1], headers={"Cache-Control": "no-cache"})

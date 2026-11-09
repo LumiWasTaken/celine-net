@@ -1,10 +1,10 @@
-"""Every long text's History: her persona and talk, Bastet's persona and voice, a
-mission's brief, a Routine's prompts, lyrics. Each is named
+"""Every long text's History: the agent's persona and talk, Bastet's persona and voice, a
+mission's brief, a Routine's prompts, lyrics, a text a model reads (Settings, Prompts). Each is named
 `<kind>:<id>[:<field>]` (web/src/lib/texts.ts TextOf). The place that saves a text calls
 `record` in the same write, so History lists every version, newest first, PAGE at a time
 (table text_versions).
 
-`by` is stored as written (`user`, `her`, '' unknown) and shown as the name it stands
+`by` is stored as written (`user`, `agent`, '' unknown) and shown as the name it stands
 for now, so a rename carries."""
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from .core import ids
 
 # Every kind of long text, as `of` names it: the place that saves one calls `record`
 # (tests/test_texts_wired.py checks each kind has such a place).
-KINDS = ("her", "bastet", "routine", "mission", "lyrics")
+KINDS = ("agent", "bastet", "routine", "mission", "lyrics", "prompt")
 PAGE = 50
 CUT = 80                       # the most characters of a sentence a change line quotes
 _SENTENCE = re.compile(r"[^.!?\n]+[.!?]*")
@@ -63,7 +63,7 @@ def change(old: str | None, new: str) -> str:
 
 def record(c: sqlite3.Connection, of: str, text: str, by: str) -> None:
     """Inside a write: `text` is the newest version of `of`, written by `by` ("user" or
-    "her"). The same text as the newest version is not kept twice."""
+    "agent"). The same text as the newest version is not kept twice."""
     last = c.execute("SELECT text FROM text_versions WHERE of=? ORDER BY id DESC LIMIT 1",
                      (of,)).fetchone()
     if last is not None and last[0] == text:
@@ -87,7 +87,7 @@ def who(cfg, by: str) -> str:
     """The name `by` stands for now: the user's or its own."""
     if by == "user":
         return cfg.user
-    return cfg.name if by == "her" else by
+    return cfg.name if by == "agent" else by
 
 
 def _view(cfg, r, full: bool = False) -> dict:
@@ -146,7 +146,7 @@ def about(c, cfg, of: str) -> list[str]:
         return lines
     if kind == "bastet":
         what = {"persona": "who she is", "talk": "how she replies to you on the Intercom",
-                "note": "how she writes her notes to {{username}}"}.get(rest)
+                "note": "how she writes her messages to {{username}}"}.get(rest)
         return [cfg.substitute(f"This is Bastet's text of {what}: Bastet is the guard who "
                                "checks your steps.")] if what else []
     return []

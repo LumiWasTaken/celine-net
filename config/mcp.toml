@@ -17,7 +17,7 @@
 # its results (public, informal, nsfw, sensitive; default sensitive), `sends`, where
 # its writing tools send (public, people, house; default public), and `outside`, when
 # its results are outside text (always, the default, or "shell": only when the command
-# reaches the network or the text is aimed at an AI, as her box's shell).
+# reaches the network or the text is aimed at an AI, as its box's shell).
 
 [servers.discord]
 enabled   = true

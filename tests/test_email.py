@@ -8,6 +8,7 @@ import email.policy
 import re
 import socketserver
 import threading
+from dataclasses import replace
 from email.message import EmailMessage
 
 import imaplib
@@ -16,6 +17,7 @@ import pytest
 from celine import boot
 from celine.skills import ToolContext, mail
 from settings_fixtures import client, make_app, scratch
+from parts_fixtures import ROOM, joined
 
 pytestmark = pytest.mark.anyio
 
@@ -218,7 +220,7 @@ async def test_settings_store_the_password_write_only_and_test_logs_in(api):
     await _setup(api, "wrong")
     t = (await api.post("/api/email/test")).json()
     assert t == {"ok": False, "folders": [], "sentence":
-                 "The mail server at 127.0.0.1 refused the login for carla@example.com: check the password in Settings, Email."}
+                 "The IMAP server at 127.0.0.1 refused the login for carla@example.com: check the password in Settings, Email."}
     bad = await api.put("/api/email", json={"email": {"tls": "none"}})
     assert bad.status_code == 400 and bad.json()["error"]["detail"]["field"] == "email.tls"
 
@@ -288,12 +290,33 @@ async def test_a_long_attachment_in_a_folder_reads_on_by_its_listed_name(api):
                                        "Fri, 02 Oct 2026 18:30:00 +0200", "Hier.",
                                        attach=("scans/liste.txt", long))
     first = (await skill.get_attachment(ctx, "INBOX:3", "scans/liste.txt")).content
-    assert "name='scans/liste.txt', part=2" in first, first[-300:]
+    assert "name='scans/liste.txt', part=2)" in first, first[-300:]
     assert not (await skill.get_attachment(ctx, "INBOX:3", "scans/liste.txt", part=2)).is_error
+    small = replace(ctx, max_output_tokens=ROOM)
+
+    async def attachment(k):
+        return (await skill.get_attachment(small, "INBOX:3", "scans/liste.txt", part=k)).content
+    whole, n = await joined(attachment, "email__get_attachment(id=\"INBOX:3\", "
+                                        "name='scans/liste.txt'")
+    assert n > 1 and whole.split() == long.split(), "the parts joined are its text"
+
+
+async def test_a_long_message_reads_in_parts_that_join_to_its_text(api):
+    skill, ctx = await _ctx(api)
+    long = "\n\n".join(f"Absatz {i}: " + "Pilze und Kastanien " * (i * 11 % 40) for i in range(300))
+    raw = _msg("Anna <anna@example.com>", "Lang", "Fri, 02 Oct 2026 18:30:00 +0200", long)
+    FakeIMAP.box["INBOX"][0][2] = raw
+
+    async def read(k):
+        return (await skill.read(replace(ctx, max_output_tokens=ROOM), "INBOX:3",
+                                 part=k)).content
+    whole, n = await joined(read, "email__read(id=\"INBOX:3\"")
+    assert n > 1 and whole == mail._body(mail._parse(raw)), "the parts joined are its text"
+    assert (await read(1)).startswith("id: INBOX:3")
 
 
 @pytest.mark.parametrize("caps", ["IMAP4rev1 AUTH=PLAIN MOVE UIDPLUS", "IMAP4rev1 AUTH=PLAIN"])
-async def test_she_marks_moves_and_deletes(api, caps):
+async def test_the_agent_marks_moves_and_deletes(api, caps):
     FakeIMAP.caps = caps                  # the second: COPY, then delete, then EXPUNGE
     skill, ctx = await _ctx(api)
     inbox = lambda: {m[0]: m[1] for m in FakeIMAP.box["INBOX"]}   # noqa: E731

@@ -139,14 +139,14 @@ async def run(services, cid: str, name: str, text: str, wait: bool = False) -> d
     store = services.store
     kind = await kind_of(store, cid)
     if kind is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     if kind not in cmd.kinds:
         raise CelineError("bad_request", f"/{cmd.name} works in a chat.", 400)
     if cmd.when == "idle" and await store.read(lambda c: c.execute(
             f"SELECT 1 FROM turns WHERE conversation_id=? AND state IN {LIVE_SQL}",
             (cid,)).fetchone()):
         # the error handler fills in the name (errors.py)
-        raise Busy(f"{{{{name}}}} is still answering. Run /{cmd.name} once the answer is "
+        raise Busy(f"{{{{name}}}} is still writing. Run /{cmd.name} once the reply is "
                    f"done.")
     text = (text or "").strip()
     for a in cmd.args:

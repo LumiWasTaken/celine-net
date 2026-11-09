@@ -178,7 +178,7 @@ async def test_only_non_mutating_calls_of_one_reply_run_concurrently(store, cfg)
 
 
 async def test_the_same_call_with_the_same_result_runs_every_time(store, cfg):
-    """A call she repeats runs again, with tools offered on every step."""
+    """A call the agent repeats runs again, with tools offered on every step."""
     t = T()
     b = Script([_call(i, "t__same", {"q": "pizza"}) for i in range(4)]
                + [[TextDelta("Nothing found."), Done(reason="stop")]])
@@ -208,7 +208,7 @@ async def test_identical_calls_of_one_step_each_run(store, cfg):
     assert (await _tool_results(store))[-2:] == ["nothing found", "nothing found"]
 
 
-async def test_when_her_time_is_up_the_turn_ends_capped(store, cfg):
+async def test_when_its_time_is_up_the_turn_ends_capped(store, cfg):
     """A turn that hits the wall clock mid-search ends with its reason: no hidden note,
     no extra step."""
     cfg.settings.general.update({"turn_wall_clock_seconds": 0.4, "last_step_seconds": 5})
@@ -257,7 +257,7 @@ async def test_a_skill_switched_on_mid_turn_is_callable_at_the_next_step(store, 
     assert await _tool_results(store) == ["on", "u ran"]
 
 
-async def test_a_call_she_is_still_writing_shows_its_name_and_growing_size(store, cfg):
+async def test_a_call_the_agent_is_still_writing_shows_its_name_and_growing_size(store, cfg):
     """tool.forming goes out as the arguments stream: the name, the characters and the
     lines so far (escaped newlines, an escaped backslash before an n is no newline), and
     once more with the last state when the reply ends."""

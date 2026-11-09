@@ -1,7 +1,7 @@
 """The work queue (work.py) and its pause (hold.py): leases, one try, deferral until a
-host is back, and none of her turns claimed while no chat host answers (an agent's
-whose own model answers is). Fixed clocks, fake
-servers."""
+host is back, and none of the agent's turns claimed while no chat host answers (an agent's
+whose own model answers is). Waiting work asks a host known down again (router.revisit)
+once RETRY_DOWN has passed; nothing else asks it. Fixed clocks, fake servers."""
 from __future__ import annotations
 
 import asyncio
@@ -18,11 +18,12 @@ from celine import work
 from fake_backend import FakeBackend
 from celine.core.ids import iso
 from celine.backends.llm import LLM
+from celine.backends import router as router_mod
 from celine.backends.router import NoModel, Router
 from celine.boot import load
 from celine.conversations import store as conversations
 from celine.core.bus import EventBus
-from celine.hold import her_hold
+from celine.hold import agent_hold
 from celine.turns import dispatcher as dispatcher_mod
 from settings_fixtures import scratch
 
@@ -47,7 +48,8 @@ async def _row(store, wid: int) -> dict:
 
 
 def _gateway(tmp_path, monkeypatch, roles, events=None):
-    """An LLM over PROVIDERS whose hosts answer only while `up` says so; pinged."""
+    """An LLM over PROVIDERS whose hosts answer only while `up` says so; `later()` ages
+    what it knows by RETRY_DOWN, so waiting work asks a host again."""
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles=roles)
     cfg = load()
     up = {"gpu": False, "lan": False}
@@ -60,13 +62,11 @@ def _gateway(tmp_path, monkeypatch, roles, events=None):
     publish = events.append if events is not None else None
     router = Router(cfg, publish, transport=t, sync_transport=t)
     llm = LLM(cfg, publish, router=router)
-    router._pinging = True                  # as the app's ping does
 
-    async def ping() -> None:               # the next ping, PING_EVERY later
+    def later() -> None:                    # every state RETRY_DOWN older
         for st in router._providers.values():
-            st.checked -= 3600
-        await router.ping_once()
-    return cfg, llm, up, ping
+            st.checked -= router_mod.RETRY_DOWN
+    return cfg, llm, up, later
 
 
 async def test_no_item_for_a_conversation_purged_meanwhile(store):
@@ -111,10 +111,11 @@ async def test_a_real_error_fails_at_once_with_its_reason(store):
 
 async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
         store, tmp_path, monkeypatch):
-    _, llm, up, ping = _gateway(tmp_path, monkeypatch, {"small": {"chain": ["lan/small"]}})
-    await ping()
-    assert llm.router.hosts()["lan"]["state"] == "down"
-    pool = work.Pool(store, llm, clock=lambda: T0)      # the clock never moves
+    _, llm, up, later = _gateway(tmp_path, monkeypatch, {"small": {"chain": ["lan/small"]}})
+    await llm.router.check_all()
+    assert llm.router.hosts()["lan"] == "down"
+    now = [T0]
+    pool = work.Pool(store, llm, clock=lambda: now[0])
     ran = []
 
     async def job(p):
@@ -126,7 +127,9 @@ async def test_a_job_whose_host_is_down_waits_and_runs_when_the_host_is_back(
         await until(async_state(store, wid, "deferred"))
         assert ran == [], "no call to a host that is down"
         up["lan"] = True
-        await ping()
+        later()
+        now[0] += s(work.DEFER_SECONDS)     # due: its run asks the host again
+        pool.notify()
         await until(async_state(store, wid, "done"))
         assert ran == [{"conversation_id": "c1"}]
         await pool.stop()
@@ -139,20 +142,20 @@ def async_state(store, wid, state):
     return check
 
 
-async def test_with_no_chat_host_she_pauses_and_resumes_by_herself(
+async def test_with_no_chat_host_the_agent_pauses_and_resumes_by_itself(
         store, tmp_path, monkeypatch):
     events: list[dict] = []
-    cfg, llm, up, ping = _gateway(tmp_path, monkeypatch, {
+    cfg, llm, up, later = _gateway(tmp_path, monkeypatch, {
         "chat": {"chain": ["gpu/big"]}, "tasks": {"chain": ["gpu/big"]}}, events)
-    await ping()
-    assert await her_hold(store, llm) == "paused" and llm.router.hold()["state"] == "paused"
-    assert [e["hold"]["state"] for e in events if e["type"] == "her.hold"] == ["paused"]
+    await llm.router.check_all()
+    assert await agent_hold(store, llm) == "paused" and llm.router.hold() == "paused"
+    assert [e["hold"] for e in events if e["type"] == "agent.hold"] == ["paused"]
     looked = []
 
     async def hold(store_, llm_):
         looked.append(1)
-        return await her_hold(store_, llm_)
-    monkeypatch.setattr(dispatcher_mod, "her_hold", hold)
+        return await agent_hold(store_, llm_)
+    monkeypatch.setattr(dispatcher_mod, "agent_hold", hold)
     monkeypatch.setattr(dispatcher_mod, "HOLD_RECHECK", 0.02)
     d = dispatcher_mod.Dispatcher(store, cfg, EventBus(), FakeBackend, None, llm=llm)
     cid = await conversations.create(store)
@@ -168,33 +171,34 @@ async def test_with_no_chat_host_she_pauses_and_resumes_by_herself(
         await until(lambda: len(looked) > n + 5)
         assert await state() == "queued", "no turn is claimed while it is paused"
         up["gpu"] = True
-        await ping()
-        assert await her_hold(store, llm) is None
-        assert [e["hold"] for e in events if e["type"] == "her.hold"][-1] is None
+        later()                             # the held worker asks it again
+        await until(lambda: _done(store, cid))
+        assert await agent_hold(store, llm) is None
+        assert [e["hold"] for e in events if e["type"] == "agent.hold"][-1] is None
         await until(lambda: _done(store, cid))
         await d.stop()
         tg.cancel_scope.cancel()
 
 
-async def test_while_she_is_paused_an_agent_whose_model_answers_runs_and_her_turn_waits(
+async def test_while_the_agent_is_paused_a_sub_agent_whose_model_answers_runs_and_its_turn_waits(
         store, tmp_path, monkeypatch):
-    """Her roles' host is down, an agent's own model's host is up: the agent's turn
-    runs, its report to her waits in the queue and lands when her host is back. An
-    agent on her down host waits with her."""
+    """The main agent's roles' host is down, a sub-agent's own model's host is up: the
+    sub-agent's turn runs, its report to the main agent waits in the queue and lands when
+    that host is back. A sub-agent on the down host waits with it."""
     from celine.intercom import send
     from celine.settings import conversations as conv
-    cfg, llm, up, ping = _gateway(tmp_path, monkeypatch, {
+    cfg, llm, up, later = _gateway(tmp_path, monkeypatch, {
         "chat": {"chain": ["gpu/big"]}, "tasks": {"chain": ["gpu/big"]}}, [])
     up["lan"] = True
-    await ping()
-    assert await her_hold(store, llm) == "paused"
+    await llm.router.check_all()
+    assert await agent_hold(store, llm) == "paused"
     assert llm.router.answering() == {"lan/small"}
     monkeypatch.setattr(dispatcher_mod, "HOLD_RECHECK", 0.02)
     d = dispatcher_mod.Dispatcher(store, cfg, EventBus(), FakeBackend, None, llm=llm)
-    her = await conversations.create(store)
-    agent = await conversations.create(store, title="a", agent_of=her, agent_name="a")
+    main = await conversations.create(store)
+    agent = await conversations.create(store, title="a", agent_of=main, agent_name="a")
     await conv.apply(store, agent, {"model": "lan/small"})
-    stuck = await conversations.create(store, title="b", agent_of=her, agent_name="b")
+    stuck = await conversations.create(store, title="b", agent_of=main, agent_name="b")
     await conv.apply(store, stuck, {"model": "gpu/big"})
 
     async def state(cid):
@@ -206,30 +210,30 @@ async def test_while_she_is_paused_an_agent_whose_model_answers_runs_and_her_tur
         await user_says(store, stuck, "build that")
         d.notify()
         await until(lambda: _done(store, agent))
-        assert (await send(store, f"agent:{agent}", f"agent:{her}", "[a, done]"))["turn_id"]
+        assert (await send(store, f"agent:{agent}", f"agent:{main}", "[a, done]"))["turn_id"]
         d.notify()
-        assert await state(her) == "queued" and await state(stuck) == "queued"
+        assert await state(main) == "queued" and await state(stuck) == "queued"
         up["gpu"] = True
-        await ping()
-        await until(lambda: _done(store, her))
+        later()
+        await until(lambda: _done(store, main))
         await until(lambda: _done(store, stuck))
         await d.stop()
         tg.cancel_scope.cancel()
 
 
 async def test_frozen_wins_over_paused(store, tmp_path, monkeypatch):
-    cfg, llm, up, ping = _gateway(tmp_path, monkeypatch, {
+    cfg, llm, up, later = _gateway(tmp_path, monkeypatch, {
         "chat": {"chain": ["gpu/big"]}, "tasks": {"chain": ["gpu/big"]}}, [])
-    await ping()
-    assert await her_hold(store, llm) == "paused"
+    await llm.router.check_all()
+    assert await agent_hold(store, llm) == "paused"
 
     def froze(c):
         rid = c.execute("INSERT INTO freezes(at, by, why) VALUES("
                         "'2026-10-01T10:00:00.000+00:00', 'user', 'x')").lastrowid
         c.execute("INSERT INTO kv(k, v) VALUES('frozen', ?)", (str(rid),))
     await store.write(froze)
-    assert await her_hold(store, llm) == "frozen"
-    assert await her_hold(store, None) == "frozen"
+    assert await agent_hold(store, llm) == "frozen"
+    assert await agent_hold(store, None) == "frozen"
 
 
 async def _done(store, cid) -> bool:
@@ -247,7 +251,7 @@ async def test_any_answer_from_a_host_means_it_is_up_and_only_a_rejected_key_is_
     assert (await router.probe("lan", max_age=0)).reachable is True
     status["gpu"] = 401
     st = await router.probe("gpu", max_age=0)
-    assert st.reachable is False and "rejected the API key" in st.error
+    assert st.reachable is False and st.error.startswith("llama-swap returned 401")
 
 
 async def test_an_item_of_a_kind_nobody_handles_does_not_wake_the_pool(store):
@@ -288,9 +292,14 @@ class _Raises:
         yield
 
 
+async def _nothing(_roles) -> None:
+    pass
+
+
 def _titler(store, by_role):
     llm = SimpleNamespace(bind=lambda fixed, role, **kw: by_role[role],
-                          router=SimpleNamespace(all_down=lambda roles: False))
+                          router=SimpleNamespace(all_down=lambda roles: False,
+                                                 revisit=_nothing))
     return dispatcher_mod.Dispatcher(store, load(), EventBus(), None, None, llm=llm)
 
 
@@ -318,7 +327,7 @@ async def test_a_title_waits_for_a_host_and_stays_empty_on_an_error(
     assert not await conversations.title(store, cid), "a failure leaves no title"
 
 
-async def test_her_appraisal_is_a_work_item_and_a_stale_one_makes_no_call(
+async def test_the_agents_appraisal_is_a_work_item_and_a_stale_one_makes_no_call(
         store, tmp_path, monkeypatch):
     from celine.skills import mind
     scratch(tmp_path, monkeypatch, providers=PROVIDERS, roles={})
@@ -355,3 +364,37 @@ async def test_a_describe_run_with_no_model_leaves_one_waiting_item(store):
     assert rows == [{"kind": "documents.describe", "state": "deferred",
                      "payload": '{"kb": "docs"}',
                      "not_before": iso(T0 + s(work.DEFER_SECONDS))}]
+
+
+async def test_a_turn_waiting_for_an_answer_takes_no_turn_slot(store):
+    """One turn at once, and that turn waits for the user's answer to a request: the
+    user's own turn in another chat starts beside it."""
+    cfg = load()
+    cfg.settings.general["max_concurrent_turns"] = 1
+    go = anyio.Event()
+
+    class Blocks(FakeBackend):
+        async def stream(self, messages, tools, body=None, model=None):
+            if "wait" in str(messages[-1].get("content")):
+                await go.wait()
+            async for ev in super().stream(messages, tools, body):
+                yield ev
+    asks = SimpleNamespace(waiting={})
+    d = dispatcher_mod.Dispatcher(store, cfg, EventBus(), Blocks, None)
+    d.approvals = asks
+    first, second = await conversations.create(store), await conversations.create(store)
+    async with anyio.create_task_group() as tg:
+        await d.start(tg)
+        await user_says(store, first, "wait for me")
+        d.notify()
+        await until(lambda: len(d._active) == 1)
+        asks.waiting["a"] = SimpleNamespace(expires=None)   # its tool asks the user
+        d.resize()
+        await user_says(store, second, "hello")
+        d.notify()
+        await until(lambda: _done(store, second))
+        assert not await _done(store, first), "still waiting for the answer"
+        go.set()
+        await until(lambda: _done(store, first))
+        await d.stop()
+        tg.cancel_scope.cancel()

@@ -28,7 +28,7 @@
 
 # Celine's uid and gid in its shellbox and its browser, the owner of its home (shellbox/):
 # named here once. Both boxes are built with it, the app gives its home to it.
-x-her-uid: &her-uid "1000"
+x-agent-uid: &agent-uid "1000"
 
 services:
   celine:
@@ -48,7 +48,7 @@ services:
       CELINE_SEARXNG_URL: http://searxng:8080
       CELINE_SHELL_URL: http://shellbox:8770
       CELINE_BROWSER_URL: http://browser:8771
-      HER_UID: *her-uid
+      AGENT_UID: *agent-uid
       TZ: ${TZ:-UTC}
     # the whole volume: at its start (as root, docker-entrypoint in the Dockerfile) the app
     # makes the folders the other services mount and gives its home to its uid, then runs
@@ -76,7 +76,7 @@ services:
       context: .
       dockerfile: shellbox/Dockerfile
       args:
-        HER_UID: *her-uid
+        AGENT_UID: *agent-uid
     image: ${CELINE_IMAGES:-celine}/celine-shellbox:${CELINE_TAG:-latest}
     restart: unless-stopped
     depends_on:
@@ -145,7 +145,7 @@ services:
       context: .
       dockerfile: browser/Dockerfile
       args:
-        HER_UID: *her-uid
+        AGENT_UID: *agent-uid
     image: ${CELINE_IMAGES:-celine}/celine-browser:${CELINE_TAG:-latest}
     restart: unless-stopped
     depends_on:

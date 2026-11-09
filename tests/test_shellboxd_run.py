@@ -102,7 +102,7 @@ def box(tmp_path, monkeypatch):
     sock = Path(f"/tmp/sbx-{os.getpid()}-{id(d)}.sock")
     d.TMUX = ["tmux", "-S", str(sock), "-f", str(ROOT / "shellbox" / "etc" / "tmux.conf")]
     d.MARKER, d.LOGS, d.CMD, d.RC = lib / "started", lib / "logs", lib / "cmd", tmp_path / "run.sh"
-    d.USER, d.HOME, d.AS_HER = getpass.getuser(), home, {}
+    d.USER, d.HOME, d.AS_AGENT = getpass.getuser(), home, {}
     d.ENV = {**d.ENV, "HOME": str(home), "USER": d.USER, "LOGNAME": d.USER}
     d.KEY_HASH = hashlib.sha256(KEY.encode()).hexdigest()
     d.START_WAIT, d.SETTLE, d.TICK, d.WAITING_FOR = 2.0, 0.5, 0.05, 0.3
@@ -148,7 +148,7 @@ def test_a_run_ends_with_its_exit_and_its_output(box):
     assert "cat <<'EOF'" in history and "__shellbox_run" not in history
 
 
-def test_a_bashrc_that_replaces_prompt_command_does_not_hang_her_runs(box):
+def test_a_bashrc_that_replaces_prompt_command_does_not_hang_its_runs(box):
     # it ~/.bashrc of 20 oct: PROMPT_COMMAND="_celine_strikes", the mark gone; at the
     # shell's start and again inside a run (it sources it ~/.bashrc)
     rc = Path(box.d.LAUNCH.split("--rcfile ")[1].split()[0])
@@ -319,7 +319,7 @@ def test_a_background_job_never_holds_the_terminal_and_the_next_run_goes(box):
     box.type(text="kill %1")
 
 
-def test_her_output_stands_on_the_screen_above_her_next_prompt(box):
+def test_the_agents_output_stands_on_the_screen_above_its_next_prompt(box):
     box.run("echo first-line; echo second-line >&2")
     screen = box.type()["screen"].split("\n")
     at = next(i for i, ln in enumerate(screen) if ln == "first-line")
@@ -334,7 +334,7 @@ def test_a_shell_alone_at_its_prompt_is_ended_never_waiting(box):
 
 
 @pytest.mark.parametrize("command", ["read -n1 -p 'go? ' x; echo got", "read -s x"])
-def test_a_read_in_a_run_waits_and_is_never_her_prompt(box, command):
+def test_a_read_in_a_run_waits_and_is_never_its_prompt(box, command):
     # `read -n1` turns canonical mode off and `read -s` echo, as its line editor does
     r = box.run(command)
     assert (r["state"], r["exit"]) == ("waiting", None)

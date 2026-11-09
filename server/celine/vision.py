@@ -117,7 +117,7 @@ async def ask(llm, image: bytes, question: str, answer_as: str, *, conversation_
     except BackendError as e:
         raise Unavailable(str(e)) from None
     raw = "".join(parts)
-    word = raw.strip().strip(" .*\"'`")       # read for the id; she gets raw
+    word = raw.strip().strip(" .*\"'`")       # read for the id; the agent gets raw
     if answer_as == "text":
         value = raw if raw.strip() else None        # the words as the model said them
     elif answer_as == "box":

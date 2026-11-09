@@ -1,30 +1,30 @@
 """The slop finder (turns/slop.py) and its voice's phrases and patterns
-(settings/voice.py, config/her/voice.toml)."""
+(settings/voice.py, config/agent/voice.toml)."""
 from __future__ import annotations
 
 import tomllib
 
 import pytest
 
-from celine.her import BASE
+from celine.agent import BASE
 from celine.settings import voice
 from celine.turns import slop
 
-HERS = voice.validate(tomllib.loads((BASE / "voice.toml").read_text()))
+SHIPPED = voice.validate(tomllib.loads((BASE / "voice.toml").read_text()))
 
 
 def _what(text):
-    return [h["what"] for h in slop.find(text, HERS)]
+    return [h["what"] for h in slop.find(text, SHIPPED)]
 
 
 def test_phrases_match_on_word_boundaries_in_any_case():
-    hits = slop.find("Want me to check? I couldn't help but laugh.", HERS)
+    hits = slop.find("Want me to check? I couldn't help but laugh.", SHIPPED)
     assert [(h["what"], h["kind"], h["start"]) for h in hits] == [
         ("want me to", "phrase", 0), ("couldn't help but", "phrase", 20)]
     assert _what("an example of a sample") == [], "ample inside a word is no hit"
 
 
-def test_patterns_count_her_chatbot_shapes():
+def test_patterns_count_its_chatbot_shapes():
     assert len(_what("It's not the pizza, it's you.")) == 1
     assert len(_what("**Short answer:** yes")) == 1
     assert len(_what("(a) the bar\n(b) the couch")) == 1
@@ -36,10 +36,10 @@ def test_code_and_quotes_are_someone_elses_words():
     assert _what("```\nfeel free to\n```") == []
 
 
-def test_her_words_against_his_give_her_tics():
-    hers = ["honestly that is wild", "honestly no", "honestly fine", "ok"]
+def test_the_agents_words_against_his_give_its_tics():
+    own = ["honestly that is wild", "honestly no", "honestly fine", "ok"]
     theirs = ["ok", "that is fine", "no"]
-    top = slop.profile(hers, theirs)
+    top = slop.profile(own, theirs)
     assert top[0][0] == "honestly" and top[0][1] > 1
     assert all(g != "ok" for g, _ in top), "a word it writes 1 time is not counted"
 
@@ -79,7 +79,7 @@ def test_patterns_count_sales_copy_closers_setups_and_tics(text):
     "end of storyline rewrite",
     "your rules, your call, your",                 # nothing after the third
 ])
-def test_patterns_leave_her_plain_lines_alone(text):
+def test_patterns_leave_its_plain_lines_alone(text):
     assert _what(text) == [], text
 
 
@@ -123,7 +123,7 @@ def test_patterns_count_toppers(text):
     "deal with it later today",
     "i'm not gonna be nice about it if you ask again",
 ])
-def test_toppers_leave_her_short_lines_alone(text):
+def test_toppers_leave_its_short_lines_alone(text):
     assert _what(text) == [], text
 
 
@@ -134,7 +134,7 @@ def test_a_button_after_a_long_sentence_is_counted():
     assert _what("done. all clean.") == []
 
 
-def test_a_phrase_in_quotes_or_code_is_not_hers_and_a_pattern_needs_its_context():
+def test_a_phrase_in_quotes_or_code_is_not_its_own_and_a_pattern_needs_its_context():
     v = {"phrases": ["want me to"], "patterns": [r"\bfriend\b(?=[.,!?])"]}
     got = slop.find('ok friend. Want me to? "want me to" `want me to` friend account', v)
     assert [(h["kind"], h["start"]) for h in got] == [("pattern", 3), ("phrase", 11)], got

@@ -50,8 +50,8 @@ FROZEN_CHANGED = "frozen.changed"
 GUARD_BANNER = "guard.banner"
 GUARD_PASSES = "guard.passes"
 
-HER_CHANGED = "her.changed"
-HER_HOLD = "her.hold"
+AGENT_CHANGED = "agent.changed"
+AGENT_HOLD = "agent.hold"
 
 IMAGES_BATCH = "images.batch"
 IMAGES_NOTICE = "images.notice"
@@ -116,3 +116,5 @@ VERSION_CHANGED = "version.changed"
 ERROR = "error"
 MOOD = "mood"
 NOTICE = "notice"
+
+WAITS_CHANGED = "waits.changed"

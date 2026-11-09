@@ -1,7 +1,7 @@
-"""Her agent templates (sub_agents/templates.py): notes in templates/ in the shape of
+"""The agent's templates (sub_agents/templates.py): notes in templates/ in the shape of
 Claude Code's and opencode's agent files; a sub-agent started from one gets its body as
-the start of a lean system prompt and only its skills. Her own system prompt keeps its
-stable start when she writes an always note (turns/prompt.py system_blocks)."""
+the start of a lean system prompt and only its skills. Its own system prompt keeps its
+stable start when it writes an always note (turns/prompt.py system_blocks)."""
 from __future__ import annotations
 
 import pytest
@@ -58,14 +58,14 @@ async def test_a_sub_agent_from_a_template_gets_its_body_and_only_its_skills(sto
     text = await _prompt(cfg, reg, store, sub)
     assert text.startswith("You look things up on the web.")
     assert "You are scout one, a sub-agent" in text
-    assert cfg.substitute(cfg.her.persona).strip()[:40] not in text
+    assert cfg.substitute(cfg.agent.persona).strip()[:40] not in text
     assert set(await loads.offered(reg, store, sub)) <= {"web", "notebook", *templates.ALWAYS}
     plain = await conversations.create(store, agent_of=chat, agent_name="plain one")
     assert (await _prompt(cfg, reg, store, plain)).startswith("You are plain one, a sub-agent")
     assert "- Web scout: Finds facts on the web and cites them." in templates.listing(cfg)
 
 
-async def test_an_unknown_template_is_refused_with_the_ones_she_has(store):
+async def test_an_unknown_template_is_refused_with_the_ones_the_agent_has(store):
     cfg = load()
     await write_notes(store, cfg, {"templates/scout.md": SCOUT})
     chat = await conversations.create(store, "chat")
@@ -73,7 +73,7 @@ async def test_an_unknown_template_is_refused_with_the_ones_she_has(store):
     assert refusal == "There is no agent template 'nope' in templates/. Yours: Web scout."
 
 
-async def test_her_prompt_is_stable_and_a_note_write_changes_only_its_end(store):
+async def test_the_agents_prompt_is_stable_and_a_note_write_changes_only_its_end(store):
     cfg = load()
     reg = make_app(cfg, store).state.services.registry
     await write_notes(store, cfg, {"style.md": "load: always\n\nShort sentences."})
@@ -129,7 +129,7 @@ async def test_a_note_without_frontmatter_is_named_and_a_path_finds_its_template
     assert ("templates/digger.md is no template: it does not start with a --- "
             "frontmatter.") in refusal.splitlines()
     got = templates.all_templates(cfg)
-    assert (templates.read_note(cfg.her.notebook, "templates/scout.md") or "").startswith(
+    assert (templates.read_note(cfg.agent.notebook, "templates/scout.md") or "").startswith(
         "Last changed:"), "the stamp above the frontmatter is read past"
     for given in ("templates/scout.md", "templates/scout", "scout.md", "web SCOUT"):
         assert templates.pick(got, given).name == "Web scout", given

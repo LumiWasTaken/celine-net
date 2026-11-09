@@ -89,13 +89,13 @@ async def test_the_users_files_are_untouchable_and_a_mark_survives_a_restart(sto
     nb = Notebook(cfg)
     made = await nb.seed(store)
     assert {"identity.md", "opinions/README.md", "appearance/body.md"} <= set(made)
-    (cfg.her.notebook / "appearance/body.md").unlink()
+    (cfg.agent.notebook / "appearance/body.md").unlink()
     assert await nb.seed(store) == [], "a placeholder it deleted stays deleted"
     c = ctx(store, cfg)
     assert (await nb.write(c, "identity.md", "I am nobody", "x")).is_error
-    assert "I am nobody" not in (cfg.her.notebook / "identity.md").read_text()
+    assert "I am nobody" not in (cfg.agent.notebook / "identity.md").read_text()
     assert (await nb.delete(c, "opinions/README.md")).is_error
-    assert (cfg.her.notebook / "opinions/README.md").exists()
+    assert (cfg.agent.notebook / "opinions/README.md").exists()
     await nb.write(c, "opinions/tea.md", "meh", "tea")
     await nb.mark(store, "opinions/tea.md", True)
     assert (await nb.write(c, "opinions/tea.md", "x", "x")).is_error
@@ -110,12 +110,12 @@ async def test_an_overwritten_or_deleted_note_is_kept_for_the_user(store, cfg):
     await nb.write(c, "plans/a.md", "first", "a")
     await nb.write(c, "plans/a.md", "second", "a")
     assert "plans/a.md" in await build_index_fragment(store, cfg), "its index has it"
-    old = list((cfg.her.notebook / ".versions/plans/a.md").iterdir())
+    old = list((cfg.agent.notebook / ".versions/plans/a.md").iterdir())
     assert len(old) == 1 and "first" in old[0].read_text()
     assert not (await nb.delete(c, "plans/a.md")).is_error
-    assert not (cfg.her.notebook / "plans/a.md").exists()
+    assert not (cfg.agent.notebook / "plans/a.md").exists()
     assert [r["path"] for r in await notebook_index.list(store)] == []
-    trashed = list((cfg.her.notebook / ".trash").glob("*/plans/a.md"))
+    trashed = list((cfg.agent.notebook / ".trash").glob("*/plans/a.md"))
     assert len(trashed) == 1 and "second" in trashed[0].read_text(), "the user keeps a copy"
 
 
@@ -137,3 +137,30 @@ def test_a_value_of_another_type_is_named_and_never_converted():
     assert mistyped({"find": "x", "part": 2, "wait": True, "server_id": "1"}, schema) is None
     look = {"properties": {"what": {"type": "string", "enum": ["view", "locate"]}}}
     assert mistyped({"what": "find"}, look) == "what is one of view, locate"
+
+
+async def test_a_call_that_sends_the_apps_shortening_mark_back_is_refused(store, cfg, registry,
+                                                                        tmp_path):
+    import json
+    from celine.turns import compact
+    content = json.loads(compact.short_arguments(json.dumps(
+        {"content": "# notes\n" + "a line of the note that goes on and on\n" * 200}),
+        "t9:0:0"))["content"]
+    cid, events = await _one_call(store, cfg, registry, "notebook__write",
+                                  json.dumps({"path": "copied.md", "summary": "notes",
+                                              "content": content}))
+    assert [e["data"]["state"] for e in events] == ["error"]
+    snap = await view.snapshot(store, cid)
+    result = next(m for m in snap["messages"] if m["role"] == "tool")["content"]
+    assert result.startswith("invalid arguments: content ends in the app's mark for the "
+                             "shortened content of call t9:0:0")
+    assert not (cfg.agent.notebook / "copied.md").exists(), "nothing was written"
+
+
+async def test_a_failed_call_logs_why(store, cfg, registry, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="celine.tools")
+    await _one_call(store, cfg, registry, "notebook__read", '{"nope": 1}')
+    done = [r for r in caplog.records if getattr(r, "event", None) == "tool.done"]
+    assert done and done[-1].state == "error"
+    assert done[-1].reason.startswith("invalid arguments")

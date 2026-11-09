@@ -103,7 +103,7 @@ async def test_history_pages_400_versions_newest_first(c, app):
 async def test_history_search_finds_the_change_or_who_wrote_it(c, app):
     store, cfg = app.state.services.store, app.state.services.cfg
     await write(store, "lore:k", "Miso is a cat.")
-    await write(store, "lore:k", "Miso is a grey cat.", "her")
+    await write(store, "lore:k", "Miso is a grey cat.", "agent")
     await write(store, "lore:k", "Miso is a grey cat. She hates rain.")
     hits = await ok(await c.get("/api/text-versions", params={"of": "lore:k", "q": "GREY"}))
     assert [v["change"] for v in hits["versions"]] == ['Changed the wording of "Miso is a grey cat."']
@@ -119,7 +119,7 @@ def lines(r: httpx.Response) -> list[dict]:
     return [json.loads(line) for line in r.text.splitlines() if line]
 
 
-async def test_ask_streams_her_draft_until_done(c, app):
+async def test_ask_streams_its_draft_until_done(c, app):
     """The draft comes back on the request that asked, nowhere else: what it adds as it
     writes, then the whole draft with done. Nothing goes on the global feed."""
     s = app.state.services

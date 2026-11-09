@@ -53,7 +53,7 @@ REFUSED_MASTER = "The vault refuses the master password"
 NO_COLLECTION = ("The collection in Settings, Vault is not one the agent's account is in: invite and "
                  "confirm that account in the organization and give it that collection")
 NO_COLLECTION_SET = ("No collection in Settings, Vault: the agent's entries live only in a "
-                     "collection the user shares with her")
+                     "collection the user shares with it")
 TWO_COLLECTIONS = ("Two of the agent's collections have the name in Settings, Vault: give its id "
                    "instead")
 REFUSED_KEY = "The vault refuses the client id or the client secret"

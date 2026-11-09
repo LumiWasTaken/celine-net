@@ -1,7 +1,7 @@
 # Built-in skills. `enabled` here is the default for every conversation; the Tools tab of a
 # conversation's side panel changes it for that conversation only.
 #
-# Turning a tool off does not hide it from Celine. It still sees it listed and
+# Turning a tool off does not hide it from the agent. It still sees it listed and
 # is told you turned it off, so it can say so instead of pretending it never
 # existed.
 #

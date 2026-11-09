@@ -1,6 +1,6 @@
-"""All of it in every kind of her turns: her persona, the legend, her talk in the system
+"""All of it in every kind of its turns: its persona and pronouns, the legend, its talk in the system
 prompt of a chat, a mission, a schedule's run and a trigger's task (prompt.system_blocks,
-the one assembly), and her Banned words on every call of her turns (settings/voice.of).
+the one assembly), and its Banned words on every call of its turns (settings/voice.of).
 A sub-agent gets its own lean prompt: who it is, the legend, no persona or talk."""
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ async def _kinds(store) -> dict[str, str]:
     }
 
 
-async def test_every_kind_gets_her_persona_talk_and_legend(store):
+async def test_every_kind_gets_the_agents_persona_talk_and_legend(store):
     cfg = load()
-    cfg.her.talk = "how I talk.\n\n## how I sound\nloud, and emojis when it fits."
+    cfg.agent.talk = "how I talk.\n\n## how I sound\nloud, and emojis when it fits."
     for kind, cid in (await _kinds(store)).items():
         carried = await loads.select(store, cfg, None, cid, None)
         blocks = await system_blocks(cfg, None, store, cid, "", carried)
@@ -38,18 +38,19 @@ async def test_every_kind_gets_her_persona_talk_and_legend(store):
         if kind == "agent":
             assert "How the app marks what it adds" in text
             assert "You have your own taste." not in text
-            assert "how I talk." not in text
+            assert "how I talk." not in text and "Your pronouns" not in text
             continue
         assert text.startswith(f"You are {cfg.name}."), kind
+        assert ("persona", "Your pronouns are she/her.") in blocks, kind
         assert "You have your own taste." in text, kind
         assert "How the app marks what it adds" in text, kind
         assert ("talk", "how I talk.\n\n## how I sound\nloud, and emojis when it fits.") \
             in blocks, kind
 
 
-async def test_her_banned_words_go_with_every_turn_and_the_writer(store):
+async def test_the_agents_banned_words_go_with_every_turn_and_the_writer(store):
     cfg = load()
-    assert voice.of(cfg, "chat") is cfg.her.voice      # its turns, any kind
-    assert voice.of(cfg, "writer") is cfg.her.voice
+    assert voice.of(cfg, "chat") is cfg.agent.voice      # its turns, any kind
+    assert voice.of(cfg, "writer") is cfg.agent.voice
     for role in ("tasks", "small", "vision"):
         assert voice.of(cfg, role) is None, role

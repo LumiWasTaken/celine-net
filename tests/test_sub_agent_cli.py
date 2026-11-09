@@ -144,7 +144,7 @@ async def test_a_stop_presses_ctrl_c_in_its_terminal(cfg, store, box, monkeypatc
     assert box.calls[-1][0] == "/stop"
 
 
-async def test_start_takes_one_of_her_models_and_a_cli(cfg, store, box):
+async def test_start_takes_one_of_its_models_and_a_cli(cfg, store, box):
     app = _services(cfg, store, box)
     agents = app.registry.skills["sub_agents"]
     parent = await conversations.create(store)

@@ -156,7 +156,7 @@ async def test_wait_watches_the_run_already_going(shell, box):
 
 
 async def test_the_users_message_ends_the_wait_and_the_command_keeps_running(shell, box):
-    """The run is typed (its started line), then she waits; the user writes: the wait
+    """The run is typed (its started line), then the agent waits; the user writes: the wait
     ends at once with what it printed so far, read by a short /wait."""
     wrote = anyio.Event()
     opened = anyio.Event()
@@ -292,7 +292,7 @@ async def test_type_stop_and_read_send_what_they_say(shell, box):
     assert out.content == "terminal main ~: at the prompt\nceline@shellbox:~$"
 
 
-async def test_a_screen_tells_once_that_her_last_run_ended(shell, box):
+async def test_a_screen_tells_once_that_its_last_run_ended(shell, box):
     ended = {"id": "k3x9ab", "command": "apt-get install x", "log": "/l", "exit": 0,
              "seconds": 12.0}
     box.answers = [screen(cmd=ended), screen(cmd=ended)]
@@ -395,7 +395,7 @@ def test_the_view_keeps_tmux_questions_from_the_page(monkeypatch, tmp_path):
     assert d.unasked(b"A", b"\x1b[") == (b"\x1b[A", b"")
 
 
-async def test_at_the_cap_she_hears_which_terminal_made_room_or_why_none_did(shell, box):
+async def test_at_the_cap_the_agent_hears_which_terminal_made_room_or_why_none_did(shell, box):
     box.answers.append(ran(terminal="new", opened=True, notes=["made_room:build"]))
     out = await shell.run(ctx(), command="ls", terminal="new")
     assert "so build, the one of yours that waited at its prompt quiet the longest, was " \

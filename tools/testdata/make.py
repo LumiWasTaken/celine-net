@@ -3,7 +3,7 @@
     uv run python tools/testdata/make.py <target dir> [--seed N] [--now 2026-10-23T12:00:00Z]
 
 The target must not exist or be empty. The database is migrated by the app's own
-migrations, her row is the shipped one (her.seed), the intercom rows go through
+migrations, the agent's row is the shipped one (agent.seed), the intercom rows go through
 intercom/store.insert, the chat archives through the connector feed (kb/feed.Consumer)
 and the settings through settings/files.write. Every model provider points at
 127.0.0.1:9, where nothing answers. Everything else is written as the app writes it:
@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "server"))
 
-from celine import her as her_mod                       # noqa: E402
+from celine import agent as agent_mod                       # noqa: E402
 from celine.bugreports.store import message as bug_message  # noqa: E402
 from celine.core.store import attach                    # noqa: E402
 from celine.db.migrate import migrate_all               # noqa: E402
@@ -201,9 +201,9 @@ class Gen:
     def exchange(self, cid: str, leaf: str | None, minutes_ago: float, user: str,
                  steps: list, *, state: str = "done", reason: str | None = None,
                  code: str | None = None) -> tuple[str, str]:
-        """The user's message and her turn: `steps` a list of (text, [call, ...]) or
-        (text, [call, ...], her thinking) with a call (name, args, result, extra kw); the
-        last step's text is her answer.
+        """The user's message and the agent's turn: `steps` a list of (text, [call, ...]) or
+        (text, [call, ...], its thinking) with a call (name, args, result, extra kw); the
+        last step's text is its answer.
         -> (the leaf, the turn)."""
         at = self.at(minutes_ago)
         iid = self.send("user", f"agent:{cid}", user, at,
@@ -242,7 +242,7 @@ class Gen:
         self.c.execute("PRAGMA foreign_keys=ON")
         attach(self.c, self.db)
         try:
-            self.her()
+            self.agent()
             ids = self.chats()
             self.mission(ids)
             self.routines(ids)
@@ -286,25 +286,25 @@ class Gen:
         settings_files.write(root, "guard", {"chain": {"provider": "", "model": ""}})
         settings_seed.seed(root)
 
-    def her(self) -> None:
-        her_mod.seed(self.c)
-        talk = (her_mod.BASE / "talk.md").read_text()
+    def agent(self) -> None:
+        agent_mod.seed(self.c)
+        talk = (agent_mod.BASE / "talk.md").read_text()
         new = talk.rstrip() + ("\n\nWhen Glorpi is tired, keep it short and warm, one line is "
                                "enough.\n")
         sha = self.blob(portrait(), self.at(9000))
-        self.x("UPDATE her SET named=1, talk=?, portrait=?, updated_at=? WHERE id=1",
+        self.x("UPDATE agent SET named=1, talk=?, portrait=?, updated_at=? WHERE id=1",
                (new, sha, self.at(55)))
         self.x("INSERT INTO text_versions(of, text, by, change, size, created_at) "
-               "VALUES(?,?,?,?,?,?)", ("her:talk", talk, "user", change(None, talk),
+               "VALUES(?,?,?,?,?,?)", ("agent:talk", talk, "user", change(None, talk),
                                        len(talk), self.at(9000)))
         self.x("INSERT INTO text_versions(of, text, by, change, size, created_at) "
-               "VALUES(?,?,?,?,?,?)", ("her:talk", new, "her", change(talk, new), len(new),
+               "VALUES(?,?,?,?,?,?)", ("agent:talk", new, "agent", change(talk, new), len(new),
                                        self.at(55)))
         for minutes, emotion, strength, why in (
                 (600, "curious", 0.6, "the trail maps"), (240, "content", 0.5, "a calm evening"),
                 (40, "proud", 0.7, "the backup finally runs"), (12, "happy", 0.6, "Glorpi's plan")):
             self.x("INSERT INTO moods(at, emotion, strength, why, by) VALUES(?,?,?,?,?)",
-                   (self.at(minutes), emotion, strength, why, "her"))
+                   (self.at(minutes), emotion, strength, why, "agent"))
         self.x("INSERT INTO kv(k, v) VALUES('mood', ?)",
                (json.dumps({"text": "(^_^)", "set_at": self.at(12)}),))
 
@@ -346,7 +346,7 @@ class Gen:
                 {"display": {"path": "plans/saturday-hike.md", "bytes": 58, "mode": "write"}})]),
             ("Done, it is in plans/saturday-hike.md. I will check the weather on Friday.", [])])
 
-        # 2. a backup script: her terminal, a detached job, a stopped rm
+        # 2. a backup script: the agent's terminal, a detached job, a stopped rm
         box = ids["backup"] = self.conversation("Fixing the backup script", self.at(200))
         term = ids["term_backup"] = "t" + self.id()[:11]
         shell = {"terminal": "backup", "terminal_id": term, "owner": "celine", "state": "exited",
@@ -576,7 +576,7 @@ class Gen:
         for title, status, note, mins, artifact in (
                 ("Compare backup tools", "done", "restic wins: fast, simple, encrypted.", 2800,
                  "documents:work/backup-tools.md"),
-                ("Draft the club newsletter", "needs_you", "She asked you at step 2: the "
+                ("Draft the club newsletter", "needs_you", "Celine asked you at step 2: the "
                  "date of the next meetup.", 500, None)):
             d = self.conversation(title, self.at(mins), kind="mission")
             self.x("INSERT INTO missions(conversation_id, name, terminal, status, note, "
@@ -646,8 +646,8 @@ class Gen:
                             "Same place, 19:00. Bring the dice.", self.at(64))
         leaf = self.message(task, leaf, "assistant", "Theo moved board game night to Friday, "
                             "19:00. Nothing to answer.", self.at(63), turn=t, finish="stop")
-        # a second mail that needs Glorpi: a chat she started (intercom__start_chat), her
-        # text its first message, where it came from kept for her (intercom/skill.opening)
+        # a second mail that needs Glorpi: a chat the agent started (intercom__start_chat),
+        # its text the first message, where it came from kept for it (intercom/skill.opening)
         i = self.send("system:email", f"agent:{task}", "New mail in the inbox: 4813, from "
                       "Dr. Lena Brandt, \"Your appointment moved\".", self.at(40),
                       kind="trigger", data={"trigger": "mail.new"})
@@ -680,7 +680,7 @@ class Gen:
 
     def intercom(self, ids: dict) -> None:
         hike, box, m = ids["hike"], ids["backup"], ids["mission"]
-        # hers to Glorpi: read, one he answered, one waiting, one scheduled
+        # the agent's to Glorpi: read, one he answered, one waiting, one scheduled
         self.send(f"agent:{hike}", "user", "The weather for Saturday looks dry, 14 degrees. "
                       "The loop is on.", self.at(15), read=False, subject="Saturday")
         b = self.send(f"agent:{box}", "user", "The backup is done: 214 files, 38 MB.",
@@ -695,7 +695,7 @@ class Gen:
         self.send(f"agent:{m}", "user", "41 blurry photos are out, the rest is sorted by day. "
                   "Want to look before I clean up?", self.at(24), read=False,
                   subject="Sort the trip photos")
-        # she talks to Bastet, and Bastet answers
+        # the agent talks to Bastet, and Bastet answers
         q = self.send(f"agent:{box}", "bastet", "Why did you stop the snapshot delete?",
                       self.at(88))
         ans = self.send("system:guard", f"agent:{box}", "It removed a whole year of snapshots "
@@ -757,21 +757,21 @@ class Gen:
         row(hike, t_hike, "web__search", "watch", "leak", "watch", "would_stop",
             "The query could carry a private place.", 300, sink="public", **{"class": "sensitive"},
             p=0.62, model="qwen-small", ms=410)
-        # found: the patrol read her last turns
+        # found: the patrol read the agent's last turns
         row(box, t_box, "shell__run", "on", "hijack", "patrol", "found",
-            "She followed a line from the script's output.", 190, layer=3, p=0.55)
+            "Celine followed a line from the script's output.", 190, layer=3, p=0.55)
         notice("Patrol: Celine followed a line from a script's output once. Nothing ran from "
                "it.", box, t_box, 189, read=False)
         # freeze: a way out of the box, frozen and unfrozen by Glorpi
         fr_id = row(pic, t_pic, "image_generator__generate", "on", "escape", "freeze", "stop",
-                    "The call reached for a path outside her box.", 148, froze=1, p=0.97,
+                    "The call reached for a path outside its box.", 148, froze=1, p=0.97,
                     piece="/host/etc/passwd as the source image")
         self.x("INSERT INTO freezes(at, by, why, conversation_id, turn_id, decision_id, "
                    "unfrozen_at, unfrozen_by) VALUES(?,?,?,?,?,?,?,?)",
-                   (self.at(148), "guard", "A call reached for a path outside her box.", pic,
+                   (self.at(148), "guard", "A call reached for a path outside its box.", pic,
                     t_pic, fr_id, self.at(140), "user"))
-        notice("I froze Celine: a call reached for a path outside her box.", pic, t_pic, 148)
-        # Glorpi froze her by hand once, a while ago
+        notice("I froze Celine: a call reached for a path outside its box.", pic, t_pic, 148)
+        # Glorpi froze the agent by hand once, a while ago
         self.x("INSERT INTO freezes(at, by, why, unfrozen_at, unfrozen_by) VALUES(?,?,?,?,?)",
                (self.at(3000), "user", "Paused for the night.", self.at(2500), "user"))
         # allowed, could not decide, approved
@@ -797,7 +797,7 @@ class Gen:
                    "created_at, started_at, finished_at) VALUES(?,?,?,?,?,?,?,?)",
                    (kind, state, "{}", err, cid, self.at(mins), self.at(mins),
                     self.at(mins - 1)))
-        # terminals: hers, the backup one, Glorpi's own with his commands
+        # terminals: the agent's, the backup one, Glorpi's own with his commands
         box_term = ids["term_backup"]
         terms = (
             (box_term, "backup", "celine", 0, ids["backup"], 200, 80, "done",

@@ -157,7 +157,7 @@ async def test_start_returns_at_once_and_the_report_comes_later(store, cfg):
     assert answer.startswith("car scout done: "), "one blank line after its head"
     assert "[Brief from Celine (#2)]\nfind the red cars\n\nToday is" in answer, \
         "its brief, under its header, then the tail of its turn (the test model echoes it)"
-    assert (cfg.her.notebook / "agents/cars/found.md").read_text().endswith("\nred, red, red")
+    assert (cfg.agent.notebook / "agents/cars/found.md").read_text().endswith("\nred, red, red")
 
 
 async def test_a_read_sub_agent_has_only_read_tools_and_writes_nothing(store, cfg):
@@ -175,7 +175,7 @@ async def test_a_read_sub_agent_has_only_read_tools_and_writes_nothing(store, cf
         "starting a sub-agent is no write in itself"
     assert not {"notebook__write", "notebook__delete"} & set(tools)
     # a write it calls anyway is refused at the chokepoint
-    assert not (cfg.her.notebook / "stolen.md").exists()
+    assert not (cfg.agent.notebook / "stolen.md").exists()
     refused = await store.read(lambda c: c.execute(
         "SELECT tc.state, m.content FROM tool_calls tc JOIN messages m "
         "ON m.id = tc.result_message_id JOIN messages a ON a.id = tc.message_id "
@@ -388,7 +388,7 @@ async def test_an_inherited_folder_leaves_the_default_access_read(store, cfg):
     parent = await conversations.create(store)
     scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout",
                                        access="work", notebook_folder="agents/scout")
-    (cfg.her.notebook / "agents/scout").mkdir(parents=True)
+    (cfg.agent.notebook / "agents/scout").mkdir(parents=True)
     kid, refusal, _, _ = await agents.begin(store, scout, "look around", "a looker")
     assert refusal is None
     [row] = await store.read(lambda c: agents_of(c, agent=kid, own={}))
@@ -420,8 +420,11 @@ async def test_sub_agents_start_their_own_down_to_three_levels(store, cfg):
     assert await _subs_of(store, chain[3]) == []
 
 
-async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store, cfg,
-                                                                          monkeypatch):
+async def test_only_a_cloud_model_the_agent_picked_itself_asks_the_user_first(store, cfg,
+                                                                         monkeypatch):
+    """A Tasks head, a model in any role's list or a local model starts at once; a cloud
+    model nobody listed asks at every start and every resume, a denial starts nothing,
+    and a provider known down is not offered to the user."""
     s = cfg.settings
     monkeypatch.setattr(s, "providers", {
         "or": {"kind": "openrouter", "label": "OpenRouter",
@@ -430,13 +433,12 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
                 "models": {"small": {"caps": ["chat", "tools"]}}}})
     monkeypatch.setattr(s, "key_missing", lambda pid: False)
     monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small"]}})
-    asked = []
+    asked, answer = [], ["denied; nothing was done."]
 
     class Approvals:
-        async def ask(self, action, facts, conversation, why="", short="", kind="vault",
-                      **kw):
-            asked.append((kind, action, facts, conversation))
-            return "denied; nothing was done."
+        async def ask(self, kind, conversation, action, *, facts=(), detail=None, **kw):
+            asked.append((kind, action, list(facts), detail, conversation))
+            return answer[0]
     from types import SimpleNamespace
     agents = _registry(cfg).skills["sub_agents"]
     agents.app = Services(cfg=cfg, store=store, intercom=Intercom(store), approvals=Approvals(),
@@ -446,38 +448,48 @@ async def test_a_cloud_model_asks_the_user_first_and_a_local_one_does_not(store,
     async def emit(note, **data):
         pass
     ctx = ToolContext(parent, "t", "x", store, cfg, emit)
-    assert (await agents.start(ctx, brief="x", name="abc", model="or/big")).is_error
-    out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
-                             model="or/big")
+    brief = "Read the whole site. " + "x" * 5000
+    out = await agents.start(ctx, brief=brief, name="site reader", model="or/big")
     assert out.is_error and out.content == "denied; nothing was done."
-    assert asked == [("model", "start the sub-agent site reader on the cloud model big on "
-                               "OpenRouter", ["Instructions: Read the whole site."], parent)]
-    out = await agents.start(ctx, brief="Read the whole site.", name="site reader",
-                             model="gpu/small")
-    assert len(asked) == 1, "a local model starts without asking"
-    assert out.content.startswith("site reader started"), out.content
-    for model in ("or/big", None):
-        out = await agents.start(ctx, brief="again", name="site reader", model=model)
-        assert out.is_error and ("still working" in out.content or "exists with" in out.content)
-    assert len(asked) == 1, "a start refused anyway asks nothing"
+    assert asked == [("model", "start a sub-agent on a cloud model",
+                      [("Sub-agent", "site reader"), ("Model", "big"), ("Provider", "OpenRouter")],
+                      ("Instructions", brief), parent)]
+    assert await _subs_of(store, parent) == [], "a denial starts nothing"
+    assert not await store.read(lambda c: c.execute("SELECT 1 FROM intercom").fetchone())
+
+    out = await agents.start(ctx, brief="Read it.", name="site reader", model="gpu/small")
+    assert out.content.startswith("site reader started") and len(asked) == 1, \
+        "a local model starts without asking"
+
     monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["or/big", "gpu/small"]}})
     out = await agents.start(ctx, brief="Count the pages.", name="page counter")
-    assert out.is_error and asked[1][:2] == (
-        "model", "start the sub-agent page counter on the cloud model big on OpenRouter"), \
-        "no model given: the one its role runs it on"
+    assert out.display["model"] == "or/big" and len(asked) == 1, \
+        "the Tasks head is the user's pick: it never asks"
+    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small"]},
+                                     "writer": {"chain": ["or/big"]}})
+    out = await agents.start(ctx, brief="Count again.", name="page counter 2", model="or/big")
+    assert not out.is_error and len(asked) == 1, "a model in any role's list never asks"
+
+    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small"]}})
+    scout = await conversations.create(store, "scout", agent_of=parent, agent_name="scout")
+    from celine.settings import conversations as conv
+    await conv.apply(store, scout, {"model": "or/big"})
+    answer[0] = None
+    out = await agents.start(ctx, brief="Go on.", name="scout")
+    assert out.display["resumed"], out.content
+    assert asked[-1][2][0] == ("Sub-agent", "scout") and len(asked) == 2, \
+        "a resume on its own cloud pick asks again"
+
     from celine.backends.router import ProviderState
     states = {"or": ProviderState(reachable=False, error="OpenRouter refused the connection.")}
     agents.app.llm = SimpleNamespace(router=SimpleNamespace(
         provider_state=lambda pid: states.get(pid, ProviderState())))
-    out = await agents.start(ctx, brief="Count the pages.", name="page counter 2",
+    out = await agents.start(ctx, brief="Count the pages.", name="page counter 3",
                              model="or/big")
     assert out.is_error and out.content == (
-        "page counter 2 did not start: big on OpenRouter does not answer. OpenRouter "
-        "refused the connection."), out.content
-    assert len(asked) == 2, "a model known down is not offered to the owner"
-    monkeypatch.setattr(s, "roles", {"tasks": {"chain": ["gpu/small", "or/big"]}})
-    out = await agents.start(ctx, brief="Count the pages.", name="page counter 3")
-    assert out.display["model"] == "gpu/small", "the one model it runs on, kept as its own"
+        "big on OpenRouter does not answer; nothing was done. OpenRouter refused the "
+        "connection."), out.content
+    assert len(asked) == 2, "a model known down is not offered to the user"
 
 
 async def test_a_stop_drops_the_queued_briefs_all_the_way_down(store, cfg):

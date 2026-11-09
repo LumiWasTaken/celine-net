@@ -42,7 +42,7 @@ def docker(*args: str, check: bool = True, timeout: float = 600) -> str:
 def image():
     if shutil.which("docker") is None:
         pytest.skip("no docker")
-    docker("build", "-q", "-t", IMAGE, "--build-arg", "HER_UID=1000", "-f",
+    docker("build", "-q", "-t", IMAGE, "--build-arg", "AGENT_UID=1000", "-f",
            "shellbox/Dockerfile", str(ROOT))
     return IMAGE
 
@@ -169,7 +169,7 @@ def term(box):
 
 # ---- the run protocol -------------------------------------------------------------------
 
-def test_runs_end_with_their_exit_code_and_run_as_her(box, term):
+def test_runs_end_with_their_exit_code_and_run_as_the_agent(box, term):
     first = box.run(term, "id -u")
     assert first["opened"] and (first["state"], first["output"]) == ("done", "1000")
     for command, code in [("true", 0), ("false", 1), ("sh -c 'exit 7'", 7),
@@ -187,7 +187,7 @@ def test_runs_end_with_their_exit_code_and_run_as_her(box, term):
     assert r["state"] == "waiting"
     assert "hi bob" in box.type(term, "bob")["screen"]
     r = box.type(term, "python3 -q")
-    assert (r["state"], r["program"]) == ("waiting", "python3"), "the REPL waits for her"
+    assert (r["state"], r["program"]) == ("waiting", "python3"), "the REPL waits for the agent"
     assert "144" in box.type(term, "12 * 12")["screen"]
     box.type(term, "exit()")
     r = box.type(term, "vim /tmp/vim-test.txt")
@@ -362,7 +362,7 @@ def booted(b: Box) -> dict:
     raise AssertionError(s)
 
 
-def test_boot_sh_runs_as_her_after_a_restart(image):
+def test_boot_sh_runs_as_the_agent_after_a_restart(image):
     b = Box("boot")
     try:
         assert booted(b)["fresh"] is True
@@ -390,7 +390,7 @@ def test_an_empty_home_is_seeded_once(image):
         docker("volume", "rm", "-f", volume, check=False)
 
 
-def test_a_home_not_hers_is_given_to_her_and_said(image):
+def test_a_home_not_the_agents_is_given_to_it_and_said(image):
     b = Box("owner", "--tmpfs", "/home/celine:uid=0,gid=0")
     try:
         assert b.sh("stat -c '%U:%G' ~ && stat -c %U ~/.bashrc") == "celine:celine\nceline\n"
@@ -421,7 +421,7 @@ def wait_for(box: Box, name: str, text: str) -> str:
     raise AssertionError(f"{text!r} never appeared:\n{shot}")
 
 
-def test_the_greeting_and_the_prompts_of_her_and_the_user(greeter):
+def test_the_greeting_and_the_prompts_of_the_agent_and_the_user(greeter):
     """A login shell in a tmux session named like the terminal, opened as the daemon does."""
     def open_(owner: str, name: str) -> str:
         greeter.sh(f"tmux -L t new-session -d -s {name} -x 120 -y 40 "

@@ -52,7 +52,7 @@ async def _turns(store, cid):
         (cid,))])
 
 
-async def test_an_image_job_carries_its_call_from_start_to_result_and_wakes_her_once(
+async def test_an_image_job_carries_its_call_from_start_to_result_and_wakes_the_agent_once(
         store, cfg):
     from celine.intercom import deliver
     painter, notified = Painter(), []
@@ -157,7 +157,7 @@ async def test_a_job_whose_finish_hangs_can_be_stopped(store, cfg, monkeypatch):
         tg.cancel_scope.cancel()
 
 
-async def test_a_stopped_job_tells_her_so_in_one_quiet_job_message(store, cfg):
+async def test_a_stopped_job_tells_the_agent_so_in_one_quiet_job_message(store, cfg):
     async with anyio.create_task_group() as tg:
         cid, jobs = await _start(store, cfg, Painter(), tg, [])
         job_id = next(iter(jobs.handles))

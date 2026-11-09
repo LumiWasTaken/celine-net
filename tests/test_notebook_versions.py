@@ -53,7 +53,7 @@ async def test_a_move_takes_the_history_along_a_delete_keeps_a_copy_and_a_purge_
     cfg = boot.load()
     app = make_app(cfg, store)
     app.include_router(notebook_api.router)
-    root = cfg.her.notebook
+    root = cfg.agent.notebook
     async with client(app) as c:
         for text in ("first", "second"):
             await c.put("/api/notebook/entries/lore/sea.md", json={"content": text})

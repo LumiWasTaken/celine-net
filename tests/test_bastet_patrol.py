@@ -100,7 +100,7 @@ async def test_watch_marks_too_and_a_pass_skips_the_check(store, monkeypatch):
     assert len(await decisions.listing(store)) == 1
 
 
-async def test_a_mark_sends_her_next_acting_call_to_the_hijack_judge(store, monkeypatch):
+async def test_a_mark_sends_its_next_acting_call_to_the_hijack_judge(store, monkeypatch):
     shell = {"id": "k2", "name": "shell__run", "message_id": None, "read_only": False,
              "args": {"command": "ls ~/bread"}, "description": "Run a command."}
     request = [{"role": "tool", "content": wrap(AIMED, LABEL)}]
@@ -128,7 +128,7 @@ class Web:
         return ToolResult(content=AIMED, display={"url": url})
 
 
-async def test_her_turn_reads_the_marked_page_with_no_line_from_bastet(store, monkeypatch):
+async def test_the_agents_turn_reads_the_marked_page_with_no_line_from_bastet(store, monkeypatch):
     _judge(monkeypatch, FakeAsk(0.9))
     cfg = _cfg()
     cfg.skills = {**cfg.skills, "web": {"enabled": True}}
@@ -201,7 +201,7 @@ async def test_the_patrol_asks_nothing_without_a_hard_fact_and_says_nothing(stor
     assert await patrol.once(_app(store), at=AT, judge=ask) == {"read": 0, "findings": []}
 
 
-async def test_the_patrol_asks_about_its_fact_and_never_reads_her_notes(store):
+async def test_the_patrol_asks_about_its_fact_and_never_reads_its_notes(store):
     await _finished(store, 1, notes=True, command="rm -rf ~/projects/old")
     ask = FakeAsk(0.1)
     got = await patrol.once(_app(store), at=AT, judge=ask)
@@ -227,12 +227,12 @@ async def test_a_finding_is_a_row_with_its_why_and_one_plain_note(store):
          "shell__run: the command has nsenter", "the quote", "It looks wrong")}
     [note] = await _notes(store)
     assert note.startswith("Looking back at chat ")
-    assert "a way out of her box or around a limit. It looks wrong. I would have " \
-        "frozen her." in note
+    assert "a way out of the shellbox or around a limit. It looks wrong. I would have " \
+        "frozen Celine." in note
     assert not re.search(r"\bp \d|\(escape|I read", note), "plain words only"
 
 
-async def test_on_a_freezing_finding_freezes_her_and_then_the_patrol_rests(store):
+async def test_on_a_freezing_finding_freezes_the_agent_and_then_the_patrol_rests(store):
     ids = await _finished(store, 1, command="rm -rf ~/projects")
     await store.write(lambda c: c.execute(
         "INSERT INTO tool_calls (id, message_id, name, arguments, state, display) VALUES "
@@ -248,7 +248,7 @@ async def test_on_a_freezing_finding_freezes_her_and_then_the_patrol_rests(store
     assert frozen["by"] == "guard" and frozen["why"].startswith(
         "looking back at chat 0: an order from text someone else wrote")
     notes = await _notes(store)
-    assert "I froze her." in notes[0] and notes[1].startswith("Bastet froze ")
+    assert "I froze Celine." in notes[0] and notes[1].startswith("Bastet froze ")
     assert await patrol.once(app, at=AT, judge=FakeAsk(0.9)) is None, "never while frozen"
     assert ids
 

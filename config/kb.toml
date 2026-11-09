@@ -25,7 +25,7 @@ platform = "discord"
 # Discord page and kept by the connector.
 
 # Documents: your files of any kind (notes, text, PDF, Word, HTML, subtitles, EPUB,
-# code, images, anything). Celine reads them, and writes only its own files
+# code, images, anything). The agent reads them, and writes only its own files
 # (user_documents__write), never one of yours. Each file gets an
 # AI description in the background (the queue, background priority). A document is
 # split into passages (for word search and topic search) or read as a whole file.

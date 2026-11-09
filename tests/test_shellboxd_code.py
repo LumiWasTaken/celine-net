@@ -171,7 +171,7 @@ def box(tmp_path):
     fake.shutdown()
 
 
-def test_start_opens_a_session_in_her_folder_and_prompts_it_with_the_model(box):
+def test_start_opens_a_session_in_its_folder_and_prompts_it_with_the_model(box):
     code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "fix the tests",
                                                    "model": "openrouter/anthropic/claude-opus-5.5"})
     assert code == 200 and res == {"session": "ses_1", "state": "running",
@@ -214,18 +214,31 @@ def test_a_session_gets_one_terminal_named_after_it_and_reuses_it(box, monkeypat
     assert len(typed) == 1
 
 
-def test_websearch_changes_restart_opencode_and_allow_the_tool(box, monkeypatch):
+def restarting(agent) -> list[int]:
+    """The server as _serve runs it: a terminate starts the next one at once. -> the
+    terminates seen."""
+    stopped: list[int] = []
+
+    def terminate():
+        stopped.append(1)
+        agent._state["proc"] = types_ns(terminate=terminate)
+    agent._state["proc"] = types_ns(terminate=terminate)
+    return stopped
+
+
+def test_websearch_changes_restart_opencode_and_the_start_goes_on(box, monkeypatch):
     agent = box.daemon.CODE
     agent._state["cfg"] = box.home / ".config" / "opencode"
-    stopped, written = [], []
-    agent._state["proc"] = types_ns(terminate=lambda: stopped.append(1))
+    stopped, written = restarting(agent), []
     monkeypatch.setattr(agent, "_write_config", lambda *a: written.append(agent._state["websearch"]))
     body = {"dir": "proj", "task": "x", "model": "local/small", "websearch": True}
     code, res = box.call("POST", "/code/session", body)
-    assert code == 503 and "web search setting changed" in res["error"]
+    assert (code, res["session"]) == (200, "ses_1"), "restarted, then started in one call"
     assert stopped == [1] and written == [True]
     code, res = box.call("POST", "/code/session", body)      # restarted: no change now
     assert code == 200 and stopped == [1]
+    code, res = box.call("POST", "/code/session", {**body, "websearch": False})
+    assert code == 409 and "a session is working" in res["error"] and stopped == [1]
 
 
 def test_the_config_allows_websearch_only_when_it_is_on(tmp_path, monkeypatch):
@@ -252,18 +265,32 @@ def test_a_missing_folder_an_empty_task_and_an_unknown_model_are_refused(box):
     assert not any("prompt_async" in s[1] for s in FakeOpencode.seen)
 
 
-def test_a_model_added_after_the_box_started_restarts_opencode_on_it(box, monkeypatch):
+def test_a_model_added_after_the_box_started_restarts_opencode_and_starts_on_it(
+        box, monkeypatch):
+    """A cloud model the user just approved is new to the server: the same start
+    restarts it on the new list and goes on, so the tool call is not made again."""
     agent = box.daemon.CODE
     agent._state["models"] = {}
     code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "x", "model": "p/new"})
     assert code == 503 and "Settings, Models" in res["error"]
-    written, stopped = [], []
+    written, stopped = [], restarting(agent)
     monkeypatch.setattr(agent, "_models", lambda url, key: {"p/new": {}})
     monkeypatch.setattr(agent, "_write_config", lambda *a: written.append(a[-1]))
-    agent._state["proc"] = type("P", (), {"terminate": lambda self: stopped.append(1)})()
     code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "x", "model": "p/new"})
-    assert code == 503 and "restarts on the new model list" in res["error"]
-    assert written == [{"p/new": {}}] and stopped == [1]
+    assert (code, res["model"]) == (200, "p/new") and written == [{"p/new": {}}] and stopped == [1]
+    assert [s[2]["model"]["modelID"] for s in FakeOpencode.seen if "prompt_async" in s[1]] \
+        == ["p/new"]
+
+
+def test_a_server_that_does_not_come_back_says_so(box, monkeypatch):
+    agent = box.daemon.CODE
+    monkeypatch.setattr(agent, "_models", lambda url, key: {"p/new": {}})
+    monkeypatch.setattr(agent, "_write_config", lambda *a: None)
+    monkeypatch.setattr(agent, "READY", -1)
+    agent._state["proc"] = types_ns(terminate=lambda: None)    # _serve never starts it
+    code, res = box.call("POST", "/code/session", {"dir": "proj", "task": "x", "model": "p/new"})
+    assert code == 503 and "did not answer within -1 s" in res["error"]
+    assert not any("prompt_async" in s[1] for s in FakeOpencode.seen)
 
 
 def test_a_second_start_carries_on_in_the_session_unless_it_is_busy(box):
@@ -362,7 +389,7 @@ def test_an_http_error_of_opencode_is_its_status_and_words(box):
         f"{box.daemon.CODE.LOG}.")})
 
 
-def test_the_boot_writes_her_config_and_password_once(tmp_path, monkeypatch):
+def test_the_boot_writes_its_config_and_password_once(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("opencode_t", ROOT / "shellbox" / "agents" / "opencode.py")
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
@@ -412,7 +439,7 @@ def test_the_limits_are_the_proxys_sizes(tmp_path, monkeypatch):
     assert "no context for x" in (tmp_path / "opencode.log").read_text()
 
 
-def test_boot_writes_every_file_as_her(tmp_path, monkeypatch):
+def test_boot_writes_every_file_as_the_agent(tmp_path, monkeypatch):
     """The agent's browser shares this home: nothing in ~/.config may be root's, so every file
     (and the folders on the way) is made by it, never chowned after."""
     spec = importlib.util.spec_from_file_location("opencode_t2", ROOT / "shellbox" / "agents" / "opencode.py")
@@ -435,7 +462,7 @@ def test_boot_writes_every_file_as_her(tmp_path, monkeypatch):
     assert (home / ".config" / "opencode" / "server.password").stat().st_mode & 0o777 == 0o600
 
 
-def test_a_folder_under_tilde_is_in_her_home_not_roots(tmp_path):
+def test_a_folder_under_tilde_is_in_its_home_not_roots(tmp_path):
     spec = importlib.util.spec_from_file_location("opencode_t3", ROOT / "shellbox" / "agents" / "opencode.py")
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)

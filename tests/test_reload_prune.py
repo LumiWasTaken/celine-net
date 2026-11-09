@@ -96,7 +96,7 @@ async def test_the_logs_are_pruned_on_a_timer_not_at_a_turns_end(store, monkeypa
     assert (await view.resume(store, cid, after_seq=5)).get("resync") == "history_trimmed"
 
 
-async def test_a_reload_keeps_what_the_shell_told_her_and_moves_the_clock(store, monkeypatch):
+async def test_a_reload_keeps_what_the_shell_told_the_agent_and_moves_the_clock(store, monkeypatch):
     cfg = load()
     app = Services(cfg=cfg, store=store)
     app.registry = build_registry(app)

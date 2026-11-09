@@ -62,32 +62,32 @@ async def body_of(llm, role, cid=None, **kw):
     return Rec.bodies[-1]
 
 
-async def test_the_shipped_list_loads_and_is_hers(tmp_path, monkeypatch, store):
+async def test_the_shipped_list_loads_and_is_its_own(tmp_path, monkeypatch, store):
     shipped = voice.validate(tomllib.loads(
-        (config_mod.CONFIG_DIR / "her" / "voice.toml").read_text()))
+        (config_mod.CONFIG_DIR / "agent" / "voice.toml").read_text()))
     assert shipped["on"] and shipped["bias"] == -8.0
     assert {" delve", " leverage", " Moreover", " nestled"} <= set(shipped["banned"])
     var = scratch(tmp_path, monkeypatch)
     cfg = boot.load()
-    assert cfg.her.voice == shipped
+    assert cfg.agent.voice == shipped
     assert not (var / "settings" / "voice.toml").exists(), "no voice in var/settings"
-    from celine import her
-    await her.write(store, cfg, {"voice": {"banned": [" utilize"]}})
-    assert boot.load().her.voice["banned"] == [" utilize"], "never copied again"
+    from celine import agent
+    await agent.write(store, cfg, {"voice": {"banned": [" utilize"]}})
+    assert boot.load().agent.voice["banned"] == [" utilize"], "never copied again"
 
 
-async def test_a_chat_call_on_tabby_carries_her_phrases_and_bans_as_banned_strings(llm):
-    voice = llm.cfg.her.voice
+async def test_a_chat_call_on_tabby_carries_its_phrases_and_bans_as_banned_strings(llm):
+    voice = llm.cfg.agent.voice
     assert voice["banned"][:2] == ["\u2014", "\u2013"], "the dashes are on the list"
     body = await body_of(llm, "chat", "c1")
     assert body["banned_strings"] == [*voice["phrases"], *voice["banned"]]
     assert "logit_bias" not in body
 
 
-async def test_a_chat_call_on_llama_server_carries_her_bans_as_logit_bias(llm):
+async def test_a_chat_call_on_llama_server_carries_its_bans_as_logit_bias(llm):
     llm.cfg.settings.roles["chat"] = {"chain": ["lan/small"]}
     body = await body_of(llm, "chat", "c1")
-    assert body["logit_bias"] == [[b, -8.0] for b in llm.cfg.her.voice["banned"]]
+    assert body["logit_bias"] == [[b, -8.0] for b in llm.cfg.agent.voice["banned"]]
     assert "banned_strings" not in body
 
 
@@ -124,7 +124,7 @@ def test_off_or_another_server_or_nothing_banned_sends_none():
     assert voice.apply(other, voice.validate({"banned": [" delve"]})) is other
 
 
-def test_merge_keeps_the_base_and_adds_hers_once():
+def test_merge_keeps_the_base_and_adds_its_own_once():
     base = {"banned": ["\u2014", " delve"], "bias": -8.0}
     got = voice.merge_voice(base, {"banned": ["moist", " delve"], "bias": -20})
     assert got == {"banned": ["\u2014", " delve", " moist"], "bias": -20}
