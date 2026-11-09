@@ -115,6 +115,18 @@ async def test_a_steer_step_lands_the_message_and_the_turn_goes_on(store, cfg):
     assert backend.calls[1][-1]["content"].endswith("use canvas")
     assert await _turns(store, cid) == [("user", "done")], "one turn"
 
+    # a Continue of that turn sends the message taken mid-turn as it went: no tail on it
+    tails = lambda: store.read(lambda c: [r[0] is not None for r in c.execute(   # noqa: E731
+        "SELECT x.tail FROM messages m LEFT JOIN message_context x ON x.message_id = m.id "
+        "WHERE m.conversation_id=? AND m.role='user' ORDER BY m.rowid", (cid,))])
+    assert await tails() == [True, False]
+    await store.write(lambda c: c.execute(
+        "UPDATE turns SET state='interrupted', reason_code='crash' WHERE id=?", (turn["id"],)))
+    await turns.continue_turn(store, cid, turn["id"])
+    again = await turns.claim(store, "w2")
+    await run_turn(again, store, cfg, backend, EventBus(), Token(turn["id"]), Registry())
+    assert await tails() == [True, False]
+
 
 async def _family(store):
     parent = await conversations.create(store)
