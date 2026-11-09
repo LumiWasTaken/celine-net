@@ -1,12 +1,14 @@
 /* Routines: what it does on its own schedule. The place's sidebar holds Runs, Schedules and
    Triggers with their counts, then the day's runs. Runs: one day as a timeline (the
    schedules at their times, a run on each, a run that runs after another drawn as a line to
-   it), fourteen days as a row above it (Earlier and Later step through older ones), the
-   state and the schedule to narrow it. A run opens on its page (its result, the turns with
-   a reviewer, what it was asked; Run now, Stop). A schedule opens to
-   edit (when, what it runs after, who, the prompt, the reviewer, the Limits, its runs; Run
-   now, Delete asks first); its prompts open in the large editor with History. Triggers:
-   Watch and Event, a switch each, and what they started, which opens with its sub-agents.
+   it), fourteen days as a row above it (a day whose newest try of a schedule failed in
+   the error tone; Earlier and Later step through older ones), the state and the schedule
+   to narrow it. Each run says its state as a word and the server's line under it. A run
+   opens on its page (its result, the turns with a reviewer, what it started, what it was
+   asked; Run now, Retry, Stop). A schedule opens to edit (when, what it runs after, who,
+   the prompt, the reviewer, the Limits with When a run fails, its runs; Run now, Delete
+   asks first); its prompts open in the large editor with History. Triggers:
+   Folder and Event, a switch each, and what they started, which opens with its sub-agents.
    Every state, reason and time is the server's.
    Keys: Esc closes, Left and Right the day, Up and Down the run, N a new schedule, Ctrl+S
    saves the schedule.
@@ -15,17 +17,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight, Bot, Braces, CalendarClock, ChevronLeft, ChevronRight, CircleStop, History, MoreHorizontal, NotebookPen, Pencil,
-  Play, Plus, SearchX, Trash2, Zap,
+  Play, Plus, RotateCcw, SearchX, Trash2, Zap,
 } from 'lucide-react'
 import type { Message as ChatMessage } from '../lib/api'
 import { LOCALE, listTime, shortDate, turnStep } from '../lib/format'
-import { useAgents } from '../lib/agents'
+import { agentsApi, useAgents } from '../lib/agents'
 import { click } from '../components/ConversationList'
-import { Work } from './Missions'
+import { TreeLine, Work, treeOrder } from './Missions'
 import { isSaveKey, isTyping } from '../lib/keys'
 import { format, useNav, type Route } from '../lib/nav'
 import {
-  ASKED_WORD, FINISHED, RUN_TONE, STATE_WORD, isRunEvent, nightWords, routinesApi, type EventTask, type Night, type Run, type Runs, type RunState, type Schedule, type ScheduleBody, type Trigger,
+  ASKED_WORD, FINISHED, RETRIES, RUN_TONE, STATE_WORD, isRunEvent, nightWords, routinesApi, type EventTask, type Night, type OnFail, type Run, type Runs, type RunState,
+  type Schedule, type ScheduleBody, type ScheduleWords, type Trigger,
 } from '../lib/routines'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useName } from '../lib/name'
@@ -35,12 +38,11 @@ import { useResource } from '../lib/useResource'
 import { Markdown } from '../components/Markdown'
 import { Portrait } from '../components/Portrait'
 import { PlanButton } from '../components/Plan'
-import { Elapsed } from '../components/ToolRow'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
-  Avatar, Button, Checkbox, Choice, ConfirmDialog, copied, Dot, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input,
-  ListRow, ListSection, Loaded, LoadingRow, MenuButton, Message, Notice, NumberField, PageIndex, Place, PlaceHead, Section, Segmented,
-  Switch, Toolbar, useContextMenu, VirtualList, type Crumb, type MenuItem,
+  Avatar, Button, Checkbox, Choice, ConfirmDialog, copied, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input,
+  ListRow, ListSection, Loaded, LoadingRow, MenuButton, Message, NumberField, PageIndex, Place, PlaceHead, Section, Segmented,
+  StateWord, Switch, Toolbar, useContextMenu, VirtualList, type Crumb, type MenuItem,
 } from '../ui'
 import './Routines.css'
 
@@ -74,23 +76,24 @@ const LIVE: State[] = ['waiting', 'running']
 /** what the page edits of a schedule, kept while you go to its prompts and back */
 type Draft = {
   key: string; label: string; summary: string; when: 'daily' | 'cron'; time: string; cron: string; after: string[]; role: string
-  prompt: string; reviewer: boolean; partner: string; partner_prompt: string; rounds: string; note: string; on: boolean
-  idle_only: boolean; wall: string; daytime: boolean
+  prompt: string; has_reviewer: boolean; reviewer: string; reviewer_prompt: string; turns: string; note: string; on: boolean
+  idle_only: boolean; wall: string; daytime: boolean; on_fail: OnFail
 }
 const draftOf = (s: Schedule | null): Draft => ({
   key: s?.name ?? '', label: s?.label ?? '', summary: s?.summary ?? '', when: s && !s.time ? 'cron' : 'daily', time: s?.time ?? '02:00', cron: s?.cron ?? '0 2 * * *',
-  after: s?.after ?? [], role: s?.role ?? 'chat', prompt: s?.prompt ?? '', reviewer: !!s?.partner,
-  partner: s?.partner ?? '', partner_prompt: s?.partner_prompt ?? '', rounds: String(s?.rounds ?? 8), note: s?.note ?? '',
+  after: s?.after ?? [], role: s?.role ?? 'chat', prompt: s?.prompt ?? '', has_reviewer: !!s?.reviewer,
+  reviewer: s?.reviewer ?? '', reviewer_prompt: s?.reviewer_prompt ?? '', turns: String(s?.turns ?? 8), note: s?.note ?? '',
   on: s?.on ?? true, idle_only: s?.idle_only ?? false, wall: s?.wall_minutes != null ? String(s.wall_minutes) : '', daytime: s?.daytime ?? false,
+  on_fail: s?.on_fail ?? 'retry',
 })
 const bodyOf = (d: Draft): ScheduleBody => ({
   label: d.label.trim(), summary: d.summary, ...(d.when === 'daily' ? { time: d.time } : { cron: d.cron.trim() }), prompt: d.prompt, after: d.after,
-  role: d.role, partner: d.reviewer ? d.partner : '', partner_prompt: d.reviewer ? d.partner_prompt : '',
-  rounds: Number(d.rounds) || 0, note: d.note.trim(), on: d.on, idle_only: d.idle_only,
-  daytime: d.daytime, wall_minutes: d.wall.trim() ? Number(d.wall) || null : null,
+  role: d.role, reviewer: d.has_reviewer ? d.reviewer : '', reviewer_prompt: d.has_reviewer ? d.reviewer_prompt : '',
+  turns: Number(d.turns) || 0, note: d.note.trim(), on: d.on, idle_only: d.idle_only,
+  daytime: d.daytime, wall_minutes: d.wall.trim() ? Number(d.wall) || null : null, on_fail: d.on_fail,
 })
 /** the long texts of a schedule, by the editor's key */
-const TEXTS = { prompt: { field: 'prompt', label: 'Prompt' }, reviewer: { field: 'partner_prompt', label: 'Reviewer prompt' } } as const
+const TEXTS = { prompt: { field: 'prompt', label: 'Prompt' }, reviewer: { field: 'reviewer_prompt', label: 'Reviewer prompt' } } as const
 type TextKey = keyof typeof TEXTS
 
 export function Routines({ active }: { active: boolean }) {
@@ -193,6 +196,7 @@ export function Routines({ active }: { active: boolean }) {
     : route.schedule ? (
       route.schedule !== 'new' && !s ? <Missing title="Schedules" onBack={() => go({})} loaded={!!schedules.data} />
         : <SchedulePage key={route.schedule} name={route.schedule} s={s} all={schedules.data?.schedules ?? []} roles={schedules.data?.roles ?? []}
+                        words={schedules.data}
                         night={night} draft={draft(route.schedule)} onDraft={d => drafts.current.set(route.schedule!, d)} save={save}
                         onSaved={name => { drafts.current.delete(route.schedule!); schedules.reload(); runs.reload(); go({ schedule: name }, true) }}
                         onDeleted={() => { drafts.current.delete(route.schedule!); schedules.reload(); setView('schedules'); go({}) }} go={go} />
@@ -216,7 +220,7 @@ export function Routines({ active }: { active: boolean }) {
                       onClick={() => toList('triggers')} />
              {nodes.some(n => n.run) && <ListSection label={night ? dayShort(night) : 'Recent'} />}
              {nodes.filter(n => n.run).slice(0, 8).map(n => (
-               <ListRow key={n.key} density="sm" leading={<Dot tone={RUN_TONE[n.state]} />} title={`${n.at} ${n.label}`}
+               <ListRow key={n.key} density="sm" title={`${n.at} ${n.label}`} meta={<StateWord tone={RUN_TONE[n.state]}>{STATE_WORD[n.state]}</StateWord>}
                         href={format({ section: 'routines', night, run: n.run!.id })} onClick={click(() => go({ run: n.run!.id }))}
                         selected={route.run === n.run!.id} />
              ))}
@@ -231,7 +235,7 @@ function Missing({ title, onBack, loaded }: { title: string; onBack: () => void;
   return (
     <div className="routines-page">
       <PlaceHead level={1} title={title} crumbs={[{ label: 'Routines', onClick: e => { e.preventDefault(); onBack() } }]} />
-      {loaded ? <EmptyState icon={SearchX} title="Nothing at this link" /> : <LoadingRow />}
+      {loaded ? <EmptyState icon={SearchX} title="Not found">Nothing at this link.</EmptyState> : <LoadingRow />}
     </div>
   )
 }
@@ -251,7 +255,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
   const [of, setOf] = useState<string | null>(null)
   const act = useAction(async (fn: () => Promise<unknown>) => { await fn() })
   const OF: Record<string, State[]> = { all: ['planned', 'waiting', 'running', 'done', 'failed', 'skipped', 'stopped'],
-                                        running: ['waiting', 'running'], failed: ['failed'], done: ['done'] }
+                                        running: ['running'], waiting: ['waiting'], failed: ['failed'], done: ['done'] }
   const shown = nodes.filter(n => OF[show]!.includes(n.state) && (!of || n.schedule?.name === of)
     && (!q.trim() || n.label.toLowerCase().includes(q.trim().toLowerCase())))
   const ran = nodes.filter(n => n.run)
@@ -263,9 +267,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
       : n.schedule ? [{ label: 'Run now', icon: Play, onSelect: () => void act.run(async () => { const r = await routinesApi.runNow(n.schedule!.name); go({ night: r.run.night, run: r.run.id }) }) }] : []),
     ...(n.schedule ? ['sep' as const, { label: 'Edit', icon: Pencil, detail: n.schedule.title, onSelect: () => go({ schedule: n.schedule!.name }) }] : []),
   ]
-  // the strip: fourteen days, oldest left, each with a mark per schedule (its newest run)
-  const order = all.map(s => s.name)
-  const rank = (s: string) => { const i = order.indexOf(s); return i < 0 ? order.length : i }
+  // the strip: fourteen days, oldest left, a failed one in the error tone
   const newest = days[0]?.night ?? today
   const strip = useRef<HTMLDivElement>(null)
   useEffect(() => { strip.current?.querySelector('[aria-checked="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, [night, days])
@@ -278,22 +280,18 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
         <div className="routines-days" ref={strip}>
           <IconButton icon={ChevronLeft} size="sm" label="Earlier" onClick={onEarlier} />
           <Segmented label="Day" className="routines-days__strip" value={night} onChange={d => go({ night: d }, true)}
-                     options={[...days].reverse().map(n => ({
-                       value: n.night, title: nightWords(n.night),
-                       label: <span className="routines-day">
-                         <span>{`${weekdayOf(n.night)} ${Number(n.night.slice(8))}`}</span>
-                         <span className="routines-day__marks" aria-hidden>
-                           {[...n.runs].sort((a, b) => rank(a.schedule) - rank(b.schedule)).map((r, i) => (
-                             <span key={i} className={`routines-mark routines-mark--${RUN_TONE[r.state]}`} />
-                           ))}
-                         </span>
-                       </span>,
-                     }))} />
+                     options={[...days].reverse().map(n => {
+                       const day = `${weekdayOf(n.night)} ${Number(n.night.slice(8))}`
+                       // the error tone is not the only sign: its name says a run failed
+                       return { value: n.night, title: n.failed ? `${nightWords(n.night)}, a run failed` : nightWords(n.night),
+                                label: n.failed ? <StateWord tone="error">{day}</StateWord> : day }
+                     })} />
           <IconButton icon={ChevronRight} size="sm" label="Later" disabled={newest >= today} onClick={onLater} />
         </div>
         <Toolbar state={{ label: 'State', value: show, onChange: setShow, options: [
                    { value: 'all', label: 'All', count: ran.length },
-                   { value: 'running', label: STATE_WORD.running, count: ran.filter(n => LIVE.includes(n.state)).length },
+                   { value: 'running', label: STATE_WORD.running, count: ran.filter(n => n.state === 'running').length },
+                   { value: 'waiting', label: STATE_WORD.waiting, count: ran.filter(n => n.state === 'waiting').length },
                    { value: 'failed', label: STATE_WORD.failed, count: ran.filter(n => n.state === 'failed').length },
                    { value: 'done', label: STATE_WORD.done, count: ran.filter(n => n.state === 'done').length }] }}
                  filters={[{ label: 'Schedule', icon: CalendarClock, picked: of ? label(of) : undefined, onClear: () => setOf(null),
@@ -310,16 +308,16 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                            const i = shown.indexOf(n)
                            const prev = shown[i - 1]
                            const after = !!prev?.schedule && !!n.schedule && n.schedule.after.includes(prev.schedule.name)
-                           const reviewer = !!n.schedule?.partner
+                           const r = n.run
                            return (
-                             <ListRow density="lg" dot={n.run?.asked ? 'warn' : RUN_TONE[n.state]} title={n.label} tooltip={n.label} depth={after ? 1 : 0}
+                             <ListRow density="lg" title={n.label} tooltip={n.label} depth={after ? 1 : 0}
                                       muted={n.state === 'planned'}
-                                      subtitle={n.state === 'running' && n.run?.conversation_id
-                                        ? <LiveStep run={n.run} rounds={reviewer ? n.schedule!.rounds : 0} active={active} />
-                                        : n.reason || (n.run?.error ?? (n.run?.result ? n.run.result.split('\n')[0] : n.schedule?.after.length
+                                      subtitle={r && LIVE.includes(r.state) && r.conversation_id
+                                        ? <LiveStep run={r} turns={n.schedule?.reviewer ? n.schedule.turns : 0} active={active} />
+                                        : r?.reason_why || (r?.error ?? (r?.result ? r.result.split('\n')[0] : n.schedule?.after.length
                                           ? `Runs after ${label(n.schedule.after[0]!)}` : n.schedule?.every))}
-                                      column={reviewer ? 'Reviewer' : ''}
-                                      cell={n.run?.asked ? ASKED_WORD : STATE_WORD[n.state]} meta={n.at}
+                                      cell={r?.asked ? <StateWord tone="warn">{ASKED_WORD}</StateWord> : <StateWord tone={RUN_TONE[n.state]}>{STATE_WORD[n.state]}</StateWord>}
+                                      meta={n.at}
                                       href={n.run ? format({ section: 'routines', night, run: n.run.id })
                                         : n.schedule ? format({ section: 'routines', night, schedule: n.schedule.name }) : undefined}
                                       onClick={click(() => open(n))} onContextMenu={e => ctx.open(e, menu(n), n.label)}
@@ -334,17 +332,21 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
   )
 }
 
-/* What it does right now in a running run: the tool it is in (from its conversation's
-   feed), the reviewer's turn, how long it runs */
-function LiveStep({ run, rounds, active }: { run: Run; rounds: number; active: boolean }) {
+/** what holds a run's model call, in the server's words, else null */
+const waitLine = (w: { noModel?: string | null; limited?: string | null; held?: string | null } | null) =>
+  w?.noModel || w?.limited || w?.held || null
+
+/* What it does right now in a live run (from its conversation's feed): what its model
+   call waits for, else the server's reason while it waits (its work waits for a model, or
+   it waits for its model to come back), else the tool it is in, and the reviewer's turn */
+function LiveStep({ run, turns, active }: { run: Run; turns: number; active: boolean }) {
   const convo = useConversation(active ? run.conversation_id : null)
   const calls = Object.values(convo.toolCalls).flat()
   const tool = [...calls].reverse().find(c => c.state === 'running' || c.state === 'pending')
-  const words = convo.waiting?.noModel ?? tool?.words.step ?? turnStep(convo.turn?.state) ?? STATE_WORD.running
+  const words = waitLine(convo.waiting) || run.reason_why || tool?.words.step || turnStep(convo.turn?.state) || STATE_WORD.running
   const said = (convo.messages as ChatMessage[]).filter(m => m.role === 'user' && m.intercom?.from?.startsWith('system:')
     && m.intercom.from !== 'system:schedules').length
-  const since = run.started_at
-  return <>{words}{rounds > 0 && said > 0 && `, turn ${Math.min(said, rounds)} of ${rounds}`}{since && <>, <Elapsed since={since} /></>}</>
+  return <>{words}{turns > 0 && said > 0 && `, turn ${Math.min(said, turns)} of ${turns}`}</>
 }
 
 /* ── the schedules ── */
@@ -388,14 +390,14 @@ function SchedulesList({ list, night, all, go, onChange }: {
           <VirtualList items={shown} estimate={68} getKey={s => s.name} label="Schedules"
                        renderRow={s => (
                          <ListRow density="lg" icon={CalendarClock} title={s.title} tooltip={s.title} muted={!s.on}
-                                  subtitle={s.gone ?? (s.after.length ? `${s.every}, runs after ${s.after.map(label).join(', ')}` : s.every)}
+                                  subtitle={s.after.length ? `${s.every}, runs after ${s.after.map(label).join(', ')}` : s.every}
                                   href={format({ section: 'routines', night, schedule: s.name })}
                                   onClick={click(() => go({ schedule: s.name }))} onContextMenu={e => ctx.open(e, menu(s), s.title)}
                                   press={ctx.press(() => menu(s), s.title)}
                                   trailingAlways
                                   trailing={
                                     <span className="row-actions">
-                                      <Switch label={s.title} hideLabel checked={s.on} disabled={!online || act.busy || !!s.gone}
+                                      <Switch label={s.title} hideLabel checked={s.on} disabled={!online || act.busy}
                                               onChange={on => void act.run(() => routinesApi.put(s.name, bodyOf({ ...draftOf(s), on })))} />
                                       <MenuButton icon={MoreHorizontal} label={`More for ${s.title}`} items={menu(s)} size="sm" />
                                     </span>
@@ -444,7 +446,7 @@ function TriggersList({ list, triggers, tasks, night, go }: {
   const both = ts.length > 0 && bs.length > 0
   const rows: R[] = [
     ...(both ? [{ key: 'g:t', head: 'Triggers', n: ts.length, icon: Zap }] : []), ...ts.map(t => ({ key: t.name, row: { t } })),
-    ...(both ? [{ key: 'g:r', head: 'Runs', n: bs.length, icon: History }] : []), ...bs.map(b => ({ key: b.id, row: { b } })),
+    ...(both ? [{ key: 'g:r', head: 'Background tasks', n: bs.length, icon: History }] : []), ...bs.map(b => ({ key: b.id, row: { b } })),
   ]
   const nothing = triggers.data !== undefined && !triggers.data.length && !tasks.data?.length
   // a trigger by its label (its name only when it is gone); a run by its title, else its trigger's
@@ -466,14 +468,16 @@ function TriggersList({ list, triggers, tasks, night, go }: {
                          renderRow={r => 'head' in r ? <GroupHead icon={r.icon} title={r.head} />
                            : 't' in r.row ? (
                              <ListRow density="lg" icon={Zap} title={r.row.t.label} subtitle={r.row.t.about} muted={!r.row.t.on}
-                                      column={r.row.t.kind === 'watch' ? 'Watch' : 'Event'}
+                                      column={r.row.t.kind === 'watch' ? 'Folder' : 'Event'}
                                       meta={r.row.t.fired_at ? listTime(r.row.t.fired_at) : ''}
                                       trailingAlways trailing={<Switch label={r.row.t.label} hideLabel checked={r.row.t.on} disabled={!online || save.busy}
                                                                        title={online ? undefined : OFFLINE_TITLE} onChange={on => void save.run((r.row as { t: { name: string } }).t.name, on)} />} />
                            ) : (
-                             <ListRow density="lg" dot={r.row.b.asked ? 'warn' : r.row.b.working ? 'running' : 'ok'} title={taskTitle(r.row.b)}
+                             <ListRow density="lg" title={taskTitle(r.row.b)}
                                       subtitle={r.row.b.last_line || undefined} column={byName(r.row.b.trigger) === taskTitle(r.row.b) ? '' : byName(r.row.b.trigger)}
-                                      cell={r.row.b.asked ? ASKED_WORD : r.row.b.working ? STATE_WORD.running : STATE_WORD.done} meta={listTime(r.row.b.updated_at)}
+                                      cell={r.row.b.asked ? <StateWord tone="warn">{ASKED_WORD}</StateWord>
+                                        : r.row.b.working ? <StateWord tone="running">{STATE_WORD.running}</StateWord> : <StateWord tone="success">{STATE_WORD.done}</StateWord>}
+                                      meta={listTime(r.row.b.updated_at)}
                                       muted={!r.row.b.working}
                                       href={format({ section: 'routines', night, task: r.row.b.id })}
                                       onClick={click(() => go({ task: (r.row as { b: { id: string } }).b.id }))}
@@ -516,7 +520,7 @@ function TaskPage({ id, night, tasks, active, go, onBack }: {
           {kids.map(a => (
             <ListRow key={a.id} icon={Bot} title={a.name} href={format({ section: 'routines', night, task: a.id })} onClick={click(() => go({ task: a.id }))}
                      subtitle={a.working ? a.step_words ?? STATE_WORD.running : a.report?.text.split('\n')[0] ?? STATE_WORD.done}
-                     meta={a.working ? <Dot tone="running" pulse label={STATE_WORD.running} /> : undefined} />
+                     meta={a.working ? <StateWord tone="running">{STATE_WORD.running}</StateWord> : undefined} />
           ))}
         </div>
       )}
@@ -527,43 +531,58 @@ function TaskPage({ id, night, tasks, active, go, onBack }: {
 
 /* ── one run ── */
 
+/** a run linked to this one (Retry of, Retried): its time, opening its page */
+function RunLink({ run, night, go }: { run: { id: string; at: string }; night: string; go: (r: Open) => void }) {
+  return <a className="routines-link" href={format({ section: 'routines', night, run: run.id })}
+            onClick={click(() => go({ night, run: run.id }))}>{run.at}</a>
+}
+
 function RunPage({ id, night, go, active, schedules }: {
   id: string; night: string; go: (r: Open, replace?: boolean) => void; active: boolean; schedules: Map<string, Schedule>
 }) {
   const online = useOnline()
   const nav = useNav()
   const res = useResource(signal => routinesApi.run(id, signal), [id], { events: ev => isRunEvent(ev) && ((ev as { run?: Run }).run)?.id === id })
-  const again = useAction(async (name: string) => { const r = await routinesApi.runNow(name); go({ night: r.run.night, run: r.run.id }) })
+  const open = (r: Run) => go({ night: r.night, run: r.id })
+  const again = useAction(async (name: string) => { open((await routinesApi.runNow(name)).run) })
+  const retry = useAction(async () => { open((await routinesApi.retry(id)).run) })
   const stop = useAction(async () => { await routinesApi.stop(id); res.reload() })
   const d = res.data
   const r = d?.run
   const s = r ? schedules.get(r.schedule) : undefined
   const cid = r?.conversation_id ?? null
+  // what the run started: its sub-agents at every depth and the missions they started, the server's tree
+  const tree = useResource(() => agentsApi.tree(cid!), [cid],
+                           { enabled: !!cid, events: ev => ev.type === 'agent.state' || ev.type === 'mission.state' })
+  const nodes = tree.data ? treeOrder(tree.data.top, tree.data.agents, tree.data.missions) : []
   const crumbs: Crumb[] = [{ label: dayShort(r?.night ?? night), href: format({ section: 'routines', night: r?.night ?? night }),
                              onClick: e => { e.preventDefault(); go({ night: r?.night ?? night }) } }]
-  const error = again.error ?? stop.error
+  const error = again.error ?? retry.error ?? stop.error
+  const offline = online ? undefined : OFFLINE_TITLE
   if (res.missing) return <Missing title="Runs" onBack={() => go({})} loaded />
   return (
     <div className="routines-page">
       <PlaceHead level={1} crumbs={crumbs} title={r?.label ?? ''} titleAttr={r?.label}
-                 detail={r && <Dot tone={RUN_TONE[r.state]} pulse={r.state === 'running'} text={`${STATE_WORD[r.state]}, ${r.at}`} />}
-                 actions={r && (FINISHED.includes(r.state)
-                   ? s && <Button icon={Play} loading={again.busy} disabled={!online || !!s.gone} title={online ? undefined : OFFLINE_TITLE}
-                                  onClick={() => void again.run(s.name)}>Run now</Button>
-                   : <Button icon={CircleStop} loading={stop.busy} disabled={!online} onClick={() => void stop.run()}>Stop</Button>)}
+                 detail={r && <StateWord tone={RUN_TONE[r.state]}>{`${STATE_WORD[r.state]}, ${r.at}`}</StateWord>}
+                 actions={r && (!FINISHED.includes(r.state)
+                   ? <Button icon={CircleStop} loading={stop.busy} disabled={!online} onClick={() => void stop.run()}>Stop</Button>
+                   : s && RETRIES.includes(r.state) && !r.retried
+                     ? <Button icon={RotateCcw} loading={retry.busy} disabled={!online} title={offline} onClick={() => void retry.run()}>Retry</Button>
+                     : s && <Button icon={Play} loading={again.busy} disabled={!online} title={offline} onClick={() => void again.run(s.name)}>Run now</Button>)}
                  more={r && s ? [{ label: 'Edit', icon: Pencil, detail: s.title, onSelect: () => go({ schedule: s.name }) }] : []} />
       {res.error && <div className="list-page__note"><InlineError message={res.error} onRetry={res.reload} /></div>}
       {error && <div className="list-page__note"><InlineError compact message={error} /></div>}
       {!d && !res.error && <LoadingRow />}
       {r && d && (
         <div className="page"><div className="page__col page__col--wide">
-          <PageIndex sections={[{ id: 'r-res', label: 'Result' }, ...(s?.partner || cid ? [{ id: 'r-talk', label: 'Turns' }] : []),
+          <PageIndex sections={[{ id: 'r-res', label: 'Result' }, ...(s?.reviewer || cid ? [{ id: 'r-talk', label: 'Turns' }] : []),
+                                ...(nodes.length ? [{ id: 'r-agents', label: 'Sub-agents', count: nodes.length }] : []),
                                 { id: 'r-ask', label: 'Prompt' }]}>
             <Section id="r-res" title="Result">
               {r.reason && <p className="routines-prose routines-prose--quiet">{r.reason}</p>}
               {r.error && r.error !== r.reason && <InlineError compact message={r.error} />}
               {r.result ? <div className="prose"><Markdown text={r.result} /></div>
-                : !r.reason && <p className="routines-prose routines-prose--quiet">{r.state === 'running' ? STATE_WORD.running : 'No result'}</p>}
+                : !r.reason && <p className="routines-prose routines-prose--quiet">{LIVE.includes(r.state) ? STATE_WORD[r.state] : 'No result'}</p>}
               <Facts grid items={[
                 ...(d.note && r.state === 'done' ? [{ label: 'Note', value: (
                   <a className="routines-link" href={format({ section: 'notebook', note: d.note })}
@@ -571,17 +590,24 @@ function RunPage({ id, night, go, active, schedules }: {
                     <NotebookPen size={ICON.sm} aria-hidden />{d.note}
                   </a>
                 ) }] : []),
+                ...(r.again_of ? [{ label: 'Retry of', value: <RunLink run={r.again_of} night={r.night} go={go} /> }] : []),
+                ...(r.retried ? [{ label: 'Retried', value: <RunLink run={r.retried} night={r.night} go={go} /> }] : []),
               ]} />
             </Section>
-            {(s?.partner || cid) && (
+            {(s?.reviewer || cid) && (
               <Section id="r-talk" title="Turns">
-                {cid ? <Talk key={cid} cid={cid} active={active} /> : <p className="routines-prose routines-prose--quiet">{STATE_WORD.waiting}</p>}
+                {cid ? <Talk key={cid} cid={cid} active={active} waits={r.reason} /> : <p className="routines-prose routines-prose--quiet">{STATE_WORD.waiting}</p>}
+              </Section>
+            )}
+            {nodes.length > 0 && (
+              <Section id="r-agents" title="Sub-agents" count={nodes.length}>
+                <div className="routines-rows">{nodes.map(n => <TreeLine key={n.id} n={n} />)}</div>
               </Section>
             )}
             <Section id="r-ask" title="Prompt">
-              {d.prompt === null ? <p className="routines-prose routines-prose--quiet">Its schedule was deleted</p> : <>
+              {d.prompt === null ? <p className="routines-prose routines-prose--quiet">Its schedule was deleted.</p> : <>
                 <div className="prose"><Markdown text={d.prompt} /></div>
-                {d.partner_prompt && <><span className="routines-label">Reviewer prompt</span><div className="prose"><Markdown text={d.partner_prompt} /></div></>}
+                {d.reviewer_prompt && <><span className="routines-label">Reviewer prompt</span><div className="prose"><Markdown text={d.reviewer_prompt} /></div></>}
               </>}
             </Section>
           </PageIndex>
@@ -592,24 +618,26 @@ function RunPage({ id, night, go, active, schedules }: {
 }
 
 /* The run's conversation as turns: the reviewer's lines and its own, what it was asked left
-   out (it is the Prompt section) */
-function Talk({ cid, active }: { cid: string; active: boolean }) {
-  const her = useName()
+   out (it is the Prompt section); while it works, what its model call waits for, else the
+   run's reason (`waits`: the server's, while its work waits for a model) */
+function Talk({ cid, active, waits }: { cid: string; active: boolean; waits: string }) {
+  const agentName = useName()
   const convo = useConversation(active ? cid : null)
   const items = (convo.messages as ChatMessage[]).filter(m => (m.role === 'user' || m.role === 'assistant') && m.intercom?.from !== 'system:schedules'
     && m.content.trim())
-  if (!items.length) return convo.conversation ? <p className="routines-prose routines-prose--quiet">{convo.running ? STATE_WORD.running : 'No turns'}</p> : <LoadingRow />
+  const working = waitLine(convo.waiting) || waits || STATE_WORD.running
+  if (!items.length) return convo.conversation ? <p className="routines-prose routines-prose--quiet">{convo.running ? working : 'No turns'}</p> : <LoadingRow />
   return (
     <div className="routines-talk">
       {items.map(m => {
-        const name = m.role === 'user' ? m.intercom?.from_name ?? 'Reviewer' : her
+        const name = m.role === 'user' ? m.intercom?.from_name ?? 'Reviewer' : agentName
         return (
           <Message key={m.id} name={name} face={m.role === 'user' ? <Avatar name={name} size={28} /> : <Portrait size="sm" />}>
             <div className="prose"><Markdown text={m.content} /></div>
           </Message>
         )
       })}
-      {convo.running && <p className="routines-prose routines-prose--quiet">{convo.waiting?.noModel ?? STATE_WORD.running}</p>}
+      {convo.running && <p className="routines-prose routines-prose--quiet">{working}</p>}
     </div>
   )
 }
@@ -635,8 +663,8 @@ function followers(all: Schedule[], name: string | null): Map<string, string> {
   return out
 }
 
-function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKey, onSaved, onDeleted, go }: {
-  name: string; s: Schedule | null; all: Schedule[]; roles: { name: string; label: string }[]; night: string
+function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save: saveKey, onSaved, onDeleted, go }: {
+  name: string; s: Schedule | null; all: Schedule[]; roles: { name: string; label: string }[]; words?: ScheduleWords; night: string
   draft: Draft; onDraft: (d: Draft) => void; save: React.MutableRefObject<(() => void) | null>
   onSaved: (name: string) => void; onDeleted: () => void; go: (r: Open) => void
 }) {
@@ -678,7 +706,7 @@ function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKe
     <div className="routines-page">
       <PlaceHead level={1} crumbs={crumbs} title={fresh ? 'New schedule' : s!.title} titleAttr={s?.title}
                  actions={<>
-                   {!fresh && <Button icon={Play} loading={runNow.busy} disabled={!online || !!s?.gone} onClick={() => void runNow.run()}>Run now</Button>}
+                   {!fresh && <Button icon={Play} loading={runNow.busy} disabled={!online} onClick={() => void runNow.run()}>Run now</Button>}
                    <Button variant="primary" loading={save.busy} disabled={!ready} title={online ? undefined : OFFLINE_TITLE}
                            onClick={() => void save.run()}>Save</Button>
                  </>}
@@ -688,8 +716,7 @@ function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKe
         <PageIndex sections={[{ id: 's-when', label: 'Schedule' }, ...(roles.length > 1 ? [{ id: 's-who', label: 'Model' }] : []), { id: 's-prompt', label: 'Prompt' },
                               { id: 's-rev', label: 'Reviewer' }, { id: 's-limits', label: 'Limits' },
                               ...(fresh ? [] : [{ id: 's-runs', label: 'Runs', count: theirs.length }])]}>
-          <Section id="s-when" title="Schedule" action={!s?.gone && <Switch label="On" checked={d.on} onChange={on => put({ on })} />}>
-            {s?.gone && <Notice tone="warn">{s.gone}</Notice>}
+          <Section id="s-when" title="Schedule" action={<Switch label="On" checked={d.on} onChange={on => put({ on })} />}>
             <div className="routines-form">
               {/* a new schedule's key comes from its name */}
               <Field label="Name" error={err('label') ?? err('name')}>
@@ -699,7 +726,7 @@ function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKe
                      hint={d.when === 'cron' && s && d.cron.trim() === s.cron && s.every !== s.cron ? s.every : undefined}>
                 <div className="routines-when">
                   <Segmented label="Schedule" value={d.when} onChange={when => put({ when })}
-                             options={[{ value: 'daily', label: 'Every day' }, { value: 'cron', label: 'Cron' }]} />
+                             options={[{ value: 'daily', label: 'Daily' }, { value: 'cron', label: 'Cron' }]} />
                   {d.when === 'daily'
                     ? <Input mono className="routines-when__value" value={d.time} aria-label="Time" inputMode="numeric" maxLength={5}
                              onChange={e => put({ time: e.target.value })} />
@@ -740,27 +767,33 @@ function SchedulePage({ name, s, all, roles, night, draft, onDraft, save: saveKe
             </Field>
             {d.note.trim() && notePath.data && notePath.data !== d.note.trim() && <p className="routines-prose routines-prose--quiet routines-mono">{notePath.data}</p>}
           </Section>
-          <Section id="s-rev" title="Reviewer" action={<Switch label="Reviewer" hideLabel checked={d.reviewer} onChange={reviewer => put({ reviewer })} />}>
-            {d.reviewer ? (
+          <Section id="s-rev" title="Reviewer" action={<Switch label="Reviewer" hideLabel checked={d.has_reviewer} onChange={has_reviewer => put({ has_reviewer })} />}>
+            {d.has_reviewer ? (
               <div className="routines-form">
-                <Field label="Reviewer prompt" group error={err('partner_prompt') ?? err('partner')}>
-                  {d.partner_prompt.trim() ? <p className="routines-prose routines-mono">{d.partner_prompt}</p> : null}
+                <Field label="Reviewer prompt" group error={err('reviewer_prompt') ?? err('reviewer')}>
+                  {d.reviewer_prompt.trim() ? <p className="routines-prose routines-mono">{d.reviewer_prompt}</p> : null}
                   <span><Button icon={Pencil} onClick={() => edit('reviewer')}>Edit</Button></span>
                 </Field>
-                <NumberField label="Turns" value={d.rounds} min={1} max={30} onChange={rounds => put({ rounds })} invalid={field === 'rounds'} />
+                <NumberField label="Turns" value={d.turns} min={1} max={30} onChange={turns => put({ turns })} invalid={field === 'turns'} />
               </div>
             ) : null}
           </Section>
           <Section id="s-limits" title="Limits">
-            <Switch checked={d.idle_only} onChange={idle_only => put({ idle_only })} label="Only when the app is idle" />
-            <NumberField label="Time limit" unit="min" value={d.wall} min={1} max={1440} onChange={wall => put({ wall })} invalid={field === 'wall_minutes'} />
+            <Field label="When a run fails" help={words?.help.on_fail} group error={err('on_fail')}>
+              <Segmented label="When a run fails" value={d.on_fail} onChange={on_fail => put({ on_fail })}
+                         options={words?.choices.on_fail ?? []} />
+            </Field>
+            <Switch checked={d.idle_only} onChange={idle_only => put({ idle_only })} label="Only when the app is idle" help={words?.help.idle_only} />
+            <NumberField label="Time limit" unit="min" value={d.wall} min={1} max={1440} onChange={wall => put({ wall })} invalid={field === 'wall_minutes'}
+                         help={words?.help.wall_minutes} />
           </Section>
           {!fresh && (
             <Section id="s-runs" title="Runs" count={theirs.length}>
               {theirs.length ? (
                 <div className="routines-rows">
                   {theirs.map(r => (
-                    <ListRow key={r.id} density="lg" dot={RUN_TONE[r.state]} title={dayShort(r.night)} subtitle={r.reason || STATE_WORD[r.state]} meta={r.at}
+                    <ListRow key={r.id} density="lg" title={dayShort(r.night)} subtitle={r.reason_why || r.error || undefined}
+                             cell={<StateWord tone={RUN_TONE[r.state]}>{STATE_WORD[r.state]}</StateWord>} meta={r.at}
                              href={format({ section: 'routines', night: r.night, run: r.id })} onClick={click(() => go({ night: r.night, run: r.id }))} />
                   ))}
                 </div>
@@ -783,7 +816,7 @@ function ScheduleText({ name, s, k, history, night, draft, variables, onDraft, o
 }) {
   const t = TEXTS[k]
   const value = draft[t.field]
-  const saved = s ? (k === 'prompt' ? s.prompt : s.partner_prompt) : ''
+  const saved = s ? (k === 'prompt' ? s.prompt : s.reviewer_prompt) : ''
   const of = s ? `routine:${s.name}:${k}` : undefined
   const crumbs: Crumb[] = [{ label: 'Schedules', href: format({ section: 'routines', night }) },
                            { label: s?.title ?? 'New schedule', href: format({ section: 'routines', night, schedule: name }),
@@ -803,11 +836,11 @@ function ScheduleText({ name, s, k, history, night, draft, variables, onDraft, o
                 hint="Make it shorter, or add a question"
                 onCancel={() => go({ schedule: name })}
                 onSave={async vals => {
-                  const next = { ...draft, [t.field]: vals[k] ?? '', ...(k === 'reviewer' ? { reviewer: true } : {}) }
+                  const next = { ...draft, [t.field]: vals[k] ?? '', ...(k === 'reviewer' ? { has_reviewer: true } : {}) }
                   if (s) {
                     // only this text changes: the rest of the page's edits wait for its Save
                     const base = draftOf(s)
-                    await routinesApi.put(s.name, bodyOf({ ...base, [t.field]: vals[k] ?? '', ...(k === 'reviewer' ? { reviewer: true } : {}) }))
+                    await routinesApi.put(s.name, bodyOf({ ...base, [t.field]: vals[k] ?? '', ...(k === 'reviewer' ? { has_reviewer: true } : {}) }))
                     onDraft({ ...next })
                     onSaved()
                   } else onDraft(next)

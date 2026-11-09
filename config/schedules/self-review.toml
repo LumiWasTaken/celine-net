@@ -1,12 +1,13 @@
 label = "Self-review"
-summary = "Reviews the day's conversations at night."
+summary = "Reviews the day's chats at night."
 cron = "0 4 * * *"
 after = ["user-day"]
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "diary/{{date}}-review.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 Review this night's conversations, those of {{day_before}} and of {{date}} so far: what
 went well and what did not.

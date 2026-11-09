@@ -12,8 +12,9 @@ trigger's own conversation (kind `background`, made on its first fire, never in 
 list, its fires never in the user's intercom list): it starts a turn there, or reaches
 the one still running at its next step. The text is the trigger's prompt and RULE:
 nothing that needs the user ends the turn with one line for its log; something
-actionable becomes a chat for the user (`intercom__start_chat`) with a message on the
-intercom that waits for them. GET /api/background-conversations lists the background tasks and the
+actionable becomes a chat for the user (`intercom__send(to="user")` from a background
+task starts one, intercom/skill.py `_chat`) with a message on the intercom that waits for
+them. GET /api/background-conversations lists the background tasks and the
 runs.
 """
 from __future__ import annotations
@@ -32,8 +33,10 @@ log = logging.getLogger("celine.triggers")
 
 RULE = ("This is a background task: {{username}} is not here and reads nothing of it. If "
         "nothing in it needs {{username}}, end your turn with one short line for your log. "
-        "If something needs {{username}} to act or to know now, start a chat for them with "
-        "intercom__start_chat: a title and what they read first, short and complete.")
+        "If something needs {{username}} to act or to know now, write to them with "
+        "intercom__send(to=\"user\", subject, text): it starts a chat for them, the subject "
+        "its name in 2 to 4 words and your text its first message, short and complete; "
+        "their answer comes to you in that chat.")
 
 
 @dataclass(frozen=True)
@@ -77,6 +80,12 @@ def state(cfg, t) -> dict:
     """The user's state of trigger `t`: {on}."""
     saved = (getattr(getattr(cfg, "settings", None), "triggers", None) or {}).get(t.name, {})
     return {"on": bool(saved.get("on", False))}
+
+
+def fired(c, name: str) -> str | None:
+    """When trigger `name` last fired, None: never."""
+    return c.execute("SELECT max(created_at) FROM intercom WHERE kind = 'trigger' AND "
+                     "json_extract(data, '$.trigger') = ?", (name,)).fetchone()[0]
 
 
 class _Fill(dict):

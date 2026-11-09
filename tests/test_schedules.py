@@ -1,7 +1,7 @@
 """Schedules and runs (schedules/): the variables come from the run's night, missed slots
 are caught up, a run waits for the runs it follows, for a model of its role and for the
 user's chat, a run has one try (it waits for its model, fails once, resumes after a
-restart), a partner and it alternate, the answer is written to the note and read by the
+restart), a reviewer and it alternate, the answer is written to the note and read by the
 next run of the night."""
 from __future__ import annotations
 
@@ -96,10 +96,10 @@ async def _runs(store) -> list[dict]:
 
 
 async def test_the_variables_come_from_the_night_not_the_clock(cfg):
-    text = ("{{date}} {{day_before}} {{weekday}} {{username}} {{name}} {{she}} "
+    text = ("{{date}} {{day_before}} {{weekday}} {{username}} {{name}} {{pronouns}} "
             "[{{result:world}}] [{{result:nope}}]")
     assert fill(cfg, text, date(2026, 10, 10), {"world": "Rain."}) == (
-        f"2026-10-10 2026-10-09 Saturday Joe {cfg.name} she [Rain.] [(none)]")
+        f"2026-10-10 2026-10-09 Saturday Joe {cfg.name} she/her [Rain.] [(none)]")
 
 
 async def test_missed_slots_are_made_oldest_first_and_older_than_a_week_skipped(
@@ -205,7 +205,7 @@ class Router:
     def __init__(self):
         self.why: str | None = "llama-swap does not answer"
 
-    async def can_answer(self, role):
+    async def can_answer(self, role, probe=True):
         return self.why
 
     async def wait_change(self, timeout):
@@ -228,7 +228,7 @@ async def test_a_run_waits_for_a_model_and_for_what_it_follows_then_runs_its_own
         rows = await _runs(store)
         assert [(r["night"], r["schedule"], r["state"]) for r in rows] == [
             ("2026-10-09", "world", "waiting"), ("2026-10-09", "day", "waiting")]
-        assert rows[0]["reason"] == "Waiting for a model: llama-swap does not answer"
+        assert rows[0]["reason"] == "Waiting for a model. llama-swap does not answer"
         assert rows[1]["reason"] == "Runs after World"
 
         router.why = None                                 # the next day, Nix is on
@@ -334,20 +334,45 @@ class Failing(FakeBackend):
         yield  # unreachable: makes this a generator
 
 
-async def test_a_model_error_fails_the_run_once(store, cfg):
+async def test_a_model_error_fails_the_run_then_three_runs_again_then_one_notice(
+        store, cfg):
     cfg.schedules = {"world": _s("world")}
     backend = Failing()
     app = _app(store, cfg, backend)
-    async with _scheduler(store, cfg, app, backend,
-                          Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))) as sched:
+    clock = Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))
+    async with _scheduler(store, cfg, app, backend, clock) as sched:
         run = await sched.run_now("world")
         await sched.tick()
         await until(lambda: _state(store, run["id"], "failed"))
         await until(lambda: _idle(sched))
+        first, again = await _runs(store)
+        assert first["state"] == "failed" and "the model broke" in first["error"]
+        assert await _turns(store, first["conversation_id"]) == 1, "no second turn in it"
+        assert (again["state"], again["again_of"], again["night"]) == (
+            "waiting", first["id"], first["night"])
+        assert again["reason"] == "Retry of the 02:00 run"
         await sched.tick()
-    [row] = await _runs(store)
-    assert row["state"] == "failed" and "the model broke" in row["error"]
-    assert await _turns(store, row["conversation_id"]) == 1, "one try, no second turn"
+        assert sched.current is None, "it waits for its time"
+
+        for wait in runs_mod.RUN_AGAIN:
+            assert again["slot"] == iso(clock.at + wait)
+            assert await _notices(store) == 0, "a failure with a run again tells nothing yet"
+            clock.at += wait
+            await sched.tick()
+            await until(lambda: _state(store, again["id"], "failed"))
+            await until(lambda: _idle(sched))
+            again = (await _runs(store))[-1]
+        await sched.tick()
+    rows = await _runs(store)
+    assert [r["state"] for r in rows] == ["failed"] * 4, "it runs again three times"
+    assert [r["again_of"] for r in rows[1:]] == [r["id"] for r in rows[:-1]]
+    assert len({r["conversation_id"] for r in rows}) == 4, "each a fresh run"
+    assert await _notices(store) == 1
+
+
+async def _notices(store) -> int:
+    return await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM global_events WHERE type = 'notice'").fetchone()[0])
 
 
 async def _turns(store, cid) -> int:
@@ -387,7 +412,7 @@ async def test_an_unreachable_model_leaves_the_run_waiting_and_its_turn_goes_on_
         await until(lambda: _state(store, run["id"], "waiting"))
         await until(lambda: _idle(sched))
         [row] = await _runs(store)
-        assert row["reason"] == "Waiting for a model: llama-swap does not answer"
+        assert row["reason"] == "Waiting for a model. llama-swap does not answer"
         cid = row["conversation_id"]
         assert cid and await _turns(store, cid) == 1
         await sched.tick()
@@ -400,6 +425,135 @@ async def test_an_unreachable_model_leaves_the_run_waiting_and_its_turn_goes_on_
     assert row["conversation_id"] == cid, "the same conversation"
     assert await _turns(store, cid) == 1, "the failed turn was continued, not asked again"
     assert "News of 2026-10-09?" in row["result"]
+
+
+class NoModel(FakeBackend):
+    """The turn gets no model (the Router finds none that answers), though the Router's
+    state reads up by the time the run looks."""
+
+    def __init__(self):
+        super().__init__(echo=True)
+        self.first = True
+
+    async def stream(self, messages, tools, body=None):
+        if self.first:
+            self.first = False
+            from celine.backends.router import NoModel as Gone
+            raise Gone("gpu-box does not answer.")
+        async for ev in super().stream(messages, tools, body):
+            yield ev
+
+
+async def test_a_turn_that_got_no_model_leaves_the_run_waiting_not_failed(store, cfg):
+    cfg.schedules = {"world": _s("world", prompt="News of {{day_before}}?")}
+    router = Router()
+    router.why = None
+    backend = NoModel()
+    app = _app(store, cfg, backend, llm=SimpleNamespace(router=router))
+    async with _scheduler(store, cfg, app, backend, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)),
+                          routed=True) as sched:
+        run = await sched.run_now("world")
+        await sched.tick()
+        await until(lambda: _state(store, run["id"], "waiting"))
+        await until(lambda: _idle(sched))
+        [row] = await _runs(store)
+        assert row["reason"] == "Waiting for a model. gpu-box does not answer."
+        await sched.tick()
+        await until(lambda: _state(store, run["id"], "done"))
+    [row] = await _runs(store)
+    assert await _turns(store, row["conversation_id"]) == 1, "continued, not asked again"
+
+
+async def test_time_waiting_for_a_model_does_not_count_against_the_ceiling(store, cfg):
+    """A run whose calls wait for a model (a slot, a busy server, a GPU lease) past its
+    limit is still running: the limit counts work. Past it with no wait, it fails."""
+    from celine.backends.llm import HeldClock, paused
+    cfg.schedules = {"world": _s("world")}
+    clock = Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))
+    sched = Scheduler(_app(store, cfg, FakeBackend(echo=True)), clock)
+    cid = await conversations.for_trigger(store, "run:r1", "World news")
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs (id, schedule, label, slot, night, state, conversation_id, "
+        "created_at) VALUES ('r1', 'world', 'World news', ?, '2026-10-09', 'running', ?, ?)",
+        (iso(clock.at), cid, iso(clock.at))))
+    sched.current = "r1"
+    sched._clock, sched._over = HeldClock(timedelta(minutes=30), clock), "Ran over 30 minutes"
+    with paused(None, sched._clock):            # its sub-agent waits for a slot
+        clock.at += timedelta(minutes=50)
+        await sched._watch()
+        assert sched._clock.left() is None, "no ceiling to wake for while held"
+    await sched._watch()
+    assert sched.current == "r1", "50 minutes waiting for a model are not work"
+    assert sched._clock.left() == timedelta(minutes=30)
+    clock.at += timedelta(minutes=31)
+    await sched._watch()
+    [row] = await _runs(store)
+    assert row["state"] == "failed" and row["error"] == "Ran over 30 minutes"
+
+
+async def test_a_run_whose_limit_ends_while_a_request_waits_names_the_request(store, cfg):
+    from celine import approvals as ap
+    from celine.backends.llm import HeldClock
+    cfg.schedules = {"world": _s("world")}
+    clock = Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))
+    app = _app(store, cfg, FakeBackend(echo=True))
+    sched = Scheduler(app, clock)
+    cid = await conversations.for_trigger(store, "run:r1", "World news")
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs (id, schedule, label, slot, night, state, conversation_id, "
+        "created_at) VALUES ('r1', 'world', 'World news', ?, '2026-10-09', 'running', ?, ?)",
+        (iso(clock.at), cid, iso(clock.at))))
+    app.approvals = SimpleNamespace(lapsed=lambda root: ap.ASK_LAPSED.format(
+        title="Tink asks to open the vault.") if root == cid else None)
+    sched.current = "r1"
+    sched._clock, sched._over = HeldClock(timedelta(minutes=30), clock), "Ran over 30 minutes"
+    clock.at += timedelta(minutes=31)
+    await sched._watch()
+    [row] = await _runs(store)
+    assert row["state"] == "failed" and row["error"] == \
+        "The time limit ran out before your answer. Tink asks to open the vault."
+
+
+def test_two_overlapping_waits_move_a_run_clock_by_their_union():
+    from celine.backends.llm import HeldClock, paused
+    now = [0.0]
+    run = HeldClock(100.0, lambda: now[0])
+    with paused(None, run):                 # a turn waits from 0 to 30
+        now[0] = 10.0
+        with paused(None, run):             # its sub-agent from 10 to 50
+            now[0] = 30.0
+        assert run.left() is None, "held while one still waits"
+        now[0] = 50.0
+    assert run.deadline == 150.0, "50 seconds of waiting, counted once"
+    assert run.left() == 100.0
+
+
+async def test_a_run_waits_on_its_own_model_when_only_a_later_one_answers(
+        tmp_path, monkeypatch):
+    """The role's chain is [a server that is down, one that answers]: the run runs on
+    the first alone, so it waits for it, in the server's words."""
+    import httpx
+    from celine.backends.router import Router
+    from settings_fixtures import scratch
+    scratch(tmp_path, monkeypatch, providers={
+        "gpu": {"kind": "llama-swap", "label": "5090", "base_url": "http://gpu:1/v1",
+                "models": {"big": {"label": "Heretic", "caps": ["chat", "tools"]}}},
+        "lan": {"kind": "ollama", "label": "lan", "base_url": "http://lan:2/v1",
+                "models": {"small": {"caps": ["chat", "tools"]}}}},
+        roles={"chat": {"chain": ["gpu/big", "lan/small"]}})
+    cfg = load()
+
+    def reply(request):
+        if request.url.host == "gpu":
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json={"models": []})
+    router = Router(cfg, None, transport=httpx.MockTransport(reply))
+    await router.check_all()
+    app = SimpleNamespace(cfg=cfg, llm=SimpleNamespace(router=router),
+                          dispatcher=SimpleNamespace(backend_factory=None))
+    sched = Scheduler(app, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)))
+    assert await sched._model_why("chat") == \
+        "Waiting for Heretic on 5090. 5090 at gpu:1 refused the connection."
 
 
 async def test_a_run_is_over_only_once_its_sub_agents_have_reported(store):
@@ -417,7 +571,7 @@ async def test_a_run_is_over_only_once_its_sub_agents_have_reported(store):
     await turns.transition(store, out["turn_id"], sub, "done")
     assert not await store.read(lambda c: runs_mod.finished(c, run)), "not reported yet"
     rep = await send(store, f"agent:{sub}", f"agent:{run}", "It went fine.", kind="report")
-    assert not await store.read(lambda c: runs_mod.finished(c, run)), "the report wakes her"
+    assert not await store.read(lambda c: runs_mod.finished(c, run)), "the report wakes the agent"
     await turns.claim(store, "w")
     await turns.transition(store, rep["turn_id"], run, "done")
     assert await store.read(lambda c: runs_mod.finished(c, run))
@@ -492,21 +646,21 @@ def _calls(*calls):
 
 
 class Session(FakeBackend):
-    """The partner reads the day first, then asks "Question <n>."; it answers each
+    """The reviewer reads the day first, then asks "Question <n>."; it answers each
     line, and its final answer is two lines: The entry. The end."""
 
     def __init__(self):
         super().__init__()
-        self.partner: list[tuple[str, list[str]]] = []
+        self.reviewer: list[tuple[str, list[str]]] = []
 
     async def stream(self, messages, tools, body=None):
         system = messages[0]["content"] if messages[0]["role"] == "system" else ""
         if system.startswith("You are the mentor"):
-            self.partner.append((system, [t["function"]["name"] for t in tools]))
+            self.reviewer.append((system, [t["function"]["name"] for t in tools]))
             lines = [m for m in messages if m["role"] == "assistant"
                      and not m.get("tool_calls")]
             out = _calls(("past_conversations__list_day", {"date": "2026-10-09"})) \
-                if len(self.partner) == 1 else \
+                if len(self.reviewer) == 1 else \
                 [TextDelta(f"Question {len(lines) + 1}."), Done(reason="stop")]
         else:
             last = str([m for m in messages if m["role"] == "user"][-1]["content"])
@@ -517,14 +671,14 @@ class Session(FakeBackend):
             yield ev
 
 
-async def test_a_partner_and_she_alternate_up_to_the_rounds_then_her_answer_is_the_note(
+async def test_a_reviewer_and_the_agent_alternate_up_to_the_turns_then_its_answer_is_the_note(
         store, cfg):
     cfg.schedules = {
         "review": _s("review", "0 4 * * *"),
         "reflection": _s("reflection", "0 5 * * *", "Session about {{day_before}}.",
-                      label="Reflection", after=("review",), partner="mentor.md",
-                      partner_prompt="You are the mentor. Review: {{result:review}}",
-                      rounds=3, note="diary/{{day_before}}-session.md")}
+                      label="Reflection", after=("review",), reviewer="mentor.md",
+                      reviewer_prompt="You are the mentor. Review: {{result:review}}",
+                      turns=3, note="diary/{{day_before}}-session.md")}
     night = "2026-10-10"
     await store.write(lambda c: c.execute(
         "INSERT INTO runs(id, schedule, label, slot, night, state, result, created_at) VALUES "
@@ -548,11 +702,11 @@ async def test_a_partner_and_she_alternate_up_to_the_rounds_then_her_answer_is_t
         "system:mentor", "assistant"] * 3 + ["system:schedules", "assistant"]
     assert [t for w, t in said if w == "system:mentor"] == [
         "Question 1.", "Question 2.", "Question 3."]
-    first, tools = backend.partner[0]
+    first, tools = backend.reviewer[0]
     assert "Review: A good day." in first and "This is line 1 of at most 3." in first
     assert "past_conversations__list_day" in tools and "notebook__write" not in tools
-    assert runs_mod.LAST in backend.partner[-1][0]
-    note = cfg.her.notebook / "diary" / "2026-10-09-session.md"
+    assert runs_mod._say(cfg, "last_line.md") in backend.reviewer[-1][0]
+    note = cfg.agent.notebook / "diary" / "2026-10-09-session.md"
     assert note.read_text().endswith("The entry.\nThe end.")
 
 
@@ -573,10 +727,10 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
         by_name = {s["name"]: s for s in got["schedules"]}
         reflection = by_name["reflection"]
         assert (reflection["time"], reflection["after"]) == ("05:00", ["self-review"])
-        assert reflection["every"] == "Daily at 05:00" and reflection["rounds"] == 8
+        assert reflection["every"] == "Daily at 05:00" and reflection["turns"] == 8
         assert reflection["next_at"] == "05:00" and reflection["next_night"] >= got["tonight"]
-        assert reflection["partner"] == "mentor.md" and "neutral and direct" in \
-            reflection["partner_prompt"]
+        assert reflection["reviewer"] == "mentor.md" and "neutral and direct" in \
+            reflection["reviewer_prompt"]
         day = by_name["user-day"]
         assert (day["label"], day["title"]) == ("{{username}}'s day", f"{cfg.user}'s day"), \
             "the label as written, the title filled"
@@ -584,21 +738,21 @@ async def test_the_api_ships_four_schedules_and_edits_previews_runs_and_deletes(
         assert [r["name"] for r in got["roles"]] == ["chat", "tasks", "small"], \
             "the roles a schedule may run on"
         for s in got["schedules"]:
-            for text in (s["prompt"], s["partner_prompt"]):
+            for text in (s["prompt"], s["reviewer_prompt"]):
                 assert "—" not in text and " · " not in text
 
         body = {"label": "Morning", "time": "07:30", "prompt": "Plan {{date}}.",
-                "after": [], "partner_prompt": "", "rounds": 3, "note": "", "role": "chat",
+                "after": [], "reviewer_prompt": "", "turns": 3, "note": "", "role": "chat",
                 "on": True}
         r = await api.put("/api/schedules/morning", json=body)
         assert r.status_code == 200 and r.json()["cron"] == "30 7 * * *"
         saved = tomllib.loads((var / "settings" / "schedules" / "morning.toml").read_text())
-        assert saved["prompt"] == "Plan {{date}}." and saved["partner"] == ""
+        assert saved["prompt"] == "Plan {{date}}." and saved["reviewer"] == ""
         assert await store.read(lambda c: c.execute(
             "SELECT by FROM text_versions WHERE of='routine:morning:prompt'").fetchone()[0]) \
             == "user", "the prompt goes into its history"
         for bad, field in (({"time": "25:00"}, "time"), ({"after": ["nope"]}, "after"),
-                           ({"note": "../x.md"}, "note"), ({"rounds": 0}, "rounds"),
+                           ({"note": "../x.md"}, "note"), ({"turns": 0}, "turns"),
                            ({"role": "roleplay"}, "role")):
             r = await api.put("/api/schedules/morning", json={**body, **bad})
             assert r.status_code == 400 and r.json()["error"]["detail"]["field"] == field
@@ -684,12 +838,12 @@ async def _one_run(store, cfg, backend, clock=None) -> dict:
     return row
 
 
-async def test_a_note_she_wrote_is_the_result_not_the_line_beside_the_write(store, cfg):
+async def test_a_note_the_agent_wrote_is_the_result_not_the_line_beside_the_write(store, cfg):
     review = "# Self-review\n\nWent well: the search.\nDid not: the mail."
     backend = Writer({"Review the night": [TextDelta("Writing the review now."),
                                            *_write(NOTE, review)]})
     row = await _one_run(store, cfg, backend)
-    note = (cfg.her.notebook / NOTE).read_text()
+    note = (cfg.agent.notebook / NOTE).read_text()
     assert note.endswith(review), "nothing is written over the note it wrote"
     assert "Writing the review now" not in note
     assert row["result"] == review, "the note is the result the next run reads"
@@ -697,27 +851,27 @@ async def test_a_note_she_wrote_is_the_result_not_the_line_beside_the_write(stor
 
 
 async def test_a_turn_that_ends_with_another_write_leaves_the_note_unwritten(store, cfg):
-    """Her lead-in beside a write of another note is no answer: the note is not written,
+    """Its lead-in beside a write of another note is no answer: the note is not written,
     the run says so, the lead-in stays its result as it came."""
     backend = Writer({"Review the night": [TextDelta("Merged the notes:"),
                                            *_write("thoughts/x.md", "The merge.")]})
     row = await _one_run(store, cfg, backend)
-    assert not (cfg.her.notebook / NOTE).exists()
+    assert not (cfg.agent.notebook / NOTE).exists()
     assert row["state"] == "done" and row["result"] == "Merged the notes:"
     assert row["error"] == (f"The note {NOTE} was not written: the run ended with a tool "
                             "call and no answer after it.")
 
 
-async def test_a_note_she_wrote_then_went_on_past_is_the_result_and_the_run_says_so(
+async def test_a_note_the_agent_wrote_then_went_on_past_is_the_result_and_the_run_says_so(
         store, cfg, monkeypatch):
-    """She writes the note, reads it, then answers with a correction: the note is the
-    result, untouched, and the run's error says the note is older than her later calls."""
+    """The agent writes the note, reads it, then answers with a correction: the note is the
+    result, untouched, and the run's error says the note is older than its later calls."""
     from celine.skills.notebook import unstamped
     from celine.turns import store as turns
     clock = Clock(datetime(2026, 10, 10, 4, tzinfo=UTC))
     monkeypatch.setattr(turns, "now", lambda: iso(clock.at))
     draft = "# Self-review\n\nDiagnosis: the mail."
-    note = cfg.her.notebook / NOTE
+    note = cfg.agent.notebook / NOTE
 
     def read_it():
         os.utime(note, (clock.at.timestamp(), clock.at.timestamp()))
@@ -730,37 +884,37 @@ async def test_a_note_she_wrote_then_went_on_past_is_the_result_and_the_run_says
                       "Diagnosis": [TextDelta("corrected diagnosis"), Done(reason="stop")]})
     row = await _one_run(store, cfg, backend, clock)
     assert (row["state"], row["result"]) == ("done", draft)
-    assert row["error"] == f"The note {NOTE} was last written before the run's last 1 tool call."
-    assert unstamped(note.read_text()).strip() == draft, "her note stays as she wrote it"
+    assert row["error"] == f"The note {NOTE} was last written before the run's last tool call."
+    assert unstamped(note.read_text()).strip() == draft, "its note stays as it wrote it"
 
 
-async def test_a_new_note_gets_her_answer_whole(store, cfg):
+async def test_a_new_note_gets_its_answer_whole(store, cfg):
     backend = Writer({"Review the night": [TextDelta("Went well: the search.\nDid not: the mail."),
                                            Done(reason="stop")]})
     row = await _one_run(store, cfg, backend)
     from celine.skills.notebook import unstamped
-    note = unstamped((cfg.her.notebook / NOTE).read_text())
+    note = unstamped((cfg.agent.notebook / NOTE).read_text())
     assert note.strip() == "Went well: the search.\nDid not: the mail." == row["result"]
     assert len(backend.calls) == 1, "its first final answer is the result: no second ask"
 
 
-async def test_a_note_she_wrote_again_keeps_its_text_not_the_closing_line(store, cfg):
-    """The note was there with the same text she writes: her write still makes it hers,
-    her closing line is not appended."""
+async def test_a_note_the_agent_wrote_again_keeps_its_text_not_the_closing_line(store, cfg):
+    """The note was there with the same text the agent writes: its write still makes it its
+    own, its closing line is not appended."""
     review = "# Self-review\n\nWent well: the search."
-    note = cfg.her.notebook / NOTE
+    note = cfg.agent.notebook / NOTE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text(review)
     backend = Writer({"Review the night": [TextDelta("Got the whole picture now."),
                                            *_write(NOTE, review)]})
     row = await _one_run(store, cfg, backend)
     from celine.skills.notebook import unstamped
-    assert unstamped(note.read_text()) == review, "the note she wrote stays as she wrote it"
+    assert unstamped(note.read_text()) == review, "the note the agent wrote stays as it wrote it"
     assert row["result"] == review
 
 
-async def test_a_note_she_did_not_write_gets_her_answer_appended(store, cfg):
-    note = cfg.her.notebook / NOTE
+async def test_a_note_the_agent_did_not_write_gets_its_answer_appended(store, cfg):
+    note = cfg.agent.notebook / NOTE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("# Reviews\n")
     backend = Writer({"Review the night": [TextDelta("Went well: the search."),
@@ -770,8 +924,8 @@ async def test_a_note_she_did_not_write_gets_her_answer_appended(store, cfg):
     assert row["result"] == "Went well: the search."
 
 
-async def test_a_log_note_she_adds_to_gives_only_what_she_added(store, cfg):
-    note = cfg.her.notebook / NOTE
+async def test_a_log_note_the_agent_adds_to_gives_only_what_it_added(store, cfg):
+    note = cfg.agent.notebook / NOTE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("# Reviews\n\nThe night before.\n")
     added = "\n## Tonight\n\nWent well: the search.\n"

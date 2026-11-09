@@ -1,6 +1,6 @@
 """A Routine written or run, by the user (schedules/api.py) or by it (schedules/skill.py):
 one path, the same checks. A write goes to var/settings/schedules/<name>.toml (and its
-partner prompt beside it), reloads the config in place, records its texts in their
+reviewer prompt beside it), reloads the config in place, records its texts in their
 History by who wrote them and wakes the scheduler."""
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ from . import NAME, check_after, parse
 from ..core.event_types import SETTINGS_CHANGED
 
 CLOCK = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
-FIELDS = ("label", "summary", "cron", "time", "prompt", "after", "partner", "partner_prompt",
-          "rounds", "note", "role", "on", "idle_only", "wall_minutes",
-          "daytime")
+FIELDS = ("label", "summary", "cron", "time", "prompt", "after", "reviewer", "reviewer_prompt",
+          "turns", "note", "role", "on", "idle_only", "wall_minutes",
+          "daytime", "on_fail")
+KEPT = ("daytime", "on_fail")   # left out of a write, the stored values stay
 
 
 def record_texts(c, s, by: str) -> None:
@@ -23,8 +24,8 @@ def record_texts(c, s, by: str) -> None:
     page, written by `by` (user or it)."""
     from ..texts import record
     record(c, f"routine:{s.name}:prompt", s.prompt, by)
-    if s.partner_prompt:
-        record(c, f"routine:{s.name}:reviewer", s.partner_prompt, by)
+    if s.reviewer_prompt:
+        record(c, f"routine:{s.name}:reviewer", s.reviewer_prompt, by)
 
 
 async def save(app, name: str, body: dict, by: str):
@@ -53,18 +54,20 @@ async def save(app, name: str, body: dict, by: str):
         body["cron"] = f"{int(m[2])} {int(m[1])} * * *"
     if body.get("wall_minutes") is None:
         body.pop("wall_minutes", None)
-    text = body.pop("partner_prompt", "") or ""
+    text = body.pop("reviewer_prompt", "") or ""
     if not isinstance(text, str):
-        raise Invalid("partner_prompt", "The reviewer prompt is text.")
-    body["partner"] = (body.get("partner") or f"{name}-partner.md") if text.strip() else ""
+        raise Invalid("reviewer_prompt", "The reviewer prompt is text.")
+    body["reviewer"] = (body.get("reviewer") or f"{name}-reviewer.md") if text.strip() else ""
     every = app.cfg.schedules
-    s = parse(name, body, text if body["partner"] else None)
+    if (old := every.get(name)) is not None:
+        body = {**{k: getattr(old, k) for k in KEPT}, **body}
+    s = parse(name, body, text if body["reviewer"] else None)
     check_after({k: v for k, v in every.items() if k != name}, s)
     folder = seed.schedules_dir(files.settings_dir(app.cfg))
     async with write.lock():
         files.write_toml(folder / f"{name}.toml", s.raw())
-        if s.partner:
-            files.write_bytes(folder / s.partner, (s.partner_prompt + "\n").encode())
+        if s.reviewer:
+            files.write_bytes(folder / s.reviewer, (s.reviewer_prompt + "\n").encode())
         applied = reload.apply(app)
     await app.store.write(lambda c: record_texts(c, s, by))
     app.store.emit_global({"type": SETTINGS_CHANGED, "what": ["schedules"]})

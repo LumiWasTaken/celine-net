@@ -2,11 +2,12 @@ label = "World news"
 summary = "Searches the news of the day before and writes a digest."
 cron = "0 2 * * *"
 after = []
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "diary/{{date}}-world.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 What happened in the world on {{day_before}}?
 

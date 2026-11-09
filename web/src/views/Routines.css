@@ -3,17 +3,10 @@
 
 .routines-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-/* the fourteen days: Earlier, the days (each its date and a mark per schedule), Later */
+/* the fourteen days: Earlier, the days (a failed one in the error tone), Later */
 .routines-days { display: flex; align-items: center; gap: var(--s-1); min-width: 0; }
 /* one row that scrolls sideways, never wraps */
-.routines-days .routines-days__strip { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-.routines-day { display: inline-flex; align-items: center; gap: var(--s-1); white-space: nowrap; }
-.routines-day__marks { display: inline-flex; gap: var(--s-0); min-height: var(--s-1); }
-.routines-mark { width: var(--s-1); height: var(--s-1); border-radius: var(--r-full); background: var(--text-muted); }
-.routines-mark--ok { background: var(--success); }
-.routines-mark--error { background: var(--error); }
-.routines-mark--running { background: var(--accent); }
-.routines-mark--off { background: var(--surface-4); }
+.routines-days .routines-days__strip { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
 
 .routines-prose { margin: 0; line-height: var(--lh-body); color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .routines-prose--quiet { color: var(--text-secondary); }

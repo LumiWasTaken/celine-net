@@ -51,7 +51,7 @@ async def extras(app, text: str, night: date,
         out["tool_failures"] = await store.read(
             lambda c: tool_failures(c, night, zone(cfg)))
     if "{{voice_counts}}" in text:
-        voice = cfg.her.voice if getattr(cfg, "her", None) else {}
+        voice = cfg.agent.voice if getattr(cfg, "agent", None) else {}
         out["voice_counts"] = await store.read(lambda c: voice_counts(c, now, voice))
     return out
 
@@ -93,7 +93,7 @@ async def on_mind(app) -> str:
     from ..skills import notebook_index
     from ..skills.notebook import keys_of
     from ..turns.loads import key_in
-    root = app.cfg.her.notebook if getattr(app.cfg, "her", None) else None
+    root = app.cfg.agent.notebook if getattr(app.cfg, "agent", None) else None
     said = "\n".join([*last_thoughts(root), *await app.store.read(last_exchange)])
     if root is None or not said.strip():
         return NONE
@@ -153,10 +153,10 @@ def _per_k(texts: list[str], voice: dict) -> float:
 
 def voice_counts(c: sqlite3.Connection, now: datetime, voice: dict) -> str:
     from ..turns import slop
-    hers, theirs = _texts(c, iso(now - timedelta(days=DAYS)))
-    if not hers:
+    own, theirs = _texts(c, iso(now - timedelta(days=DAYS)))
+    if not own:
         return NONE
-    h, u = [m["text"] for m in hers], [m["text"] for m in theirs]
+    h, u = [m["text"] for m in own], [m["text"] for m in theirs]
     lines = [f"Your chat replies of the last {DAYS} days: {len(h)} ({sum(map(len, h)):,} "
              f"characters). {{{{username}}}}'s messages: {len(u)}.",
              f"Slop hits per 1,000 characters: yours {_per_k(h, voice):.1f}, "
@@ -168,7 +168,7 @@ def voice_counts(c: sqlite3.Connection, now: datetime, voice: dict) -> str:
     after = []
     for m in theirs:
         if SHORT.search(m["text"]):
-            nxt = next((r for r in hers if r["cid"] == m["cid"] and r["at"] > m["at"]), None)
+            nxt = next((r for r in own if r["cid"] == m["cid"] and r["at"] > m["at"]), None)
             if nxt:
                 after.append(len(nxt["text"].split()))
     lines.append(f"After {{{{username}}}} asked for short, your reply was "

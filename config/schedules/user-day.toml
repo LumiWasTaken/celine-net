@@ -1,12 +1,13 @@
 label = "{{username}}'s day"
-summary = "Reads what you did the day before from your chats and mail."
+summary = "Reads what you did the day before from your chats and email."
 cron = "0 3 * * *"
 after = ["world"]
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "diary/{{date}}-{{username}}.md"
 role = "chat"
 on = false
+on_fail = "retry"
 prompt = """
 What did {{username}} do on {{day_before}}?
 

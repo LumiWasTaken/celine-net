@@ -20,7 +20,7 @@ from celine.boot import load
 from celine.conversations import store as conversations
 from celine.core.services import Services
 from celine.intercom import Intercom
-from celine.schedules import Schedule, parse, read_partner, runs as runs_mod
+from celine.schedules import Schedule, parse, read_reviewer, runs as runs_mod
 from celine.schedules.backups import nightly
 from celine.schedules.runs import IN_USE, PASSED, Scheduler, binding, waited_on
 from celine.schedules.variables import tool_failures
@@ -58,32 +58,33 @@ def test_every_shipped_schedule_loads_through_the_parser():
             "growth"} <= set(names)
     for name in names:
         raw = tomllib.loads((CONFIG / f"{name}.toml").read_text())
-        s = parse(name, raw, read_partner(CONFIG, str(raw.get("partner") or "")))
+        s = parse(name, raw, read_reviewer(CONFIG, str(raw.get("reviewer") or "")))
         assert "—" not in s.prompt and " · " not in s.prompt
     from celine.errors import CelineError
     with pytest.raises(CelineError):
         parse("x", {"label": "X", "cron": "0 2 * * *", "prompt": "p", "wall_minutes": 0}, None)
 
 
-async def test_the_partner_binds_behind_the_user_with_the_schedules_label(store, cfg):
+async def test_the_reviewer_binds_behind_the_user_with_the_schedules_label(store, cfg):
     bound = {}
     llm = SimpleNamespace(bind=lambda backend, **kw: bound.update(kw) or "b")
     sched = Scheduler(_app(store, cfg, llm))
     s = Schedule("reflection", "Reflection", "0 5 * * *", "p")
-    assert sched._partner_backend("cid", s) == "b"
+    assert sched._reviewer_backend("cid", s) == "b"
     assert (bound["priority"], bound["label"], bound["fallback"]) == \
         (Priority.BACKGROUND, "Reflection", False), "on the role's own model only"
 
     cfg.schedules = {"reflection": s}
     run_cid = await conversations.create(store, "run")
     sub = await conversations.create(store, "scout", agent_of=run_cid, agent_name="scout")
+    deep = await conversations.create(store, "digger", agent_of=sub, agent_name="digger")
     await store.write(lambda c: c.execute(
         "INSERT INTO runs(id, schedule, label, slot, night, state, conversation_id, "
         "created_at) VALUES('r', 'reflection', 'Reflection', 'x', '2026-10-16', 'running', ?, "
         "'x')", (run_cid,)))
-    for cid in (run_cid, sub):
+    for cid in (run_cid, sub, deep):            # every depth binds as the run
         assert await store.read(lambda c: binding(c, cid, cfg)) == {
-            "priority": Priority.BACKGROUND, "label": "Reflection"}
+            "priority": Priority.BACKGROUND, "label": "Reflection", "run": "r"}
     chat = await conversations.create(store, "talk")
     assert await store.read(lambda c: binding(c, chat, cfg)) is None
 
@@ -125,13 +126,13 @@ async def test_an_idle_only_run_is_skipped_while_the_app_is_in_use(store, cfg):
     chat = await conversations.create(store, "talk")
     await user_says(store, chat, "hi")
     await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
-    run = await sched.run_now("daydream")
+    run = await sched.run_now("daydream", by="agent")      # the user's own is never skipped
     await sched.tick()
     got = await store.read(lambda c: dict(c.execute(
         "SELECT state, reason FROM runs WHERE id=?", (run["id"],)).fetchone()))
     assert got == {"state": "skipped", "reason": IN_USE}, "a message came a moment ago"
     clock.at += timedelta(seconds=1)
-    later = await sched.run_now("daydream")
+    later = await sched.run_now("daydream", by="agent")
     clock.at += timedelta(hours=1)
     await sched.tick()
     assert await store.read(lambda c: c.execute(
@@ -143,18 +144,18 @@ async def test_a_note_that_is_there_gets_the_answer_under_a_heading(store, cfg):
     sched = Scheduler(_app(store, cfg))
     s = Schedule("review", "Self-review", "0 4 * * *", "p", note="diary/x.md")
     cid = await conversations.create(store, "run")
-    note = cfg.her.notebook / "diary" / "x.md"
+    note = cfg.agent.notebook / "diary" / "x.md"
     assert await sched._write_note(cid, "diary/x.md", "First.", s, "2026-10-16") is None
     assert note.read_text().strip().endswith("\nFirst.")
     await sched._write_note(cid, "diary/x.md", "Second.", s, "2026-10-17")
     assert note.read_text().strip().endswith("First.\n\n## 2026-10-17 Self-review\n\nSecond.")
 
 
-async def test_a_note_she_touched_since_the_run_began_is_hers_whole(store, cfg):
+async def test_a_note_the_agent_touched_since_the_run_began_is_its_own_whole(store, cfg):
     """A run that goes on after a restart: what it wrote before it is the result."""
     import os
     sched = Scheduler(_app(store, cfg))
-    note = cfg.her.notebook / "diary" / "w.md"
+    note = cfg.agent.notebook / "diary" / "w.md"
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("# World\n\nThe news.\n")
     at = datetime(2026, 10, 17, 2, tzinfo=UTC)
@@ -221,7 +222,7 @@ async def test_tool_failures_are_one_line_per_tool(store):
         runs_mod.NONE
 
 
-async def test_voice_counts_compare_her_replies_with_the_users(store):
+async def test_voice_counts_compare_its_replies_with_the_users(store):
     from celine.schedules.variables import voice_counts
     cid = await conversations.create(store, "talk")
     now = datetime.now(UTC)
@@ -253,7 +254,7 @@ async def test_the_clock_starts_with_the_run_and_its_ceiling_wakes_the_scheduler
     sched._start(run)
     await store.write(lambda c: c.execute("UPDATE runs SET state='running' WHERE id=?",
                                           (run["id"],)))
-    assert sched._began == clock.at, "the clock starts with the run"
+    assert sched._clock.left() == timedelta(minutes=10), "the clock starts with the run"
     clock.at += timedelta(minutes=9, seconds=30)
     assert sched.until_next() == 30, "the scheduler looks again at its ceiling"
     clock.at += timedelta(seconds=30)
@@ -265,7 +266,7 @@ async def test_the_clock_starts_with_the_run_and_its_ceiling_wakes_the_scheduler
     await sched.tick()
     assert await store.read(lambda c: tuple(c.execute(
         "SELECT state, error FROM runs WHERE id=?", (run["id"],)).fetchone())) == \
-        ("failed", "Ran over 10 minutes")
+        ("failed", "Stopped at its time limit of 10 minutes.")
 
 
 async def test_a_routine_time_limit_of_0_lets_a_run_go_on(store, cfg):

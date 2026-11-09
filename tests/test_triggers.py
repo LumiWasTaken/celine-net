@@ -33,8 +33,8 @@ async def api(tmp_path, monkeypatch, store):
 
 async def test_the_mail_trigger_is_declared_off_and_the_user_turns_it_on(api):
     got = (await api.get("/api/triggers")).json()["triggers"]
-    assert {"name": "mail.new", "label": "New email", "about": "Reads new mail and "
-            "asks you only when something needs you.", "skill": "email", "kind": "event",
+    assert {"name": "mail.new", "label": "New email", "about": "Reads new emails and "
+            "asks you only when one needs your answer.", "skill": "email", "kind": "event",
             "on": False, "fired_at": None} in got
     r = await api.put("/api/triggers/mail.new", json={"on": True})
     assert r.status_code == 200 and r.json()["on"] is True

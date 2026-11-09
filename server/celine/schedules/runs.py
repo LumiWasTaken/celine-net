@@ -9,14 +9,20 @@ was switched off (`forget`) make nothing that passed, they only start the count.
 the onboarding is not done no run starts. A run's night is `night_of` its slot. Slots
 missed while the app was off with Routines on are made too, oldest first: those of the
 last CATCH_UP_DAYS wait like any other, older ones are written `skipped` with the
-reason. A slot is never dropped silently.
+reason. A slot is never dropped silently. A Skip routine (`on_fail` skip) waits for its
+newest slot only: its new waiting run ends the older waiting ones `skipped` (NEXT_DUE).
+A run the user started (`started_by` user: Run now, Retry) neither ends others so nor
+is ended so.
 
 When a run starts. A run is `waiting` until all of these hold; its `reason` says the
 first that does not, in words:
+0. its slot has come: a run again waits for its time ("Retry of the 02:00 run");
 1. every run it follows in the same night is finished, done or failed or skipped
    ("Runs after World news");
-2. the model of its role can answer now, the Router says ("Waiting for <model>"); it
-   starts by itself when the model comes back, the same night or days later;
+2. the first model of its role can answer now, the Router says ("Waiting for <model>.
+   <why>", the why in the server's words); a server known to be failing is asked again
+   at most every RETRY_DOWN (backends/router.py), and the run starts by itself when the
+   model comes back, the same night or days later;
 3. no turn a person waits on is live: a chat (not a trigger's), a turn the user
    started in a mission ("Waiting until your chat is done"); a mission's
    turns that go on by themselves hold no run unless Routines wait for missions is on
@@ -25,20 +31,24 @@ first that does not, in words:
 While it is frozen (guard/freeze.py) no run starts ("Frozen"); the run whose turn a
 freeze cut is `waiting` ("Frozen") and goes on in that turn after the unfreeze.
 A schedule with `idle_only` starts only when, besides, nobody used the app for
-IDLE_MINUTES (no user message, no turn a person waits on); otherwise, or when it could
-not start within IDLE_MINUTES of its slot, that run is `skipped` and never caught up.
+IDLE_MINUTES (no user message, no turn a person waits on): a run that finds the app in
+use is `skipped` at that look (IN_USE), one still waiting for another reason IDLE_MINUTES
+after its slot is `skipped` (PASSED), and neither is caught up. A run the user started
+is held to none of this.
 The queue is ordered by night, then by how deep the schedule follows, then by slot, so
 missed nights run night by night, each about its own date.
 
 A run. One background conversation (`run:<id>`, hidden from the chat list) with the
 filled prompt as its first message, from `system:schedules`; its persona, notes and
-tools as in any conversation, on the schedule's role. The agent's turns and the partner's calls
+tools as in any conversation, on the schedule's role. The agent's turns and the reviewer's calls
 wait behind every interactive request (Priority BACKGROUND, `binding`), named by the
 schedule's label, on the role's own model only: no other model (turns/dispatcher.py
-binds them so). What the result is it reads with the prompt and after the partner's
-talk, from final.md beside this file (note.md names the note): the whole result, in
-full, nothing asked again. With a partner, the partner prompt (on the same role, with the
-read-only tools of READS) and it alternate up to `rounds` lines, the partner may end
+binds them so, `binding`, at every depth of sub-agents under the run). Its lines are
+.md files beside this file (`_say`): background.md with the prompt (what the result is,
+from final.md, note.md naming the note: the whole result, in full, nothing asked
+again), reviewer_first.md, asked.md, line.md, last_line.md and talk_over.md for a
+reviewer. With a reviewer, the reviewer prompt (on the same role, with the
+read-only tools of READS) and it alternate up to `turns` lines, the reviewer may end
 sooner with END alone on its last line; then it is asked for its final answer. The agent's
 final answer is the result. With `note` the app writes it to that notebook path; a note
 that is there already gets it appended under "## <date> <label>" (run_date). A note it
@@ -55,19 +65,31 @@ when its conversation and its sub-agents are quiet and every sub-agent has repor
 (looked at after every turn or job end, the dispatcher's `on_end`). Every run first keeps the
 night's backups (schedules/backups.py: once a night, the later runs find them made).
 
-One try. A run is never re-asked, rewritten or retried. When its turn fails and the
+When a run fails. A run is never re-asked or rewritten. When its turn fails and the
 Router says the role's model cannot answer (it is unreachable, or none is set), the run
 is `waiting` for it ("Waiting for <model>"), its conversation kept; when the Router sees
 the model answer, the run starts again and continues that failed turn in the same
 conversation (turns/store.continue_turn: the stored context, no new prompt). Any other
-failure fails the run with the error, once: a model error, a tool error that ends its
-turn, its turn stopped, or its ceiling: the Routine time limit (Settings, Advanced, 0
-none; a schedule's own `wall_minutes` makes it shorter) counts from the run's start; a
-run that waited for its model starts with a new clock. A run that was running when the app stopped is running still at
-the next start: the scheduler continues its cut turn (`_resume`) and takes its
-answer once the conversation is quiet (a partner's talk that was cut ends there). `end`
-ends a waiting or running run with a reason: Stop in the run's drawer (`stopped`), its
-schedule deleted (`skipped`), its ceiling (`failed`). A run keeps its schedule's
+failure ends it, in one place (`_fail`), as its schedule's When a run fails (`on_fail`)
+says: a model error, a tool error that ends its turn, its turn stopped, or its ceiling.
+Skip: the run is `skipped` with the error as its reason, and nothing tells it. Retry:
+the run is `failed` with the error; a run that failed on an error (not its ceiling, not
+a stop) runs again as a fresh run of its prompt, up to three times (RUN_AGAIN: 15
+minutes, 1 hour, then 4 hours after the try before): a waiting run `again_of` it, for the
+same night (its dates are the first try's, `first_slot`), only when that is before the
+schedule's next slot; the runs after it wait for it. A failure with no run again sends
+the notice. Retry on the run's page runs
+a failed, skipped or stopped run again now (`retry`). The ceiling is the Routine time
+limit (Settings, Advanced, 0 none; a schedule's own `wall_minutes` makes it shorter): it
+counts the run's work from its start, not its waits for a model: while any call of the
+run, its sub-agents or its reviewer waits for a slot, a busy server or a GPU lease, its
+clock stands still (RunClock, a backends/llm.HeldClock; overlapping waits count once), and the run reads `waiting`, its reason HELD (view `held`). A request that
+waits for the user's answer runs on the clock: it waits as long as the run's limit lets
+it. A run that waited for its model starts with a new clock. A run that was running when the app stopped is running
+still at the next start: the scheduler continues its cut turn (`_resume`) and takes its
+answer once the conversation is quiet (a reviewer's talk that was cut ends there). `end`
+ends a waiting or running run with a reason: Stop on the run's page (`stopped`), its
+schedule deleted (`skipped`), its ceiling (`_fail`). A run keeps its schedule's
 label. Every change is `run.state {run}` on the global feed.
 """
 from __future__ import annotations
@@ -83,7 +105,9 @@ import anyio
 from croniter import croniter
 
 from .. import homes, metrics, prompts
+from ..errors import NotFound
 from ..backends.base import Done, TextDelta, ToolCallDelta
+from ..backends.llm import HeldClock
 from ..conversations import store as conversations, tree
 from ..core.ids import iso, new_id, now
 from ..core.states import LIVE_SQL
@@ -91,17 +115,20 @@ from ..skills import ToolContext
 from ..clock import zone
 from ..sub_agents.report import asked, last_answer, quiet
 from . import NONE, depth, fill, night_of, run_date, shown
+from ..settings.files import Invalid
 from .variables import FROM_USER, extras
 from ..core.event_types import RUN_STATE
 
 log = logging.getLogger("celine.schedules")
 
 TICK = 60.0                  # seconds between two looks without a wake
+# a Retry routine's failed run runs again this long after it, the first, second and third time
+RUN_AGAIN = (timedelta(minutes=15), timedelta(hours=1), timedelta(hours=4))
 CATCH_UP_DAYS = 7
 MAX_SLOTS = 2000             # slots made per schedule in one look
 CHECKED = "schedules.checked"
-PARTNER_STEPS = 12           # the partner's tool steps before one line
-READS = ("notebook", "past_conversations", "chat_archive")   # the partner's read tools
+REVIEWER_STEPS = 12          # the reviewer's tool steps before one line
+READS = ("notebook", "past_conversations", "chat_archive")   # the reviewer's read tools
 END = re.compile(r"\s*\bEND\s*$")
 
 MISSED = f"Missed while the app was off for more than {CATCH_UP_DAYS} days"
@@ -111,21 +138,16 @@ IDLE_MINUTES = 30
 IN_USE = "The app was in use"
 FROZEN = "Frozen"            # a freeze cut its turn, or it may not start while frozen
 PASSED = f"More than {IDLE_MINUTES} minutes late"
+NEXT_DUE = "The next run was due"     # a Skip routine's older waiting run, at a newer slot
+RETRY_OF = "Retry of the {at} run"    # a Retry routine's run again, until its time
+HELD = "Waiting for the model"         # a running run's reason while its work waits (view)
+# a run's row for `view`, with the slot of the run it runs again and the id and slot of
+# the run that runs it again (`retried`)
+ROW = ("SELECT r.*, a.slot AS again_slot, x.id AS retried, x.slot AS retried_slot "
+       "FROM runs r LEFT JOIN runs a ON a.id = r.again_of LEFT JOIN runs x ON x.id = "
+       "(SELECT y.id FROM runs y WHERE y.again_of = r.id ORDER BY y.slot DESC LIMIT 1)")
 WAITED_ON = ("((c.kind = 'mission' AND {mission}) OR (c.kind = 'chat' AND "
              "c.trigger_key IS NULL))")
-
-RULE = ("This runs in the background: {{username}} is not here and reads nothing of it "
-        "live. {final} If something needs {{username}} to act or to know, start a chat "
-        "for them with intercom__start_chat: a title and what they read first, short and "
-        "complete.")
-PARTNER_LINE = ("In this run you talk with {who} first. Their lines come to you in this "
-                "conversation: answer here, in your own words. intercom__send reaches "
-                "{{username}}, not {who}.")
-FINAL = "The talk with {who} is over. Now give your final answer to what this run asks of you. {final}"
-ASKED = "What {{name}} was asked for this run:"
-LAST = "This is your last line: give your closing line now."
-LINE = "This is line {n} of at most {rounds}."
-
 
 def _repeated(slot: datetime, tz) -> bool:
     """The second 02:00 of the night the clocks go back: that wall time already ran."""
@@ -133,9 +155,15 @@ def _repeated(slot: datetime, tz) -> bool:
     return local.utcoffset() != local.replace(fold=0).utcoffset()
 
 
+def _say(cfg, name: str, **values) -> str:
+    """A run's line from its .md beside this file (background.md, reviewer_first.md,
+    talk_over.md, asked.md, line.md, last_line.md), filled (prompts.fill)."""
+    return prompts.fill(cfg, __file__, name, **values).strip()
+
+
 def final_words(note: str) -> str:
     """final.md (with note.md's clause for `note`, the notebook path, when there is one):
-    what the result of a run is, said to it with the prompt and after a partner's talk."""
+    what the result of a run is, said to it with the prompt and after a reviewer's talk."""
     clause = prompts.text(__file__, "note.md").strip().replace("{{path}}", note) if note else ""
     return prompts.text(__file__, "final.md").strip().replace("{{note}}", clause)
 
@@ -145,10 +173,40 @@ class RunFailed(Exception):
     fails, it never waits for its model then; `frozen` True when a freeze cut its turn: the
     run waits for the unfreeze."""
 
-    def __init__(self, sentence: str, stopped: bool = False, frozen: bool = False):
+    def __init__(self, sentence: str, stopped: bool = False, frozen: bool = False,
+                 code: str = ""):
         super().__init__(sentence)
         self.stopped = stopped
         self.frozen = frozen
+        self.code = code            # the failed turn's reason_code
+
+
+class RunClock(HeldClock):
+    """The running run's HeldClock (backends/llm.py): its time limit (None: no limit,
+    `left` is None), and `changed()` when it starts or stops waiting for a model."""
+
+    def __init__(self, limit: timedelta | None, now, changed):
+        super().__init__(limit or timedelta(0), now)
+        self.limited = limit is not None
+        self.changed = changed
+        self.told = False        # the held state the feed was last told (Scheduler._tell)
+
+    @property
+    def held(self) -> bool:
+        return self._held > 0
+
+    def hold(self) -> None:
+        super().hold()
+        if self._held == 1:
+            self.changed()
+
+    def release(self) -> None:
+        super().release()
+        if self._held == 0:
+            self.changed()
+
+    def left(self):
+        return super().left() if self.limited else None
 
 
 # ---- rows ---------------------------------------------------------------------------------
@@ -159,31 +217,53 @@ def night_words(night: str) -> str:
     return f"{d:%a} {d.day} {d:%b}"
 
 
-def view(r: sqlite3.Row | dict, cfg) -> dict:
-    """A run as the API and the feed give it: `at` its slot's time of day in the app's
-    zone, `label` its schedule's (the one it kept once the schedule is gone)."""
+def why_alone(reason: str) -> str:
+    """A run's reason without the "Waiting" its state word says already, for the day's
+    list: "Waiting for Big. Main returned 503: ..." is "Main returned 503: ...", "Waiting
+    until your chat is done" is "Until your chat is done"; any other reason as it is."""
+    if reason.startswith("Waiting for ") and ". " in reason:
+        return reason.split(". ", 1)[1]
+    if reason.startswith("Waiting "):
+        rest = reason.removeprefix("Waiting ")
+        return rest[:1].upper() + rest[1:]
+    return reason
+
+
+def view(r: sqlite3.Row | dict, cfg, held: bool = False) -> dict:
+    """A run as the API and the feed give it (a ROW): `at` its slot's time of day in the
+    app's zone, `label` its schedule's (the one it kept once the schedule is gone);
+    `state` waiting and `reason` HELD while it runs and its work waits for a model
+    (`held`, its RunClock), `reason_why` its reason without the "Waiting" (why_alone);
+    `again_of` the run it runs again and `retried` the run that runs it again, each
+    {id, at} or None."""
     s = (getattr(cfg, "schedules", None) or {}).get(r["schedule"])
+    waits = held and r["state"] == "running"
+    reason = HELD if waits else r["reason"]
+
+    def at(slot: str) -> str:
+        return datetime.fromisoformat(slot).astimezone(zone(cfg)).strftime("%H:%M")
     return {"id": r["id"], "schedule": r["schedule"],
-            "label": shown(s) if s else r["label"], "slot": r["slot"],
-            "at": datetime.fromisoformat(r["slot"]).astimezone(zone(cfg)).strftime("%H:%M"),
-            "night": r["night"], "state": r["state"], "reason": r["reason"],
+            "label": shown(s) if s else r["label"], "slot": r["slot"], "at": at(r["slot"]),
+            "night": r["night"], "state": "waiting" if waits else r["state"],
+            "reason": reason, "reason_why": why_alone(reason),
             "conversation_id": r["conversation_id"], "result": r["result"],
             "error": r["error"], "created_at": r["created_at"],
             "started_at": r["started_at"], "finished_at": r["finished_at"],
-            "started_by": r["started_by"]}
+            "started_by": r["started_by"],
+            "again_of": {"id": r["again_of"], "at": at(r["again_slot"])}
+            if r["again_of"] else None,
+            "retried": {"id": r["retried"], "at": at(r["retried_slot"])}
+            if r["retried"] else None}
 
 
-def _set(c: sqlite3.Connection, store, cfg, rid: str, **fields) -> dict:
+def _set(c: sqlite3.Connection, store, cfg, rid: str, held: bool = False,
+         **fields) -> dict:
     """Inside a write: change run `rid` and tell the feed. -> its view."""
     if fields:
         c.execute(f"UPDATE runs SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
                   (*fields.values(), rid))
-    out = view(c.execute("SELECT * FROM runs WHERE id = ?", (rid,)).fetchone(), cfg)
+    out = view(c.execute(f"{ROW} WHERE r.id = ?", (rid,)).fetchone(), cfg, held)
     store.global_event(c, RUN_STATE, {"run": out})
-    if fields.get("state") == "failed":
-        from ..events import notice
-        notice(store, c, "run", out["label"], out["error"] or "Failed",
-               homes.run_link(out["night"], rid), f"run:{rid}")
     if fields.get("state") in ("done", "failed", "skipped", "stopped"):
         from ..events import added
         added(store, c, "run", out["conversation_id"])
@@ -199,22 +279,77 @@ def _set(c: sqlite3.Connection, store, cfg, rid: str, **fields) -> dict:
 
 
 def _insert(c: sqlite3.Connection, store, cfg, name: str, slot: datetime,
-            tz, state: str = "waiting", reason: str = "", by: str = "clock") -> dict | None:
+            tz, state: str = "waiting", reason: str = "", by: str = "clock",
+            night: str | None = None, again_of: str | None = None) -> dict | None:
     """The run of `name` at `slot`, None when it is there already; `by` who started it:
-    the clock, the user (Run now) or it (routines__run)."""
+    the clock, the user (Run now, Retry) or it (routines__run). A run again (`again_of`)
+    keeps the `night` of the run it runs again. A Skip routine's new waiting run ends its
+    older waiting ones skipped (NEXT_DUE): after days off it runs once, for its newest
+    slot. A run the user started neither ends others so nor is ended so."""
     rid = new_id()
     s = (getattr(cfg, "schedules", None) or {}).get(name)
     made = c.execute(
         "INSERT INTO runs(id, schedule, label, slot, night, state, reason, "
-        "created_at, started_by) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(schedule, slot) "
-        "DO NOTHING",
-        (rid, name, shown(s) if s else name, iso(slot), night_of(slot, tz).isoformat(),
-         state, reason, now(), by)).rowcount
+        "created_at, started_by, again_of) VALUES (?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(schedule, slot) DO NOTHING",
+        (rid, name, shown(s) if s else name, iso(slot),
+         night or night_of(slot, tz).isoformat(), state, reason, now(), by,
+         again_of)).rowcount
     if not made:
         return None
+    if state == "waiting" and s is not None and s.on_fail == "skip" and by != "user":
+        for (old,) in c.execute("SELECT id FROM runs WHERE schedule = ? AND state = "
+                                "'waiting' AND slot < ? AND started_by != 'user'",
+                                (name, iso(slot))).fetchall():
+            _set(c, store, cfg, old, state="skipped", reason=NEXT_DUE, finished_at=now())
     # a slot written skipped at once is finished, counted and in Events (_set)
     return _set(c, store, cfg, rid, **({} if state == "waiting" else
                                        {"state": state, "finished_at": now()}))
+
+
+def _fail(c: sqlite3.Connection, store, cfg, rid: str, s, error: str, again: bool,
+          at: datetime) -> dict:
+    """Inside a write: the one place a run ends unfinished, as its schedule's When a run
+    fails says. Skip: `skipped`, `error` its reason, no notice. Retry: `failed` with
+    `error`; a run that failed on an error (`again`: not its time limit, not a stop) with
+    fewer than len(RUN_AGAIN) tries before it runs again, RUN_AGAIN[tries] from `at` for
+    the same night, when that is before the schedule's next slot: a waiting run `again_of`
+    it, its notice left to how that ends. Otherwise the notice. -> the run's view."""
+    if s is not None and s.on_fail == "skip":
+        return _set(c, store, cfg, rid, state="skipped", reason=error, finished_at=now())
+    r = c.execute("SELECT * FROM runs WHERE id = ?", (rid,)).fetchone()
+    tz = zone(cfg)
+    tries = len(_chain(c, r)) - 1
+    slot = (at + RUN_AGAIN[tries]).replace(microsecond=0) if tries < len(RUN_AGAIN) else None
+    retry = again and s is not None and slot is not None and croniter(
+        s.cron, datetime.fromisoformat(r["slot"]).astimezone(tz)).get_next(datetime) > slot
+    out = _set(c, store, cfg, rid, state="failed", error=error, finished_at=now())
+    if retry:
+        _insert(c, store, cfg, s.name, slot, tz, reason=RETRY_OF.format(at=out["at"]),
+                night=r["night"], again_of=rid)
+    else:
+        from ..events import notice
+        notice(store, c, "run", out["label"], error or "Failed",
+               homes.run_link(out["night"], rid), f"run:{rid}")
+    return out
+
+
+def _chain(c: sqlite3.Connection, r) -> list:
+    """Run `r`, then the run it runs again (`again_of`), and so on to the first try."""
+    out = [r]
+    while out[-1]["again_of"]:
+        up = c.execute("SELECT slot, again_of FROM runs WHERE id = ?",
+                       (out[-1]["again_of"],)).fetchone()
+        if up is None:
+            break
+        out.append(up)
+    return out
+
+
+def first_slot(c: sqlite3.Connection, r) -> str:
+    """The slot of the first try of a run again, else its own: a run again fills the
+    dates of the first try."""
+    return _chain(c, r)[-1]["slot"]
 
 
 def results(c: sqlite3.Connection, night: str) -> dict[str, str]:
@@ -250,19 +385,20 @@ def idle(c: sqlite3.Connection, at: datetime, missions: bool = False) -> bool:
 
 
 def binding(c: sqlite3.Connection, cid: str, cfg) -> dict | None:
-    """How a turn of conversation `cid` binds its model when it is a run's (a sub-agent
-    of one too): {priority: BACKGROUND, label: the schedule's}, on the role's own model
-    only; None for any other conversation. turns/dispatcher.py binds with it
-    (`run_binding`, set at start)."""
+    """How a turn of conversation `cid` binds its model when it is a run's, at any depth
+    (its root, homes.root, is the run's conversation): {priority: BACKGROUND, label: the
+    schedule's, run: the run's id}, on the role's own model only; None for any other
+    conversation. turns/dispatcher.py binds with it (`run_binding`, set at start, which
+    adds the running run's clock)."""
     from ..backends.queue import Priority
-    # one hop: a sub-agent starts no sub-agents (sub_agents/api.py)
-    run = c.execute("SELECT r.schedule, r.label FROM conversations c JOIN runs r ON "
-                    "r.conversation_id = coalesce(c.agent_of, c.id) WHERE c.id = ?",
-                    (cid,)).fetchone()
-    if run is None:
+    top = homes.root(c, cid)
+    run = top and c.execute("SELECT id, schedule, label FROM runs WHERE conversation_id = ?",
+                            (top["id"],)).fetchone()
+    if not run:
         return None
     s = (getattr(cfg, "schedules", None) or {}).get(run["schedule"])
-    return {"priority": Priority.BACKGROUND, "label": shown(s) if s else run["label"]}
+    return {"priority": Priority.BACKGROUND, "label": shown(s) if s else run["label"],
+            "run": run["id"]}
 
 
 def finished(c: sqlite3.Connection, cid: str) -> bool:
@@ -273,11 +409,11 @@ def finished(c: sqlite3.Connection, cid: str) -> bool:
         "SELECT id FROM conversations WHERE agent_of = ?", (cid,)).fetchall())
 
 
-def outcome(c: sqlite3.Connection, cid: str) -> tuple[str, str]:
-    """(state, reason) of the conversation's last turn."""
-    r = c.execute("SELECT state, reason FROM turns WHERE conversation_id = ? "
+def outcome(c: sqlite3.Connection, cid: str) -> tuple[str, str, str]:
+    """(state, reason, reason_code) of the conversation's last turn."""
+    r = c.execute("SELECT state, reason, reason_code FROM turns WHERE conversation_id = ? "
                   "ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
-    return (r["state"], r["reason"] or "") if r else ("done", "")
+    return (r["state"], r["reason"] or "", r["reason_code"] or "") if r else ("done", "", "")
 
 
 def _said(c: sqlite3.Connection, cid: str) -> tuple[str, bool]:
@@ -319,9 +455,9 @@ class Scheduler:
         self._wake = anyio.Event()
         self._tg = None
         self.current: str | None = None      # the run that runs, by id
-        self._began: datetime | None = None   # when it started: its clock
+        self._clock: RunClock | None = None   # its time limit, held while it waits
+        self._over = ""                       # the reason it fails with past the limit
         self._scope: anyio.CancelScope | None = None   # its work, for `end`
-        self._ceiling: tuple[timedelta, str] | None = None   # its own, for tick
         self._turn_ended = anyio.Event()      # set and replaced at every turn or job end
         on_end = getattr(app.dispatcher, "on_end", None)
         if on_end is not None:               # a turn ended: a run may start or be over
@@ -344,10 +480,17 @@ class Scheduler:
         resume = await self.app.store.write(self._interrupted)
         if getattr(self.app.dispatcher, "on_end", None) is not None:
             # its turns in a run: behind every interactive request, on its own model
-            self.app.dispatcher.run_binding = lambda c, cid: binding(c, cid, self.app.cfg)
+            self.app.dispatcher.run_binding = self._binding
         for r in resume:
             self._start(r)
         tg.start_soon(self._loop)
+
+    def _binding(self, c: sqlite3.Connection, cid: str) -> dict | None:
+        """`binding`, with the run's clock while that run runs."""
+        b = binding(c, cid, self.app.cfg)
+        if b is not None:
+            b["clock"] = self._clock if b["run"] == self.current else None
+        return b
 
     async def _ended(self, _cid: str, _turn: str | None) -> None:
         ended, self._turn_ended = self._turn_ended, anyio.Event()
@@ -388,8 +531,9 @@ class Scheduler:
         nxt = min((croniter(s.cron, at).get_next(datetime)
                    for s in self.schedules.values() if s.on), default=None)
         wait = TICK if nxt is None else min(TICK, max(0.0, (nxt - at).total_seconds()))
-        if self._began is not None and self._ceiling:    # the running run's ceiling
-            wait = min(wait, max(0.0, (self._began + self._ceiling[0] - at).total_seconds()))
+        left = self._clock.left() if self._clock is not None else None
+        if left is not None:                  # the running run's ceiling, while not held
+            wait = min(wait, max(0.0, left.total_seconds()))
         return wait
 
     # -- making runs
@@ -448,14 +592,45 @@ class Scheduler:
 
     async def get_by(self, name: str, slot: datetime) -> dict:
         return await self.app.store.read(lambda c: view(c.execute(
-            "SELECT * FROM runs WHERE schedule = ? AND slot = ?",
+            f"{ROW} WHERE r.schedule = ? AND r.slot = ?",
             (name, iso(slot))).fetchone(), self.app.cfg))
+
+    async def retry(self, rid: str) -> dict:
+        """Run `rid` (failed, skipped or stopped, not run again yet) runs again for its
+        night, now: a waiting run `again_of` it, started by the user. Raises NotFound,
+        or Invalid when it may not."""
+        store, cfg, at = self.app.store, self.app.cfg, self.now().replace(microsecond=0)
+
+        def fn(c: sqlite3.Connection) -> dict:
+            r = c.execute(f"{ROW} WHERE r.id = ?", (rid,)).fetchone()
+            if r is None:
+                raise NotFound("run")
+            if r["state"] not in ("failed", "skipped", "stopped"):
+                raise Invalid("run", "Only a failed, skipped or stopped run can be retried.")
+            if r["retried"]:
+                raise Invalid("run", "This run was retried already.")
+            if r["schedule"] not in self.schedules:
+                raise Invalid("run", f"{DELETED}.")
+            out = _insert(c, store, cfg, r["schedule"], at, zone(cfg), by="user",
+                          night=r["night"], again_of=rid)
+            if out is None:
+                raise Invalid("run", "Another run of this schedule starts at this second.")
+            return out
+        out = await store.write(fn)
+        self.wake()
+        return out
+
+    @property
+    def held(self) -> str | None:
+        """The running run while its work waits for a model (its RunClock is held)."""
+        return self.current if self._clock is not None and self._clock.held else None
 
     async def end(self, rid: str, state: str, why: str,
                   from_states: tuple[str, ...] = ("waiting", "running")) -> dict | None:
         """Run `rid`, while in one of `from_states`, ends as `state` with `why` (its
-        reason, its error when failed); a running one's work is cancelled and its turns
-        aborted as a chat's Stop does. None: no such run, or it is in no such state."""
+        reason; failed goes through `_fail`, its time limit, never run again); a running
+        one's work is cancelled and its turns aborted as a chat's Stop does. None: no
+        such run, or it is in no such state."""
         store, cfg = self.app.store, self.app.cfg
         if rid == self.current and self._scope is not None:
             self._scope.cancel()
@@ -464,8 +639,9 @@ class Scheduler:
             r = c.execute("SELECT * FROM runs WHERE id = ?", (rid,)).fetchone()
             if r is None or r["state"] not in from_states:
                 return None, None
-            out = _set(c, store, cfg, rid, state=state, finished_at=now(),
-                       **{"error" if state == "failed" else "reason": why})
+            out = _fail(c, store, cfg, rid, self.schedules.get(r["schedule"]), why, False,
+                        self.now()) if state == "failed" else \
+                _set(c, store, cfg, rid, state=state, finished_at=now(), reason=why)
             return out, r["conversation_id"] if r["state"] == "running" else None
         out, cid = await store.write(fn)
         abort = getattr(self.app.dispatcher, "abort_conversation", None)
@@ -507,6 +683,8 @@ class Scheduler:
             "SELECT night, schedule FROM runs WHERE state IN ('waiting', 'running')")})
         models: dict[str, str | None] = {}
         for r in waiting:
+            if datetime.fromisoformat(r["slot"]) > self.now():
+                continue                     # a run again waits for its time (RETRY_OF)
             s = schedules.get(r["schedule"])
             if s is None:
                 await store.write(lambda c, r=r: _set(
@@ -528,24 +706,49 @@ class Scheduler:
                     c, store, self.app.cfg, r["id"], reason=why))
 
     def _start(self, r: dict) -> None:
-        """Run `r` runs now, in the task group."""
-        s = self.schedules.get(r["schedule"])
-        self.current, self._began = r["id"], self.now()
+        """Run `r` runs now, in the task group, with a new clock for its ceiling."""
+        s, rid = self.schedules.get(r["schedule"]), r["id"]
+        self.current = rid
         cap = [m for m in (s and s.wall_minutes, self.app.cfg.r("routine_max_minutes")) if m]
-        self._ceiling = (timedelta(minutes=min(cap)), f"Ran over {min(cap)} minutes") \
-            if cap else None
-        self._tg.start_soon(self._execute, r["id"])
+        self._clock = RunClock(timedelta(minutes=min(cap)) if cap else None, self.now,
+                               lambda: self._tell(rid))
+        n = min(cap) if cap else 0
+        self._over = f"Stopped at its time limit of {n} minute{'' if n == 1 else 's'}." \
+            if cap else ""
+        self._tg.start_soon(self._execute, rid)
+
+    def _tell(self, rid: str) -> None:
+        """The running run's work started or stopped waiting for a model: its `run.state`
+        says so (view `held`) once the writer gets to it, only when that changed then,
+        so a wait that ended at once tells nothing."""
+        clock, store, cfg = self._clock, self.app.store, self.app.cfg
+
+        def fn(c: sqlite3.Connection) -> None:
+            if clock is None or clock is not self._clock or clock.held == clock.told:
+                return
+            clock.told = clock.held
+            _set(c, store, cfg, rid, held=clock.held)
+        store.write_soon(fn)
 
     async def _watch(self) -> None:
-        """The running run's ceiling (module docstring) fails it."""
-        if self._began is not None and self._ceiling and \
-                self.now() - self._began > self._ceiling[0]:
-            await self.end(self.current, "failed", self._ceiling[1], ("running",))
+        """The running run's ceiling (module docstring) fails it. The ceiling counts the
+        run's work: while a call of its conversation or of a sub-agent under it waits for
+        a model, its clock stands still (backends/llm.HeldClock). A request of the agent's that
+        waits for the user runs on the clock; when the limit ends the run meanwhile, the
+        reason names it (approvals.lapsed)."""
+        left = self._clock.left() if self._clock is not None else None
+        if left is not None and left < timedelta(0):
+            rid, approvals = self.current, getattr(self.app, "approvals", None)
+            row = await self.app.store.read(lambda c: c.execute(
+                "SELECT conversation_id FROM runs WHERE id = ?", (rid,)).fetchone())
+            why = approvals.lapsed(row[0]) if approvals is not None and row and row[0] else None
+            await self.end(rid, "failed", why or self._over, ("running",))
 
     def _idle_skip(self, r: dict, s, unused: bool) -> str | None:
         """Why an `idle_only` run is skipped now, None when it may wait on: one that
-        began already (it waits for its model) waits like any run."""
-        if not s.idle_only or r["conversation_id"]:
+        began already (it waits for its model) and one the user started (Run now, Retry)
+        wait like any run."""
+        if not s.idle_only or r["conversation_id"] or r["started_by"] == "user":
             return None
         if self.now() - datetime.fromisoformat(r["slot"]) > timedelta(minutes=IDLE_MINUTES):
             return PASSED
@@ -570,20 +773,35 @@ class Scheduler:
             return f"While {shown(other) if other else 'another run'} runs"
         return None
 
-    async def _model_why(self, role: str) -> str | None:
-        """"Waiting for <model>" while the Router says no model of `role` answers now
-        (its first model named; the Router's sentence when none is set), else None."""
+    async def _model_why(self, role: str, probe: bool = True) -> str | None:
+        """"Waiting for <model>. <why>" while the Router says the first model of `role`
+        (the one a run uses) cannot answer now, else None. `probe` False: the Router's
+        state as it stands, no new question to the server."""
         if getattr(self.app.dispatcher, "backend_factory", None) is not None:
             return None                          # one fixed backend answers every role
         router = getattr(self.app.llm, "router", None)
-        why = None if router is None else await router.can_answer(role)
-        if why is None:
-            return None
+        why = None if router is None else await router.can_answer(role, probe=probe)
+        return None if why is None else self._waiting(router, role, why)
+
+    @staticmethod
+    def _waiting(router, role: str, why: str) -> str:
         refs = router.chain(role) if getattr(router, "chain", None) else []
         if refs:
-            from ..settings.her_models import label
-            return f"Waiting for {label(router.s, refs[0])}"
-        return f"Waiting for a model: {why}"
+            from ..settings.agent_models import label
+            return f"Waiting for {label(router.s, refs[0])}. {why}"
+        return f"Waiting for a model. {why}"
+
+    async def _failed_why(self, role: str, code: str, error: str) -> str | None:
+        """Why a run whose turn failed waits instead of failing, else None: its turn got
+        no model (`no_model`), or the Router's state, as the failure left it, says the
+        run's model cannot answer. A model that answered with an error it may answer
+        again fails the run, as its schedule's When a run fails says (`_fail`)."""
+        if (why := await self._model_why(role, probe=False)) is not None:
+            return why
+        if code == "no_model":
+            router = getattr(self.app.llm, "router", None)
+            return self._waiting(router, role, error) if router is not None else None
+        return None
 
     # -- one run
 
@@ -594,7 +812,7 @@ class Scheduler:
                     "SELECT * FROM runs WHERE id = ?", (rid,)).fetchone()))
                 await self._run_as(rid, r)
         finally:
-            self.current = self._began = self._scope = None
+            self.current = self._clock = self._scope = None
             self.wake()
 
     async def _run_as(self, rid: str, r: dict) -> None:
@@ -607,7 +825,8 @@ class Scheduler:
             await store.write(lambda c: _set(c, store, cfg, rid, state="skipped",
                                              reason=DELETED, finished_at=now()))
             return
-        day = run_date(s, datetime.fromisoformat(r["slot"]), zone(cfg))
+        first = await store.read(lambda c: first_slot(c, r))
+        day = run_date(s, datetime.fromisoformat(first), zone(cfg))
         fresh = not r["conversation_id"]
         started = r["started_at"] or now()
 
@@ -644,18 +863,18 @@ class Scheduler:
                 start = None
             if not fresh:
                 answer, final = await self._resume(cid)
-            elif s.partner:
+            elif s.reviewer:
                 prompt = fill(cfg, s.prompt, day, res, await extras(self.app, s.prompt, night))
                 answer, final = await self._dialogue(rid, s, cid, prompt, day, res, where)
             else:
                 prompt = fill(cfg, s.prompt, day, res, await extras(self.app, s.prompt, night))
                 answer, final = await self._turn(cid, "system:schedules", "\n\n".join(
-                    [prompt, cfg.substitute(RULE.replace("{final}", where))]), "trigger",
+                    [prompt, _say(cfg, "background.md", final=where)]), "trigger",
                     {"run": rid})
-            answer, hers = self._take(note, start, answer, await self._wrote(cid, note))
+            answer, own = self._take(note, start, answer, await self._wrote(cid, note))
             if not note:
                 error = None
-            elif hers:
+            elif own:
                 error = await self._stale(cid, note)
             elif not final:
                 error = (f"The note {note} was not written: the run ended with a tool call "
@@ -665,13 +884,15 @@ class Scheduler:
         except Exception as e:                   # noqa: BLE001 - every failure ends it
             error = str(e) or type(e).__name__
             why = FROZEN if getattr(e, "frozen", False) else \
-                None if getattr(e, "stopped", False) else await self._model_why(s.role)
+                None if getattr(e, "stopped", False) else \
+                await self._failed_why(s.role, getattr(e, "code", ""), error)
             if why:              # its model is gone, or a freeze: the run waits for it
                 await store.write(lambda c: _set(c, store, cfg, rid, state="waiting",
                                                  reason=why))
             else:
-                await store.write(lambda c: _set(c, store, cfg, rid, state="failed",
-                                                 error=error, finished_at=now()))
+                again = not getattr(e, "stopped", False)
+                await store.write(lambda c: _fail(c, store, cfg, rid, s, error, again,
+                                                  self.now()))
             log.info("run failed", extra={"event": "schedules.failed", "run": rid,
                                           "waits": bool(why), "error": error})
             return
@@ -726,7 +947,7 @@ class Scheduler:
         data = getattr(cfg, "data_dir", None)
         if data is None:
             return
-        root = cfg.her.notebook if getattr(cfg, "her", None) else None
+        root = cfg.agent.notebook if getattr(cfg, "agent", None) else None
         try:
             await anyio.to_thread.run_sync(nightly, data, cfg.db_path, root, night,
                                            cfg.r("backup_keep_days"))
@@ -734,8 +955,8 @@ class Scheduler:
             log.exception("backup failed", extra={"event": "backup.failed"})
 
     def _note_path(self, note: str):
-        return self.app.cfg.her.notebook / note if note and getattr(
-            self.app.cfg, "her", None) else None
+        return self.app.cfg.agent.notebook / note if note and getattr(
+            self.app.cfg, "agent", None) else None
 
     def _note_text(self, note: str) -> str | None:
         """What `note` holds now, None when it is not there (or there is no note)."""
@@ -786,8 +1007,8 @@ class Scheduler:
         if not later or self._note_touched(note, later[-1]):
             return None
         n = len(later)
-        return (f"The note {note} was last written before the run's last {n} tool "
-                f"call{'s' if n > 1 else ''}.")
+        calls = "last tool call" if n == 1 else f"last {n} tool calls"
+        return f"The note {note} was last written before the run's {calls}."
 
     async def _write_note(self, cid: str, path: str, answer: str, s, day: str) -> str | None:
         """The agent's answer into the notebook at `path`: a note there already gets it appended
@@ -796,7 +1017,7 @@ class Scheduler:
         spec = getattr(self.app.registry, "tools", {}).get("notebook__write")
         if spec is None:
             return f"The note {path} was not written: the notebook is off."
-        there = (self.app.cfg.her.notebook / path).is_file()
+        there = (self.app.cfg.agent.notebook / path).is_file()
         out = await spec.fn(self._ctx(cid), path=path, summary=f"{shown(s)}, "
                             f"{night_words(day)}",
                             **({"content": f"\n\n## {day} {shown(s)}\n\n{answer}\n",
@@ -810,26 +1031,27 @@ class Scheduler:
                            store=self.app.store, config=self.app.cfg, emit=quiet_emit,
                            max_output_tokens=8000)
 
-    # -- a partner
+    # -- a reviewer
 
     async def _dialogue(self, rid: str, s, cid: str, prompt: str, day: date,
                         res: dict, where: str) -> tuple[str, bool]:
-        """The agent and the partner alternate (module docstring); -> its final answer
+        """The agent and the reviewer alternate (module docstring); -> its final answer
         as `_said`."""
         cfg = self.app.cfg
-        who = s.partner.removesuffix(".md")
+        who = s.reviewer.removesuffix(".md")
         sender = f"system:{who}"
-        rule = cfg.substitute(RULE.replace("{final}", where))
-        line = cfg.substitute(PARTNER_LINE.replace("{who}", who))
+        rule = _say(cfg, "background.md", final=where)
+        line = _say(cfg, "reviewer_first.md", who=who)
         history = [{"role": "user", "content": (await self._turn(
             cid, "system:schedules", "\n\n".join([prompt, line, rule]), "trigger",
             {"run": rid}))[0]}]
-        base = "\n\n".join([fill(cfg, s.partner_prompt, day, res),
-                            cfg.substitute(ASKED), prompt])
-        backend, tools = self._partner_backend(cid, s), self._partner_tools()
-        for n in range(1, s.rounds + 1):
-            last = n == s.rounds
-            system = f"{base}\n\n{LAST if last else LINE.format(n=n, rounds=s.rounds)}"
+        base = "\n\n".join([fill(cfg, s.reviewer_prompt, day, res),
+                            _say(cfg, "asked.md"), prompt])
+        backend, tools = self._reviewer_backend(cid, s), self._reviewer_tools()
+        for n in range(1, s.turns + 1):
+            last = n == s.turns
+            system = f"{base}\n\n" + (_say(cfg, "last_line.md") if last else
+                                         _say(cfg, "line.md", n=n, turns=s.turns))
             said = await self._line(backend, cid, system, history, tools)
             ends = last or bool(END.search(said))
             said = END.sub("", said).strip()
@@ -842,8 +1064,8 @@ class Scheduler:
                 lambda c: _answer(c, cid, sent["intercom_id"])) or "(no answer)"})
             if ends:
                 break
-        return await self._turn(cid, "system:schedules", FINAL.replace(
-            "{who}", who).replace("{final}", where), "trigger", {"run": rid})
+        return await self._turn(cid, "system:schedules", _say(
+            cfg, "talk_over.md", who=who, final=where), "trigger", {"run": rid})
 
     async def _settle(self, cid: str) -> None:
         """Until its conversation is `finished`, looked at after every turn or job end;
@@ -854,18 +1076,18 @@ class Scheduler:
             if await store.read(lambda c: finished(c, cid)):
                 break
             await ended.wait()
-        state, reason = await store.read(lambda c: outcome(c, cid))
+        state, reason, code = await store.read(lambda c: outcome(c, cid))
         if state == "aborted" and reason == "frozen":
             raise RunFailed(FROZEN, frozen=True)
         if state == "aborted":
             raise RunFailed("Stopped", stopped=True)
         if state == "failed":
-            raise RunFailed(reason or "The turn failed")
+            raise RunFailed(reason or "The turn failed", code=code)
 
-    def _partner_backend(self, cid: str, s):
-        """The partner's model: behind every interactive request, named by the
+    def _reviewer_backend(self, cid: str, s):
+        """The reviewer's model: behind every interactive request, named by the
         schedule's label, on the role's own model only; never its Banned words, the
-        partner is not it."""
+        reviewer is not it."""
         d = self.app.dispatcher
         fixed = d.backend_factory() if getattr(d, "backend_factory", None) else None
         if self.app.llm is None:
@@ -873,9 +1095,9 @@ class Scheduler:
         from ..backends.queue import Priority
         return self.app.llm.bind(fixed, role=s.role, priority=Priority.BACKGROUND,
                                  conversation_id=cid, label=shown(s), fallback=False,
-                                 voice=False)
+                                 voice=False, wait=0, run_clock=self._clock)
 
-    def _partner_tools(self) -> dict:
+    def _reviewer_tools(self) -> dict:
         reg = self.app.registry
         if reg is None:
             return {}
@@ -884,13 +1106,13 @@ class Scheduler:
 
     async def _line(self, backend, cid: str, system: str, history: list[dict],
                     tools: dict) -> str:
-        """One line of the partner: its tool steps first (kept in `history`, so it
+        """One line of the reviewer: its tool steps first (kept in `history`, so it
         remembers what it read), then its words."""
         wire = [t.as_wire() for t in tools.values()]
-        for step in range(PARTNER_STEPS + 1):
+        for step in range(REVIEWER_STEPS + 1):
             text, calls = await _ask(backend, [{"role": "system", "content": system}]
-                                     + history, wire if step < PARTNER_STEPS else [])
-            if not calls or step == PARTNER_STEPS:
+                                     + history, wire if step < REVIEWER_STEPS else [])
+            if not calls or step == REVIEWER_STEPS:
                 return text
             history.append({"role": "assistant", "content": text, "tool_calls": [
                 {"id": c["id"], "type": "function",
@@ -922,7 +1144,7 @@ async def _ask(backend, messages: list[dict], tools: list[dict]):
 
 
 async def _call(spec, ctx: ToolContext, arguments: str) -> str:
-    """One read of the partner's (READS, read-only: nothing leaves, so not through its
+    """One read of the reviewer's (READS, read-only: nothing leaves, so not through its
     chokepoint); none while it is frozen."""
     from ..guard.freeze import frozen
     if await frozen(ctx.store) is not None:

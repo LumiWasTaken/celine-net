@@ -5,15 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from ..errors import NotFound
-from . import Event, declared, state
+from . import Event, declared, fired, state
 
 router = APIRouter(prefix="/api")
-
-
-def _fired(c, name: str) -> str | None:
-    r = c.execute("SELECT max(created_at) FROM intercom WHERE kind = 'trigger' AND "
-                  "json_extract(data, '$.trigger') = ?", (name,)).fetchone()
-    return r[0]
 
 
 async def _view(request: Request, skill, t) -> dict:
@@ -21,7 +15,7 @@ async def _view(request: Request, skill, t) -> dict:
     return {"name": t.name, "label": cfg.substitute(t.label),
             "about": cfg.substitute(t.about), "skill": skill.name,
             "kind": "event" if isinstance(t, Event) else "watch", **state(cfg, t),
-            "fired_at": await request.app.state.services.store.read(lambda c: _fired(c, t.name))}
+            "fired_at": await request.app.state.services.store.read(lambda c: fired(c, t.name))}
 
 
 @router.get("/triggers")

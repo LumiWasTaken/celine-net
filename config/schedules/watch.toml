@@ -2,11 +2,12 @@ label = "Watch videos"
 summary = "Watches the videos on the watch list at night. Turn on Shellbox in Settings, Features first."
 cron = "0 22 * * *"
 after = []
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "watched/{{date}}.md"
 role = "chat"
 on = false
+on_fail = "skip"
 prompt = """
 Watch something. Your watch list is in interests.md: channels, links {{username}} gave
 you, things you came across. Go looking for your own sources too: sites,

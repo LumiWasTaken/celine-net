@@ -13,10 +13,25 @@ from ..settings.files import Invalid
 from ..settings.registry import ROLES
 from ..clock import zone
 from . import VARIABLES, fill, night_of, run_date, run_roles, shown, words
-from .runs import STOPPED, results, view as run_view
+from .runs import IDLE_MINUTES, ROW, STOPPED, first_slot, results, \
+    view as run_view
 
 router = APIRouter(prefix="/api")
 NIGHTS = 14                     # the past nights the page shows
+# a field's "?" on the schedule page (ui Help): at most two sentences, filled by the server;
+# what runs.py does (_fail, _idle_skip), the period in the Routines page's word (day)
+HELP = {
+    "on_fail": "Retry runs a failed run again after 15 minutes, 1 hour and 4 hours for the "
+               "same day, never past the next run, unless it was stopped or over the time "
+               "limit. Skip ends it with no notice.",
+    "idle_only": f"A run starts only when nobody used the app in the last {IDLE_MINUTES} "
+                 "minutes, else it is skipped at once; so is one still waiting for another "
+                 f"reason {IDLE_MINUTES} minutes after its time. Run now and Retry are not "
+                 "skipped for this.",
+    "wall_minutes": "The most minutes one run may work; waiting for a model does not count. "
+                    "Empty uses the Routine time limit in Settings, Advanced.",
+}
+CHOICES = {"on_fail": [{"value": "retry", "label": "Retry"}, {"value": "skip", "label": "Skip"}]}
 
 
 def _folder(request: Request):
@@ -43,11 +58,11 @@ def _view(s, cfg) -> dict:
     return {"name": s.name, "label": s.label, "title": shown(s), "summary": s.summary, "cron": s.cron, "time": s.time,
             "every": words(s.cron),
             "prompt": s.prompt, "after": list(s.after),
-            "partner": s.partner, "partner_prompt": s.partner_prompt, "rounds": s.rounds,
+            "reviewer": s.reviewer, "reviewer_prompt": s.reviewer_prompt, "turns": s.turns,
             "note": s.note, "role": s.role,
             "on": s.on, "idle_only": s.idle_only,
             "daytime": s.daytime,
-            "wall_minutes": s.wall_minutes,
+            "wall_minutes": s.wall_minutes, "on_fail": s.on_fail,
             "next": iso(nxt) if nxt else None,
             "next_night": night_of(nxt, tz).isoformat() if nxt else None,
             "next_at": f"{nxt:%H:%M}" if nxt else None}
@@ -62,32 +77,36 @@ def _scheduler(request: Request):
 
 @router.get("/schedules")
 async def list_schedules(request: Request) -> dict:
-    """{schedules: [{name, label, title, summary, cron, time, every, prompt, after, partner,
-    partner_prompt, rounds, note, role, on, idle_only, wall_minutes, next,
+    """{schedules: [{name, label, title, summary, cron, time, every, prompt, after, reviewer,
+    reviewer_prompt, turns, note, role, on, idle_only, wall_minutes, on_fail, next,
     next_night, next_at}],
-    roles, variables, tonight}: by time of day; `time` "02:00" for a daily one (else
+    roles, variables, tonight, choices, help}: by time of day; `time` "02:00" for a daily one (else
     null), `every` in words ("Daily at 02:00", "Sundays at 07:00"), `next` the next
     slot (UTC, null while off), `next_night` its night and `next_at` its time of day,
     `roles` the chat roles a schedule can run on,
-    `variables` the words a prompt can hold, `tonight` the night the page opens on."""
+    `variables` the words a prompt can hold, `tonight` the night the page opens on,
+    `choices` a field's choices ({on_fail: [{value, label}]}), `help` a field's "?" text
+    (on_fail, idle_only, wall_minutes)."""
     cfg = request.app.state.services.cfg
     rows = sorted(_schedules(request).values(), key=lambda s: (s.time or "99", s.name))
     return {"schedules": [_view(s, cfg) for s in rows],
             "roles": [{"name": r, "label": ROLES[r]["label"]} for r in run_roles()],
             "variables": [*VARIABLES, *(f"result:{s.name}" for s in rows)],
-            "tonight": _tonight(cfg).isoformat()}
+            "tonight": _tonight(cfg).isoformat(), "choices": CHOICES,
+            "help": {k: cfg.substitute(v) for k, v in HELP.items()}}
 
 
 @router.put("/schedules/{name}")
 async def put_schedule(request: Request, name: str) -> dict:
-    """{label, summary, cron or time ("02:00": every day then), prompt, after, partner,
-    partner_prompt, rounds, note, role, on, idle_only
+    """{label, summary, cron or time ("02:00": every day then), prompt, after, reviewer,
+    reviewer_prompt, turns, note, role, on, idle_only
     (start only when nobody used the app for 30 minutes, else skip that run),
-    wall_minutes (minutes it may run, null: 3 hours),
-    daytime (true: its dates are the calendar date of its slot, not the night's; left
-    out, the stored one stays)}: the whole schedule, made or replaced.
-    `partner_prompt` is the reviewer's text, written to the file `partner` names
-    (`<name>-partner.md` when none is named); empty: no partner. -> the schedule as in
+    wall_minutes (minutes it may run, null: the Routine time limit),
+    daytime (true: its dates are the calendar date of its slot, not the night's),
+    on_fail (retry or skip; daytime and on_fail left out, the stored ones stay)}: the
+    whole schedule, made or replaced.
+    `reviewer_prompt` is the reviewer's text, written to the file `reviewer` names
+    (`<name>-reviewer.md` when none is named); empty: no reviewer. -> the schedule as in
     the list, and `applied`."""
     from ..api.deps import json_body
     from .edit import FIELDS, save
@@ -98,7 +117,7 @@ async def put_schedule(request: Request, name: str) -> dict:
 
 @router.delete("/schedules/{name}")
 async def delete_schedule(request: Request, name: str) -> dict:
-    """The schedule goes, its partner prompt with it when no other schedule talks with
+    """The schedule goes, its reviewer prompt with it when no other schedule talks with
     it. Its waiting and running runs stop, all its runs stay readable. Refused while
     another schedule follows it."""
     from .. import reload
@@ -114,9 +133,9 @@ async def delete_schedule(request: Request, name: str) -> dict:
     folder = _folder(request)
     async with write.lock():
         (folder / f"{name}.toml").unlink(missing_ok=True)
-        if s.partner and not any(o.partner == s.partner for o in every_.values()
-                                 if o.name != name):
-            (folder / s.partner).unlink(missing_ok=True)
+        if s.reviewer and not any(o.reviewer == s.reviewer for o in every_.values()
+                                  if o.name != name):
+            (folder / s.reviewer).unlink(missing_ok=True)
         applied = reload.apply(request.app.state.services)
     write.publish(request.app.state.services, ["schedules"])
     _scheduler(request).wake()
@@ -140,7 +159,7 @@ def _night(raw) -> date:
 
 @router.post("/schedules/preview")
 async def preview(request: Request) -> dict:
-    """{night, text}: `text` (a prompt, a partner prompt or a note path) filled as a run
+    """{night, text}: `text` (a prompt, a reviewer prompt or a note path) filled as a run
     of that night gets it, with the results that night has so far and {{mood}} and the
     others as they are now (schedules/variables.py). -> {text}."""
     from ..api.deps import json_body
@@ -157,67 +176,62 @@ async def preview(request: Request) -> dict:
 @router.get("/runs")
 async def list_runs(request: Request, night: str | None = None,
                     schedule: str | None = None, until: str | None = None) -> dict:
-    """{runs, nights, tonight, attention}: the runs of `night` (default: tonight) or of
-    one `schedule` (its newest 50), oldest slot first; `nights` the NIGHTS nights up to
-    `until` (default and at most tonight), newest first, each {night, runs: [{schedule,
-    state}] (a schedule's newest run), late (a run of a night gone by still waits)};
-    `attention` running while a run runs, failed while a run of the last two nights
-    failed, else null (the rail's dot). A run's `asked`: an approval waits in it or in a
+    """{runs, nights, tonight}: the runs of `night` (default: tonight) or of one
+    `schedule` (its newest 50), oldest slot first; `nights` the NIGHTS nights up to
+    `until` (default and at most tonight), newest first, each {night, failed: the newest
+    try of one of its schedules failed}. A run's `asked`: an approval waits in it or in a
     sub-agent of it (approvals.asked)."""
     from ..approvals import asked
-    cfg, store = request.app.state.services.cfg, request.app.state.services.store
-    waits = asked(request.app.state.services)
+    services = request.app.state.services
+    cfg, store = services.cfg, services.store
+    waits = asked(services)
+    held = getattr(services.schedules, "held", None)
     tonight = _tonight(cfg)
     which = (_night(night) if night else tonight).isoformat()
     last = min(_night(until), tonight) if until else tonight
     first = (last - timedelta(days=NIGHTS - 1)).isoformat()
-    two = (tonight - timedelta(days=1)).isoformat()
 
     def fn(c):
         if schedule is not None:
-            rows = c.execute("SELECT * FROM runs WHERE schedule = ? ORDER BY slot DESC "
-                             "LIMIT 50", (schedule,)).fetchall()[::-1]
+            rows = c.execute(f"{ROW} WHERE r.schedule = ? ORDER BY r.slot DESC LIMIT 50",
+                             (schedule,)).fetchall()[::-1]
         else:
-            rows = c.execute("SELECT * FROM runs WHERE night = ? ORDER BY slot",
-                             (which,)).fetchall()
-        dots = c.execute("SELECT night, schedule, state FROM runs WHERE night >= ? AND "
-                         "night <= ? ORDER BY slot", (first, last.isoformat())).fetchall()
-        running = c.execute("SELECT 1 FROM runs WHERE state = 'running' LIMIT 1").fetchone()
-        # a schedule's newest run of either of the last two nights
-        recent = {(d["night"], d["schedule"]): d["state"] for d in c.execute(
-            "SELECT night, schedule, state FROM runs WHERE night >= ? ORDER BY slot", (two,))}
-        return [run_view(r, cfg) for r in rows], dots, \
-            "running" if running else "failed" if "failed" in recent.values() else None
-    runs, dots, attention = await store.read(fn)
-    nights = []
-    for i in range(NIGHTS):
-        n = (last - timedelta(days=i)).isoformat()
-        newest = {d["schedule"]: d["state"] for d in dots if d["night"] == n}
-        mine = [{"schedule": k, "state": v} for k, v in newest.items()]
-        nights.append({"night": n, "runs": mine, "late": n < tonight.isoformat() and any(
-            d["state"] == "waiting" for d in mine)})
+            rows = c.execute(f"{ROW} WHERE r.night = ? ORDER BY r.slot", (which,)).fetchall()
+        # each schedule's newest try of each night (a later slot replaces an earlier one)
+        newest: dict[tuple[str, str], str] = {}
+        for d in c.execute("SELECT night, schedule, state FROM runs WHERE night >= ? AND "
+                           "night <= ? ORDER BY slot", (first, last.isoformat())):
+            newest[(d["night"], d["schedule"])] = d["state"]
+        return [run_view(r, cfg, r["id"] == held) for r in rows], newest
+    runs, newest = await store.read(fn)
+    failed = {n for (n, _), state in newest.items() if state == "failed"}
+    nights = [{"night": n, "failed": n in failed} for n in
+              ((last - timedelta(days=i)).isoformat() for i in range(NIGHTS))]
     runs = [{**r, "asked": r["conversation_id"] in waits} for r in runs]
-    return {"runs": runs, "nights": nights, "tonight": tonight.isoformat(),
-            "attention": attention}
+    return {"runs": runs, "nights": nights, "tonight": tonight.isoformat()}
 
 
 @router.get("/runs/{rid}")
 async def get_run(request: Request, rid: str) -> dict:
-    """{run, prompt, partner_prompt, note}: the run, and what its schedule asks filled
-    for its date (run_date; null for a deleted schedule)."""
-    cfg, store = request.app.state.services.cfg, request.app.state.services.store
-    r = await store.read(lambda c: c.execute("SELECT * FROM runs WHERE id = ?",
-                                             (rid,)).fetchone())
+    """{run, prompt, reviewer_prompt, note}: the run, and what its schedule asks filled
+    for its date (run_date of its first try, first_slot; null for a deleted schedule)."""
+    services = request.app.state.services
+    cfg, store = services.cfg, services.store
+    def one(c):
+        r = c.execute(f"{ROW} WHERE r.id = ?", (rid,)).fetchone()
+        return r, r and first_slot(c, r)
+    r, slot = await store.read(one)
     if r is None:
         raise NotFound("run")
     s = _schedules(request).get(r["schedule"])
     res = await store.read(lambda c: results(c, r["night"]))
 
     def filled(text: str) -> str | None:
-        return fill(cfg, text, run_date(s, datetime.fromisoformat(r["slot"]), zone(cfg)),
+        return fill(cfg, text, run_date(s, datetime.fromisoformat(slot), zone(cfg)),
                     res) if s and text else None
-    return {"run": run_view(r, cfg), "prompt": filled(s.prompt if s else ""),
-            "partner_prompt": filled(s.partner_prompt if s else ""),
+    held = getattr(services.schedules, "held", None) == rid
+    return {"run": run_view(r, cfg, held), "prompt": filled(s.prompt if s else ""),
+            "reviewer_prompt": filled(s.reviewer_prompt if s else ""),
             "note": filled(s.note if s else "")}
 
 
@@ -234,3 +248,11 @@ async def stop_run(request: Request, rid: str) -> dict:
     if out is None:
         raise Invalid("run", "The run has finished.")
     return {"run": out}
+
+
+@router.post("/runs/{rid}/retry")
+async def retry_run(request: Request, rid: str) -> dict:
+    """A failed, skipped or stopped run runs again for its night, now: a new waiting run
+    `again_of` it (Scheduler.retry). -> {run}. 404: no such run; 400: it has not ended,
+    it is done, it ran again already, or its schedule was deleted."""
+    return {"run": await _scheduler(request).retry(rid)}

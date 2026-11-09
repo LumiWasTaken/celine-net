@@ -126,7 +126,7 @@ async def test_a_closed_gate_never_runs_in_watch_with_a_pass_or_allowed_once(sto
     b = await store.read(lambda c: decisions.banner(c, row["id"]))
     assert b["kind"] == "closed" and b["line"] == (
         'Stopped a web search. It sends "12 Example Road" (sensitive) to the public, and that '
-        'gate is closed in guard.toml. A closed gate holds in Watch too.')
+        'gate is closed in guard.toml. A closed gate applies in Warn too.')
     for grant in ("once", "pass"):
         got = await banners.answer(app, row["id"], by=OWNER, said="let her", decided={
             "grant": grant, "rule": "all", "minutes": 60, "where": "here"})
@@ -375,7 +375,7 @@ def test_no_tool_writes_the_rule_file_the_database_or_bastet():
                              text), path
 
 
-async def test_her_file_tools_never_reach_the_rule_file_bastet_or_the_database(store,
+async def test_the_agents_file_tools_never_reach_the_rule_file_bastet_or_the_database(store,
                                                                               tmp_path):
     """The notebook and Documents resolve a path, symlinks too, and refuse what lands
     outside their root (a `..` is test_notebook's and test_documents')."""
@@ -423,7 +423,7 @@ NOT_TOOLS = {"core/store.py", "kb/connectors.py"}
 def test_every_tool_runs_through_the_chokepoint():
     """A tool's function is called in turns/tools.py, by the jobs it hands a step to
     (jobs/jobs.py, begun only there), and by the app itself in a routine: the note it
-    writes with its answer and the partner's read-only reads (schedules/runs.py)."""
+    writes with its answer and the reviewer's read-only reads (schedules/runs.py)."""
     calls = {p for p, t in _sources() if re.search(r"\.fn\(", t)} - NOT_TOOLS
     assert calls == {"turns/tools.py", "jobs/jobs.py", "schedules/runs.py"}
     begun = {p for p, t in _sources() if re.search(r"\bjobs\.begin\(", t)}
@@ -441,8 +441,8 @@ async def test_an_agent_cli_counts_as_outside_work(store):
     assert got == {"source": "sub-agent coder", "by": None}
 
 
-async def test_frozen_the_partner_of_a_routine_reads_nothing(store):
-    from celine.schedules.runs import _call as partner_call
+async def test_frozen_the_reviewer_of_a_routine_reads_nothing(store):
+    from celine.schedules.runs import _call as reviewer_call
     ran = []
 
     async def read(ctx, **kw):
@@ -450,7 +450,7 @@ async def test_frozen_the_partner_of_a_routine_reads_nothing(store):
         return ToolResult(content="a note")
     ctx = SimpleNamespace(store=store)
     spec = SimpleNamespace(fn=read)
-    assert await partner_call(spec, ctx, json.dumps({"path": "a.md"})) == "a note"
+    assert await reviewer_call(spec, ctx, json.dumps({"path": "a.md"})) == "a note"
     await _frozen(store)
-    assert (await partner_call(spec, ctx, "{}")).startswith("error: frozen")
+    assert (await reviewer_call(spec, ctx, "{}")).startswith("error: frozen")
     assert ran == [{"path": "a.md"}]

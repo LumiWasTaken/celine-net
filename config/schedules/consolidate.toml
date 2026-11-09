@@ -2,11 +2,12 @@ label = "Merge notes"
 summary = "Merges the night's notes into the main ones."
 cron = "30 5 * * *"
 after = ["reflection"]
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "diary/{{date}}-consolidate.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 Put the night into your notebook.
 

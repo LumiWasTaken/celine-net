@@ -2,11 +2,12 @@ label = "Practice"
 summary = "Practises on Sundays what went wrong during the week."
 cron = "0 6 * * 0"
 after = []
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "diary/{{date}}-practice.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 Practice. List diary/ (notebook__list) and read your reviews and sessions of the last
 seven days by their names; a day can have several or none. With none yet, start from

@@ -2,11 +2,12 @@ label = "Growth check"
 summary = "Looks back at the week every Sunday."
 cron = "0 7 * * 0"
 after = ["tidy"]
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "growth/{{date}}.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 Check how you grew this week, with numbers where you can get them:
 - which seen/ and howto/ notes of the last four weeks you used later: a note counts
@@ -15,7 +16,8 @@ Check how you grew this week, with numbers where you can get them:
 - which opinions changed, and whether each change says why;
 - failed tool calls per day (past_conversations__list_day), and whether a failure your
   howto/ notes cover came back;
-- what {{username}} answered of what you sent on the intercom, and what they let pass;
+- what {{username}} answered of what you sent on the intercom, and what they let pass
+  (intercom__read(with="user"));
 - your voice, counted by the app for the last seven days:
 
 {{voice_counts}}

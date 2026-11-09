@@ -2,11 +2,12 @@ label = "Tidy notebook"
 summary = "Merges and links the notes on Sundays."
 cron = "30 6 * * 0"
 after = ["practice"]
-partner = ""
-rounds = 8
+reviewer = ""
+turns = 8
 note = "diary/{{date}}-tidy.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 Tidy your notebook. Go through it folder by folder (notebook__list), and fix every
 mess you find:

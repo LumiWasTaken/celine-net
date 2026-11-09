@@ -1,10 +1,10 @@
 /* Routines: the schedules (jobs as data, GET/PUT/DELETE /schedules, POST run, POST
-   preview) and their runs (GET /runs, GET /runs/{id}, POST stop; `run.state` on the
-   feed). Every state, reason and time is the server's; the page says them as they are.
+   preview) and their runs (GET /runs, GET /runs/{id}, POST stop, POST retry; `run.state`
+   on the feed). Every state, reason and time is the server's; the page says them as they are.
    docs/ARCHITECTURE.md, Schedules. */
 import { LOCALE } from './format'
 import { del, json, post, request } from './api'
-import { useResource } from './useResource'
+import type { WordTone } from '../ui'
 
 export type Schedule = {
   name: string
@@ -23,9 +23,9 @@ export type Schedule = {
   /** the schedules whose runs of the same day it runs after */
   after: string[]
   /** the reviewer prompt's file, '' for none */
-  partner: string
-  partner_prompt: string
-  rounds: number
+  reviewer: string
+  reviewer_prompt: string
+  turns: number
   /** a notebook path with variables, '' for none */
   note: string
   role: string
@@ -36,14 +36,16 @@ export type Schedule = {
   /** its dates are the calendar date of its slot, not the night's */
   daytime: boolean
   on: boolean
-  /** why it is off for good ("Schedule was deleted."), else null */
-  gone: string | null
+  /** When a run fails: retry runs a failed run again up to three times for the same day, skip ends it skipped and quiet */
+  on_fail: OnFail
   /** the next slot (UTC), null while off */
   next: string | null
   /** the night of the next slot, and its time of day ("02:00") */
   next_night: string | null
   next_at: string | null
 }
+
+export type OnFail = 'retry' | 'skip'
 
 export type ScheduleBody = {
   label: string
@@ -52,15 +54,17 @@ export type ScheduleBody = {
   cron?: string
   prompt: string
   after: string[]
-  partner: string
-  partner_prompt: string
-  rounds: number
+  reviewer: string
+  reviewer_prompt: string
+  turns: number
   note: string
   role: string
   idle_only: boolean
   wall_minutes: number | null
   daytime: boolean
   on: boolean
+  /** left out, the stored one stays */
+  on_fail?: OnFail
 }
 
 export type RunState = 'waiting' | 'running' | 'done' | 'failed' | 'skipped' | 'stopped'
@@ -77,21 +81,31 @@ export type Run = {
   at: string
   night: string
   state: RunState
-  /** why it waits, in words; '' when nothing holds it */
+  /** why it waits or why it was skipped, in words; '' when nothing holds it */
   reason: string
+  /** the reason without the "Waiting" its state word says, for a row under that word */
+  reason_why: string
   conversation_id: string | null
   result: string | null
   error: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null
+  /** the run it runs again (Retry) and its time of day, else null */
+  again_of: { id: string; at: string } | null
+  /** the run that runs it again and its time of day, else null */
+  retried: { id: string; at: string } | null
 }
 
-export type Night = { night: string; runs: { schedule: string; state: RunState }[]; late: boolean }
+/** one of the fourteen days: failed when a schedule's newest try that day failed */
+export type Night = { night: string; failed: boolean }
 
-export type Runs = { runs: Run[]; nights: Night[]; tonight: string; attention: 'running' | 'failed' | null }
+export type Runs = { runs: Run[]; nights: Night[]; tonight: string }
 
-type RunDetail = { run: Run; prompt: string | null; partner_prompt: string | null; note: string | null }
+/** GET /schedules: a field's choices and its "?" text, the server's */
+export type ScheduleWords = { choices: { on_fail: { value: OnFail; label: string }[] }; help: Record<'on_fail' | 'idle_only' | 'wall_minutes', string> }
+
+type RunDetail = { run: Run; prompt: string | null; reviewer_prompt: string | null; note: string | null }
 
 export type Trigger = { name: string; label: string; about: string; skill: string; kind: 'event' | 'watch'; on: boolean; fired_at: string | null }
 
@@ -99,7 +113,7 @@ const enc = encodeURIComponent
 
 export const routinesApi = {
   schedules: (signal?: AbortSignal) =>
-    request<{ schedules: Schedule[]; roles: { name: string; label: string }[]; variables: string[]; tonight: string }>('/schedules', { signal }),
+    request<{ schedules: Schedule[]; roles: { name: string; label: string }[]; variables: string[]; tonight: string } & ScheduleWords>('/schedules', { signal }),
   put: (name: string, body: ScheduleBody) =>
     request<Schedule & { applied: boolean }>(`/schedules/${enc(name)}`, json('PUT', body)),
   remove: (name: string) => del<{ deleted: string }>(`/schedules/${enc(name)}`),
@@ -116,6 +130,8 @@ export const routinesApi = {
     request<Runs>(`/runs?schedule=${enc(schedule)}`, { signal }).then(r => r.runs),
   run: (id: string, signal?: AbortSignal) => request<RunDetail>(`/runs/${enc(id)}`, { signal }),
   stop: (id: string) => post<{ run: Run }>(`/runs/${enc(id)}/stop`),
+  /** a failed, skipped or stopped run runs again now, for its night */
+  retry: (id: string) => post<{ run: Run }>(`/runs/${enc(id)}/retry`),
   /** what the events started: their conversations (GET /background), newest first */
   tasks: (signal?: AbortSignal) => request<{ background: EventTask[] }>('/background-conversations', { signal }).then(r => r.background),
   triggers: (signal?: AbortSignal) => request<{ triggers: Trigger[] }>('/triggers', { signal }).then(r => r.triggers),
@@ -131,23 +147,20 @@ export const ASKED_WORD = 'Waiting for you'
 
 /** the one word for a run's state */
 export const STATE_WORD: Record<RunState | 'planned', string> = {
-  waiting: 'Waiting', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', stopped: 'Stopped',
+  waiting: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', stopped: 'Stopped',
   planned: 'Scheduled',
 }
 
-/** the dot of a run's state */
-export const RUN_TONE: Record<RunState | 'planned', 'ok' | 'error' | 'running' | 'muted' | 'off'> = {
-  waiting: 'muted', running: 'running', done: 'ok', failed: 'error', skipped: 'off', stopped: 'off', planned: 'off',
+/** the tone of a run's state word */
+export const RUN_TONE: Record<RunState | 'planned', WordTone> = {
+  waiting: 'muted', running: 'running', done: 'success', failed: 'error', skipped: 'muted', stopped: 'muted', planned: 'muted',
 }
 
 /** a run that is over: Retry or Run now instead of Stop */
 export const FINISHED: (RunState | 'planned')[] = ['done', 'failed', 'skipped', 'stopped']
 
-/** the rail's dot for Routines: a run running, or one that failed, else null */
-export function useRoutinesAttention(): 'running' | 'failed' | null {
-  const res = useResource(signal => routinesApi.runs(undefined, signal), [], { events: isRunEvent })
-  return res.data?.attention ?? null
-}
+/** a run that ended unfinished: Retry runs it again, once */
+export const RETRIES: RunState[] = ['failed', 'skipped', 'stopped']
 
 /** a day's date as a heading: "Saturday 10 October" */
 export const nightWords = (night: string) =>

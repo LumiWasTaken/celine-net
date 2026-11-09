@@ -8,10 +8,10 @@ summary = "Writes a digest."      # one sentence under its name in the onboardin
 cron = "0 2 * * *"                # minute hour day month weekday, in the app's time zone
                                   # "0 2 * * *" every day 02:00, "0 10-23/2 * * *" every
                                   # two hours from 10:00, "0 7 * * 0" Sundays 07:00
-after = []                        # names of routines it follows on the same night
-partner = ""                      # a .md prompt beside this file it talks with first
+after = []                        # names of routines it runs after on the same night
+reviewer = ""                     # a .md prompt beside this file it talks with first
                                   # (like mentor.md); "" for none
-rounds = 8                        # the partner's lines at most, 1 to 30
+turns = 8                         # the reviewer's lines at most, 1 to 30
 note = "diary/{{date}}-mine.md"   # notebook path (.md) its answer is written to; "" for none
 role = "chat"                     # the model role its turns run on
 on = true                         # false: it never starts by itself
@@ -20,10 +20,12 @@ idle_only = false                 # true: starts only if nobody used the app for
 wall_minutes = 10                 # most minutes a run may take, 1 to 180; leave out for 180
 daytime = false                   # true: {{date}} is the calendar date of the slot, not
                                   # the night's date (for routines that run in the day)
+on_fail = "retry"                 # when a run fails: "retry" runs it again up to three
+                                  # times for the same night, "skip" ends it skipped with no notice
 
-# The prompt (and the partner file, and note) can hold:
+# The prompt (and the reviewer file, and note) can hold:
 #   {{date}} {{day_before}} {{weekday}}  dates of the run
-#   {{username}} {{name}}, and pronouns {{she}} {{her}} {{herself}} {{them}}
+#   {{username}} {{name}} {{pronouns}}  the user's name, the agent's name and pronouns
 #   {{result:<routine>}}  the answer of another routine from the same night
 #   {{mood}} {{on_mind}} {{tool_failures}} {{voice_counts}}  filled when the run starts
 prompt = """

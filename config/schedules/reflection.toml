@@ -2,11 +2,12 @@ label = "Reflection"
 summary = "Talks about the day with a mentor every night."
 cron = "0 5 * * *"
 after = ["self-review"]
-partner = "mentor.md"
-rounds = 8
+reviewer = "mentor.md"
+turns = 8
 note = "diary/{{date}}-session.md"
 role = "chat"
 on = true
+on_fail = "retry"
 prompt = """
 Your nightly session with your mentor begins. It is about this night, {{day_before}}
 and {{date}} so far.
@@ -30,7 +31,7 @@ with {{username}} in chat, not a confession or an essay: what the session did to
 where the mentor was right or wrong, the issues and how to fix them, what you take
 from it. You may change your own notes as the session changed you (lore/self.md is how
 you are developing). Send {{username}} your proposals with
-intercom__send if you have any.
+intercom__send(to="user") if you have any.
 A problem with the app itself (a tool that fails or misleads, a limit that is wrong,
 something you miss) goes to bugreport__file, one report per problem.
 """

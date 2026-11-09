@@ -8,18 +8,20 @@ there:
     summary = "Reads the news."  # one sentence for the onboarding's list ("": none)
     cron = "0 2 * * *"            # minute hour day month weekday, the app's time zone
     after = ["tidy"]              # the runs of the same night this one follows
-    partner = "mentor.md"      # a prompt beside it it talks with first ("": none)
-    rounds = 8                    # the partner's lines at most
+    reviewer = "mentor.md"        # a prompt beside it it talks with first ("": none)
+    turns = 8                     # the reviewer's lines at most
     note = "radar/{{date}}.md"    # where its answer is written ("": nowhere)
     role = "chat"                 # the model role its turns run on
     on = true
     idle_only = false             # true: starts only when nobody used the app for 30 min,
                                   # else that run is skipped (never caught up)
     wall_minutes = 10             # left out: the Routine time limit (Settings, Advanced)
+    on_fail = "retry"             # when a run fails: "retry" runs it again up to three
+                                  # times for the same night, "skip" ends it skipped with no notice
     daytime = false               # true: its dates are the calendar date of its slot
     prompt = '''What happened in the world on {{day_before}}? ...'''
 
-The prompt, the partner prompt and the note path are filled from the run's date, never
+The prompt, the reviewer prompt and the note path are filled from the run's date, never
 from the clock (`fill`): {{date}} the night's date (night_of: every day-based name uses
 it), or for a `daytime` job the calendar date of its slot (`run_date`), {{day_before}}, {{weekday}}, {{result:<schedule>}} that schedule's answer of the
 same night, its name, its pronouns and {{username}}. A
@@ -35,9 +37,10 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
-PARTNER = re.compile(r"^[a-z][a-z0-9_-]{0,31}\.md$")
-KEYS = {"label", "summary", "cron", "prompt", "after", "partner", "rounds", "note", "role",
-        "on", "idle_only", "wall_minutes", "daytime"}
+REVIEWER = re.compile(r"^[a-z][a-z0-9_-]{0,40}\.md$")   # room for <name>-reviewer.md
+KEYS = {"label", "summary", "cron", "prompt", "after", "reviewer", "turns", "note", "role",
+        "on", "idle_only", "wall_minutes", "daytime", "on_fail"}
+ON_FAIL = ("retry", "skip")   # When a run fails (schedules/runs.py _fail)
 RESULT = re.compile(r"\{\{result:([a-z][a-z0-9_-]{0,31})\}\}")
 DAILY = re.compile(r"^(\d{1,2}) (\d{1,2}) \* \* \*$")
 VARIABLES = ("date", "day_before", "weekday", "username", "name", "mood", "on_mind",
@@ -53,9 +56,9 @@ class Schedule:
     cron: str
     prompt: str
     after: tuple[str, ...] = ()
-    partner: str = ""
-    partner_prompt: str = ""
-    rounds: int = 8
+    reviewer: str = ""
+    reviewer_prompt: str = ""
+    turns: int = 8
     note: str = ""
     role: str = "chat"
     on: bool = True
@@ -63,6 +66,7 @@ class Schedule:
     wall_minutes: int | None = None
     daytime: bool = False
     summary: str = ""
+    on_fail: str = "retry"
     title: str = ""            # the label with its name and the user's filled in (load)
 
     @property
@@ -75,10 +79,11 @@ class Schedule:
         """What its file holds."""
         return {"label": self.label, "summary": self.summary, "cron": self.cron,
                 "after": list(self.after),
-                "partner": self.partner, "rounds": self.rounds, "note": self.note,
+                "reviewer": self.reviewer, "turns": self.turns, "note": self.note,
                 "role": self.role, "on": self.on,
                 "idle_only": self.idle_only,
                 "daytime": self.daytime,
+                "on_fail": self.on_fail,
                 **({"wall_minutes": self.wall_minutes} if self.wall_minutes else {}),
                 "prompt": self.prompt}
 
@@ -158,9 +163,9 @@ def shown(s: Schedule) -> str:
 
 def run_roles() -> list[str]:
     """The roles a schedule can run on: every chat role but the writer (a tool's,
-    skills/writer.py)."""
+    skills/writer.py) and Bastet's own (guard/small_role.py)."""
     from ..settings.registry import ROLES
-    return [r for r, v in ROLES.items() if "chat" in v["caps"] and r != "writer"]
+    return [r for r, v in ROLES.items() if "chat" in v["caps"] and r not in ("writer", "guard")]
 
 
 def _invalid(field: str, sentence: str):
@@ -168,8 +173,8 @@ def _invalid(field: str, sentence: str):
     return Invalid(field, sentence)
 
 
-def parse(name: str, raw: dict, partner_prompt: str | None) -> Schedule:
-    """One schedule from its values and its partner prompt (None: the file is missing).
+def parse(name: str, raw: dict, reviewer_prompt: str | None) -> Schedule:
+    """One schedule from its values and its reviewer prompt (None: the file is missing).
     Raises Invalid with the field and one sentence."""
     from croniter import croniter
     if not NAME.match(name):
@@ -195,16 +200,16 @@ def parse(name: str, raw: dict, partner_prompt: str | None) -> Schedule:
         raise _invalid("after", "Runs after is a list of schedule names.")
     if name in after:
         raise _invalid("after", "A schedule cannot run after itself.")
-    partner = raw.get("partner", "")
-    if not isinstance(partner, str) or (partner and not PARTNER.match(partner)):
-        raise _invalid("partner", "The reviewer is a prompt file name such as mentor.md.")
-    if partner and partner_prompt is None:
-        raise _invalid("partner", f"The reviewer prompt {partner} is missing.")
-    if partner and not partner_prompt.strip():
-        raise _invalid("partner_prompt", "The reviewer prompt is empty.")
-    rounds = raw.get("rounds", 8)
-    if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
-        raise _invalid("rounds", "The turns are a whole number from 1.")
+    reviewer = raw.get("reviewer", "")
+    if not isinstance(reviewer, str) or (reviewer and not REVIEWER.match(reviewer)):
+        raise _invalid("reviewer", "The reviewer is a prompt file name such as mentor.md.")
+    if reviewer and reviewer_prompt is None:
+        raise _invalid("reviewer", f"The reviewer prompt {reviewer} is missing.")
+    if reviewer and not reviewer_prompt.strip():
+        raise _invalid("reviewer_prompt", "The reviewer prompt is empty.")
+    turns = raw.get("turns", 8)
+    if not isinstance(turns, int) or isinstance(turns, bool) or turns < 1:
+        raise _invalid("turns", "The turns are a whole number from 1.")
     note = raw.get("note", "")
     if not isinstance(note, str) or (note and (
             not note.endswith(".md") or note.startswith("/") or ".." in note.split("/"))):
@@ -223,11 +228,14 @@ def parse(name: str, raw: dict, partner_prompt: str | None) -> Schedule:
                              or wall < 1):
         raise _invalid("wall_minutes", "The time it may run is a whole number of minutes, "
                                        "or none.")
+    on_fail = raw.get("on_fail", "retry")
+    if on_fail not in ON_FAIL:
+        raise _invalid("on_fail", "When a run fails is retry or skip.")
     return Schedule(name, label.strip(), " ".join(cron.split()), prompt.strip(),
-                    tuple(dict.fromkeys(after)), partner,
-                    (partner_prompt or "").strip() if partner else "", rounds,
+                    tuple(dict.fromkeys(after)), reviewer,
+                    (reviewer_prompt or "").strip() if reviewer else "", turns,
                     note.strip(), role, flags["on"], flags["idle_only"], wall,
-                    flags["daytime"], summary.strip())
+                    flags["daytime"], summary.strip(), on_fail)
 
 
 def check_after(schedules: dict[str, Schedule], one: Schedule) -> None:
@@ -259,9 +267,9 @@ def depth(schedules: dict[str, Schedule], name: str, _seen=()) -> int:
     return max((1 + depth(schedules, a, _seen + (name,)) for a in s.after), default=0)
 
 
-def read_partner(folder: Path, partner: str) -> str | None:
-    p = folder / partner
-    return p.read_text() if partner and p.is_file() else None
+def read_reviewer(folder: Path, reviewer: str) -> str | None:
+    p = folder / reviewer
+    return p.read_text() if reviewer and p.is_file() else None
 
 
 def load(folder: Path, problems: list, substitute=lambda text: text) -> dict[str, Schedule]:
@@ -274,7 +282,7 @@ def load(folder: Path, problems: list, substitute=lambda text: text) -> dict[str
     for path in sorted(folder.glob("*.toml")):
         try:
             raw = tomllib.loads(path.read_text())
-            s = parse(path.stem, raw, read_partner(folder, str(raw.get("partner") or "")))
+            s = parse(path.stem, raw, read_reviewer(folder, str(raw.get("reviewer") or "")))
             out[path.stem] = replace(s, title=substitute(s.label))
         except (tomllib.TOMLDecodeError, OSError) as e:
             problems.append(Problem(shown_path(path), f"not loaded: {e}"))
