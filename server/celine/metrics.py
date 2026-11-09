@@ -31,20 +31,28 @@ _FAST = (0.05, 0.1, 0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 10, 20, 60, 120)
 # ---- turns ----------------------------------------------------------------------------
 TURNS_STARTED = Counter("celine_turns_started_total", "Turns a worker started",
                         ["origin"])
-TURNS = Counter("celine_turns_total", "Turns ended, by how they ended (the turn state)",
-                ["origin", "outcome"])
+TURNS = Counter("celine_turns_total", "Turns ended, by how they ended (the turn state) "
+                "and why (its reason code, empty when none)", ["origin", "outcome", "reason"])
 TURN_SECONDS = Histogram("celine_turn_seconds", "A turn from its start to its end",
                          ["origin"], buckets=_SECONDS)
 TURN_STEPS = Histogram("celine_turn_steps", "Model requests (steps) per turn", ["origin"],
                        buckets=(1, 2, 3, 5, 8, 13, 21, 34, 55, 100, 200))
+TURN_TOKENS = Counter("celine_turn_tokens_total", "Tokens of a turn's model requests, as "
+                      "the providers counted them", ["origin", "direction"])
+TURN_CONTEXT = Histogram("celine_turn_context_tokens", "The largest prompt of a turn: the "
+                         "context it reached", ["origin"],
+                         buckets=(1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000,
+                                  256000, 1000000))
 TOOL_CALLS = Counter("celine_tool_calls_total", "Tool calls by tool and state "
                      "(ok, error, gated is not run, cancelled, detached)", ["tool", "state"])
 TOOL_SECONDS = Histogram("celine_tool_seconds", "A tool call run in the turn",
                          ["tool"], buckets=_FAST)
 
 # ---- models ---------------------------------------------------------------------------
-MODEL_REQUESTS = Counter("celine_model_requests_total", "Model calls by outcome "
-                         "(ok, error, cancelled)", ["role", "provider", "model", "outcome"])
+MODEL_REQUESTS = Counter("celine_model_requests_total", "Model calls by outcome: ok, "
+                         "cancelled, queue_timeout, busy, unreachable, could_not_load, "
+                         "error, or the error's code (context_overflow, out_of_credits, "
+                         "...)", ["role", "provider", "model", "outcome"])
 MODEL_FIRST_TOKEN = Histogram("celine_model_first_token_seconds",
                               "From the slot to the first event (prompt read, load)",
                               ["role", "provider", "model"], buckets=_FAST)
@@ -81,10 +89,14 @@ GUARD_JUDGE = Histogram("celine_guard_judge_seconds", "The judge's time per judg
                         buckets=_FAST)
 GUARD_WAIT = Histogram("celine_guard_wait_seconds", "Time a call waited for the judge "
                        "to answer at all", buckets=_SECONDS)
+GUARD_WAITING = Gauge("celine_guard_waiting", "Calls waiting for Bastet now: a judge "
+                      "that cannot answer holds them (On)")
 
 # ---- the gateway and the work queue ---------------------------------------------------
-HOST_UP = Gauge("celine_host_up", "A model provider's host answers its ping (1) or not (0)",
-                ["provider"])
+HOST_UP = Gauge("celine_host_up", "A model provider answered its last request or probe (1) "
+                "or not (0)", ["provider"])
+HOST_DOWN = Counter("celine_host_down_total", "A model provider seen up that stopped "
+                    "answering", ["provider"])
 PAUSED = Gauge("celine_paused", "The agent is paused: no host of the chat and tasks models "
                "answers (1)")
 WORK = Counter("celine_work_items_total", "Work queue items run, by outcome (done, "

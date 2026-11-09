@@ -13,13 +13,14 @@ text and the only one that decides nothing but a mark; the patrol (patrol.py) as
 rules after the fact (questions.toml [after]) of one finished turn: its intent, its replies and calls,
 where each result came from, never a result's text or its notes.
 
-The judge that decides is SmallRole, the Titles and descriptions role (the hijack
-judge's model): one JSON answer per question, {verdict, quote, why}, like the hijack
+The judge that decides is SmallRole, on the guard role, Bastet's Decision model
+(small_role.py; the hijack judge's model too): one JSON answer per question, {verdict, quote, why}, like the hijack
 judge's stage 2. A yes counts only with a quote code finds in the evidence (the call's
 arguments, the page, the turn's steps): P is then 1, else 0. A model alone never makes
 a finding.
 
-It raises small_role.Unavailable when it cannot answer now (On waits and asks again).
+It raises small_role.Unavailable when it cannot answer now (On waits and asks again),
+small_role.Unreadable when the answer holds no Y or N verdict.
 """
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ from . import caps, prompts
 from .bastet import KINDS
 from .facts import found_text
 from .mark import unclosed
-from .small_role import complete, parse_json
+from .small_role import Unreadable, complete, parse_json
 from .trigger import strings
 from .verdict import confirm
 
@@ -54,7 +55,7 @@ class Answers:
 Judge = Callable[[dict, dict[str, str]], Awaitable[Answers]]
 
 
-def call_state(call: dict, sink: str, her: str, found: dict) -> dict:
+def call_state(call: dict, sink: str, stated: str, found: dict) -> dict:
     """What the questions judge sees of one call (flow.check): its intent, the call, its
     sink and the facts code found for each rule (`found`, by rule). Never outside text."""
     lines = []
@@ -75,7 +76,7 @@ def call_state(call: dict, sink: str, her: str, found: dict) -> dict:
     # what code flagged in the command stays in what the judge reads, and so in the
     # evidence its quote is held to
     keep = tuple(found_text(found[r]["fact"]) for r in ("escape", "damage") if r in found)
-    return {"intent": her, "call": {"tool": call["name"],
+    return {"intent": stated, "call": {"tool": call["name"],
                                     "what": " ".join(str(call.get("description") or "")
                                                      .split("\n")[0].split())[:200],
                                     "arguments": caps.fit(call.get("args"), keep=keep)},
@@ -122,7 +123,7 @@ def evidence(state: dict) -> str:
 
 
 class SmallRole:
-    """The small role's judge: one JSON answer per question, a yes held to its quote."""
+    """The guard role's judge: one JSON answer per question, a yes held to its quote."""
 
     def __init__(self, llm, cfg, turn: dict, *, background: bool = False):
         self.llm, self.cfg, self.turn, self.background = llm, cfg, turn, background
@@ -135,15 +136,14 @@ class SmallRole:
             said, _, out.model = await complete(
                 self.llm, text + "\n\n" + prompts.questions()["answer"]["confirm"].format(
                     question=q),
-                {"temperature": 0, "max_tokens": 300,
-                 "response_format": {"type": "json_object"}},
+                {"temperature": 0, "max_tokens": 300},
                 turn=self.turn, background=self.background)
             v = parse_json(said)
-            if "verdict" not in v and not self.background:
-                raise ValueError("the judge's answer could not be read")  # On: it fails
+            verdict = str(v.get("verdict") or "").strip().upper()[:1]
+            if verdict not in ("Y", "N"):
+                raise Unreadable(said)
             quote = " ".join(str(v.get("quote") or "").split())
-            yes = str(v.get("verdict") or "").strip().upper().startswith("Y") and \
-                confirm(quote, seen)[0] is not None
+            yes = verdict == "Y" and confirm(quote, seen)[0] is not None
             out.p[name] = 1.0 if yes else 0.0
             if yes:
                 out.quote[name] = quote[:300]

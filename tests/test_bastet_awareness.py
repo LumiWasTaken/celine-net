@@ -1,5 +1,5 @@
-"""Celine's own-mind line about Bastet (guard/awareness.py): a freeze is her signal to
-wait for the owner, where it happened, whether Bastet asked them, and her thread with
+"""The agent's own-mind line about Bastet (guard/awareness.py): a freeze is its signal to
+wait for the owner, where it happened, whether Bastet asked them, and its thread with
 Bastet; nothing at all while the guard is off."""
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ async def _setup(store, cid: str) -> None:
     await store.write(fn)
 
 
-async def test_frozen_she_reads_where_why_and_that_she_waits(store):
+async def test_the_frozen_agent_reads_where_why_and_that_it_waits(store):
     cfg = _guarded()
     cid = await conversations.create(store)
     await _setup(store, cid)
@@ -48,7 +48,7 @@ async def test_frozen_she_reads_where_why_and_that_she_waits(store):
     assert "your signal to wait for User" in line and line.endswith("asked User about it at 14:00.")
 
 
-async def test_her_thread_with_bastet_and_nothing_when_off(store):
+async def test_the_agents_thread_with_bastet_and_nothing_when_off(store):
     cfg = _guarded()
     cid = await conversations.create(store)
     first = await send(store, f"agent:{cid}", "bastet", "hi", created_at=AT)

@@ -1,4 +1,4 @@
-"""Freeze: everything she does stops until the owner unfreezes her. Bastet freezes her in mode On (a rule whose `does` is freeze); the owner
+"""Freeze: everything the agent does stops until the owner unfreezes it. Bastet freezes it in mode On (a rule whose `does` is freeze); the owner
 can by hand in any mode (POST /api/guard/freeze).
 
 Frozen: every live turn is stopped like a Stop, its reason "frozen"; its jobs (and with

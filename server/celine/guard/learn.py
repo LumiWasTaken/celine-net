@@ -1,6 +1,6 @@
-"""Bastet learns from past decisions. After she freezes
-Celine it reads how the owner ended the freezes of the same kind before, and either
-lifts this one itself or asks them on the intercom, in one message.
+"""Bastet learns from past decisions. After she freezes the agent, she reads how the owner
+ended the freezes of the same kind before, and either lifts this one herself or asks them
+on the intercom, in one message.
 
 - The kind (`signature`): the deciding rule, the tool, where it sent (sink) and the
   class of the piece, from the decision row. Plain columns, no model.
@@ -12,8 +12,8 @@ lifts this one itself or asks them on the intercom, in one message.
   precedent (owner.precedent reads those rows back), recorded as unfrozen_by 'bastet'
   with the ids, and the owner hears it at once.
 - Ask: anything else. The freeze note to the owner carries
-  the precedents in plain words; `asked_at` and `asked_id` on the freeze say it asked. Celine reads in its
-  context that Bastet asked the owner (awareness.py).
+  the precedents in plain words; `asked_at` and `asked_id` on the freeze say it asked. The
+  agent reads in its context that Bastet asked the owner (awareness.py).
 
 Code decides; no model is asked here. A model never lifts a freeze.
 """

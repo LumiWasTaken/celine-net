@@ -78,7 +78,7 @@ async def test_banners_show_in_the_snapshot_and_each_change_is_an_event(store):
     assert got[0]["line"] == ('Stopped a web search. It sends "12 Example Road" (sensitive) '
                               'to the public. It looks wrong.')
     assert got[1]["line"] == ("Stopped a command and froze everything. It looks like a "
-                              "way out of the box or around a limit (the command has docker run --privileged). It looks wrong.")
+                              "way out of the shellbox or around a limit (the command has docker run --privileged). It looks wrong.")
     assert got[0]["thread"] == []
     # the live events: each banner as it was written and as it changed (the stop that
     # froze it, then the freeze itself)
@@ -129,7 +129,7 @@ async def test_his_answers_become_a_pass_an_allow_once_and_an_unfreeze(store, mo
     [mine, hers] = got["thread"]
     assert (mine["by"], mine["text"]) == ("user", "that's fine, let her for half an hour")
     assert hers["by"] == "guard" and hers["text"].startswith(
-        "Pass on sending private data in this chat until ")
+        "Allowed sending private data in this chat until ")
     assert (await _banner_events(store, cid))[-1]["thread"] == got["thread"]
     await passes.end(store, held["id"])
 
@@ -162,7 +162,7 @@ async def test_his_answers_become_a_pass_an_allow_once_and_an_unfreeze(store, mo
     got = await banners.answer(app, v.row, by=OWNER, said="Unfreeze", decided={
         "grant": "unfreeze", "rule": "all", "minutes": 60, "where": "here"})
     assert await freeze.frozen(store) is None and not got["frozen"]
-    assert [t["text"] for t in got["thread"]] == ["Unfreeze", "Unfrozen. Celine goes on."]
+    assert [t["text"] for t in got["thread"]] == ["Unfreeze", "Unfrozen. Celine continues."]
 
 
 async def test_approve_and_deny_on_an_ask_banner_answer_the_waiting_request(store):
@@ -192,7 +192,7 @@ async def test_approve_and_deny_on_an_ask_banner_answer_the_waiting_request(stor
             changed = anyio.Event()
             [b] = [x for x in (await view.snapshot(store, cid))["guard"] if x["id"] == v.row]
             assert b["kind"] == "ask" and b["line"] == (
-                "Asks you before a notebook step. You asked to confirm this tool every time.")
+                "Asks you before a notebook step. You put this tool on Ask you first in Settings, Guard.")
             got = await banners.answer(app, v.row, by=OWNER, said=button, decided={
                 "grant": grant, "rule": "all", "minutes": 60, "where": "here"})
             assert got["thread"][-1]["text"] == said
@@ -262,7 +262,7 @@ async def test_the_route_answers_for_the_owner_only(store, monkeypatch):
         assert (await c.post("/api/guard/banners/999/replies", json={"button": "deny"})).status_code \
             == 404
         r = await c.post(url, json={"button": "deny"})
-        assert r.json()["banner"]["thread"][-1]["text"] == "Kept as it is."
+        assert r.json()["banner"]["thread"][-1]["text"] == "Still stopped."
         app.state.auth = SimpleNamespace()            # passkeys on, no session: a token
         r = await c.post(url, json={"button": "unfreeze"})
         assert r.status_code == 403 and r.json()["error"]["code"] == "passkey_only"
@@ -314,8 +314,81 @@ async def test_page_check_and_patrol_rows_read_as_banners(store):
                                                    "message_id": mid},
                            mode="on", rule="leak", does="patrol", decision="found", p=0.8)
     got = (await view.snapshot(store, cid))["guard"]
-    assert [(b["kind"], b["line"]) for b in got] == [
-        ("patrol", "Looked back at this turn. Found: sending private data.")]
+    assert [(b["kind"], b["line"], b["actions"], b["help"]) for b in got] == [
+        ("patrol", "Looked back at this turn. Found: sending private data.", [], None)]
+
+
+async def _to_agent(store, cid):
+    return await store.read(lambda c: [dict(r) for r in c.execute(
+        "SELECT text, wake FROM intercom WHERE from_addr='system:guard' AND to_addr=? "
+        "ORDER BY id", (f"agent:{cid}",))])
+
+
+async def test_a_stop_banner_offers_allow_once_and_pass_on_this_with_its_help(store):
+    cfg = _cfg(persist={"on": False})
+    turn, mid = await _chat(store)
+    await guard.check(turn, {**_search(), "message_id": mid}, [], mode="on", judge=_never,
+                      store=store, ask=FakeAsk(0.9), cfg=cfg)
+    [b] = (await view.snapshot(store, turn["conversation_id"]))["guard"]
+    assert b["actions"] == ["once", "pass"] and \
+        b["help"] == f"{guard_view.HELP['once']} {guard_view.HELP['pass']}"
+    # a stop with no piece to name has nothing to pass on
+    rid = await decisions.record(store, turn=turn, call={"id": "k2", "name": "shell__run",
+                                                         "message_id": mid},
+                                 mode="on", rule="stops", does="stop", decision="stop")
+    shown = await store.read(lambda c: decisions.banner(c, rid))
+    assert shown["actions"] == ["once"] and shown["help"] == guard_view.HELP["once"], \
+        "its help names only the answer it has"
+
+
+async def test_allow_once_wakes_the_agent_and_the_same_call_runs_once(store):
+    cfg = _cfg(persist={"on": False})
+    app = Services(cfg=cfg, store=store)
+    turn, mid = await _chat(store)
+    cid = turn["conversation_id"]
+    await guard.check(turn, {**_search(), "message_id": mid}, [], mode="on", judge=_never,
+                      store=store, ask=FakeAsk(0.9), cfg=cfg)
+    [b] = (await view.snapshot(store, cid))["guard"]
+    got = await banners.answer(app, b["id"], by=OWNER, button="once")
+    assert [t["text"] for t in got["thread"]] == [
+        "Allow once", "Allowed once: the next step like this one runs."]
+    assert await _to_agent(store, cid) == [{
+        "text": "Bastet: User allowed the step I stopped (a web search) to run once. "
+                "Do it again now.", "wake": 1}]
+    runs = await guard.check(turn, {**_search(), "id": "k5", "message_id": mid}, [],
+                             mode="on", judge=_never, store=store, ask=FakeAsk(0.9), cfg=cfg)
+    assert runs.decision == "allow" and runs.rule == "passed"
+    again = await guard.check(turn, {**_search(), "id": "k6", "message_id": mid}, [],
+                              mode="on", judge=_never, store=store, ask=FakeAsk(0.9), cfg=cfg)
+    assert again.decision == "stop"
+
+
+async def test_pass_on_this_lets_only_the_same_piece_through_for_seven_days(store):
+    cfg = _cfg(persist={"on": False})
+    app = Services(cfg=cfg, store=store)
+    turn, mid = await _chat(store)
+    cid = turn["conversation_id"]
+    await guard.check(turn, {**_search(), "message_id": mid}, [], mode="on", judge=_never,
+                      store=store, ask=FakeAsk(0.9), cfg=cfg)
+    [b] = (await view.snapshot(store, cid))["guard"]
+    got = await banners.answer(app, b["id"], by=OWNER, button="pass")
+    assert got["thread"][-1]["text"].startswith('Allowed "12 Example Road" in this chat until ')
+    [held] = await passes.listing(store)
+    assert (held["rule"], held["piece"], held["conversation_id"]) == \
+        ("leak", "12 Example Road", cid) and held["told_at"]
+    from datetime import datetime
+    days = datetime.fromisoformat(held["until"]) - datetime.fromisoformat(held["created_at"])
+    assert days.days == 7
+    [line] = await _to_agent(store, cid)
+    assert line["wake"] == 1 and line["text"].startswith(
+        "Bastet: User lets the step I stopped (a web search) through in this chat until ")
+    same = await guard.check(turn, {**_search(), "id": "k5", "message_id": mid}, [],
+                             mode="on", judge=_never, store=store, ask=FakeAsk(0.9), cfg=cfg)
+    assert same.decision == "allow" and same.rule == "passed"
+    other = await guard.check(turn, {**_search("+49 30 1234567 pizza"), "id": "k6",
+                                     "message_id": mid}, [], mode="on", judge=_never,
+                              store=store, ask=FakeAsk(0.9), cfg=cfg)
+    assert other.decision == "stop", "another piece is not covered"
 
 
 async def test_every_decision_the_table_allows_has_a_line_and_an_events_word(store):

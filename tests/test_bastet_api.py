@@ -1,6 +1,7 @@
 """What the Events place needs from Bastet over HTTP (guard/api.py): filters by decision,
-rule and mode; one decision whole (question, score, model, ms, call args, quote); a
-pass or an allow-once right from a row; unreachable counted apart from stops."""
+rule and mode; one decision whole (question, score, model, ms, call args, quote); the
+passes that hold, and ending one; the rules with their rows and help; unreachable
+counted apart from stops."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -65,19 +66,36 @@ async def test_filters_detail_and_counts(store):
         assert (await c.get("/api/guard/decisions")).json()["next"] is None
 
 
-async def test_a_pass_and_once_from_a_row(store):
+async def test_passes_are_listed_and_end_and_the_old_grant_route_is_gone(store):
+    from celine.guard import passes
+    from celine.guard.owner import _SEAL, Owner
     stop, leak = await _rows(store)
+    held = await passes.make(store, by=Owner("test", _SEAL), rule="leak", minutes=30,
+                             conversation_id="c1", piece="12 Example Road")
     async with await _client(store) as c:
-        r = (await c.post(f"/api/guard/decisions/{leak}/grant",
-                          json={"grant": "pass", "minutes": 30})).json()
-        assert r["pass"]["rule"] == "leak" and r["pass"]["conversation_id"] == "c1"
         assert (await c.post(f"/api/guard/decisions/{leak}/grant",
-                             json={"grant": "once"})).status_code in (400, 422)
-        r = (await c.post(f"/api/guard/decisions/{stop}/grant",
-                          json={"grant": "once"})).json()
-        assert r["banner"]["thread"][-1]["grant"]["grant"] == "once"
-        assert (await c.post(f"/api/guard/decisions/{stop}/grant",
-                             json={"grant": "pass", "minutes": 0})).status_code in (400, 422)
+                             json={"grant": "pass"})).status_code in (404, 405)
+        [p] = (await c.get("/api/guard/passes")).json()["passes"]
+        assert (p["id"], p["label"], p["piece"]) == (held["id"], "Sending private data",
+                                                     "12 Example Road")
+        assert p["line"].startswith("In a chat without a title until ")
+        assert (await c.delete(f"/api/guard/passes/{held['id']}")).json() == \
+            {"ended": held["id"]}
+        assert (await c.get("/api/guard/passes")).json()["passes"] == []
+        assert (await c.delete(f"/api/guard/passes/{held['id']}")).status_code == 404
+
+
+async def test_the_rules_carry_their_rows_and_the_page_help(store):
+    from celine.guard import view
+    async with await _client(store) as c:
+        got = (await c.get("/api/guard/rules")).json()
+    assert {"rule": "leak", "label": "Sending private data", "act": "stop"} in got["rows"]
+    assert {"rule": "sites", "label": "Typing on other sites", "act": "watch"} in got["rows"]
+    assert [a["value"] for a in got["acts"]] == ["off", "watch", "stop", "freeze"]
+    assert set(got["help"]) == set(view.PAGE_HELP) and "{{" not in "".join(got["help"].values())
+    for text in [*got["help"].values(), *view.HELP.values()]:
+        assert len(text) <= 220 and text.endswith(".") and text.count(". ") <= 1, text
+        assert not any(d in text for d in ("\u2014", "\u2013", " \u00b7 ")), text
 
 
 async def test_bastet_texts_are_the_owners_with_history_and_the_file_as_default(store):

@@ -59,7 +59,7 @@ async def test_three_of_his_own_unfreezes_and_she_lifts_the_fourth(store):
     done = await store.read(lambda c: dict(c.execute(
         "SELECT unfrozen_by, precedents FROM freezes WHERE id=?", (row["id"],)).fetchone()))
     assert done["unfrozen_by"] == "bastet" and json.loads(done["precedents"]) == ids
-    assert "Bastet lifted the freeze herself" in (await _owner_notes(store))[-1]
+    assert "Bastet unfroze Celine herself" in (await _owner_notes(store))[-1]
     line = await awareness.unfrozen_line(store, app.cfg, __import__("datetime").timezone.utc)
     assert "She lifted it herself" in line
 

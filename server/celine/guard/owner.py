@@ -9,8 +9,6 @@ tests/test_gates_hold.py checks that no other file makes one.
 """
 from __future__ import annotations
 
-import json
-
 from ..errors import CelineError
 from . import store as decisions
 
@@ -59,8 +57,7 @@ def second_look(c, rid: int) -> Owner:
     here from row `rid` (its last chain level L2 with verdict N, the row froze). It
     unfreezes and does nothing else."""
     r = decisions.row(c, rid)
-    last = ((json.loads(r["scores"] or "{}") or {}).get("chain") or [{}])[-1] if r else {}
-    if not r or not r["froze"] or last.get("level") != "L2" or last.get("verdict") != "N":
+    if not r or not r["froze"] or not decisions.overruled(r):
         raise TypeError("only a second look that said no")
     return Owner("review", _SEAL, (int(rid),))
 

@@ -21,7 +21,7 @@ NEVER = ("image_generator__", "music_generator__", "vault__")
 # skills whose results hold text someone else wrote. Shell output counts only when
 # plain code finds a reason (network, a file from outside, text aimed at an AI);
 # every other MCP server counts too (its display names the server), but one whose
-# mcp.toml block says `outside = "shell"` (her device's shell and files) counts as shell
+# mcp.toml block says `outside = "shell"` (the agent's device's shell and files) counts as shell
 OUTSIDE = {"browser", "web", "email", "discord", "whatsapp", "chat_archive",
            "user_documents", "shell"}
 
@@ -49,7 +49,7 @@ def is_outside(name: str) -> bool:
 
 def label(name: str, args: dict, result, mcp=None) -> dict | None:
     """The outside label of `name`'s result, None when the text is its own. `mcp`: its
-    server's mcp.toml block (facts.mcp_of); one with `outside = "shell"` (her own
+    server's mcp.toml block (facts.mcp_of); one with `outside = "shell"` (its own
     device's shell and files) is read as the box shell is."""
     d = result.display or {}
     if d.get("gated"):

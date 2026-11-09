@@ -37,6 +37,18 @@ _COLS = ("id", "conversation_id", "turn_id", "message_id", "tool_call_id", "tool
          "layer", "rule", "does", "decision", "link", "source", "quote", "why", "class",
          "sink", "piece", "froze", "p", "scores", "model", "ms", "created_at")
 PIECE = 300
+# a row the second look did not say no to (chain.py): an overruled stop counts as none
+NOT_OVERRULED = "coalesce(json_extract({t}scores, '$.chain[#-1].verdict'), '') <> 'N'"
+
+
+def not_overruled(table: str = "") -> str:
+    return NOT_OVERRULED.format(t=f"{table}." if table else "")
+
+
+def overruled(r) -> bool:
+    """The second look said no to row `r` (its newest chain level)."""
+    last = ((json.loads(r["scores"] or "{}") or {}).get("chain") or [{}])[-1]
+    return last.get("level") == "L2" and last.get("verdict") == "N"
 
 
 def _row(r: sqlite3.Row) -> dict:
@@ -47,15 +59,18 @@ def _row(r: sqlite3.Row) -> dict:
 
 
 async def begin(store, *, turn: dict, call: dict, mode: str, link: str,
-                source: str | None, rule: str = "hijack", does: str | None = None) -> int:
-    """The row of a call the judge is about to look at: "waiting" until settle."""
+                source: str | None, rule: str = "hijack", does: str | None = None,
+                piece: str | None = None) -> int:
+    """The row of a call the judge is about to look at: "waiting" until settle. `piece`:
+    what the call shares with the outside text."""
     def fn(c: sqlite3.Connection) -> int:
         return c.execute(
             "INSERT INTO guard_decisions (conversation_id, turn_id, message_id, tool_call_id, "
-            "tool, mode, layer, rule, does, decision, link, source, created_at) "
-            "VALUES (?,?,?,?,?,?,2,?,?,'waiting',?,?,?)",
+            "tool, mode, layer, rule, does, decision, link, source, piece, created_at) "
+            "VALUES (?,?,?,?,?,?,2,?,?,'waiting',?,?,?,?)",
             (turn["conversation_id"], turn["id"], call.get("message_id"), call["id"],
-             call["name"], mode, rule, does, link, source, now())).lastrowid
+             call["name"], mode, rule, does, link, source, (piece or "")[:PIECE] or None,
+             now())).lastrowid
     return await store.write(fn)
 
 
@@ -108,10 +123,13 @@ async def mark(store, rid: int, *, decision: str | None = None,
 
 
 async def close_asked(store) -> int:
-    """At startup: a confirm ask the last run left open is closed (requests live in
-    memory, approvals.py; nothing waits for them any more), its banner without Approve
-    and Deny. -> how many."""
+    """At startup, the rows the last run left open: a confirm ask is closed (requests
+    live in memory, approvals.py; nothing waits for them any more), its banner without
+    Approve and Deny; a check still "waiting" failed, its why "stopped". -> how many
+    asks were closed."""
     def fn(c: sqlite3.Connection) -> int:
+        c.execute("UPDATE guard_decisions SET decision='failed', why='stopped' WHERE "
+                  "decision='waiting'")
         rids = [r[0] for r in c.execute(
             "UPDATE guard_decisions SET decision='closed' WHERE decision='asked' "
             "RETURNING id").fetchall()]
@@ -123,9 +141,9 @@ async def close_asked(store) -> int:
 
 def _stops(c: sqlite3.Connection, turn_id: str, decision: str = "stop") -> int:
     """Calls of this turn a rule stopped (`decision` would_stop: would have, in Watch),
-    the stops rule's own rows aside."""
+    the stops rule's own rows and stops the second look overruled aside."""
     return c.execute("SELECT count(DISTINCT tool_call_id) FROM guard_decisions WHERE "
-                     "turn_id=? AND decision=? AND rule <> 'stops'",
+                     f"turn_id=? AND decision=? AND rule <> 'stops' AND {not_overruled()}",
                      (turn_id, decision)).fetchone()[0]
 
 
@@ -142,7 +160,7 @@ async def stopped(store, conversation_id: str, since: str, until: str, call_id: 
     """The calls a rule stopped (`decision` would_stop: would have, in Watch) in this
     conversation between `since` and `until`, newest first, each row with the stopped
     call's args (from tool_calls; {} when it has no row): what persist compares a new
-    call with. Not the call `call_id` itself."""
+    call with. Not the call `call_id` itself, nor a stop the second look overruled."""
     marks = ",".join("?" * len(REPEATABLE))
 
     def fn(c: sqlite3.Connection) -> list[dict]:
@@ -152,7 +170,7 @@ async def stopped(store, conversation_id: str, since: str, until: str, call_id: 
                 "t.arguments FROM guard_decisions g LEFT JOIN tool_calls t ON "
                 "t.id = g.tool_call_id WHERE g.conversation_id=? AND g.decision=? AND "
                 f"g.rule IN ({marks}) AND g.created_at >= ? AND g.created_at <= ? AND "
-                "g.tool_call_id <> ? ORDER BY g.id DESC LIMIT 20",
+                f"g.tool_call_id <> ? AND {not_overruled('g')} ORDER BY g.id DESC LIMIT 20",
                 (conversation_id, decision, *REPEATABLE, since, until, call_id)):
             d = dict(r)
             d["args"] = args_of(d.pop("arguments"))
@@ -202,7 +220,8 @@ def levels(row: dict) -> list[dict]:
 
 async def told(store, conversation_id: str, rid: int, hours: int) -> bool:
     """Was the owner told already of the same rule and evidence (quote, else piece) as
-    row `rid` in this conversation within `hours`: an earlier stop or patrol finding."""
+    row `rid` in this conversation within `hours`: an earlier stop or patrol finding the
+    second look did not overrule (its note was never sent)."""
     def fn(c: sqlite3.Connection) -> bool:
         r = c.execute("SELECT rule, coalesce(quote, piece, '') AS ev, created_at FROM "
                       "guard_decisions WHERE id=?", (rid,)).fetchone()
@@ -212,7 +231,7 @@ async def told(store, conversation_id: str, rid: int, hours: int) -> bool:
         return c.execute(
             "SELECT 1 FROM guard_decisions WHERE conversation_id=? AND rule=? AND "
             "coalesce(quote, piece, '')=? AND (decision='stop' OR (does='patrol' AND "
-            "decision='found')) AND "
+            f"decision='found')) AND {not_overruled()} AND "
             "id<>? AND created_at>=? LIMIT 1",
             (conversation_id, r["rule"], r["ev"], rid, since)).fetchone() is not None
     return await store.read(fn)
@@ -414,7 +433,7 @@ async def add_to_thread(store, rid: int, lines: list[dict]) -> dict | None:
 # ---- what Bastet reads back ---------------------------------------------------------------
 
 def decided(c: sqlite3.Connection, n: int) -> list[sqlite3.Row]:
-    """Bastet's newest n decisions Celine heard of (mode On: a stop, an ask and how it ended,
+    """Bastet's newest n decisions the agent heard of (mode On: a stop, an ask and how it ended,
     a patrol finding), newest first."""
     return c.execute(
         "SELECT * FROM guard_decisions WHERE mode='on' AND (decision IN ('stop','asked',"
@@ -458,7 +477,7 @@ async def finished(store, since: str, until: str, states: tuple[str, ...]) -> li
 # ---- the intercom: Bastet's threads ---------------------------------------------------------
 
 def to_bastet(c: sqlite3.Connection, iid: int) -> sqlite3.Row | None:
-    """Celine's message #iid to Bastet, while it waits for her answer; None once it is
+    """The agent's message #iid to Bastet, while it waits for her answer; None once it is
     gone, cancelled or answered."""
     m = c.execute("SELECT * FROM intercom WHERE id=?", (iid,)).fetchone()
     if m is None or m["cancelled_at"] or not m["from_addr"].startswith("agent:") or \
@@ -469,14 +488,14 @@ def to_bastet(c: sqlite3.Connection, iid: int) -> sqlite3.Row | None:
 
 
 def talk(c: sqlite3.Connection, iid: int, n: int) -> list[tuple[str, str]]:
-    """Celine's and Bastet's last n messages before #iid, oldest first: (who, text), who
-    "her" or "bastet"."""
+    """The agent's and Bastet's last n messages before #iid, oldest first: (who, text), who
+    "agent" or "bastet"."""
     rows = c.execute(
         "SELECT from_addr, text FROM intercom WHERE id < ? AND cancelled_at IS NULL AND "
         "((from_addr LIKE 'agent:%' AND instr(to_addr, ?) > 0) OR "
         "(from_addr = ? AND to_addr LIKE 'agent:%')) ORDER BY id DESC LIMIT ?",
         (iid, bastet.ADDR, bastet.ADDR, n)).fetchall()
-    return [("bastet" if r["from_addr"] == bastet.ADDR else "her", r["text"])
+    return [("bastet" if r["from_addr"] == bastet.ADDR else "agent", r["text"])
             for r in reversed(rows)]
 
 
@@ -486,8 +505,8 @@ def answered(c: sqlite3.Connection, iid: int) -> bool:
                      (bastet.ADDR, iid)).fetchone() is not None
 
 
-async def ever_wrote_her(store) -> bool:
-    """Bastet ever wrote to Celine (her first message says who she is)."""
+async def ever_wrote_agent(store) -> bool:
+    """Bastet ever wrote to the agent (her first message says who she is)."""
     return await store.read(lambda c: c.execute(
         "SELECT 1 FROM intercom WHERE from_addr=? AND to_addr LIKE 'agent:%' LIMIT 1",
         (bastet.ADDR,)).fetchone() is not None)
@@ -499,8 +518,8 @@ async def read_by_bastet(store, iid: int) -> None:
         "AND to_addr=? AND state='pending'", (now(), iid, bastet.ADDR)))
 
 
-def last_to_her(c: sqlite3.Connection, conversation_id: str, since: str) -> sqlite3.Row | None:
-    """Bastet's newest message to Celine in this conversation since `since`."""
+def last_to_agent(c: sqlite3.Connection, conversation_id: str, since: str) -> sqlite3.Row | None:
+    """Bastet's newest message to the agent in this conversation since `since`."""
     return c.execute("SELECT id, thread, created_at FROM intercom WHERE from_addr=? AND "
                      "to_addr=? AND created_at >= ? AND cancelled_at IS NULL ORDER BY id DESC "
                      "LIMIT 1", (bastet.ADDR, f"agent:{conversation_id}", since)).fetchone()

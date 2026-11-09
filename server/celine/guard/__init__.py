@@ -30,10 +30,10 @@ The modules, one concern each:
 - facts.py, persist.py, trigger.py, sources.py, patterns.py   plain code, no model
 - caps.py     what a judge reads, capped, a marker at every cut
 - prompts.py  the prompt files (config/guard/*.md, questions.toml)
-- small_role.py  the small role's transport, its JSON, Unavailable
+- small_role.py  the guard role's transport, its JSON, Unavailable
 - intent.py   its intent and a finished turn, as the judges read them
 - judge.py    the hijack judge (two stages, a quote as evidence)
-- questions.py  the questions judge (the small role)
+- questions.py  the questions judge (the guard role)
 - chain.py    the second look by a big model
 - page.py, patrol.py, mark.py   the page check, the patrol, the labels
 - store.py    every query on guard_decisions, kv and intercom; the banners' rows
@@ -43,7 +43,7 @@ The modules, one concern each:
 - persona.py  its persona, replies and notes as the owner's texts (Settings, Guard)
 - bastet.py, view.py, talk.py, banners.py, awareness.py   its voice: sentences, the
   owner's lines and banners, its intercom replies, the owner's answers, the lines in
-  Celine's context
+  the agent's context
 - api.py      HTTP
 """
 from __future__ import annotations

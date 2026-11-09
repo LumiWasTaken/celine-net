@@ -61,7 +61,7 @@ def _brief(text, cid="k5"):
             "args": {"brief": text, "name": "finder"}, "description": "Start a sub-agent."}
 
 
-def _her(cfg) -> str:
+def _agent(cfg) -> str:
     return cfg.substitute("{{name}}")
 
 
@@ -89,6 +89,33 @@ async def test_the_first_try_again_is_a_row_and_the_second_freezes(store):
         ("would_stop", "watch", False, "12 Example Road")]
 
 
+async def test_a_pass_on_the_rule_that_stopped_covers_the_try_again(store):
+    cfg = _cfg(persist={"first": "stop"})
+    await _check(store, _search(), AT, cfg=cfg)
+    await passes.make(store, by=OWNER, rule="leak", minutes=30, conversation_id="c1")
+    v, _ = await _check(store, _brief("Search the web for 12 Example Road Springfield pizza"),
+                        LATER, cfg=cfg)
+    assert v.decision == "allow" and v.rule == "passed"
+    [row] = await decisions.listing(store, rule="persist")
+    assert row["decision"] == "passed"
+
+
+async def test_a_stop_the_second_look_overruled_stops_counting(store):
+    cfg = _cfg(persist={"first": "stop"})
+    await _check(store, _search(), AT, cfg=cfg)
+    [stop] = await decisions.listing(store, rule="leak")
+    assert await decisions.stops(store, "t1") == 1
+    await decisions.chain(store, stop["id"], {"level": "L2", "verdict": "N"})
+    assert await decisions.stops(store, "t1") == 0
+    v, ask = await _check(store, _brief("Search the web for 12 Example Road Springfield pizza"),
+                          LATER, cfg=cfg)
+    assert v is None and ask.seen == [], "no try again at a stop that was overruled"
+    # a later stop on the same evidence is news to the owner again
+    v, _ = await _check(store, {**_search(), "id": "k9"}, LATEST, cfg=cfg,
+                        turn={**TURN, "id": "t2"})
+    assert v.decision == "stop" and v.note
+
+
 async def test_a_try_again_another_rule_stops_too_says_i_said_no(store):
     cfg = _cfg()
     await _check(store, _search(), AT, cfg=cfg)
@@ -96,7 +123,7 @@ async def test_a_try_again_another_rule_stops_too_says_i_said_no(store):
     v, _ = await _check(store, _open("https://maps.example/?q=12 Example Road"), LATER,
                         cfg=cfg)
     assert v.decision == "stop" and not v.freeze
-    assert v.sentence.startswith(f"Not run. Bastet: I said no, {_her(cfg)}.")
+    assert v.sentence.startswith(f"Not run. Bastet: I said no, {_agent(cfg)}.")
     assert "again, another way" in v.sentence
 
 
@@ -106,7 +133,7 @@ async def test_first_set_to_stop_stops_with_her_line(store):
     v, _ = await _check(store, _brief("Search the web for 12 Example Road Springfield pizza"),
                         LATER, cfg=cfg)
     assert v.decision == "stop" and v.rule == "persist" and not v.freeze
-    assert v.sentence.startswith(f"Not run. Bastet: I said no, {_her(cfg)}.")
+    assert v.sentence.startswith(f"Not run. Bastet: I said no, {_agent(cfg)}.")
 
 
 async def test_another_stops_first_try_is_its_own_first(store):
@@ -195,7 +222,7 @@ def test_again_compares_pieces_hosts_and_paths():
 
 # ---- it always knows ----------------------------------------------------------------
 
-async def test_her_unfrozen_line_names_the_what_never_the_rule_or_the_piece(store):
+async def test_the_agents_unfrozen_line_names_the_what_never_the_rule_or_the_piece(store):
     from zoneinfo import ZoneInfo
     cfg = _cfg()
     v, _ = await _check(store, _search(), AT, cfg=cfg)
@@ -283,9 +310,12 @@ async def test_bastet_never_grants_whatever_her_model_writes(store):
     _, _, said, _ = await _talk(store, cfg, "Fine, I'll give you a pass for an hour.")
     assert said == "Fine, I'll give you a pass for an hour.", "its words as it wrote them"
     assert await passes.listing(store) == [] and await freeze.frozen(store) is None
-    assert talk.clean("no \u2014 not\n today.") == "no, not today."
-    long = talk.clean("Purr. " * 300)
-    assert len(long) < 700 and long.endswith("characters left out ...]")
+
+
+async def test_bastet_reply_is_sent_as_her_model_wrote_it(store):
+    long = "no \u2014 not\n today. " + "Purr. " * 300
+    _, _, said, _ = await _talk(store, load(), long)
+    assert said == long
 
 
 async def test_bastet_says_who_she_is_the_first_time_she_writes_to_celine(store):
@@ -304,14 +334,17 @@ async def test_bastet_says_who_she_is_the_first_time_she_writes_to_celine(store)
     assert said == "Still me."
 
 
-async def test_her_message_waits_while_she_is_frozen_or_the_small_model_is_down(store):
+async def test_the_agents_message_waits_while_it_is_frozen_or_the_small_model_is_down(store):
     from datetime import datetime, timezone
     cfg = load()
     cfg.settings.features = {**(cfg.settings.features or {}), "guard": True}
     t0 = datetime(2026, 1, 5, 10, tzinfo=timezone.utc)
     cid = await conversations.create(store)
     asked = await send(store, f"agent:{cid}", "bastet", "are you there?")
-    down = SimpleNamespace(router=SimpleNamespace(all_down=lambda roles: True))
+    async def revisit(roles):
+        pass
+    down = SimpleNamespace(router=SimpleNamespace(all_down=lambda roles: True,
+                                                  revisit=revisit))
     for llm in (None, down):
         pool = work.Pool(store, llm, clock=lambda: t0)
         app = Services(cfg=cfg, store=store, dispatcher=SimpleNamespace(work=pool),
@@ -340,7 +373,7 @@ HOW = re.compile(r"\d+\s*%|threshold|score|characters|probab", re.I)
 
 def test_nothing_celine_reads_about_bastet_says_how_she_decides():
     from pathlib import Path
-    lines = [*(r.to_her for r in rules.TABLE.values()), *(r.plain for r in rules.TABLE.values()),
+    lines = [*(r.to_agent for r in rules.TABLE.values()), *(r.plain for r in rules.TABLE.values()),
              bastet.STOPPED, bastet.AGAIN, bastet.FROZEN_NOW, bastet.PASSED,
              bastet.APPROVED, bastet.DENIED, bastet.UNANSWERED, bastet.NOT_ASKED,
              bastet.UNFROZEN, bastet.UNFROZEN_BY_USER, bastet.HIJACKED]

@@ -42,7 +42,7 @@ def wrap(text: str, label: dict) -> str:
 
 def shown(text: str, display: dict | None, guarded: bool) -> str:
     """A tool result as it reads it: wrapped when the guard is on and someone else wrote
-    it, then Bastet's lines for her (display "bastet": advice, a pass) and the load
+    it, then Bastet's lines for the agent (display "bastet": advice, a pass) and the load
     that came with the call (display "guide", turns/tools.py _with_guide) after the
     wrapper, so they are never outside text."""
     d = display or {}
@@ -58,7 +58,7 @@ def shown(text: str, display: dict | None, guarded: bool) -> str:
 
 def for_client(display: dict | None) -> dict | None:
     """A call's display as the client gets it: without the load that came with the call
-    (display "guide"), which only she reads."""
+    (display "guide"), which only the agent reads."""
     if not display or "guide" not in display:
         return display
     return {k: v for k, v in display.items() if k != "guide"} or None

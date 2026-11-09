@@ -14,7 +14,7 @@ from ..api.deps import cfg_of, etag, json_body, person_only, services_of, settin
 from ..errors import CelineError, NotFound
 from ..settings import files, write
 from ..settings.files import Invalid, version
-from . import banners, freeze as freezes, owner, passes as passes_mod, persona
+from . import banners, freeze as freezes, owner, passes as passes_mod, persona, view
 from . import prompts, questions, rules as rule_set, store as decisions
 from .small_role import Unavailable
 
@@ -70,46 +70,6 @@ async def get_decision(rid: int, request: Request) -> dict:
     return {"decision": row}
 
 
-@router.post("/guard/decisions/{rid}/grant")
-async def grant_decision(rid: int, request: Request) -> dict:
-    """The owner's answer right from a decision's row: {"grant": "pass", "minutes"?,
-    "where"? (here | everywhere)} suspends its rule; {"grant": "once"} lets the same call
-    run once (only where the row shows a banner). -> {"banner": the banner or null,
-    "pass": the pass or null}."""
-    by = owner.session(request)
-    body = await json_body(request, need=("grant",), allow=("grant", "minutes", "where"))
-    g, where = body["grant"], body.get("where") or "here"
-    minutes = body.get("minutes", banners.MINUTES)
-    if g not in ("pass", "once"):
-        raise Invalid("grant", "This must be pass or once.")
-    if where not in banners.WHERE:
-        raise Invalid("where", "This must be here or everywhere.")
-    services = services_of(request)
-    row = await decisions.one(services.store, rid)
-    if row is None:
-        raise NotFound("decision")
-    rule = row["rule"] if row["rule"] in rule_set.RULES else None
-    if g == "pass" and rule is None:
-        raise Invalid("grant", "No pass opens this one.")
-    shown = await services.store.read(lambda c: decisions.banner(c, rid))
-    if shown is not None:
-        try:
-            got = await banners.answer(services, rid, by=by, said="Pass" if g == "pass"
-                                       else "Allow once", decided={
-                                           "grant": g, "rule": rule or rule_set.ALL,
-                                           "minutes": minutes, "where": where})
-        except Unavailable as e:
-            raise CelineError("bastet_away", str(e), 503) from None
-        return {"banner": got, "pass": None}
-    if g == "once":
-        raise Invalid("grant", "Nothing to allow once here.")
-    p = await passes_mod.make(services.store, by=by, rule=rule, minutes=minutes,
-                              conversation_id=row["conversation_id"]
-                              if where == "here" else None,
-                              why=f"from Bastet's decision {rid}")
-    return {"banner": None, "pass": p}
-
-
 # ---- the freeze -------------------------------------------------------------------------
 
 @router.get("/guard/freeze")
@@ -163,7 +123,7 @@ async def put_text(field: str, request: Request) -> dict:
 @router.post("/guard/banners/{rid}/replies")
 async def answer_banner(rid: int, request: Request) -> dict:
     """The owner answers Bastet in a banner's thread: {"text": their words} (read by the
-    small role) or {"button": banners.BUTTONS}. -> {"banner": the banner, its answer
+    guard role) or {"button": banners.BUTTONS}. -> {"banner": the banner, its answer
     last in its thread}. 503 bastet_away when the reader cannot answer now."""
     by = owner.session(request)
     body = await json_body(request, allow=("text", "button"))
@@ -184,18 +144,42 @@ async def answer_banner(rid: int, request: Request) -> dict:
     return {"banner": got}
 
 
+# ---- passes -------------------------------------------------------------------------------
+
+@router.get("/guard/passes")
+async def list_passes(request: Request) -> dict:
+    """{"passes": every pass that holds now, each with its rule's `label` and a `line`
+    saying where and until when (passes.shown)}."""
+    person_only(request)
+    services = services_of(request)
+    return {"passes": await passes_mod.shown(services.store, services.cfg)}
+
+
+@router.delete("/guard/passes/{pid}")
+async def end_pass(pid: int, request: Request) -> dict:
+    """The pass ends now (the event guard.passes). 404 when no such pass holds."""
+    person_only(request)
+    if not await passes_mod.end(services_of(request).store, pid):
+        raise NotFound("pass")
+    return {"ended": pid}
+
+
 # ---- its rules (var/settings/guard.toml) -----------------------------------------------
 
 def _rules_view(request: Request) -> dict:
-    s = settings_of(request)
-    return {**rule_set.current(cfg_of(request)), "version": version(s.guard),
-            "saved": bool(s.saved.get("guard"))}
+    s, cfg = settings_of(request), cfg_of(request)
+    current = rule_set.current(cfg)
+    return {**current, "version": version(s.guard), "saved": bool(s.saved.get("guard")),
+            "rows": rule_set.rows(current), "acts": rule_set.ACTS,
+            "help": {k: cfg.substitute(v) for k, v in view.PAGE_HELP.items()}}
 
 
 @router.get("/guard/rules")
 async def get_guard_rules(request: Request, response: Response) -> dict:
     """The rules in use: the saved values over guard/rules.py DEFAULTS (model, chain,
-    patrol, learn, gates and the rule tables), plus version and saved."""
+    patrol, learn, gates and the rule tables), plus version and saved; `rows` (each rule
+    Settings, Guard sets: its label and what it does now, rules.rows), `acts` (the words
+    of what a rule can do) and `help` (the page's "?" texts, names filled in)."""
     person_only(request)
     view = _rules_view(request)
     etag(response, view["version"])

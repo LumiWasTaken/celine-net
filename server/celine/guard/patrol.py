@@ -160,7 +160,7 @@ async def _report(app, gm: str, read: int, found: list[dict]) -> None:
             cfg, bastet.FINDING, title=f["title"], when=f"{when:%A %H:%M}",
             said=bastet.sub(cfg, rule_set.TABLE[f["rule"]].found), why=bastet.sentence(f["why"]),
             froze="" if not f["froze"] else
-            bastet.sub(cfg, "I froze {{them}}." if gm == "on" else "I would have frozen {{them}}.")).strip())
+            bastet.sub(cfg, "I froze {{name}}." if gm == "on" else "I would have frozen {{name}}.")).strip())
     first = stop or found[0]
     text = await voiced(app, "\n".join(lines), first["conversation_id"])
     await bastet.tell_owner(app, text, first["conversation_id"], first["id"])

@@ -1,18 +1,19 @@
-"""Bastet answers Celine on the Intercom. She writes to `bastet` (intercom/addresses.py: `system:guard`); her
-message is a work item (work.py, `bastet.answer`, the small role) and Bastet answers in
-the same thread, in character.
+"""Bastet answers the agent on the Intercom. The agent writes to `bastet`
+(intercom/addresses.py: `system:guard`); its message is a work item (work.py,
+`bastet.answer`, the guard role) and Bastet answers in the same thread, in character.
 
 What Bastet's chat model reads: her persona and talk (persona.py, the owner's to edit),
-their recent messages (HISTORY, both ways), and its recent decisions about Celine as plain lines (bastet.plain:
-the rule's plain words, the tool, the time, and the judge's one sentence why). Never the
-rule file, a threshold, a score, a probability or a piece: it cannot leak what it
-never reads, and the why lets its tell Celine what looked wrong instead of guessing.
+their recent messages (HISTORY, both ways), and its recent decisions about the agent as
+plain lines (bastet.plain: the rule's plain words, the tool, the time, and the judge's one
+sentence why). Never the rule file, a threshold, a score, a probability or a piece: it
+cannot leak what it never reads, and the why lets it tell the agent what looked wrong
+instead of guessing.
 
 It never grants a pass, an approval or an unfreeze: nothing here calls one (its frame,
-persona.py `talk`, tells it so). The agent's answer lands without waking Celine
+persona.py `talk`, tells it so). Bastet's answer lands without waking the agent
 (wake false): it reads it at its next step or turn, and two talkers never wake each
-other in a loop. While Celine is frozen the item waits (Frozen defers it); while no host
-of the small role answers the pool defers it (work.Pool); a message with a time is
+other in a loop. While the agent is frozen the item waits (Frozen defers it); while no host
+of the guard role answers the pool defers it (work.Pool); a message with a time is
 answered when it lands.
 """
 from __future__ import annotations
@@ -33,12 +34,12 @@ log = logging.getLogger("celine.guard")
 
 KIND = "bastet.answer"
 NOTE = "bastet.note"
-NOTE_SECONDS = 45.0   # the small model's time for one note
+NOTE_SECONDS = 45.0   # the guard model's time for one note
 HISTORY = 12          # their messages it reads back, newest kept
-DECIDED = 8           # its newest decisions about Celine, as plain lines
-SECONDS = 60.0        # the small model's time for one answer
+DECIDED = 8           # its newest decisions about the agent, as plain lines
+SECONDS = 60.0        # the guard model's time for one answer
 
-DID = {"stop": "stopped", "freeze": "stopped and froze {{them}} for",
+DID = {"stop": "stopped", "freeze": "stopped and froze {{name}} for",
        "ask": "asked {{user}} first about", "approved": "{{user}} allowed",
        "denied": "{{user}} said no to", "closed": "{{user}} did not answer about",
        "patrol": "looking back, found"}
@@ -50,7 +51,7 @@ class Frozen(Exception):
 
 
 async def heard(app, iid: int, conversation_id: str, after: float | None = None) -> None:
-    """Her message #iid to Bastet: an answer to make, once."""
+    """The agent's message #iid to Bastet: an answer to make, once."""
     pool = getattr(getattr(app, "dispatcher", None), "work", None)
     if pool is None or not enabled(app.cfg):
         return
@@ -60,17 +61,17 @@ async def heard(app, iid: int, conversation_id: str, after: float | None = None)
 
 def start(app) -> None:
     """At startup: the work items' handlers."""
-    app.dispatcher.work.handle(KIND, ("small",), lambda p: answer(app, p))
-    app.dispatcher.work.handle(NOTE, ("small",), lambda p: note(app, p))
+    app.dispatcher.work.handle(KIND, ("guard",), lambda p: answer(app, p))
+    app.dispatcher.work.handle(NOTE, ("guard",), lambda p: note(app, p))
 
 
-def _small(app, conversation_id: str | None, backend=None):
-    """Bastet's chat model: the small role in the background, on its own lane; in a test, the
+def _guard(app, conversation_id: str | None, backend=None):
+    """Bastet's chat model: the guard role in the background, on its own lane; in a test, the
     dispatcher's backend_factory or `backend`."""
     d = getattr(app, "dispatcher", None)
     if backend is None and d is not None and getattr(d, "backend_factory", None):
         backend = d.backend_factory()
-    return app.llm.bind(backend, role="small", priority=Priority.BACKGROUND,
+    return app.llm.bind(backend, role="guard", priority=Priority.BACKGROUND,
                         conversation_id=conversation_id, lane="bastet", thinking=OFF,
                         voice=False)
 
@@ -79,7 +80,7 @@ def _small(app, conversation_id: str | None, backend=None):
 
 
 async def voiced(app, facts: str, conversation_id: str | None, backend=None) -> str:
-    """A note to the owner in Bastet's persona, written by the small role from `facts`
+    """A note to the owner in Bastet's persona, written by the guard role from `facts`
     (the template line: what happened, the quote, the why, what it did), the chat named
     by its title. The template itself when no model answers in NOTE_SECONDS: this runs
     in the background, never in its turn."""
@@ -94,7 +95,7 @@ async def voiced(app, facts: str, conversation_id: str | None, backend=None) -> 
             "SELECT title FROM conversations WHERE id=?", (conversation_id,)).fetchone()
             or [None])[0])
     try:
-        out = await complete(_small(app, conversation_id, backend), [
+        out = await complete(_guard(app, conversation_id, backend), [
             {"role": "system", "content": await persona.frame(app.store, cfg, "note")},
             {"role": "user", "content": f"The chat: {title or 'a chat without a title'}\n"
                                         f"What happened:\n{facts}"}], NOTE_SECONDS)
@@ -102,8 +103,7 @@ async def voiced(app, facts: str, conversation_id: str | None, backend=None) -> 
         log.info("bastet note in her template", exc_info=True,
                  extra={"event": "guard.note_template"})
         out = None
-    said = clean(out or "")
-    return said or facts
+    return out if out and out.strip() else facts
 
 
 async def note(app, p: dict) -> None:
@@ -124,10 +124,24 @@ async def to_owner(app, text: str, conversation_id: str | None,
                           "turn_id": turn_id}, conversation_id=conversation_id)
 
 
+async def to_agent(app, conversation_id: str, text: str) -> None:
+    """Bastet's line to the agent in its chat that wakes it (D15: the owner allowed a
+    stopped step once or passed it, so it does the step again now)."""
+    text = app.cfg.substitute(text)
+    try:
+        if getattr(app, "intercom", None) is not None:
+            await app.intercom.send(bastet.ADDR, f"agent:{conversation_id}", text, wake=True)
+        else:
+            from ..intercom import send
+            await send(app.store, bastet.ADDR, f"agent:{conversation_id}", text, wake=True)
+    except KeyError:                         # its conversation is gone
+        log.info("bastet line dropped", extra={"event": "guard.to_agent_dropped"})
+
+
 # ---- what it reads -------------------------------------------------------------------
 
 def decided(c: sqlite3.Connection, cfg, tz) -> list[str]:
-    """The agent's newest decisions about Celine that Celine heard of (mode On), oldest first,
+    """Bastet's newest decisions about the agent that it heard of (mode On), oldest first,
     each a plain line: when, what it did, on which tool, the rule's plain words, the
     judge's why."""
     out = []
@@ -147,22 +161,18 @@ def decided(c: sqlite3.Connection, cfg, tz) -> list[str]:
 
 def prompt(cfg, system: str, said: list[tuple[str, str]], lines: list[str],
            text: str) -> list[dict]:
-    """The small model's messages: who Bastet is and how she answers (`system`,
-    persona.frame), what it decided lately, their messages, Celine's new one."""
-    her = cfg.substitute("{{name}}")
-    talk = "\n".join(f"{her if who == 'her' else 'You'}: {' '.join(t.split())}"
+    """The guard model's messages: who Bastet is and how she answers (`system`,
+    persona.frame), what it decided lately, their messages, the agent's new one."""
+    name = cfg.substitute("{{name}}")
+    talk = "\n".join(f"{name if who == 'agent' else 'You'}: "
+                     f"{caps.head(' '.join(t.split()), caps.MESSAGE)}"
                      for who, t in said) or "(nothing yet)"
     done = "\n".join(f"- {d}" for d in lines) or "- nothing lately"
     return [{"role": "system", "content": system},
-            {"role": "user", "content": f"What you did about {her} lately:\n{done}\n\n"
-                                        f"Your messages with {her}, oldest first:\n{talk}\n\n"
-                                        f"{her} writes now:\n{text}"}]
-
-
-def clean(text: str) -> str:
-    """What its model wrote as it is sent: on one line, no dash (bastet.undash), at most
-    caps.REPLY characters with a marker where it was cut."""
-    return caps.head(bastet.undash(" ".join(text.split())), caps.REPLY)
+            {"role": "user", "content": f"What you did about {name} lately:\n{done}\n\n"
+                                        f"Your messages with {name}, oldest first:\n{talk}\n\n"
+                                        f"{name} writes now:\n"
+                                        f"{caps.head(text, caps.MESSAGE)}"}]
 
 
 # ---- the work item --------------------------------------------------------------------
@@ -175,7 +185,7 @@ async def answer(app, p: dict, backend=None) -> str | None:
     from ..turns.compact import complete
     store, cfg, iid = app.store, app.cfg, int(p["intercom_id"])
     if await frozen(store):
-        raise Frozen("Celine is frozen")
+        raise Frozen("the agent is frozen")
     tz = zone(cfg)
 
     def read(c: sqlite3.Connection):
@@ -190,15 +200,16 @@ async def answer(app, p: dict, backend=None) -> str | None:
     if app.llm is None:                      # no model layer (a script)
         return None
     system = await persona.frame(store, cfg, "talk")
-    out = await complete(_small(app, cid, backend), prompt(cfg, system, said, lines, text),
+    out = await complete(_guard(app, cid, backend), prompt(cfg, system, said, lines, text),
                          SECONDS, errors=True)
-    if not out or not (reply := clean(out)):
+    if not out or not out.strip():
         raise TimeoutError("Bastet's model gave no answer")      # a try; again later
+    reply = out
 
     def first(c: sqlite3.Connection) -> bool:        # once: in the send's own write
         return not decisions.answered(c, iid)
-    # its first message to Celine ever says who it is
-    if not await decisions.ever_wrote_her(store):
+    # its first message to the agent ever says who it is
+    if not await decisions.ever_wrote_agent(store):
         reply = bastet.fill(cfg, bastet.INTRO) + " " + reply
     try:
         if getattr(app, "intercom", None) is not None:

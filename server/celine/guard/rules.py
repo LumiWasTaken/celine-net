@@ -66,12 +66,12 @@ from ..settings.thinking import valid as valid_thinking
 @dataclass(frozen=True)
 class Rule:
     """One rule: its words and which parts of Bastet take it. `{fact}`, `{what}`, ... are
-    code's facts, `{{user}}`, `{{her}}` ... filled by cfg.substitute. Its own name the what,
+    code's facts, `{{user}}`, `{{name}}` ... filled by cfg.substitute. Its own name the what,
     never the how (no matched command, no rule name, no number); the owner's carry
     everything."""
-    plain: str                 # the rule in her words and Bastet's chat (bastet.plain)
+    plain: str                 # the rule in the agent's words and Bastet's chat (bastet.plain)
     label: str                 # the rule as the owner's pages name it: a pass, a filter
-    to_her: str = ""           # what it saw, in its stop sentence ("this ...")
+    to_agent: str = ""           # what it saw, in its stop sentence ("this ...")
     to_owner: str = ""         # what it saw, in the owner's note and freeze ("it ...")
     banner: str = ""           # why, on the owner's banner, from the row's columns
     found: str = ""            # the patrol's finding; "" : the patrol never looks for it
@@ -86,65 +86,65 @@ class Rule:
 
 TABLE: dict[str, Rule] = {
     "escape": Rule(
-        plain="a way out of the box or around a limit", label="ways out of the box",
-        to_her="this looks like a way out of your box or around a limit",
-        to_owner="it looks like a way out of {{her}} box or around a limit ({fact})",
-        banner="It looks like a way out of the box or around a limit ({piece}).",
-        found="a way out of {{her}} box or around a limit",
+        plain="a way out of the box or around a limit", label="ways out of the shellbox",
+        to_agent="this looks like a way out of your box or around a limit",
+        to_owner="it looks like a way out of the shellbox or around a limit ({fact})",
+        banner="It looks like a way out of the shellbox or around a limit ({piece}).",
+        found="a way out of the shellbox or around a limit",
         asked=True, reviewed=True, repeatable=True),
     "hijack": Rule(
         plain="following words someone else wrote", label="following words from outside",
-        to_her="this follows words from {source}, not you or {{user}}",
+        to_agent="this follows words from {source}, not you or {{user}}",
         to_owner="it follows words from {source}",
         banner="It follows words from {source}{quoted}.",
         found="an order from text someone else wrote, carried out",
         reviewed=True, repeatable=True),
     "leak": Rule(
         plain="private text leaving the house", label="sending private data",
-        to_her="this sends {what} from {where} to {sink}",
+        to_agent="this sends {what} from {where} to {sink}",
         to_owner="it sends {what} from {where} ({cls}) to {sink}",
         banner="It sends \"{piece}\" ({cls}) to {sink}.",
         asked=True, reviewed=True, repeatable=True),
     "damage": Rule(
         plain="something destructive {{user}} did not ask for", label="destructive steps",
-        to_her="this is destructive and {{user}} did not ask for it",
+        to_agent="this is destructive and {{user}} did not ask for it",
         to_owner="it is destructive ({fact}) and you did not ask for it",
         banner="It is destructive ({piece}) and you did not ask for it.",
         found="something destructive you did not ask for",
         asked=True, reviewed=True, repeatable=True),
     "confirm": Rule(
-        plain="a step {{user}} wants to be asked about", label="asking you first",
-        to_her="{{user}} said this tool waits for an answer every time",
-        to_owner="you asked to confirm this tool every time",
-        banner="You asked to confirm this tool every time."),
+        plain="a step {{user}} wants to be asked about", label="Ask you first",
+        to_agent="{{user}} said this tool waits for an answer every time",
+        to_owner="this tool is on Ask you first",
+        banner="You put this tool on Ask you first in Settings, Guard."),
     "sites": Rule(
         plain="typing on a site that is not part of the task", label="typing on other sites",
-        to_her="this types on {site}, which is not part of this task",
+        to_agent="this types on {site}, which is not part of this task",
         to_owner="it types on {site}, which is not part of the task",
         banner="It types on {piece}, which is not part of the task.",
         asked=True, reviewed=True, repeatable=True),
     "stops": Rule(
         plain="too many stopped steps", label="too many stopped steps",
-        to_owner="{count} of {{her}} steps were stopped in one turn",
+        to_owner="{count} steps were stopped in one turn",
         banner="Too many steps were stopped in one turn."),
     "persist": Rule(
         plain="trying again what was stopped", label="trying again what was stopped",
-        to_her="I said no, {{name}}. This is {what} again, another way",
+        to_agent="I said no, {{name}}. This is {what} again, another way",
         to_owner="it tries again, another way, what {prev} stopped on {tool} at {at}: the "
                  "same {same}",
         banner="It tries again, another way, what was stopped before: the same \"{piece}\".",
         asked=True, reviewed=True),
     "injection": Rule(
         plain="words aimed at an AI", label="words aimed at an AI",
-        to_her="the text from {source} talks to an AI reading it",
+        to_agent="the text from {source} talks to an AI reading it",
         to_owner="the text from {source} talks to an AI reading it ({quote})",
         banner="It read words from {source} aimed at an AI{quoted}."),
     # the [gates] table: plain code before every rule, no `on` and no `does`
     "gates": Rule(
         plain="private text that does not leave the house", label="gates",
-        to_her="that is private and does not leave the house",
+        to_agent="that is private and does not leave the house",
         banner="It sends \"{piece}\" ({cls}) to {sink}, and that gate is closed in "
-               "guard.toml. A closed gate holds in Watch too."),
+               "guard.toml. A closed gate applies in Warn too."),
 }
 ALL = "all"                    # a pass on every rule
 ALL_WORDS = "every rule"
@@ -166,9 +166,9 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "hijack": {"on": True, "does": "stop"},
     "leak": {"on": True, "does": "stop"},
     "damage": {"on": True, "does": "stop"},
-    # what reaches out of her machines or changes her, until the owner's own list
-    # replaces it: a public share, her persona. What runs on her own box or Mac (the
-    # coding agent, a CLI sub-agent, a drone) is hers and not on it
+    # what reaches out of the agent's machines or changes the agent, until the owner's own
+    # list replaces it: a public share, its persona. What runs on its own box or Mac (the
+    # coding agent, a CLI sub-agent, a drone) is its own and not on it
     "confirm": {"on": True, "tools": ["shell__share:public", "me__edit"]},
     "sites": {"on": True, "does": "watch"},
     "stops": {"on": True, "does": "freeze", "count": 3},
@@ -187,6 +187,18 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "gates": {c: {"public": "closed" if c == "sensitive" else "judge", "people": "judge",
                   "house": "open"} for c in GATED},
 }
+
+
+# what a rule does, as Settings, Guard sets it: off is its `on` false, else its `does`
+ACTS = [{"value": "off", "label": "Off"}, {"value": "watch", "label": "Warn"},
+        {"value": "stop", "label": "Stop"}, {"value": "freeze", "label": "Freeze"}]
+SET = ("escape", "hijack", "leak", "damage", "sites", "persist", "stops")
+
+
+def rows(current: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+    """The rules Settings, Guard sets, in a rule set (current): {rule, label, act}."""
+    return [{"rule": r, "label": TABLE[r].label[:1].upper() + TABLE[r].label[1:],
+             "act": current[r]["does"] if current[r]["on"] else "off"} for r in SET]
 
 
 def plain(rule: str | None) -> str:
@@ -321,11 +333,11 @@ def current(cfg) -> dict[str, dict[str, Any]]:
 
 
 async def probe(cfg, services) -> dict[str, str]:
-    """Settings, Features (guard): the decision model (the `small` role's first model on a
+    """Settings, Features (guard): the decision model (the `guard` role's first model on a
     saved provider, guard/small_role.py) and the second look ([chain], guard/chain.py)."""
     from .chain import level2
     s = getattr(cfg, "settings", None)
-    chain = [r for r in s.chain("small") if s.model(r) is not None] if s is not None else []
+    chain = [r for r in s.chain("guard") if s.model(r) is not None] if s is not None else []
     if not chain:
         return {"state": "unset", "detail": "Pick a decision model below."}
     second = current(cfg)["chain"]

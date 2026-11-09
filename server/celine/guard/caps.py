@@ -1,5 +1,5 @@
-"""What Bastet sends a judge, and what she writes to Celine, is capped here: her intent,
-a call's arguments, a finished turn's lines and its replies. The hijack judge's outside
+"""What Bastet sends a model is capped here: the agent's intent, a call's arguments, a finished
+turn's lines and its replies. What Bastet's model writes is sent as it wrote it. The hijack judge's outside
 excerpts (judge.py) and the page check's page (page.py) keep their own sizes beside
 the code that cuts them.
 
@@ -15,7 +15,8 @@ CALLED = 600        # one "{{agent_name}} called <tool> <args>" line of the inte
 SAID = 1500         # one "{{agent_name}} said" line of the intent, the head kept
 ARGS = 3000         # the action's arguments, head and tail kept
 VALUE = 1200        # one string value inside the arguments, head and tail kept
-REPLY = 600         # one reply of Bastet to Celine on the intercom
+MESSAGE = 1500      # one intercom message in Bastet's chat prompt, the head kept
+SKILLS = 4000       # the hijack judge's list of loaded skills, first and last kept
 MARK = "[... {n} characters left out ...]"
 
 

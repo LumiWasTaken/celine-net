@@ -43,10 +43,13 @@ def test_scope_and_chips():
 def test_not_run_and_cut_off():
     gated = w("web__search", {"query": "tea"}, "gated", None,
               "Down: SearXNG does not answer. Start it.")
-    assert gated["settled"] == 'Could not search the web for "tea": searXNG does not answer'
+    assert gated["settled"] == 'Could not search the web for "tea": SearXNG does not answer'
     late = w("notebook__search", {"query": "tea"}, "error", {"time_up": True},
              "Not run: the time for this turn is up.")
     assert late["settled"] == "Not run: the time for this turn is up"
+    stopped = w("shell__run", {"command": "rm -rf x"}, "gated", None,
+                "Bastet stopped this step: destructive steps.")
+    assert stopped["settled"] == "Not run: Bastet stopped this step: destructive steps"
     # still at work: its words if the turn cuts it off
     assert w("notebook__list", {}, "running")["settled"] == "Listed the notebook"
 
@@ -124,13 +127,14 @@ def test_a_servers_own_words():
     assert g("macfiles__read_text_file", {"path": "/a.txt"}) == \
         g("macshell__read_file", {"path": "/b.txt"}) == "Read {n} files on the Mac"
     assert m("macbrowser__browser_navigate", {"url": "https://example.org"}, "ok")["settled"] \
-        == "Opened https://example.org in Chrome on the Mac"
+        == "Opened https://example.org in a browser on the Mac"
     assert forming("macshell__start_process", '{"command": "make test", "ti', OWN) == \
         "Running make test on the Mac"
     # a tool the server gave no words, and calls that stand alone
     assert m("macshell__give_feedback", {}, "ok")["settled"] == "Used macshell give feedback"
     assert g("macshell__give_feedback", {}) is None
-    assert g("notebook__read", {"path": "a.md"}) is None
+    assert g("notebook__read", {"path": "a.md"}) == "Read {n} notes"
+    assert g("browser__click", {}) == g("browser__open", {}) == "Used the browser {n} times"
     # the box's run: its terminal from the arguments, the same at its start and after it
     assert g("shell__run", {"command": "ls", "terminal": "main"}) == \
         "Ran {n} commands in terminal main"
@@ -170,27 +174,36 @@ def call(i, name="shell__run", state="ok", exit=None, time_up=None, terminal="ma
             "arguments": json.dumps({"command": f"ls {i}", "terminal": terminal})}
 
 
-def test_runs():
-    # three in a row are a run; two are not; the count and the failed ones from the server
-    block = [call(1), call(2, exit=2), call(3, state="error"),
-             call(4, terminal="other"), call(5, terminal="other")]
-    assert runs([block]) == [{"ids": ["c1", "c2", "c3"],
-                              "words": "Ran 3 commands in terminal main", "failed": 2}]
-    # plumbing between them breaks nothing
+def test_a_stretch_of_work_is_one_line_in_words():
+    # every settled call between two texts is one stretch: a part per group in the order
+    # first seen, a group of one in its own sentence, the failed ones counted
+    note = {"id": "n1", "name": "notebook__read", "state": "ok", "exit": None,
+            "arguments": json.dumps({"path": "a.md"})}
+    note2 = {**note, "id": "n2", "arguments": json.dumps({"path": "b.md"})}
+    block = [note, call(1), note2, call(2, exit=2), call(3, state="error"),
+             call(4, terminal="other")]
+    assert runs([block]) == [{"ids": ["n1", "c1", "n2", "c2", "c3", "c4"],
+                              "words": "Read 2 notes, ran 3 commands in terminal main, "
+                                       "ran ls 4 in terminal other", "failed": 2}]
+    # plumbing sits between them unseen; one call alone is no stretch
     plumbing = {"id": "p", "name": "skills__read_guide", "state": "ok", "arguments": "{}"}
-    assert runs([[call(1), plumbing, call(2), call(3)]])[0]["ids"] == ["c1", "c2", "c3"]
-    # a reply's text between them ends the run
-    assert runs([[call(1), call(2)], [call(3)]]) == []
+    assert runs([[call(1), plumbing, call(2)]])[0]["ids"] == ["c1", "c2"]
+    assert runs([[call(1), plumbing]]) == []
+    # a reply's text between them ends the stretch
+    assert runs([[call(1)], [call(2)]]) == []
 
 
-def test_calls_that_stand_alone():
+def test_calls_that_keep_their_own_row():
     for alone in (call(2, state="pending"), call(2, state="running"),
                   call(2, state="detached"), call(2, state="gated"),
                   call(2, state="error", time_up=1)):
-        assert runs([[call(1), alone, call(3), call(4)]]) == [], alone["state"]
-    # it joins its run once it ran
-    assert runs([[call(1), call(2), call(3), call(4)]])[0]["words"] == \
-        "Ran 4 commands in terminal main"
+        got = runs([[call(1), alone, call(3)]])
+        assert got[0]["ids"] == ["c1", "c3"], alone["state"]
+    # a sub-agent, a message, pictures, a page, a share: their own rows, nothing cut
+    agent = {"id": "a", "name": "sub_agents__start", "state": "ok", "arguments": "{}"}
+    page = {"id": "p", "name": "artifacts__write", "state": "ok", "arguments": "{}",
+            "display": json.dumps({"artifact": "r21"})}
+    assert runs([[call(1), agent, page, call(2)]])[0]["ids"] == ["c1", "c2"]
 
 
 def test_runs_of_a_turn():
@@ -213,21 +226,27 @@ def test_runs_of_a_turn():
     message("m3", "", call(3), call(4))
     message("m4", "Now the rest.", call(5))
     message("m5", "", call(6))
+    message("m7", "Last one.", call(7))
     assert words_mod.runs_of_turn(c, "t1") == [
         {"ids": ["c1", "c2", "c3", "c4"], "words": "Ran 4 commands in terminal main",
-         "failed": 0}]
-    # an event says the runs only when the calls that settled changed them
-    assert words_mod.runs_after(c, ["c6"]) is None
+         "failed": 0},
+        {"ids": ["c5", "c6"], "words": "Ran 2 commands in terminal main", "failed": 0}]
+    # an event says the runs only when the calls that settled changed them: a call alone
+    # in its stretch changes none
+    assert words_mod.runs_after(c, ["c7"]) is None
     c.execute("UPDATE tool_calls SET state='ok', display=? WHERE id='c4'", ('{"exit": 1}',))
     assert words_mod.runs_after(c, ["c4"]) == {"turn": "t1", "list": [
         {"ids": ["c1", "c2", "c3", "c4"], "words": "Ran 4 commands in terminal main",
-         "failed": 1}]}
+         "failed": 1},
+        {"ids": ["c5", "c6"], "words": "Ran 2 commands in terminal main", "failed": 0}]}
     # a call at work again: the runs go with the event, whatever they are
     c.execute("UPDATE tool_calls SET state='pending' WHERE id='c3'")
-    assert words_mod.runs_after(c, ["c3"], reset=True) == {"turn": "t1", "list": []}
+    assert words_mod.runs_after(c, ["c3"], reset=True) == {"turn": "t1", "list": [
+        {"ids": ["c1", "c2", "c4"], "words": "Ran 3 commands in terminal main", "failed": 1},
+        {"ids": ["c5", "c6"], "words": "Ran 2 commands in terminal main", "failed": 0}]}
 
 
-# the tools and their arguments as the Mac's servers list them (the versions setup.sh pins)
+# the tools and their arguments as the Mac's servers list them
 MAC_TOOLS = json.loads((Path(__file__).parent / "data/mac_tools.json").read_text())
 
 
@@ -243,3 +262,50 @@ def test_every_mac_tool_has_words_and_a_group():
             # a hole names a real argument, or its subject silently drops
             for hole in words_mod._HOLE.finditer(text):
                 assert hole.group(2) in tools[tool], f"{sid} {tool}: {{{hole.group(2)}}}"
+
+
+def test_rows_name_models_by_label_and_settings_by_page_never_a_host():
+    from celine.skills.words import words
+    asked = words("models__ask", '{"model": "proxy.example.co/Qwen3.8-Flash"}', "ok",
+                  {"model": "proxy.example.co/Qwen3.8-Flash", "label": "Qwen Flash on proxy"})
+    assert asked["settled"] == "Asked Qwen Flash on proxy"
+    bare = words("models__ask", '{"model": "proxy.example.co/Qwen3.8-Flash"}', "running")
+    assert bare["running"] == "Asking Qwen3.8-Flash", "the model part only, no host"
+    assert words("settings__read", '{"target": "providers.main"}', "ok",
+                 {"target": "providers.main", "label": "Models"})["settled"] == \
+        "Read the Models settings"
+    assert words("settings__read", "{}", "ok")["settled"] == "Listed the settings"
+    assert words("me__whoami", "{}", "ok")["settled"] == "Checked the setup"
+
+
+def test_a_failed_call_carries_its_reason_in_the_servers_words():
+    from celine.skills.words import words
+    w = words("web__search", '{"query": "lake loop"}', "error", None,
+              "SearXNG at searxng:8080 returned 503: The model server is paused.\nmore")
+    assert w["why"] == "SearXNG at searxng:8080 returned 503: The model server is paused."
+    assert words("web__search", '{"query": "x"}', "ok", None, "results")["why"] is None
+    assert words("web__search", '{"query": "x"}', "error", {"time_up": True},
+                 "Not run: the turn's time was up.")["why"] is None, "not run is not failed"
+
+
+def test_a_command_row_says_what_the_agent_said_it_does():
+    args = {"command": "ls ~/mycelium && python3 - <<'PY'", "terminal": "c-1",
+            "about": "Check the mycelium folder"}
+    for state in ("ok", "error", "running"):
+        got = w("shell__run", args, state)
+        assert got["settled"] == "Check the mycelium folder", state
+    assert w("shell__run", args, "running")["running"] == "Check the mycelium folder"
+    assert forming("shell__run", '{"about": "Check the mycelium folder", "comm') == \
+        "Check the mycelium folder"
+    assert w("shell__run", {"command": "ls", "terminal": "main"}, "ok")["settled"] == \
+        "Ran ls in terminal main"
+    # not run: the reason is the row, not its words
+    assert w("shell__run", args, "gated", None, "Not run: Shell is off.")["settled"] == \
+        "Not run: Shell is off"
+    # in a stretch its words keep their casing after the first part
+    note = {"id": "n1", "name": "notebook__read", "state": "ok", "exit": None,
+            "arguments": json.dumps({"path": "a.md"})}
+    ssh = {"id": "s1", "name": "shell__run", "state": "ok", "exit": 0,
+           "arguments": json.dumps({"command": "ssh nas df", "terminal": "main",
+                                    "about": "SSH into the NAS"})}
+    assert runs([[note, ssh]])[0]["words"] == "Read the note a.md, SSH into the NAS"

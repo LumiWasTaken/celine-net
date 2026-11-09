@@ -1,13 +1,13 @@
-"""What Celine knows about Bastet, as one line of her own mind (skills/mind.py), built
+"""What the agent knows about Bastet, as one line of its own mind (skills/mind.py), built
 by the server from the tables: never a guess, never how Bastet decides.
 
 - Frozen: since when, what for in plain words (bastet.plain), where (the
-  conversation's title) and the judge's one sentence why, that it is her signal to wait for {{user}}, and whether Bastet
+  conversation's title) and the judge's one sentence why, that it is the agent's signal to wait for {{user}}, and whether Bastet
   asked {{user}} already (learn.py).
-- Her thread with Bastet: the newest message Bastet wrote to her in this conversation
+- Its thread with Bastet: the newest message Bastet wrote to it in this conversation
   within RECENT hours, so it answers in that thread (intercom reply_to).
 
-Nothing while the guard is off (switch.py): her context is exactly as without Bastet.
+Nothing while the guard is off (switch.py): its context is exactly as without Bastet.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from . import bastet, store as decisions
 from .switch import enabled
 
-RECENT = 24        # hours a message from Bastet counts as a thread she has with her
+RECENT = 24        # hours a message from Bastet counts as a thread the agent has with her
 
 
 def _hm(t: str, tz) -> str:
@@ -25,7 +25,7 @@ def _hm(t: str, tz) -> str:
 
 
 def lines(c: sqlite3.Connection, cfg, tz, conversation_id: str, at: str) -> list[str]:
-    """Her lines about Bastet now (`at`), oldest concern first; [] when there is none."""
+    """The agent's lines about Bastet now (`at`), oldest concern first; [] when there is none."""
     out = []
     f = decisions.open_freeze(c)
     if f is not None:
@@ -44,7 +44,7 @@ def lines(c: sqlite3.Connection, cfg, tz, conversation_id: str, at: str) -> list
         out.append(line)
     since = (datetime.fromisoformat(at) - timedelta(hours=RECENT)).isoformat(
         timespec="milliseconds")
-    if (m := decisions.last_to_her(c, conversation_id, since)) is not None:
+    if (m := decisions.last_to_agent(c, conversation_id, since)) is not None:
         out.append(bastet.fill(cfg, bastet.AWARE_THREAD, at=_hm(m["created_at"], tz),
                                thread=m["thread"] or m["id"], id=m["id"]))
     return out
@@ -63,7 +63,7 @@ TOLD = "unfreeze_told"          # kv: the last freeze its mind told it about
 
 async def unfrozen_line(store, cfg, tz) -> str | None:
     """The agent's own-mind line on its first turn after an unfreeze, once (skills/mind.py).
-    Bastet's freeze in her words: the decision's plain what (bastet.plain), never the
+    Bastet's freeze in the agent's words: the decision's plain what (bastet.plain), never the
     owner's sentence with its rule and evidence; their own freeze with their reason."""
     def fn(c: sqlite3.Connection) -> tuple[dict, sqlite3.Row | None] | None:
         r = c.execute("SELECT * FROM freezes WHERE unfrozen_at IS NOT NULL "
@@ -78,8 +78,9 @@ async def unfrozen_line(store, cfg, tz) -> str | None:
         return None
     r, d = got
     if r["by"] == "guard":
-        return bastet.fill(cfg, bastet.LIFTED if r["unfrozen_by"] == "bastet"
-                           else bastet.UNFROZEN, at=_hm(r["at"], tz),
+        said = bastet.UNFROZEN if r["unfrozen_by"] != "bastet" else \
+            bastet.LIFTED_REVIEW if d is not None and decisions.overruled(d) else bastet.LIFTED
+        return bastet.fill(cfg, said, at=_hm(r["at"], tz),
                            back=_hm(r["unfrozen_at"], tz),
                            what=bastet.plain(cfg, d["rule"] if d else None,
                                              d["tool"] if d else None).rstrip("."))

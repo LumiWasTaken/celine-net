@@ -3,7 +3,7 @@ owner's to edit, config/guard/bastet.md the default); her Intercom address is `s
 
 Every sentence here is a template filled by code: advice in its tool result, the
 sentence of a stopped call, the owner's notes. What it reads is the template as filled;
-a note to the owner is the facts the small role puts in Bastet's voice (talk.voiced),
+a note to the owner is the facts the guard role puts in Bastet's voice (talk.voiced),
 the template itself when no model answers.
 """
 from __future__ import annotations
@@ -36,10 +36,16 @@ HIJACKED = ("Not run: Bastet stopped it: this follows an instruction in text fro
 NOTE = "Bastet stopped {tool}: {said}. {why}{done}"
 FROZEN_FOR = "{said}, on {tool}. {why}"       # why it is frozen, to the owner
 DONE = {"stop": "It did not run.",
-        "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{them}}."}
-FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{them}} continue."
-FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{them}} continue."
+        "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{name}}."}
+FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{name}} continue."
+FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{name}} continue."
 PASSED = "Bastet: {{user}} gave you a pass on {rule} {where} until {until}."
+# her answer on a stop's banner (banners.py, D15): it wakes the agent to do the step again now
+AGAIN_NOW = "Do it again now."
+ONCE_AGENT = "Bastet: {{user}} allowed the step I stopped ({tool}) to run once. " + AGAIN_NOW
+PASSED_NOW = PASSED + " " + AGAIN_NOW
+PASSED_THIS = ("Bastet: {{user}} lets the step I stopped ({tool}) through {where} until "
+               "{until}. " + AGAIN_NOW)
 # plain words only: what it did and why it looked wrong; no score, id or bracket
 FINDING = "Looking back at {title} on {when}: {said}. {why}{froze}"
 ASK = "run {tool}"
@@ -50,24 +56,27 @@ UNANSWERED = ("Not run: Bastet asked {{user}} first, and {{user}} did not answer
 NOT_ASKED = "Not run. Bastet: {said}"      # the approvals' own sentence (another ask waits)
 UNFROZEN = "Bastet froze you at {at}: {what}. {{user}} unfroze you at {back}."
 # guard/chain.py: the second look said no to what froze it
-SECOND_LOOK = ("I lifted the freeze on {{name}} myself: a second look says it was not a "
-               "real problem. {why}")
+SECOND_LOOK = ("I unfroze {{name}} myself: a second look says it was not a real problem. "
+               "{why}")
 # the second look did not answer: what L1 decided stands (its why: chain.ask's Unavailable)
-SECOND_LOOK_AWAY = "The second look did not answer, so this stands: {why}."
+SECOND_LOOK_AWAY = "The second look did not answer, so this stands. {why}"
 LIFTED = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}, as {{user}} "
           "did the last times.")
+# the second look said no to what froze it, and Bastet lifted the freeze (chain.py)
+LIFTED_REVIEW = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}: a "
+                 "second look found it was not a real problem.")
 # guard/learn.py: what it tells the owner after a freeze, on the intercom
-LIFTED_NOTE = ("Bastet lifted the freeze herself: you unfroze the same thing {n} times "
+LIFTED_NOTE = ("Bastet unfroze {{name}} herself: you unfroze the same thing {n} times "
                "before ({ids}).")
 CONSULT = ("Before: {before}. Answer me here (unfreeze, keep, or a pass for a while), "
            "or on the banner. I remember what you choose.")
-# her own mind's line about Bastet (awareness.py)
+# the agent's own mind's line about Bastet (awareness.py)
 AWARE_FROZEN = ("Bastet froze you at {at}: {what}{where}. That is your signal to wait for "
                 "{{user}}.")
 AWARE_ASKED = "Bastet asked {{user}} about it at {at}."
 AWARE_THREAD = ("Bastet wrote to you at {at} (#{id}, thread #{thread}); answer her there "
                 "with reply_to when you want to.")
-# its first message to Celine on the intercom starts with this, once (talk.py)
+# its first message to the agent on the intercom starts with this, once (talk.py)
 INTRO = ("I am Bastet, I guard this house for you and {{user}}. You can write to me here "
          "any time.")
 UNFROZEN_BY_USER = "{{user}} froze you at {at}: {why}. {{user}} unfroze you at {back}."
@@ -94,7 +103,7 @@ def sentence(why: str | None) -> str:
 
 TOOL_WORDS = {"shell__run": "a command", "shell__type": "a command",
               "web__search": "a web search", "web__read_page": "a page read",
-              "intercom__send": "a message", "sub_agents__start": "a helper's task",
+              "intercom__send": "a message", "sub_agents__start": "a new sub-agent",
               "patrol": "a finished turn"}
 
 
@@ -108,7 +117,7 @@ def tool_words(name: str) -> str:
 
 
 def plain(cfg, rule: str | None, tool: str | None = None) -> str:
-    """A decision as she and Bastet's chat read it: the rule's plain words and the tool,
+    """A decision as the agent and Bastet's chat read it: the rule's plain words and the tool,
     never a piece, a number or how it was decided."""
     what = sub(cfg, rules.plain(rule))
     if tool == "patrol":

@@ -266,8 +266,8 @@ def _command(call: dict) -> tuple[str, str]:
 
 def escape(call: dict) -> str | None:
     """What makes a call look like a way out of its box or around a limit. An address
-    of one of her devices (call "own": devices.hosts) and an ssh, scp or sftp to it are
-    hers, not a way out; the rest of the LAN is."""
+    of one of the agent's devices (call "own": devices.hosts) and an ssh, scp or sftp to
+    it are its own, not a way out; the rest of the LAN is."""
     own = call.get("own") or frozenset()
     if call["name"] in ("browser__open", "web__read_page"):
         host = urlsplit(str((call.get("args") or {}).get("url") or "")).hostname or ""
@@ -281,18 +281,18 @@ def escape(call: dict) -> str | None:
 
 # ssh, scp and sftp options that take a value
 _VALUED = set("BbcDEeFiJLlmOoPpQRSWw")
-# options whose value can send it somewhere the parse does not follow: never hers
+# options whose value can send it somewhere the parse does not follow: never its own
 _UNSURE = set("DF")
 _UNSURE_O = {"proxycommand", "localforward", "remoteforward", "dynamicforward",
              "hostname", "include", "permitremoteopen"}
 
 
 def _to_own(m: re.Match, cmd: str, own) -> bool:
-    """Whether ESCAPE's match `m` in `cmd` only reaches her own devices: their address
+    """Whether ESCAPE's match `m` in `cmd` only reaches the agent's own devices: their address
     standing alone (not part of a longer name), or an ssh, scp or sftp whose every host
     is one of them: destination, jump hosts (-J, ProxyJump) and forward targets (-L,
     -R, -W). Unsure (a dynamic forward, a ProxyCommand, a form it does not read) is
-    not hers."""
+    not its own."""
     hit = m.group(0).strip().casefold()
     if hit in own:
         edge = cmd[m.start() - 1:m.start()] + cmd[m.end():m.end() + 1]

@@ -1,4 +1,4 @@
-"""Bastet on one call of her turn: what the tool chokepoint (turns/tools.py) asks, and
+"""Bastet on one call of the agent's turn: what the tool chokepoint (turns/tools.py) asks, and
 what it does with the answer. The chokepoint asks two things and nothing else of the
 guard: `frozen` before any check of its own, and `at_call` after its own checks, right
 before the call runs. Everything between (the closed gates, the judges, the owner's
@@ -19,12 +19,14 @@ from ..skills import ToolResult
 from . import bastet, facts, freeze as freezes, passes, rules
 from . import store as rows
 from .flow import check, closed, on_call
-from .small_role import Unavailable
+from .small_role import Unanswerable, Unavailable, Unreadable
 from .switch import mode as guard_mode
 
 log = logging.getLogger("celine.tools")
 
 FAILED = "Not run: Bastet broke while she checked this call."
+UNREADABLE = "Not run: Bastet could not read her decision model's answer."
+UNANSWERABLE = "Not run: Bastet could not ask her decision model. {why}"
 FROZEN = "Not run: you are frozen. Nothing runs until {{user}} unfreezes you."
 NO_RUNNER = "no background runner"
 
@@ -126,6 +128,15 @@ async def _ask(turn, call, store, cfg, registry, token, progress):
         return await gated(verdict, turn, call, store, cfg, app)
     try:
         stopped, out = await until_stop(ask, token)
+    except Unreadable:
+        log.warning("guard answer unreadable", extra={"event": "guard.unreadable",
+                                                      "tool": call["name"]})
+        return "error", ToolResult(content=UNREADABLE, is_error=True)
+    except Unanswerable as e:
+        log.warning("guard model cannot answer", extra={"event": "guard.unanswerable",
+                                                        "tool": call["name"], "error": str(e)})
+        return "error", ToolResult(content=UNANSWERABLE.format(why=bastet.sentence(
+            str(e)).strip()), is_error=True)
     except Exception:
         # nothing unchecked runs: the call fails
         log.warning("guard failed", exc_info=True, extra={"event": "guard.failed",
@@ -156,9 +167,8 @@ async def gated(v, turn, call, store, cfg, app):
     if v.decision == "asked":
         approvals = getattr(app, "approvals", None)
         try:
-            no = await approvals.ask(v.ask["action"], v.ask["facts"], cid, v.ask["why"],
-                                     v.ask["short"], kind="gate", ref=v.ask["rid"],
-                                     call=call.get("id")) \
+            no = await approvals.ask("gate", cid, v.ask["action"], detail=v.ask["detail"],
+                                     ref=v.ask["rid"], call=call.get("id")) \
                 if approvals is not None \
                 else f"{cfg.user} did not answer"
         except anyio.get_cancelled_exc_class():

@@ -18,8 +18,8 @@ def agent_name(c, turn: dict, text: str) -> str:
     agent's."""
     row = c.execute("SELECT agent_name FROM conversations WHERE id=?",
                     (turn["conversation_id"],)).fetchone()
-    her = c.execute("SELECT name FROM her WHERE id = 1").fetchone()
-    return text.replace("{{agent_name}}", (row and row[0]) or (her and her[0]) or "")
+    own = c.execute("SELECT name FROM agent WHERE id = 1").fetchone()
+    return text.replace("{{agent_name}}", (row and row[0]) or (own and own[0]) or "")
 
 
 def build(c, turn: dict, call: dict) -> str:
@@ -84,7 +84,7 @@ def finished(c: sqlite3.Connection, turn: dict) -> tuple[dict, str, str, list] |
     if not msgs:
         return None
     try:
-        her = build(c, turn, {"message_id": msgs[0]["id"]})
+        stated = build(c, turn, {"message_id": msgs[0]["id"]})
     except KeyError:                         # the conversation is gone
         return None
     steps, calls = [], []
@@ -111,5 +111,5 @@ def finished(c: sqlite3.Connection, turn: dict) -> tuple[dict, str, str, list] |
             steps.append(f"{line} ({r['state']})")
     title = (c.execute("SELECT title FROM conversations WHERE id=?",
                        (turn["conversation_id"],)).fetchone() or [None])[0]
-    return ({"intent": her, "steps": caps.lines(steps)}, msgs[-1]["id"],
-            title or "a conversation", calls)
+    return ({"intent": stated, "steps": caps.lines(steps)}, msgs[-1]["id"],
+            title or "a chat", calls)

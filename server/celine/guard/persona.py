@@ -1,5 +1,5 @@
 """Bastet's voice, the owner's to edit on Settings, Guard: who she is (`persona`, shipped as
-config/guard/bastet.md), how it replies to Celine on the Intercom (`talk`, talk.md) and
+config/guard/bastet.md), how it replies to the agent on the Intercom (`talk`, talk.md) and
 how it writes its notes to the owner (`note`, note.md). The judges' prompts stay files:
 they are calibrated questions, not a voice.
 

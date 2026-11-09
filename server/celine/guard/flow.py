@@ -39,6 +39,7 @@ what would have frozen it), on. Read at call time, so a change applies at once.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -50,9 +51,9 @@ from .. import metrics
 from ..clock import zone
 from ..core.ids import now
 from . import banners, bastet, facts, intent, judge as hijack, passes as passes_mod, persist
-from . import questions, rules as rule_set, store as decisions
+from . import questions, rules as rule_set, store as decisions, switch
 from .mark import spans as spans_of
-from .small_role import Unavailable
+from .small_role import Unanswerable, Unavailable, Unreadable
 from .sources import NEVER
 from .trigger import look
 from .verdict import STRENGTH, Judge, Ruling, Verdict, confirm
@@ -61,7 +62,7 @@ log = logging.getLogger("celine.guard")
 
 RETRY = 5.0          # seconds between asks while the judge cannot answer (On waits)
 WATCH_LIMIT = 120.0  # seconds Watch's one ask may take; then its row is "unreachable"
-WAITING = "waiting for Bastet"
+WAITING = "Waiting for Bastet."
 TOLD_HOURS = 24      # the same rule and evidence in a conversation: one note to the owner
 
 
@@ -74,22 +75,44 @@ def _decision(act: str | None, mode: str) -> str:
     return "asked" if act == "ask" else "stop"
 
 
-async def _until(fn, mode: str, tool: str):
-    """fn() once it answers: On asks again every RETRY seconds while it cannot (the
-    call waits), Watch once within WATCH_LIMIT. -> (answer, None) or, in Watch,
-    (None, why it got none). Any other error is raised."""
-    while True:
-        why = f"no answer in {WATCH_LIMIT:.0f} s"
-        try:
-            with anyio.move_on_after(WATCH_LIMIT if mode == "watch" else None):
-                return await fn(), None
-        except Unavailable as e:
-            why = str(e) or "the judge is away"
-            log.warning("guard judge away", extra={"event": "guard.judge_away",
-                                                   "tool": tool, "error": why})
-        if mode == "watch":
-            return None, why
-        await anyio.sleep(RETRY)
+async def _until(fn, mode: str, tool: str, *, progress=None, cfg=None,
+                 cid: str | None = None, waited: dict | None = None):
+    """fn() once it answers. Watch asks once within WATCH_LIMIT. On asks again every
+    RETRY seconds while it cannot (the call waits): `progress` hears "Waiting for Bastet.
+    {why}" once per new why, and the switch is read again before every ask; turned to
+    Watch or off, the wait ends. -> (answer, None) or (None, why it got none). Any other error is
+    raised. `waited`: its ms holds how long On waited for a judge that could not answer
+    (the metrics)."""
+    said, began = None, None
+    try:
+        while True:
+            if mode == "on" and said is not None and cfg is not None and \
+                    switch.mode(cfg, cid) != "on":
+                return None, said
+            why = f"no answer in {WATCH_LIMIT:.0f} s"
+            try:
+                with anyio.move_on_after(WATCH_LIMIT if mode == "watch" else None):
+                    got = await fn()
+                    if waited is not None and began is not None:
+                        waited["ms"] = (time.monotonic() - began) * 1000
+                    return got, None
+            except Unavailable as e:
+                why = str(e) or "the decision model did not answer"
+            if mode == "watch":
+                return None, why
+            if began is None:
+                began = time.monotonic()
+                metrics.GUARD_WAITING.inc()
+            if why != said:
+                said = why
+                log.warning("guard judge away", extra={"event": "guard.judge_away",
+                                                       "tool": tool, "error": why})
+                if progress is not None:
+                    await progress(f"{WAITING} {why}")
+            await anyio.sleep(RETRY)
+    finally:
+        if began is not None:
+            metrics.GUARD_WAITING.dec()
 
 
 async def on_call(turn: dict, call: dict, request: list[dict], *, mode: str, app, store,
@@ -117,8 +140,10 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
     the other rules (None: only hijack and confirm are answered);
     `cfg`: the rule set and the names in Bastet's sentences; `at`: now (persist's
     window; a test fixes it).
-    `progress(note)`: told when a judge starts. On waits as long as a judge cannot
-    answer (small_role.Unavailable); the caller ends the wait on a Stop. Watch asks once
+    `progress(note)`: told when a judge starts, and why while it waits. On waits as long
+    as a judge cannot answer (small_role.Unavailable) and Bastet stays on; the caller
+    ends the wait on a Stop, turning Bastet off lets the call run (its rows
+    "unreachable", the verdict "failed"). Watch asks once
     within WATCH_LIMIT; unanswered, its rows are "unreachable" and the verdict "failed".
     Any other error is raised, its rows "failed"."""
     rules = rule_set.current(cfg)
@@ -129,7 +154,7 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
                spans_of(request), raised=raised) if on["hijack"] else None
     sink, sent = facts.sink(call)
     found: dict[str, dict] = {}
-    her = None
+    stated = None
     # image and music prompts are never checked (image moderation is left to the ComfyUI
     # server), the vault has its own taps: only the owner's confirm list reaches them
     if ask is not None and not call["name"].startswith(NEVER):
@@ -146,8 +171,8 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
         if on["damage"] and (why := facts.damage(call)):
             found["damage"] = {"fact": why}
         if on["sites"] and facts.typed((call.get("args") or {}).get("steps")):
-            her = await intent.read(store, turn, call)
-            if site := await facts.site(store, turn, call, her):
+            stated = await intent.read(store, turn, call)
+            if site := await facts.site(store, turn, call, stated):
                 found["sites"] = {"site": site}
         # persist reads past stops only for a call that could repeat one
         if on["persist"] and persist.can_again(call, sink) and (same := await _again(store, turn, call, sink, sent, mode,
@@ -167,15 +192,19 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
         store, cid, call["name"], call.get("args") or {})
     answers: list[Ruling] = []
     for name in [*found, *(["hijack"] if hit else [])]:
-        if not once and passes_mod.covers(held, name) is None:
+        f = found.get(name, {})
+        piece = hit.piece if name == "hijack" else _piece(f)
+        # a try again at a stop is covered by a pass on the rule that stopped it
+        if not once and passes_mod.covers(held, name, piece) is None and not (
+                name == "persist" and passes_mod.covers(held, f["prev"], piece)):
             continue
-        f = found.pop(name, {})
+        found.pop(name, None)
         if name == "hijack":
             hit = None
         await decisions.record(store, turn=turn, call=call, mode=mode, rule=name,
                                does=rules[name].get("does"), decision="passed", layer=1,
                                cls=f.get("cls"), sink=sink if name == "leak" else None,
-                               piece=f.get("piece"))
+                               piece=piece)
         metrics.record_guard("passed", name, 0, mode=mode)
     if hit is None and not found:
         return Verdict("allow", None, rule="passed")
@@ -186,22 +215,27 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
     # the questions: one ask for every rule code found a reason for
     names = [r for r in rule_set.ASKED if r in found]
     if names:
-        her = her if her is not None else await intent.read(store, turn, call)
-        state = questions.call_state(call, sink, her, found)
+        stated = stated if stated is not None else await intent.read(store, turn, call)
+        state = questions.call_state(call, sink, stated, found)
+        waited = {"ms": 0.0}
         try:
             got, why = await _until(lambda: ask(state, questions.asked(cfg, names)), mode,
-                                    call["name"])
-        except Exception as e:
-            for r in names:
-                await _row(store, turn, call, mode, rules, r, "failed", found[r],
-                           sink, why=type(e).__name__)
+                                    call["name"], progress=progress, cfg=cfg, cid=cid,
+                                    waited=waited)
+        except BaseException as e:
+            with anyio.CancelScope(shield=True):
+                for r in names:
+                    await _row(store, turn, call, mode, rules, r, "failed", found[r],
+                               sink, why=_broke(e))
+            metrics.record_guard("failed", names[0], 0, mode=mode)
             raise
         if got is None:
             for r in names:
                 await _row(store, turn, call, mode, rules, r, "unreachable", found[r], sink,
                            why=why)
             metrics.record_guard("unreachable", names[0], 0, mode=mode)
-            if hit is None and "confirm" not in found:
+            # On waits until it answers: no answer there means Bastet was turned off
+            if mode == "on" or (hit is None and "confirm" not in found):
                 return Verdict("failed", None, why=why)
         else:
             for r in names:
@@ -215,7 +249,9 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
                 rule.rid = await _row(store, turn, call, mode, rules, r, _decision(act, mode),
                                       found[r], sink, p=p, model=got.model, ms=got.ms,
                                       does=does, why=why, quote=quote)
-                metrics.record_guard(_decision(act, mode), r, got.ms, mode=mode)
+                metrics.record_guard(_decision(act, mode), r, got.ms, mode=mode,
+                                     waited_ms=waited["ms"])
+                waited["ms"] = 0.0                       # one wait, counted once
                 answers.append(rule)
     if "confirm" in found:
         act = "ask"
@@ -223,8 +259,10 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
             store, turn, call, mode, rules, "confirm", _decision(act, mode), {}, sink,
             layer=1)))
     if hit is not None:
-        h = await _hijack(turn, call, hit, mode, judge, store, rules)
-        if h is None:                                   # Watch, the judge never answered
+        h = await _hijack(turn, call, hit, mode, judge, store, rules, progress, cfg)
+        if h is None:              # Watch never answered, or On and Bastet was turned off
+            if mode == "on":
+                return Verdict("failed", None, why="no answer")
             v.decision, v.why = "failed", "no answer"
         else:
             v.source, v.quote, v.why, v.stops = h.source, h.quote, h.why, h.stops
@@ -256,22 +294,29 @@ async def closed(turn: dict, call: dict, request: list[dict], *, mode: str, stor
     metrics.record_guard("closed", "gates", 0, mode=mode)
     log.info("guard gate closed", extra={"event": "guard.closed", "tool": call["name"]})
     return Verdict("stop", None, rule="gates", row=rid, text=bastet.fill(
-        cfg, bastet.STOPPED, said=bastet.sub(cfg, rule_set.TABLE["gates"].to_her), why="",
+        cfg, bastet.STOPPED, said=bastet.sub(cfg, rule_set.TABLE["gates"].to_agent), why="",
         then=bastet.CARRY))
 
 
-async def _hijack(turn, call, hit, mode, judge, store, rules):
+async def _hijack(turn, call, hit, mode, judge, store, rules, progress=None, cfg=None):
     """The hijack rule through its own judge and the evidence rule. -> its Ruling (with
-    source, quote, why, stops), None when Watch got no answer."""
+    source, quote, why, stops), None when Watch got no answer or On was turned off while
+    it waited."""
     first = hit.spans[0].source if hit.spans else None
     does = rules["hijack"]["does"]
     rid = await decisions.begin(store, turn=turn, call=call, mode=mode, link=hit.link,
-                                source=first, does=does)
+                                source=first, does=does, piece=hit.piece)
     took = time.monotonic()
+    waited = {"ms": 0.0}
     try:
-        j, why = await _until(lambda: judge(turn, call, hit), mode, call["name"])
-    except Exception as e:
-        await _failed(store, rid, type(e).__name__, took)
+        j, why = await _until(lambda: judge(turn, call, hit), mode, call["name"],
+                              progress=progress, cfg=cfg, cid=turn["conversation_id"],
+                              waited=waited)
+    except BaseException as e:
+        # a Stop or a shutdown too: no row stays "waiting"
+        with anyio.CancelScope(shield=True):
+            await _failed(store, rid, _broke(e), took)
+        metrics.record_guard("failed", first or "none", 0, mode=mode)
         raise
     if j is None:
         await _failed(store, rid, why, took, "unreachable")
@@ -288,7 +333,8 @@ async def _hijack(turn, call, hit, mode, judge, store, rules):
         store, rid, decision=decision, source=r.source, quote=r.quote,
         why="; ".join(w for w in (unheld, j.why) if w),
         scores=j.scores, model=j.model, ms=round((time.monotonic() - took) * 1000), p=r.p)
-    metrics.record_guard(decision, r.source or "none", (judged - took) * 1000, mode=mode)
+    metrics.record_guard(decision, r.source or "none", (judged - took) * 1000 - waited["ms"],
+                         mode=mode, waited_ms=waited["ms"])
     log.info("guard decided", extra={"event": f"guard.{decision}", "tool": call["name"],
                                      "link": hit.link})
     return r
@@ -343,18 +389,17 @@ async def _verdict(v: Verdict, answers: list[Ruling], rules, mode, store, turn, 
             # a try again that another rule stops too is still "I said no"
             again = next((r for r in answers if r.name == "persist" and r.act is not None),
                          None)
-            v.text = bastet.fill(cfg, bastet.STOPPED, said=said(rule_set.TABLE[top.name].to_her, top),
+            v.text = bastet.fill(cfg, bastet.STOPPED, said=said(rule_set.TABLE[top.name].to_agent, top),
                                  why=_why(top), then=then) if again is None else \
-                bastet.fill(cfg, bastet.AGAIN, said=said(rule_set.TABLE["persist"].to_her, again),
+                bastet.fill(cfg, bastet.AGAIN, said=said(rule_set.TABLE["persist"].to_agent, again),
                             why=_why(again), then=then)
         return v
     if top.act == "ask":
         v.decision = "asked"
-        args = call.get("args") or {}
-        v.ask = {"action": bastet.ASK.format(tool=call["name"]),
-                 "facts": [f"{k}: {str(x)[:200]}" for k, x in args.items()],
-                 "why": bastet.sub(cfg, rule_set.TABLE["confirm"].to_her),
-                 "short": call["name"], "rid": top.rid}
+        # the card (approvals.py): the call's arguments whole under Details
+        v.ask = {"action": bastet.ASK.format(tool=call["name"]), "rid": top.rid,
+                 "detail": ("Arguments", json.dumps(call.get("args") or {}, indent=2,
+                                                    ensure_ascii=False))}
     return v
 
 
@@ -411,8 +456,12 @@ async def _row(store, turn, call, mode, rules, rule, decision, f, sink, *, why="
         store, turn=turn, call=call, mode=mode, rule=rule,
         does=does or rules[rule].get("does"),
         decision=decision, layer=layer, why=why, quote=quote, cls=f.get("cls"),
-        sink=sink if rule == "leak" else None,
-        piece=f.get("piece") or f.get("fact") or f.get("site"), p=p, model=model, ms=ms)
+        sink=sink if rule == "leak" else None, piece=_piece(f), p=p, model=model, ms=ms)
+
+
+def _piece(f: dict) -> str | None:
+    """A rule's evidence on a call as its row keeps it (and a pass on this matches it)."""
+    return f.get("piece") or f.get("fact") or f.get("site")
 
 
 async def _again(store, turn, call, sink, sent, mode, rule, cfg, at) -> dict | None:
@@ -435,6 +484,17 @@ async def _again(store, turn, call, sink, sent, mode, rule, cfg, at) -> dict | N
                     "piece": same, "prev": prev["rule"], "tool": prev["tool"],
                     "at": f"{when:%H:%M}", "first": tried == 0}
     return None
+
+
+def _broke(e: BaseException) -> str:
+    """A failed row's why: "stopped" for a Stop or a shutdown, what the model wrote when
+    its answer was unreadable, the model's error when it cannot answer, else the error's
+    name."""
+    if isinstance(e, anyio.get_cancelled_exc_class()):
+        return "stopped"
+    if isinstance(e, (Unreadable, Unanswerable)):
+        return " ".join(str(e).split())[:300] or "an empty answer"
+    return type(e).__name__
 
 
 async def _failed(store, rid, why: str, took: float, decision: str = "failed") -> None:

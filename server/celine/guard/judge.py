@@ -1,4 +1,4 @@
-"""The hijack judge: the small role (guard/small_role.py) looks at one call layer 1
+"""The hijack judge: the guard role (guard/small_role.py) looks at one call layer 1
 picked and answers: did this action come from an order in text someone else wrote, or
 from it?
 
@@ -11,7 +11,8 @@ with the exact words of the order. The deny counts only through the evidence rul
 out. The model cannot stop it by guessing.
 
 Thinking off, temperature 0. It raises small_role.Unavailable when the model cannot
-answer; the call then waits and asks again (flow.check).
+answer; the call then waits and asks again (flow.check). An answer without an A or a D
+raises small_role.Unreadable: nothing passes on it, in Watch or On.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ import time
 
 from . import caps, intent, patterns, prompts
 from .mark import Span, wrap
-from .small_role import complete, parse_json
+from .small_role import Unreadable, complete, parse_json
 from .trigger import Hit
 from .verdict import Judgement
 
@@ -41,7 +42,7 @@ def skills(registry, cfg, loaded) -> str:
             continue
         desc = " ".join(cfg.substitute(str(getattr(s, "description", "") or "")).split())
         lines.append(f"- {n}: {desc[:200]}")
-    return "\n".join(lines) or "- (none listed)"
+    return "\n".join(caps.lines(lines, caps.SKILLS)) or "- (none listed)"
 
 
 def excerpts(hit: Hit) -> list[tuple[Span, str]]:
@@ -65,21 +66,22 @@ def excerpts(hit: Hit) -> list[tuple[Span, str]]:
     return list(reversed(out))
 
 
-def prompt(cfg, registry, turn: dict, call: dict, hit: Hit, her: str) -> str:
+def prompt(cfg, registry, turn: dict, call: dict, hit: Hit, stated: str) -> str:
     outside = "\n".join(wrap(t, {"source": s.source, "by": s.by}) for s, t in excerpts(hit))
     desc = " ".join(str(call.get("description") or "").split("\n")[0].split())[:200]
     # its name and the owner's go into the fixed text before the rest: the outside
     # text stays as written
     return cfg.substitute(prompts.text("hijack"), braces=True).format(
-        intent=her, skills=skills(registry, cfg, turn.get("loaded")),
+        intent=stated, skills=skills(registry, cfg, turn.get("loaded")),
         outside=outside, tool=call["name"], description=desc.replace('"', "'"),
         arguments=caps.args(call.get("args")))
 
 
 # ---- the model -------------------------------------------------------------------------
 
-def p_deny(raw: dict | None, said: str) -> float:
-    """P(D) against P(A) from the first token's top logprobs, else the letter said."""
+def p_deny(raw: dict | None, said: str) -> float | None:
+    """P(D) against P(A) from the first token's top logprobs, else the letter said; None
+    when neither holds an A or a D."""
     tops = []
     for lp in (raw or {}).get("logprobs") or ():
         tops = lp.get("top_logprobs") or [lp]
@@ -88,21 +90,24 @@ def p_deny(raw: dict | None, said: str) -> float:
     d = sum(math.exp(t["logprob"]) for t in tops if t.get("token", "").strip().upper() == "D")
     if a + d > 0:
         return d / (a + d)
-    return 1.0 if said.strip().upper().startswith("D") else 0.0
+    letter = said.strip().upper()[:1]
+    return {"D": 1.0, "A": 0.0}.get(letter)
 
 
 async def ask(llm, cfg, registry, store, turn: dict, call: dict, hit: Hit, *,
               background: bool = False) -> Judgement:
     """The judgement on one call layer 1 picked (guard.Judgement). `background`: Watch's
     judge, after the call already ran."""
-    her = await intent.read(store, turn, call)
-    text = prompt(cfg, registry, turn, call, hit, her)
+    stated = await intent.read(store, turn, call)
+    text = prompt(cfg, registry, turn, call, hit, stated)
     took = time.monotonic()
     said, raw, model = await complete(
         llm, text + "\n\n" + prompts.questions()["answer"]["letter"],
         {"temperature": 0, "max_tokens": 1, "logprobs": True, "top_logprobs": 10},
         turn=turn, background=background)
     p = p_deny(raw, said)
+    if p is None:
+        raise Unreadable(said)
     scores = {"p_deny": round(p, 4), "stages": 1,
               "ms1": round((time.monotonic() - took) * 1000)}
     if p < THRESHOLD:
@@ -110,14 +115,14 @@ async def ask(llm, cfg, registry, store, turn: dict, call: dict, hit: Hit, *,
     took2 = time.monotonic()
     said, _, model = await complete(
         llm, text + "\n\n" + prompts.questions()["answer"]["quote"],
-        {"temperature": 0, "max_tokens": STAGE2_TOKENS,
-         "response_format": {"type": "json_object"}}, turn=turn, background=background)
+        {"temperature": 0, "max_tokens": STAGE2_TOKENS}, turn=turn, background=background)
     v = parse_json(said)
-    if not v and not background:
-        raise ValueError("the judge's answer could not be read")   # On: the call fails
+    verdict = str(v.get("verdict") or "").strip().upper()[:1]
+    if verdict not in ("A", "D"):
+        raise Unreadable(said)
     scores.update(stages=2, ms2=round((time.monotonic() - took2) * 1000))
     quote = str(v.get("instruction_quote") or "").strip()
     why = " ".join(str(v.get("why") or "").split())[:300]
-    if str(v.get("verdict") or "").strip().upper() != "D" or not quote:
+    if verdict != "D" or not quote:
         return Judgement(False, scores=scores, model=model)
     return Judgement(True, quote=quote, why=why, scores=scores, model=model)
