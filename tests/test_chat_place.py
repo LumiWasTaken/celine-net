@@ -94,6 +94,8 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     assert rows[failed]["state"] == {"tone": "error", "words": "The reply failed."}
     assert rows[old]["group"] == "2025" and rows[old]["dated"]
     assert not rows[pinned]["dated"] and not rows[running]["dated"]
+    assert rows[old]["folded"] and not rows[failed]["folded"], \
+        "a date group before Previous 7 days starts folded"
     assert "rank" not in rows[old]
 
     # frozen (guard/freeze.py): the queued turn waits, nothing runs

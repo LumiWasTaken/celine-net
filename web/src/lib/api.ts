@@ -74,6 +74,8 @@ export type ConversationSummary = {
   group?: string
   /** GET /conversations: its group is a date (not Running or Pinned) */
   dated?: boolean
+  /** GET /conversations: its group starts folded (a date before Previous 7 days) */
+  folded?: boolean
   /** GET /conversations: its turn in it, running with the server's step words ('' while it
       writes), waiting for you, or how the last turn ended when it failed or paused */
   state?: { tone: 'running' | 'error' | 'warn'; words: string } | null

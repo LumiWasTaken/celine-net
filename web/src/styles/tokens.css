@@ -57,7 +57,7 @@
 
   --tracking-display: -0.02em;  /* 2xl */
   --tracking-title:   -0.01em;  /* xl, and lg as a title */
-  --tracking-meta:     0.01em;  /* xs muted labels: list sections, menu headings, groups */
+  --tracking-meta:     0.01em;  /* xs muted labels: menu headings, groups */
 
   /* ── space: ONE scale, static. s-3 between a row's parts, s-4 page padding on a
      phone, s-5 between groups. ── */

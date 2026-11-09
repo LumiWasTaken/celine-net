@@ -1,7 +1,8 @@
 /* A place's conversations, as one virtual list:
 
      Running, Pinned, Today, Yesterday, ...   the server's group of each row (`group`); a
-                    date group (`dated`) folds by its head, kept on this device;
+                    date group (`dated`) folds by its head: the server's `folded`
+                    (before Previous 7 days) until the user folds or opens it here;
                     each row a real link with the title, its last line, a bare time, the
                     server's words for a failure or a wait (its `state`); a running row
                     shows the server's step words (the dots while it writes) and Stop
@@ -54,7 +55,7 @@ export const kindIcon = (c: Pick<ConversationSummary, 'kind'>): LucideIcon => (c
 const WORD_TONE: Record<string, WordTone> = { running: 'running', error: 'error', warn: 'warn' }
 
 type Row =
-  | { type: 'group'; key: string; label: string; fold?: number }
+  | { type: 'group'; key: string; label: string; open?: boolean }
   | { type: 'head'; key: string; node: ReactNode }
   | { type: 'work'; key: string; w: WorkItem }
   | { type: 'away'; key: string; text: string }
@@ -62,7 +63,7 @@ type Row =
   | { type: 'gone'; key: string; c: ConversationSummary }
   | { type: 'hit'; key: string; h: ChatHit }
 
-const HEIGHT = { group: 36, head: 56, work: 68, away: 44, conversation: 68, gone: 68, hit: 76 } as const
+const HEIGHT = { group: 48, head: 56, work: 68, away: 44, conversation: 68, gone: 68, hit: 76 } as const
 
 const NO_ROWS: ConversationSummary[] = []
 const NO_HITS: ChatHit[] = []
@@ -118,8 +119,8 @@ export function ConversationList({
   label?: string
 }) {
   const q = query.trim().toLowerCase()
-  // the date groups folded on this device, by label
-  const [folded, setFolded] = usePref<string[]>('conversations:folded', [])
+  // the date groups the user folded (false) or opened (true) on this device, by label
+  const [folds, setFolds] = usePref<Record<string, boolean>>('conversations:folds', {})
   const rows = useMemo<Row[]>(() => {
     const ranked = (list: ConversationSummary[]) => {
       if (!q) return list
@@ -157,13 +158,14 @@ export function ConversationList({
       }
     } else {
       let last = ''
+      let open = true
       for (const c of listed) {
         if (c.group !== last) {
           last = c.group ?? ''
-          out.push({ type: 'group', key: `g:${last}`, label: last,
-                     fold: c.dated ? listed.filter(x => x.group === last).length : undefined })
+          open = folds[last] ?? !c.folded
+          out.push({ type: 'group', key: `g:${last}`, label: last, open: c.dated ? open : undefined })
         }
-        if (!c.dated || !folded.includes(last)) push(c)
+        if (!c.dated || open) push(c)
       }
     }
     if (q && hits.length) {
@@ -171,7 +173,7 @@ export function ConversationList({
       hits.forEach(h => out.push({ type: 'hit', key: `h:${h.message_id}`, h }))
     }
     return out
-  }, [conversations, archived, deleted, shelf, hits, titles, q, working, away, groups, matches, deletedHeads, folded])
+  }, [conversations, archived, deleted, shelf, hits, titles, q, working, away, groups, matches, deletedHeads, folds])
   if (picker) {
     picker.keys.current = rows.flatMap(r => (r.type === 'gone' || (r.type === 'conversation' && !r.sub) ? [r.c.id] : []))
   }
@@ -219,10 +221,9 @@ export function ConversationList({
       <VirtualList items={rows} getKey={r => r.key} estimate={i => HEIGHT[rows[i]!.type]} inset={8} label={label}
                    renderRow={r => {
                      if (r.type === 'group') {
-                       if (r.fold == null) return <ListSection label={r.label} />
-                       const open = !folded.includes(r.label)
-                       return <ListSection label={r.label} open={open} count={r.fold}
-                                           onToggle={() => setFolded(open ? [...folded, r.label] : folded.filter(l => l !== r.label))} />
+                       if (r.open == null) return <ListSection label={r.label} />
+                       return <ListSection label={r.label} open={r.open}
+                                           onToggle={() => setFolds({ ...folds, [r.label]: !r.open })} />
                      }
                      if (r.type === 'head') return r.node
                      if (r.type === 'away') return <ListRow density="sm" title={r.text} tooltip={r.text} onClick={onAway} />

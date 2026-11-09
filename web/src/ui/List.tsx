@@ -142,13 +142,11 @@ export function ListRow({
 
 /* ── ListSection: with `onToggle` its label is a button that folds the group under it
    (Celine's date groups); folded, it says how many are in it ── */
-export function ListSection({ label, open, onToggle, count, className }: {
+export function ListSection({ label, open, onToggle, className }: {
   label: ReactNode
   /** the group is shown; with `onToggle` */
   open?: boolean
   onToggle?: () => void
-  /** how many the group holds, shown while it is folded */
-  count?: number
   className?: string
 }) {
   return (
@@ -157,7 +155,6 @@ export function ListSection({ label, open, onToggle, count, className }: {
         <button type="button" className="list-section__fold" aria-expanded={!!open} onClick={onToggle}>
           <DisclosureArrow />
           <span>{label}</span>
-          {!open && count != null && <span className="list-section__count">{count}</span>}
         </button>
       ) : <span>{label}</span>}
     </div>

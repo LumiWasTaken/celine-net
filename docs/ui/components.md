@@ -29,7 +29,7 @@ outside `tokens.css` writes a font size, line height, weight or letter spacing a
 
 | Step | Phone to desktop | For | Line height | Tracking |
 |---|---|---|---|---|
-| `--t-xs` | 12.5 to 14 px | meta: times, counts, hints, chips, small labels, mono tool bodies | `--lh-ui` | `--tracking-meta` on muted labels (list sections, menu headings, groups) |
+| `--t-xs` | 12.5 to 14 px | meta: times, counts, hints, chips, small labels, mono tool bodies | `--lh-ui` | `--tracking-meta` on muted labels (menu headings, groups) |
 | `--t-md` | 14 to 16 px | every piece of UI text: rows, buttons, fields, menus, names | `--lh-ui` one line, `--lh-body` wrapping | none |
 | `--t-lg` | 16 to 18 px | reading text: bubbles, prose, the composer, documents; card and empty-state heads | `--lh-body`, the story editor `--lh-story` | `--tracking-title` when it is a title |
 | `--t-xl` | 20 to 22.5 px | place, section and dialog titles, prose h2 | `--lh-title` | `--tracking-title` |
@@ -111,10 +111,11 @@ While selecting, the SelectBar takes its place.
 `menu` (the group's own "..." and right-click: a folder's Rename, Move to Trash), `onDrop`
 (a dragged row lands in the group; the head takes the accent wash while one is over it).
 **Don't:** open or close (no fold); carry more than its "...".
-`ListSection` stays the small label in a place sidebar ("Recent", "Today"). With `onToggle`
-(and `open`, `count`) its label is a button with the DisclosureArrow (`aria-expanded`) that
-folds the group under it, and a folded one shows its count: the agent's date groups, the
-owner's explicit exception to "no folds". The rows go and come through the list's own
+`ListSection` is the head of a group in a place sidebar ("Recent", "Today"): UI size in
+`--text-secondary`, so it stands apart from the rows. With `onToggle` (and `open`) its label
+is a button with the DisclosureArrow (`aria-expanded`) that folds the group under it: the
+agent's date groups, the owner's explicit exception to "no folds"; the server says which start
+folded (`folded`, before Previous 7 days) until the user folds or opens one on this device. The rows go and come through the list's own
 `useMove`, so the rows below glide; a search shows its matches without groups.
 
 ### Section

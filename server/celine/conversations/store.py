@@ -542,6 +542,9 @@ def _rank(models: frozenset[str] | None) -> str:
 _STEP = {"queued": "", "preparing": "Thinking", "streaming": ""}
 
 
+OPEN_GROUPS = ("Today", "Yesterday", "Previous 7 days")   # the date groups that start open
+
+
 def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
     """The list's group label of a row: Running, Pinned, then when it was last active in
     the app's time zone: Today, Yesterday, Previous 7 days, Previous 30 days, the month
@@ -619,7 +622,8 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
     `trashed`: only the deleted ones (archived or not). `place` "celine": only its
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
-    (last_line above), `group` (group_of) and `dated` (its group is a date), `state` (state_of; `asked`: the conversations a
+    (last_line above), `group` (group_of), `dated` (its group is a date) and `folded`
+    (its group starts folded: a date before Previous 7 days), `state` (state_of; `asked`: the conversations a
     request waits in; `models`: hold.answering), `home` and `link`
     (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
@@ -644,12 +648,13 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                 _SUMMARY + "WHERE c.agent_of = ? ORDER BY c.created_at, c.id", (r["id"],))]
             r["group"] = group_of(r["rank"], r["updated_at"], tz, now_)
             r["dated"] = r["rank"] == 0
+            r["folded"] = r["dated"] and r["group"] not in OPEN_GROUPS
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
                 one["state"] = state_of(c, one, asked, models)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
-                a["group"], a["dated"] = r["group"], r["dated"]
+                a["group"], a["dated"], a["folded"] = r["group"], r["dated"], r["folded"]
         return rows
 
     return await store.read(fn)
