@@ -1,11 +1,11 @@
 /* Status: where a reply will land before it is there, in Celine's chat and in every Talk
-   (a mission's): the typing dots, with what holds it in words as their tooltip
-   ("Waiting for the model: Self-review is running.", the model loading); the reply's first
-   line takes the same place. Words come from the server. A conversation shows one, for
+   (a mission's): what holds it, in words, as a quiet line at work ("Queued while
+   Self-review is running.", the model loading, a busy provider's own words), else the
+   typing dots; the reply's first line takes the same place. Words come from the server. A conversation shows one, for
    its oldest queued turn; turns after it a muted "Queued".
 
    TurnEnd is the line where an answer did not come, in soft words: "Paused." with
-   Continue, "The reply failed." with Retry, the server's sentence as their tooltip. Under
+   Continue ("Stopped." with Continue for a reply you stopped), "The reply failed." with Retry, the server's sentence as their tooltip. Under
    your message that has no answer (the server's `unanswered`: a turn that failed, was
    interrupted, answered nothing or was stopped) its reason, with Regenerate, and Continue
    before it when the server offers it (a failed reply that said something, on a model
@@ -26,7 +26,7 @@ import type { QueueWait } from '../lib/useConversation'
 import { settingsApi } from '../lib/settingsApi'
 import { useResource } from '../lib/useResource'
 import { ArrowLeftRight, Hourglass, Play, RefreshCw, Settings } from 'lucide-react'
-import { Button, Dots, InlineError, cx } from '../ui'
+import { Button, Dots, EventLine, InlineError, cx } from '../ui'
 import { ModelChooser } from './ModelChooser'
 import './Transcript.css'
 
@@ -36,17 +36,19 @@ export function waitWords(wait: QueueWait | null, live: Live | null): string | n
     if (wait.noModel != null) return `Queued until a chat model answers. ${wait.noModel}`.trim()
     if (wait.held) return wait.held
     if (wait.limited) return wait.limited
-    return wait.holder ? `Waiting for the model: ${wait.holder} is running.` : 'Waiting for the model.'
+    return wait.holder ? `Queued while ${wait.holder} is running.` : 'Queued.'
   }
   if (live?.phase === 'loading') return `Loading ${live.model ?? 'the model'}.`
   return null
 }
 
-/** the reply's slot: the dots, what holds it as their tooltip */
+/** the reply's slot: what holds it, in the server's words, as a quiet line at work (a
+    phone shows no tooltip); the dots while nothing holds it */
 export function Status({ words, queued = false }: { words: string | null; queued?: boolean }) {
+  if (words && !queued) return <div className="status" role="status"><EventLine quiet running>{words}</EventLine></div>
   return (
     <div className={cx('status', queued && 'status--queued')}>
-      {queued ? 'Queued' : <span className="status__dots" title={words ?? undefined} role="status" aria-label={words ?? undefined}><Dots /></span>}
+      {queued ? 'Queued' : <span className="status__dots" role="status" aria-label="Writing"><Dots /></span>}
     </div>
   )
 }
@@ -56,11 +58,11 @@ export function Status({ words, queued = false }: { words: string | null; queued
 const REASON: Record<string, string> = {
   restart: 'The server restarted during the reply.',
   wall_clock: 'The reply took too long and was stopped.',
-  max_tool_iterations: 'Stopped at the step limit.',
+  max_tool_iterations: 'Stopped at the tool round limit.',
   cut_length: 'The reply reached the length limit.',
 }
 const ENDED: Record<string, string> = {
-  aborted: 'Stopped.', interrupted: 'Interrupted.', capped: 'Stopped at the step limit.', failed: 'The reply failed.',
+  aborted: 'Stopped.', interrupted: 'Interrupted.', capped: 'Stopped at the tool round limit.', failed: 'The reply failed.',
   done: 'The reply reached the length limit.',
 }
 
@@ -124,7 +126,8 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
   const lost = regen && (unanswered.state === 'failed' || unanswered.state === 'interrupted')
   const broke = lost || (!regen && (turn?.state === 'failed' || turn?.state === 'interrupted' || (!!error && !ended)))
   const owner = lost || !!setting || (turn?.state === 'failed' && !!turn.reason) || (!!error && !ended)
-  const words = broke ? 'The reply failed.' : canContinue ? 'Paused.' : sentence
+  // how it ended in its own sentence (Stopped., Stopped at the tool round limit., ...)
+  const words = broke ? 'The reply failed.' : sentence
   return (
     <div className={cx('turn-end', owner && broke && 'turn-end--error')}>
       <span className="turn-end__text" title={words !== sentence && !owner ? sentence : undefined}>

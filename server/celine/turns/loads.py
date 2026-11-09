@@ -38,7 +38,7 @@ DEFAULTS = {"memory_floor": 0.5, "memory_sections": 3, "memory_tokens": 1500,
 WHOLE = ("memory_sections", "memory_tokens", "result_tokens")
 KEY_REPLY = 300          # the characters of its last reply a key is looked for in
 ALWAYS_MAX = 1536        # bytes of an always-loaded note carried whole; past it its head
-OFF_HERE = "left out in this conversation"
+OFF_HERE = "left out in this chat"
 
 
 def shares(cfg) -> dict:
@@ -137,7 +137,7 @@ async def _notes(store, cfg, conv, counter) -> list[dict]:
     """The always notes of its notebook (Carried.notes), and the ones the user left out
     here, so one can come back on."""
     from ..skills import notebook_index
-    root = cfg.her.notebook
+    root = cfg.agent.notebook
     folder, off = conv["notebook_folder"], set(json.loads(conv["notes_off"] or "[]"))
     user = (getattr(cfg, "user", "") or "").lower()
     notes: list[dict] = []

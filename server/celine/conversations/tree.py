@@ -30,7 +30,7 @@ class Busy(errors.Busy):
     """Raised inside a write when the conversation still has a turn or a job running: a
     409 as it is (errors.py), a route with its own sentence catches it."""
 
-    def __init__(self, message: str = "{{name}} is still answering."):
+    def __init__(self, message: str = "{{name}} is still writing."):
         super().__init__(message)
 
 
@@ -502,7 +502,7 @@ prefills = None
 
 # why no answer came, by how the turn that tried ended
 _NO_ANSWER = {"failed": "The reply failed.", "interrupted": "The server restarted during "
-              "the reply.", "aborted": "Stopped.", "capped": "Stopped at the step limit.",
+              "the reply.", "aborted": "Stopped.", "capped": "Stopped at the tool round limit.",
               "done": "The reply was empty."}
 
 
@@ -655,7 +655,7 @@ async def continue_message(store, cid: str, message_id: str, *,
         try:
             refuse_if_live(c, cid)
         except Busy:
-            raise ValueError("{{name}} is still answering.") from None
+            raise ValueError("{{name}} is still writing.") from None
         if leaf(c, cid) != message_id:
             raise ValueError("Only the last message can be continued.")
         if not (m["content"] or "").strip():
@@ -777,7 +777,7 @@ async def branch(store, cid: str, message_id: str) -> dict | None:
 
 
 def final_words(c: sqlite3.Connection, turn_id: str) -> str:
-    """The agent's answer of a turn as she wrote it: its last reply that called no tool.
+    """The agent's answer of a turn as it wrote it: its last reply that called no tool.
     "" when it has none: what it said between tool calls is no answer."""
     r = c.execute("SELECT content FROM messages m WHERE turn_id = ? AND role = 'assistant' "
                   "AND coalesce(content, '') <> '' AND NOT EXISTS (SELECT 1 FROM tool_calls "

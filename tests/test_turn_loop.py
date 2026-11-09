@@ -184,8 +184,8 @@ async def test_continue_on_a_capped_turn_gets_a_fresh_step_budget(store, cfg):
     assert len(b.calls) == 4               # two more steps, not none
 
 
-async def test_tool_results_reach_her_as_the_tool_made_them(store, cfg):
-    cfg.her.talk = "a chat.\n\n## how I sound\n\nshort and dry, a little formal\nmore\n"
+async def test_tool_results_reach_the_agent_as_the_tool_made_them(store, cfg):
+    cfg.agent.talk = "a chat.\n\n## how I sound\n\nshort and dry, a little formal\nmore\n"
     reg = _registry(cfg, Notebook())
     cid = await conversations.create(store)
     b = Replies([_calls(("notebook__write", {"path": "a.md", "text": "x"}),

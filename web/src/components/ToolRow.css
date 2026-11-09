@@ -2,6 +2,8 @@
    reply's Activity one list row per call, its colour its state; opened (a Sheet), the call
    and its result in sunk blocks. Tokens only. */
 .tool-list { display: grid; gap: var(--s-1); min-width: 0; }
+/* under its words in a reply: UI text, not reading text, so the reply reads first */
+.tool-list--reply { font-size: var(--t-md); }
 .tool { min-width: 0; }
 .tool__meta { display: inline-flex; align-items: center; gap: var(--s-1); }
 .tool__body {

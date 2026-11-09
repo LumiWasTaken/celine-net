@@ -121,7 +121,7 @@ async def _conversation(state, send, cid: str, after: int) -> None:
         tx, rx = bus.subscribe(cid)
         try:
             try:
-                got = await (view.snapshot(store, cid) if last == 0
+                got = await (view.snapshot(store, cid, state.llm) if last == 0
                              else view.resume(store, cid, last))
             except KeyError:                     # no such conversation (any more)
                 await send({"type": "error", "conversation": cid, "code": "not_found"})
@@ -221,8 +221,7 @@ async def changes(request: Request, since: int | None = None,
     resync (since is below what the feed keeps, as on the socket: refetch everything),
     conversations (those whose seq moved, and those the feed names after `since`, such as
     an archive: id, seq, title, archived_at, active_state), gone (ids deleted or that no
-    longer exist), jobs (finished since: id, conversation_id, tool, state, finished_at), unread
-    (intercom messages waiting for the user), agents (every sub-agent not in the archive,
+    longer exist), jobs (finished since: id, conversation_id, tool, state, finished_at), agents (every sub-agent not in the archive,
     as GET /sub-agents)}."""
     known: dict[str, int] = {}
     for part in conversations.split(","):

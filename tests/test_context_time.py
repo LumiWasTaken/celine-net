@@ -71,7 +71,7 @@ async def test_a_reply_goes_with_its_thinking_the_same_way_in_every_request(stor
         store, cfg, backend, cid, system="S", tools=[]))[:2]
 
 
-async def test_her_tail_starts_with_today_in_the_app_zone(store):
+async def test_the_agents_tail_starts_with_today_in_the_app_zone(store):
     from celine.turns.loads import Carried
     from celine.turns.prompt import request_parts, tail_text
     cfg = load()
@@ -84,7 +84,7 @@ async def test_her_tail_starts_with_today_in_the_app_zone(store):
     assert not any("Today is" in t for _, t in blocks), "the date stays out of the prefix"
 
 
-async def test_her_request_tells_her_now_and_the_zone_of_every_time(store, monkeypatch):
+async def test_the_agents_request_tells_it_now_and_the_zone_of_every_time(store, monkeypatch):
     from celine import clock
     from celine.core.bus import EventBus
     from celine.turns.cancel import Token
@@ -106,7 +106,7 @@ async def test_her_request_tells_her_now_and_the_zone_of_every_time(store, monke
     assert "Now it is" not in system, "now stays out of the cached prefix"
 
 
-async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch, store):
+async def test_the_agents_request_tells_it_the_fallback_and_why(tmp_path, monkeypatch, store):
     """One tail line while the model that answered the turn's role is not its chain's
     first: this turn's last answer, before its first call the role's last answer in the
     conversation (its `llm.queue` running event). None on the first choice, none before
@@ -144,7 +144,7 @@ async def test_her_request_tells_her_the_fallback_and_why(tmp_path, monkeypatch,
     [line] = await tail()
     assert line.startswith("You are running in fallback mode. Instead of main/big you are "
                            "running on lan/small. ")
-    assert line.endswith(" main/big: llama-swap does not answer.")
+    assert line.endswith(" main/big: llama-swap at 127.0.0.1:11434 refused the connection.")
     alone = llm.bind(role="chat", priority=Priority.AGENT, conversation_id=cid,
                      fallback=False)
     assert await tail(alone) == [], "a turn on the first model alone fails instead"

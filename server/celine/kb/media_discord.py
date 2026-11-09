@@ -14,6 +14,7 @@ from typing import Any
 
 from .importers import ImportContext
 from ..core.ids import now_ms
+from ..errors import said
 
 
 def candidates(kb, types: tuple[str, ...] = ("photo",), limit: int = 50) -> list[dict[str, Any]]:
@@ -46,13 +47,15 @@ def refresh(kb, link, ctx: ImportContext | None = None, *, limit: int = 50,
         if ctx is not None:
             ctx.check()
             ctx.progress(i, len(todo), "messages")
-        code, got = link.request_sync("POST", "/admin/media/refresh",
-                                      {"chat": m["channel"], "message": m["key"],
-                                       "max_mb": max_mb}, timeout=180.0)
-        if code != 200:
+        r = link.raw_sync("POST", "/admin/media/refresh",
+                          {"chat": m["channel"], "message": m["key"], "max_mb": max_mb},
+                          timeout=180.0)
+        if r.status_code != 200:
             res["failed"] += 1
-            res["error"] = (got or {}).get("error") or f"The Discord connection answered {code}."
+            res["error"] = said(r.content).text or \
+                f"The Discord connection answered {r.status_code}."
             break                                 # a login problem: stop, try again later
+        got = r.json()
         state, err, files = got["state"], got.get("error"), got.get("files") or []
         if state == "ok":
             files = [f for f in files if not f.get("sha256") or link.pull(f["sha256"])]

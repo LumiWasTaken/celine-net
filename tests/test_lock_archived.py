@@ -64,7 +64,7 @@ async def api(store):
         yield client
 
 
-async def test_archiving_stops_her_work_and_drops_what_waits_there(api, store):
+async def test_archiving_stops_its_work_and_drops_what_waits_there(api, store):
     cid = await conversations.create(store, "videos")
     sub = await conversations.create(store, "fetcher", agent_of=cid, agent_name="fetcher")
     ic = Intercom(store)
@@ -111,7 +111,7 @@ async def test_a_mission_of_an_archived_chat_is_not_woken_or_watched(store):
     assert await delivered() == before, "everyone working is not the archived mission"
 
 
-async def test_her_reviews_leave_an_archived_chat_out_and_her_search_marks_it(store):
+async def test_the_agents_reviews_leave_an_archived_chat_out_and_its_search_marks_it(store):
     cfg = load()
     cfg.timezone = "UTC"
     skill = PastConversations(cfg)
@@ -135,7 +135,7 @@ async def test_her_reviews_leave_an_archived_chat_out_and_her_search_marks_it(st
     assert await store.read(last_exchange) == ["buy milk"], "the routine's {{on_mind}} skips it"
 
 
-async def test_the_users_message_opens_it_again_and_she_answers(api, store):
+async def test_the_users_message_opens_it_again_and_the_agent_answers(api, store):
     gone = await _archived(store)
     _, tid, _ = await user_says(store, gone, "one more: the last video")
     assert tid and (await turns.claim(store, "w"))["id"] == tid

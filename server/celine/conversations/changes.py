@@ -1,6 +1,5 @@
 """What changed for a client coming back (GET /api/changes, api/ws.py): the global feed's
-bounds, and since a global id, the conversations, jobs, unread messages and sub-agents
-it needs again."""
+bounds, and since a global id, the conversations, jobs and sub-agents it needs again."""
 from __future__ import annotations
 
 import json
@@ -26,7 +25,6 @@ def catch_up(c: sqlite3.Connection, since: int | None, known: dict[str, int], ow
     """`known`: {conversation id: the seq the client has}; `own` the MCP servers' row
     words (store.tool_words); `settings` label the
     sub-agents' models."""
-    from ..intercom.store import waiting
     from ..sub_agents.skill import agents_of, labelled
     lo, hi = bounds(c)
     stale = since is not None and behind(lo, since)
@@ -61,4 +59,4 @@ def catch_up(c: sqlite3.Connection, since: int | None, known: dict[str, int], ow
         f"WHERE id IN ({marks}) AND finished_at IS NOT NULL ORDER BY finished_at",
         sorted(job_ids))] if job_ids else []
     return {"global": hi, "resync": stale, "conversations": moved, "gone": gone,
-            "jobs": jobs, "unread": waiting(c, "user"), "agents": labelled(settings, agents_of(c, own=own))}
+            "jobs": jobs, "agents": labelled(settings, agents_of(c, own=own))}

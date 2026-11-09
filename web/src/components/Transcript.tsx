@@ -11,9 +11,9 @@
    default. While it thinks and has no words yet, one shimmering "Thinking" line. The agent's
    settled tool calls sit under its words as their rows (hidden with Hide tool calls,
    leaving Activity in "..."). Bastet's banners sit after the reply whose call she
-   decided on (GuardBanner), and so does a request of hers that waits for you
-   (ApprovalAsk). Never hidden: Retry, Continue, Regenerate, Stop, reminders, intercom lines,
-   Bastet's banners and her requests. */
+   decided on (GuardBanner), and so does a request of the agent's that waits for you
+   (ApprovalCard). Never hidden: Retry, Continue, Regenerate, Stop, reminders, intercom lines,
+   Bastet's banners and the agent's requests. */
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   conversationApi, type Attachment, type Compaction, type ImageNotice, type Live, type Message, type Queued, type Switched,
@@ -29,16 +29,18 @@ import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
 import { Status, TurnEnd, endWords } from './Status'
-import { capital, useOwner, usePronouns } from '../lib/name'
-import { useHer } from '../lib/her'
+import { useName, useOwner } from '../lib/name'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
 import { ArtifactCards, FileLine, FormingRow, ShareCards, ToolLines, ToolRuns, ToolSheets, artifactsOf, sharesOf, useToolRuns } from './ToolRow'
+import { busy } from '../lib/toolPlaces'
 import { GuardBanner } from './GuardBanner'
-import { ApprovalAsk } from './ApprovalAsk'
-import { useFrozen, type GuardBanner as Banner } from '../lib/guard'
-import type { ChatApproval } from '../lib/settingsApi'
+import { ApprovalCard } from './ApprovalCard'
+import type { GuardBanner as Banner } from '../lib/guard'
+import { useServerEvents } from '../lib/bus'
+import { snapshotAgain } from '../lib/socket'
+import type { Approval } from '../lib/settingsApi'
 import { KeepPlace } from '../lib/useStickToBottom'
 import { Appear } from './Appear'
 import './Transcript.css'
@@ -51,25 +53,24 @@ function Stamp({ at }: { at: string }) {
 }
 
 /* A message that reached the conversation other than as you typed it: one quiet line,
-   its text behind the line. `Reminder` (one it set; one you set reads `Note to Celine`), `Brief from
-   Sam` (in a sub-agent's conversation `Brief from Celine`), `Brief changed`, `Time
+   its text behind the line. `Reminder` (one it set or you set), `Instructions from
+   Sam` (in a sub-agent's conversation `Instructions from Celine`), `Instructions changed`, `Time
    limit`, a mission's note `Mission RSS feed needs you` (a link to the mission's
-   conversation), `From scout`, `Report from scout` (`Report from scout, stopped` when
-   its turn did not end done), `Announcement to everyone`, `Note to her` (one you
-   scheduled). Null for your own message, a trigger's prompt and a job's result (the
+   conversation), `From scout`, `Result from scout` (`Result from scout, stopped` when
+   its turn did not end done), `Announcement to everyone`. Null for your own message, a trigger's prompt and a job's result (the
    result shows in its tool row). */
 const REPORT_STATE: Record<string, string> = {
-  aborted: 'stopped', failed: 'failed', interrupted: 'interrupted', capped: 'stopped at its limit',
+  aborted: 'stopped', failed: 'failed', interrupted: 'interrupted', capped: 'stopped at the tool round limit',
 }
 
-function eventOf(m: Message, user: string, assistant: string, her: string): { heading: ReactNode; body: string; icon?: LucideIcon } | null {
+function eventOf(m: Message, user: string, assistant: string): { heading: ReactNode; body: string; icon?: LucideIcon } | null {
   const ic = m.intercom
   if (!ic || ic.kind === 'job' || ic.kind === 'trigger') return null
   const you = user || 'you'
   const sender = ic.from === 'user' ? you : ic.from.startsWith('agent:') ? (ic.from_name ?? assistant) : (ic.from_name ?? 'the app')
   if (ic.to === 'all') return { heading: ic.from === 'user' ? 'Announcement to everyone' : `Announcement from ${sender}`, body: m.content, icon: Megaphone }
   if (ic.kind === 'message' && ic.from === 'user' && !ic.due_at) return null
-  if (ic.due_at) return { heading: ic.from === 'user' ? `Note to ${her}` : 'Reminder', body: m.content, icon: Bell }
+  if (ic.due_at) return { heading: 'Reminder', body: m.content, icon: Bell }
   if (ic.kind === 'brief') {
     return { heading: ic.data.changed ? 'Instructions changed' : `Instructions from ${ic.from === 'user' ? you : assistant}`, body: m.content }
   }
@@ -131,8 +132,8 @@ type Props = {
   imageNotices: ImageNotice[]
   /** Bastet's banners, after the messages that made their calls */
   banners?: Banner[]
-  /** her requests that wait for you, after the messages that made their calls */
-  approvals?: ChatApproval[]
+  /** the agent's requests that wait for you, after the messages that made their calls */
+  approvals?: Approval[]
   /** tool calls it is still writing, shown under their message */
   forming?: Forming[]
   /** what a slash command said, last in the transcript */
@@ -145,6 +146,8 @@ type Props = {
   onRetry: () => Promise<void>
   /** read-only (a mission in the Trash): nothing here writes to it */
   closed?: boolean
+  /** the hold that keeps its queued turn aside (the snapshot's `held`): it is not writing */
+  held?: 'frozen' | 'paused' | null
 }
 
 /** the row where a reply lands (the dots, "Queued"), as useMove knows it: never gone */
@@ -159,10 +162,9 @@ type T = {
 
 export function Transcript(
   { conversationId, messages, toolCalls, runs, turn, unanswered, running, error, pending, compactions, waiting, live, queue = [], swaps = 0, switched, imageNotices, banners = [],
-    approvals = [], forming = [], note, assistant, user, onRetry, closed = false }: Props,
+    approvals = [], forming = [], note, assistant, user, onRetry, closed = false, held: hold = null }: Props,
 ) {
   const streaming = running && turn?.state === 'streaming'
-  const frozen = useFrozen()
   const toolRuns = useToolRuns(toolCalls, runs)
   // a background job's result shows in the call that started the job, not again here
   const visible = messages.filter(m => m.role !== 'tool' && m.intercom?.kind !== 'job')
@@ -211,13 +213,12 @@ export function Transcript(
     else segments.push({ kind, msgs: [m], index })
   })
 
-  const words = usePronouns()
   const { hide_thinking, hide_tools, collapse_thinking } = useAppearance()
-  const her = useHer()
+  const name = useName()
   // by its name, as chosen ("What Celine saw")
-  const sawTitle = `What ${her?.name || words.subject} saw`
+  const sawTitle = `What ${name || 'your agent'} saw`
   const owner = useOwner()
-  const thoughtsTitle = `${capital(owner)} thoughts`
+  const thoughtsTitle = `${owner} thoughts`
   // the message being written now: its row keeps its place, empty
   const liveId = running ? live?.message_id ?? (streaming ? last?.id : undefined) : undefined
   const thoughtsOf = (msgs: Message[]) => {
@@ -247,7 +248,7 @@ export function Transcript(
     const m = seg.m
 
     // a message from someone other than you as you typed: a reminder, a brief, a note
-    const ev = m.role === 'user' ? eventOf(m, user, assistant, words.object) : null
+    const ev = m.role === 'user' ? eventOf(m, user, assistant) : null
     if (ev) {
       return (
         <div key={m.id} data-id={m.id} ref={arrive(m)} className="msg-event">
@@ -287,7 +288,7 @@ export function Transcript(
     const at = seg.msgs[0]!.created_at
     const edit = replyEdit(lastM)
     return (
-      <div key={seg.msgs[0]!.id} data-id={seg.msgs[0]!.id} ref={arrive(seg.msgs[0]!, writingHere)} className="msg-hers">
+      <div key={seg.msgs[0]!.id} data-id={seg.msgs[0]!.id} ref={arrive(seg.msgs[0]!, writingHere)} className="msg-agent">
         <Line t={t} m={lastM} steps={seg.msgs} calls={calls} sawTitle={sawTitle}
               writing={writingHere} thoughts={hide_thinking ? thoughtsOf(seg.msgs) : null}
               face={faceOf(writingHere)} time={<Stamp at={at} />}>
@@ -297,8 +298,9 @@ export function Transcript(
                 <Fold key={String(collapse_thinking)} title={thoughtsTitle} icon={Brain} defaultOpen={!collapse_thinking}
                       remember={`thoughts:${seg.msgs[0]!.id}`}><Thoughts>{reasoning}</Thoughts></Fold>
               )}
-              {thinkingNow && <EventLine quiet running className="thinking">Thinking</EventLine>}
               {steps.map(renderStep)}
+              {/* where the work is now: after the steps and calls already done */}
+              {thinkingNow && <EventLine quiet running className="thinking">Thinking</EventLine>}
               {waitsHere && <div className="step">{thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}</div>}
               <ArtifactCards cards={artifactsOf(calls)} />
               <ShareCards cards={sharesOf(calls)} />
@@ -317,8 +319,10 @@ export function Transcript(
       return (
         <div key={m.id} className="step">
           {swap && <EventLine quiet icon={Repeat} detail={swap.why || undefined}>Answered by {swap.model} instead of {swap.instead_of}</EventLine>}
+          {/* one mark of work at a time: a call at work (its line, a picture on its way) says
+              it, the dots or what holds the reply only when nothing else does */}
           {m.content ? <div className="msg__prose"><StreamText text={m.content} live={isLive && live?.phase !== 'done'} /></div>
-            : isLive && !thinkingNow && <Status words={waiting} />}
+            : isLive && !thinkingNow && !(toolCalls[m.id] ?? []).some(busy) && <Status words={waiting} />}
           {formingOf(m.id)}
           <ToolLines calls={toolCalls[m.id] ?? []} inline={!hide_tools} />
           {/* the pictures and sounds it sent you, where it sent them; files are cards under the
@@ -353,7 +357,7 @@ export function Transcript(
   const bannersAfter = (ids: string[]) => banners.filter(b => b.message_id && ids.includes(b.message_id))
     .map(b => <Appear key={`guard-${b.id}`}><GuardBanner banner={b} user={user} /></Appear>)
   const asksAfter = (ids: string[]) => approvals.filter(a => a.message_id && ids.includes(a.message_id))
-    .map(a => <Appear key={`ask-${a.id}`}><ApprovalAsk ask={a} /></Appear>)
+    .map(a => <Appear key={`ask-${a.id}`}><ApprovalCard ask={a} /></Appear>)
 
   // Where the next reply lands before it exists (your message sent, a turn queued or
   // getting ready): its face and the dots.
@@ -368,12 +372,14 @@ export function Transcript(
     ? messages.some(m => m.intercom?.id === pending.intercomId)
     : messages.some(m => !before.current.ids.has(m.id) && m.role === 'user' && m.intercom?.from === 'user' && m.intercom.kind === 'message'))
   const thinkingFirst = running && live?.phase === 'thinking'
-  // frozen (the server's): its queued turn waits, it is not writing
-  const held = !!frozen && turn?.state === 'queued'
+  // frozen or paused (the server's): its queued turn waits, it is not writing
+  const held = !!hold && turn?.state === 'queued'
+  // the hold came or went: the server's snapshot says again whether it keeps this one aside
+  useServerEvents(ev => { if (conversationId && (ev.type === 'agent.hold' || ev.type === 'frozen.changed')) snapshotAgain(conversationId) })
   // the reply it writes joins the reply above (its last step answered again): it waits there
   const joins = ghost && !pending && !held && segments.at(-1)?.kind === 'reply'
   const ghostRow = (queued: boolean, key: string) => (
-    <div key={key} className="msg-hers" data-key={LANDS} ref={watched ? riseIn : undefined}>
+    <div key={key} className="msg-agent" data-key={LANDS} ref={watched ? riseIn : undefined}>
       <Said face={<span className="msg__face" aria-hidden><Portrait size="sm" speaking={!queued} away={queued} /></span>}>
         {queued ? <Status words={null} queued /> : thinkingFirst ? <EventLine quiet running className="thinking">Thinking</EventLine> : <Status words={waiting} />}
       </Said>
@@ -506,7 +512,7 @@ function FileCards({ list }: { list: Attachment[] }) {
 }
 
 function imageNoticeText(n: ImageNotice): string {
-  return n.describer ? `${n.model} can't see images, so it gets a description of the earlier ones` : `${n.model} can't see the earlier images`
+  return n.describer ? `${n.model} cannot see images, so it gets a description of the earlier ones` : `${n.model} cannot see the earlier images`
 }
 
 
@@ -561,7 +567,7 @@ function Editor(
       <div className="msg__edit-row">
         {error && <InlineError message={error} compact />}
         <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" loading={saving} onClick={() => void save()}>{message.role === 'user' ? 'Save and resend' : 'Save'}</Button>
+        <Button size="sm" variant="primary" loading={saving} onClick={() => void save()}>{message.role === 'user' ? 'Send' : 'Save'}</Button>
       </div>
     </div>
   )
@@ -573,9 +579,9 @@ export function TranscriptLoading() {
   const face = <span className="msg__face" aria-hidden><Portrait size="sm" /></span>
   return (
     <div className="transcript__inner is-transcript transcript-loading" aria-busy>
-      <div className="msg-hers"><Said face={face}><LoadingRow /></Said></div>
+      <div className="msg-agent"><Said face={face}><LoadingRow /></Said></div>
       <div className="msg-yours"><Said mine><LoadingRow inline /></Said></div>
-      <div className="msg-hers"><Said face={face}><LoadingRow /></Said></div>
+      <div className="msg-agent"><Said face={face}><LoadingRow /></Said></div>
     </div>
   )
 }

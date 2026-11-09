@@ -347,6 +347,82 @@ async def test_a_stream_that_never_yields_fails_as_produced_nothing(tmp_path, mo
         await collect(llm.bind(role="chat", priority=A, conversation_id="c2"))
 
 
+async def test_a_cold_load_asks_the_server_nothing_until_its_first_token(
+        tmp_path, monkeypatch):
+    """A request for a model the server did not list as loaded says "loading" once and
+    asks the server nothing while it loads; its first token is followed by one probe,
+    which learns what is loaded now."""
+    import httpx
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
+    running: list[str] = []
+    asked: list[str] = []
+
+    def server(r):
+        if r.url.host == "main" and r.url.path == "/running":
+            asked.append(r.url.path)
+        return httpx.Response(200, json={"models": [],
+                                         "running": [{"model": m, "state": "ready"}
+                                                     for m in running]})
+    llm.router.transport = httpx.MockTransport(server)
+    await llm.router.check_all()
+    for task in list(llm.router._discovering.values()):
+        await task                          # the model lists read once it answered
+    asked.clear()
+    go = anyio.Event()
+
+    async def cold(messages, tools, body=None, model=None):
+        await go.wait()
+        running.append("big")
+        yield TextDelta("a")
+        yield Done(reason="stop")
+    nets["main/big"].stream = cold
+    sent: list[dict] = []
+
+    async def emit(ev):
+        sent.append(ev)
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(collect, llm.bind(role="chat", priority=I, conversation_id="c1",
+                                        emit=emit))
+        await until(lambda: any(e.get("state") == "loading" for e in sent))
+        await settle()
+        assert asked == [], "nothing polls the server while it loads"
+        go.set()
+    await until(lambda: asked == ["/running"])
+    assert [e["state"] for e in sent].count("loading") == 1
+    assert llm.router.provider_state("main").loaded == frozenset({"big"})
+
+
+async def test_at_first_event_a_model_still_starting_gets_more_time(tmp_path, monkeypatch):
+    """No event for FIRST_EVENT: the server is asked once, strict; while it shows the
+    model starting the request gets FIRST_EVENT more, so a long cold load is not cut."""
+    import httpx
+    from celine.backends import llm as llm_mod
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
+    monkeypatch.setattr(llm_mod, "FIRST_EVENT", 0)
+    looks = []
+    go = anyio.Event()
+
+    def server(r):
+        if r.url.host != "main" or r.url.path != "/running":
+            return httpx.Response(200, json={"models": [], "data": []})
+        looks.append(r.url.path)
+        if len(looks) == 4:                 # the startup check, then three strict looks
+            go.set()
+        return httpx.Response(200, json={"running": [{"model": "big",
+                                                      "state": "starting"}]})
+    llm.router.transport = httpx.MockTransport(server)
+    await llm.router.check_all()
+
+    async def slow(messages, tools, body=None, model=None):
+        await go.wait()
+        yield TextDelta("a")
+        yield Done(reason="stop")
+    nets["main/big"].stream = slow
+    out = await collect(llm.bind(role="chat", priority=I, conversation_id="c1",
+                                 fallback=False))
+    assert isinstance(out[-1], Done) and looks[:4] == ["/running"] * 4
+
+
 async def test_a_502_marks_the_provider_unreachable_and_its_probe_down(tmp_path, monkeypatch):
     """A proxy in front of a dead model box answers 502: the call and the probe agree
     the provider is down, so a run waits for it and the host does not flap."""
@@ -357,14 +433,14 @@ async def test_a_502_marks_the_provider_unreachable_and_its_probe_down(tmp_path,
     with pytest.raises(BackendError, match="returned 502"):
         await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
     st = llm.router.provider_state("main")
-    assert st.reachable is False and st.error == "Main returned 502. Bad Gateway"
+    assert st.reachable is False and st.error == "Main returned 502: Bad Gateway"
     assert llm.router.model_state("main/big") is None, "the provider is down, not the model"
 
     llm.router.transport = httpx.MockTransport(lambda r: httpx.Response(502, text="Bad Gateway"))
     st = await llm.router.probe("main", max_age=0)
     assert st.reachable is False
-    assert st.error == "main answered 502: the server behind its proxy is down."
-    assert llm.router.hosts()["main"]["state"] == "down"
+    assert st.error == "main returned 502: Bad Gateway", "the same words as a request"
+    assert llm.router.hosts()["main"] == "down"
 
 
 async def test_a_long_wait_for_a_model_ends_the_call_stale_and_sends_nothing(
@@ -389,12 +465,13 @@ async def test_a_long_wait_for_a_model_ends_the_call_stale_and_sends_nothing(
             llm.router.note_ok("main/big")           # it answers again
     llm.router.note_unreachable("main", gone)
     secs = llm_mod.MODEL_WAIT_FRESH + 60
-    with pytest.raises(BackendError, match=r"^The model came back after 6 minutes; the "
-                                           r"turn's request is stale\.$") as e:
+    with pytest.raises(BackendError, match=r"^The model is back, but the turn's request "
+                                           r"is stale\.$") as e:
         await collect(llm.bind(role="chat", priority=A, conversation_id="c1", emit=emit))
     assert e.value.retryable and e.value.code is None, "the runner's backend_retryable"
     assert nets["main/big"].calls == 0, "the stale request never went out"
-    assert waits == ["main does not answer."]
+    assert waits == [gone], "the provider's own sentence"
+    assert not any(ch.isdigit() for ch in str(e.value)), "no clock in it"
 
     llm.router.note_unreachable("main", gone)
     secs = 30
@@ -405,7 +482,8 @@ async def test_a_long_wait_for_a_model_ends_the_call_stale_and_sends_nothing(
 async def test_the_vision_twin_answers_an_image_and_everything_while_loaded(
         tmp_path, monkeypatch):
     """One name for the ticket, the queue events and the request: the twin for an
-    image, and for text too while it is loaded, so llama-swap never swaps back."""
+    image, and for text too while the app knows it is loaded, so llama-swap never swaps
+    back."""
     from celine.backends.router import ProviderState
     providers = copy.deepcopy(PROVIDERS)
     providers["main"]["models"]["big"].update(slots=2, vision_twin="big-vision")
@@ -417,6 +495,7 @@ async def test_the_vision_twin_answers_an_image_and_everything_while_loaded(
     async def probe(pid, **_):
         return ProviderState(reachable=True, loaded=frozenset(loaded))
     monkeypatch.setattr(llm.router, "probe", probe)
+    llm.router._providers["main"] = ProviderState(reachable=True)   # does not say yet
     granted: list[str] = []
     grant = llm.scheduler._grant
     llm.scheduler._grant = lambda t: (granted.append(t.model), grant(t))[1]
@@ -433,7 +512,8 @@ async def test_the_vision_twin_answers_an_image_and_everything_while_loaded(
              {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}]
     await ask("hi")
     await ask(image)
-    loaded.add("big-vision")
+    loaded.add("big-vision")                # what the app learned (a probe after the load)
+    llm.router._providers["main"] = ProviderState(reachable=True, loaded=frozenset(loaded))
     await ask("and now?")
     assert big.models == ["big", "big-vision", "big-vision"]
     assert granted == big.models
@@ -551,17 +631,22 @@ async def test_the_users_turn_fails_busy_and_keep_waiting_waits(tmp_path, monkey
     assert e.value.code == "busy" and nets["main/big"].calls == 1, "asked once, no wait"
     assert nets["far/small"].calls == 0
 
-    seen = []
+    assert llm.router.model_state("main/big").kind == "busy", "the failed chat leaves its words"
+
+    seen, states = [], []
 
     async def emit(d):
         seen.append(d)
         if d.get("reason") == "busy":
+            states.append(llm.router.model_state("main/big"))
             nets["main/big"].fail = None    # the provider is free again
     out = await collect(llm.bind(role="chat", priority=I, conversation_id="c1",
                                  fallback=False, keep_waiting=True, emit=emit))
     assert isinstance(out[-1], Done) and nets["main/big"].calls == 3
-    assert {"reason": "busy", "message": "Waiting for big."}.items() <= \
-        next(d for d in seen if d.get("reason") == "busy").items()
+    assert {"reason": "busy", "message": "Waiting for big on main. main returned 429."
+            }.items() <= next(d for d in seen if d.get("reason") == "busy").items()
+    assert states[0].kind == "busy" and states[0].message == "main returned 429."
+    assert llm.router.model_state("main/big") is None, "its first token clears the words"
 
 
 async def test_a_keep_waiting_turns_tool_calls_wait_too(tmp_path, monkeypatch):
@@ -654,6 +739,39 @@ async def test_background_work_on_one_model_waits_for_a_busy_provider(tmp_path, 
     llm.cfg.settings.general["busy_retry_seconds"] = 0     # no backoff: no wait here
     out = await collect(llm.bind(role="small", priority=B, fallback=False, emit=emit))
     assert isinstance(out[-1], Done) and nets["main/big"].calls == 2
+
+
+async def test_a_busy_wait_holds_the_runs_clock_and_counts_once(tmp_path, monkeypatch):
+    """A run's call that waits for a busy server does not use up the run's time limit:
+    its clock is held for the wait (and for the slot), never run past it."""
+    from celine.backends.llm import HeldClock
+    llm, nets = routed(tmp_path, monkeypatch, {"small": {"chain": ["main/big"]}})
+    nets["main/big"].fail = _busy(503)
+    now = [0.0]
+
+    class Long(HeldClock):
+        def release(self):                  # every wait takes an hour
+            now[0] += 3600
+            super().release()
+    run = Long(1800.0, lambda: now[0])
+    held = []
+
+    async def emit(d):
+        if d.get("reason") == "busy":
+            nets["main/big"].fail = None
+
+    async def stream(messages, tools, body=None, model=None):
+        held.append(run.left())
+        now[0] += 600                       # ten minutes of work per call
+        if nets["main/big"].fail:
+            raise nets["main/big"].fail
+        yield Done(reason="stop")
+    nets["main/big"].stream = stream
+    llm.cfg.settings.general["busy_retry_seconds"] = 0
+    out = await collect(llm.bind(role="small", priority=B, fallback=False, emit=emit,
+                                 run_clock=run))
+    assert isinstance(out[-1], Done) and held == [1800.0, 1200.0], "only the work counts"
+    assert run.left() == 600.0 and now[0] > 3 * 3600, "hours of waiting, none counted"
 
 
 async def test_background_work_waits_longer_each_time_a_provider_stays_busy(
@@ -773,3 +891,147 @@ async def test_the_snapshot_says_which_reply_another_model_wrote(store):
     mid = await store.write(fn)
     assert (await view.snapshot(store, cid))["switched"] == {
         mid: {"model": "small", "instead_of": "big"}}
+
+
+async def test_a_providers_requests_per_hour_fail_a_chat_and_hold_background_work(
+        tmp_path, monkeypatch):
+    """Requests per hour 2 on a fixed clock: the third chat call fails busy with the
+    sentence, the third background call waits holding no slot until Stop, an hour on
+    there is room again, and 0 never refuses."""
+    providers = copy.deepcopy(PROVIDERS)
+    providers["main"]["options"] = {"max_per_hour": 2}
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]},
+                                               "small": {"chain": ["main/big"]}}, providers)
+    nets["main/big"].cfg.label = "Main"         # the provider's label, as backend_config's
+    clock = [100.0]
+    llm.router.now = lambda: clock[0]
+    for _ in range(2):
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    with pytest.raises(BackendError) as e:
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    assert str(e.value) == "Main reached its 2 requests this hour." and e.value.code == "busy"
+    assert nets["main/big"].calls == 2
+
+    token, seen = Token("t9"), []
+
+    async def emit(d):
+        seen.append(d)
+        if d.get("reason") == "busy":
+            assert llm.scheduler.running == [], "the wait holds no slot"
+            token.cancel()
+    with pytest.raises(QueueCancelled):
+        await collect(llm.bind(role="small", priority=B, token=token, emit=emit))
+    assert seen[-1]["message"] == "Main reached its 2 requests this hour."
+    assert nets["main/big"].calls == 2, "background work waited instead"
+
+    clock[0] += 3600
+    assert isinstance((await collect(llm.bind(role="small", priority=B)))[-1], Done)
+    assert nets["main/big"].calls == 3
+    llm.cfg.settings.providers["main"]["options"] = {"max_per_hour": 0}
+    for _ in range(4):
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    assert nets["main/big"].calls == 7, "0 never refuses"
+
+
+async def test_requests_per_hour_count_per_provider_not_per_address(tmp_path, monkeypatch):
+    """Two providers on one address: each has its own count under its own cap."""
+    providers = copy.deepcopy(PROVIDERS)
+    providers["main"]["options"] = {"max_per_hour": 1}
+    providers["twin"] = {"kind": "ollama", "base_url": "http://main:11434/v1",
+                         "models": {"other": {"caps": ["chat"]}},
+                         "options": {"max_per_hour": 3}}
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]},
+                                               "small": {"chain": ["twin/other"]}}, providers)
+    nets["main/big"].cfg.label = "main"
+    llm.router.now = lambda: 100.0
+    await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    for _ in range(3):
+        await collect(llm.bind(role="small", priority=B))
+    assert nets["twin/other"].calls == 3, "main's request is not twin's"
+    assert llm.router.full("twin") == "twin reached its 3 requests this hour."
+    with pytest.raises(BackendError) as e:
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    assert str(e.value) == "main reached its 1 request this hour." and e.value.code == "busy"
+
+
+async def test_a_used_up_hour_moves_a_call_with_a_fallback_and_holds_one_without(
+        tmp_path, monkeypatch):
+    """main has Requests per hour 1. Once it is used: Models and a waiting run show the
+    sentence, a call with a fallback moves on to far/small and says why, the user's own
+    turn fails busy, and a run's call (no fallback) waits for main's hour instead of
+    moving on. An hour later main answers again and shows nothing."""
+    providers = copy.deepcopy(PROVIDERS)
+    providers["main"]["options"] = {"max_per_hour": 1}
+    both = {"chain": ["main/big", "far/small"]}
+    llm, nets = routed(tmp_path, monkeypatch, {"chat": both, "small": both}, providers)
+    nets["main/big"].cfg.label = "main"
+    clock, published = [100.0], []
+    llm.router.now = lambda: clock[0]
+    llm.router.publish = published.append
+    full = "main reached its 1 request this hour."
+
+    await collect(llm.bind(role="small", priority=B))
+    assert nets["main/big"].calls == 1
+    assert llm.router.problem(None, "main/big") == full
+    assert llm.router.problem(None, "far/small") is None
+    assert await llm.router.can_answer("small", probe=False) == full
+
+    seen = []
+
+    async def emit(d):
+        seen.append(d)
+    await collect(llm.bind(role="small", priority=B, emit=emit))
+    assert nets["far/small"].calls == 1 and nets["main/big"].calls == 1
+    running = [d for d in seen if d.get("state") == "running"][-1]
+    assert running["fallback"] and running["why"] == full
+
+    with pytest.raises(BackendError) as e:
+        await collect(llm.bind(role="chat", priority=I, conversation_id="c1", fallback=False))
+    assert str(e.value) == full and e.value.code == "busy"
+
+    token, waits = Token("run"), []
+
+    async def run_emit(d):
+        waits.append(d)
+        if d.get("reason") == "busy":
+            token.cancel()
+    with pytest.raises(QueueCancelled):
+        await collect(llm.bind(role="small", priority=B, fallback=False, token=token,
+                               emit=run_emit))
+    assert waits[-1]["message"] == full
+    assert nets["far/small"].calls == 1, "a call with no fallback waits for its own model"
+
+    clock[0] += 3600
+    assert llm.router.problem(None, "main/big") is None
+    await collect(llm.bind(role="small", priority=B))
+    assert nets["main/big"].calls == 2
+
+    clock[0] += 3600
+    published.clear()
+    assert llm.router.take("main") == 0
+    assert [e["type"] for e in published] == ["models.state"], \
+        "the request that uses the hour up tells the UI"
+
+
+async def test_next_model_when_full_off_holds_a_call_with_a_fallback_on_its_provider(
+        tmp_path, monkeypatch):
+    """main has Requests per hour 1 and Next model at the hourly limit off: once its hour is used,
+    a call with a fallback waits for main instead of moving on to far/small."""
+    providers = copy.deepcopy(PROVIDERS)
+    providers["main"]["options"] = {"max_per_hour": 1, "next_when_full": False}
+    both = {"chain": ["main/big", "far/small"]}
+    llm, nets = routed(tmp_path, monkeypatch, {"small": both}, providers)
+    nets["main/big"].cfg.label = "main"
+    llm.router.now = lambda: 100.0
+    llm.router.publish = lambda e: None
+    await collect(llm.bind(role="small", priority=B))
+    token, waits = Token("work"), []
+
+    async def emit(d):
+        waits.append(d)
+        if d.get("reason") == "busy":
+            token.cancel()
+    with pytest.raises(QueueCancelled):
+        await collect(llm.bind(role="small", priority=B, token=token, emit=emit))
+    assert waits[-1]["message"] == "main reached its 1 request this hour."
+    assert nets["far/small"].calls == 0 and nets["main/big"].calls == 1

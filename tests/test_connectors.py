@@ -24,11 +24,14 @@ class FakeLink:
         self.ticks: dict[str, bool] = {}
         self.head = 0
         self.polls = 0
+        self.answer: dict[str, httpx.Response] = {}     # path -> what it answers instead
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {KEY}"
         body = json.loads(request.content) if request.content else None
         self.calls.append((request.method, p := request.url.path, body))
+        if p in self.answer:
+            return self.answer[p]
         if p == "/admin/status":
             return httpx.Response(200, json={"connection": {"state": "connected"},
                                              "account": {"id": "105", "name": "sam"},
@@ -73,6 +76,17 @@ def test_the_connector_state_is_its_status(world):
                    "account": {"id": "105", "name": "sam"}, "login_lost_at": None,
                    "login": None, "qr_at": None}
     assert [p for _, p, _ in link.calls] == ["/admin/status"]
+
+
+def test_an_error_answer_of_the_connector_is_its_own_words(world):
+    client, link, _ = world
+    link.answer["/admin/subscriptions/123"] = httpx.Response(500, text="panic: nil map")
+    r = client.delete("/api/sources/discord/discord/subscriptions/123")
+    assert (r.status_code, r.json()["error"]["message"]) == (502, "panic: nil map")
+    link.answer["/admin/status"] = httpx.Response(500, json={"error": "journal locked"})
+    got = client.get("/api/sources/discord/connector").json()["connection"]
+    assert (got["state"], got["error"]) == (
+        "unreachable", "The Discord connection returned 500: journal locked")
 
 
 def test_a_deleted_chat_is_left_out_first_and_comes_back_when_included(world):
@@ -133,3 +147,24 @@ def test_the_first_import_counts_the_archive_and_ends_at_the_journal_head(world)
     out = conn.first_import("j9", ctx, sleep=fed)
     assert seen == [0, 1, 2, 3] and out["messages"] == 3     # head 7 reached at seq 9
     assert out["sentence"] == "Done. 3 messages in the archive."
+
+
+def test_the_doctors_connector_line_says_the_connections_words(monkeypatch):
+    from celine import ops
+    monkeypatch.setattr(ops.httpx, "get", lambda url, headers, timeout: httpx.Response(
+        500, text="journal locked"))
+    s = SimpleNamespace(id="discord", url="http://127.0.0.1:8768/mcp", headers={})
+    assert ops._connector(s) == (False, "discord: the connection returned 500: journal locked "
+                                        "(is its clients file the app's keys/connector-clients?)")
+
+
+def test_a_qr_code_the_connection_cannot_give_says_its_words(world):
+    client, link, kb = world
+    kb.platform = "whatsapp"
+    link.answer["/admin/qr"] = httpx.Response(404)
+    r = client.get("/api/sources/discord/connector/qr.png")
+    assert (r.status_code, r.json()["error"]["message"]) == (
+        404, "There is no code to scan right now.")
+    link.answer["/admin/qr"] = httpx.Response(500, text="qr encoder failed")
+    r = client.get("/api/sources/discord/connector/qr.png")
+    assert (r.status_code, r.json()["error"]["message"]) == (502, "qr encoder failed")

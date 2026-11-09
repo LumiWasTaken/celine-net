@@ -10,7 +10,7 @@ from .. import metrics, work
 from ..conversations import store as conversations
 from ..core.ids import new_id
 from ..core.store import Store
-from ..hold import her_hold
+from ..hold import any_held, answering, agent_hold
 from ..intercom import deliver
 from ..settings import roles
 from . import cancel as cancel_mod, store as turns
@@ -42,6 +42,7 @@ class Dispatcher:
         self.tokens = cancel_mod.Registry()
         self.jobs = None
         self.intercom = None            # the Intercom service, for a Stop's cascade
+        self.approvals = None           # approvals.Approvals: its asks waiting in turns
         # set once the vault's first unlock is over (its passwords are in the redaction
         # set): no turn starts before it, or before READY_SECONDS
         self.ready = None
@@ -108,8 +109,9 @@ class Dispatcher:
         tg.start_soon(self.replay_ended)
 
     def resize(self) -> None:
-        """Workers up to max_concurrent_turns (Settings, Advanced; reload.py calls it on a
-        change). A worker past the number claims nothing until it is raised again."""
+        """Workers up to `_cap` (reload.py calls it on a change of Settings, and every
+        change of the asks calls it, __main__). A worker past the number claims nothing
+        until it is raised again."""
         if self._tg is None:                # not started
             return
         for _ in range(self._cap() - len(self._workers)):
@@ -119,7 +121,12 @@ class Dispatcher:
         self.notify()
 
     def _cap(self) -> int:
-        return max(1, int(self.cfg.r("max_concurrent_turns")))
+        """max_concurrent_turns (Settings, Advanced), plus one for each turn that waits
+        for the user's answer to a request (approvals.py): a waiting turn takes no slot,
+        so the user's own turn starts beside it."""
+        waits = sum(1 for a in list(self.approvals.waiting.values())
+                    if a.expires is None) if self.approvals is not None else 0
+        return max(1, int(self.cfg.r("max_concurrent_turns"))) + waits
 
     async def stop(self, grace: float | None = None) -> None:
         """Graceful shutdown, before the store closes. Every running turn is cancelled
@@ -242,7 +249,8 @@ class Dispatcher:
         fallback: when that model fails, the turn fails); other trigger and job turns
         walk the list. Time spent waiting for a model is given back to the turn's wall
         `clock`. `label`: who the calls are for in the model queue (the conversation's
-        title; a run's schedule)."""
+        title; a run's schedule). A run's waits for a model also hold the run's clock
+        (`run["clock"]`, backends/llm.HeldClock)."""
         fixed = self.backend_factory() if self.backend_factory is not None else None
         if self.llm is None:
             return fixed
@@ -253,7 +261,6 @@ class Dispatcher:
         if run is not None:
             priority, label = run["priority"], run["label"]
 
-
         async def emit(data: dict) -> None:
             await store.append_event(cid, LLM_QUEUE, data)
             if data.get("state") == "running" and data.get("backend"):
@@ -261,6 +268,7 @@ class Dispatcher:
 
         from ..attachments import Images
         return self.llm.bind(fixed, role="chat", priority=priority,
+                             run_clock=run.get("clock") if run is not None else None,
                              fallback=not user and run is None,
                              keep_waiting=turn.get("reason") == "keep_waiting",
                              conversation_id=cid, turn_id=turn["id"], token=token,
@@ -285,8 +293,20 @@ class Dispatcher:
         return CliBackend(app, cid, cli, clock)
 
     async def _held(self) -> None:
-        """While she is paused (hold.py): until the gateway's state changes or a turn
-        is queued (one of an agent whose model answers runs)."""
+        """While the agent is paused (hold.py) and a turn waits for it: its servers are asked
+        again (router.revisit, at most every RETRY_DOWN), then until the router's state
+        changes, a turn is queued (one of an agent whose model answers runs) or
+        HOLD_RECHECK. With no turn held nothing is asked: until a turn is queued."""
+        from ..backends.router import AGENT_ROLES
+        models = answering(self.llm)
+        if models is None:                  # resumed meanwhile: claim again
+            return
+        if not await self.store.read(lambda c: any_held(c, models)):
+            await self._wait_for_work()
+            return
+        await self.llm.router.revisit(AGENT_ROLES)
+        if not self.llm.router.paused:
+            return
         async with anyio.create_task_group() as tg:
             async def first(wait) -> None:
                 await wait()
@@ -328,14 +348,14 @@ class Dispatcher:
         """One look for a turn, and the turn when there is one. -> False when the
         worker ends (a shutdown)."""
         from ..guard.freeze import frozen
-        hold = await her_hold(self.store, self.llm)
+        hold = await agent_hold(self.store, self.llm)
         if hold == "frozen":            # the unfreeze wakes them (notify)
             await self._wait_for_work()
             return True
         if self._workers.index(worker_id) >= self._cap():
             await self._wait_for_work()
             return True
-        # paused: her own turns wait for a host of hers; a sub-agent or drone whose own
+        # paused: its own turns wait for a host of its own; a sub-agent or drone whose own
         # model answers goes on
         turn = await turns.claim(self.store, worker_id,
                                  None if hold is None else self.llm.router.answering())
@@ -380,13 +400,21 @@ class Dispatcher:
         return True
 
     async def _count(self, tid: str, origin: str, seconds: float) -> None:
-        """A turn that ended: its outcome and its steps (the requests it sent)."""
-        state, steps = await self.store.read(lambda c: tuple(c.execute(
-            "SELECT state, (SELECT count(*) FROM requests WHERE turn_id=turns.id) "
-            "FROM turns WHERE id=?", (tid,)).fetchone() or ("gone", 0)))
-        metrics.TURNS.labels(origin, state).inc()
+        """A turn that ended: its outcome and why, its steps (the requests it sent), the
+        tokens they took and the largest prompt among them."""
+        state, why, steps, tin, tout, ctx = await self.store.read(lambda c: tuple(c.execute(
+            "SELECT state, coalesce(reason_code, ''), count(r.turn_id), "
+            "coalesce(sum(r.prompt_tokens), 0), coalesce(sum(r.completion_tokens), 0), "
+            "max(r.prompt_tokens) FROM turns LEFT JOIN requests r ON r.turn_id = turns.id "
+            "WHERE turns.id=? GROUP BY turns.id", (tid,)).fetchone()
+            or ("gone", "", 0, 0, 0, None)))
+        metrics.TURNS.labels(origin, state, why).inc()
         metrics.TURN_SECONDS.labels(origin).observe(seconds)
         metrics.TURN_STEPS.labels(origin).observe(steps)
+        metrics.TURN_TOKENS.labels(origin, "in").inc(tin)
+        metrics.TURN_TOKENS.labels(origin, "out").inc(tout)
+        if ctx:
+            metrics.TURN_CONTEXT.labels(origin).observe(ctx)
 
     async def _run_one(self, turn: dict, worker_id: str, token) -> None:
         self._active[turn["id"]] = turn["conversation_id"]

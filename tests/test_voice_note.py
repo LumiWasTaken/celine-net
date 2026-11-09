@@ -1,4 +1,4 @@
-"""voice__send: her text spoken by the Read aloud model, an audio file on her message;
+"""voice__send: the agent's text spoken by the Read aloud model, an audio file on its message;
 with Read aloud off it fails and says so."""
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ async def _ctx(store, cfg) -> tuple[ToolContext, str]:
                        config=cfg, emit=None), mid
 
 
-async def test_a_voice_note_lands_on_her_message(store, monkeypatch):
+async def test_a_voice_note_lands_on_the_agents_message(store, monkeypatch):
     cfg = load()
     cfg.settings.features["speech_output"] = True
     said = []

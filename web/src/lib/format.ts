@@ -28,7 +28,9 @@ const startOfDay = (t: number) => {
 
 const toMs = (t: number | string | null | undefined) => (typeof t === 'string' ? Date.parse(t) : t ?? NaN)
 
-export function listTime(t: number | string | null | undefined, now = Date.now()): string {
+/** a row's time in a list; `dayGroups`: the list is grouped by day (Today, Yesterday), so
+    yesterday's row shows its time of day instead of the group's name again */
+export function listTime(t: number | string | null | undefined, now = Date.now(), dayGroups = false): string {
   const ms = toMs(t)
   if (!ms || Number.isNaN(ms)) return ''
   const diff = now - ms
@@ -36,7 +38,7 @@ export function listTime(t: number | string | null | undefined, now = Date.now()
   if (diff >= 0 && diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`
   const days = Math.round((startOfDay(now) - startOfDay(ms)) / DAY)
   if (days === 0) return clock(ms)
-  if (days === 1) return 'Yesterday'
+  if (days === 1) return dayGroups ? clock(ms) : 'Yesterday'
   const d = new Date(ms)
   if (days > 1 && days < 7) return d.toLocaleDateString(LOCALE, { weekday: 'short' })
   return shortDate(ms, d.getFullYear() !== new Date(now).getFullYear())
@@ -107,8 +109,8 @@ export function monthYear(ms: number | null | undefined): string {
 }
 
 const nf = new Intl.NumberFormat(LOCALE)
-/** a filter that found nothing, the same words in every list: Nothing matches “words” */
-export const nothingMatches = (q: string) => `Nothing matches “${q.trim()}”`
+/** a filter that found nothing, the same words in every list: "No tools match" */
+export const noneMatch = (things: string) => `No ${things} match`
 
 export const num = (n: number | null | undefined) => nf.format(n ?? 0)
 
@@ -133,7 +135,7 @@ export function dueTime(t: number | string | null | undefined, now = Date.now())
 }
 
 const TURN_STEP: Record<string, string> = {
-  queued: 'Waiting for the model', preparing: 'Thinking', streaming: 'Writing', tools: 'Using a tool',
+  queued: 'Queued', preparing: 'Thinking', streaming: 'Writing', tools: 'Using a tool',
 }
 
 /** a turn at work, in words, the same on every page */

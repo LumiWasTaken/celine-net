@@ -12,7 +12,7 @@ from fastapi import FastAPI
 
 from chat_fixtures import user_says
 from celine.backends.base import Done, TextDelta
-from celine.api import her as her_api
+from celine.api import agent as agent_api
 from fake_backend import FakeBackend
 from celine.boot import load
 from celine.conversations import api as conversations_api, store as conversations, tree, view
@@ -35,7 +35,7 @@ async def c(store):
     app.state.services = Services()
     install_error_handler(app)
     app.include_router(conversations_api.router)
-    app.include_router(her_api.router)
+    app.include_router(agent_api.router)
     app.state.services.store, app.state.services.cfg = store, load()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                  base_url="http://t") as client:
@@ -103,6 +103,29 @@ async def test_the_list_runs_first_then_pinned_and_every_row_says_its_state(c, s
     assert rows[running]["group"] != "Running" and rows[running]["state"] is None
 
 
+async def test_a_running_row_says_loading_while_its_model_loads(c, store):
+    """The row says what its chat says (Status.tsx): "Loading <model>." from the live
+    turn's newest llm.queue event, then Thinking once the model runs."""
+    cid = await conversations.create(store, "running")
+    await user_says(store, cid, "are you there")
+    tid = (await turns.claim(store, "w"))["id"]
+
+    async def state():
+        rows = (await c.get("/api/conversations", params={"place": "celine"})).json()
+        return next(r for r in rows["conversations"] if r["id"] == cid)["state"]
+    assert await state() == {"tone": "running", "words": "Thinking"}
+    await store.append_event(cid, "llm.queue", {"turn_id": tid, "state": "loading",
+                                                "model": "big-model"})
+    assert await state() == {"tone": "running", "words": "Loading big-model."}
+    await store.append_event(cid, "llm.queue", {"turn_id": tid, "state": "running"})
+    assert await state() == {"tone": "running", "words": "Thinking"}
+    # the runner says streaming before each request; the model may load only then
+    await turns.transition(store, tid, cid, "streaming")
+    await store.append_event(cid, "llm.queue", {"turn_id": tid, "state": "loading",
+                                                "model": "big-model"})
+    assert await state() == {"tone": "running", "words": "Loading big-model."}
+
+
 async def test_a_sub_agent_working_three_levels_down_runs_its_chat_first(c, store):
     top = await conversations.create(store, "top")
     await conversations.create(store, "quiet")
@@ -164,7 +187,7 @@ async def test_branch_from_here_copies_the_path_up_to_the_message(c, store):
     assert first not in [m["id"] for m in msgs], "copies, not the same rows"
 
 
-async def test_branch_joins_her_steps_and_leaves_tool_rows_out(store):
+async def test_branch_joins_its_steps_and_leaves_tool_rows_out(store):
     from celine.skills import ToolResult
     cid = await conversations.create(store)
     umid, tid, _ = await user_says(store, cid, "look it up")
@@ -197,7 +220,7 @@ async def test_export_is_the_path_as_markdown(c, store):
     assert (await c.get("/api/conversations/nope/export")).status_code == 404
 
 
-async def test_she_sets_her_mood_and_it_is_stored_sent_and_served(c, store):
+async def test_the_agent_sets_its_mood_and_it_is_stored_sent_and_served(c, store):
     from types import SimpleNamespace
     from celine.skills import ToolContext
     from celine.skills import mind
@@ -209,7 +232,7 @@ async def test_she_sets_her_mood_and_it_is_stored_sent_and_served(c, store):
     skill = mind.Mind(cfg)
     skill.app = SimpleNamespace(store=store, cfg=cfg, llm=None, registry=None)
     ctx = ToolContext(cid, "t", "x", store, cfg, None)  # type: ignore[arg-type]
-    assert not (await skill.set_status(ctx, "feeling great")).is_error, "her words stand"
+    assert not (await skill.set_status(ctx, "feeling great")).is_error, "its words stand"
     feed.receive_nowait()
     assert not (await skill.set_status(ctx, " \U0001f319✨ " * 30)).is_error
     got = (await c.get("/api/agent/mood")).json()["mood"]

@@ -32,9 +32,12 @@ async def list_conversations(request: Request, limit: int = 200,
     from ..clock import zone
     limit = max(1, min(limit, 500))
     from ..approvals import asked
+    from ..hold import answering
+    services = request.app.state.services
     rows = await store.list(store_of(request), limit + 1, read_cursor(cursor), archived,
                             trashed, place=place, tz=zone(cfg_of(request)),
-                            asked=asked(request.app.state.services))
+                            asked=asked(services),
+                            models=answering(getattr(services, "llm", None)))
     more = len(rows) > limit
     rows = rows[:limit]
     last = rows[-1] if rows else None
@@ -81,9 +84,10 @@ class NewMessage(BaseModel):
 async def conversation(request: Request, cid: str) -> dict:
     """The snapshot as every client gets it (view.snapshot, the socket's too)."""
     try:
-        snap = await view.snapshot(store_of(request), cid)
+        snap = await view.snapshot(store_of(request), cid,
+                                   getattr(request.app.state.services, "llm", None))
     except KeyError:
-        raise NotFound("conversation") from None
+        raise NotFound("chat") from None
     return view.for_client(snap, getattr(cfg_of(request), "settings", None))
 
 
@@ -113,7 +117,7 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     def who(c):
         row = c.execute("SELECT auto_context FROM conversations WHERE id=?", (cid,)).fetchone()
         if row is None:
-            raise NotFound("conversation")
+            raise NotFound("chat")
         return bool(row[0])
     auto = await db.read(who)
     backend, blocks, tools, carried = await turn_parts(request.app.state.services, cid)
@@ -188,7 +192,7 @@ async def patch_conversation(request: Request, cid: str, body: ConversationPatch
     ok = await store.update(store_of(request), cid, body.title, body.pinned,
                             notes_off=notes_off)
     if not ok:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     return {"ok": True}
 
 
@@ -207,14 +211,14 @@ async def delete_conversation(request: Request, cid: str, for_good: bool = False
     except ValueError as e:
         raise CelineError("not_trashed", str(e), 409) from None
     if not ok:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     return {"ok": True}
 
 
 @router.post("/conversations/{cid}/restore")
 async def restore_conversation(request: Request, cid: str) -> dict:
     if not await store.restore(store_of(request), cid):
-        raise NotFound("deleted conversation")
+        raise NotFound("deleted chat")
     return {"ok": True}
 
 
@@ -229,7 +233,7 @@ async def archive_conversation(request: Request, cid: str) -> dict:
     except tree.Busy:
         raise Busy("Stop the running turn first.") from None
     if out is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     dispatcher = request.app.state.services.dispatcher
     if dispatcher is not None and await store_of(request).read(store.lock_archived):
         # its work there stops
@@ -242,7 +246,7 @@ async def archive_conversation(request: Request, cid: str) -> dict:
 async def unarchive_conversation(request: Request, cid: str) -> dict:
     out = await store.archive(store_of(request), cid, False)
     if out is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     return out
 
 
@@ -305,13 +309,13 @@ async def post_message(request: Request, cid: str, body: NewMessage) -> dict:
             sup = await _chat_model(request, cid, None)
             if sup["blocked"]:
                 raise CelineError("cannot_see_images",
-                                  f"{sup['model']} can't see images. Remove the images "
+                                  f"{sup['model']} cannot see images. Remove the images "
                                   f"to send the message.", 400, sup)
     try:
         return await request.app.state.services.intercom.send(
             "user", f"agent:{cid}", body.text, attachments=body.attachments)
     except KeyError:
-        raise NotFound("conversation") from None
+        raise NotFound("chat") from None
     except ValueError as e:
         raise CelineError("bad_request", str(e), 400) from None
 
@@ -362,7 +366,7 @@ async def regenerate(request: Request, cid: str) -> dict:
     try:
         tid, seq = await tree.regenerate(store_of(request), cid)
     except KeyError:
-        raise NotFound("conversation") from None
+        raise NotFound("chat") from None
     except ValueError as e:
         raise CelineError("bad_request", str(e), 400) from None
     request.app.state.services.dispatcher.notify()
@@ -518,7 +522,7 @@ async def impersonate(request: Request, cid: str,
     from . import impersonate as imp
     if await store_of(request).read(lambda c: c.execute(
             "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone()) is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     await writable(request, cid)
     backend = _chat_backend(request, cid, priority=Priority.INTERACTIVE, thinking="off",
                             voice=False, fallback=False)
@@ -566,7 +570,7 @@ async def delete_message(request: Request, cid: str, mid: str) -> dict:
 async def get_conversation_settings(request: Request, cid: str) -> dict:
     stored = await conv.get(store_of(request), cid)
     if stored is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     return conv.view(settings_of(request), cid, stored)
 
 
@@ -580,7 +584,7 @@ async def patch_conversation_settings(request: Request, cid: str) -> dict:
     db = store_of(request)
     before = settings_of(request).chat_chain(cid)[:1]
     if not await conv.apply(db, cid, clean):
-        raise NotFound("conversation")
+        raise NotFound("chat")
     out = conv.view(settings_of(request), cid, await conv.get(db, cid))
     await db.append_event(cid, CONVERSATION_SETTINGS, out)
     await attachments_mod.after_switch(db, cfg_of(request),
@@ -610,13 +614,13 @@ async def export(request: Request, cid: str) -> Response:
     try:
         msgs = await store_of(request).read(lambda c: tree.path(c, cid))
     except KeyError:
-        raise NotFound("conversation") from None
+        raise NotFound("chat") from None
     title = await store.title(store_of(request), cid) or "Untitled"
-    her, you = ("{{name}}\n{{username}}").split("\n", 1)
+    agent, you = ("{{name}}\n{{username}}").split("\n", 1)
     lines = [f"# {title}", ""]
     for m in msgs:
         if m["role"] in ("user", "assistant"):
-            lines += [f"## {you if m['role'] == 'user' else her}", "", m["content"] or "", ""]
+            lines += [f"## {you if m['role'] == 'user' else agent}", "", m["content"] or "", ""]
     name = "".join(ch if ch.isalnum() else "-" for ch in title)[:60].strip("-") or "conversation"
     return Response("\n".join(lines), media_type="text/markdown; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{name}.md"'})

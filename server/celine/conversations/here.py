@@ -13,7 +13,7 @@ from ..core.states import LIVE_SQL
 from ..intercom.store import OPENING
 
 OTHERS_MAX = 6
-COLS = "id, kind, title, trigger_key, agent_name, agent_of, agent_cli, agent_device"
+COLS = "id, kind, title, trigger_key, agent_name, agent_cli, agent_device"
 
 
 def _run(c: sqlite3.Connection, r) -> sqlite3.Row | None:
@@ -51,29 +51,15 @@ def _ids(c: sqlite3.Connection, r) -> str:
     return f"{kind} (address {r['id']})"
 
 
-def chain(c: sqlite3.Connection, cid: str) -> list[sqlite3.Row]:
-    """The conversation and the ones above it on the agent_of chain, itself first."""
-    out: list[sqlite3.Row] = []
-    seen: set[str] = set()
-    while cid and cid not in seen:
-        seen.add(cid)
-        r = c.execute(f"SELECT {COLS} FROM conversations WHERE id=?", (cid,)).fetchone()
-        if r is None:
-            break
-        out.append(r)
-        cid = r["agent_of"]
-    return out
-
-
 def where(c: sqlite3.Connection, cid: str, role: str | None = None) -> str | None:
     """Where it works, one fact a line, from ids; None for a conversation that is gone.
     `role`: the model role its turns run on."""
+    from ..homes import chain
     from ..skills.places import place_of
-    up = chain(c, cid)
+    up = chain(c, cid, COLS)
     if not up:
         return None
-    from .store import depth as depth_of
-    me, depth = up[0], depth_of(c, cid)
+    me, depth = up[0], len(up) - 1
     place = place_of(c, cid) + (", as a sub-agent" if me["kind"] == "agent" else "")
     from ..devices import label
     device = (f"{label(me['agent_device'])}, through {me['agent_cli']}"
@@ -96,7 +82,7 @@ def where(c: sqlite3.Connection, cid: str, role: str | None = None) -> str | Non
         starter = f"the trigger {me['trigger_key'].removeprefix('trigger:')}"
     elif me["kind"] == "chat" and c.execute("SELECT 1 FROM kv WHERE k=?",
                                             (OPENING + cid,)).fetchone():
-        starter = "you, with intercom__start_chat"
+        starter = "you, from another conversation (the first line here names it)"
     lines = [f"Where you are: {_ids(c, me)}.", f"Place: {place}.", f"Device: {device}."]
     if role:
         lines.append(f"Model role: {role}.")

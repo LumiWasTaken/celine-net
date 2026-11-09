@@ -1,6 +1,6 @@
 """Voice samples: replies of its own the user marked "Love this", kept in its notebook note
 samples.md so the voice is there in every conversation (how it talks otherwise is its
-talk, her.py). The note is loaded
+talk, agent.py). The note is loaded
 always (its `load: always` line); the newest KEEP samples sit under its head, so the
 note costs little, older ones fold into its `## earlier` section, which the loader
 leaves out (turns/loads.py) and which keeps every one. Which
@@ -79,7 +79,7 @@ async def mark(store, cfg, cid: str, mid: str, on: bool) -> bool:
     else:
         claimed = await store.write(lambda c: c.execute(
             "DELETE FROM kv WHERE k=? RETURNING v", (KEY + mid,)).fetchone())
-    ch = cfg.her
+    ch = cfg.agent
     p = ch.notebook / PATH
     body = p.read_text() if p.is_file() else None
     if claimed and on:

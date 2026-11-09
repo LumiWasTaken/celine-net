@@ -208,7 +208,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
             if taken:
                 await message_context.ensure(store, cfg, registry, cid, tid, taken,
                                              tool_turn["max_output_tokens"])
-                context.add_user(messages, context.user_wire(cfg, taken, cid))
+                context.add_wire(messages, context.user_wire(cfg, taken, cid))
                 parent = taken[-1]["id"]
                 grown = True
 
@@ -369,7 +369,7 @@ async def _stopped(store, tid, cid, token) -> None:
 
 
 def _carried_notes(carried) -> list[dict]:
-    """The notes she carries in full this step, for Bastet's leak rule (guard/facts.py
+    """The notes the agent carries in full this step, for Bastet's leak rule (guard/facts.py
     private)."""
     return [{"path": n["path"], "text": n["text"]} for n in carried.notes
             if n.get("state") == "included" and n.get("text")]
@@ -474,7 +474,7 @@ async def _too_small(store, tid, cid, cfg, backend, need: int | None, win: int, 
     else:
         what = (f"This turn needs {about} tokens even after compacting, and {model} has "
                 f"room for {win:,}.")
-    fix = " Choose a model with more context for this conversation"
+    fix = " Choose a model with more context for this chat"
     fix += (f", or give {model} a larger context size in Settings, Models."
             if kind == "ollama" else ".")
     await _failed(store, tid, cid, "context_too_small", what + fix, False)

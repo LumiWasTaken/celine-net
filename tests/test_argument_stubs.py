@@ -40,6 +40,10 @@ async def _heredoc_call(store, cid) -> tuple[str, str]:
     return call["id"], mid
 
 
+READBACK = [{"type": "function", "function": {"name": "past_conversations__read_tool_call",
+                                              "parameters": {"type": "object"}}}]
+
+
 def _sent(built, call_id) -> str:
     return next(t["function"]["arguments"] for m in built.messages
                 for t in m.get("tool_calls") or () if t["id"] == call_id)
@@ -54,7 +58,11 @@ async def test_an_aged_heredoc_call_goes_short_and_valid(store):
     assert json.loads(_sent(fresh, call_id))["command"] == SCRIPT, "verbatim until aged"
 
     await compactions.set_aged_through(store, cid, mid, {"results": 1})
-    aged = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[],
+    bare = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[],
+                               mode="dry")
+    assert json.loads(_sent(bare, call_id))["command"] == SCRIPT, \
+        "no read-back tool offered: the argument goes whole"
+    aged = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=READBACK,
                                mode="dry")
     args = json.loads(_sent(aged, call_id))
     assert args["tab"] == "main", "a short value stays"
@@ -63,9 +71,20 @@ async def test_an_aged_heredoc_call_goes_short_and_valid(store):
         f"tokens, shortened; the call is kept: {call_id}; read it back with "
         f"past_conversations__read_tool_call(id=\"{call_id}\")]")
     assert len(_sent(aged, call_id)) < 400
-    again = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[],
+    again = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=READBACK,
                                 mode="dry")
     assert _sent(again, call_id) == _sent(aged, call_id), "byte-identical every build"
     stored = await store.read(lambda c: c.execute(
         "SELECT arguments FROM tool_calls WHERE id=?", (call_id,)).fetchone()[0])
     assert json.loads(stored)["command"] == SCRIPT, "the row never changes"
+
+
+def test_the_mark_names_the_argument_and_call_it_shortened():
+    from celine.turns import compact
+    short = json.loads(compact.short_arguments(json.dumps({"command": SCRIPT, "tab": "a"}),
+                                               "t1:0:0"))
+    assert compact.marked(short) == ("command", "t1:0:0")
+    assert compact.marked({"files": [{"content": short["command"]}]}) == ("files", "t1:0:0")
+    quoted = f"the app wrote {short['command']} into my file, then I fixed it"
+    assert compact.marked({"content": quoted}) is None, "a text that quotes it runs"
+    assert compact.marked({"command": SCRIPT}) is None

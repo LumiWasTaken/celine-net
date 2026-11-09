@@ -85,6 +85,7 @@ class Policy:
 
 
 POLICY = Policy()
+READBACK = "past_conversations__read_tool_call"   # the tool a shortened argument names
 
 
 def room(backend, system: str, tools: list[dict], win: int | None = None) -> int:
@@ -150,18 +151,23 @@ def user_wire(cfg, msgs: list[dict], cid: str) -> list[dict]:
     guarded = guard.enabled(cfg, cid)
     out: list[dict] = []
     for i, m in enumerate(msgs):
-        add_user(out, wire_message(cfg, _Item(i, m, None, tz, cfg.user, guarded=guarded,
+        add_wire(out, wire_message(cfg, _Item(i, m, None, tz, cfg.user, guarded=guarded,
                                               cid=cid)))
     return out
 
 
-def add_user(out: list[dict], wire: list[dict]) -> None:
-    """Appends wire messages; consecutive user messages of plain text go as one, a
-    blank line between them, with both origins."""
+def add_wire(out: list[dict], wire: list[dict]) -> None:
+    """Appends wire messages; consecutive messages of one role in plain text go as one,
+    a blank line between them, with both origins, as the chat templates want roles to
+    alternate: user lines, and the agent's reply with its timed message to the user that
+    landed after it (intercom store.SAY). A reply with calls, or a second one with its own
+    thinking, stays apart."""
     for w in wire:
         last = out[-1] if out else None
-        if (last is not None and w["role"] == last["role"] == "user"
-                and isinstance(w["content"], str) and isinstance(last["content"], str)):
+        if (last is not None and w["role"] == last["role"] in ("user", "assistant")
+                and isinstance(w["content"], str) and isinstance(last["content"], str)
+                and not (w["role"] == "assistant" and (
+                    "tool_calls" in last or set(w) - {"role", "content", ORIGIN}))):
             out[-1] = {**last, "content": last["content"] + "\n\n" + w["content"],
                        ORIGIN: [*last.get(ORIGIN, ()), *w.get(ORIGIN, ())]}
         else:
@@ -220,7 +226,7 @@ def malformed(messages: list[dict], cid: str) -> str | None:
 
 
 # ---- the path as items ----------------------------------------------------------------
-HER_FIRST = "This chat starts with your message."   # history: before a reply that is first
+AGENT_FIRST = "This chat starts with your message."   # history: before a reply that is first
 
 
 def _thought(it: "_Item") -> dict:
@@ -294,6 +300,7 @@ class _Plan:
         self.cid = cid
         self.view = view
         self.guarded = guard.enabled(cfg, cid)        # a chat can turn Bastet off
+        self.readback = False       # the request offers past_conversations__read_tool_call
         chain = view["chain"]
         self.chain = chain
         self.pos = {m["id"]: i for i, m in enumerate(chain)}
@@ -347,12 +354,14 @@ class _Plan:
             return it._wire[aged]
         if it.calls:
             # an aged call's long string arguments go shortened (compact.short_arguments),
-            # whatever the size of its result; never_age keeps a notebook call whole
+            # whatever the size of its result, where the request offers the tool that reads
+            # the call back; never_age keeps a notebook call whole
             out = [{"role": "assistant", "content": it.content, **_thought(it), "tool_calls": [
                 {"id": c["id"], "type": "function",
                  "function": {"name": c["name"], "arguments":
                               compact.short_arguments(c["arguments"], c["id"])
-                              if aged and not _kept(c, self.policy) else c["arguments"]}}
+                              if aged and self.readback and not _kept(c, self.policy)
+                              else c["arguments"]}}
                 for c in it.calls], ORIGIN: origin(it.cid, turn=it.turn, message=it.id)}]
             screens = []
             for c in it.calls:
@@ -410,11 +419,11 @@ class _Plan:
     def history(self) -> list[dict]:
         out: list[dict] = []
         for it in self.items:
-            add_user(out, self.wire(it, self.aged(it)))
+            add_wire(out, self.wire(it, self.aged(it)))
         if out and out[0]["role"] == "assistant" and self.items[0] is self.all_items[0]:
             # its message first (a chat start_chat made): a user line before it, as the
             # chat templates want one, with where it came from
-            out.insert(0, {"role": "user", "content": self.opening or HER_FIRST,
+            out.insert(0, {"role": "user", "content": self.opening or AGENT_FIRST,
                            ORIGIN: origin(self.cid, note="opening")})
         return out
 
@@ -534,6 +543,8 @@ async def _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
     view = await compactions.context_view(store, cid, path)
     plan = _Plan(view, cfg, backend, counter, policy, int(cfg.r("history_messages") or 0),
                  cid)
+    # the mark of a shortened argument names the read-back tool: no tool, no shortening
+    plan.readback = any((t.get("function") or {}).get("name") == READBACK for t in tools)
     plan.opening = await store.read(lambda c: (c.execute(
         "SELECT v FROM kv WHERE k=?", (OPENING + cid,)).fetchone() or [""])[0])
     run = _Run(store, cfg, backend, cid, plan, system, tools, mode, focus, policy,

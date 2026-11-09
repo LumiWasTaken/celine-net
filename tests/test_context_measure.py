@@ -1,6 +1,6 @@
 """Each step records its time to the first token, its prompt tokens and the prompt
 tokens the server read from its cache (turns/runner.py _record_usage), in `requests`
-beside the request (the reply's What she saw)."""
+beside the request (the reply's What it saw)."""
 from __future__ import annotations
 
 import pytest

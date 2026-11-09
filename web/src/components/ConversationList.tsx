@@ -2,8 +2,8 @@
 
      Running, Pinned, Today, Yesterday, ...   the server's group of each row (`group`); a
                     date group (`dated`) folds by its head, kept on this device;
-                    each row a real link with the title, its last line, a bare time, a
-                    dot for a failure or a wait (the server's `state`); a running row
+                    each row a real link with the title, its last line, a bare time, the
+                    server's words for a failure or a wait (its `state`); a running row
                     shows the server's step words (the dots while it writes) and Stop
      sub-agents     always under the conversation that started them, no fold
      Found in messages   on a search: the titles the server ranked first, then the
@@ -24,8 +24,8 @@ import type { ChatHit } from '../lib/chat'
 import { listTime } from '../lib/format'
 import { usePref } from '../lib/prefs'
 import {
-  Button, coarse, Dot, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet,
-  VirtualList, useContextMenu, type DotTone, type MenuItem, type Picker, type Shelf,
+  Button, coarse, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet,
+  StateWord, VirtualList, useContextMenu, type MenuItem, type WordTone, type Picker, type Shelf,
 } from '../ui'
 
 /** one thing at work, on top of a list without the server's groups */
@@ -47,18 +47,11 @@ export type WorkItem = {
 /** a group of rows under a head of its own, in place of the day groups */
 export type ListGroup = { key: string; head: ReactNode; items: ConversationSummary[] }
 
-/** the state a row's dot says, or none */
-export type RowState = 'running' | 'failed' | 'needs_you'
-/** each place's loudest state, for the rail */
-export type Work = Partial<Record<'celine', RowState>>
-
 /** the glyph of a conversation, the same on a row and in a head */
 export const kindIcon = (c: Pick<ConversationSummary, 'kind'>): LucideIcon => (c.kind === 'mission' ? Flag : Heart)
 
-const TONE: Record<RowState, DotTone> = { running: 'running', failed: 'error', needs_you: 'warn' }
-const STATE: Record<string, RowState> = { running: 'running', error: 'failed', warn: 'needs_you' }
-/** a row's state as the rail counts it: the server's, else the caller's */
-export const rowState = (c: ConversationSummary): RowState | null => (c.state ? STATE[c.state.tone] ?? null : null)
+/** the server's row tone as its word's tone */
+const WORD_TONE: Record<string, WordTone> = { running: 'running', error: 'error', warn: 'warn' }
 
 type Row =
   | { type: 'group'; key: string; label: string; fold?: number }
@@ -79,8 +72,8 @@ const byTitle = (c: ConversationSummary, q: string) => c.title.toLowerCase().inc
 
 export function ConversationList({
   conversations, archived = NO_ROWS, deleted = NO_ROWS, shelf = 'list', picker, onRestore, hits = NO_HITS, titles, query,
-  selected, renaming, onOpen, onRename, onStartRename, onPin, onArchive, onDelete, onStop, onExport, stateOf, working = NO_WORK,
-  away = null, onAway, onClearSearch, groups, matches = byTitle, leadingOf, label = 'Conversations', deletedHeads = NO_HEADS,
+  selected, renaming, onOpen, onRename, onStartRename, onPin, onArchive, onDelete, onStop, onExport, working = NO_WORK,
+  away = null, onAway, onClearSearch, groups, matches = byTitle, leadingOf, label = 'Chats', deletedHeads = NO_HEADS,
 }: {
   conversations: ConversationSummary[]
   /** the archived ones, on the Archive shelf */
@@ -111,8 +104,6 @@ export function ConversationList({
   onStop: (id: string) => void
   /** the conversation as a file */
   onExport?: (c: ConversationSummary) => void
-  /** a list without the server's `state`: the caller's */
-  stateOf?: (c: ConversationSummary) => RowState | null
   /** a list without the server's groups: what runs, on top */
   working?: WorkItem[]
   /** Clear search, where nothing matches */
@@ -200,12 +191,12 @@ export function ConversationList({
       // a sub-agent goes with its parent
       ...(c.agent_of || !onArchive ? [] : [c.archived_at
         ? { label: 'Restore', icon: ArchiveRestore, onSelect: () => onArchive(c, false) }
-        : { label: 'Archive', icon: Archive, disabled: running, title: running ? 'Stop the reply first' : undefined,
+        : { label: 'Archive', icon: Archive, disabled: running, title: running ? 'Stop the reply first.' : undefined,
             onSelect: () => onArchive(c, true) }]),
       ...(picker && !c.agent_of ? [{ label: 'Select', icon: ListChecks, onSelect: () => picker.start(c.id) }] : []),
       'sep' as const,
       { label: 'Move to Trash', icon: Trash2, danger: true, disabled: running,
-        title: running ? 'Stop the reply first' : undefined, onSelect: () => onDelete(c.id) },
+        title: running ? 'Stop the reply first.' : undefined, onSelect: () => onDelete(c.id) },
     ]
   }
   const leading = (c: ConversationSummary) => {
@@ -216,7 +207,7 @@ export function ConversationList({
   }
 
   if (q && rows.length === 0) {
-    return <EmptyState title="No conversations match"
+    return <EmptyState title="No chats match"
                        action={onClearSearch && <Button onClick={onClearSearch}>Clear search</Button>} />
   }
   if (shelf !== 'list' && rows.length === 0) {
@@ -272,14 +263,13 @@ export function ConversationList({
                      }
                      const menu = actions(c)
                      const state = c.state ?? null
-                     const own = stateOf?.(c) ?? null
-                     const running = state ? state.tone === 'running' : own === 'running'
-                     const tone = running ? undefined : state ? TONE[STATE[state.tone]!] : own ? TONE[own] : undefined
+                     const running = state?.tone === 'running'
+                     const said = state && !running ? <StateWord tone={WORD_TONE[state.tone] ?? 'muted'}>{state.words}</StateWord> : null
                      if (r.sub) {
                        return (
                          <ListRow depth={1} icon={Bot} href={c.link} selected={c.id === selected} title={name} tooltip={c.last_line || name}
-                                  dot={running ? 'running' : state ? TONE[STATE[state.tone]!] : own ? TONE[own] : undefined}
-                                  meta={listTime(c.updated_at)} onClick={click(() => onOpen(c.id))}
+                                  running={running} subtitle={said ?? undefined}
+                                  meta={listTime(c.updated_at, Date.now(), !q)} onClick={click(() => onOpen(c.id))}
                                   onContextMenu={e => ctx.open(e, menu, name)} press={touch ? ctx.press(() => menu, name) : undefined}
                                   trailing={!touch && <MenuButton icon={MoreHorizontal} label="More" size="sm" items={menu} />} />
                        )
@@ -289,9 +279,8 @@ export function ConversationList({
                                 leading={leading(c)} title={name} tooltip={name}
                                 subtitle={running
                                   ? state?.words ? <EventLine running quiet>{state.words}</EventLine> : <Dots />
-                                  : c.last_line || undefined}
-                                // its state dot sits beside its time, so every title starts at one edge
-                                meta={running ? undefined : tone ? <Dot tone={tone} text={listTime(c.updated_at)} /> : listTime(c.updated_at)}
+                                  : said ?? (c.last_line || undefined)}
+                                meta={running ? undefined : listTime(c.updated_at, Date.now(), !q)}
                                 onClick={click(() => onOpen(c.id))} onContextMenu={e => ctx.open(e, menu, name)}
                                 press={touch ? ctx.press(() => menu, name) : undefined} trailingAlways={running}
                                 trailing={running

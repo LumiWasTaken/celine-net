@@ -236,7 +236,7 @@ async def test_a_conversation_is_a_chat_of_a_kind_fixed_at_creation(c, store):
     assert {r["id"]: r["kind"] for r in rows} == {cid: "chat", plain["id"]: "chat"}
 
 
-async def test_her_last_line_impersonate_and_a_refused_continue(c, store):
+async def test_the_agents_last_line_impersonate_and_a_refused_continue(c, store):
     """The list's rows carry the newest message's first line; Impersonate writes the
     user's line without sending it; Continue on a message that is not its own says why."""
     from types import SimpleNamespace
@@ -261,7 +261,7 @@ async def test_her_last_line_impersonate_and_a_refused_continue(c, store):
     rows = (await c.get("/api/conversations")).json()["conversations"]
     assert rows[0]["last_line"] == "first line here"
     await store.write(lambda db: db.execute("UPDATE turns SET state='done'"))
-    hers = await store.write(lambda db: tree.append(db, store, cid, umid, "assistant",
+    answer = await store.write(lambda db: tree.append(db, store, cid, umid, "assistant",
                                                     "y" * 300, "model"))
     rows = (await c.get("/api/conversations")).json()["conversations"]
     assert rows[0]["last_line"] == "y" * 120
@@ -270,7 +270,7 @@ async def test_her_last_line_impersonate_and_a_refused_continue(c, store):
     assert r.json() == {"text": f"{c.cfg.user}: and then we went home"}, "as it came"
     system, user = sent[0]
     assert system["content"].startswith(f"Write {c.cfg.user}'s next message")
-    assert "first line here" in user["content"], "the talk: the user's lines and hers"
+    assert "first line here" in user["content"], "the talk: the user's lines and the agent's"
     assert user["content"].endswith(f"{c.cfg.name}: {'y' * 300}")
     # what the user typed is where the message starts
     r = await c.post(f"/api/conversations/{cid}/impersonate", json={"start": "*waves*"})
@@ -298,11 +298,11 @@ async def test_her_last_line_impersonate_and_a_refused_continue(c, store):
     r = await c.post(f"/api/conversations/{cid}/messages/{umid}/continue")
     assert r.status_code == 200
     assert r.json() == {"refused": "Only Celine's replies can be continued."}
-    r = await c.post(f"/api/conversations/{cid}/messages/{hers['id']}/continue")
-    assert r.json()["turn_id"] and r.json()["message_id"] != hers["id"]
+    r = await c.post(f"/api/conversations/{cid}/messages/{answer['id']}/continue")
+    assert r.json()["turn_id"] and r.json()["message_id"] != answer["id"]
     assert (await c.post(f"/api/conversations/{cid}/messages/nope/continue")).status_code == 404
 
-    r = await c.post(f"/api/conversations/{cid}/messages/{hers['id']}/versions",
+    r = await c.post(f"/api/conversations/{cid}/messages/{answer['id']}/versions",
                      json={"text": "edited"})
     assert r.status_code == 409, "a turn is queued"
     feed = await store.read(lambda db: [(r["type"], json.loads(r["data"])) for r in db.execute(

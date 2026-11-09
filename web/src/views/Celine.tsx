@@ -14,24 +14,23 @@ import {
 import { emit, useServerEvents } from '../lib/bus'
 import { ShowArtifact } from '../lib/artifacts'
 import { chatApi, useMood, type ChatHit, type Mood } from '../lib/chat'
-import { ConversationList, rowState, type RowState, type Work } from '../components/ConversationList'
+import { ConversationList } from '../components/ConversationList'
 import { ConversationPanel, type PanelTab } from '../components/ConversationPanel'
 import { ReminderLines, Reminders, pendingOf } from '../components/Reminders'
-import { HerFace, MoodText } from '../components/Talk'
+import { AgentFace, MoodText } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
-import { useHer, type Her } from '../lib/her'
+import { useAgent, type Agent } from '../lib/agent'
 import { count, errorText } from '../lib/format'
 import { useNav } from '../lib/nav'
 import { setPageName } from '../lib/title'
 import { AgentsContext, useAgents } from '../lib/agents'
-import { isOpen } from '../lib/missions'
 import { fileUrl } from '../lib/media'
 import { FirstRun } from './settings/FirstRun'
 import { ConversationReminders, remindersApi } from '../lib/reminders'
 import { snapshotAgain, useOnline, OFFLINE_TITLE } from '../lib/socket'
 import { useConversation } from '../lib/useConversation'
-import { useResource } from '../lib/useResource'
-import { KeepPlace, useStickToBottom } from '../lib/useStickToBottom'
+import { useResource, type Resource } from '../lib/useResource'
+import { KeepPlace, said, useStickToBottom } from '../lib/useStickToBottom'
 import { Transcript, TranscriptLoading, type Pending } from '../components/Transcript'
 import { SideHost } from '../components/MessageActions'
 import { Composer, NewMessages, type ComposerHandle, type Note } from '../components/Composer'
@@ -51,15 +50,15 @@ const LIST_EVENTS = new Set(['conversation.title', 'conversation.created', 'conv
   'version.changed', 'message.purged', 'mission.state', 'frozen.changed', 'approvals.changed'])
 
 const place = 'celine' as const
-const chatsNoun = (n: number) => count(n, 'conversation')
+const chatsNoun = (n: number) => count(n, 'chat')
 
 /** a new conversation's face, name and mood; the first message sent, it fades where it was */
-function Greeting({ who, name, mood }: { who: Her | null; name: string; mood: Mood | null }) {
+function Greeting({ who, name, mood }: { who: Agent | null; name: string; mood: Mood | null }) {
   const ref = useRef<HTMLDivElement>(null)
   useLeave(ref, g => leave(g, OUT.fade, '--dur'))
   return (
     <div ref={ref} className="chat-greeting">
-      <HerFace who={who} size="lg" />
+      <AgentFace who={who} size="lg" />
       <div className="chat-greeting__name">{name}</div>
       <MoodText mood={mood} />
     </div>
@@ -67,17 +66,15 @@ function Greeting({ who, name, mood }: { who: Her | null; name: string; mood: Mo
 }
 const exportUrl = (id: string) => `/api/conversations/${encodeURIComponent(id)}/export`
 
-export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
+export function Celine({ active, status, sidebarOpen, onSidebar }: {
   active: boolean
   status: ConfigStatus | null
   /** the list over the chat on a phone */
   sidebarOpen: boolean
   onSidebar: (open: boolean) => void
-  /** what each place has going on (the rail's dots) */
-  onWork: (work: Work) => void
 }) {
   const nav = useNav()
-  const who = useHer()
+  const who = useAgent()
   const mood = useMood()
   const placeName = who?.name ?? ''
   // the side panel and its tab, kept on this device; on a phone it lies over the chat, so
@@ -114,6 +111,10 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const [shelf, setShelf] = useState<Shelf>('list')
   const listEvents = (ev: { type: string; state?: unknown }) => LIST_EVENTS.has(ev.type)
     || (ev.type === 'turn.state' && ['queued', 'done', 'aborted', 'failed', 'interrupted', 'capped'].includes(ev.state as string))
+    // its model starts or ends loading: the row says "Loading <model>." as the chat does
+    || (ev.type === 'llm.queue' && ['loading', 'running'].includes(ev.state as string))
+    // a message delivered into a chat outside a turn (a reminder at its time): the row's newest line
+    || (ev.type === 'intercom.state' && !!(ev as { conversation_id?: string | null }).conversation_id)
   const list = useResource(() => chatApi.list('list'), [], { events: listEvents })
   // the archived ones always: one opened by its link is still its own, with Restore
   const archived = useResource(() => chatApi.list('archive'), [], { events: listEvents })
@@ -159,10 +160,15 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const transcript = useRef<HTMLDivElement>(null)
   const jumpRef = useRef<(opts?: unknown) => void>(() => {})
   const agents = useAgents()
-  // this conversation's background jobs: the head's count and the panel's list
-  const jobs = useResource(
+  // this conversation's background jobs: the head's count and the panel's list, again on a
+  // job's state and on what a running one says it is doing
+  const jobs: Resource<Job[]> = useResource(
     () => (selected ? api.jobs(selected, 20).then(r => r.jobs) : Promise.resolve([] as Job[])), [selected],
-    { events: ev => ev.type === 'job.state' && (ev as { conversation?: string }).conversation === selected })
+    { events: ev => {
+      const e = ev as { type: string; conversation?: string; tool_call_id?: string }
+      return e.conversation === selected && (e.type === 'job.state' || (e.type === 'tool.progress'
+        && !!jobs.data?.some(j => j.state === 'running' && j.tool_call_id === e.tool_call_id)))
+    } })
   const jobList = (jobs.data ?? []).filter(j => j.conversation_id === selected)
   const runningJobs = jobList.filter(j => j.state === 'running').length
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -212,7 +218,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
     if (!outcome || !awaitingCompact.current) return
     awaitingCompact.current = false
     setNote(outcome.kind === 'compacted' ? { tone: 'success', text: 'Compacted.' }
-      : outcome.kind === 'failed' ? { tone: 'error', text: "Couldn't compact right now." }
+      : outcome.kind === 'failed' ? { tone: 'error', text: 'Could not compact right now.' }
       : { tone: 'success', text: outcome.reason ?? 'Nothing to compact yet.' })
   }, [outcome])
 
@@ -334,21 +340,6 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
     return () => window.removeEventListener('keydown', onKey)
   }, [active, drawerOpen, sidebarOpen, selected, setSelected, onSidebar]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // what the rail shows for its place: waiting for you over failed over running (the
-  // server's row states), and its sub-agents at work
-  const work = useMemo<Work>(() => {
-    const rank: Record<RowState, number> = { running: 1, failed: 2, needs_you: 3 }
-    let top: RowState | null = null
-    const mark = (st: RowState | null) => { if (st && (!top || rank[st] > rank[top])) top = st }
-    for (const c of rows ?? []) {
-      mark(rowState(c) ?? (c.mission_name && isOpen(c.mission_status) ? 'running' : null))
-      c.agents.forEach(a => mark(rowState(a)))
-    }
-    if (agents.some(a => a.working && (rows ?? []).some(c => c.id === a.parent))) mark('running')
-    return top ? { celine: top } : {}
-  }, [rows, agents])
-  useEffect(() => { onWork(work) }, [work, onWork])
-
   const online = useOnline()
   const offline = convo.reconnecting || !online
   // back online: what failed meanwhile is asked again, so no stale error stays
@@ -365,21 +356,22 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   // the snapshot is not in yet: the transcript's shape stands in (TranscriptLoading)
   const snapshotDue = !!selected && !convo.conversation && !shownPending
   const { onScroll: onTranscriptScroll, unseen, jump: jumpToLatest, keep } = useStickToBottom(
-    transcript, [convo.messages.length, convo.live?.message_id, pendingReminders.length],
+    transcript, [said(convo.messages), pendingReminders.length],
     [selected], [selected, convo.messages.length > 0, drawn, snapshotDue])
   jumpRef.current = jumpToLatest
 
   const noteLine = note && (
     <div className="chat-note">
       {note.tone === 'error' ? <InlineError message={note.text} compact /> : <StatusLine tone="success">{note.text}</StatusLine>}
-      <IconButton icon={X} size="sm" label="Dismiss" onClick={() => setNote(null)} />
+      <IconButton icon={X} size="sm" label="Close" onClick={() => setNote(null)} />
     </div>
   )
   const open = (id: string) => { setSelected(id); onSidebar(false) }
   const conversationTitle = current?.title || convo.conversation?.title || ''
-  const startedBy = convo.conversation?.started_by ?? null
-  // whom the composer writes to: the sub-agent in its conversation, her in her own
-  const writingTo = startedBy ? convo.conversation?.agent_name ?? conversationTitle : name
+  // a sub-agent's conversation: the chain above it, the server's (homes.path)
+  const above = convo.conversation?.kind === 'agent' ? (convo.conversation.path ?? []).slice(0, -1) : null
+  // whom the composer writes to: the sub-agent in its conversation, the agent in its own
+  const writingTo = above ? convo.conversation?.agent_name ?? conversationTitle : name
   const isArchived = current ? !!current.archived_at : !!convo.conversation?.archived_at
   const headMore = current ? [
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(current.id) },
@@ -396,10 +388,10 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   const headActs = 1 + (current ? 1 : 0) + (runningJobs > 0 ? 1 : 0) + (isArchived && current ? 1 : 0) + (convo.plan?.steps.length ? 1 : 0)
 
   const listHead = <>
-    <PlaceHead search={{ value: query, onChange: setQuery, label: 'Search conversations', loading: !!q && found.loading }}
+    <PlaceHead search={{ value: query, onChange: setQuery, label: 'Search chats', loading: !!q && found.loading }}
                picker={picker} shelf={{ archive: true, trash: true, value: shelf, onChange: setShelf }}
                more={[older.item, { label: 'Go to', icon: Compass, onSelect: () => emit({ type: 'ui.goto' }) }]}
-               newLabel="New conversation" onNew={newConversation} />
+               newLabel="New chat" onNew={newConversation} />
     {older.dialog}
     <SelectBar picker={picker} noun={chatsNoun} actions={bulkActions({ what: 'conversations', shelf, noun: chatsNoun, archive: true })} />
   </>
@@ -409,7 +401,8 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
       {found.error && <InlineError message={found.error} onRetry={found.reload} />}
       {actionError && <InlineError message={actionError} compact />}
       {!shown.data ? <LoadingRow /> : shelf === 'list' && !rows?.length && !q ? (
-        <EmptyState action={<Button variant="primary" icon={Plus} onClick={newConversation}>New conversation</Button>} />
+        // the head's New chat and the open composer already start one: no second primary here
+        <EmptyState title="No chats yet" />
       ) : (
         <ConversationList conversations={rows ?? []} archived={archived.data?.rows} deleted={trashed.data?.rows} shelf={shelf}
                           picker={picker} query={query} titles={q ? found.data?.titles ?? [] : undefined} hits={q ? found.data?.hits : undefined}
@@ -424,7 +417,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
   return (
     <ShowArtifact.Provider value={showArtifact}>
     <AgentsContext.Provider value={agents}>
-    <Place title={placeName} label="Conversations" open={sidebarOpen} onOpen={onSidebar} fold="celine" head={listHead} side={listBody}>
+    <Place title={placeName} label="Chats" open={sidebarOpen} onOpen={onSidebar} fold="celine" head={listHead} side={listBody}>
       <div className="chat">
         <main className={cx('chat-main', dragging && 'chat-main--drop')} style={{ '--acts': headActs } as CSSProperties}
               onDragOver={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); setDragging(true) }}
@@ -435,18 +428,18 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                 e.preventDefault(); composer.current?.addFiles(e.dataTransfer.files)
               }}>
           <PlaceHead level={1}
-                     {...(startedBy ? {
-                       /* a sub-agent's conversation: its name under the one that started it */
-                       crumbs: [{ label: startedBy.name, href: startedBy.link ?? undefined,
-                                  onClick: startedBy.link ? (e: { preventDefault(): void }) => { e.preventDefault(); nav.goPath(startedBy.link!) } : undefined }],
+                     {...(above ? {
+                       /* a sub-agent's conversation: its name under the chain that started it */
+                       crumbs: above.map(c => ({ label: c.name, href: c.link ?? undefined,
+                                                 onClick: c.link ? (e: { preventDefault(): void }) => { e.preventDefault(); nav.goPath(c.link!) } : undefined })),
                        title: writingTo,
                      } : {
-                     lead: <HerFace who={who} size="sm" speaking={convo.running} />,
+                     lead: <AgentFace who={who} size="sm" speaking={convo.running} />,
                      title:
                        <span className="chat-who">
                          {name}<MoodText mood={mood} />
                          {renaming === current?.id ? (
-                           <InlineEdit value={conversationTitle} label="Rename conversation" onCancel={() => setRenaming(null)}
+                           <InlineEdit value={conversationTitle} label="Rename chat" onCancel={() => setRenaming(null)}
                                        onSave={t => { setRenaming(null); if (t && t !== conversationTitle) rename(current.id, t) }} />
                          ) : (
                            conversationTitle && <span className="chat-head__title">{conversationTitle}</span>
@@ -486,7 +479,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
                               live={convo.live} switched={convo.switched}
                               imageNotices={convo.imageNotices} banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
                               waiting={waitWords(convo.waiting, convo.live)} queue={convo.queue} swaps={convo.swaps}
-                              note={null} assistant={name}
+                              note={null} assistant={name} held={convo.conversation?.held}
                               user={status?.user ?? ''} />}
                 </KeepPlace.Provider>
                 </ConversationReminders.Provider>
@@ -501,7 +494,9 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
           ) : missing ? (
             <div className="chat-scroll chat-scroll--empty">
               <EmptyState icon={TriangleAlert} title="Not found"
-                          action={<Button variant="primary" icon={Plus} onClick={newConversation}>New conversation</Button>} />
+                          action={<Button variant="primary" icon={Plus} onClick={newConversation}>New chat</Button>}>
+                Nothing at this link.
+              </EmptyState>
             </div>
           ) : (
             <div className="chat-scroll chat-scroll--empty">
@@ -535,8 +530,8 @@ export function Celine({ active, status, sidebarOpen, onSidebar, onWork }: {
         <Reminders conversationId={current.id} list={pendingReminders} reload={reminders.reload} onClose={() => setRemindersOpen(false)} />
       )}
       {confirmTrash && (
-        <ConfirmDialog title="Move to Trash?" danger confirmLabel="Move to Trash"
-                       body={<>"{every.find(c => c.id === confirmTrash)?.title || 'Untitled'}" moves to the Trash. You can restore it from there.</>}
+        <ConfirmDialog title={`Move ${every.find(c => c.id === confirmTrash)?.title || 'Untitled'} to Trash?`} danger confirmLabel="Move to Trash"
+                       body="You can restore it from the Trash."
                        onClose={() => setConfirmTrash(null)} onConfirm={() => toTrash(confirmTrash)} />
       )}
       {standalonePhoto && (

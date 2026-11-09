@@ -116,7 +116,7 @@ export function Composer({
   setNote: Dispatch<SetStateAction<Note | null>>
   /** /compact ran: its outcome arrives later */
   onCompact?: () => void
-  /** "Ask her" from elsewhere: to a new conversation */
+  /** "Ask" from elsewhere: to a new conversation */
   toNew?: () => void
   /** a click that fails says so */
   attempt: (fn: () => Promise<unknown>) => Promise<void>
@@ -132,7 +132,7 @@ export function Composer({
   placeholder?: string
   /** the line when the model that answers takes no tools (default: it can't search) */
   noToolsText?: (model: string) => string
-  /** "Ask her" from elsewhere lands in this box (its place's, not a mission's) */
+  /** "Ask" from elsewhere lands in this box (its place's, not a mission's) */
   takesPrefill?: boolean
   /** a chip that goes out first with the next message (a project's Edit); `onTag(null)`
       takes it away, after a send too */
@@ -168,7 +168,7 @@ export function Composer({
   useServerEvents(ev => {
     if (SETTINGS_EVENTS(ev)) setModels(null)       // /model's list follows Settings at once
     if (ev.type === 'models.state' || SETTINGS_EVENTS(ev)) setModelsVersion(v => v + 1)
-    // "Ask her" from search or a message: a client-only event on the same bus. Starts a
+    // "Ask" from search or a message: a client-only event on the same bus. Starts a
     // fresh conversation in its place with the text as a draft and never sends it.
     if (ev.type === 'celine.prefill' && takesPrefill) prefill()
     // from the side panel: added to this conversation's draft, nothing else moves
@@ -284,7 +284,7 @@ export function Composer({
       setNote({ tone: 'success', text: `Model: ${hit.label ?? hit.name}. This applies from your next message.` })
       return true
     }
-    setNote({ tone: 'error', text: `/${cmd} needs a conversation. Send a first message.` })
+    setNote({ tone: 'error', text: `/${cmd} needs a chat. Send a first message.` })
     return false
   }, [newSettings.thinking, setNewSettings, setNote, onModelPanel])
 
@@ -303,7 +303,7 @@ export function Composer({
       try {
         if (!selected) { if (await draftCommand(command.name, args)) setDraft(''); return }
         if (command.when === 'idle' && running) {
-          setNote({ tone: 'error', text: `${name} is still answering. Run /${command.name} once the reply is done.` })
+          setNote({ tone: 'error', text: `${name} is still writing. Run /${command.name} once the reply is done.` })
           return
         }
         const r = await commandsApi.run(selected, command.name, args)
@@ -374,7 +374,7 @@ export function Composer({
   const plusItems: MenuItem[] = [
     { label: 'Attach', icon: Paperclip, onSelect: () => pickFiles(f => void addFiles(f)) },
     ...(exists ? [{ label: 'Impersonate', icon: UserPen, disabled: running || offline,
-      title: running ? 'Wait until the reply is written' : offline ? OFFLINE_TITLE : undefined,
+      title: running ? 'Wait until the reply is written.' : offline ? OFFLINE_TITLE : undefined,
       onSelect: () => void impersonate() }] : []),
     ...(onReminders ? [{ label: 'Reminders', icon: Bell, onSelect: onReminders }] : []),
   ]
@@ -410,9 +410,9 @@ export function Composer({
           ) : jump}
         </div>
         {noTools && (
-          <Notice tone="warn">{noToolsText ? noToolsText(noTools.model) : `${noTools.model} can't use tools, so ${name} can't search.`}</Notice>
+          <Notice tone="warn">{noToolsText ? noToolsText(noTools.model) : `${noTools.model} cannot use tools, so ${name} cannot search.`}</Notice>
         )}
-        {imageBlock && <Notice tone="warn">{imageBlock.model} can't see images.</Notice>}
+        {imageBlock && <Notice tone="warn">{imageBlock.model} cannot see images.</Notice>}
         {notices}
         {setup}
         {typed !== null && (

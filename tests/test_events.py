@@ -111,12 +111,12 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         assert got["total"] == 8 and got["failed"] == 2 and got["next"] is None
         assert got["tabs"] == [
             {"id": "guard", "label": "Guard", "total": 5, "failed": 1},
-            {"id": "celine", "label": "Celine", "total": 8, "failed": 2},
+            {"id": "agent", "label": "Celine", "total": 8, "failed": 2},
             {"id": "background", "label": "Background tasks", "total": 3, "failed": 2}]
         guard = await get(tab="guard")
         assert [(e["kind"], e["title"], e["outcome"]) for e in guard["events"]] == [
             ("freeze", "Unfreeze", "Done"),
-            ("pass", "Pass on sending private data", "Allowed"),
+            ("pass", "Pass for sending private data", "Allowed"),
             ("freeze", "Freeze", "Frozen"),
             ("guard", "Terminals: run a command", "Would have stopped"),
             ("guard", "Browser: open a page", "Stopped"),
@@ -148,11 +148,11 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         assert by["pass:1"]["detail"] == "until 13:13"        # Berlin
         assert by["work:1"]["detail"] == "no model answered"
         assert by["turn:t1"]["day"] == "Today" and by["run:r1"]["day"] == "Today"
-        assert [k["id"] for k in got["kinds"]] == list(events.TAB_KINDS["celine"])
+        assert [k["id"] for k in got["kinds"]] == list(events.TAB_KINDS["agent"])
         assert got["days"][:2] == [{"value": "2026-10-01", "label": "Today"},
                                    {"value": "2026-09-30", "label": "Yesterday"}]
 
-        for tab, kind, n in (("celine", "tool", 3), ("guard", "freeze", 2),
+        for tab, kind, n in (("agent", "tool", 3), ("guard", "freeze", 2),
                              ("background", "job", 1), ("background", "turn", 0)):
             assert len((await get(tab=tab, kind=kind))["events"]) == n, kind
         failed = await get(state="failed")
@@ -204,7 +204,8 @@ async def test_bastets_filters_and_undecided_apart_from_her_stops(store, monkeyp
         assert got["failed"] == 1 and got["undecided"] == 1   # not counted as failed
         by = {e["id"]: e for e in got["events"]}
         assert (by["guard:3"]["outcome"], by["guard:3"]["tone"]) == ("Could not decide", "warn")
-        assert by["guard:1"]["guard"] == {"id": 1, "actions": ["once", "pass"]}
+        assert by["guard:1"]["guard"] == {"id": 1, "actions": ["once"]}, \
+            "a stop with no piece offers no pass (D16)"
         assert by["guard:3"]["guard"] == {"id": 3, "actions": []}
         assert (await get())["events"][-1]["guard"] is None
         assert [e["id"] for e in (await get(tab="guard", state="undecided"))["events"]] == ["guard:3"]
@@ -213,8 +214,8 @@ async def test_bastets_filters_and_undecided_apart_from_her_stops(store, monkeyp
         assert [e["id"] for e in watch["events"]] == ["guard:3", "guard:2"]
         assert watch["total"] == 2 and watch["undecided"] == 1
         assert [e["id"] for e in (await get(tab="guard", decision="stop"))["events"]] == ["guard:1"]
-        assert got["guard"]["modes"] == [{"id": "on", "label": "On"},
-                                         {"id": "watch", "label": "Watch"}]
+        assert got["guard"]["modes"] == [{"id": "on", "label": "Enforce"},
+                                         {"id": "watch", "label": "Warn"}]
         assert {"id": "unreachable", "label": "Could not decide"} in got["guard"]["decisions"]
         assert {"id": "hijack", "label": "Following words from outside"} in got["guard"]["rules"]
         bad = await h.get("/api/events", params={"tab": "guard", "kind": "turn",
@@ -266,3 +267,26 @@ def test_a_queued_turn_reads_queued_not_running():
          "reason": None}
     got = events._turn(r, CFG)
     assert (got["outcome"], got["tone"]) == ("Queued", "muted")
+
+
+@pytest.mark.anyio
+async def test_a_turn_names_the_tokens_its_requests_used(store):
+    cid = await conversations.create(store)
+
+    def fn(c):
+        c.execute("INSERT INTO turns(id, conversation_id, state, model, created_at, finished_at) "
+                  "VALUES('t1', ?, 'done', 'm', ?, ?)",
+                  (cid, _at("10:00"), "2026-10-01T10:00:12.000+00:00"))
+        c.execute("INSERT INTO turns(id, conversation_id, state, model, created_at, finished_at) "
+                  "VALUES('t2', ?, 'done', 'm', ?, ?)",
+                  (cid, _at("09:00"), "2026-10-01T09:00:03.000+00:00"))
+        for step, tid, i, o in ((0, "t1", 1200, 30), (1, "t1", 1500, 45), (0, "t2", None, None)):
+            c.execute("INSERT INTO requests(message_id, step, turn_id, provider, model, body, "
+                      "prompt_tokens, completion_tokens, created_at) "
+                      "VALUES(?, ?, ?, 'p', 'm', x'', ?, ?, ?)",
+                      ("m" + tid, step, tid, i, o, _at("10:00")))
+    await store.write(fn)
+    got = await store.read(lambda c: events.listing(c, CFG, kinds=["turn"]))
+    t1, t2 = got["events"]
+    assert t1["detail"] == "m, 12 s, 2700 tokens in, 75 out"
+    assert t2["detail"] == "m, 3 s", "a server that counted nothing: no count"

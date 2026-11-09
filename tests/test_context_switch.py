@@ -19,7 +19,7 @@ async def _events(store, kind: str) -> list[dict]:
         "SELECT data FROM global_events WHERE type=? ORDER BY id", (kind,))])
 
 
-async def test_the_switch_holds_for_her_sub_agents(
+async def test_the_switch_holds_for_its_sub_agents(
         tmp_path, monkeypatch, store):
     scratch(tmp_path, monkeypatch)
     cfg = boot.load()
@@ -40,7 +40,7 @@ async def test_the_switch_holds_for_her_sub_agents(
                             json={"on": True})).status_code == 404
 
 
-async def test_a_reply_shows_her_own_block_for_the_message_it_answers(
+async def test_a_reply_shows_its_own_block_for_the_message_it_answers(
         tmp_path, monkeypatch, store):
     scratch(tmp_path, monkeypatch)
     app = make_app(boot.load(), store)

@@ -1,4 +1,4 @@
-"""A message from the user ends a wait in her turn (turns/cancel.Token.user_wrote): the
+"""A message from the user ends a wait in the agent's turn (turns/cancel.Token.user_wrote): the
 call returns at once and the message lands at the next step. Through the real runner,
 Intercom and the dispatcher's hook."""
 from __future__ import annotations
@@ -51,7 +51,7 @@ class Model(FakeBackend):
             yield Done(reason="stop")
 
 
-async def test_the_users_message_ends_her_wait_and_lands_next(store):
+async def test_the_users_message_ends_its_wait_and_lands_next(store):
     cfg = load()
     reg, waiter, model = Registry(), Waiter(), Model()
     reg.add(waiter)

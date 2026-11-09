@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import anyio
 
 from .. import homes
+from ..hold import held, held_sql
 from ..core.ids import iso, new_id, now
 from ..core.states import LIVE_SQL
 from ..kb.chat import fts_candidates, is_query_error
@@ -157,7 +158,7 @@ def named(c: sqlite3.Connection, tz, first: str | None = None) -> list[dict]:
         if r["title"] and not r["title_auto"]:
             return r["title"]
         d = datetime.fromisoformat(r["created_at"]).astimezone(tz)
-        return f"{NAMES['her']} {d.day} {d:%b %H:%M}"
+        return f"{NAMES['agent']} {d.day} {d:%b %H:%M}"
 
     return [{"id": r["id"], "name": name(r)} for r in rows]
 
@@ -438,13 +439,7 @@ def locked(c: sqlite3.Connection, cid: str) -> str | None:
 def depth(c: sqlite3.Connection, cid: str) -> int:
     """How many levels `cid` is below the top of its agent_of chain: 0 for a
     conversation that is not a sub-agent."""
-    n, seen = 0, {cid}
-    while (r := c.execute("SELECT agent_of FROM conversations WHERE id=?",
-                          (cid,)).fetchone()) and r["agent_of"] and r["agent_of"] not in seen:
-        cid = r["agent_of"]
-        seen.add(cid)
-        n += 1
-    return n
+    return max(0, len(homes.chain(c, cid, "id")) - 1)
 
 
 def set_archived(c: sqlite3.Connection, store, cid: str, archived: bool) -> bool:
@@ -496,7 +491,7 @@ async def ensure_writable(store, cid: str) -> None:
         "SELECT trashed_at FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
     if trashed:
         from ..errors import CelineError
-        raise CelineError("deleted", "This conversation is deleted. Restore it to continue.",
+        raise CelineError("deleted", "This chat is deleted. Restore it to continue.",
                           409)
     await archive(store, cid, False)
 
@@ -532,15 +527,17 @@ _SUMMARY = (
     "FROM conversations c LEFT JOIN missions mi ON mi.conversation_id = c.id ")
 
 
-# a turn that waits in the queue while Bastet holds her frozen (guard/freeze.py) does
-# not run: its conversation is not under Running and its row has no step
-_HELD = "EXISTS (SELECT 1 FROM kv WHERE k = 'frozen')"
-# Running first (a live turn in it or in a sub-agent under it), then pinned, then the rest
-_RANK = (f"CASE WHEN EXISTS (WITH RECURSIVE fam(id) AS (SELECT c.id UNION ALL SELECT "
-         f"s.id FROM conversations s JOIN fam ON s.agent_of = fam.id) SELECT 1 FROM turns t "
-         f"JOIN fam ON fam.id = t.conversation_id WHERE t.state IN {LIVE_SQL} "
-         f"AND NOT (t.state = 'queued' AND {_HELD})) "
-         f"THEN 2 WHEN c.pinned THEN 1 ELSE 0 END")
+def _rank(models: frozenset[str] | None) -> str:
+    """Running first (a live turn in it or in a sub-agent under it, a queued one the
+    hold keeps aside not counted: hold.held_sql), then pinned, then the rest."""
+    return (f"CASE WHEN EXISTS (WITH RECURSIVE fam(id) AS (SELECT c.id UNION ALL SELECT "
+            f"s.id FROM conversations s JOIN fam ON s.agent_of = fam.id) SELECT 1 FROM turns t "
+            f"JOIN fam ON fam.id = t.conversation_id JOIN conversations hc ON "
+            f"hc.id = t.conversation_id WHERE t.state IN {LIVE_SQL} "
+            f"AND NOT (t.state = 'queued' AND {held_sql(models, 'hc')})) "
+            f"THEN 2 WHEN c.pinned THEN 1 ELSE 0 END")
+
+
 # the step words of a live turn ('' : the dots); a running tool says its label
 _STEP = {"queued": "", "preparing": "Thinking", "streaming": ""}
 
@@ -567,17 +564,30 @@ def group_of(rank: int, updated_at: str, tz, now_: datetime) -> str:
     return d.strftime("%B") if d.year == today.year else str(d.year)
 
 
-def state_of(c: sqlite3.Connection, row: dict, asked: frozenset[str] = frozenset()
-             ) -> dict | None:
+def _loading(c: sqlite3.Connection, cid: str) -> str | None:
+    """"Loading <model>." while the model of its live turn loads: the turn's newest
+    llm.queue event, the one its chat shows (Status.tsx waitWords)."""
+    r = c.execute("SELECT e.data FROM events e JOIN turns t ON t.conversation_id = "
+                  f"e.conversation_id AND t.state IN {LIVE_SQL} WHERE e.conversation_id = ? "
+                  "AND e.type = 'llm.queue' AND json_extract(e.data, '$.turn_id') = t.id "
+                  "ORDER BY e.seq DESC LIMIT 1", (cid,)).fetchone()
+    d = json.loads(r[0]) if r else {}
+    return f"Loading {d.get('model') or 'the model'}." if d.get("state") == "loading" else None
+
+
+def state_of(c: sqlite3.Connection, row: dict, asked: frozenset[str] = frozenset(),
+             models: frozenset[str] | None = None) -> dict | None:
     """How its turn in it stands, in the server's words: waiting for you (a request in
-    it, `asked`: approvals.py; a mission), running with its step (not while frozen), or
-    how the last turn ended when it failed or paused."""
+    it, `asked`: approvals.py; a mission), running with its step (not while the hold
+    keeps its queued turn aside: hold.held, `models` as there), or how the last turn
+    ended when it failed or paused."""
     from ..settings.tools_meta import TOOLS, humanize
     if row["id"] in asked:
         return {"tone": "warn", "words": "Waiting for you"}
-    held = row["active_state"] == "queued" and c.execute(f"SELECT {_HELD}").fetchone()[0]
-    if row["active_state"] and not held:
-        words = _STEP.get(row["active_state"])
+    kept = row["active_state"] == "queued" and held(c, row["id"], models)
+    if row["active_state"] and not kept:
+        # a model loads before a step's request too, while the turn says streaming
+        words = _loading(c, row["id"]) or _STEP.get(row["active_state"])
         if words is None:       # tools: the running call's label
             r = c.execute(
                 "SELECT tc.name FROM tool_calls tc JOIN messages m ON m.id = tc.message_id "
@@ -593,7 +603,7 @@ def state_of(c: sqlite3.Connection, row: dict, asked: frozenset[str] = frozenset
     if last and last[0] in ("failed", "interrupted"):
         return {"tone": "error", "words": "The reply failed."}
     if last and last[0] == "capped":
-        return {"tone": "warn", "words": "Paused."}
+        return {"tone": "warn", "words": "Stopped at the tool round limit."}
     return None
 
 
@@ -601,7 +611,8 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                after: tuple[int, str, str] | None = None,
                archived: bool = False, trashed: bool = False, *, place: str | None = None,
                tz=timezone.utc, now_: datetime | None = None,
-               asked: frozenset[str] = frozenset()) -> list[dict]:
+               asked: frozenset[str] = frozenset(),
+               models: frozenset[str] | None = None) -> list[dict]:
     """Running first (a live turn in it or a sub-agent of it), then pinned, then the most
     recently updated. `after`: the (rank, updated_at, id) of the last row of the
     previous page. `archived`: only the archived ones, else only the others;
@@ -609,7 +620,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
     chats (no missions). Background conversations are not in it (GET /api/background-conversations).
     A mission's row carries its name and status, every row its kind, its `last_line`
     (last_line above), `group` (group_of) and `dated` (its group is a date), `state` (state_of; `asked`: the conversations a
-    request waits in), `home` and `link`
+    request waits in; `models`: hold.answering), `home` and `link`
     (homes.of: where it opens). Sub-agents are not rows of their own: each row lists its
     sub-agents in `agents`, oldest first, in the same shape; `rank` is the page's sort key (2 running,
     1 pinned, 0)."""
@@ -625,7 +636,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
                     "(updated_at = ? AND id < ?)))) ")
             args = [p, p, u, u, i]
         rows = [dict(r) for r in c.execute(
-            "SELECT * FROM (" + _SUMMARY.replace("SELECT ", f"SELECT {_RANK} AS rank, ", 1)
+            "SELECT * FROM (" + _SUMMARY.replace("SELECT ", f"SELECT {_rank(models)} AS rank, ", 1)
             + where + ") " + page + "ORDER BY rank DESC, updated_at DESC, id DESC "
             "LIMIT ?", (*args, limit))]
         for r in rows:
@@ -635,7 +646,7 @@ async def list(store, limit: int = 200,  # noqa: A001 - the module's word for it
             r["dated"] = r["rank"] == 0
             for one in (r, *r["agents"]):
                 one["last_line"] = last_line(c, one.pop("active_leaf_id"))
-                one["state"] = state_of(c, one, asked)
+                one["state"] = state_of(c, one, asked, models)
                 one.update(homes.of(c, one["id"]))       # where it opens, the server's
             for a in r["agents"]:
                 a["group"], a["dated"] = r["group"], r["dated"]

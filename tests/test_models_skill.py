@@ -56,7 +56,7 @@ CTX = ToolContext(conversation_id="c1", turn_id="t1", tool_call_id="x", store=No
                   config=None, emit=None)  # type: ignore[arg-type]
 
 
-async def test_ask_sends_her_messages_to_exactly_that_model(skill):
+async def test_ask_sends_its_messages_to_exactly_that_model(skill):
     sched, seen = skill.app.llm.scheduler, []
     acquire = sched.acquire
 
@@ -85,3 +85,41 @@ async def test_only_chat_models_and_a_failure_is_the_calls(skill):
     r = await skill.ask(CTX, model="main/big", messages=[{"role": "user", "content": "x"}])
     assert r.is_error and "out of memory" in r.content
     assert [m for m, _ in Rec.calls] == ["big"], "no other model is tried"
+
+
+async def test_a_cloud_model_the_agent_picked_asks_first_and_a_denial_sends_nothing(
+        tmp_path, monkeypatch):
+    providers = {**PROVIDERS, "or": {"kind": "openai", "label": "Far",
+                                     "base_url": "https://api.example.com/v1",
+                                     "models": {"glm": {"caps": ["chat"]},
+                                                "kimi": {"caps": ["chat"]}}}}
+    scratch(tmp_path, monkeypatch, providers=providers,
+            roles={**ROLES, "writer": {"chain": ["or/kimi"]}})
+    cfg = boot.load()
+    cfg.llm = {"queue": {"wait_seconds": 5}}
+    llm = LLM(cfg, build=lambda bc: Rec(bc, 5))
+    asked, answer = [], ["Lumi denied it; nothing was done."]
+
+    class Approvals:
+        async def ask(self, kind, conversation, action, *, facts=(), detail=None, **kw):
+            asked.append((kind, action, list(facts), detail))
+            return answer[0]
+    Rec.calls, Rec.fail = [], False
+    s = Models(cfg)
+    s.app = types.SimpleNamespace(llm=llm, approvals=Approvals())
+    listed = (await s.list(CTX)).content.splitlines()
+    marks = [line.split(":")[0] for line in listed if "asks" in line]
+    assert marks == ["or/glm"], "only the cloud model nobody listed asks first"
+    assert listed[-2].endswith(f"Using it asks {cfg.user} first.")
+
+    hi = [{"role": "user", "content": "hi"}]
+    r = await s.ask(CTX, model="or/glm", messages=hi)
+    assert r.is_error and r.content == answer[0] and Rec.calls == [], "nothing went out"
+    assert asked == [("model", "send messages to a cloud model",
+                      [("Model", "glm"), ("Provider", "Far")], ("Messages", "user: hi"))]
+    answer[0] = None
+    assert not (await s.ask(CTX, model="or/glm", messages=hi)).is_error
+    assert len(asked) == 2 and len(Rec.calls) == 1, "every call asks"
+    assert not (await s.ask(CTX, model="or/kimi", messages=hi)).is_error
+    assert not (await s.ask(CTX, model="main/big", messages=hi)).is_error
+    assert len(asked) == 2, "a model in a role's list and a local one never ask"

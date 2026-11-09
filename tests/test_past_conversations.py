@@ -1,7 +1,10 @@
 """The past_conversations skill."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from chat_fixtures import user_says
+from parts_fixtures import ROOM, joined
 
 import pytest
 
@@ -83,6 +86,25 @@ async def test_a_day_is_an_index_a_read_is_a_slice_and_a_tool_call_reads_raw(sto
     assert "web__read_page error" in raw and '"query": "milk"' in raw
     assert raw.endswith("403 at the shop")
     assert (await skill.read_tool_call(ctx, "nope")).is_error
+
+    long = "".join(f"line {i}: {'x' * (i % 70)}\n" for i in range(6000))
+    await store.write(lambda c: c.execute(
+        "UPDATE messages SET content = ? WHERE id = (SELECT result_message_id FROM tool_calls "
+        "WHERE id = 't1')", (long,)))
+    small = replace(ctx, max_output_tokens=ROOM)
+
+    async def read(k):
+        return (await skill.read_tool_call(small, "t1", part=k)).content
+    whole, n = await joined(read, "past_conversations__read_tool_call(id=\"t1\"")
+    assert n > 1 and whole.startswith("call t1 web__search ok, conversation ")
+    assert whole.endswith("\nresult:\n" + long), "the parts joined are the call"
+    first = await read(None)
+    assert first.startswith(f"part 1 of {n}\n\ncall t1 ")
+    assert first.endswith("\n\nlater: past_conversations__read_tool_call(id=\"t1\", part=2)")
+    last = await read(99)
+    assert last.startswith(f"part {n} of {n}\n\n") and last.endswith(
+        f"line 5999: {'x' * 49}\n\n\nearlier: past_conversations__read_tool_call(id=\"t1\", "
+        f"part={n - 1})")
 
 
 async def test_read_and_search_give_times_in_the_apps_time_zone(store):

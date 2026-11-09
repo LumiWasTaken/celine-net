@@ -263,12 +263,12 @@ def about_user(cfg) -> str:
 async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | None = None
                         ) -> list[tuple[str, str]]:
     """The system prompt's pieces, each named for what it is (persona, talk, about,
-    notes, tools), the most stable first: its persona, the legend, who it is talking
-    to, where it is (conversations/here.py where, from ids; `role` its model role), how
+    notes, tools), the most stable first: its persona and pronouns, the legend, who it is
+    talking to, where it is (conversations/here.py where, from ids; `role` its model role), how
     it talks (its `talk`), what the user wrote about themselves, the skill index, what
     each core skill adds for the whole conversation (its live state goes in the tail:
     `tail_part`), and last the notes it always carries (turns/loads.py), the one piece
-    her own writes change. Nothing here changes from turn to turn unless she writes an
+    its own writes change. Nothing here changes from turn to turn unless it writes an
     always note: what does is in the tail (tail_text), so the start of the request stays
     the same for the model server's cache. A chat, a mission and a background run or
     task get all of it; what the kind adds (a brief, a trigger's prompt) comes as its
@@ -282,9 +282,11 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
     if row is not None and row["agent_of"]:
         return await agent_blocks(cfg, registry, store, ctx, carried, role,
                                   bool(row["agent_cli"]))
-    her = getattr(cfg, "her", None)
-    parts = [("persona", cfg.substitute(her.persona).strip())] \
-        if her is not None and her.persona.strip() else []
+    agent = getattr(cfg, "agent", None)
+    parts = [("persona", cfg.substitute(agent.persona).strip())] \
+        if agent is not None and agent.persona.strip() else []
+    # its pronouns, from its row, right under who it is
+    parts.append(("persona", cfg.substitute(prompts.text(__file__, "pronouns.md")).strip()))
     # what the app's marks in its context mean (turns/legend.py), right under who it is
     parts.append(("persona", legend.legend(cfg, guard.enabled(cfg, cid))))
     if cfg.r("ask_before_setup"):
@@ -297,8 +299,8 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
     if where:
         parts.append(("talk", cfg.substitute(where)))
     parts.append(("talk", devices.about(cfg) or ""))
-    if her is not None:
-        parts.append(("talk", cfg.substitute(her.talk_text)))
+    if agent is not None:
+        parts.append(("talk", cfg.substitute(agent.talk_text)))
     parts.append(("about", about_user(cfg)))
     if registry:
         parts.append(("tools", registry.index(cfg, carried)))
@@ -314,9 +316,9 @@ async def agent_blocks(cfg, registry, store, ctx, carried, role, cli: bool
                        ) -> list[tuple[str, str]]:
     """A sub-agent's system prompt: its agent template's body when it was started from
     one (sub_agents/templates.py), who it is and how it reports (the sub_agents
-    fragment), where it is, then the legend and its skills. Not her persona, talk, notes
-    or the user's words about themselves: a template that wants them says so. A CLI or a
-    drone (`cli`) has none of her tools: the template, how it reports and where it is
+    fragment), where it is, then the legend and its skills. Not the agent's persona, talk,
+    notes or the user's words about themselves: a template that wants them says so. A CLI
+    or a drone (`cli`) has none of the agent's tools: the template, how it reports and where it is
     (drone.py hands it to opencode as the system prompt)."""
     from ..conversations import here
     from ..sub_agents import templates

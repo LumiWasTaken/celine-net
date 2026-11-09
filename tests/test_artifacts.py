@@ -19,6 +19,7 @@ from celine.boot import load
 from celine.core.bus import EventBus
 from celine.skills import ToolContext
 from celine.skills.artifacts import Artifacts
+from parts_fixtures import ROOM, joined
 
 pytestmark = pytest.mark.anyio
 
@@ -66,7 +67,7 @@ async def test_no_page_answers_without_its_sandbox(store):
     assert frame == page.SANDBOX == "allow-scripts allow-forms"
 
 
-async def test_a_deleted_conversation_leaves_her_page(store):
+async def test_a_deleted_conversation_leaves_the_agents_page(store):
     cid = await conversations.create(store)
     aid = (await _write(store, cid, title="Plan", content="<p>v1</p>")).display["artifact"]["id"]
     again = await _write(store, cid, title="Plan", content="<p>new</p>")
@@ -82,7 +83,7 @@ async def test_a_deleted_conversation_leaves_her_page(store):
     assert v1.text.endswith("<p>v1</p>")
 
 
-async def test_a_page_is_stored_as_she_wrote_it(store):
+async def test_a_page_is_stored_as_the_agent_wrote_it(store):
     cid = await conversations.create(store)
     text = "# Prices\n\nbolts are cheap [[web:3]] and [web:9]【2†source】"
     aid = (await _write(store, cid, title="Prices", content=text, kind="markdown")
@@ -111,3 +112,29 @@ async def test_a_new_version_keeps_its_title_and_a_new_artifact_needs_one(store)
     aid = (await _write(store, cid, title="Game", content="<p>1</p>")).display["artifact"]["id"]
     again = await _write(store, cid, id=aid, content="<p>2</p>")
     assert not again.is_error and again.display["artifact"]["title"] == "Game"
+
+
+async def test_a_long_page_reads_in_parts_that_join_to_the_page(store):
+    import random
+    from dataclasses import replace
+    rnd = random.Random(7)
+    words = ["bolt", "nut", "washer", "price", "<td>", "</tr>", "€3.50", "{x: 1}"]
+    content = "\n".join(
+        " ".join(rnd.choice(words) for _ in range(rnd.randint(0, 14))) + ("\n" if i % 9 == 0 else "")
+        for i in range(4000))
+    assert len(content.encode()) > 60_000
+    cid = await conversations.create(store)
+    aid = (await _write(store, cid, title="Big", content=content)).display["artifact"]["id"]
+    ctx = replace(ToolContext(cid, "t", "call-1", store, load(), None),  # type: ignore[arg-type]
+                  max_output_tokens=ROOM)
+
+    async def read(k):
+        return (await Artifacts(load()).read(ctx, id=aid, part=k)).content
+    call = f"artifacts__read(id=\"{aid}\", version=1"
+    whole, n = await joined(read, call)
+    assert n > 1 and whole == content, "the parts joined are the page"
+    first = await read(None)
+    assert re.match(r'"Big" \(\w+\), version 1 of 1[.:]', first)
+    assert first.endswith(f"\n\nlater: {call}, part=2)")
+    last = await read(99)
+    assert f"\npart {n} of {n}\n" in last and last.endswith(f"\n\nearlier: {call}, part={n - 1})")

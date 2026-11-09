@@ -32,8 +32,9 @@ LINES = (
     "otherwise.",
     "- [earlier result, shortened to save room] and [cut: ...]: the app shortened a tool "
     "result. Call the tool again for the whole of it.",
-    "- [N lines, about T tokens, shortened; the call is kept: ...] in an older call's "
-    "argument: the app sent its first line only. The call ran with the whole of it.",
+    "- [N lines, about T tokens, shortened; the call is kept: ...] in an earlier call's "
+    "argument: the app sent its first line only. The call ran with the whole of it. A "
+    "call that carries this mark is refused; read the call back to send the text again.",
     "- [the screen from ...]: a picture of a screen your tool took, or the image a tool "
     "result says follows it ([the image follows]).",
     "- [loaded with this call] after a tool result: the skill of that tool, loaded as "

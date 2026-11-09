@@ -29,7 +29,7 @@ T0 = "2026-10-22T03:00:00.000+00:00"
 DAY_LATER = "2026-10-23T03:00:00.001+00:00"
 
 
-async def test_the_call_that_opened_a_terminal_names_her_conversation(store, monkeypatch):
+async def test_the_call_that_opened_a_terminal_names_its_conversation(store, monkeypatch):
     from celine.skills.shell import Shell
     box = FakeBox()
     monkeypatch.setenv("CELINE_SHELL_URL", "http://shellbox:8770")
@@ -77,7 +77,7 @@ def _sync(store, daemon: Daemon) -> TerminalSync:
     return TerminalSync(cfg, store, transport=httpx.MockTransport(daemon.handle))
 
 
-async def test_her_terminal_quiet_a_day_with_nothing_running_closes(store):
+async def test_the_agents_terminal_quiet_a_day_with_nothing_running_closes(store):
     daemon = Daemon(term("old", "o1o1o1", quiet_for=IDLE),
                     term("fresh", "f1f1f1", quiet_for=IDLE - 1),
                     term("build", "b1b1b1", quiet_for=IDLE * 2, busy=True, program="make"),
@@ -253,7 +253,7 @@ async def test_a_done_or_stopped_mission_and_a_quiet_sub_agent_close_what_they_o
     assert len(looks) == 3 and services.terminals.closed[-1] == plain
 
 
-async def test_her_next_result_says_the_app_closed_it_not_the_user(store, monkeypatch):
+async def test_the_agents_next_result_says_the_app_closed_it_not_the_user(store, monkeypatch):
     from datetime import datetime
 
     from celine.clock import zone

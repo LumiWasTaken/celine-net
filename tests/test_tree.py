@@ -74,7 +74,7 @@ async def test_what_is_refused(store):
     b = await conversations.create(store)
     await user_says(store, b, "in b")
     await say(store, b, "B")
-    mine, hers = (await view.snapshot(store, a))["messages"]
+    mine, answer = (await view.snapshot(store, a))["messages"]
     foreign = (await view.snapshot(store, b))["messages"]
     with pytest.raises(KeyError):
         await tree.retry(store, a, foreign[1]["id"])
@@ -82,9 +82,9 @@ async def test_what_is_refused(store):
         await tree.edit(store, a, foreign[0]["id"], "x")
     await store.write(lambda c: c.execute(
         "INSERT INTO tool_calls(id,message_id,name,arguments,state) "
-        "VALUES(?,?,'shell__type','{}','running')", (new_id(), hers["id"])))
+        "VALUES(?,?,'shell__type','{}','running')", (new_id(), answer["id"])))
     with pytest.raises(tree.Unresolved):
-        await tree.retry(store, a, hers["id"])
+        await tree.retry(store, a, answer["id"])
     with pytest.raises(tree.Unresolved):
         await tree.edit(store, a, mine["id"], "x")
     assert await shown(store, a) == ["in a", "A"] and await shown(store, b) == ["in b", "B"]
@@ -149,7 +149,7 @@ async def test_a_failed_reply_that_said_something_regenerates_away(store):
     assert next_turn["conversation_id"] == cid
 
 
-async def test_editing_her_reply_is_a_new_version_and_keeps_her_tool_steps(store):
+async def test_editing_the_agents_reply_is_a_new_version_and_keeps_its_tool_steps(store):
     """The agent's edited reply: a sibling of the final step with the new text, the leaf; the
     steps above it (its tool calls) are shared, what followed stays on the old path."""
     cid = await conversations.create(store)
@@ -190,7 +190,7 @@ async def _updated(store, cid):
         "SELECT updated_at FROM conversations WHERE id=?", (cid,)).fetchone()[0])
 
 
-async def test_continue_her_reply_grows_a_new_version(store):
+async def test_continue_the_agents_reply_grows_a_new_version(store):
     class Prefill(FakeBackend):
         """A queued backend's surface: a copy per message, a thinking level."""
         supports_prefill = True
@@ -335,13 +335,13 @@ async def test_continue_is_refused_with_a_sentence(store):
     with pytest.raises(ValueError, match="replies can be continued"):
         await tree.continue_message(store, cid, umid, prefill=True)
     await say(store, cid, "hello")
-    hers = (await view.snapshot(store, cid))["messages"][-1]["id"]
+    answer = (await view.snapshot(store, cid))["messages"][-1]["id"]
     await user_says(store, cid, "more")
-    with pytest.raises(ValueError, match="is still answering"):
-        await tree.continue_message(store, cid, hers, prefill=True)
+    with pytest.raises(ValueError, match="is still writing"):
+        await tree.continue_message(store, cid, answer, prefill=True)
     await say(store, cid, "sure")
     with pytest.raises(ValueError, match="last message"):
-        await tree.continue_message(store, cid, hers, prefill=True)
+        await tree.continue_message(store, cid, answer, prefill=True)
 
 
 async def test_an_older_version_whose_later_lines_moved_ends_the_path_there(store):

@@ -192,11 +192,14 @@ async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_wa
     async def ids(key):
         r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {key}"})
         return [m["id"] for m in r.json()["data"]]
-    assert await ids(KEY) == ["main/big", "main/small", "or/x/glm", "default"]
+    assert await ids(KEY) == ["main/big", "main/small", "default"], \
+        "nothing approved: the box gets no cloud model either"
     assert await ids("dev-key") == ["main/big", "main/small", "default"]
+    proxy.cfg.user = "Joe"
     refused = await ask(proxy, model="or/x/glm", key="dev-key")
-    assert refused.status_code == 403 and refused.json()["error"]["message"] == \
-        "or/x/glm is a cloud model no drone on Her Mac was approved for."
+    assert refused.status_code == 403 and refused.json()["error"]["message"] == (
+        "or/x/glm is a cloud model that needs Joe's approval: sub_agents__start with "
+        "device mac on that model asks for it.")
     parent = await conversations.create(store)
     elsewhere = await conversations.create(store, title="pc", agent_of=parent,
                                            agent_name="pc", access="work",
@@ -216,3 +219,69 @@ async def test_a_device_gets_its_local_models_and_the_cloud_one_a_drone_there_wa
         "UPDATE conversations SET created_at='2020-01-01T00:00:00.000+00:00' WHERE id=?",
         (sub,)))
     assert await ids("dev-key") == ["main/big", "main/small", "default"]
+
+
+async def test_the_box_gets_a_cloud_model_only_for_approved_work(proxy, store, monkeypatch,
+                                                                clock, db_path):
+    """A cloud model reaches the box when the user listed it in a role, while a CLI
+    sub-agent approved on it works, or once code__start was approved on it (a grant
+    each call keeps alive, kept across a restart); any other is refused with the
+    sentence that names what asks the user."""
+    from celine.conversations import store as conversations
+    from celine.core.store import Store
+    from celine.settings import conversations as conv, agent_models
+    s = proxy.cfg.settings
+    proxy.cfg.user = "Joe"
+    monkeypatch.setattr(s, "key_missing", lambda pid: False)
+    monkeypatch.setattr(agent_models, "_now", lambda: clock.at)
+
+    async def ids():
+        r = await proxy.get("/llm/v1/models", headers={"Authorization": f"Bearer {KEY}"})
+        return [m["id"] for m in r.json()["data"]]
+    refused = await ask(proxy, model="or/x/glm")
+    assert refused.status_code == 403 and refused.json()["error"]["message"] == (
+        "or/x/glm is a cloud model that needs Joe's approval: code__start, or "
+        "sub_agents__start with cli, on that model asks for it.")
+    assert len(proxy.up.seen) == 0
+
+    await store.write(lambda c: agent_models.grant_sync(c, "or/x/glm"))  # code__start's
+    assert "or/x/glm" in await ids()
+    clock.advance(agent_models.BOX_GRANT - 1)
+    assert (await ask(proxy, model="or/x/glm")).status_code == 200
+    clock.advance(agent_models.BOX_GRANT - 1)
+    assert "or/x/glm" in await ids(), "the call kept the approval alive"
+    async with anyio.create_task_group() as tg:    # the app restarts on the same file
+        again = Store(db_path)
+        await again.start(tg)
+        proxy.services.store = again
+        assert "or/x/glm" in await ids(), "the restart kept the approval"
+        await again.aclose()
+    proxy.services.store = store
+    clock.advance(agent_models.BOX_GRANT)
+    assert "or/x/glm" not in await ids(), "an idle grant runs out"
+
+    parent = await conversations.create(store)
+    sub = await conversations.create(store, title="scout", agent_of=parent,
+                                     agent_name="scout", access="work",
+                                     agent_cli="opencode")
+    await conv.apply(store, sub, {"model": "or/x/glm"})
+    assert "or/x/glm" in await ids(), "a CLI sub-agent approved on it, just started"
+    await store.write(lambda c: c.execute(
+        "UPDATE conversations SET created_at='2020-01-01T00:00:00.000+00:00' WHERE id=?",
+        (sub,)))
+    assert "or/x/glm" not in await ids()
+
+    monkeypatch.setattr(s, "roles", {**s.roles, "writer": {"chain": ["or/x/glm"]}})
+    assert "or/x/glm" in await ids(), "the user listed it in a role"
+
+
+async def test_a_provider_over_its_requests_per_hour_answers_429(proxy, monkeypatch):
+    s = proxy.cfg.settings
+    main = {**s.providers["main"], "options": {"max_per_hour": 1}}
+    monkeypatch.setattr(s, "providers", {**s.providers, "main": main})
+    proxy.llm.router.now = lambda: 50.0
+    assert (await ask(proxy)).status_code == 200
+    over = await ask(proxy)
+    assert over.status_code == 429 and over.headers["retry-after"] == "3600"
+    assert over.json()["error"]["message"] == "main reached its 1 request this hour."
+    assert len(proxy.up.seen) == 1, "the provider was asked once"

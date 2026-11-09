@@ -5,7 +5,7 @@ import {
 } from './api'
 import { asBatch } from './media'
 import { follow, isDown, snapshotAgain, useConnection, type Frame } from './socket'
-import type { ChatApproval, ConversationSettings } from './settingsApi'
+import type { Approval, ConversationSettings } from './settingsApi'
 import type { GuardBanner } from './guard'
 import type { Plan, ToolRun, Unanswered } from './api'
 
@@ -67,8 +67,8 @@ type State = {
   imageNotices: ImageNotice[]
   /** Bastet's banners after the messages that made their calls (event guard.banner) */
   banners: GuardBanner[]
-  /** her requests that wait for you, after the messages that made their calls (events approval.asked, approval.closed) */
-  approvals: ChatApproval[]
+  /** the agent's requests that wait for you, after the messages that made their calls (events approval.asked, approval.closed) */
+  approvals: Approval[]
   /** the turn you pressed Stop on, shown stopped until the server says so */
   stopping: string | null
   /** the latest manual compaction's outcome, for the quiet line at the end of the transcript */

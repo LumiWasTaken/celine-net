@@ -101,7 +101,7 @@ async def test_out_of_credits_fails_the_turn_like_any_other_error(store, cfg):
         errors = [e["data"] for e in (await view.resume(store, c1, 0))["events"]
                   if e["type"] == "error"]
         assert errors[-1]["code"] == "out_of_credits" and \
-            "OpenRouter is out of credits." in errors[-1]["message"]
+            "OpenRouter is out of credits: Insufficient credits." in errors[-1]["message"]
         assert opr.asked == ["first"] and local.asked == []
         # nothing is held: the next message asks OpenRouter again
         opr.broke = False

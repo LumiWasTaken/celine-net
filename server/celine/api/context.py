@@ -44,7 +44,7 @@ async def get_auto_context(request: Request, cid: str) -> dict:
     r = await services_of(request).store.read(lambda c: c.execute(
         "SELECT auto_context FROM conversations WHERE id=?", (cid,)).fetchone())
     if r is None:
-        raise NotFound("conversation")
+        raise NotFound("chat")
     return {"on": bool(r[0])}
 
 
@@ -52,7 +52,7 @@ async def get_auto_context(request: Request, cid: str) -> dict:
 async def put_auto_context(request: Request, cid: str, body: On) -> dict:
     store = services_of(request).store
     if not await _exists(store, cid):
-        raise NotFound("conversation")
+        raise NotFound("chat")
     await store.write(lambda c: set_auto_context(c, store, cid, body.on))
     return {"on": body.on}
 

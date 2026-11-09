@@ -56,5 +56,5 @@ async def set_tool(request: Request, cid: str, target: str, body: Override) -> d
         seq = await set_override(request.app.state.services.store, cid, _target(target),
                                  body.enabled, body.client_seq)
     except KeyError:
-        raise NotFound("conversation") from None
+        raise NotFound("chat") from None
     return {"seq": seq, "applied": seq is not None}

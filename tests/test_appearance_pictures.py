@@ -36,7 +36,7 @@ async def test_retry_makes_one_failed_item_again_and_refuses_the_rest(app):  # n
         await app.batches.retry(b["id"], 0)
 
 
-async def test_her_picture_has_its_size_on_her_message(app, store):  # noqa: F811
+async def test_the_agents_picture_has_its_size_on_its_message(app, store):  # noqa: F811
     from celine.conversations import store as conversations
     cid = await conversations.create(store)
     _, mid = await _call(store, cid, "call1")
@@ -47,7 +47,7 @@ async def test_her_picture_has_its_size_on_her_message(app, store):  # noqa: F81
     assert [(r["width"], r["height"]) for r in rows] == [(832, 1216)]
 
 
-async def test_retry_on_her_message_without_a_speaker_runs(app, store):  # noqa: F811
+async def test_retry_on_the_agents_message_without_a_speaker_runs(app, store):  # noqa: F811
     from celine.conversations import store as conversations
     cid = await conversations.create(store)
     await _call(store, cid, "call1")

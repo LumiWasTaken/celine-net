@@ -1,25 +1,27 @@
 /* What Celine did with a tool. In the
    stream only what is at work shows, as one shimmering line (ToolLines), with the pictures
    and music it makes as their blocks; everything else is in its reply's Activity: a list with one row per call (ToolGroup), the icon, the words, a
-   bare duration or count, the row's colour its state; a click opens everything about the
+   count or an exit where it says more, the row's colour its state (a settled row has no
+   clock; a call at work ticks); a click opens everything about the
    call in a Sheet, the call by its name, the arguments, where it looked and the complete
    result, nothing cut. A shell command names its terminal (Open terminal), a browser step
    its tab (Open Browser; opened, the shots the vision model saw), a message it sent can
    be cancelled while it waits. A page it wrote is a card under its reply (ArtifactCards),
    one per page whatever the number of versions it wrote in that reply; so is a share of
-   its box (ShareCards), with the server's dot. */
+   its box (ShareCards), with the server's state. */
 import { Appear } from './Appear'
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { TextWithRefs } from './Markdown'
 import {
-  AlertTriangle, AppWindow, ArrowLeft, Bell, BookOpen, Bot, CircleSlash, Download, ExternalLink, FileText, Flag, Globe, ImagePlus, LockKeyhole, Mail, MessagesSquare,
-  Music, NotebookPen, PanelRight, Paperclip, ScreenShare, Search, Square, Terminal, UserRound, Wrench, type LucideIcon,
+  Activity, AlertTriangle, AppWindow, ArrowLeft, Bell, BookOpen, Bot, Brain, Bug, CalendarClock, CircleSlash, Code, Cpu, Download, ExternalLink, FileText, Flag, Globe,
+  ImagePlus, ListChecks, LockKeyhole, Mail, MessageSquare, MessagesSquare, Music, NotebookPen, PanelRight, Paperclip, ScreenShare, Search, SlidersHorizontal, Square,
+  Terminal, UserRound, Wrench, type LucideIcon,
 } from 'lucide-react'
 import { api, type ToolCall, type ToolRun } from '../lib/api'
 import { AgentsContext, agentsApi } from '../lib/agents'
 import { useServerEvents } from '../lib/bus'
-import { artifactOf, kindWord, ShowArtifact, type ArtifactCardData } from '../lib/artifacts'
-import { SHARE_DOT, shareEvent, shareOf, sharesApi, type ShareCardData } from '../lib/shares'
+import { artifactOf, ShowArtifact, type ArtifactCardData } from '../lib/artifacts'
+import { shareEvent, shareOf, sharesApi, type ShareCardData } from '../lib/shares'
 import { useResource } from '../lib/useResource'
 import { bytes, count, duration, errorText, stamp } from '../lib/format'
 import { titleOf } from '../lib/pictures'
@@ -28,10 +30,10 @@ import { format, refHref } from '../lib/nav'
 import { intercomApi } from '../lib/intercom'
 import { ConversationReminders } from '../lib/reminders'
 import { useAction } from '../lib/useAction'
-import { capital, useOwner } from '../lib/name'
+import { capital } from '../lib/name'
 import { useNow } from '../lib/useNow'
 import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
-import { Button, Dot, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
+import { Button, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
 import { BatchGallery, GalleryContext, StopBatch, doneWords, type Made } from './Batch'
 import './ToolRow.css'
 
@@ -40,7 +42,8 @@ const ICONS: Record<string, typeof Wrench> = {
   chat_archive: MessagesSquare, user_documents: BookOpen, notebook: NotebookPen, shell: Terminal,
   web: Globe, past_conversations: Search, sub_agents: Bot, image_generator: ImagePlus,
   music_generator: Music, artifacts: AppWindow, email: Mail, browser: Globe, appearance: UserRound, me: UserRound,
-  vault: LockKeyhole,
+  vault: LockKeyhole, settings: SlidersHorizontal, models: Cpu, routines: CalendarClock, missions: Flag, plan: ListChecks,
+  mind: Brain, code: Code, intercom: MessageSquare, bugreport: Bug,
 }
 
 type Args = Record<string, unknown>
@@ -103,10 +106,10 @@ function asImage(v: unknown): Made | null {
   return img && typeof img.sha256 === 'string' ? img : null
 }
 
-/** a job's state as a word in a sentence */
+/** a job's state word */
 export const JOB_STATE_WORD: Record<string, string> = {
-  running: 'running', done: 'done', failed: 'failed', cancelled: 'stopped', timeout: 'timed out',
-  interrupted: 'interrupted',
+  running: 'Running', done: 'Done', failed: 'Failed', cancelled: 'Stopped', timeout: 'Timed out',
+  interrupted: 'Interrupted',
 }
 
 /** how long a call has been at work (ticking) or took */
@@ -118,8 +121,8 @@ export function Elapsed({ since, until }: { since: string; until?: string | null
   return <>{duration(end - start)}</>
 }
 
-/* ── one call as one row of a list (Activity, a run's calls): the icon, the words, a bare
-   duration or count; a call at work has the running dot, a failed one says "Could not", one
+/* ── one call as one row of a list (Activity, a run's calls): the icon, the words, a count
+   where it says more; a call at work has the spinner, a failed one says "Could not", one
    not run or off is muted. A click opens everything about it in a Sheet: the call by its
    name, the arguments, where it looked and the complete result, nothing cut. Its own
    buttons (Stop, Open, Cancel) sit at its end. Nothing folds: a run of calls alike
@@ -133,17 +136,12 @@ function toneOf(call: ToolCall): Tone {
   return call.state === 'ok' ? null : 'muted'
 }
 
-/** the bare time a call took, or ticking while it works after what it says it is doing
-    now (its progress note: "Waiting for Bastet") */
+/** while a call works: what it says it is doing now (its progress note: "Waiting for
+    Bastet") and its ticking time; a settled row carries no clock */
 function took(call: ToolCall): ReactNode {
-  if (!call.started_at) return null
-  if (busy(call)) {
-    const note = call.progress?.note
-    return <>{note && `${capital(note)} `}<Elapsed since={call.started_at} /></>
-  }
-  const ms = call.finished_at ? Date.parse(call.finished_at) - Date.parse(call.started_at) : NaN
-  // every settled row has its time; under a second reads as one
-  return Number.isNaN(ms) ? null : duration(Math.max(ms, 1000))
+  if (!call.started_at || !busy(call)) return null
+  const note = call.progress?.note
+  return <>{note && `${capital(note)} `}<Elapsed since={call.started_at} /></>
 }
 
 /** next to the sentence only what the sentence does not say: an ambiguous name, a
@@ -179,7 +177,8 @@ function reminderWords(call: ToolCall) {
   const to = str(d?.to) ?? str(a?.to)
   const label = to === 'me' ? `Reminder ${time}`.trim()
     : `Message to ${to ?? ''} ${time}`.trim()
-  return { label, time, text: str(d?.text) ?? str(a?.text) ?? '' }
+  const cancelLabel = `Cancel the ${to === 'me' ? 'reminder' : 'message'} at ${time}`
+  return { label, cancelLabel, text: str(d?.text) ?? str(a?.text) ?? '' }
 }
 
 const plainWords = (s: string) => s.replace(/\[\[|\]\]/g, '')
@@ -204,11 +203,10 @@ function useView(call: ToolCall): View {
     const id = str(d?.terminal_id)
     const ran = (call.name === 'shell__run' || call.name === 'shell__wait') && call.state === 'ok'
     const exit = ran ? num(d?.exit) : null
-    const seconds = ran ? num(d?.seconds) : null
     const log = str(d?.log)
     return {
       icon: Terminal, tone: exit ? 'error' : toneOf(call), words: rowWords(call),
-      meta: exit ? `exit ${exit}` : seconds !== null ? duration(seconds * 1000) : took(call),
+      meta: exit ? `exit ${exit}` : took(call),
       under: <Files call={call} />,
       detail: <>
         {log && <Part label="Log"><code className="tool__log">{log}</code></Part>}
@@ -230,14 +228,14 @@ function useView(call: ToolCall): View {
   }
   if (call.name === 'intercom__send') {
     const id = typeof d?.id === 'number' ? d.id : null
-    const { label, time, text } = reminderWords(call)
+    const { label, cancelLabel, text } = reminderWords(call)
     const state = id !== null ? reminders.list?.find(r => r.id === id)?.state : undefined
     const waiting = state === 'pending'
     return {
       icon: Bell, words: `${label} ${text}`.trim(), meta: null,
       tone: call.state !== 'ok' ? toneOf(call) : waiting ? 'running' : state === 'cancelled' ? 'muted' : null,
       actions: waiting && (
-        <Button size="sm" variant="ghost" loading={cancel.busy} aria-label={`Cancel the message ${time}`}
+        <Button size="sm" variant="ghost" loading={cancel.busy} aria-label={cancelLabel}
                 onClick={() => void cancel.run(id!).then(reminders.reload)}>Cancel</Button>
       ),
       under: cancel.error && <InlineError message={cancel.error} compact />,
@@ -285,7 +283,7 @@ function useView(call: ToolCall): View {
       )}
       {link && (
         <Button size="sm" variant="ghost" href={link}
-                aria-label={`Open the conversation of ${String(d?.name ?? 'the sub-agent')}`}>Open</Button>
+                aria-label={`Open the chat of ${String(d?.name ?? 'the sub-agent')}`}>Open chat</Button>
       )}
       {jobId && (
         <Button size="sm" variant="ghost" loading={stopping} onClick={() => void stop()}
@@ -301,16 +299,18 @@ function useView(call: ToolCall): View {
 }
 
 /* one call in a list: a click opens it whole (the list's Sheet, onOpen) */
-function CallRow({ call, onOpen }: { call: ToolCall; onOpen: () => void }) {
+/* `quiet`: under its words in a reply, where the reply is what reads first: muted unless it failed */
+function CallRow({ call, onOpen, quiet = false }: { call: ToolCall; onOpen: () => void; quiet?: boolean }) {
   const v = useView(call)
   return (
     <div className="tool">
-      {/* a failed row keeps its icon (its sentence says "Could not"), so every row's text
-          starts at one edge; only a call at work trades it for the running dot */}
-      <ListRow density="sm" icon={v.tone === 'running' ? undefined : v.icon}
-               dot={v.tone === 'running' ? 'running' : undefined}
+      {/* a failed call has the triangle and its reason under it, in the server's words; a
+          call at work has the kit's spinner in its icon tile */}
+      <ListRow density="sm" icon={call.state === 'error' ? AlertTriangle : v.icon}
+               running={v.tone === 'running'}
                title={<TextWithRefs text={v.words} />} tooltip={plainWords(v.words)}
-               meta={v.meta} muted={v.tone === 'muted'} onClick={onOpen}
+               subtitle={call.state === 'error' ? call.words?.why : undefined}
+               meta={v.meta} muted={v.tone === 'muted' || (quiet && call.state !== 'error')} onClick={onOpen}
                trailing={v.actions} trailingAlways={!!v.actions} />
       {v.under}
     </div>
@@ -323,15 +323,22 @@ function CallRow({ call, onOpen }: { call: ToolCall; onOpen: () => void }) {
 export function ToolGroup({ calls }: { calls: ToolCall[] }) {
   const shown = calls.some(c => !PLUMBING.has(c.name)) ? calls.filter(c => !PLUMBING.has(c.name)) : calls
   if (shown.length === 0) return null
-  return <ToolSheets calls={shown}><div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div></ToolSheets>
+  // every call its own row here: the stretch lines are the stream's
+  return (
+    <ToolRuns.Provider value={NO_RUNS}>
+      <ToolSheets calls={shown}><div className="tool-list" role="list" aria-label="Activity"><Rows calls={shown} /></div></ToolSheets>
+    </ToolRuns.Provider>
+  )
 }
 
-/* The runs the server made of each turn's calls (skills/words.py runs): calls alike in a
-   row, one row with the server's words and failed count. The Transcript gives them, with
-   every call of the conversation, since a run can span the steps of a reply; elsewhere
-   each call is its own row. */
+/* The runs the server made of each turn's calls (skills/words.py runs): a stretch of work
+   between two things it says, one row with the server's words ("Read 2 notes, ran 4
+   commands") and its failed count. The Transcript gives them, with every call of the
+   conversation, since a stretch can span the steps of a reply; elsewhere (Activity) each
+   call is its own row. */
 type RunsValue = { runOf: (id: string) => ToolRun | undefined; callOf: (id: string) => ToolCall | undefined }
-export const ToolRuns = createContext<RunsValue>({ runOf: () => undefined, callOf: () => undefined })
+const NO_RUNS: RunsValue = { runOf: () => undefined, callOf: () => undefined }
+export const ToolRuns = createContext<RunsValue>(NO_RUNS)
 
 export function useToolRuns(toolCalls: Record<string, ToolCall[]>, runs: Record<string, ToolRun[]>): RunsValue {
   return useMemo(() => {
@@ -372,7 +379,7 @@ export function ToolSheets({ calls, children }: { calls: ToolCall[]; children: R
     <SheetsContext.Provider value={value}>
       {children}
       {opened && shown && (
-        <CallsSheet call={call} run={run} members={members} shown={shown}
+        <CallsSheet call={call} members={members} shown={shown}
                     onPick={id => setOpened({ run: opened.run, call: id })}
                     onBack={run && call ? () => setOpened({ run: opened.run }) : undefined}
                     onClose={() => setOpened(null)} />
@@ -383,43 +390,42 @@ export function ToolSheets({ calls, children }: { calls: ToolCall[]; children: R
 
 /* The rows of a list: a run where its first call in this reply is, its other calls left
    out. Inside a ToolSheets (the Transcript's replies, ToolGroup). */
-function Rows({ calls }: { calls: ToolCall[] }) {
+function Rows({ calls, quiet = false }: { calls: ToolCall[]; quiet?: boolean }) {
   const { runOf } = useContext(ToolRuns)
   const sheets = useContext(SheetsContext)!
   return <>{calls.flatMap(c => {
     const r = runOf(c.id)
-    if (!r) return [<CallRow key={c.id} call={c} onOpen={() => sheets.open({ call: c.id })} />]
+    if (!r) return [<CallRow key={c.id} call={c} quiet={quiet} onOpen={() => sheets.open({ call: c.id })} />]
     if (sheets.here(r) !== c.id) return []
     const members = r.ids.map(sheets.find).filter((x): x is ToolCall => !!x)
-    return [<RunRow key={c.id} run={r} calls={members} onOpen={() => sheets.open({ run: r.ids[0] })} />]
+    return [<RunRow key={c.id} run={r} calls={members} quiet={quiet} onOpen={() => sheets.open({ run: r.ids[0] })} />]
   })}</>
 }
 
-/* a run as one row: the server's words, its failed calls counted (a call at work is never
-   in a run), the time from its first call to its last */
-function RunRow({ run, calls, onOpen }: { run: ToolRun; calls: ToolCall[]; onOpen: () => void }) {
-  const first = calls[0]!
-  const last = calls[calls.length - 1]!
-  const v = useView(first)
+/* a stretch as one row: the server's words on one line (the whole as its tooltip), its
+   failed calls counted (a call at work is never in a stretch); the icon of its tools when
+   they share one, else Activity */
+function RunRow({ run, calls, onOpen, quiet = false }: { run: ToolRun; calls: ToolCall[]; onOpen: () => void; quiet?: boolean }) {
+  const skills = new Set(calls.map(c => c.name.split('__')[0]!))
+  const icon = run.failed ? AlertTriangle : skills.size === 1 ? ICONS[[...skills][0]!] ?? Activity : Activity
   return (
     <div className="tool">
-      <ListRow density="sm" icon={run.failed ? AlertTriangle : v.icon} title={run.words} tooltip={run.words}
-               meta={run.failed ? `${run.failed} failed` : first.started_at &&
-                 <Elapsed since={first.started_at} until={last.finished_at ?? last.started_at} />}
+      <ListRow density="sm" icon={icon} title={run.words} tooltip={run.words}
+               meta={run.failed ? `${run.failed} failed` : null} muted={quiet && !run.failed}
                onClick={onOpen} />
     </div>
   )
 }
 
-/* One Sheet for a list: a call whole, or a run's rows, each opening in the same Sheet with
-   Back to the run. Never a Sheet on a Sheet. */
-function CallsSheet({ call, run, members, shown, onPick, onBack, onClose }: {
-  call: ToolCall | undefined; run: ToolRun | undefined; members: ToolCall[]; shown: ToolCall
+/* One Sheet for a list: a call whole, or a stretch's calls ("Activity"), each opening in
+   the same Sheet with Back to the stretch. Never a Sheet on a Sheet. */
+function CallsSheet({ call, members, shown, onPick, onBack, onClose }: {
+  call: ToolCall | undefined; members: ToolCall[]; shown: ToolCall
   onPick: (id: string) => void; onBack?: () => void; onClose: () => void
 }) {
   const v = useView(shown)
   return (
-    <Sheet title={call ? plainWords(v.words) : run?.words ?? ''} size="md" onClose={onClose}>
+    <Sheet title={call ? plainWords(v.words) : 'Activity'} size="md" onClose={onClose}>
       <div className="tool__body">
         {onBack && <span><Button size="sm" variant="ghost" icon={ArrowLeft} onClick={onBack}>Back</Button></span>}
         {call ? <>
@@ -457,7 +463,7 @@ export function ToolLines({ calls, inline = false }: { calls: ToolCall[]; inline
   return <>
     {lines.map(c => <ToolLine key={c.id} call={c} />)}
     {rows.length > 0 && (
-      <Appear className="tool-list"><Rows calls={rows} /></Appear>
+      <Appear className="tool-list tool-list--reply"><Rows calls={rows} quiet /></Appear>
     )}
   </>
 }
@@ -663,7 +669,6 @@ export function ArtifactCards({ cards }: { cards: ArtifactCardData[] }) {
     <div className="artcards">
       {cards.map(a => {
         const Kind = a.kind === 'markdown' ? FileText : AppWindow
-        const word = kindWord(a.kind)
         return (
           <a key={a.id} className="artcard" href={format({ section: 'artifact', id: a.id })} target="_blank" rel="noopener"
              onClick={show ? e => { e.preventDefault(); show(a.id) } : undefined}
@@ -671,7 +676,7 @@ export function ArtifactCards({ cards }: { cards: ArtifactCardData[] }) {
             <Kind size={ICON.lg} className="artcard__icon" aria-hidden />
             <span className="artcard__main">
               <span className="artcard__title">{a.title}</span>
-              <span className="artcard__sub">{word[0]!.toUpperCase() + word.slice(1)}, version {a.n}</span>
+              <span className="artcard__sub">Version {a.n}</span>
             </span>
             <Open size={ICON.sm} className="artcard__open" aria-hidden />
           </a>
@@ -681,7 +686,7 @@ export function ArtifactCards({ cards }: { cards: ArtifactCardData[] }) {
   )
 }
 
-/* What its calls shared from its box, one card each: the title, the server's dot and the
+/* What its calls shared from its box, one card each: the title, the server's state and the
    time left. The card opens the share in a new tab through its open route (which lets you
    in to a private one); Stop sharing beside it ends it for it too. The Pages tab lists the
    running ones with the same cards. */
@@ -700,14 +705,16 @@ export function ShareCards({ cards }: { cards: ShareCardData[] }) {
 }
 
 function ShareCard({ card }: { card: ShareCardData }) {
-  const owner = useOwner()
   const res = useResource(signal => sharesApi.get(card.token, signal), [card.token], { events: shareEvent(card.token) })
   const s = res.data
-  const now = useNow(!!s && s.state !== 'ended')
-  const left = s ? Date.parse(s.ends_at) - now : 0
-  // its end time is passive, no event marks it: the card ends itself at ends_at
-  const ended = res.missing || (!!s && (s.state === 'ended' || left <= 0))
-  const dot = ended ? SHARE_DOT.ended : s ? SHARE_DOT[s.state] : null
+  const ended = res.missing || s?.state === 'ended'
+  // its end time is passive, no event marks it: at ends_at the card asks the server again
+  const reload = res.reload
+  useEffect(() => {
+    if (!s || s.state === 'ended') return
+    const t = window.setTimeout(reload, Math.max(0, Date.parse(s.ends_at) - Date.now()) + 1000)
+    return () => { window.clearTimeout(t) }
+  }, [s, reload])
   const stop = useAction(() => sharesApi.stop(card.token))
   return (
     <div className="sharecard">
@@ -716,9 +723,7 @@ function ShareCard({ card }: { card: ShareCardData }) {
         <ScreenShare size={ICON.lg} className="artcard__icon" aria-hidden />
         <span className="artcard__main">
           <span className="artcard__title">{card.title}</span>
-          <span className="artcard__sub">
-            {dot ? <Dot tone={dot.tone} text={ended ? dot.label : `${dot.label}, ${duration(left)} left`} /> : `Shared from ${owner} box`}
-          </span>
+          {(s || ended) && <span className="artcard__sub">{ended ? 'Ended' : s!.line}</span>}
         </span>
         {s?.public && <span className="artcard__open" title="Public" role="img" aria-label="Public"><Globe size={ICON.sm} aria-hidden /></span>}
         {!ended && <ExternalLink size={ICON.sm} className="artcard__open" aria-hidden />}

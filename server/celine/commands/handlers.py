@@ -106,7 +106,7 @@ async def _think(services, cid: str, text: str, *, wait: bool = False) -> dict:
     s = getattr(services.cfg, "settings", None)
     clean = conv.validate(s, services.registry, {"thinking": level})
     if not await conv.apply(store, cid, clean):
-        raise NotFound("conversation")
+        raise NotFound("chat")
     # the same event PATCH /conversations/{cid}/settings sends (settings-backend)
     view = None
     if s is not None:
@@ -119,7 +119,7 @@ async def _think(services, cid: str, text: str, *, wait: bool = False) -> dict:
                        f"turn.{note}", "settings": view}
 
 
-command("think", "How much the model thinks before it answers, in this conversation: "
+command("think", "How much the model thinks before it answers, in this chat: "
         "off, default, or an effort word the model knows.",
         args=(Arg("level", "off, default, or an effort word. The model's words are "
                   "suggested. The app passes any word through."),),
@@ -198,7 +198,7 @@ async def _model(services, cid: str, text: str, *, wait: bool = False) -> dict:
                 f"Models.", 400, {"model": hit, "provider": pid})
         clean = conv.validate(s, services.registry, {"model": f"{pid}/{hit}"})
     if not await conv.apply(store, cid, clean):
-        raise NotFound("conversation")
+        raise NotFound("chat")
     view = conv.view(s, cid, await conv.get(store, cid))
     await store.append_event(cid, CONVERSATION_SETTINGS, view)
     from .. import attachments
@@ -209,7 +209,7 @@ async def _model(services, cid: str, text: str, *, wait: bool = False) -> dict:
                        f"turn."}
 
 
-command("model", "Which model answers in this conversation. Checked against the "
+command("model", "Which model answers in this chat. Checked against the "
         "models the current provider offers.",
         args=(Arg("name", "A model of the current provider, or provider/model, or "
                   "default", required=False),))(_model)

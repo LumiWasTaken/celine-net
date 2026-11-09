@@ -80,7 +80,7 @@ class Block(str):
 
 async def _feel(store, emotion: str, minutes: float, why: str) -> None:
     await store.write(lambda c: c.execute(
-        "INSERT INTO moods(at, emotion, strength, why, by) VALUES(?, ?, 0.9, ?, 'her')",
+        "INSERT INTO moods(at, emotion, strength, why, by) VALUES(?, ?, 0.9, ?, 'agent')",
         ((T0 + timedelta(minutes=minutes)).isoformat(), emotion, why)))
 
 
@@ -96,31 +96,31 @@ def _nothing(text: str) -> bool:
 async def test_the_mind_block_comes_whole_only_when_something_in_it_changed(
         store, monkeypatch):
     cfg = load()
-    her = _Her(store, cfg, await conversations.create(store))
+    agent = _Her(store, cfg, await conversations.create(store))
     await _feel(store, "happy", -10, "a good morning")
-    first = await her.says("u1", None, 0)
+    first = await agent.says("u1", None, 0)
     assert _whole(first) and "\nmood: " in first and "happy since" in first
-    assert _nothing(await her.says("u2", "u1r", 5)), "nothing changed: no block"
+    assert _nothing(await agent.says("u2", "u1r", 5)), "nothing changed: no block"
     # its mood
     await _feel(store, "angry", 8, "he forgot")
-    assert "angry since" in await her.says("u3", "u2r", 10)
-    assert _nothing(await her.says("u4", "u3r", 15))
+    assert "angry since" in await agent.says("u3", "u2r", 10)
+    assert _nothing(await agent.says("u4", "u3r", 15))
     # a new model
-    her.model = "m2"
-    assert "\nmodel now: m2" in await her.says("u5", "u4r", 20)
-    assert _nothing(await her.says("u6", "u5r", 25))
+    agent.model = "m2"
+    assert "\nmodel now: m2" in await agent.says("u5", "u4r", 20)
+    assert _nothing(await agent.says("u6", "u5r", 25))
     # something down, and back
-    her.down = ["browser"]
-    assert "\ndown now: browser" in await her.says("u7", "u6r", 30)
-    her.down = []
-    assert _whole(await her.says("u8", "u7r", 35))
+    agent.down = ["browser"]
+    assert "\ndown now: browser" in await agent.says("u7", "u6r", 30)
+    agent.down = []
+    assert _whole(await agent.says("u8", "u7r", 35))
     # an unfreeze
     async def unfrozen(store, cfg, tz):
         return "unfrozen at 09:39"
     monkeypatch.setattr(mind.awareness, "unfrozen_line", unfrozen)
-    assert "\nunfrozen at 09:39" in await her.says("u9", "u8r", 40)
+    assert "\nunfrozen at 09:39" in await agent.says("u9", "u8r", 40)
     monkeypatch.undo()
-    assert _nothing(await her.says("u10", "u9r", 45))
+    assert _nothing(await agent.says("u10", "u9r", 45))
     # another conversation has its own last block
     other = _Her(store, cfg, await conversations.create(store))
     other.model = "m2"
@@ -129,36 +129,36 @@ async def test_the_mind_block_comes_whole_only_when_something_in_it_changed(
 
 async def test_a_pause_and_a_step_of_the_absence_make_the_block_whole(store):
     cfg = load()
-    her = _Her(store, cfg, await conversations.create(store))
-    assert _whole(await her.says("u1", None, 0))
+    agent = _Her(store, cfg, await conversations.create(store))
+    assert _whole(await agent.says("u1", None, 0))
     # nine hours later: a pause here is always news, and the absence is one step
-    later = await her.says("u2", "u1r", 9 * 60)
+    later = await agent.says("u2", "u1r", 9 * 60)
     assert _whole(later) and "last message here 9 hours ago" in later
     # minutes after: the absence is back to no step, so the block is whole once more
-    back = await her.says("u3", "u2r", 9 * 60 + 5)
+    back = await agent.says("u3", "u2r", 9 * 60 + 5)
     assert _whole(back) and "last message here" not in back
-    assert _nothing(await her.says("u4", "u3r", 9 * 60 + 10))
+    assert _nothing(await agent.says("u4", "u3r", 9 * 60 + 10))
 
 
-async def test_the_last_block_is_the_one_on_her_branch_she_still_sees(store):
+async def test_the_last_block_is_the_one_on_the_branch_the_agent_still_sees(store):
     cfg = load()
     cid = await conversations.create(store)
-    her = _Her(store, cfg, cid)
+    agent = _Her(store, cfg, cid)
     await _feel(store, "happy", -10, "a good morning")
-    assert _whole(await her.says("u1", None, 0))
+    assert _whole(await agent.says("u1", None, 0))
     await _feel(store, "angry", 3, "he forgot")
-    assert "angry since" in await her.says("u2", "u1r", 5)
+    assert "angry since" in await agent.says("u2", "u1r", 5)
     # an edit of u2: a sibling under u1's reply, whose branch last carried "happy"
-    edited = await her.says("u2b", "u1r", 10)
+    edited = await agent.says("u2b", "u1r", 10)
     assert _whole(edited) and "angry since" in edited
-    assert _nothing(await her.says("u3", "u2br", 15))
+    assert _nothing(await agent.says("u3", "u2br", 15))
     # a compaction through u3's reply: the last whole block is in the summary now
     await store.write(lambda c: c.execute(
         "INSERT INTO compactions(id, conversation_id, through_message_id, trigger, "
         "covers_messages, created_at) VALUES('k', ?, 'u3r', 'auto', 6, ?)",
         (cid, T0.isoformat())))
-    assert _whole(await her.says("u4", "u3r", 20))
-    assert _nothing(await her.says("u5", "u4r", 25))
+    assert _whole(await agent.says("u4", "u3r", 20))
+    assert _nothing(await agent.says("u5", "u4r", 25))
 
 
 # ---- always-loaded notes over 1.5 KB -------------------------------------------------------

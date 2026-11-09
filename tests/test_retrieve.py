@@ -121,3 +121,37 @@ def test_me_is_an_exact_word_in_written_by(tmp_path):
     except ValueError:
         return
     assert not got.me
+
+
+def test_a_reranker_error_answer_says_its_words(monkeypatch):
+    import httpx
+    import pytest
+    from celine.kb.retrieve import rerank
+    monkeypatch.setattr(rerank.httpx, "post", lambda url, json, headers, timeout: httpx.Response(
+        400, json={"error": {"message": "the model is not a reranker"}}))
+    with pytest.raises(rerank.RerankError, match="^the reranker said 400: the model is not a reranker$"):
+        rerank.HttpReranker("http://r/rerank", "m").score("q", ["a doc"])
+
+
+def test_a_reranker_counts_in_its_providers_hour(tmp_path, monkeypatch):
+    """Requests per hour 1 on the reranker's provider: the second call fails with the
+    sentence before the server is asked."""
+    import httpx
+    import pytest
+    from celine.boot import load
+    from celine.kb.retrieve import rerank
+    from settings_fixtures import scratch
+    scratch(tmp_path, monkeypatch, roles={"reranker": {"chain": ["rr/rank"]}}, providers={
+        "rr": {"kind": "llama-swap", "base_url": "http://rr:8080/v1", "label": "Ranker",
+               "options": {"max_per_hour": 1}, "models": {"rank": {"caps": ["rerank"]}}}})
+    asked = []
+    monkeypatch.setattr(rerank.httpx, "post", lambda url, json, headers, timeout: (
+        asked.append(url), httpx.Response(200, json={"results": [{"index": 0,
+                                                                   "relevance_score": 1}]}))[1])
+    from celine.backends.router import app_router
+    cfg = load()
+    app_router(cfg).now = lambda: 100.0
+    assert rerank.from_config(cfg).score("q", ["a doc"]) == [1.0]
+    with pytest.raises(rerank.RerankError, match="^Ranker reached its 1 request this hour.$"):
+        rerank.from_config(cfg).score("q", ["a doc"])
+    assert asked == ["http://rr:8080/v1/rerank"]

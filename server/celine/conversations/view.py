@@ -6,7 +6,7 @@ import json
 import sqlite3
 
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER
-from .. import approvals
+from .. import approvals, homes
 from ..guard import mark, store as guard_rows
 from ..plans import store as plans
 from ..skills import words
@@ -23,20 +23,13 @@ from ..core.event_types import (
 )
 
 
-def _started_by(c: sqlite3.Connection, parent: str | None) -> dict | None:
-    """A sub-agent's parent as its head names it: {name, link}; None for any other."""
-    if not parent:
-        return None
-    r = c.execute("SELECT agent_name, title FROM conversations WHERE id=?",
-                  (parent,)).fetchone()
-    if r is None:
-        return None
-    from .. import homes
-    return {"name": r["agent_name"] or r["title"] or "", "link": homes.of(c, parent)["link"]}
+async def snapshot(store, cid: str, llm=None) -> dict:
+    """Everything the client needs for a first paint, read in one transaction. Its
+    conversation's `held`: "frozen" or "paused" while the hold keeps a queued turn of it
+    aside (hold.held; `llm` the LLM service, None: never paused), else None."""
+    from ..hold import answering, held
+    models = answering(llm)
 
-
-async def snapshot(store, cid: str) -> dict:
-    """Everything the client needs for a first paint, read in one transaction."""
     def fn(c: sqlite3.Connection) -> dict:
         conv = c.execute(
             "SELECT id, title, pinned, trigger_key, active_leaf_id, trim_below, "
@@ -121,7 +114,9 @@ async def snapshot(store, cid: str) -> dict:
                                  "agents": agents,
                                  # the app path that shows it (intercom source_of)
                                  "link": (source_of(c, f"agent:{cid}") or {}).get("link"),
-                                 "started_by": _started_by(c, conv["agent_of"])},
+                                 # where it sits, from the top down to itself (homes.path)
+                                 "path": homes.path(c, cid),
+                                 "held": held(c, cid, models)},
                 "messages": messages,
                 "tool_calls": calls, "runs": runs, "compactions": compactions,
                 "turn": tdict, "unanswered": tree.unanswered(c, cid), "switched": switched, "image_notices": image_notices,
@@ -213,7 +208,7 @@ def continuable(c: sqlite3.Connection, cid: str, turn) -> dict:
     code = turn["reason_code"]
     cut = turn["cut"]
     labels = {"interrupted": "Interrupted.", "aborted": "Stopped.",
-              "capped": "Stopped at the step limit.", "failed": "Failed."}
+              "capped": "Stopped at the tool round limit.", "failed": "Failed."}
     if state == "failed" and code == "context_too_small":
         labels["failed"] = turn["reason"] or labels["failed"]
     label = "Cut off at the output token limit." if (state == "done" and cut) else \

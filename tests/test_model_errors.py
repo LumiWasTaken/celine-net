@@ -49,27 +49,35 @@ async def test_a_refused_or_slow_server_names_the_host(monkeypatch):
     assert str(e) == "llama-swap at gpu:8080 did not answer within 30 s."
 
 
-async def test_key_model_and_server_errors_are_plain(monkeypatch):
+async def test_key_model_and_server_errors_carry_the_servers_words(monkeypatch):
     seen = {}
 
     def answer(request):
         return httpx.Response(seen["status"], text=seen["body"])
     b = _backend(monkeypatch, answer)
-    for status in (401, 403):
-        seen.update(status=status, body=json.dumps({"error": {"message": "Unauthorized"}}))
-        e = await _fails(b)
-        assert str(e) == "llama-swap rejected the API key. Check the key in Settings, Models."
-        assert not e.retryable
+    seen.update(status=401, body=json.dumps({"error": {"message": "Unauthorized"}}))
+    e = await _fails(b)
+    assert str(e) == ("llama-swap returned 401: Unauthorized. Check the key in Settings, "
+                      "Models.")
+    assert not e.retryable
+    seen.update(status=403, body=json.dumps({"error": {"message": "region not allowed"}}))
+    assert str(await _fails(b)) == "llama-swap returned 403: region not allowed"
     seen.update(status=404, body=json.dumps({"error": {"message": "model not found"}}))
-    assert str(await _fails(b)) == ("llama-swap has no model qwen3-8b. Check its name in "
-                                    "Settings, Models.")
+    assert str(await _fails(b)) == ("llama-swap returned 404: model not found. Check the model "
+                                    "name qwen3-8b and the address in Settings, Models.")
     seen.update(status=500, body=json.dumps({"error": {"message": "failed to load model"}}))
     e = await _fails(b)
-    assert str(e) == "llama-swap returned 500. failed to load model" and e.retryable
-    seen.update(status=502, body="<html><body>Bad Gateway</body></html>")
-    assert str(await _fails(b)) == "llama-swap returned 502.", "no HTML in its transcript"
-    seen.update(status=503, body='{"detail": [{"loc": ["x"]}]}')
-    assert str(await _fails(b)) == "llama-swap returned 503.", "no raw JSON either"
+    assert str(e) == "llama-swap returned 500: failed to load model" and e.retryable
+    seen.update(status=502, body="<html><head><title>502 Bad Gateway</title></head>"
+                                 "<body><h1>502 Bad Gateway</h1>nginx</body></html>")
+    assert str(await _fails(b)) == "llama-swap returned 502: 502 Bad Gateway"
+    seen.update(status=503, body=json.dumps({"error": {
+        "message": "The model server is paused. Retry later.", "type": "model_paused"}}))
+    e = await _fails(b)
+    assert str(e) == "llama-swap returned 503: The model server is paused. Retry later."
+    assert e.retryable
+    seen.update(status=503, body="")
+    assert str(await _fails(b)) == "llama-swap returned 503: Service Unavailable"
 
 
 async def test_a_stream_cut_mid_way_is_one_sentence(monkeypatch):
@@ -98,7 +106,7 @@ async def test_an_ollama_error_line_says_what_the_server_said(monkeypatch):
     b = OllamaBackend(BackendConfig(id="far/m", kind="ollama", label="Ollama",
                                     base_url="http://far:11434/v1", model="m", params={},
                                     raw={}), timeout=30.0)
-    assert str(await _fails(b)) == "Ollama returned 500. model requires more system memory"
+    assert str(await _fails(b)) == "Ollama returned 500: model requires more system memory"
 
 
 async def test_a_broken_chunk_fails_the_call_instead_of_going_missing(monkeypatch):
@@ -145,7 +153,7 @@ async def test_parallel_calls_without_an_index_stay_apart(monkeypatch):
 
 
 def test_arguments_that_are_not_an_object_fail_the_ollama_request_with_the_reason():
-    """Ollama takes a call's arguments as an object: what she wrote is never sent as
+    """Ollama takes a call's arguments as an object: what the agent wrote is never sent as
     none instead."""
     ollama = OllamaBackend(BackendConfig(id="o", kind="ollama", label="o",
                                          base_url="http://o", model="m", raw={}))

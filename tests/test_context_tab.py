@@ -18,7 +18,7 @@ pytestmark = pytest.mark.anyio
 async def test_always_notes_count_as_notes(tmp_path, monkeypatch, store):
     scratch(tmp_path, monkeypatch)
     cfg = boot.load()
-    note = cfg.her.notebook / "lore" / "sea.md"
+    note = cfg.agent.notebook / "lore" / "sea.md"
     note.parent.mkdir(parents=True, exist_ok=True)
     text = "load: always\n\n" + "The sea by the house is grey. " * 40
     note.write_text(text)

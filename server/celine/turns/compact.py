@@ -42,6 +42,11 @@ def _args(arguments: str | None, limit: int = 300) -> str:
 
 
 ARG_TOKENS = 300          # a string argument of an aged call over this is shortened
+# the end short_arguments gives a shortened value; a call that sends it back is refused
+# (turns/tools.py _invalid): the app's mark is never a value a tool may receive
+MARK = re.compile(r"\[[\d,]+ lines, about [\d,]+ tokens, shortened; the call is kept: "
+                  r"([^\s;\]]+); read it back with past_conversations__read_tool_call"
+                  r"\(id=\"[^\"]*\"\)\]\s*\Z")
 
 
 def short_arguments(arguments: str | None, call_id: str) -> str | None:
@@ -72,6 +77,18 @@ def short_arguments(arguments: str | None, call_id: str) -> str | None:
                 f"past_conversations__read_tool_call(id=\"{call_id}\")]")
     out = short(args)
     return json.dumps(out, ensure_ascii=False) if changed else arguments
+
+
+def marked(args: dict) -> tuple[str, str] | None:
+    """(the top-level argument, the call id) of the first string in `args` that ends in
+    the shortening mark short_arguments writes; None when none does."""
+    def found(v) -> str | None:
+        if isinstance(v, str):
+            m = MARK.search(v)
+            return m[1] if m else None
+        items = v.values() if isinstance(v, dict) else v if isinstance(v, list) else ()
+        return next((cid for x in items if (cid := found(x))), None)
+    return next(((k, cid) for k, v in args.items() if (cid := found(v))), None)
 
 
 MAX_CITED_LINES = 12

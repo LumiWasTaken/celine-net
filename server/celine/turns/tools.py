@@ -19,7 +19,7 @@ from ..skills import CORE, META, ToolContext, ToolResult
 from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
                              read_mode_has)
 from .cancel import until_stop
-from . import store as turns
+from . import compact, store as turns
 
 log = logging.getLogger("celine.tools")
 
@@ -52,8 +52,10 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         _seen(registry, cid, call["name"])
         known = registry is not None and registry.get(call["name"]) is not None
         metrics.TOOL_CALLS.labels(call["name"] if known else "unknown", state).inc()
+        why = {"reason": compact.one_line(result.content, 200)} \
+            if result.is_error or state == "gated" else {}
         log.info("tool done", extra={"event": "tool.done", "turn": tid,
-                                     "tool": call["name"], "state": state})
+                                     "tool": call["name"], "state": state, **why})
     if _concurrent(calls, registry):
         done: dict[str, tuple] = {}
 
@@ -239,7 +241,7 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     async def progress(note: str) -> None:
         said.append(note)
         await turns.tool_progress(store, turn["conversation_id"], call["id"], note)
-    # Bastet (guard/calls.py), before the time check: her wait for the judge counts on
+    # Bastet (guard/calls.py), before the time check: its wait for the judge counts on
     # its clock
     gate = await bastet_calls.at_call(turn, call, spec, args, store=store, cfg=cfg,
                                       registry=registry, token=token, jobs=jobs,
@@ -343,7 +345,17 @@ def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
             near = _meant(u, sorted(missing), list(props))
             parts.append(f"{u} is not a parameter" + (f", did you mean {near}?" if near else ""))
         return "; ".join(parts)
-    return mistyped(args, spec.schema)
+    return mistyped(args, spec.schema) or _marked(args)
+
+
+def _marked(args: dict) -> str | None:
+    """An argument that ends in the app's own shortening mark (compact.short_arguments):
+    the model copied an aged call as the context showed it. The mark is never content."""
+    if (hit := compact.marked(args)) is None:
+        return None
+    key, cid = hit
+    return (f"{key} ends in the app's mark for the shortened {key} of call {cid}; "
+            f"past_conversations__read_tool_call(id=\"{cid}\") reads that call back")
 
 
 def _meant(name: str, missing: list[str], props: list[str]) -> str | None:

@@ -9,7 +9,8 @@ The window (n_ctx of one slot) is what the server says, wherever it says it: a l
 llama-swap model's /props (`running_windows`, read by every router probe), a
 context-overflow error that states the server's n_ctx (`learn_window`), else the
 context the provider reports for the model (`reported_windows`, its model list, read
-by the router's ping). The server wins over the model's context size in Settings,
+by router.discover when the provider first answers, when it comes back and on Check
+provider). The server wins over the model's context size in Settings,
 Models: that number counts only where no server says (and on Ollama, which runs with
 it as num_ctx: its reported number is the model's most, not what it runs with).
 Without any of them, the window is FALLBACK_WINDOW. Everything here is keyed by the

@@ -69,13 +69,13 @@ def _grams(texts: list[str]) -> Counter:
     return out
 
 
-def profile(hers: list[str], theirs: list[str], top: int = 20,
+def profile(own: list[str], theirs: list[str], top: int = 20,
             min_count: int = 3) -> list[tuple[str, float]]:
     """The n-grams over-represented in its texts against theirs: (n-gram, ratio), the most
     over-represented first. ratio = its share of it / their share (their count plus one, so
     a word the user never writes counts), only for n-grams it wrote at least `min_count`
     times."""
-    a, b = _grams(hers), _grams(theirs)
+    a, b = _grams(own), _grams(theirs)
     na, nb = sum(a.values()) or 1, sum(b.values()) + 1
     scored = [(g, round((c / na) / ((b[g] + 1) / nb), 2)) for g, c in a.items()
               if c >= min_count]

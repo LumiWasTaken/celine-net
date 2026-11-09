@@ -202,3 +202,24 @@ async def test_a_message_taken_mid_turn_is_sent_once_and_the_reply_stays_on_its_
     taken = [m for m in msgs if m["role"] == "user"][-1]
     assert taken["parent_id"] == tool["id"], "under the turn's own tail"
     assert [m["role"] for m in msgs if m["parent_id"] == taken["id"]] == ["assistant"]
+
+
+def test_one_role_in_a_row_goes_as_one_message_where_the_templates_need_it():
+    """User lines join; the agent's reply joins the timed message to the user that landed
+    after it (intercom store.SAY); a reply with calls or its own thinking stays apart."""
+    O = context.ORIGIN
+    out: list[dict] = []
+    context.add_wire(out, [
+        {"role": "user", "content": "hi", O: [{"m": 1}]},
+        {"role": "user", "content": "there", O: [{"m": 2}]},
+        {"role": "assistant", "content": "I'll remind you.", "reasoning_content": "ok", O: [{"m": 3}]},
+        {"role": "assistant", "content": "Your call is at 9.", O: [{"m": 4}]},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}], O: [{"m": 5}]},
+    ])
+    assert [(m["role"], m["content"]) for m in out] == [
+        ("user", "hi\n\nthere"), ("assistant", "I'll remind you.\n\nYour call is at 9."),
+        ("assistant", "")]
+    assert out[1]["reasoning_content"] == "ok" and out[1][O] == [{"m": 3}, {"m": 4}]
+    out2 = [{"role": "assistant", "content": "a", O: []}]
+    context.add_wire(out2, [{"role": "assistant", "content": "b", "reasoning_content": "x", O: []}])
+    assert len(out2) == 2, "a second reply with its own thinking stays apart"

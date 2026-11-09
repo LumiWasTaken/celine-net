@@ -35,7 +35,7 @@ async def _setup(store):
     return cfg, skill, bg, ctx
 
 
-async def test_her_text_is_her_first_message_and_the_chat_knows_where_it_came_from(store):
+async def test_the_agents_text_is_its_first_message_and_the_chat_knows_where_it_came_from(store):
     cfg, skill, bg, ctx = await _setup(store)
     out = await skill.start_chat(ctx, title="Invoice due", text="It is due tomorrow.")
     new = out.display["chat"]
@@ -47,9 +47,9 @@ async def test_her_text_is_her_first_message_and_the_chat_knows_where_it_came_fr
         "SELECT from_addr, to_addr, subject FROM intercom").fetchall())
     assert [tuple(r) for r in sent] == [(f"agent:{new}", "user", "Invoice due")]
     built = await context.build(store, cfg, FakeBackend(), new, system="", tools=[])
-    first, hers = [m for m in built.messages if m["role"] != "system"][:2]
+    first, answer = [m for m in built.messages if m["role"] != "system"][:2]
     assert first["role"] == "user" and "You started this chat from" in first["content"]
-    assert "email__read" in first["content"] and hers["content"] == "It is due tomorrow."
+    assert "email__read" in first["content"] and answer["content"] == "It is due tomorrow."
 
 
 async def test_a_second_chat_from_the_same_place_starts_and_lists_the_thread(store):
@@ -65,10 +65,10 @@ async def test_a_second_chat_from_the_same_place_starts_and_lists_the_thread(sto
     assert not out.is_error
     sent = await store.read(lambda c: c.execute(
         "SELECT subject, text FROM intercom WHERE id=?", (out.display["id"],)).fetchone())
-    assert tuple(sent) == ("Two gates that stop  costing me missions", " x "), "as she wrote it"
+    assert tuple(sent) == ("Two gates that stop  costing me missions", " x "), "as the agent wrote it"
 
 
-async def test_an_open_bug_report_of_the_last_day_is_listed_for_her_to_judge(store):
+async def test_an_open_bug_report_of_the_last_day_is_listed_for_the_agent_to_judge(store):
     _, skill, bg, ctx = await _setup(store)
     rid = (await store.write(lambda c: bugs.file(c, store, bg, "Shell wedge", "high",
                                                  "it hangs", "", "")))["id"]

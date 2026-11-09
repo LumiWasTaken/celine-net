@@ -1,6 +1,6 @@
 """Events: one list of everything it did and everything that ran, built from the rows that exist, nothing stored twice:
 turns, tool calls, its notebook writes (its notebook__* calls), background jobs, the
-messages she sent the user, Routine runs, Bastet's decisions, freezes and unfreezes,
+messages the agent sent the user, Routine runs, Bastet's decisions, freezes and unfreezes,
 passes, the work queue's items (work.py), the changes it made to itself (its talk
 and slop list, skills/me.py: their versions in text_versions) and its bug reports
 (bugreports/).
@@ -18,7 +18,9 @@ tab is hidden (a system notification, web/src/lib/notify.ts; a push to a device 
 is focused, push.py): its finished reply in a
 chat, an Intercom message to the user, a mission that waits for them, a failed run, an
 approval that waits. {kind, title, body, link, tag}: `link` the app path that opens it,
-`tag` the item, so a burst of one item replaces its notification."""
+`tag` the item, so a burst of one item replaces its notification; `closed` (an
+approval's end) replaces it with how it ended, silently, and reaches a focused page's
+device too."""
 from __future__ import annotations
 
 import base64
@@ -53,10 +55,12 @@ def added(store, c: sqlite3.Connection, kind: str, conversation: str | None = No
 
 
 def notice(store, c: sqlite3.Connection, kind: str, title: str | None, body: str | None,
-           link: str | None, tag: str) -> None:
-    """Inside a write: one `notice` (above); `body` cut to its first line."""
+           link: str | None, tag: str, closed: bool = False) -> None:
+    """Inside a write: one `notice` (above); `body` cut to its first line. `closed`: it
+    replaces the notice of its tag with how that ended (an approval's), silently."""
     store.global_event(c, NOTICE, {"kind": kind, "title": title or "", "body": _first(body),
-                                     "link": link, "tag": tag})
+                                     "link": link, "tag": tag,
+                                     **({"closed": True} if closed else {})})
 
 
 # ── the words ──
@@ -103,13 +107,13 @@ def _join(*parts: str) -> str:
 RUNNING, OK, ERROR, MUTED, WARN = "running", "ok", "error", "muted", "warn"
 # a state as (word, tone)
 _TURN = {"queued": ("Queued", MUTED), "done": ("Done", OK), "aborted": ("Stopped", MUTED), "failed": ("Failed", ERROR),
-         "interrupted": ("Failed", ERROR), "capped": ("Paused", WARN)}
+         "interrupted": ("Interrupted", ERROR), "capped": ("Stopped", WARN)}
 _CALL = {"ok": ("Done", OK), "error": ("Failed", ERROR), "gated": ("Stopped", ERROR),
-         "interrupted": ("Failed", ERROR), "cancelled": ("Stopped", MUTED)}
-_JOB = {"done": ("Done", OK), "failed": ("Failed", ERROR), "timeout": ("Failed", ERROR),
-        "interrupted": ("Failed", ERROR), "cancelled": ("Stopped", MUTED)}
-_RUN = {"done": ("Done", OK), "failed": ("Failed", ERROR), "skipped": ("Skipped", MUTED),
-        "stopped": ("Stopped", MUTED)}
+         "interrupted": ("Interrupted", ERROR), "cancelled": ("Stopped", MUTED)}
+_JOB = {"done": ("Done", OK), "failed": ("Failed", ERROR), "timeout": ("Timed out", ERROR),
+        "interrupted": ("Interrupted", ERROR), "cancelled": ("Stopped", MUTED)}
+_RUN = {"waiting": ("Queued", MUTED), "done": ("Done", OK), "failed": ("Failed", ERROR),
+        "skipped": ("Skipped", MUTED), "stopped": ("Stopped", MUTED)}
 # Bastet's decision as banners.py names it (_kind: Watch's would-be acts too)
 _GUARD = {"allow": ("Allowed", OK), "would_stop": ("Would have stopped", WARN),
           "would_freeze": ("Would have frozen", WARN),
@@ -120,13 +124,13 @@ _GUARD = {"allow": ("Allowed", OK), "would_stop": ("Would have stopped", WARN),
           "denied": ("Denied", ERROR), "passed": ("Pass", MUTED), "patrol": ("Found", WARN),
           "asked": ("Waiting for you", WARN), "waiting": ("Running", RUNNING)}
 # the Mode filter's words: Bastet's mode when she decided
-MODE_WORDS = {"on": "On", "watch": "Watch"}
+MODE_WORDS = {"on": "Enforce", "watch": "Warn"}
 _WORK_STATE = {"queued": ("Queued", MUTED), "deferred": ("Paused", WARN), "done": ("Done", OK),
                "failed": ("Failed", ERROR)}
 # its text -> (the title, the key of its page's editor: web/src/lib/nav.tsx)
-_HER = {"her:talk": ("Changed the Example lines", "talk"),
-        "her:voice": ("Changed the Banned words", "banned"),
-        "her:persona": ("Changed the Persona", "persona")}
+_HER = {"agent:talk": ("Changed the Example lines", "talk"),
+        "agent:voice": ("Changed the Banned words", "banned"),
+        "agent:persona": ("Changed the Persona", "persona")}
 _BUG = {"high": "High", "medium": "Medium", "low": "Low"}
 _WORK = {"title": "Title", "appraisal": "Mood", "documents.describe": "Document descriptions"}
 
@@ -226,7 +230,7 @@ def _freeze(r, cfg) -> dict:
 def _pass(r, cfg) -> dict:
     from .guard.rules import label
     until = datetime.fromisoformat(r["until"]).astimezone(zone(cfg))
-    return {"title": f"Pass on {label(r['rule'])}", "outcome": "Allowed",
+    return {"title": f"Pass for {label(r['rule'])}", "outcome": "Allowed",
             "tone": OK, "detail": _join(f"until {until:%H:%M}", _first(r["why"]))}
 
 
@@ -236,7 +240,7 @@ def _work(r, cfg) -> dict:
             "detail": _first(r["error"]) if r["error"] else ""}
 
 
-def _her(r, cfg) -> dict:
+def _agent(r, cfg) -> dict:
     title, key = _HER.get(r["of"], (r["of"], "persona"))
     return {"title": title, "outcome": "Done", "tone": OK, "detail": _first(r["change"]),
             "open": f"/settings/agent/edit/{key}/history"}
@@ -254,7 +258,7 @@ def _bug(r, cfg) -> dict:
 
 # its chats' turns and calls are its own; a mission's, a sub-agent's or a background task's
 # are background work
-_TAB = "CASE cv.kind WHEN 'chat' THEN 'celine' ELSE 'background' END AS tab"
+_TAB = "CASE cv.kind WHEN 'chat' THEN 'agent' ELSE 'background' END AS tab"
 _TOOL_SQL = ("SELECT '{k}:' || t.id AS id, coalesce(t.started_at, m.created_at) AS at, "
              "t.state IN ('error','gated','interrupted') AS failed, m.conversation_id AS cid, "
              "t.message_id AS mid, m.turn_id AS tid, " + _TAB + ", t.name, t.arguments, t.state "
@@ -279,7 +283,7 @@ SOURCES = {s.kind: s for s in (
            "j.finished_at FROM jobs j LEFT JOIN tool_calls tc ON tc.id = j.tool_call_id", _job),
     Source("message", "Intercom",
            "SELECT 'message:' || i.id AS id, i.created_at AS at, 0 AS failed, "
-           "substr(i.from_addr, 7) AS cid, NULL AS mid, NULL AS tid, 'celine' AS tab, i.id AS iid, i.thread, "
+           "substr(i.from_addr, 7) AS cid, NULL AS mid, NULL AS tid, 'agent' AS tab, i.id AS iid, i.thread, "
            "i.text, i.due_at, i.cancelled_at FROM intercom i "
            "WHERE i.from_addr LIKE 'agent:%' AND (', ' || i.to_addr || ', ') LIKE '%, user, %' "
            "AND NOT EXISTS (SELECT 1 FROM bugreports b WHERE b.thread = i.id)",   # Bugs has it
@@ -313,21 +317,21 @@ SOURCES = {s.kind: s for s in (
            "SELECT 'work:' || w.id AS id, w.created_at AS at, w.state = 'failed' AS failed, "
            "w.conversation_id AS cid, NULL AS mid, NULL AS tid, 'background' AS tab, w.kind, w.state, w.error, "
            "w.finished_at FROM work w", _work),
-    Source("her", "Persona",
-           "SELECT 'her:' || v.id AS id, v.created_at AS at, 0 AS failed, NULL AS cid, "
-           "NULL AS mid, NULL AS tid, 'celine' AS tab, v.of, v.change FROM text_versions v "
-           "WHERE v.of LIKE 'her:%' AND v.by = 'her'", _her),
+    Source("agent", "Persona",
+           "SELECT 'agent:' || v.id AS id, v.created_at AS at, 0 AS failed, NULL AS cid, "
+           "NULL AS mid, NULL AS tid, 'agent' AS tab, v.of, v.change FROM text_versions v "
+           "WHERE v.of LIKE 'agent:%' AND v.by = 'agent'", _agent),
     Source("bugreport", "Bugs",
            "SELECT 'bugreport:' || b.id AS id, b.created_at AS at, 0 AS failed, "
-           "b.conversation_id AS cid, NULL AS mid, NULL AS tid, 'celine' AS tab, b.title, b.severity, b.what, "
+           "b.conversation_id AS cid, NULL AS mid, NULL AS tid, 'agent' AS tab, b.title, b.severity, b.what, "
            "b.state, b.thread FROM bugreports b", _bug),
 )}
 
 
-# The tabs: (id, word, the sources that land there). A turn, a call or a notebook write
-# lands by its conversation (_TAB); the rest by their source.
+# The tabs: (id, word (None: the agent's name), the sources that land there). A turn, a call
+# or a notebook write lands by its conversation (_TAB); the rest by their source.
 TABS = (("guard", "Guard", ("guard", "freeze", "pass")),
-        ("celine", "Celine", ("turn", "tool", "notebook", "message", "her", "bugreport")),
+        ("agent", None, ("turn", "tool", "notebook", "message", "agent", "bugreport")),
         ("background", "Background tasks", ("turn", "tool", "notebook", "job", "run", "work")))
 TAB_KINDS = {t: kinds for t, _, kinds in TABS}
 
@@ -396,8 +400,22 @@ def tabs(c: sqlite3.Connection, cfg, day: str | None = None) -> list[dict]:
                 "GROUP BY tab", args):
             n[tab][0] += total
             n[tab][1] += failed
-    return [{"id": t, "label": label, "total": n[t][0], "failed": n[t][1]}
+    return [{"id": t, "label": label or cfg.name, "total": n[t][0], "failed": n[t][1]}
             for t, label, _ in TABS]
+
+
+def _tokens(c: sqlite3.Connection, tids: list[str]) -> dict[str, str]:
+    """"N tokens in, M out" of each of turns `tids` that sent a request, as the servers
+    counted them (log.requests), in one query; nothing for a turn whose server counted
+    none."""
+    if not tids:
+        return {}
+    rows = c.execute(
+        f"SELECT turn_id, sum(prompt_tokens), sum(completion_tokens) "
+        f"FROM requests WHERE turn_id IN ({','.join('?' * len(tids))}) GROUP BY turn_id",
+        tids).fetchall()
+    return {t: f"{i or 0} tokens in, {o or 0} out" for t, i, o in rows
+            if i is not None or o is not None}
 
 
 def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = None,
@@ -453,10 +471,13 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
     rows.sort(key=lambda x: (x[1]["at"], x[1]["id"]), reverse=True)
     page, cache = rows[:limit], {}
     tz, now_ = zone(cfg), _now()
+    used = _tokens(c, [r["tid"] for s, r in page if s.kind == "turn"])
     events = []
     for s, r in page:
         title, path = _where(c, r["cid"], cache)
         v = s.view(r, cfg)
+        if s.kind == "turn" and r["tid"] in used:
+            v["detail"] = _join(v["detail"], used[r["tid"]])
         events.append({"id": r["id"], "at": r["at"], "kind": s.kind, "title": v["title"],
                        "outcome": v["outcome"], "tone": v["tone"], "failed": bool(r["failed"]),
                        "day": day_label(r["at"], tz, now_),
@@ -485,13 +506,13 @@ STATES = ("failed", "undecided")
 
 
 @router.get("/events")
-async def list_events(request: Request, tab: str = "celine", kind: str | None = None,
+async def list_events(request: Request, tab: str = "agent", kind: str | None = None,
                       day: str | None = None,
                       state: str | None = None, decision: str | None = None,
                       rule: str | None = None, mode: str | None = None,
                       before: str | None = None, limit: int = 100) -> dict:
     """Everything it did and everything that ran, newest first: {events, total, failed,
-    undecided, next, tabs, kinds, days, guard}. `tab` one of `tabs`' ids (guard, celine,
+    undecided, next, tabs, kinds, days, guard}. `tab` one of `tabs`' ids (guard, agent,
     background: TABS), `kind` one of `kinds`' ids (the tab's), `day` a date in
     the app's zone (one of `days`), `state` failed or undecided, `decision`, `rule`,
     `mode` one of `guard`'s (they and undecided list Bastet's rows only), `before` the
