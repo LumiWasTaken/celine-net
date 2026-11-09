@@ -350,65 +350,10 @@ class _Plan:
         return bool(it.calls) and it.idx <= self.mark
 
     def wire(self, it: _Item, aged: bool) -> list[dict]:
-        if aged in it._wire:
-            return it._wire[aged]
-        if it.calls:
-            # an aged call's long string arguments go shortened (compact.short_arguments),
-            # whatever the size of its result, where the request offers the tool that reads
-            # the call back; never_age keeps a notebook call whole
-            out = [{"role": "assistant", "content": it.content, **_thought(it), "tool_calls": [
-                {"id": c["id"], "type": "function",
-                 "function": {"name": c["name"], "arguments":
-                              compact.short_arguments(c["arguments"], c["id"])
-                              if aged and self.readback and not _kept(c, self.policy)
-                              else c["arguments"]}}
-                for c in it.calls], ORIGIN: origin(it.cid, turn=it.turn, message=it.id)}]
-            screens = []
-            for c in it.calls:
-                came = origin(it.cid, turn=it.turn, message=c.get("result_message_id"),
-                              call=c["id"])
-                res = c["result"] if c["result"] is not None else "result unavailable"
-                stubbed = aged and _agable(c, self.policy, self.counter)
-                if not stubbed:
-                    res = mark.shown(res, c.get("display"), self.guarded)  # guard/mark.py
-                images: list[dict] = []
-                if stubbed:
-                    res = compact.stub(c["name"], c["arguments"], c["result"], self.cited)
-                elif c.get("attachments"):
-                    # the result's files (shell__look): their notes stay in the tool
-                    # message, the image parts go below
-                    rendered = attachments.render(self.cfg, [
-                        {"role": "tool", "content": res,
-                         "attachments": c["attachments"]}])[0]["content"]
-                    if isinstance(rendered, list):
-                        res, images = rendered[0]["text"], rendered[1:]
-                    else:
-                        res = rendered
-                # a result meant to be seen (browser__look's screen, display "see")
-                shown = (c.get("display") or {}) if not stubbed else {}
-                shot = shown.get("shot") if shown.get("see") else None
-                if shot:
-                    images.append({"type": attachments.IMAGE, "attachment": {
-                        **{k: shot[k] for k in ("id", "filename", "sha256", "media_type")},
-                        "size": attachments.image_size_of(
-                            attachments.blob_path(self.cfg, shot["sha256"]))}})
-                if images:
-                    res += "\n" + ("[the image follows]" if len(images) == 1
-                                   else "[the images follow]")
-                out.append({"role": "tool", "tool_call_id": c["id"], "content": res,
-                            ORIGIN: came})
-                # the chat templates take image parts in user turns only: a result's
-                # images follow the results of the reply as a user message, until the
-                # result is aged away
-                if images:
-                    screens.append({"role": "user", "content": [
-                        {"type": "text", "text": f"[the screen from {c['name']}]"}, *images],
-                        ORIGIN: origin(it.cid, turn=it.turn, call=c["id"], note="screen")})
-            out += screens
-        else:
-            out = wire_message(self.cfg, it)
-        it._wire[aged] = out
-        return out
+        if aged not in it._wire:
+            it._wire[aged] = calls_wire(self.cfg, it, self.guarded, self if aged else None) \
+                if it.calls else wire_message(self.cfg, it)
+        return it._wire[aged]
 
     def cost(self, it: _Item, aged: bool | None = None) -> int:
         a = self.aged(it) if aged is None else aged
@@ -477,6 +422,77 @@ def wire_message(cfg, it: _Item) -> list[dict]:
         return [{**w, ORIGIN: came} for w in attachments.render(cfg, [
             {"role": it.role, "content": it.content, "attachments": it.attachments}])]
     return [{"role": it.role, "content": it.content, **_thought(it), ORIGIN: came}]
+
+
+def calls_wire(cfg, it: _Item, guarded: bool, plan: _Plan | None = None) -> list[dict]:
+    """A reply with calls on the wire: the reply with its thinking, each result, and the
+    images of its results after them as a user message. With `plan`, aged as `plan` ages
+    it. A turn's next step (step_wire) and every later build send a reply through here,
+    so the server's cached prefix holds from one request to the next."""
+    aged = plan is not None
+    # an aged call's long string arguments go shortened (compact.short_arguments),
+    # whatever the size of its result, where the request offers the tool that reads
+    # the call back; never_age keeps a notebook call whole
+    out = [{"role": "assistant", "content": it.content, **_thought(it), "tool_calls": [
+        {"id": c["id"], "type": "function",
+         "function": {"name": c["name"], "arguments":
+                      compact.short_arguments(c["arguments"], c["id"])
+                      if aged and plan.readback and not _kept(c, plan.policy)
+                      else c["arguments"]}}
+        for c in it.calls], ORIGIN: origin(it.cid, turn=it.turn, message=it.id)}]
+    screens = []
+    for c in it.calls:
+        came = origin(it.cid, turn=it.turn, message=c.get("result_message_id"),
+                      call=c["id"])
+        res = c["result"] if c["result"] is not None else "result unavailable"
+        stubbed = aged and _agable(c, plan.policy, plan.counter)
+        if not stubbed:
+            res = mark.shown(res, c.get("display"), guarded)  # guard/mark.py
+        images: list[dict] = []
+        if stubbed:
+            res = compact.stub(c["name"], c["arguments"], c["result"], plan.cited)
+        elif c.get("attachments"):
+            # the result's files (shell__look): their notes stay in the tool
+            # message, the image parts go below
+            rendered = attachments.render(cfg, [
+                {"role": "tool", "content": res,
+                 "attachments": c["attachments"]}])[0]["content"]
+            if isinstance(rendered, list):
+                res, images = rendered[0]["text"], rendered[1:]
+            else:
+                res = rendered
+        # a result meant to be seen (browser__look's screen, display "see")
+        shown = (c.get("display") or {}) if not stubbed else {}
+        shot = shown.get("shot") if shown.get("see") else None
+        if shot:
+            images.append({"type": attachments.IMAGE, "attachment": {
+                **{k: shot[k] for k in ("id", "filename", "sha256", "media_type")},
+                "size": attachments.image_size_of(
+                    attachments.blob_path(cfg, shot["sha256"]))}})
+        if images:
+            res += "\n" + ("[the image follows]" if len(images) == 1
+                           else "[the images follow]")
+        out.append({"role": "tool", "tool_call_id": c["id"], "content": res,
+                    ORIGIN: came})
+        # the chat templates take image parts in user turns only: a result's
+        # images follow the results of the reply as a user message, until the
+        # result is aged away
+        if images:
+            screens.append({"role": "user", "content": [
+                {"type": "text", "text": f"[the screen from {c['name']}]"}, *images],
+                ORIGIN: origin(it.cid, turn=it.turn, call=c["id"], note="screen")})
+    return out + screens
+
+
+async def step_wire(store, cfg, cid: str, mid: str) -> list[dict]:
+    """Reply `mid` with its calls' results, read back as stored and sent as every later
+    build sends it (calls_wire): its thinking and its results' images included."""
+    row = await store.read(lambda c: dict(c.execute(
+        "SELECT id, role, content, reasoning, turn_id FROM messages WHERE id=?",
+        (mid,)).fetchone()))
+    view = await compactions.context_view(store, cid, [row])
+    it = _Item(0, row, view["calls"].get(mid), None, cid=cid)
+    return calls_wire(cfg, it, guard.enabled(cfg, cid))
 
 
 # ---- build --------------------------------------------------------------------------------

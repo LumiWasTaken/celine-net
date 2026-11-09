@@ -2,7 +2,7 @@
 citation check. Fake backend, tiny synthetic archive."""
 from __future__ import annotations
 
-from chat_fixtures import Script, user_says
+from chat_fixtures import PNG, Script, user_says
 
 import json
 
@@ -10,7 +10,7 @@ import anyio
 import pytest
 
 from celine.conversations import store as conversations, view
-from celine.backends.base import Done, TextDelta, ToolCallDelta
+from celine.backends.base import Done, ReasoningDelta, TextDelta, ToolCallDelta
 from celine.boot import load
 from celine.core.bus import EventBus
 from celine.skills import Registry, ToolResult, tool
@@ -269,3 +269,41 @@ async def test_a_call_the_agent_is_still_writing_shows_its_name_and_growing_size
     shown = [e["data"] for e in events if e["type"] == "tool.forming"]
     assert [(f["name"], f["lines"]) for f in shown] == [("t__same", 2), ("t__same", 3)]
     assert shown[0]["chars"] < shown[1]["chars"] == len('{"q": "one\\ntwo\\\\n\\nthree"}')
+
+
+class Shot:
+    """`take` returns a picture with its result."""
+    name = "t"
+    description = "test"
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    @tool()
+    async def take(self, ctx) -> ToolResult:
+        """take"""
+        from celine import attachments
+        row = await attachments.save_generated(self.cfg, ctx.store, PNG, "shot.png",
+                                               "image/png", ctx.tool_call_id,
+                                               in_message=False)
+        return ToolResult(content="took it", images=[row["id"]])
+
+
+async def test_each_request_starts_with_the_request_before_it(store, cfg):
+    """A step joins the next request as every later build sends it, its thinking and
+    its result's image included: the model server's cached prompt holds from step to
+    step and into the next turn."""
+    b = Script([[ReasoningDelta("a picture first"), *_call(1, "t__take", {})],
+                [TextDelta("there"), Done(reason="stop")],
+                [TextDelta("again"), Done(reason="stop")]])
+    reg = _reg(Shot(cfg))
+    cid = await conversations.create(store)
+    for text in ("show me", "and now"):
+        await user_says(store, cid, text)
+        turn = await turns.claim(store, "w")
+        await run_turn(turn, store, cfg, b, EventBus(), Token(turn["id"]), reg)
+    step, next_turn = b.calls[1], b.calls[2]
+    assert [m["role"] for m in step] == ["system", "user", "assistant", "tool", "user"]
+    assert step[2]["reasoning_content"] == "a picture first"
+    assert step[3]["content"].endswith("[the image follows]")
+    assert next_turn[:len(step)] == step

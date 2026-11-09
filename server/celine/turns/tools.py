@@ -25,8 +25,8 @@ log = logging.getLogger("celine.tools")
 
 
 async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
-                         token, jobs=None) -> dict[str, str]:
-    """-> {call_id: result text}, what the model is told for each call.
+                         token, jobs=None) -> None:
+    """Runs a reply's calls and stores each result (the context builder sends them).
 
     The calls of one reply run concurrently when each is read-only and blocking, or
     hands work that only adds (not destructive) to a job, like several sub-agents
@@ -35,7 +35,6 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
     are not one)."""
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
-    texts: dict[str, str] = {}
     guarded = guard.enabled(cfg, cid)
 
     async def write(call, out) -> None:
@@ -48,7 +47,6 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         withheld = mask(withheld or "") or None
         await turns.finish_tool_call(store, cid, call["message_id"], call["id"],
                                      call["name"], result, state, withheld)
-        texts[call["id"]] = marked(result, guarded)
         _seen(registry, cid, call["name"])
         known = registry is not None and registry.get(call["name"]) is not None
         metrics.TOOL_CALLS.labels(call["name"] if known else "unknown", state).inc()
@@ -68,13 +66,12 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
         for call in calls:
             if done.get(call["id"]) is not None:     # None: shutdown before it started
                 await write(call, done[call["id"]])
-        return texts
+        return
     for call in calls:
         out = await _resolve(turn, call, store, cfg, registry, overrides, token, jobs)
         if out is None:                            # shutdown: left pending, settled interrupted
             break
         await write(call, out)
-    return texts
 
 
 def parsed(arguments: str | None) -> dict | None:

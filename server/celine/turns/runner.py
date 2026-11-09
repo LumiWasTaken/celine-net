@@ -304,9 +304,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
         text = await _verify_citations(store, cfg, cid, mid, text, thinking, messages, kbs,
                                        hidden)
         # `request`: what was just sent, the guard's view of the outside text in it
-        texts = await run_tool_calls({**tool_turn, "root_message_id": mid, "request": step},
-                                     [{**c, "message_id": mid} for c in calls],
-                                     store, cfg, registry, overrides, token, jobs)
+        await run_tool_calls({**tool_turn, "root_message_id": mid, "request": step},
+                             [{**c, "message_id": mid} for c in calls],
+                             store, cfg, registry, overrides, token, jobs)
         if token.cancelled:
             await _stopped(store, tid, cid, token)
             return
@@ -323,16 +323,9 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                 await _all_ok(store, [c["id"] for c in calls])):
             await turns.transition(store, tid, cid, "done")
             return
-        # as the context builder sends a stored reply: as stored, with its signed
-        # thinking (the next step continues the tool loop)
-        messages.append({"role": "assistant", "content": text,
-                         **({"thinking": done.thinking} if done and done.thinking else {}),
-                         "tool_calls": [_wire_call(c) for c in calls],
-                         ORIGIN: context.origin(cid, turn=tid, message=mid)})
-        for call in calls:
-            messages.append({"role": "tool", "tool_call_id": call["id"],
-                             "content": texts.get(call["id"], "result unavailable"),
-                             ORIGIN: context.origin(cid, turn=tid, call=call["id"])})
+        # the step as stored, in the bytes every later build sends (context.step_wire):
+        # the next request starts with what the server cached
+        messages += await context.step_wire(store, cfg, cid, mid)
         parent = await turns.step_tail(store, mid)
         iteration += 1
         grown = True
@@ -420,9 +413,6 @@ async def _record_usage(store, cid, tid, iteration, backend, counter, estimate,
 
 
 
-def _wire_call(c: dict) -> dict:
-    return {"id": c["id"], "type": "function",
-            "function": {"name": c["name"], "arguments": c["arguments"]}}
 
 
 
