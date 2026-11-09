@@ -111,7 +111,7 @@ not listed there is on, except Shares, Guard, Dictation, Read aloud and the plug
 `speech_input = true`, `speech_output = true`, `mac = true`; a plugin whose `plugin.toml`
 says `start_on = true` starts on); switching Shares on asks first, with what a share's link gives whoever holds it. The Features
 step of Setup lists every feature by tier (Core, on with no switch; Base modules, what ships in the repo;
-User modules, a plugin of `<data>/plugins` with no place of its own) and then gives a setup step
+User modules, your plugins, [plugins.md](plugins.md); one that owns a place is a base module) and then gives a setup step
 to each feature switched on there that has a form or a connection (the Shellbox and `<name>'s Mac`
 share one step, `<name>'s computer`; the Discord and WhatsApp steps say how to start the connector;
 the Routines step turns each routine on or off and sets its time). Off means its skills are not built, and for the connectors and services
@@ -189,14 +189,8 @@ search_files   = "Searched {path} for \"{pattern}\""
 read_text_file = "Read {n} files"           # two or more calls in one row: one part
 ```
 
-A plugin's `[servers.<id>]` takes the same tables (`plugins/mac/plugin.toml`).
-
-A server can also show its calls in a place: `place = "terminals"` lists them in
-Terminals, Commands (with their `command` or typed `input`), `place = "browser"` in Browser,
-History (with their words). `place_tools` names which of its tools; without it, every tool
-in its `words`. A plugin that owns such a place says so with `places = ["terminals"]`:
-Terminals and Browser stay in the rail while the shellbox, the browser box or a plugin of
-theirs is on and set up, and leave it while none is.
+A plugin's `[servers.<id>]` takes the same tables, and [plugins.md](plugins.md) lists every
+key, with `place` for showing a server's calls in Terminals or Browser.
 
 ## Image and music presets
 

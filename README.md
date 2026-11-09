@@ -44,6 +44,25 @@ can be switched on or off on its own.
 I'd recommend giving your agent its own accounts for things like email and the vault, not
 your personal ones. But it's your setup, so that's up to you.
 
+## Questions
+
+**Can I add my own tools?**
+Yes, with a plugin: a folder with a `plugin.toml` that adds an MCP server in any language,
+a Python skill or both, with its own settings page. [docs/plugins.md](docs/plugins.md)
+lists every key, and `examples/plugins/` has two working examples.
+
+**Where do my plugins go?**
+In `user-plugins/` next to `docker-compose.yml`. The app reads them at start, and
+Settings, Features switches each one on.
+
+**Can a plugin bring its own packages?**
+Run it as an MCP server in its own container and point the plugin at it over HTTP. The Mac
+plugin (`plugins/mac/`) works that way.
+
+**What happens to my plugins on an update?**
+Your plugins folder and their data stay as they are. Plugins import the app's own modules,
+and the examples move with the app, so they show what to adjust.
+
 ## A look around
 
 | A chat | Its notebook | Everything it did |

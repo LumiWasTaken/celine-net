@@ -110,6 +110,10 @@ folder.
 | `shellbox/` | `shellbox` at `/home/celine` | Your agent's home in its shellbox: its files, scripts, what it installed. A backup can leave it out. |
 | `reranker/` | `reranker` at `/models` | Only with the profile `reranker`: the model, downloaded on first start (about 0.6 GB). Nothing private; a backup can leave it out. |
 
+Your plugins are a folder of their own: `user-plugins/` beside `docker-compose.yml`, which the
+app mounts read-only at `/plugins`. Their data goes to `app/plugins/<id>/` on the volume.
+[plugins.md](plugins.md) shows how to write one.
+
 Nothing secret is in an image or in the compose file. The keys in `.env` reach the
 containers as environment variables; everything typed into the app stays on the volume.
 The passkeys, sessions and recovery codes are in `app/auth.db` (mode 600). The app's
