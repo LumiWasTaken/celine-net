@@ -452,9 +452,12 @@ def pane(name: str) -> dict:
     values = tmux("display-message", "-p", "-t", target(name),
                   "\t".join("#{%s}" % k for k in keys)).rstrip("\n").split("\t")
     p = dict(zip(keys, values))
-    if not p["pane_pid"].isdigit():             # a session on its way out
+    dead = p.get("pane_dead") == "1"
+    # a pane whose shell exited is kept (remain-on-exit) and has no pid on tmux 3.8;
+    # a session on its way out has neither
+    if not dead and not p["pane_pid"].isdigit():
         raise Problem(f"No terminal named {name}.", 404)
-    return {"pid": int(p["pane_pid"]), "dead": p["pane_dead"] == "1",
+    return {"pid": int(p["pane_pid"]) if p["pane_pid"].isdigit() else 0, "dead": dead,
             "exit": int(p["pane_dead_status"]) if p["pane_dead_status"].isdigit() else None,
             "fullscreen": p["alternate_on"] == "1", "pipe": p["pane_pipe"] == "1",
             "row": int(p["cursor_y"]), "col": int(p["cursor_x"]), "tty": p["pane_tty"],
