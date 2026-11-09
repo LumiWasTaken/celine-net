@@ -250,3 +250,32 @@ async def test_keep_waiting_continues_a_busy_turn_marked_to_wait(store, cfg):
     assert (t["state"], t["reason_code"]) == ("failed", "busy")
     await turns.continue_turn(store, cid, tid, wait=True)
     assert (await turns.claim(store, "w2"))["reason"] == "keep_waiting"
+
+
+def test_a_skill_registered_again_keeps_its_place_in_the_tool_list():
+    """A reload or a reconnect registers a skill again: its tools keep their place, so
+    every request's tool list keeps its order (the model server's cached prompt)."""
+    class A:
+        name, description = "a", "a"
+
+        @tool()
+        async def one(self, ctx) -> ToolResult:
+            """one"""
+            return ToolResult(content="1")
+
+    class B:
+        name, description = "b", "b"
+
+        @tool()
+        async def two(self, ctx) -> ToolResult:
+            """two"""
+            return ToolResult(content="2")
+
+    reg = Registry()
+    reg.add(A())
+    reg.add(B())
+    reg.add(A())
+    assert list(reg.tools) == ["a__one", "b__two"]
+    reg.add_specs(A(), [])
+    reg.add(A())
+    assert list(reg.tools) == ["b__two", "a__one"], "a skill that had no tools goes last"

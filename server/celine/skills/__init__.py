@@ -415,10 +415,12 @@ class Registry:
         self.add_specs(skill, collect(skill))
 
     def add_specs(self, skill: Any, specs: list[ToolSpec]) -> None:
-        """Replace one skill's tools wholesale. The dict is rebuilt, never mutated
-        under a turn that is iterating it."""
+        """Replace one skill's tools wholesale, in the place its tools had: the tool list
+        of a request keeps its order through a reload or a reconnect, so the server's
+        cached prompt holds. The dict is rebuilt, never mutated under a turn that is
+        iterating it."""
         self.skills[skill.name] = skill
-        kept = {k: v for k, v in self.tools.items() if v.skill != skill.name}
+        mine: dict[str, ToolSpec] = {}
         for spec in specs:
             if self.cfg is not None and not features.tool_on(self.cfg, spec.wire_name):
                 continue                # its feature is off (shell__share: shares)
@@ -426,8 +428,15 @@ class Registry:
                 # prompt text, filled in once here: {{username}} and {{name}}
                 spec = replace(spec, description=self.cfg.substitute(spec.description),
                                schema=_filled(spec.schema, self.cfg))
-            kept[spec.wire_name] = spec
-        self.tools = kept
+            mine[spec.wire_name] = spec
+        tools: dict[str, ToolSpec] = {}
+        for k, v in self.tools.items():
+            if v.skill != skill.name:
+                tools[k] = v
+            elif mine:                  # its first old tool: its new ones go here
+                tools.update(mine)
+                mine = {}
+        self.tools = {**tools, **mine}
 
     def remove(self, name: str) -> None:
         self.skills.pop(name, None)
