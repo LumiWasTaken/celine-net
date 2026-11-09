@@ -169,6 +169,19 @@ docker compose pull && docker compose up -d       # from the registry
 
 The volume is kept. Migrations run at startup. The connectors keep their logins.
 
+Before a migration changes a database, the app copies the file beside it as
+`<file>.pre-<schema version>.bak` and keeps the last three. When a migration fails, the
+app ends its start with one line that names the step and that copy
+(`docker compose logs celine`), and the database is as it was before the step. To go
+back to the release before the update:
+
+```sh
+docker compose stop celine
+docker compose run --rm --no-deps celine sh -c 'cd /data/app && rm -f celine.db-wal celine.db-shm && cp celine.db.pre-<N>.bak celine.db'
+# CELINE_TAG=<the release before, e.g. v2.1.0> in .env, then
+docker compose pull && docker compose up -d --no-build
+```
+
 A service address saved in Settings, Features wins over its `CELINE_*_URL`. Older
 versions saved every service's address at once, the variable's value too. Migration 0024
 drops a saved address only when it equals its variable, so the variable applies again.
@@ -532,6 +545,17 @@ only, like the health port, so the shellbox and the browser (which share a netwo
 the app) cannot read it, and a request carrying `X-Forwarded-For`, `Forwarded` or
 `X-Real-IP` gets 403 there. To scrape it, run Prometheus (or an exporter) in the app's
 network namespace (`network_mode: service:celine`) and point it at `127.0.0.1:8772`.
+
+## When something is wrong
+
+```sh
+docker compose ps                                        # each service and its health
+docker compose logs --tail 50 celine                     # a start that ended says why in its last line
+docker compose run --rm --no-deps celine celine doctor   # config, databases, model servers, sources
+```
+
+`celine doctor` prints one line per check and reads only, so it runs beside the app and
+while the app's container restarts.
 
 ## Logs
 

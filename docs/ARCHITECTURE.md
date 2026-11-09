@@ -945,9 +945,11 @@ system prompt says them in one line. Settings, the agent's page edits every fiel
 `agent.changed` follows every write); the editors keep a History (`texts.KINDS`: `agent`,
 `bastet`, `routine`, `mission`, `lyrics`, `prompt`).
 
-**Migrations run once, at startup** (`__main__.preflight`, and the doctor, export and
-purge commands): boot.load never migrates, so a Settings save or the file watcher
-never touches the database.
+**Migrations run once, at startup** (`__main__.preflight`, and the export and purge
+commands; `__main__.migrated`): boot.load never migrates, so a Settings save or the file
+watcher never touches the database. A database the build cannot bring to its schema ends
+the start with one line: what failed and the copy from before the update
+(`db/migrate.py` `Failed`).
 
 **Kinds.** What a conversation is is its kind (`conversations.kind`, fixed at creation):
 `chat` (the user's), `mission` (`POST /api/missions`), `agent` (a sub-agent),
@@ -2043,8 +2045,10 @@ to its `notebook/`, protected files are read-only.
 
 ## Operations
 
-`celine doctor` loads the config and prints one line per check (problems, database, providers,
-knowledge bases, skills, MCP servers, triggers). Exit 1 if anything is marked WARN.
+`celine doctor` loads the config and prints one line per check (problems, the stored
+address, database and the size of each file, providers, knowledge bases, skills, MCP
+servers, triggers). It reads only, so it runs beside the app and on a database from an
+older release. Exit 1 if anything is marked WARN.
 
 `celine export [--out DIR]` writes `conversations.json`, one Markdown file per conversation
 with its active path, the blob files, and a copy of the notebook (default

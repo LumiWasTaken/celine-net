@@ -15,7 +15,7 @@ from .attachments import blob_path
 from .conversations import tree
 from .core.states import LIVE_SQL
 from .core.store import connect
-from .db.migrate import read_only, schema_version
+from .db.migrate import _migrations, read_only, schema_version
 from .errors import answered
 
 
@@ -32,25 +32,37 @@ def keys(data_dir: Path) -> int:
 
 
 def doctor(cfg: config_mod.Config) -> int:
+    """Checks the config, the databases, the model servers and the sources, and prints
+    each as a line. It reads only: the app may be running, and a database from an older
+    release stays as it is."""
+    from .settings import address
     good = True
     print("config")
     for p in cfg.problems:
         good &= _say(not p.fatal, f"{p.file}: {p.message}")
     if not cfg.problems:
         _say(True, "no problems")
+    _say(True, f"address: {address.get(cfg) or 'none stored yet'}")
 
     print("database")
     if cfg.db_path.exists():
         with read_only(cfg.db_path) as c:
             good &= _say(c.execute("PRAGMA integrity_check").fetchone()[0] == "ok",
                          "integrity check")
-            _say(True, f"schema version {schema_version(c)}")
+            at, latest = schema_version(c), _migrations()[-1][0]
+            good &= _say(at <= latest, f"schema version {at}" + (
+                "" if at == latest else f", this build's is {latest}: the next start "
+                "brings it there" if at < latest else f", this build knows {latest}: "
+                "start the release that wrote it"))
             n = c.execute("SELECT count(*) FROM conversations").fetchone()[0]
             live = c.execute(f"SELECT count(*) FROM turns WHERE state IN {LIVE_SQL}"
                              ).fetchone()[0]
             _say(True, f"{n} chats, {live} turns live")
     else:
         _say(True, "no database yet")
+    for f in sorted(cfg.db_path.parent.glob("*.db*")):
+        if f.suffix in (".db", ".bak"):
+            _say(True, f"{f.name}: {f.stat().st_size / 1e6:,.0f} MB")
     free = shutil.disk_usage(cfg.data_dir if cfg.data_dir.exists() else Path.cwd()).free
     good &= _say(free > 500_000_000, f"{free / 1e9:.1f} GB free under {cfg.data_dir}")
 
