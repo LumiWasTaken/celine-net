@@ -169,3 +169,24 @@ async def test_the_apps_notices_into_a_mission_are_no_threads(store):
                                kind="notice", wake=False)
     found = await store.read(lambda c: rows.threads(c, None))
     assert [t["thread"] for t in found] == [kept["intercom_id"]]
+
+
+async def test_the_users_stop_ends_what_a_mission_asks_and_tells_the_chat_that_started_it(
+        store):
+    from celine.missions.skill import record
+    intercom = Intercom(store)
+    chat = await conversations.create(store, "Plans")
+    night = await conversations.create(store, "Night", kind="mission")
+    await missions.create(store, night, {"name": "Night", "terminal": "n", "brief": "b",
+                                         "started_by": chat})
+    await intercom.send(f"agent:{night}", "user", "Which hotel, the cheap one?")
+    services = SimpleNamespace(store=store, approvals=None, connectors=None)
+    assert [i["kind"] for i in await waits.items(services)] == ["mission"]
+
+    await record(SimpleNamespace(intercom=intercom, cfg=boot.load()), store, night,
+                 "stopped", None)
+    assert await waits.items(services) == [], "a stopped mission waits for nothing"
+    [told] = await store.read(lambda c: c.execute(
+        "SELECT text FROM intercom WHERE from_addr=? AND kind='report'",
+        (f"agent:{night}",)).fetchall())
+    assert told[0].startswith("Mission Night stopped by ")

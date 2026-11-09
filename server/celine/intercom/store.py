@@ -273,6 +273,14 @@ def read(c: sqlite3.Connection, ids: list[int]) -> list[int]:
     return out
 
 
+def read_from(c: sqlite3.Connection, addr: str) -> list[int]:
+    """Every message from `addr` that waits for the user becomes read (a mission that
+    stopped asks nothing any more). -> the ids changed."""
+    return read(c, [r[0] for r in c.execute(
+        f"SELECT i.id FROM intercom i WHERE i.from_addr = ? AND {_UNREAD}",
+        (addr, "user", now()))])
+
+
 # SQL: 1 when message `i` waits for the address in its first ?: delivered to nobody
 # there yet and due by the second ?
 _UNREAD = ("EXISTS (SELECT 1 FROM intercom_deliveries d WHERE d.intercom_id = i.id AND "

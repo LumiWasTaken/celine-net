@@ -54,21 +54,35 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
     """The one way a mission's status changes (its missions__update, the watch, the
     user's Stop; a user's reply resumes a stopped one inside its send, with nothing to
     follow): the row and the feed (missions.set_status_sync); done or stopped cancels what
-    it scheduled; any status but active is reported in the conversation it reports to.
-    -> the row, None when there is no such mission."""
+    it scheduled; stopped reads what it asked the user, so nothing of it waits for them;
+    any status but active is reported in the conversation it reports to, and the user's
+    Stop also in the conversation that started it. -> the row, None when there is no such
+    mission."""
     row = await store.write(lambda c: missions.set_status_sync(c, store, cid, word, note))
     if row is None or app is None:
         return row
     if word in ("done", "stopped"):
         await app.intercom.cancel_scheduled(cid)
         await missions.update(store, cid, {"wake_id": None})
-    if word != "active" and row["report_to"]:
+    if word == "stopped":
+        from ..core.event_types import INTERCOM_STATE
+        from ..intercom import store as intercom_rows
+
+        def close(c) -> None:
+            for iid in intercom_rows.read_from(c, f"agent:{cid}"):
+                store.global_event(c, INTERCOM_STATE, {"intercom_id": iid,
+                                                       "conversation_id": None})
+        await store.write(close)
+    to = row["report_to"]
+    if word == "stopped" and not note and not to and row["started_by"] not in (None, "user"):
+        to = row["started_by"]          # the user's Stop: the chat that started it hears
+    if word != "active" and to:
         # a report the user reads in that conversation; it starts no turn there
         from ..intercom.addresses import Refused
         said = "stopped" if word == "stopped" and note else WORDS[word]   # not by them
         try:
             await app.intercom.send(
-                f"agent:{cid}", f"agent:{row['report_to']}", app.cfg.substitute(
+                f"agent:{cid}", f"agent:{to}", app.cfg.substitute(
                     f"Mission {row['name']} {said}" + (f": {note}" if note else ".")),
                 kind="report", wake=False, data={"mission": cid})
         except Refused:
