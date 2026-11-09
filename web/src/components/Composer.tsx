@@ -48,6 +48,8 @@ const COMMANDS_SHOWN = 8
 
 const noop = () => {}
 const NO_DRAFT: NewConversationSettings = {}
+/** the next upload's key in the list (crypto.randomUUID needs https or localhost) */
+let uploadKey = 0
 
 export type ComposerHandle = {
   focus: () => void
@@ -227,7 +229,7 @@ export function Composer({
     const from = selected
     const here = () => current.current === from
     for (const file of Array.from(files)) {
-      const key = crypto.randomUUID()
+      const key = String(++uploadKey)
       setUploads(u => [...u, { key, name: file.name, state: 'uploading', image: file.type.startsWith('image/') }])
       try {
         const att = await uploadAttachment(file)

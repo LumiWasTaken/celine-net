@@ -18,6 +18,9 @@ type View = { s: number; x: number; y: number }
 const FIT: View = { s: 1, x: 0, y: 0 }
 const MAX = 8
 
+/** the browser copies a picture (https or localhost; plain http on a LAN has no clipboard) */
+const CAN_COPY = typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write
+
 async function copyPicture(src: string) {
   const blob = await (await fetch(src)).blob()
   const png = blob.type === 'image/png' ? blob : await new Promise<Blob>((ok, no) => {
@@ -130,7 +133,7 @@ export function Viewer({ src, name, caption, more = [], actions, panel, onClose,
   })
 
   const items: MenuItem[] = [
-    { label: 'Copy image', icon: Copy, onSelect: () => void copyPicture(src).catch(() => undefined) },
+    ...(CAN_COPY ? [{ label: 'Copy image', icon: Copy, onSelect: () => void copyPicture(src).catch(() => undefined) }] : []),
     { label: 'Download', icon: Download, onSelect: () => save(src, name) },
     { label: 'Open original', icon: ExternalLink, onSelect: () => window.open(src, '_blank', 'noopener') },
     ...(more.length ? ['sep' as const, ...more] : []),
