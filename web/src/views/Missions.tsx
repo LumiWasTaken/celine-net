@@ -444,7 +444,7 @@ function Steps({ m }: { m: Mission }) {
     <>
       <div className="missions-rows">
         {m.steps.map((s, i) => (
-          <ListRow key={i} density="lg" leading={<Step n={i + 1} done={s.state === 'done'} current={s.state === 'doing'} />} title={s.title} tooltip={s.title}
+          <ListRow key={i} density="lg" leading={<Step n={i + 1} done={s.state === 'done'} current={m.step === i + 1} />} title={s.title} tooltip={s.title}
                    muted={s.state === 'done'} subtitle={nameOf(s)} aside={s.words ?? undefined}
                    trailing={<IconButton icon={ArrowLeftRight} size="sm" label="Change model" disabled={!online || save.busy || !!m.trashed_at}
                                          onClick={() => setChoosing(i)} />} />
@@ -464,7 +464,7 @@ function Steps({ m }: { m: Mission }) {
 const agentLine = (a: AgentRow) => (a.working ? a.step_words ?? a.words : a.report ? firstLine(a.report.text) : a.last ?? '')
 
 /* one sub-agent under the mission (any depth), or a mission one of them started: its state
-   in a word, why it failed or what it does now, its model; it opens where it lives */
+   in a word, why it failed, what it does now or what it reported, its model; it opens where it lives */
 export function TreeLine({ n }: { n: TreeNode }) {
   const nav = useNav()
   const stop = useAction(() => agentsApi.stop(n.id))
@@ -475,7 +475,7 @@ export function TreeLine({ n }: { n: TreeNode }) {
   ]
   return (
     <ListRow density="lg" depth={n.depth - 1} icon={n.kind === 'mission' ? Flag : Bot} title={n.name} tooltip={stop.error ?? n.name}
-             subtitle={n.reason ?? (n.kind === 'agent' && working ? n.step_words : null) ?? undefined}
+             subtitle={n.reason ?? (n.kind === 'agent' && working ? n.step_words : n.line) ?? undefined}
              aside={n.model ?? undefined} meta={<StateWord tone={toneOf(n.tone)}>{n.words}</StateWord>} muted={!working && n.kind === 'agent'}
              href={n.link} onClick={click(() => nav.goPath(n.link))}
              trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />

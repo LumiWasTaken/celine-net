@@ -49,6 +49,8 @@ export type TreeAgent = {
   /** why it failed, stopped or paused, the server's words */
   reason: string | null
   step_words: string | null
+  /** the first line of its latest report; null for a mission */
+  line: string | null
   model: string | null
   prompt_tokens: number
   completion_tokens: number

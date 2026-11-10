@@ -566,7 +566,8 @@ def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
     started (their sub-agents in `agents`, under them). Each: id, kind (agent, mission),
     parent, depth, name, state (queued, working, done, stopped, failed, paused; a
     mission's status: active, needs_you, done, stopped), reason (why it failed, stopped
-    or paused; a mission's note), step_words, model (the newest that answered, else its
+    or paused; a mission's note), step_words, `line` (the first line of a sub-agent's
+    latest report), model (the newest that answered, else its
     own), `words` and `tone` (its state as the pages say it, core/states TREE), what
     all its turns took (report.work) and link. `states`: every state so. `origin`: where the top came
     from (homes.path above it: the run that started a mission); `total`: tokens and
@@ -583,12 +584,12 @@ def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
             total[k] += w[k]
 
     def node(r, parent: str, depth: int, kind: str, name: str, state: str,
-             reason: str | None, step: str | None) -> None:
+             reason: str | None, step: str | None, line: str | None = None) -> None:
         w = report.work(c, r["id"], whole=True)
         add(w)
         out.append({"id": r["id"], "kind": kind, "parent": parent, "depth": depth,
                     "name": name, "state": state, **said(TREE, state), "reason": reason,
-                    "step_words": step,
+                    "step_words": step, "line": line,
                     "model": (w["models"] or [r["model_id"]])[-1],
                     "prompt_tokens": w["prompt_tokens"],
                     "completion_tokens": w["completion_tokens"],
@@ -603,7 +604,8 @@ def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
             seen.add(r["id"])
             f = _look(c, r["id"], own)
             node(r, parent, depth, "agent", r["agent_name"], f["state"], f["reason"],
-                 f["step_words"] if f["working"] else None)
+                 f["step_words"] if f["working"] else None,
+                 _first_line(f["report"]["text"]) if f["report"] else None)
         for r in c.execute("SELECT cv.id, cv.model_id, m.name, m.status, m.note FROM "
                            "missions m JOIN conversations cv ON cv.id = m.conversation_id "
                            "WHERE m.started_by=? ORDER BY cv.created_at, cv.id",

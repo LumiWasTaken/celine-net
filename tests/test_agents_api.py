@@ -94,6 +94,11 @@ async def test_agents_and_missions_are_managed_over_http_with_events(db_path, mo
                 "UPDATE conversations SET model_id='nix/Qwen-125B' WHERE id=?", (chain[1],)))
             tree = (await c.get(f"/api/conversations/{deep}/sub-agents")).json()
             assert tree["agents"][1]["model"] == "Flash-Next", "its label, not its id"
+            from celine.intercom.store import insert
+            await store.write(lambda c: insert(c, f"agent:{chain[1]}", f"agent:{parent}",
+                                               "report", "Found two cars\nthe rest"))
+            tree = (await c.get(f"/api/conversations/{deep}/sub-agents")).json()
+            assert tree["agents"][1]["line"] == "Found two cars", "its report's first line"
             listed = (await c.get(f"/api/sub-agents?conversation={parent}")).json()["agents"]
             snap = (await c.get(f"/api/conversations/{parent}")).json()["conversation"]["agents"]
             for rows in (listed, snap):
