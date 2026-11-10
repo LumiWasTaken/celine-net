@@ -85,7 +85,7 @@ class Feature:
 GROUPS = {"computer": "{{name}}'s computer"}
 
 # the tiers in their order: id -> its heading
-TIERS = {"core": "Core", "base": "Base modules", "user": "User modules"}
+TIERS = {"core": "Core", "base": "Built-in", "user": "Plugins"}
 
 # The core, with no switch: the chat, and each core skill no feature owns (skills.CORE; a
 # test holds them equal). id, label, about (cfg.substitute fills the names).
@@ -156,7 +156,7 @@ BASE: tuple[Feature, ...] = (
             probe="celine.mcp:probe_whatsapp", archive="messages"),
     Feature("email", "Email", "Turns on once the account is filled in.",
             "{{name}} reads your inbox for you: new emails, search and summaries.",
-            "Turn it off if your email should stay out of reach.",
+            "Turn it off if {{name}} should not read your email.",
             skills=("email",), pages=("email",), probe="celine.skills.mail:probe",
             setup="email"),
     Feature("vault", "Vault", "Turns on once the Vaultwarden details are filled in.",
@@ -164,8 +164,7 @@ BASE: tuple[Feature, ...] = (
             "Turn it off if you have no Vaultwarden, or no password should be stored.",
             skills=("vault",), pages=("vault",), probe="celine.vault:probe", setup="vault"),
     Feature("guard", "Guard", "Turns on once a decision model is picked.",
-            "Bastet, a second model that checks risky tool calls before they run and asks you "
-            "when unsure.",
+            "Bastet, a second model that checks {{name}}'s risky tool calls before they run.",
             "Turn it off if you want no second check before risky tool calls.",
             probe="celine.guard.rules:probe", setup="guard", start_on=False),
     Feature("documents", "Documents", "",
@@ -191,7 +190,7 @@ BASE: tuple[Feature, ...] = (
             skills=("missions",), places=("missions",)),
     Feature("sub_agents", "Sub-agents", "",
             "{{name}} hands parts of a big task to sub-agents and collects their results.",
-            "Turn it off if your model server handles only one chat at a time.",
+            "Turn it off if your model server handles only one request at a time.",
             skills=("sub_agents",)),
 )
 

@@ -754,7 +754,7 @@ class DocumentsKB:
         set_kv(conn, "passages_render", str(P.RENDER_VER))
 
     def embed(self, ctx) -> dict[str, Any] | None:
-        """Vectors for passages without one, with the Topic search model.
+        """Vectors for passages without one, with the Embeddings model.
         Optional: failing here leaves instant search and reading intact."""
         cfg = self.app_cfg
         if not self._embeds():

@@ -1,4 +1,4 @@
-"""One question about one image, answered by a model of a vision role: Screen reading
+"""One question about one image, answered by a model of a vision role: Browser screenshots
 (role screen) for browser__look (skills/browser.py), Photo descriptions (role vision)
 for images.
 

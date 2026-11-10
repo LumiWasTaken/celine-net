@@ -5,7 +5,7 @@
    about you: PUT /settings), model (an address checked and saved as a provider, or the saved
    provider with that address again, one chat model picked, no Skip: PUT /providers/<id>,
    the server fills the roles), Features (the server's tiers, FeatureTiers: Core on and
-   fixed, Base modules and User modules a switch each with its `about`; PUT /features), then
+   fixed, Built-in and Plugins a switch each with its `about`; PUT /features), then
    one step per feature switched on there that has a setup step (`step`: a form, or a
    connection), in the catalog's order: its `about`, its state line, its setup form
    (WelcomeForms.tsx, its draft kept by feature id) whose Check saves and asks the probe

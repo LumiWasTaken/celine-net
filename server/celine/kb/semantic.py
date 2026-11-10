@@ -8,7 +8,7 @@ are re-cut, only passages whose text changed are embedded. Celine searches it th
 Public API
 - `build(cfg, kb, ctx)`                       the task: cut, then embed
 - `embed_passages(cfg, path, ctx)`            the embedding pass (chats and Documents)
-- `embeddings_available(cfg)`                 a Topic search model is set: the one gate
+- `embeddings_available(cfg)`                 an Embeddings model is set: the one gate
 - `query_embedder(cfg)`, `query_vector(cfg, q)`  the query side
 - `search_sync(cfg, kbs, q, ...)`             plain passage search
 - `run_scheduler(cfg, kbs)`                   new messages reach semantic topic search
@@ -47,7 +47,7 @@ __all__ = ["SemanticError", "build", "embed_passages", "embeddings_available",
 
 
 def embeddings_available(cfg) -> bool:
-    """A Topic search model is set (Settings, Models). The one gate for every embedding
+    """An Embeddings model is set (Settings, Models). The one gate for every embedding
     and every semantic search; whether it answers now is the router's next question."""
     from ..backends.router import app_router
     return bool(app_router(cfg).chain("embeddings"))

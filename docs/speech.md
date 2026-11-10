@@ -1,7 +1,7 @@
 # Speech
 
 Dictation (speech to text) and Read aloud (text to speech) are two optional features, off
-until you switch them on. Each runs on a model role, like Topic search or Reranking: pick
+until you switch them on. Each runs on a model role, like Embeddings or Reranking: pick
 the model in Setup, in Settings, Features, or in Settings, Models. No speech
 engine ships with the app.
 

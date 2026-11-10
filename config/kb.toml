@@ -41,7 +41,7 @@ embed    = true          # passages into the semantic index ([embeddings] below)
 
 # Semantic topic search.
 [embeddings]
-# The Topic search model in Settings, Models makes the vectors. This block
+# The Embeddings model in Settings, Models makes the vectors. This block
 # is the index shape. An index remembers what its model produces (a fingerprint); a
 # model that produces other vectors, or another `dims`, rebuilds it.
 batch      = 128

@@ -105,13 +105,13 @@ a save applies at once. They are listed here in the page's sections (`general.GR
 | `max_concurrent_turns` | Turns at once | 6 | conversations generating at once (the dispatcher's workers follow it, plus one for each turn that waits for your answer) |
 | `max_tool_iterations` | Tool rounds per turn | 0 | model/tool round trips per turn; 0 means no cap, the wall clock is the limit |
 | `turn_wall_clock_seconds` | Turn time limit | 1800 | its work time in one turn, tools included |
-| `last_step_seconds` | Last answer time | 180 | after the work time: the step under way may still finish |
+| `last_step_seconds` | Grace period | 180 | after the work time: the tool round under way may still finish |
 | `tool_timeout_seconds` | Tool time limit | 180 | a blocking tool past this is cancelled |
 | `job_timeout_seconds` | Job time limit | 3600 | a background job is stopped after this; must exceed `tool_timeout_seconds` |
 | `verify_citations` | Check citations | on | the citation check of a reply (`turns/reply.py`): every message or document it cites must be one a tool showed |
-| `embed_query_timeout_seconds` | Search embedding time limit | 60 | how long a search waits for the Topic search model (`kb/semantic.py`) |
-| `busy_retry_seconds` | Busy model wait | 10 | agent and background work asks a busy model again after this, doubled at each try |
-| `busy_retry_max_seconds` | Longest busy model wait | 600 | the longest wait between two asks of a busy model; at least `busy_retry_seconds` |
+| `embed_query_timeout_seconds` | Search embedding time limit | 60 | how long a search waits for the Embeddings model (`kb/semantic.py`) |
+| `busy_retry_seconds` | Busy model retry delay | 10 | agent and background work retries a busy model after this delay, doubled at each retry |
+| `busy_retry_max_seconds` | Busy model max retry delay | 600 | the longest delay between two retries of a busy model; at least `busy_retry_seconds` |
 | `routine_max_minutes` | Routine time limit | 180 | the most minutes one routine run may work; 0 means no limit (Schedules, When a run fails) |
 | `routines_wait_for_missions` | Routines wait for missions | off | a routine run starts only while no turn of a mission is live (Schedules, When a run starts) |
 | `mission_max_hours` | Mission time limit | 0 | the most hours one mission may take from its start; 0 means no limit (`missions/watch.py`) |
@@ -122,11 +122,11 @@ a save applies at once. They are listed here in the page's sections (`general.GR
 | `max_attachment_bytes` | Largest attachment | 20000000 | refused during upload |
 | `inline_text_max_bytes` | Largest text read inline | 200000 | larger text attachments become a note |
 | `max_message_bytes` | Largest message | 1000000 | enforced on POST |
-| `document_part_mb` | Largest part in a document | 256 | an EPUB or DOCX part that unpacks larger is not read |
-| `document_html_mb` | Largest web page document | 64 | a larger HTML document is stored, not read |
+| `document_part_mb` | Largest file inside an EPUB or Word file | 256 | an EPUB or DOCX part that unpacks larger is not read |
+| `document_html_mb` | Largest HTML document | 64 | a larger HTML document is stored, not read |
 | `document_pdf_pages` | PDF pages read | 5000 | pages read of one PDF |
 | `document_pdf_seconds` | PDF read time limit | 600 | time spent reading one PDF, looked at between pages |
-| `events_keep` | Log entries per chat | 500 | log entries kept per conversation once it is idle |
+| `events_keep` | Stream events per chat | 500 | live-update events kept per conversation once it is idle; a page further behind resyncs |
 | `backup_keep_days` | Backups kept | 7 | nights of backups kept |
 | `requests_keep` | Model requests kept | 30 | days a model request body is kept in log.db, its row with the token counts and times stays; 0 keeps the body forever |
 
@@ -695,7 +695,7 @@ through the same Router (below) but do not queue here.
   <model>. <the provider's words>"), waits and asks the same model again until Stop. At
   interactive priority (Keep waiting) it waits for the answer's Retry-After (at most
   120 s; 10 s without one); at agent and background priority it backs off: Busy model
-  wait (`busy_retry_seconds`, 10 s) doubled at each try, Longest busy model wait
+  wait (`busy_retry_seconds`, 10 s) doubled at each try, Busy model max retry delay
   (`busy_retry_max_seconds`, 600 s) at most, never shorter than the Retry-After
   (`backends/llm.py backoff`). The wait counts neither against the turn's
   clock nor against the time limit of the tool that waits. A 402 or an out-of-credits body fails the turn with code
@@ -1151,7 +1151,7 @@ Settings, Features (`CELINE_BROWSER_URL` until saved) with `keys/browser.key` th
 is a browser context of its own); `act(steps, tab, show)` runs its steps in order, each
 `{do, target, text, ...}` (`Step`): it clicks a row, types, presses keys, goes back,
 answers a dialog or restarts the browser; a `locate` step is resolved app
-side by the Screen reading model (`vision.py`, role screen) and becomes an ordinary point
+side by the Browser screenshots model (`vision.py`, role screen) and becomes an ordinary point
 click or hover (`skills/browser.py _locating`). `scroll(tab, direction, to, amount, show)` scrolls the
 page or brings a row into view, `close(tab)` closes a tab. `look(tab)` reads the page's text, and
 `look(what="locate", ...)` answers with a box and clicks nothing. open and act answer with
@@ -1290,7 +1290,7 @@ sentence (`MailError`).
 a config problem, not a dead server. Skills read the running set as `self.app.kbs`
 (core/services.py), so skills rebuilt by a config reload find it. `[embeddings]` in the same file holds how
 passages are embedded (dims, prefixes, input length, workers, refresh). The model is the
-Topic search role in Settings, and whether anything embeds is that role alone
+Embeddings role in Settings, and whether anything embeds is that role alone
 (`semantic.embeddings_available`; the reranker: `rerank.reranker_available`).
 
 ### Files

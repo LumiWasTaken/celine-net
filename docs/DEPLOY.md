@@ -75,8 +75,8 @@ features on. Everything can be changed later in Settings:
    instructions) and your time zone (set `TZ` in `.env` to the same zone).
 2. **Settings, Models.** Add the server your models run on (llama-swap, Ollama,
    llama-server, or a cloud provider with its key), then pick models for the roles you
-   use (Chat, Tasks, Writing, Titles and descriptions, Decision model, Topic search,
-   Reranking, Photo descriptions, Screen reading, Image generation, Music generation,
+   use (Chat, Tasks, Writing, Titles and descriptions, Decision model, Embeddings,
+   Reranking, Photo descriptions, Browser screenshots, Image generation, Music generation,
    Dictation, Read aloud). A role
    may list models on several servers: the first that answers does the work. Until a
    chat model is set, a message you send waits, and the chat says why.
@@ -389,7 +389,7 @@ the agent's notes, archive excerpts (other people's messages too), email, shell 
 screenshots; for the other roles, the text or image each one is given. OpenRouter
 requests carry `data_collection: "deny"` unless you change it, and each OpenRouter model
 can ask for zero data retention (Settings, Models). Keep archive content local by
-giving Chat and Topic search local models.
+giving Chat and Embeddings local models.
 
 A search query goes (through SearXNG) to the public engines, and `web__read_page` gets
 the page from its server with a User-Agent that names Celine (the app) as a self-hosted

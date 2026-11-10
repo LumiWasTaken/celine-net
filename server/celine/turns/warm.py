@@ -1,4 +1,4 @@
-"""Keep the chat ready (Settings, Advanced, Models): for that many minutes after the
+"""Keep cache warm (Settings, Advanced, Models): for that many minutes after the
 newest chat's last reply, its request goes to its model server again every WARM_EVERY
 seconds, with room for one token. A server that unloads an idle model (Ollama's
 keep_alive, llama-swap's ttl, a router's idle timer) keeps it loaded, and the chat's

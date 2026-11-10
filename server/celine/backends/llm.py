@@ -58,7 +58,7 @@ Every other call treats a busy provider as no failure and never moves to the nex
 model: it waits and asks the same model again, as often as it takes, until Stop. A Keep
 waiting turn waits for the answer's Retry-After (at most RETRY_AFTER_MAX; else
 RETRY_AFTER); background work (any priority but interactive) backs off: the Busy model
-wait (Settings, Advanced) doubled at each try, the Longest busy model wait at most, and
+wait (Settings, Advanced) doubled at each try, the Busy model max retry delay at most, and
 never shorter than the Retry-After (`backoff`). A turn says so
 ("waiting" with reason `busy`, "Waiting for <model>.") and the wait does not count
 against its wall clock. Only the status says busy: a load failure's text (out of
@@ -209,7 +209,7 @@ def retry_after(e: BaseException) -> float:
 
 def backoff(e: BaseException, tries: int, cfg) -> float:
     """Seconds background work waits before it asks a busy model again after `tries`
-    waits: the Busy model wait doubled at each, the Longest busy model wait at most
+    waits: the Busy model retry delay doubled at each, the Busy model max retry delay at most
     (Settings, Advanced), never shorter than the answer's Retry-After (capped)."""
     first, most = float(cfg.r("busy_retry_seconds")), float(cfg.r("busy_retry_max_seconds"))
     secs = min(most, first * 2 ** min(tries, 32))

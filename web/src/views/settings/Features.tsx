@@ -1,6 +1,6 @@
 /* Settings, Features (/settings/features): the server's tiers in its order (FeatureTiers),
-   each under its SubHead: Core, its rows on and fixed (no switch to flip); Base modules
-   and User modules, one row per feature: its label (its `help` behind a "?"), its switch (off
+   each under its SubHead: Core, its rows on and fixed (no switch to flip); Built-in
+   and Plugins, one row per feature: its label (its `help` behind a "?"), its switch (off
    and greyed while the service is missing or not set up, its `needs` sentence under it and
    in a toast on a click), saved on each change (the whole object). A feature with a setup
    form opens it under its row (Edit), the same form the onboarding uses (WelcomeForms.tsx);

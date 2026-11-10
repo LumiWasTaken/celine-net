@@ -267,7 +267,7 @@ def test_a_step_line_stays_one_line_and_does_not_repeat_the_address():
 
 
 def screen_model(answers: list[str], refs=("gpu-box/screen-model",)):
-    """A fake LLM layer whose Screen reading model answers each question with the next
+    """A fake LLM layer whose Browser screenshots model answers each question with the next
     of `answers`; the questions asked land in .asked."""
     from celine.backends.base import Done, TextDelta
 
@@ -282,7 +282,7 @@ def screen_model(answers: list[str], refs=("gpu-box/screen-model",)):
     class Router:
         async def order(self, role):
             return SimpleNamespace(refs=list(refs),
-                                   sentence=lambda: "No model is set for Screen reading.")
+                                   sentence=lambda: "No model is set for Browser screenshots.")
 
     class Llm:
         router = Router()
@@ -395,7 +395,7 @@ async def test_locate_fails_with_the_models_words_or_without_a_screen_model(monk
     b.app = SimpleNamespace(llm=screen_model([], refs=()))
     out = await b.act(ctx, steps=steps[1:], tab="a")
     assert out.is_error and out.content == (
-        "The question was not asked: No model is set for Screen reading. Tell Joe. "
+        "The question was not asked: No model is set for Browser screenshots. Tell Joe. "
         "browser__look(tab=\"a\", what=\"view\") and what=\"page\" still work.")
 
     b.app = SimpleNamespace(llm=screen_model(['{"bbox_2d": [450, 360, 540, 400]}']))

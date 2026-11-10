@@ -2,7 +2,7 @@
    Features pick them by it): comfyui (one address for Images and Music: the saved ComfyUI
    provider's to start with; Music says "Music uses the same ComfyUI as Images." once Images has one), email
    (the account, Check email logs in), vault (the server fields and the client secret), search
-   (what an embedding and a reranker model give and how to run one, then the Topic search and
+   (what an embedding and a reranker model give and how to run one, then the Embeddings and
    Reranking models out of what the saved providers offer, a pick saves at once), guard (Bastet's
    Decision model, the `guard` role, and its Second look model, PUT /guard/rules, each with what
    it does and what happens without it; a pick saves at once; no chat model at all: the way to
@@ -308,7 +308,7 @@ async function addPick(offers: Offer[] | undefined, want: string, cap: Cap) {
   return (await settingsApi.putModel(pid!, id, { label: a?.name || id, caps })).ref
 }
 
-/* ── search: Topic search (embeddings) and Reranking (rerank), one model each or none; a
+/* ── search: Embeddings and Reranking (rerank), one model each or none; a
    pick saves at once (PUT /roles/{role}), then the card's state line is asked anew ── */
 const ROLES: { role: string; cap: Cap }[] = [{ role: 'embeddings', cap: 'embeddings' }, { role: 'reranker', cap: 'rerank' }]
 type Picks = Partial<Record<string, string>>

@@ -323,7 +323,7 @@ async def test_each_request_starts_with_the_request_before_it(store, cfg):
 
 
 async def test_keep_the_chat_ready_sends_the_start_of_the_next_turns_request(store, cfg):
-    """Keep the chat ready (turns/warm.py): within its minutes after the newest chat's
+    """Keep cache warm (turns/warm.py): within its minutes after the newest chat's
     last reply, what goes is the next turn's request through the last user message;
     past them, or at 0, nothing goes."""
     from datetime import datetime, timedelta

@@ -9,7 +9,7 @@
   role and conversation picks.
 - A **role** (roles.toml) is what the app uses a model for: chat, titles and
   descriptions, tasks, its words in its own voice (writing: skills/writer.py), browser,
-  semantic topic search (Topic search), reranking, photo descriptions, image generation
+  semantic topic search (Embeddings), reranking, photo descriptions, image generation
   and music generation (lists of presets). A chat runs on the chat role, every other
   kind on tasks (settings/roles.py).
   Each has an ordered list of models: a turn the user waits on runs on the first
@@ -52,10 +52,10 @@ ROLES: dict[str, dict[str, Any]] = {
               "help": "Names chats and describes documents in a line or two. A small, fast "
                       "model does this well."},
     "guard": {"label": "Decision model", "caps": ["chat"],
-              "help": "Decides whether a risky step may run and writes Bastet's messages and "
-                      "answers. Without it, Warn lets every step run and Enforce makes risky "
-                      "steps wait."},
-    "embeddings": {"label": "Topic search", "caps": ["embeddings"],
+              "help": "Decides whether a risky tool call may run and writes Bastet's messages and "
+                      "replies. Without it, Warn lets every tool call run and Enforce makes "
+                      "risky tool calls wait."},
+    "embeddings": {"label": "Embeddings", "caps": ["embeddings"],
                    "help": "Finds messages, notes and documents by what they are about, not "
                            "only by their words."},
     "reranker": {"label": "Reranking", "caps": ["rerank"],
@@ -63,7 +63,7 @@ ROLES: dict[str, dict[str, Any]] = {
     "vision": {"label": "Photo descriptions", "caps": ["vision"],
                "help": "Describes photos in messages and documents, so Search finds them by "
                        "what they show."},
-    "screen": {"label": "Screen reading", "caps": ["vision"],
+    "screen": {"label": "Browser screenshots", "caps": ["vision"],
                "help": "Looks at a screenshot of a browser page and answers a question about "
                        "it."},
     "image_generation": {"label": "Image generation", "caps": ["image_generation"],
@@ -83,18 +83,18 @@ PROVIDERS_HELP = "The servers your models run on. Any provider can serve any rol
 # a provider option's words on its page: label, help (the "?"), unit, and each choice's
 # label; an option left out is its key in words. `cloud` is the provider's Cloud switch.
 OPTION_WORDS: dict[str, dict[str, Any]] = {
-    "service_tier": {"label": "Speed and price",
+    "service_tier": {"label": "Service tier",
                      "help": "How OpenRouter weighs speed against price for this provider's "
                              "requests.",
                      "choices": {"": "Default", "flex": "Flex (cheaper, slower)",
                                  "priority": "Priority (faster, more expensive)"}},
-    "data_collection": {"label": "Provider may keep data",
-                        "help": "Yes lets OpenRouter use providers that may store your "
+    "data_collection": {"label": "Data collection",
+                        "help": "Allow lets OpenRouter use providers that may store your "
                                 "requests or train on them.",
-                        "choices": {"deny": "No", "allow": "Yes"}},
+                        "choices": {"deny": "Deny", "allow": "Allow"}},
     "require_parameters": {"label": "Require parameters",
-                           "help": "Only providers that take every setting a request sends "
-                                   "get it."},
+                           "help": "OpenRouter sends a request only to providers that support "
+                                   "every parameter in it."},
     "allow_fallbacks": {"label": "Allow fallbacks",
                         "help": "When the first provider fails, OpenRouter sends the request "
                                 "to the next one."},
@@ -113,12 +113,13 @@ OPTION_WORDS: dict[str, dict[str, Any]] = {
                              "says."},
     "next_when_full": {"label": "Next model at the hourly limit", "needs": "max_per_hour",
                        "help": "On, work past Requests per hour moves to the next model in "
-                               "its list. Off, it waits until this provider has room again."},
+                               "its list. Off, it waits until this provider is under Requests per "
+                               "hour again."},
     "keep_alive": {"label": "Unload after",
                    "help": "How long an idle model stays loaded, such as 5m or 1h."},
     "shares_gpu_with": {"label": "Shares its GPU with",
-                        "help": "Before each image, the app unloads this provider's models to "
-                                "free the GPU."},
+                        "help": "Before each image or track, the app unloads the chosen "
+                                "provider's models to free the GPU."},
     "cloud": {"label": "Cloud",
               "help": "A server outside your network. {{name}} asks you before sending work "
                       "to one of its models you did not pick."},

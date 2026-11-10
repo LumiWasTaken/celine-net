@@ -5,7 +5,7 @@ Five tools. browser__open loads a page in a named tab and browser__close closes 
 (each has effects: a GET can log out or start a download); browser__scroll scrolls it
 (a reading tool, as look); browser__act runs steps on it
 (click, type, select, hover, press, find, back, forward, reload, upload, accept,
-dismiss, restart, and locate: a click or hover where the Screen reading model
+dismiss, restart, and locate: a click or hover where the Browser screenshots model
 boxes what it names); browser__look reads the page: the view again, the whole page
 as Markdown, its HTML, its source, or the screen itself, as an image when its model sees images,
 else as a model's answer to its question, or where something is (locate, vision.py).
@@ -727,7 +727,7 @@ class Browser:
     async def _screen(self, ctx: ToolContext, name: str, question: str,
                       answer_as: str, screen: int | None = None, wait: str = "") -> ToolResult:
         """The screen: to it as an image when its model sees images (with marks when
-        it asked for ids), else a model of the Screen reading role answers its question
+        it asked for ids), else a model of the Browser screenshots role answers its question
         (vision.py)."""
         sees = await attachments.turn_sees_images(self.cfg, ctx)
         if not sees and not question:
@@ -783,7 +783,7 @@ class Browser:
 
     async def _located(self, ctx: ToolContext, name: str, question: str,
                        screen: int | None = None, wait: str = "") -> ToolResult:
-        """Where something is on the screen, by the Screen reading model's box: the box
+        """Where something is on the screen, by the Browser screenshots model's box: the box
         and its centre in px of the view, ready as a click's target, and nothing clicked."""
         if not question:
             return self._error("locate needs a question, what to find in words, like "
@@ -812,7 +812,7 @@ class Browser:
                 f"work.")
 
     async def _screen_model(self) -> bool:
-        """Whether a model of the Screen reading role can answer now."""
+        """Whether a model of the Browser screenshots role can answer now."""
         return self.llm is not None and bool((await self.llm.router.order("screen")).refs)
 
     async def _keep(self, ctx: ToolContext, image: bytes, filename: str,

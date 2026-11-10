@@ -99,7 +99,7 @@ enabled = true
 # search (semantic topic search + word search, reranked, match windows), count,
 # read_session, read_period, scroll, get_messages, look_up, mark_same_person.
 # Which tools are on by default: Settings, Tools (var/settings/tools.toml).
-# Retrieval (kb/retrieve): query embeddings (the Topic search model), then
+# Retrieval (kb/retrieve): query embeddings (the Embeddings model), then
 # a cross-encoder reranker (the Reranking role; empty turns reranking off). Both are
 # chosen in Settings, Models.
 

@@ -104,7 +104,7 @@ async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api)
 async def test_the_tiers_come_in_order_with_the_core_and_a_group_together(api, _test_skills_core):
     r = (await api.get("/api/features")).json()
     assert [t["id"] for t in r["tiers"]] == ["core", "base"], "no user module: no user tier"
-    assert [t["label"] for t in r["tiers"]] == ["Core", "Base modules"]
+    assert [t["label"] for t in r["tiers"]] == ["Core", "Built-in"]
     assert {f["tier"] for f in r["catalog"]} == {"base"}
     # the core is the chat and every core skill no feature owns; no switch, no feature id
     owned = set(features.skill_owners())
@@ -325,7 +325,7 @@ async def test_the_messages_probe_says_what_search_can_do(api, monkeypatch):
     await api.put("/api/roles/embeddings", json={"chain": []})
     await api.put("/api/roles/reranker", json={"chain": []})
     said = await features.probe(api.cfg, api.services, "messages")
-    assert said["detail"].endswith(" Search finds messages only by their words. Pick a Topic search model in "
+    assert said["detail"].endswith(" Search finds messages only by their words. Pick an Embeddings model in "
                                  "Settings, Models to search by topic too. Pick a Reranking model in Settings, "
                                  "Models to put the best matches first.")
     assert said["detail"].startswith("Sources: ")

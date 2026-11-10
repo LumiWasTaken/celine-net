@@ -337,7 +337,7 @@ def _problem(msg: str):
 async def probe(cfg, services) -> dict[str, str]:
     """Settings, Features (messages): at least one chat archive has its connector
     answering (its sources are the connected ones); the detail says when search is words
-    only (no Topic search model) and when nothing reranks."""
+    only (no Embeddings model) and when nothing reranks."""
     from ..settings import features
     kbs = getattr(services, "kbs", None)
     if kbs is not None:
@@ -354,7 +354,7 @@ async def probe(cfg, services) -> dict[str, str]:
     from .semantic import embeddings_available
     notes = [f"Sources: {', '.join(chats)}."]
     if not embeddings_available(cfg):
-        notes.append("Search finds messages only by their words. Pick a Topic search "
+        notes.append("Search finds messages only by their words. Pick an Embeddings "
                      "model in Settings, Models to search by topic too.")
     if not reranker_available(cfg):
         notes.append("Pick a Reranking model in Settings, Models to put the best matches first.")

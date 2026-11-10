@@ -21,7 +21,7 @@ The tests load both examples, so they match the current app.
 A plugin in your folder with the id of a shipped one replaces it. The app reads the
 plugins at start, so a new or removed folder takes a restart. A new plugin starts
 switched off, and Settings, Features switches it on and off while the app runs. Settings
-lists your plugins under User modules, and a plugin that owns a place under Base modules.
+lists your plugins under Plugins, and a plugin that owns a place under Built-in.
 
 ## Three ways to give the agent something
 

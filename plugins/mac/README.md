@@ -1,6 +1,6 @@
 # Its own computer: a Mac
 
-A base plugin. Turn on `<name>'s Mac` (its name) under Base modules in Settings, Features (or the Features
+A base plugin. Turn on `<name>'s Mac` (its name) under Built-in in Settings, Features (or the Features
 step of Setup). Its form then appears as "Own computer" in the `<name>'s computer` step of Setup
 and as its own Settings page. `setup.sh` makes a Mac (Apple silicon, macOS 15 or
 later) a computer the agent uses from the app. It installs with Homebrew and npm only (no Apple
