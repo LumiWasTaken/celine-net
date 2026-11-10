@@ -182,8 +182,10 @@ def _note(r, cfg) -> dict:
 
 def _job(r, cfg) -> dict:
     word, tone = _JOB.get(r["state"], ("Running", RUNNING))
-    return {"title": _label(r["tool_name"]), "outcome": word, "tone": tone,
-            "detail": _first(r["result"]) if tone == ERROR else _took(r["at"], r["finished_at"])}
+    # an interrupted one's result is the line its model reads (jobs/store.interrupted_why)
+    detail = "The app restarted before the job finished." if r["state"] == "interrupted" \
+        else _first(r["result"]) if tone == ERROR else _took(r["at"], r["finished_at"])
+    return {"title": _label(r["tool_name"]), "outcome": word, "tone": tone, "detail": detail}
 
 
 def _message(r, cfg) -> dict:
