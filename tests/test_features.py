@@ -204,7 +204,8 @@ async def test_the_browser_probe_reads_browserd_state(api, monkeypatch):
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json=answers))))
     said = await features.probe(api.cfg, api.services, "browser")
     assert said == {"state": "missing", "detail":
-                    "The browser answers at box:8771 but Brave is not running: Brave could not start."}
+                    "The browser service answers at box:8771, but its browser is not running: "
+                    "Brave could not start."}
     answers = {"state": "up", "reason": None}
     assert (await features.probe(api.cfg, api.services, "browser"))["state"] == "ready"
 

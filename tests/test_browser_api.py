@@ -38,7 +38,7 @@ def test_front_and_close_forward_and_refuse_in_a_sentence(monkeypatch):
         assert post({"action": "front", "tab": "b"}).json() == {"front": "b"}
         assert events == [{"type": "browser.state"}]
         r = post({"action": "close", "tab": "busy"})
-        assert r.status_code == 200 and r.json()["refused"].startswith("Tab a is in the middle")
+        assert r.status_code == 200 and r.json()["refused"].startswith("Tab a is still running a tool call")
         assert post({"action": "close", "tab": "gone"}).json() == \
             {"refused": "Tab gone is closed already."}
         assert post({"action": "close"}).status_code == 400

@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Copy, Globe, History, MessageCircle, Monitor, MoreHorizontal, MousePointerClick, Play, RefreshCw, SearchX, X } from 'lucide-react'
 import RFB from '@novnc/novnc'
 import { BrowserShots } from '../components/ToolRow'
+import { useAgent } from '../lib/agent'
 import { browserApi, browserHistory, isBrowserEvent, type Box, type BrowserCall, type Tab } from '../lib/browser'
 import { clock, count, dayLabel } from '../lib/format'
 import { useNav } from '../lib/nav'
@@ -49,11 +50,12 @@ export function Browser({ active }: { active: boolean }) {
   const page: Page = boxless ? { kind: 'history' } : chosen
   const tabs = b?.tabs ?? []
   const yours = b?.state === 'up' && !!b.taken
+  const name = useAgent()?.name ?? ''
   const control = useAction(async (action: 'take' | 'give') => { await browserApi.control(action); box.reload() })
   const onTab = useAction(async (action: 'front' | 'close', tab: string) => { await browserApi.tab(action, tab); box.reload() })
   const openTab = (t: Tab) => { setPage({ kind: 'tab', name: t.name }); if (t.name !== b?.front) void onTab.run('front', t.name) }
   const take = b && b.state !== 'off' && (yours
-    ? <Button variant="primary" icon={MousePointerClick} loading={control.busy} title={b.taken ? `Yours since ${clock(b.taken * 1000)}` : undefined}
+    ? <Button variant="primary" icon={MousePointerClick} loading={control.busy} title={b.taken ? `You have control since ${clock(b.taken * 1000)}` : undefined}
               onClick={() => void control.run('give')}>Return control</Button>
     : <Button icon={MousePointerClick} loading={control.busy} disabled={b.state !== 'up'} onClick={() => void control.run('take')}>Take control</Button>)
   const restart: MenuItem = { label: 'Restart', icon: RefreshCw, disabled: !b || b.state === 'off', onSelect: () => setRestarting(true) }
@@ -82,7 +84,7 @@ export function Browser({ active }: { active: boolean }) {
         ) : <TabsList box={box} take={take} restart={restart} onOpen={openTab} onClose={t => void onTab.run('close', t.name)} />}
       {restarting && (
         <ConfirmDialog title="Restart the browser?" confirmLabel="Restart" onClose={() => setRestarting(false)}
-                       body={'The tabs reopen at their last addresses. Anything typed into pages is lost.' + (yours ? ' You also return control.' : '')}
+                       body={'The tabs reopen at their last addresses. Anything typed into pages is lost.' + (yours ? ` Control returns to ${name}.` : '')}
                        onConfirm={async () => { await browserApi.control('restart'); setRestarting(false); box.reload() }} />
       )}
     </Place>
@@ -171,7 +173,7 @@ function HistoryList() {
   ]
   const draw = (r: Row) => 'day' in r ? <GroupHead title={r.day} count={count(perDay.get(r.day) ?? 0, 'call')} /> : (
     <ListRow running={r.c.state === 'running'} icon={Globe} title={r.c.line}
-             aside={r.c.state === 'failed' ? <StateWord tone="error">Failed</StateWord> : r.c.state === 'cancelled' ? <StateWord>Stopped</StateWord> : undefined} tooltip={r.c.line} subtitle={r.c.conversation.title} column={<span className="mono">{r.c.tool}</span>}
+             aside={r.c.state === 'failed' ? <StateWord tone="error">Failed</StateWord> : r.c.state === 'cancelled' ? <StateWord>Stopped</StateWord> : undefined} tooltip={r.c.line} subtitle={r.c.conversation.title} column={TOOLS.find(t => t.value === r.c.tool)?.label ?? r.c.tool}
              cell={r.c.shots ? count(r.c.shots, 'screenshot') : ''} meta={clock(Date.parse(r.c.at))} onClick={() => setOpened(r.c)}
              onContextMenu={e => ctx.open(e, menu(r.c), r.c.line)} trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(r.c)} size="sm" />} />
   )

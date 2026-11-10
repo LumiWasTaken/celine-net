@@ -80,8 +80,8 @@ async def control(request: Request, body: Control) -> dict:
     except BrowserRefused as e:
         code = e.facts.get("error")
         if on_tab and code == "busy":
-            return {"refused": f"Tab {e.facts.get('tab') or body.tab} is in the middle of "
-                               "a call. Try again when it is done."}
+            return {"refused": f"Tab {e.facts.get('tab') or body.tab} is still running a "
+                               "tool call. Try again when it is done."}
         if on_tab and code == "no_tab":
             return {"refused": f"Tab {body.tab} is closed already."}
         raise _refused(e) from None

@@ -175,8 +175,8 @@ async def probe(cfg, services) -> dict[str, str]:
                                               f"{e.words}", **found}
     if now.get("state") != "up":
         why = now.get("reason") or f"it is {now.get('state') or 'down'}"
-        return {"state": "missing", "detail": f"The browser answers at {host} but Brave "
-                                              f"is not running: {why}.", **found}
+        return {"state": "missing", "detail": f"The browser service answers at {host}, but its "
+                                              f"browser is not running: {why}.", **found}
     if saved:
         return {"state": "ready", "detail": f"The browser at {host} answers."}
     return {"state": "ready", "detail": f"Found at {at}.", "url": at}
