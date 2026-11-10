@@ -191,7 +191,7 @@ ol{margin:0 0 var(--s-4);padding:var(--s-3) var(--s-4) var(--s-3) var(--s-7);bac
 
   <section id="v-codes" hidden>
     <h2>Recovery codes</h2>
-    <p>Save these codes somewhere safe. Each one works once, and the app does not show them again.</p>
+    <p>Save these codes somewhere safe. Each one works once, and the app shows them only this once.</p>
     <ol id="codes"></ol>
     <div class="row">
       <button id="copy" class="secondary" type="button">Copy</button>

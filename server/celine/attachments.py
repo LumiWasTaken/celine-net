@@ -195,7 +195,7 @@ def render(cfg, history: list[dict]) -> list[dict]:
                     if box:
                         notes.append(f"[image {a['filename']}{where}]")
                 else:
-                    notes.append(f"[image {a['filename']}: the file is no longer stored]")
+                    notes.append(f"[image {a['filename']}: its file was deleted]")
             elif a["kind"] == "text" and a["bytes"] <= inline_limit and path.exists():
                 notes.append(f"[attachment {a['filename']}{where}]\n"
                              f"{path.read_text(errors='replace')}\n[end of {a['filename']}]")

@@ -264,7 +264,7 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
     const refId = decodeURIComponent(href.slice(INVALID.length))
     return (
       <span className="refchip refchip--invalid"
-            title="This citation failed the check: the message was never shown in the chat, or it does not say what the reply says.">
+            title="This citation failed the check: its message was outside what the chat showed, or it says something else than the reply.">
         <Link2Off size={ICON.sm} aria-hidden />
         <span>{refId}</span>
         <span>Invalid</span>

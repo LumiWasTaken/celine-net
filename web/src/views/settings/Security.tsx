@@ -69,7 +69,7 @@ export function Security() {
                  action={<Button onClick={() => setRenewing(true)}>Reset codes</Button>}>
           {codes && (
             <div className="recovery">
-              <p className="src-line">Save these now. The app does not show them again.</p>
+              <p className="src-line">Save these now. The app shows them only this once.</p>
               <ol className="recovery__codes">{codes.map(c => <li key={c}>{c}</li>)}</ol>
               <div className="row-actions">
                 <Button icon={Copy} onClick={() => void copy(codes.join('\n')).then(setCopied)}>
@@ -209,7 +209,7 @@ function Tokens({ guard }: { guard: Guard }) {
       </form>
       {made && (
         <div className="recovery">
-          <p className="src-line">The token for {made.name}. Save it now. The app does not show it again.</p>
+          <p className="src-line">The token for {made.name}. Save it now. The app shows it only this once.</p>
           <code className="recovery__codes token-once">{made.token}</code>
           <div className="row-actions">
             <Button icon={Copy} onClick={() => void copy(made.token).then(setCopied)}>
@@ -219,7 +219,7 @@ function Tokens({ guard }: { guard: Guard }) {
         </div>
       )}
       {revoking && (
-        <ConfirmDialog title={`Remove the token ${revoking.name}?`} body="Scripts that use this token can no longer reach the app."
+        <ConfirmDialog title={`Remove the token ${revoking.name}?`} body="Scripts that use this token lose their access to the app."
                        confirmLabel="Remove" danger
                        onClose={() => setRevoking(null)}
                        onConfirm={async () => {

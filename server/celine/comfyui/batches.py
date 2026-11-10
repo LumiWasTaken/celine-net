@@ -619,7 +619,7 @@ class Batches:
         for name, src in sources:
             path = blob_path(self.app.cfg, src["sha256"])
             if not path.exists():
-                raise ImageError(f"The file of {src['filename']} is no longer stored.")
+                raise ImageError(f"The file of {src['filename']} was deleted.")
             values[name] = await comfy.upload(
                 path.read_bytes(), f"celine-{uuid4().hex[:16]}"
                 f"{_EXT.get(src['media_type'], '.png')}", src["media_type"])
