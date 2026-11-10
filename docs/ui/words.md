@@ -223,7 +223,7 @@ block at the end of this file lists the words no UI string uses.
 | Tint, How much the accent colours the background and surfaces | Appearance, Colour: how strongly the accent hue colours the greys (0 % plain grey), and its help | macOS "wallpaper tinting"; photo editors "Tint" |
 | Contrast, The step in lightness between the background and surfaces | Appearance, Colour: how far apart the surfaces are in lightness, and its help | macOS and Windows "Contrast" |
 | Grain, Fine, Coarse, Paper, None, Opacity | Appearance, Background: the canvas's grain pattern (None: a plain canvas) and how much of it shows | Photoshop "Grain", "Opacity"; Procreate "Grain" |
-| Reset to defaults, Reset the appearance? | Appearance: every choice back to the server's default, and its confirm | macOS, Windows, VS Code "Reset to defaults" |
+| Reset to defaults, Reset the appearance?, Reset | Appearance: every choice back to the server's default, its confirm and the confirm's button | macOS, Windows, VS Code "Reset to defaults" |
 | Rose, Peach, Sage, Teal, Sky, Violet, Miku | the colours: Accent colour (Appearance) and its Face colour; Miku is a bright teal blue | macOS accent colour names; Miku after Hatsune Miku's hair |
 | Roles, Chat, Tasks, Writing, Titles and descriptions, Decision model, Topic search, Reranking, Photo descriptions, Screen reading, Image generation, Music generation, Dictation, Read aloud | the roles on Settings, Models: what each list of models is used for (settings/registry.py ROLES) | plain |
 | Requests at once, Timeout, Thinking, Speed and price, Provider may keep data, Require parameters, Allow fallbacks, Sort by, Shares its GPU with | a provider's options in its dialog, beside Requests per hour and Next model at the hourly limit (settings/registry.py) | OpenRouter provider routing; LM Studio |
@@ -359,7 +359,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Approved., Denied., No answer. | a request's notice once it closed, replacing the one that asked | Android permissions "Allowed", "Denied" |
 | Paused | the rail item while no model of the agent's answers (it opens Settings, Models), and the mini player; never a reply or an image | plain |
 | Settings, Change {target}., Default, Empty, On, Off, Saved, Not set, New value, Removed | the agent's request to change Settings in a chat: the kind's name, its line, then each field's before and after (a secret by its state only) | macOS "Change Settings"; Bitwarden "Saved" |
-| Freeze, Unfreeze, Frozen | stop everything the agent does until you let it go on (the guard, or you by hand); Frozen in the rail and Unfreeze on Bastet's banner | Revolut, Monzo "Freeze card" |
+| Freeze, Unfreeze, Frozen | stop everything the agent does until you let it go on (the guard, or you by hand); Frozen in the rail, which opens the confirm Unfreeze? with why it froze, and Unfreeze on Bastet's banner | Revolut, Monzo "Freeze card" |
 | Go to the original message | jump to the message a reply or result came from | Slack, Discord "Jump to message" |
 | Lock, Unlock, Client ID | the Vault; the API key's Client ID in its form | Bitwarden "Lock", "Unlock", "client_id" |
 | Log in with QR code | link WhatsApp or Discord with the phone | Discord "Log in with QR Code" |

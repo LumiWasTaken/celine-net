@@ -259,7 +259,7 @@ function Shell() {
       {sheet === 'switch' && <Switcher onClose={() => setSheet(null)} />}
       {sheet === 'keys' && <Shortcuts onClose={() => setSheet(null)} />}
       {sheet === 'frozen' && frozen && (
-        <ConfirmDialog title="Frozen" body={frozen.why} confirmLabel="Unfreeze"
+        <ConfirmDialog title="Unfreeze?" body={frozen.why} confirmLabel="Unfreeze"
                        onConfirm={async () => { await guardApi.unfreeze(); setSheet(null) }} onClose={() => setSheet(null)} />
       )}
       {sheet === 'more' && (

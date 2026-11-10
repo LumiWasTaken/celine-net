@@ -89,7 +89,7 @@ export function Appearance() {
         <Preview hideThinking={look.hide_thinking} hideTools={look.hide_tools} collapseThinking={look.collapse_thinking} />
       </div>
       {resetting && (
-        <ConfirmDialog title="Reset the appearance?" confirmLabel="Reset to defaults" onClose={() => setResetting(false)}
+        <ConfirmDialog title="Reset the appearance?" confirmLabel="Reset" onClose={() => setResetting(false)}
                        onConfirm={async () => {
                          auto.clear()
                          try { await saveAppearance(Object.fromEntries(Object.keys(look).map(k => [k, null]))); setResetting(false) }
