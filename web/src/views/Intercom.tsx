@@ -316,11 +316,11 @@ export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
                  crumbs={crumbs ?? [{ label: 'Intercom', href: '/intercom', onClick: e => { e.preventDefault(); nav.go({ section: 'intercom' }) } }]}
                  detail={bug ? (bug.state === 'open' ? 'Open' : 'Closed') : undefined}
                  actions={<>
-                   {unread.length > 0 && <Button variant="ghost" icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}
-                   {bug?.state === 'open' && <Button variant="ghost" icon={CircleCheck} loading={close.busy} onClick={() => void close.run()}>Close</Button>}
+                   {unread.length > 0 && <Button icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}
+                   {bug?.state === 'open' && <Button icon={CircleCheck} loading={close.busy} onClick={() => void close.run()}>Close</Button>}
                    {/* a mission's thread: the mission is its home */}
-                   {src?.kind === 'mission' && src.link && <Button variant="ghost" icon={Flag} onClick={() => nav.goPath(src.link!)}>Open mission</Button>}
-                   {msgs.length > 0 && <Button variant="ghost" icon={MessageSquarePlus} loading={toChat.busy} onClick={() => void toChat.run()}>Continue in a chat</Button>}
+                   {src?.kind === 'mission' && src.link && <Button icon={Flag} onClick={() => nav.goPath(src.link!)}>Open mission</Button>}
+                   {msgs.length > 0 && <Button icon={MessageSquarePlus} loading={toChat.busy} onClick={() => void toChat.run()}>Continue in a chat</Button>}
                  </>}
                  more={[
                    ...(src?.link && src.kind !== 'mission' ? [{ label: 'Open', detail: src.title ?? undefined,

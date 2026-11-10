@@ -116,7 +116,7 @@ function MissionPage({ w, crumbs }: { w: MissionWait; crumbs: Crumb[] }) {
   return (
     <div className="waiting-page">
       <PlaceHead level={1} title={w.title} titleAttr={w.title} crumbs={crumbs}
-                 actions={w.home && <Button variant="ghost" icon={Flag} href={w.home} onClick={go(w.home)}>Open mission</Button>} />
+                 actions={w.home && <Button icon={Flag} href={w.home} onClick={go(w.home)}>Open mission</Button>} />
       <div className="page"><div className="page__col page__col--wide">
         <Section title="Waiting for you">
           <MissionAsk w={w} />
