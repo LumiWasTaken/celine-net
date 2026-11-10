@@ -53,7 +53,9 @@ PAGE_HELP = {
     "second_look": "A stronger model looks again at what the decision model stopped. When "
                    "it disagrees, you get no message and Bastet unfreezes {{name}} if "
                    "{{name}} is frozen.",
-    "rules": "What Bastet does when a rule matches a tool call. Warn only logs it in Events.",
+    "rules": "Warn logs a match in Events, Stop keeps the tool call from running, Freeze "
+             "also stops everything {{name}} does until you choose Unfreeze from Frozen in "
+             "the rail. With Mode on Warn, every rule only logs.",
     "passes": "Tool calls you allowed with Allow for 7 days or a reply to Bastet. End ends "
               "one now.",
 }
