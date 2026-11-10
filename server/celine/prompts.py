@@ -86,6 +86,21 @@ APP: dict[str, tuple[str, str]] = {
                                                       "gets."),
     "sub_agents.drone": ("Device sub-agent instructions", "Frames the instructions a "
                                                           "sub-agent on a device gets."),
+    "sub_agents.can_read": ("Sub-agent with read access", "Tells a sub-agent with read "
+                            "access what it may do."),
+    "sub_agents.can_work": ("Sub-agent with work access", "Tells a sub-agent with work "
+                            "access what it may do."),
+    "sub_agents.where_read": ("Notebook to read", "Tells a sub-agent with read access that "
+                              "it sees {{name}}'s whole notebook."),
+    "sub_agents.where_read_folder": ("Notebook folder to read", "Tells a sub-agent with read "
+                                     "access which folder of the notebook it sees."),
+    "sub_agents.where_work": ("Notebook to write", "Tells a sub-agent with work access that "
+                              "it works in {{name}}'s whole notebook."),
+    "sub_agents.where_work_folder": ("Notebook folder to write", "Tells a sub-agent with "
+                                     "work access which folder of the notebook it sees "
+                                     "and writes."),
+    "sub_agents.read_parent": ("Read access passes down", "Answers a sub-agent with read "
+                               "access that asks for a sub-agent with more."),
     "conversations.impersonate": ("Impersonate", "Asks the chat model to write "
                                   "{{username}}'s next message in their voice."),
     "conversations.impersonate_sample": ("Impersonate samples", "Shows the chat model "

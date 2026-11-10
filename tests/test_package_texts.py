@@ -28,6 +28,8 @@ FILLS = {
     "turns/fallback.md": {"first": "main/big", "current": "main/small"},
     "skills/tool_off.md": {"tool": "shell"},
     "skills/read_only.md": {"skill": "notebook", "reads": "notebook__read"},
+    "sub_agents/where_read_folder.md": {"folder": "agents/scout"},
+    "sub_agents/where_work_folder.md": {"folder": "agents/scout"},
 }
 
 

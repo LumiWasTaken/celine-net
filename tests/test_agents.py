@@ -331,7 +331,7 @@ async def test_a_folder_outside_the_notebook_is_refused(store, cfg):
 
 
 async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(store, cfg):
-    from celine.sub_agents.skill import READ_PARENT
+    from celine.sub_agents.skill import read_parent
     from celine.turns.loads import offered
     reg = _registry(cfg)
     agents = reg.skills["sub_agents"]
@@ -353,7 +353,7 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
         "a load hands it only what it may call"
     for more in ({"access": "work"}, {"cli": "opencode"}):
         out = await agents.start(ctx, brief="x", name="a helper", **more)
-        assert out.is_error and out.content == READ_PARENT, more
+        assert out.is_error and out.content == read_parent(), more
     for wider in ("agents/other", "agents/scout/../other", "agents/scout/.."):
         out = await agents.start(ctx, brief="x", name="a helper", folder=wider)
         assert out.is_error and ("agents/scout" in out.content or "not a folder" in
@@ -375,7 +375,7 @@ async def test_a_read_sub_agent_starts_only_read_children_inside_its_folder(stor
                                      agent_cli="opencode")
     assert (await agents.start(ctx, brief="again", name="old worker")).is_error
     out = await agents.start(ctx, brief="again", name="old cli")
-    assert out.is_error and out.content == READ_PARENT, "a resume gives no more than read"
+    assert out.is_error and out.content == read_parent(), "a resume gives no more than read"
     assert {s["id"] for s in await _subs_of(store, scout)} == {worker, cli}
 
 

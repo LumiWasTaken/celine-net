@@ -51,8 +51,6 @@ MIN_NAME = 5
 MAX_NAME = 60
 MAX_WAIT = 600      # seconds `read` waits for a sub-agent at most
 MAX_DEPTH = 3       # levels of sub-agents below the top conversation
-READ_PARENT = ("You have read access, so your sub-agents have read access too and run "
-               "on a model, not a CLI or a device.")
 CLOUD_ASK = "start a sub-agent on a cloud model"
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
@@ -62,6 +60,12 @@ KNOBS = (
     knob("sub_agents.cli_minutes", "Agent CLI time limit", "minutes", 1, 100_000, 120,
          "The longest one sub-agent may work through an agent CLI in the shellbox."),
 )
+
+
+def read_parent() -> str:
+    """The refusal when a sub-agent with read access asks for one with more access, a
+    CLI or a device (read_parent.md)."""
+    return prompts.text(__file__, "read_parent.md").strip()
 
 
 async def model_for_sub_agent(store, parent_cid: str) -> dict:
@@ -364,7 +368,7 @@ class SubAgents:
         if access not in ("read", "work"):
             return None, "access is read or work.", False, None
         if reading and (access == "work" or cli is not None or device is not None):
-            return None, (READ_PARENT), False, None
+            return None, read_parent(), False, None
         if model is not None and model not in agent_models.allowed(self.cfg.settings):
             yours = ", ".join(agent_models.allowed(self.cfg.settings)) or "none"
             return None, f"{model} is not one of your models. Yours: {yours}.", False, None
@@ -389,7 +393,7 @@ class SubAgents:
             return None, refusal, False, None
         if reading and known is not None and (known["access"] == "work" or known["cli"]
                                               or known["device"]):
-            return None, READ_PARENT, False, None     # a resume gives no more either
+            return None, read_parent(), False, None     # a resume gives no more either
         # the user's answer may take minutes: asked outside the lock, checked again in it
         model = await self._model(store, parent, model, known)
         if asker is not None and (no := await agent_models.ask_cloud(
@@ -487,17 +491,10 @@ class SubAgents:
                                 agent_name=row["agent_name"], parent=parent,
                                 device=dev.label if dev else "a Linux box")
         folder = row["notebook_folder"]
-        if row["access"] == "read":
-            can = ("You were started to look things up: you have only tools that read, "
-                   "and you change nothing.")
-            where = (f"You see only `{folder}` of {{{{name}}}}'s notebook." if folder
-                     else "You see {{name}}'s whole notebook.")
-        else:
-            can = "You may write where the brief asks you to."
-            where = (f"Your notebook here is {{{{name}}}}'s notebook, limited to "
-                     f"`{folder}`: you see and write only that folder." if folder else
-                     "Your notebook here is {{name}}'s whole notebook. Write what the "
-                     "brief asks for and leave the rest as it is.")
+        access = "read" if row["access"] == "read" else "work"
+        can = prompts.text(__file__, f"can_{access}.md").strip()
+        where = prompts.text(__file__, f"where_{access}_folder.md" if folder else
+                             f"where_{access}.md").strip().replace("{{folder}}", folder or "")
         return prompts.fill(self.cfg, __file__, "fragment.md", agent_name=row["agent_name"],
                             parent=parent, can=can, where=where)
 
