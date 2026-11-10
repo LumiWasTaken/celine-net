@@ -60,8 +60,8 @@ def _missions(c) -> list[dict]:
     """Every open or done mission outside the Archive and the Trash that is in Needs you
     or has a message to the user that waits (its home is the mission: intercom/store.py
     MISSION_FROM), once. `why`: its note in Needs you. `text`: what it wrote the user
-    that waits, oldest first, else its last answer. `reply_to`: the newest of those
-    messages. `origin`: the conversation it was started from, as a crumb (homes.path)."""
+    that waits, oldest first, else its last answer. `asked`: those messages' ids, the
+    newest last (a reply answers that one). `origin`: the conversation it was started from, as a crumb (homes.path)."""
     from . import homes
     from .core.ids import now
     from .intercom.store import _UNREAD, BUG
@@ -86,7 +86,7 @@ def _missions(c) -> list[dict]:
         out.append({
             "kind": "mission", "id": cid, "title": r["name"], "why": why,
             "text": "" if text == why else text, "line": _line(text or why),
-            "reply_to": asked[-1]["id"] if asked else None,
+            "asked": [a["id"] for a in asked],
             "at": asked[-1]["created_at"] if asked else r["updated_at"],
             "origin": {"name": above[-1]["name"], "link": above[-1]["link"]} if above else None,
             "link": f"/waiting/mission/{cid}", "home": homes.of(c, cid)["link"]})

@@ -146,16 +146,16 @@ async def test_a_missions_message_waits_on_the_mission_once(store):
         ("mission", "Which hotel, the cheap one?"), ("thread", "I found three flats.")]
     assert (got[0]["title"], got[0]["link"]) == ("Night", f"/waiting/mission/{night}")
     await store.write(lambda c: missions.set_status_sync(c, store, night, "needs_you", "Pick one."))
-    assert [i["kind"] for i in await waits.items(services)] == ["mission", "thread"], "still once"
-    [m] = await store.read(lambda c: rows.listed(c, from_addr=f"agent:{night}", waiting=True))
-    assert m["id"] == asked["intercom_id"], "the mission's page reads what waits"
+    again = await waits.items(services)
+    assert [i["kind"] for i in again] == ["mission", "thread"], "still once"
+    assert again[0]["asked"] == [asked["intercom_id"]], "the mission's page reads what waits"
     assert [t["thread"] for t in await store.read(lambda c: rows.threads(
         c, "user", unread=True, received=True))] == [flats["intercom_id"]], \
         "the Intercom's Waiting for you leaves it to the mission"
 
     # the page's reply answers it: its thread stops waiting
     await intercom.send("user", "", "the cheap one", reply_to=asked["intercom_id"])
-    assert await store.read(lambda c: rows.listed(c, from_addr=f"agent:{night}", waiting=True)) == []
+    assert [i["kind"] for i in await waits.items(services)] == ["thread"]
 
 
 async def test_the_apps_notices_into_a_mission_are_no_threads(store):

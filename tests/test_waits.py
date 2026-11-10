@@ -51,10 +51,10 @@ async def test_an_ask_a_mission_a_lost_login_and_a_thread_are_four_items(store):
     assert [i["group"] for i in got] == ["Approvals", "Missions", "Sources", "Intercom"]
     assert got[0]["approval"]["title"] == "Celine asks to change the Persona."
     assert got[0]["approval"]["where"] == "Chat Plans"
-    assert {k: got[1][k] for k in ("title", "why", "text", "reply_to", "origin", "link",
+    assert {k: got[1][k] for k in ("title", "why", "text", "asked", "origin", "link",
                                    "home")} == {
         "title": "Night", "why": "A question for you at step 3: Book the hotel.",
-        "text": "", "reply_to": None, "origin": None,
+        "text": "", "asked": [], "origin": None,
         "link": f"/waiting/mission/{night}", "home": f"/mission/{night}"}
     assert got[2] == {"kind": "login", "id": "wa", "title": "WhatsApp", "group": "Sources",
                       "line": waits.LOST_BY["whatsapp"], "link": "/settings/sources/wa"}
@@ -77,7 +77,6 @@ async def test_a_bug_report_a_mission_filed_waits_as_its_own_thread(store):
     got = await waits.items(SimpleNamespace(store=store, approvals=None, connectors=None))
     assert [(i["kind"], i["title"], i["line"]) for i in got] == [
         ("thread", f"Bug #{report['id']}: Writes come back short", "High: A write lost its end.")]
-    assert await store.read(lambda c: rows.listed(c, from_addr=f"agent:{night}", waiting=True)) == []
     assert await store.write(lambda c: rows.read_from(c, f"agent:{night}")) == []
 
 
@@ -128,11 +127,11 @@ async def test_a_mission_says_what_it_asks_and_where_it_was_started(store):
     night = await conversations.create(store, "Night", kind="mission")
     await missions.create(store, night, {"name": "Night", "terminal": "n", "brief": "b",
                                          "started_by": chat})
-    await intercom.send(f"agent:{night}", "user", "Which hotel?")
+    first = (await intercom.send(f"agent:{night}", "user", "Which hotel?"))["intercom_id"]
     second = (await intercom.send(f"agent:{night}", "user", "And which night?"))["intercom_id"]
     [item] = await waits.items(services)
-    assert (item["why"], item["text"], item["reply_to"]) == (
-        "", "Which hotel?\n\nAnd which night?", second)
+    assert (item["why"], item["text"], item["asked"]) == (
+        "", "Which hotel?\n\nAnd which night?", [first, second])
     assert item["origin"] == {"name": "Plans", "link": f"/chat/{chat}"}
     await intercom.send("user", "", "The Adler, Friday.", reply_to=second)
     assert await waits.items(services) == []

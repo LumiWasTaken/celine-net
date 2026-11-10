@@ -224,16 +224,11 @@ def state(c: sqlite3.Connection, r: sqlite3.Row) -> str:
 
 def listed(c: sqlite3.Connection, to: str | None = None, from_addr: str | None = None,
            scheduled: bool = False, thread: int | None = None, after: int = 0,
-           limit: int | None = None, waiting: bool = False) -> list[dict]:
+           limit: int | None = None) -> list[dict]:
     """Messages to `to` (a stored address) and from `from_addr`, in thread `thread`, with
     an id above `after`, oldest first; with `scheduled` only those with a due time, by
-    due time; with `waiting` only those that wait for the user outside a bug report (a
-    mission's page: what it asked). Each with its `text`
-    and `state`."""
+    due time. Each with its `text` and `state`."""
     sql, args = "SELECT * FROM intercom i WHERE i.id > ?", [after]
-    if waiting:
-        sql += f" AND {_UNREAD} AND NOT {BUG}"
-        args += ["user", now()]
     if to:
         sql += (" AND EXISTS (SELECT 1 FROM intercom_deliveries d WHERE "
                 "d.intercom_id = i.id AND d.to_addr = ?)")

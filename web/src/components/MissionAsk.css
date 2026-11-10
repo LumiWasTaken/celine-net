@@ -1,0 +1,6 @@
+/* What a mission asks you: its note, its words, the reply and its actions in one column */
+.mission-ask { display: grid; gap: var(--s-3); min-width: 0; }
+.mission-ask__why, .mission-ask__text { margin: 0; line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mission-ask__why { color: var(--text-secondary); }
+.mission-ask__text { color: var(--text-primary); }
+.mission-ask__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }

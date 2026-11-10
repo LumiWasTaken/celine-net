@@ -18,6 +18,7 @@ export const Notebook = lazy(() => import('./views/Notebook').then(m => ({ defau
 export const Terminals = lazy(() => import('./views/Terminals').then(m => ({ default: m.Terminals })))
 export const Chats = lazy(() => import('./views/Chats').then(m => ({ default: m.Chats })))
 export const Intercom = lazy(() => import('./views/Intercom').then(m => ({ default: m.Intercom })))
+export const Waiting = lazy(() => import('./views/Waiting').then(m => ({ default: m.Waiting })))
 export const SearchPage = lazy(() => import('./views/Search').then(m => ({ default: m.Search })))
 export const Documents = lazy(() => import('./views/Documents').then(m => ({ default: m.Documents })))
 export const Settings = lazy(() => import('./views/settings/Settings').then(m => ({ default: m.Settings })))
@@ -46,7 +47,7 @@ export const BAR: Section[] = ['celine', 'missions', 'notebook', 'intercom']
 
 export const TITLE: Record<Section, string> = {
   celine: '', missions: 'Missions', routines: 'Routines', notebook: 'Notebook', terminals: 'Terminals',
-  browser: 'Browser', artifact: 'Artifact', intercom: 'Intercom', events: 'Events', chats: 'Messages', search: 'Search', documents: 'Documents', settings: 'Settings', welcome: 'Setup',
+  browser: 'Browser', artifact: 'Artifact', intercom: 'Intercom', waiting: 'Waiting for you', events: 'Events', chats: 'Messages', search: 'Search', documents: 'Documents', settings: 'Settings', welcome: 'Setup',
 }
 
 export function sectionHref(s: Section): string {
@@ -79,6 +80,7 @@ export const VIEWS: { id: Section; view: (c: ViewContext) => ReactNode }[] = [
   { id: 'browser', view: c => <BrowserPage active={c.active} /> },
   { id: 'artifact', view: c => (c.artifact ? <ArtifactPage id={c.artifact} assistant={c.name} /> : null) },
   { id: 'intercom', view: c => <Intercom active={c.active} /> },
+  { id: 'waiting', view: c => <Waiting active={c.active} /> },
   { id: 'events', view: c => <Events active={c.active} /> },
   { id: 'chats', view: c => <Chats active={c.active} /> },
   { id: 'search', view: c => <SearchPage active={c.active} /> },

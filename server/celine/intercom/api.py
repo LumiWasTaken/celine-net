@@ -86,18 +86,15 @@ async def send(request: Request, body: MessageIn) -> dict:
 async def list_messages(request: Request, to: str | None = None,
                         from_: str | None = Query(None, alias="from"),
                         thread: int | None = None, scheduled: bool = False,
-                        waiting: bool = False,
                         after: int = 0, limit: int = Query(200, ge=1, le=1000)) -> dict:
     """Messages to `to` and from `from` (stored addresses), in `thread`, above id
     `after`, oldest first, each with its state (pending, sent, cancelled) and whether it
     waits for the user (`unread`) and where it came from (`source`); `scheduled`: only
-    those with a due time; `waiting`: only those that wait for the user (a mission's
-    page: what it asked). With `thread`, also where the thread comes from (`source`);
+    those with a due time. With `thread`, also where the thread comes from (`source`);
     the bug report it is: GET /api/bugreports?thread=."""
     def fn(c):
         out = {"messages": rows.listed(c, to=to, from_addr=from_, scheduled=scheduled,
-                                       thread=thread, after=after, limit=limit,
-                                       waiting=waiting)}
+                                       thread=thread, after=after, limit=limit)}
         if thread is not None:
             out["source"] = rows.thread_source(c, thread)
         return out

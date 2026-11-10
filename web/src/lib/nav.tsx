@@ -22,6 +22,9 @@
    /artifact/<id>                     one of its artifacts as a page of its own
    /events                            everything it did and everything that ran (Events)
    /intercom  /intercom/<thread id>   the Intercom: threads between you, its conversations and the app
+   /waiting                           Waiting for you: everything that waits on you
+   /waiting/thread/<thread id>        the same with an Intercom thread open to answer
+   /waiting/mission/<conversation id> the same with what a mission asks open to answer
    /chats                             /chats/<source>  /chats/<source>/<chat>  /chats/<source>/<chat>/<message>
    /m/<source>/<message>              a message link; Chats resolves it to its chat and replaces the URL
    /documents?folder=…  /documents/<item id>?folder=…   your documents, one folder (Documents)
@@ -53,7 +56,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 
-export type Section = 'celine' | 'missions' | 'routines' | 'notebook' | 'terminals' | 'browser' | 'artifact' | 'events' | 'intercom' | 'chats' | 'search' | 'documents' | 'settings' | 'welcome'
+export type Section = 'celine' | 'missions' | 'routines' | 'notebook' | 'terminals' | 'browser' | 'artifact' | 'events' | 'intercom' | 'waiting' | 'chats' | 'search' | 'documents' | 'settings' | 'welcome'
 
 export type Route =
   | { section: 'celine'; conversation?: string }
@@ -65,6 +68,7 @@ export type Route =
   | { section: 'artifact'; id: string }
   | { section: 'events' }
   | { section: 'intercom'; thread?: number }
+  | { section: 'waiting'; thread?: number; mission?: string }
   | { section: 'chats'; kb?: string; chat?: number; message?: number; resolve?: boolean }
   | ({ section: 'search' } & SearchFilters)
   | { section: 'documents'; item?: number; folder?: string }
@@ -144,6 +148,10 @@ function parse(pathname: string, search = ''): Parsed {
       return a ? { route: { section: 'artifact', id: a } } : { route: { section: 'celine' }, redirect: true }
     case 'intercom':
       return { route: { section: 'intercom', thread: num(a) } }
+    case 'waiting':
+      if (a === 'thread' && num(b)) return { route: { section: 'waiting', thread: num(b) } }
+      if (a === 'mission' && b) return { route: { section: 'waiting', mission: b } }
+      return { route: { section: 'waiting' }, redirect: !!a }
     case 'chats': {
       const chat = num(b), message = chat ? num(c) : undefined
       return { route: { section: 'chats', kb: a, chat, message } }
@@ -226,6 +234,8 @@ export function format(r: Route): string {
       return `/artifact/${e(r.id)}`
     case 'intercom':
       return '/intercom' + (r.thread ? `/${r.thread}` : '')
+    case 'waiting':
+      return '/waiting' + (r.thread ? `/thread/${r.thread}` : r.mission ? `/mission/${e(r.mission)}` : '')
     case 'chats':
       if (r.resolve && r.kb && r.message) return `/m/${e(r.kb)}/${r.message}`
       return '/chats' + (r.kb ? `/${e(r.kb)}` : '') + (r.kb && r.chat ? `/${r.chat}` : '') +

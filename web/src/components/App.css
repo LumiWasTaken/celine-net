@@ -198,6 +198,3 @@ input[type='file']::file-selector-button:hover { background: var(--surface-4); }
 }
 .server-down__dots { margin-left: var(--s-1); }
 .server-down__title { margin: 0; font: inherit; }
-
-/* Waiting for you: each item's words wrap (three lines), a step apart */
-.waits { display: grid; gap: var(--s-1); }

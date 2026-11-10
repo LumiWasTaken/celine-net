@@ -4,12 +4,7 @@
    `intercom.state` on the feed (lib/bus). No EventSource here: each one holds
    one of the six HTTP/1.1 connections a browser keeps per site, so a few open tabs
    would starve every request. /intercom/stream is for other clients (curl, a CLI). */
-import { createContext } from 'react'
 import { json, post, query, request, type Attachment } from './api'
-
-/** how many messages wait for you, the server's (the rail's count, App); null until it
-    answered */
-export const WaitingCount = createContext<number | null>(null)
 
 /** where a message or a thread came from, from the server: the conversation that sent it
  *  (a chat, a mission, a schedule's run, a background task, a sub-agent) or the app's
@@ -100,10 +95,6 @@ export const intercomApi = {
   /** a thread's messages, oldest first, and where it comes from */
   thread: (id: number, signal?: AbortSignal) =>
     request<{ messages: IntercomMessage[]; source: Source | null }>(`/intercom?thread=${id}`, { signal }),
-  /** what `from` (a stored address, like a mission's) wrote that waits for you, oldest first */
-  waitingFrom: (from: string, signal?: AbortSignal) =>
-    request<{ messages: IntercomMessage[] }>(`/intercom?from=${encodeURIComponent(from)}&waiting=1`, { signal }).then(r => r.messages),
-  /** the bug report a thread is, or null */
   bugOf: (thread: number, signal?: AbortSignal) =>
     request<{ reports: BugReport[] }>(`/bugreports?thread=${thread}`, { signal }).then(r => r.reports[0] ?? null),
   /** Continue in a chat: a new chat with it that carries the thread; what waits in it is read */

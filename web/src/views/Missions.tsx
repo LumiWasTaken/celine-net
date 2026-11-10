@@ -10,22 +10,21 @@
    URL: /missions, /mission/<id>. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Archive, ArrowLeftRight, ArrowUpRight, Bot, CheckCheck, CircleStop, FileText, Flag, History, ListChecks, MessagesSquare, MoreHorizontal, Pencil, Plus, Reply,
+  Archive, ArrowLeftRight, ArrowUpRight, Bot, CircleStop, FileText, Flag, History, ListChecks, MessagesSquare, MoreHorizontal, Pencil, Plus, Reply,
   RotateCcw, SearchX, SquareTerminal, Trash2,
 } from 'lucide-react'
 import { api, conversationApi, request } from '../lib/api'
 import { AUTO_CONTEXT, AUTO_CONTEXT_TIP, contextApi } from '../lib/context'
 import { agentsApi, useAgents, type Agent, type TreeAgent, type TreeMission } from '../lib/agents'
 import { artifactRef } from '../lib/artifacts'
-import { count, errorText, fullDate, listTime, stamp } from '../lib/format'
-import { intercomApi, isIntercomEvent, type IntercomMessage } from '../lib/intercom'
+import { count, errorText, listTime, stamp } from '../lib/format'
 import {
   STATE_WORD, isMissionEvent, isOpen, missionsApi, type Mission, type MissionStatus, type MissionStep,
 } from '../lib/missions'
 import { SETTINGS_EVENTS, settingsApi } from '../lib/settingsApi'
 import { useName } from '../lib/name'
 import { format, useNav, type Route } from '../lib/nav'
-import { OFFLINE_TITLE, useOnline } from '../lib/socket'
+import { useOnline } from '../lib/socket'
 import { useAction } from '../lib/useAction'
 import { useConversation } from '../lib/useConversation'
 import { useResource } from '../lib/useResource'
@@ -34,11 +33,13 @@ import { click } from '../components/ConversationList'
 import { ArtifactChip, Markdown } from '../components/Markdown'
 import { Talk } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
+import { MissionAsk, StopMission } from '../components/MissionAsk'
+import { useWaits, type MissionWait } from '../lib/waits'
 import { ModelPick, ModelRow } from '../components/ConversationPanel'
 import { ModelChooser } from '../components/ModelChooser'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
-  Button, ComposerBox, ConfirmDialog, Dialog, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input, ListRow,
+  Button, ConfirmDialog, Dialog, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input, ListRow,
   ListSection, Loaded, LoadingRow, MenuButton, PageIndex, Place, PlaceHead, Section, SelectBar, ShelfRow, Switch, TextArea, Toolbar,
   StateWord, Step, coarse, useContextMenu, usePicker, VirtualList, type MenuItem, type Shelf, type WordTone,
 } from '../ui'
@@ -255,7 +256,7 @@ function MissionsList({ shelf, setShelf, lists, agents, onNew, onChange }: {
       </Loaded>
       {ctx.menu}
       {renaming && <Rename m={renaming} onClose={() => setRenaming(null)} onDone={onChange} />}
-      {stopping && <StopMission m={stopping} onClose={() => setStopping(null)} onDone={onChange} />}
+      {stopping && <StopMission cid={stopping.conversation_id} name={stopping.name} onClose={() => setStopping(null)} onDone={onChange} />}
       {trashing && <TrashMission m={trashing} onClose={() => setTrashing(null)} onDone={onChange} />}
     </div>
   )
@@ -273,14 +274,6 @@ function Rename({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDon
       </form>
       {save.error && <InlineError compact message={save.error} />}
     </Dialog>
-  )
-}
-
-function StopMission({ m, onClose, onDone }: { m: Mission; onClose: () => void; onDone: () => void }) {
-  return (
-    <ConfirmDialog title={`Stop ${m.name}?`} danger confirmLabel="Stop" body="Its chat, plan and terminals are kept."
-                   onClose={onClose}
-                   onConfirm={async () => { try { await missionsApi.stop(m.conversation_id) } catch (e) { return errorText(e) } onDone(); onClose() }} />
   )
 }
 
@@ -348,11 +341,8 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
   const nodes = tree.data ? treeOrder(tree.data.top, tree.data.agents, tree.data.missions) : []
   const act = useAction(async (fn: () => Promise<unknown>) => { await fn(); onChange() })
   const gone = !!m.trashed_at
-  // what it wrote you that waits (the server's): its home is this page
-  const asked = useResource(signal => intercomApi.waitingFrom(`agent:${m.conversation_id}`, signal), [m.conversation_id],
-                            { events: isIntercomEvent })
-  const askedList = asked.data ?? []
-  const waiting = m.status === 'needs_you' || askedList.length > 0
+  // what it asks you, the server's item of Waiting for you
+  const waiting = useWaits().data?.items.find((w): w is MissionWait => w.kind === 'mission' && w.id === m.conversation_id)
   // where it is: its note, else its newest line
   const lastLine = firstLine([...convo.messages].reverse().find(x => x.role === 'assistant' && x.content.trim())?.content ?? '')
   const crumbs = [{ label: 'Missions', href: '/missions', onClick: (e: React.MouseEvent) => { e.preventDefault(); nav.go({ section: 'missions' }) } }]
@@ -403,7 +393,7 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
       {work ? <div className="missions-work"><Work cid={m.conversation_id} convo={convo} active={active} closed={gone} /></div> : (
         <div className="page"><div className="page__col page__col--wide">
           <PageIndex sections={sections}>
-            {waiting && <Waiting m={m} asked={askedList} />}
+            {waiting && <Section id="m-wait" title="Waiting for you"><MissionAsk w={waiting} stop={false} /></Section>}
             <Section id="m-ins" title="Instructions"
                      action={!gone && m.status !== 'stopped' && <Button icon={Pencil} onClick={() => setBrief('edit')}>Edit</Button>}>
               <p className="missions-prose">{m.brief}</p>
@@ -427,35 +417,10 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
           </PageIndex>
         </div></div>
       )}
-      {stopping && <StopMission m={m} onClose={() => setStopping(false)} onDone={onChange} />}
+      {stopping && <StopMission cid={m.conversation_id} name={m.name} onClose={() => setStopping(false)} onDone={onChange} />}
       {renaming && <Rename m={m} onClose={() => setRenaming(false)} onDone={onChange} />}
       {trashing && <TrashMission m={m} onClose={() => setTrashing(false)} onDone={onChange} />}
     </div>
-  )
-}
-
-/* the mission waits for you: its question (its note in Needs you) and what it wrote you
-   that waits, and your reply into its conversation: to the newest of those messages, so
-   its thread stops waiting, else as a chat message; Dismiss reads them */
-function Waiting({ m, asked }: { m: Mission; asked: IntercomMessage[] }) {
-  const online = useOnline()
-  const [text, setText] = useState('')
-  const newest = asked.at(-1)
-  const send = useAction(async () => {
-    if (newest) await intercomApi.send({ to: '', text: text.trim(), reply_to: newest.id })
-    else await conversationApi.send(m.conversation_id, text.trim(), [])
-    setText('')
-  })
-  const dismiss = useAction(() => intercomApi.read(asked.map(x => x.id)))
-  return (
-    <Section id="m-wait" title="Waiting for you"
-             action={asked.length > 0 && <Button icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}>
-      {m.status === 'needs_you' && m.note && <p className="missions-prose">{m.note}</p>}
-      {asked.map(x => <p key={x.id} className="missions-prose" title={fullDate(x.created_at)}>{x.text}</p>)}
-      <ComposerBox value={text} onChange={setText} onSend={() => void send.run()} placeholder="Reply"
-                   ready={!!text.trim() && !send.busy} disabled={online ? undefined : OFFLINE_TITLE} />
-      {(send.error ?? dismiss.error) && <InlineError compact message={(send.error ?? dismiss.error)!} />}
-    </Section>
   )
 }
 

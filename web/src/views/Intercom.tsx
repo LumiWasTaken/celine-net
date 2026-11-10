@@ -1,15 +1,16 @@
 /* The Intercom: messages between you, its conversations and the app, in threads. The list:
-   Waiting for you, All and Guard (Bastet's threads, the server's) with their counts, Type
-   and From to narrow it, Sort, Group by whom it is with (Show more for the rest), job results as one line, Search, Select to dismiss many, Dismiss all in More.
-   Each row says where it came from (the server's source); what a mission wrote you (but a bug report) waits
-   on the mission's page, not in Waiting for you (the server's). A thread is a chat history,
+   All and Guard (Bastet's threads, the server's) with their counts, Type
+   and From to narrow it, Sort, Group by whom it is with (Show more for the rest), job results as one line, Search, Select to dismiss many.
+   A thread that waits for you says so on its row and comes first; all that waits is on the
+   Waiting for you page (views/Waiting), which shows a thread with this file's ThreadPage.
+   Each row says where it came from (the server's source). A thread is a chat history,
    oldest first, your lines on the right, where each came from under it, the reply pinned
    at its foot; replying marks it read, Dismiss does too. Continue in a chat takes any thread
    into a new chat with it (the server carries its messages); a bug report's thread shows
    Open or Closed and its Close. New message: To (its conversation
    as a second step), Subject, the text and When. Reminders are messages here too.
    URL: /intercom, /intercom/<thread id>. */
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight, Bot, CheckCheck, CircleCheck, CornerUpLeft, Flag, Info, Link, Mail, MessageCircle, MessageSquarePlus, MoreHorizontal, SearchX, Shapes, Terminal, User,
   type LucideIcon,
@@ -17,7 +18,7 @@ import {
 import { Portrait } from '../components/Portrait'
 import { Attached } from '../components/Transcript'
 import {
-  KINDS, KIND_PLURAL, KIND_WORD, WaitingCount, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
+  KINDS, KIND_PLURAL, KIND_WORD, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
   type IntercomMessage, type Kind, type Source, type Thread, type ThreadsPage,
 } from '../lib/intercom'
 import { useName } from '../lib/name'
@@ -30,11 +31,11 @@ import { useResource } from '../lib/useResource'
 import {
   Avatar, Button, Choice, ComposerBox, copied, cx, Dialog, Divider, EventLine, Field, GroupHead, ICON, InlineError, Input,
   ListRow, Loaded, LoadingRow, MenuButton, Message, PlaceHead, Segmented, SelectBar, StateWord, TextArea, Toolbar, useContextMenu, usePicker,
-  coarse, VirtualList, type BulkResult, type MenuItem, type PickProps,
+  coarse, VirtualList, type BulkResult, type Crumb, type MenuItem, type PickProps,
 } from '../ui'
 import './Intercom.css'
 
-type Show = 'waiting' | 'all' | 'guard'
+type Show = 'all' | 'guard'
 type Who = { address: string; name: string }
 
 /* pages 1 to `pages`, each after the cursor of the one before */
@@ -114,7 +115,7 @@ export function Intercom({ active }: { active: boolean }) {
 function List({ active, onNew }: { active: boolean; onNew: () => void }) {
   const nav = useNav()
   const ctx = useContextMenu()
-  const [picked, setShow] = useState<Show | null>(null)
+  const [show, setShow] = useState<Show>('all')
   const [who, setWho0] = useState<Who | null>(null)
   const [kind, setKind] = useState<Kind | null>(null)
   const [q, setQ] = useState('')
@@ -133,16 +134,10 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
                             { events: isIntercomEvent, enabled: active })
   const s = q.trim().toLowerCase()
   const matches = (t: Thread) => !s || [t.name, t.subject ?? '', t.last.text, t.last.from_name ?? '', t.source?.title ?? ''].some(x => x.toLowerCase().includes(s))
-  // what waits for you: the server's count, the rail's
-  const waitN = useContext(WaitingCount)
-  // it opens on Waiting for you when something waits, else on All; it stays where it opened
-  const show: Show = picked ?? 'waiting'
-  const opened = !!waiting.data
-  useEffect(() => { if (opened && !waiting.data!.groups.length) setShow(s => s ?? 'all') }, [opened]) // eslint-disable-line react-hooks/exhaustive-deps -- once, on the first answer
   const allN = list.data && !list.data.next && !who ? list.data.groups.reduce((n, g) => n + g.threads, 0) : undefined
   const guardOn = useFeatureOn('guard')
   const guardN = guard.data && !guard.data.next ? guard.data.groups.reduce((n, g) => n + g.threads, 0) : undefined
-  const from = who ? list : show === 'waiting' ? waiting : show === 'guard' ? guard : list
+  const from = !who && show === 'guard' ? guard : list
   const groups = from.data?.groups ?? []
   const waits = useMemo(() => new Set((waiting.data?.groups ?? []).flatMap(g => g.items).map(t => t.thread)), [waiting.data])
 
@@ -181,7 +176,6 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
   const shown = from
   const picker = usePicker(`${show} ${all} ${kind}`)
   picker.keys.current = rows.flatMap(r => (r.type === 'thread' ? [String(r.t.thread)] : []))
-  const dismissAll = useAction(async () => { await intercomApi.readAll(); waiting.reload() })
   const dismiss = useAction(async (thread: number) => { await intercomApi.dismiss(thread); waiting.reload() })
   const dismissMany = async (keys: string[]): Promise<BulkResult> => {
     const out: BulkResult = { done: [], skipped: [] }
@@ -202,12 +196,10 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
     { label: 'Copy link', icon: Link, onSelect: () => copyLink(t.thread) },
   ]
   const word = kind ? KIND_PLURAL[kind].toLowerCase() : null
-  const empty = s ? 'No messages match'
-    : show === 'waiting' && !who ? (word ? `No ${word} are waiting for you` : 'Nothing is waiting for you')
-    : word ? `No ${word} yet` : 'No messages yet'
+  const empty = s ? 'No messages match' : word ? `No ${word} yet` : 'No messages yet'
   const froms = (list.data?.groups ?? []).map(g => ({ address: g.addresses.length === 1 ? g.addresses[0]! : g.name, name: g.name }))
   const failed = !shown.data && shown.error
-  const error = dismissAll.error ?? dismiss.error ?? toChat.error
+  const error = dismiss.error ?? toChat.error
 
   return (
     <div className="list-page">
@@ -215,16 +207,14 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
                  back={who ? { label: 'All threads', onClick: () => setWho(null) } : undefined}
                  crumbs={who ? [{ label: 'Intercom', onClick: e => { e.preventDefault(); setWho(null) } }] : undefined}
                  search={{ value: q, onChange: setQ, placeholder: 'Search' }} picker={failed ? undefined : picker}
-                 actions={!who && <Button icon={CheckCheck} disabled={!waitN} loading={dismissAll.busy} onClick={() => void dismissAll.run()}>Dismiss all</Button>}
                  newLabel="New message" onNew={onNew} />
       {!failed && <div className="list-page__top">
         {picker.on
           ? <SelectBar picker={picker} noun={n => count(n, 'thread')}
                        actions={[{ label: 'Dismiss', icon: CheckCheck, done: 'dismissed', run: dismissMany }]} />
-          : <Toolbar state={{ label: 'Show', value: show, onChange: v => { setShow(v as Show); if (v === 'waiting') setWho0(null) },
-                              options: [{ value: 'waiting', label: 'Waiting for you', count: waitN ?? undefined },
-                                        { value: 'all', label: 'All', count: allN },
-                                        ...(guardOn ? [{ value: 'guard', label: 'Guard', count: guardN }] : [])] }}
+          : <Toolbar state={guardOn ? { label: 'Show', value: show, onChange: v => setShow(v as Show),
+                                        options: [{ value: 'all', label: 'All', count: allN },
+                                                  { value: 'guard', label: 'Guard', count: guardN }] } : undefined}
                      filters={[
                        { label: 'Type', icon: Shapes, picked: kind ? KIND_PLURAL[kind] : undefined, onClear: () => setKind(null),
                          items: KINDS.map(k => ({ label: KIND_PLURAL[k], current: kind === k, onSelect: () => setKind(k) })) },
@@ -241,7 +231,7 @@ function List({ active, onNew }: { active: boolean; onNew: () => void }) {
           <div className="list-page__rows">
             <VirtualList items={rows} getKey={r => r.key} estimate={i => (rows[i]!.type === 'thread' ? 76 : rows[i]!.type === 'group' ? 56 : 48)}
                          label="Threads" resetOn={`${show} ${all} ${kind} ${group}`}
-                         onEndReached={show !== 'waiting' && from.data?.next && !from.loading ? () => setPages(n => n + 1) : undefined}
+                         onEndReached={from.data?.next && !from.loading ? () => setPages(n => n + 1) : undefined}
                          renderRow={r => r.type === 'group'
                            ? <GroupHead icon={r.icon} title={r.name} count={count(r.n, 'thread')} onClick={() => setWho(r.who)} />
                            : r.type === 'more' ? <ListRow title="Show more" meta={r.n} onClick={() => setWho(r.who)} />
@@ -280,7 +270,8 @@ function ThreadRow({ t, waiting, under, pick, menu, onOpen, onMenu }: {
 
 /* ── one thread ── */
 
-function ThreadPage({ id }: { id: number }) {
+/** `crumbs`: the pages above it where another place shows it (Waiting for you) */
+export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
   const nav = useNav()
   const online = useOnline()
   const thread = useResource(signal => intercomApi.thread(id, signal), [id], { events: isIntercomEvent })
@@ -320,7 +311,7 @@ function ThreadPage({ id }: { id: number }) {
   return (
     <div className="intercom-thread">
       <PlaceHead level={1} title={title} titleAttr={title}
-                 crumbs={[{ label: 'Intercom', href: '/intercom', onClick: e => { e.preventDefault(); nav.go({ section: 'intercom' }) } }]}
+                 crumbs={crumbs ?? [{ label: 'Intercom', href: '/intercom', onClick: e => { e.preventDefault(); nav.go({ section: 'intercom' }) } }]}
                  detail={bug ? (bug.state === 'open' ? 'Open' : 'Closed') : undefined}
                  actions={<>
                    {unread.length > 0 && <Button variant="ghost" icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}

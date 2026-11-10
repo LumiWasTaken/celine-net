@@ -1,5 +1,5 @@
-import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { DoorOpen, Ellipsis, Flag, Hand, Mail, PauseCircle, Plug, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { DoorOpen, Ellipsis, Hand, PauseCircle, Rat, Settings as SettingsIcon, Snowflake } from 'lucide-react'
 import './components/Shell.css'
 import './components/App.css'
 import { api, authApi, type ConfigStatus } from './lib/api'
@@ -13,18 +13,16 @@ import { AgentContext } from './lib/agent'
 import { NameContext } from './lib/name'
 import { AppearanceContext, useAppearanceSettings } from './lib/appearance'
 import { SpeechProvider } from './components/Speech'
-import { NavProvider, format, useNav, type Section } from './lib/nav'
+import { NavProvider, useNav, type Section } from './lib/nav'
 import { ConnectionProvider } from './lib/socket'
-import { useWaits } from './lib/waits'
-import { ApprovalCard } from './components/ApprovalCard'
-import { WaitingCount } from './lib/intercom'
+import { WaitsContext, useWaitsResource } from './lib/waits'
 import { useSlide } from './ui/slide'
 import { SectionBoundary } from './components/SectionBoundary'
 import { ServerDown } from './components/ServerDown'
 import { VaultBanner } from './components/VaultBanner'
 import { Shortcuts, Switcher } from './components/Switcher'
 import { isTyping } from './lib/keys'
-import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, ListSection, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
+import { Button, ConfirmDialog, ICON, coarse, isNarrow, isPhone, ListRow, LoadingRow, Sheet, TipLayer, ToastHost, cx, ms, reduced } from './ui'
 import { guardApi, useFrozen } from './lib/guard'
 import { usePageName } from './lib/title'
 import { BAR, TITLE, VIEWS, Welcome, sectionHref, shownPlaces, type RailEntry } from './routes'
@@ -39,9 +37,6 @@ export function App() {
     </NavProvider>
   )
 }
-
-/** a row of Waiting for you, by what waits */
-const WAIT_ICON = { mission: Flag, login: Plug, thread: Mail } as const
 
 function Shell() {
   const nav = useNav()
@@ -117,10 +112,9 @@ function Shell() {
   }
 
   // everything that waits for you, the server's (lib/waits.ts): the rail's Waiting, its
-  // sheet, the window's title; the Intercom's Waiting for you counts its threads
-  const waits = useWaits()
+  // page (views/Waiting), the window's title, a mission's own page
+  const waits = useWaitsResource()
   const waiting = waits.data?.count ?? 0
-  const threads = waits.data ? waits.data.items.filter(i => i.kind === 'thread').length : null
 
   // the window's title, on every page: the waiting count first (not in Setup, which has no
   // rail), then the page's own name (a terminal, an artifact: lib/title; Celine's place: its
@@ -140,16 +134,9 @@ function Shell() {
   const paused = !frozen && status?.hold === 'paused'
 
   // the keys of the whole app: Ctrl+K, Ctrl+Shift+O, ?
-  const [sheet, setSheet] = useState<'switch' | 'keys' | 'more' | 'frozen' | 'waiting' | null>(null)
+  const [sheet, setSheet] = useState<'switch' | 'keys' | 'more' | 'frozen' | null>(null)
   useGlobalKeys(nav, { goTo: () => setSheet(s => (s === 'switch' ? null : 'switch')), keys: () => setSheet('keys') })
   useEffect(() => { setSheet(s => (s === 'more' ? null : s)) }, [section])
-  // Open in Waiting for you: the page changing closes the sheet (closing it first would take
-  // its history step back after the new page's step)
-  const at = format(nav.route)
-  useEffect(() => { setSheet(s => (s === 'waiting' ? null : s)) }, [at])
-  // the last item answered: nothing waits, the sheet closes
-  const none = waiting === 0
-  useEffect(() => { if (none) setSheet(s => (s === 'waiting' ? null : s)) }, [none])
 
   useFocusHandback()
   // system notifications while the tab is hidden (lib/notify.ts)
@@ -183,7 +170,6 @@ function Shell() {
     nav.goSection(id)
   }
   const count = (n: number) => <span className="rail__count" aria-hidden>{n > 99 ? '99+' : n}</span>
-  const openWait = (link: string) => { if (link === at) setSheet(null); else nav.goPath(link) }
   const railItem = (s: RailEntry, cls?: string) => (
     <a key={s.id} className={cx('rail__item', cls)} href={sectionHref(s.id)}
        aria-current={section === s.id ? 'page' : undefined} onClick={go(s.id)}>
@@ -202,7 +188,7 @@ function Shell() {
     <AgentContext.Provider value={status?.owner ?? null}>
     <NameContext.Provider value={name}>
     <AppearanceContext.Provider value={appearance}>
-    <WaitingCount.Provider value={threads}>
+    <WaitsContext.Provider value={waits}>
     <SpeechProvider features={status?.features}>
     <div className="app">
       {section === 'welcome' ? (
@@ -231,12 +217,12 @@ function Shell() {
             </Button>
           )}
           {waiting > 0 && (
-            <Button variant="ghost" className="rail__item rail__item--more" title="Waiting for you"
-                    aria-label={`Waiting, ${waiting}`} aria-haspopup="dialog" onClick={() => setSheet('waiting')}>
+            <a className="rail__item rail__item--more" href="/waiting" title="Waiting for you" aria-label={`Waiting, ${waiting}`}
+               aria-current={section === 'waiting' ? 'page' : undefined} onClick={go('waiting')}>
               <Hand size={ICON.lg} aria-hidden />
               <span className="rail__label">Waiting</span>
               {count(waiting)}
-            </Button>
+            </a>
           )}
           <div className="rail__spacer" />
           {railItem({ id: 'settings', icon: SettingsIcon }, 'rail__item--more')}
@@ -280,8 +266,9 @@ function Shell() {
         <Sheet title="More" onClose={() => setSheet(null)}>
           <nav className="more" aria-label="More sections">
             {waiting > 0 && (
-              <ListRow leading={<Hand size={ICON.lg} aria-hidden />} title="Waiting" meta={count(waiting)}
-                       onClick={() => setSheet('waiting')} />
+              <ListRow href="/waiting" selected={section === 'waiting'} leading={<Hand size={ICON.lg} aria-hidden />} title="Waiting"
+                       meta={count(waiting)}
+                       onClick={e => { if (section !== 'waiting') go('waiting')(e); else { e.preventDefault(); setSheet(null) } }} />
             )}
             {[...places.filter(p => !bar.includes(p.id)), { id: 'settings' as const, icon: SettingsIcon }].map(p => (
               <ListRow key={p.id} href={sectionHref(p.id)} selected={section === p.id}
@@ -297,22 +284,6 @@ function Shell() {
         </Sheet>
       )}
 
-      {sheet === 'waiting' && (
-        <Sheet title="Waiting for you" size="lg" onClose={() => setSheet(null)}>
-          <div className="waits">
-            {(waits.data?.items ?? []).map((w, i, all) => (
-              <Fragment key={w.kind === 'approval' ? `a:${w.approval.id}` : `${w.kind}:${w.id}`}>
-                {w.group !== all[i - 1]?.group && <ListSection label={w.group} />}
-                {w.kind === 'approval'
-                  ? <ApprovalCard ask={w.approval} onOpen={openWait} />
-                  : <ListRow density="lg" icon={WAIT_ICON[w.kind]} title={w.title} body={w.line || undefined}
-                             href={w.link ?? undefined}
-                             onClick={w.link ? e => { e.preventDefault(); openWait(w.link!) } : undefined} />}
-              </Fragment>
-            ))}
-          </div>
-        </Sheet>
-      )}
       {/* the one tooltip layer: every title and data-tip in the app */}
       <TipLayer />
       <ToastHost />
@@ -320,7 +291,7 @@ function Shell() {
       <ServerDown />
     </div>
     </SpeechProvider>
-    </WaitingCount.Provider>
+    </WaitsContext.Provider>
     </AppearanceContext.Provider>
     </NameContext.Provider>
     </AgentContext.Provider>

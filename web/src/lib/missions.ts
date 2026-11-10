@@ -64,6 +64,8 @@ export const missionsApi = {
   edit: (cid: string, body: { name?: string; brief?: string }) =>
     request<{ ok: boolean }>(`/missions/${cid}`, json('PATCH', body)),
   stop: (cid: string) => post<{ ok: boolean }>(`/missions/${cid}/stop`),
+  /** Mark as done: an open mission ends as done, its work stopped */
+  done: (cid: string) => post<{ ok: boolean }>(`/missions/${cid}/done`),
   setSteps: (cid: string, steps: MissionStep[]) =>
     request<Mission>(`/missions/${cid}`, json('PATCH', {
       steps: steps.map(s => ({ title: s.title, state: s.state, checkpoint: s.checkpoint, model: s.model })),
