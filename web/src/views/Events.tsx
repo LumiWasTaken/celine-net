@@ -83,7 +83,7 @@ export function Events({ active }: { active: boolean }) {
   const draw = (r: Row) => {
     if ('day' in r) return <GroupHead title={r.day} />
     const e = r.e
-    const common = { running: e.tone === 'running', title: e.title, tooltip: e.title, subtitle: e.detail || undefined, column: <span>{e.where ?? ''}</span>,
+    const common = { running: e.tone === 'running', title: e.title, tooltip: e.title, subtitle: e.detail || undefined, column: e.where ? <span>{e.where}</span> : '',
                      cell: e.tone === 'ok' ? undefined : <StateWord tone={e.tone}>{e.outcome}</StateWord>, meta: clock(Date.parse(e.at)) }
     if (!e.guard) return <ListRow {...common} href={e.links.open ?? undefined} />
     return <ListRow {...common} onClick={() => show(e)} onContextMenu={ev => ctx.open(ev, menu(e), e.title)}

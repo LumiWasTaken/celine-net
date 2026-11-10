@@ -188,8 +188,8 @@ lore entry, a found passage as a Snippet), `progress` (0 to 1, null while unknow
 With `column` or `cell` it is a wide row: the column, the cell and the time each keep their
 column, so rows line up; a list whose rows have a cell only sometimes passes `cell={null}`
 on the others. The row's own width decides (a container query): from 60rem every column,
-from 36rem the column goes, below that the cell is a line under the text and the time
-sits on the title line, as in every row. "..." lies over the time on hover, and the time
+below 60rem the column's words lead the subtitle's line (`column=''` is none), below 36rem
+the cell is a line under the text and the time sits on the title line, as in every row. "..." lies over the time on hover, and the time
 hides meanwhile. A row is `--s-1` from its edges top and bottom (`lg`: `--s-2`), so text
 that wraps never touches the next row. A terminal row and a folder row are both
 ListRows.

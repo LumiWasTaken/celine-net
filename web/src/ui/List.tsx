@@ -39,7 +39,8 @@ export function ListRow({
   /** on the subtitle's line, flush right, small and muted: a kind, a due time */
   aside?: ReactNode
   /** a column beside the text on a wide screen: a terminal's conversation, a folder's faces. With it
-      (or `cell`) the row is a wide row: `meta` takes its own column at the right end */
+      (or `cell`) the row is a wide row: `meta` takes its own column at the right end. Narrow, its
+      words lead the subtitle's line; '' is none */
   column?: ReactNode
   /** a short cell before the time: "Ended", "20 documents"; on a phone a line under the text */
   cell?: ReactNode
@@ -68,6 +69,8 @@ export function ListRow({
   const picking = pick?.checked !== undefined
   const box = picking ? pick!.checked : undefined
   const wide = column !== undefined || cell !== undefined
+  // below 60rem the column hides and its words lead the subtitle's line instead
+  const folds = column != null && column !== '' && column !== false
   // a subtitle makes a two-line row, the same height everywhere
   const size = density === 'md' && (subtitle || aside) ? 'lg' : density
   const cls = cx('list-row', size !== 'md' && `list-row--${size}`, wide && 'list-row--wide', picking && 'list-row--picking',
@@ -94,9 +97,12 @@ export function ListRow({
           <span className="list-row__title">{title}</span>
           {hasMeta && <span className={cx('list-row__meta', wide && 'list-row__meta--line')}>{meta}</span>}
         </span>
-        {(subtitle || aside) && (
-          <span className="list-row__line">
-            <span className="list-row__subtitle">{subtitle}</span>
+        {(subtitle || aside || folds) && (
+          <span className={cx('list-row__line', !subtitle && !aside && 'list-row__line--folded')}>
+            <span className="list-row__subtitle">
+              {folds && <span className="list-row__column-under">{column}{subtitle ? ', ' : null}</span>}
+              {subtitle}
+            </span>
             {aside && <span className="list-row__meta">{aside}</span>}
           </span>
         )}

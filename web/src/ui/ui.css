@@ -440,7 +440,15 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .list-row__cell--side { flex: none; width: var(--row-cell); overflow: hidden; }
 .list-row__cell--under { display: none; }
 .list-row__time { width: var(--row-time); justify-content: flex-end; }
-@container (max-width: 60rem) { .list-row__column { display: none; } }
+/* narrow, the column's words lead the subtitle's line (a line of their own without one) */
+.list-row__column-under, .list-row__line--folded { display: none; }
+.list-row__column-under > span + span::before { content: ', '; }
+.list-row__column-under svg { vertical-align: -2px; }
+@container (max-width: 60rem) {
+  .list-row__column { display: none; }
+  .list-row__column-under { display: inline; }
+  .list-row__line--folded { display: flex; }
+}
 /* a wide row's time on its title line while it is narrow, as in every other row */
 .list-row__meta.list-row__meta--line { display: none; }
 @container (max-width: 36rem) {

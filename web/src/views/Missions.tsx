@@ -243,8 +243,8 @@ function MissionsList({ shelf, setShelf, lists, agents, onNew, onChange }: {
                            ) : (
                              <ListRow density="lg" icon={Flag} title={r.m.name} tooltip={r.m.name}
                                       subtitle={r.m.note || firstLine(r.m.brief)} muted={r.m.status === 'done' || r.m.status === 'stopped'}
-                                      column={<span className="missions-column">{kids.get(r.m.conversation_id) ? agentsNoun(kids.get(r.m.conversation_id)!) : ''}
-                                        {r.m.artifact && <FileText size={ICON.sm} aria-label="Result" />}</span>}
+                                      column={kids.get(r.m.conversation_id) || r.m.artifact ? <span className="missions-column">{kids.get(r.m.conversation_id) ? agentsNoun(kids.get(r.m.conversation_id)!) : ''}
+                                        {r.m.artifact && <FileText size={ICON.sm} aria-label="Result" />}</span> : ''}
                                       cell={<StateWord tone={toneOf(r.m.tone)}>{r.m.words}</StateWord>} meta={<time dateTime={r.m.updated_at}>{listTime(r.m.updated_at)}</time>}
                                       href={format({ section: 'missions', conversation: r.m.conversation_id })} onClick={click(() => open(r.m))}
                                       pick={picker.row(r.m.conversation_id)} onContextMenu={e => ctx.open(e, menu(r.m), r.m.name)}
@@ -641,7 +641,7 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
             <VirtualList items={list} estimate={84} getKey={a => a.id} label="Sub-agents" resetOn={`${show}|${of}`}
                          renderRow={a => (
                            <ListRow density="lg" icon={Bot} title={a.name} subtitle={agentLine(a)} detail={name.get(a.parent)}
-                                    column={<span>{[a.model, a.cli, a.device].filter(Boolean).join(', ')}</span>} cell={a.words}
+                                    column={a.model || a.cli || a.device ? <span>{[a.model, a.cli, a.device].filter(Boolean).join(', ')}</span> : ''} cell={a.words}
                                     meta={listTime(a.updated_at)} muted={!a.working}
                                     href={format({ section: 'missions', conversation: a.id })} onClick={click(() => nav.go({ section: 'missions', conversation: a.id }))}
                                     onContextMenu={e => ctx.open(e, menu(a), a.name)}
