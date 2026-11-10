@@ -63,8 +63,9 @@ class Models:
         """The models you may use: in models__ask, as a sub-agent's model, and in your
         shellbox's agent CLIs. Returns one line per model: its name to use, what it is,
         its context window, whether it sees images and calls tools, whether its server
-        answers and whether the model is loaded, each as its server last said, and
-        whether using it asks {{username}} first (a cloud model they did not pick)."""
+        answers and whether the model is loaded, each as its server last said, why the
+        model does not answer now when its last answer was a failure, and whether using
+        it asks {{username}} first (a cloud model they did not pick)."""
         s = self.cfg.settings
         refs = agent_models.allowed(s)
         if not refs:
@@ -86,6 +87,7 @@ class Models:
                      up.get(hosts.get(s.split(r)[0]) or "", "")]
             if r in loaded:
                 facts.append("It is loaded." if loaded[r] else "It is not loaded.")
+            facts.append(llm.router.problem(None, r) or "")
             facts.append(asks.get(r, ""))
             return " ".join(f for f in facts if f)
         return ToolResult(content="\n".join(line(r) for r in refs), display={"models": refs})
