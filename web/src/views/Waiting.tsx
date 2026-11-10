@@ -1,7 +1,8 @@
 /* Waiting for you: everything that waits on you, the server's list (lib/waits) under the
    server's groups with their counts. A request is its card, answered in place; a row opens
    the page that answers it, in this pane: an Intercom thread (the Intercom's thread page),
-   what a mission asks (its note, its words, Reply, Mark as done, Stop), a lost login's
+   what a mission asks (its note, its words, Reply, Mark as done, Stop, in one Section as on
+   the mission's own page), a lost login's
    Settings page. The Intercom group's "..." has Dismiss all. An item that is answered
    leaves the list, and its page goes back to the list.
    URL: /waiting, /waiting/thread/<thread id>, /waiting/mission/<conversation id>. */
@@ -14,7 +15,7 @@ import { intercomApi } from '../lib/intercom'
 import { useNav, type Route } from '../lib/nav'
 import { useAction } from '../lib/useAction'
 import { useWaits, type MissionWait, type Wait } from '../lib/waits'
-import { Button, Facts, GroupHead, InlineError, ListRow, Loaded, PlaceHead, VirtualList, type Crumb } from '../ui'
+import { Button, Facts, GroupHead, InlineError, ListRow, Loaded, PlaceHead, Section, VirtualList, type Crumb } from '../ui'
 import { ThreadPage } from './Intercom'
 import './Waiting.css'
 
@@ -99,10 +100,12 @@ function MissionPage({ w, crumbs }: { w: MissionWait; crumbs: Crumb[] }) {
     <div className="waiting-page">
       <PlaceHead level={1} title={w.title} titleAttr={w.title} crumbs={crumbs}
                  actions={w.home && <Button variant="ghost" icon={Flag} href={w.home} onClick={go(w.home)}>Open mission</Button>} />
-      <div className="page"><div className="page__col waiting-page__col">
-        <MissionAsk w={w} />
-        {w.origin && <Facts items={[{ label: 'Started from', value: w.origin.link
-          ? <a href={w.origin.link}>{w.origin.name}</a> : w.origin.name }]} />}
+      <div className="page"><div className="page__col page__col--wide">
+        <Section title="Waiting for you">
+          <MissionAsk w={w} />
+          {w.origin && <Facts items={[{ label: 'Started from', value: w.origin.link
+            ? <a href={w.origin.link}>{w.origin.name}</a> : w.origin.name }]} />}
+        </Section>
       </div></div>
     </div>
   )
