@@ -80,7 +80,7 @@ _PAGE = r"""<!doctype html>
   --surface-3:     oklch(from var(--accent) calc(0.161 + 0.114 * var(--contrast)) calc(0.018 * var(--tint)) h);
   --surface-4:     oklch(from var(--accent) calc(0.161 + 0.157 * var(--contrast)) calc(0.021 * var(--tint)) h);
   --border:        oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.09);
-  --border-strong: oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.36);
+  --border-strong: oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.40);
   --text-primary:   oklch(from var(--accent) 0.951 calc(0.009 * var(--tint)) h);
   --text-secondary: oklch(from var(--accent) 0.820 calc(0.014 * var(--tint)) h);
   --text-on-accent: oklch(from var(--accent) 0.215 0.048 h);

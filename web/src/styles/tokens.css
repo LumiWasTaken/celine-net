@@ -153,7 +153,7 @@
   --rail-active-ink: var(--accent);
 
   --border:        oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.09);   /* hairlines only; most containers have none */
-  --border-strong: oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.36);   /* field and control edges, 3:1 on every surface */
+  --border-strong: oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.40);   /* field and control edges, 3:1 on every surface at every tint and contrast */
   --ring:          oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.08);   /* the 1 px edge of everything that floats */
   --scroll-thumb:  oklch(from var(--accent) 0.968 calc(0.017 * var(--tint)) h / 0.16);
 
