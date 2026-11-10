@@ -93,6 +93,20 @@ async def test_a_page_is_stored_as_the_agent_wrote_it(store):
     assert source.text == text
 
 
+async def test_a_write_reports_the_bytes_stored_for_its_version(store):
+    from celine.artifacts import store as artifacts
+    cid = await conversations.create(store)
+    page_v1 = "<!DOCTYPE html>\n" + "<p>Grüße, ok</p>\n" * 3500        # about 60 KB
+    page_v2 = page_v1.replace("ok", "fine")
+    first = await _write(store, cid, title="Big", content=page_v1)
+    aid = first.display["artifact"]["id"]
+    second = await _write(store, cid, content=page_v2, id=aid)
+    stored = [v["bytes"] for v in (await artifacts.get(store, aid))["versions"]]
+    said = [int(re.search(r"version \d+, ([\d,]+) bytes", r.content)[1].replace(",", ""))
+            for r in (first, second)]
+    assert said == stored == [len(page_v1.encode()), len(page_v2.encode())]
+
+
 async def test_an_artifact_id_and_title_match_exactly(store):
     cid = await conversations.create(store)
     aid = (await _write(store, cid, title="Plan", content="<p>v1</p>")).display["artifact"]["id"]
