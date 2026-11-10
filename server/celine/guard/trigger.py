@@ -175,7 +175,7 @@ def _out(name: str, args: dict) -> list[str]:
     return [x for _, x in parse_qsl(u.query)] + ([u.fragment] if u.fragment else [])
 
 
-RAISED = "after words aimed at an AI"
+RAISED = "after injected instructions"
 
 
 def look(name: str, args: dict, read_only: bool, spans: list[Span],

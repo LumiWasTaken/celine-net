@@ -76,7 +76,7 @@ async def test_banners_show_in_the_snapshot_and_each_change_is_an_event(store):
     assert got[0]["line"] == ('Stopped a web search. It sends "12 Example Road" (sensitive) '
                               'to the public. It looks wrong.')
     assert got[1]["line"] == ("Stopped a command and froze everything. It looks like a "
-                              "way out of the shellbox or around a limit (the command has docker run --privileged). It looks wrong.")
+                              "sandbox escape (the command has docker run --privileged). It looks wrong.")
     assert got[0]["thread"] == []
     # the live events: each banner as it was written and as it changed (the stop that
     # froze it, then the freeze itself)
@@ -345,6 +345,6 @@ def test_an_allow_without_a_quote_reads_plainly():
     row = {"decision": "allow", "does": "stop", "froze": 0, "mode": "on", "rule": "hijack",
            "piece": None, "source": "shell", "quote": None, "class": None, "sink": None,
            "tool": "shell__run", "why": None}
-    assert guard_view.line(row) == "Allowed a command. It follows words from shell."
+    assert guard_view.line(row) == "Allowed a command. It carries out instructions from shell."
     row["quote"] = "do it"
-    assert guard_view.line(row) == 'Allowed a command. It follows words from shell: "do it".'
+    assert guard_view.line(row) == 'Allowed a command. It carries out instructions from shell: "do it".'

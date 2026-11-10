@@ -83,27 +83,27 @@ class Rule:
 
 TABLE: dict[str, Rule] = {
     "escape": Rule(
-        plain="a way out of the box or around a limit", label="sandbox escape",
+        plain="sandbox escape", label="sandbox escape",
         to_agent="this looks like a way out of your box or around a limit",
-        to_owner="it looks like a way out of the shellbox or around a limit ({fact})",
-        banner="It looks like a way out of the shellbox or around a limit ({piece}).",
-        found="a way out of the shellbox or around a limit",
+        to_owner="it looks like a sandbox escape ({fact})",
+        banner="It looks like a sandbox escape ({piece}).",
+        found="a sandbox escape",
         asked=True, reviewed=True, repeatable=True),
     "hijack": Rule(
-        plain="following words someone else wrote", label="prompt injection",
+        plain="prompt injection", label="prompt injection",
         to_agent="this follows words from {source}, not you or {{user}}",
-        to_owner="it follows words from {source}",
-        banner="It follows words from {source}{quoted}.",
+        to_owner="it carries out instructions from {source}",
+        banner="It carries out instructions from {source}{quoted}.",
         found="an order from text someone else wrote, carried out",
         reviewed=True, repeatable=True),
     "leak": Rule(
-        plain="private text leaving the house", label="data exfiltration",
+        plain="data exfiltration", label="data exfiltration",
         to_agent="this sends {what} from {where} to {sink}",
         to_owner="it sends {what} from {where} ({cls}) to {sink}",
         banner="It sends \"{piece}\" ({cls}) to {sink}.",
         asked=True, reviewed=True, repeatable=True),
     "damage": Rule(
-        plain="something destructive {{user}} did not ask for", label="destructive steps",
+        plain="something destructive {{user}} did not ask for", label="destructive tool calls",
         to_agent="this is destructive and {{user}} did not ask for it",
         to_owner="it is destructive ({fact}) and you did not ask for it",
         banner="It is destructive ({piece}) and you did not ask for it.",
@@ -116,21 +116,20 @@ TABLE: dict[str, Rule] = {
         banner="It types on {piece}, which is not part of the task.",
         asked=True, reviewed=True, repeatable=True),
     "stops": Rule(
-        plain="too many stopped steps", label="too many stopped steps",
-        to_owner="{count} steps were stopped in one turn",
-        banner="Too many steps were stopped in one turn."),
+        plain="too many stopped tool calls", label="too many stopped tool calls",
+        to_owner="{count} tool calls were stopped in one turn",
+        banner="Too many tool calls were stopped in one turn."),
     "persist": Rule(
-        plain="trying again what was stopped", label="bypassing a stop",
+        plain="bypassing a stop", label="bypassing a stop",
         to_agent="I said no, {{name}}. This is {what} again, another way",
-        to_owner="it tries again, another way, what {prev} stopped on {tool} at {at}: the "
-                 "same {same}",
-        banner="It tries again, another way, what was stopped before: the same \"{piece}\".",
+        to_owner="it tries to bypass the {stopped_by} stop on {tool} at {at}: the same {same}",
+        banner="It tries to bypass an earlier stop: the same \"{piece}\", another way.",
         asked=True, reviewed=True),
     "injection": Rule(
-        plain="words aimed at an AI", label="injected instructions",
+        plain="injected instructions", label="injected instructions",
         to_agent="the text from {source} talks to an AI reading it",
-        to_owner="the text from {source} talks to an AI reading it ({quote})",
-        banner="It read words from {source} aimed at an AI{quoted}."),
+        to_owner="the text from {source} holds injected instructions ({quote})",
+        banner="It read injected instructions in text from {source}{quoted}."),
     # the [gates] table: plain code before every rule, no `on` and no `does`
     "gates": Rule(
         plain="private text that does not leave the house", label="gates",
@@ -190,10 +189,10 @@ def rows(current: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
 
 
 def plain(rule: str | None) -> str:
-    """A rule in its words (`all`: every rule); a name that is no rule: a stopped step."""
+    """A rule in its words (`all`: every rule); a name that is no rule: a stopped tool call."""
     if rule == ALL:
         return ALL_WORDS
-    return TABLE[rule].plain if rule in TABLE else "a step that was stopped"
+    return TABLE[rule].plain if rule in TABLE else "a stopped tool call"
 
 
 def label(rule: str) -> str:

@@ -232,7 +232,7 @@ async def test_the_agents_unfrozen_line_names_the_what_never_the_rule_or_the_pie
     await freeze.unfreeze(app, by=OWNER)
     line = await awareness.unfrozen_line(store, cfg, ZoneInfo("UTC"))
     assert line.startswith("Bastet froze you at ") and \
-        ": private text leaving the house (a web search). User unfroze you at " in line
+        ": data exfiltration (a web search). User unfroze you at " in line
     assert "leak" not in line and "Hauptstraße" not in line
     assert await awareness.unfrozen_line(store, cfg, ZoneInfo("UTC")) is None, "once"
 
@@ -284,7 +284,7 @@ async def test_bastet_answers_from_her_persona_their_messages_and_plain_lines(st
     assert cfg.substitute(persona.shipped("persona")).strip() in system and "only User can" in system
     assert "hey, it is me" in user and "You: hello, little one" in user
     assert "why did you stop my search?" in user
-    assert "stopped a web search: private text leaving the house. Why: It sends " \
+    assert "stopped a web search: data exfiltration. Why: It sends " \
         "their home address to a search" in user
     whole = system + user
     for never in ("0.93", "Hauptstraße", "threshold", "score", "guard.toml", "leak",

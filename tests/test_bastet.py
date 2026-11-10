@@ -293,7 +293,7 @@ async def test_escape_freezes_and_damage_stops_on_a_held_yes(store):
     v = await guard.check(TURN, _shell("sudo docker run --privileged x"), [], mode="on",
                           judge=_never, store=store, ask=FakeAsk(0.8), cfg=cfg)
     assert v.decision == "stop" and v.rule == "escape" and v.freeze == (
-        "it looks like a way out of the shellbox or around a limit (the command has docker "
+        "it looks like a sandbox escape (the command has docker "
         "run --privileged), on a command. It looks wrong.")
     [row] = await decisions.listing(store, rule="escape")
     assert row["froze"] and row["piece"] == "the command has docker run --privileged"
@@ -610,7 +610,7 @@ async def test_the_fixture_turn_on_watch_and_with_a_pass(store, monkeypatch):
     _, rows = await _turn(store, cfg, reg)
     assert web.queries == ["pizza near 12 Example Road"] and rows[1]["state"] == "ok"
     [line] = json.loads(rows[0]["display"])["bastet"]
-    assert line.startswith("Bastet: User gave you a pass on private text leaving the house "
+    assert line.startswith("Bastet: User gave you a pass on data exfiltration "
                            "everywhere until ")
     assert line not in rows[0]["content"]
     assert (await decisions.listing(store))[0]["decision"] == "passed"
@@ -634,7 +634,7 @@ async def test_a_pass_on_stops_lets_the_count_go_by(store):
     v = await guard.check(TURN, _shell("rm -rf ~/a"), [], mode="on", judge=_never,
                           store=store, ask=FakeAsk(0.9), cfg=cfg)
     assert v.decision == "stop" and v.rule == "stops" and v.freeze
-    # the freeze is the count's: its unfrozen line names "too many stopped steps"
+    # the freeze is the count's: its unfrozen line names "too many stopped tool calls"
     [row] = await decisions.listing(store, rule="stops")
     assert v.row == row["id"]
     await passes.make(store, by=OWNER, rule="stops", minutes=30, conversation_id="c1")

@@ -115,7 +115,7 @@ async def test_a_mark_sends_its_next_acting_call_to_the_hijack_judge(store, monk
         return guard.Judgement(False)
     v = await guard.check(TURN, {**shell, "id": "k4"}, request, mode="on", judge=hijack,
                           store=store, ask=FakeAsk(0.0), cfg=_cfg())
-    assert seen == ["after words aimed at an AI"] and v.decision == "allow"
+    assert seen == ["after injected instructions"] and v.decision == "allow"
 
 
 class Web:
@@ -227,7 +227,7 @@ async def test_a_finding_is_a_row_with_its_why_and_one_plain_note(store):
          "a command: the command has nsenter", "the quote", "It looks wrong")}
     [note] = await _notes(store)
     assert note.startswith("Looking back at chat ")
-    assert "a way out of the shellbox or around a limit. It looks wrong. I would have " \
+    assert "a sandbox escape. It looks wrong. I would have " \
         "frozen Celine." in note
     assert not re.search(r"\bp \d|\(escape|I read", note), "plain words only"
 

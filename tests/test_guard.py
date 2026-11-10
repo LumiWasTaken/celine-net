@@ -616,8 +616,8 @@ async def test_three_stops_in_one_turn_freeze_the_agent_and_tell_the_owner(store
         "SELECT from_addr, to_addr, text FROM intercom WHERE to_addr='user'").fetchall())
     # the first stop, once (the same order again is the same evidence), then the freeze
     assert [n[0] for n in notes] == ["system:guard"] * 2
-    assert notes[0][2].startswith("Bastet stopped a command: it follows words from")
-    assert notes[1][2].startswith("Bastet froze Celine: 3 steps were stopped") \
+    assert notes[0][2].startswith("Bastet stopped a command: it carries out instructions from")
+    assert notes[1][2].startswith("Bastet froze Celine: 3 tool calls were stopped") \
         and "{{" not in notes[1][2]
 
 
