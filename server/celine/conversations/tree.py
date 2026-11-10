@@ -38,7 +38,8 @@ class Unresolved(errors.UnresolvedToolCalls):
     """Raised inside a write when tool calls on the target have not settled (409)."""
 
     def __init__(self, names: list[str]):
-        super().__init__(names)
+        from ..settings.tools_meta import label
+        super().__init__(names, [label(n) for n in names])
         self.names = names
 
 

@@ -276,13 +276,15 @@ class Busy(CelineError):
 
 
 class UnresolvedToolCalls(CelineError):
-    def __init__(self, names: list[str]):
-        joined = ", ".join(names)
+    def __init__(self, names: list[str], labels: list[str]):
+        """`labels`: the tools as the Tools page names them, for the message."""
+        what = "Tool calls are" if len(names) > 1 else "A tool call is"
         super().__init__(
             "unresolved_tool_calls",
-            f"{joined} is still running. Stop it first, then edit or regenerate.",
+            f"{what} still running ({', '.join(labels)}). Stop it first, then edit or "
+            "regenerate.",
             409,
-            {"tools": joined},
+            {"tools": ", ".join(names)},
         )
 
 
