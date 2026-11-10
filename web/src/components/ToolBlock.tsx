@@ -24,7 +24,7 @@ const line = (s: string) => s.split(/(?<=\.)\s/)[0] ?? ''
 
 /** a tool under its skill without the skill's name it starts with ("Notebook: delete a
     note" is "Delete a note") */
-const shortLabel = (label: string) => {
+export const shortLabel = (label: string) => {
   const t = label.replace(/^[^:]+:\s+/, '')
   return t.charAt(0).toUpperCase() + t.slice(1)
 }

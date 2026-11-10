@@ -194,8 +194,8 @@ block at the end of this file lists the words no UI string uses.
 | Anything worth knowing about you | the placeholder of About you | plain |
 | All set, {name} is ready., On:, Off:, Off because they did not answer: {features}. Check their addresses in Settings, Features., Not set up: {feature}. {why}, You can change all of this later in Settings. | the last Setup step: its title, then the features on, the ones switched on whose service did not answer, one line per one switched on that is not set up with what is missing, and the rest off, as muted lines, then that Settings changes all of it | Apple setup "All set", Google "All set"; plain |
 | Guard mode, Warn, Enforce | Settings, Guard: how Bastet acts while her feature is on (off is the feature switch): Warn tells you what she would have done, Enforce does it | Kubernetes Pod Security "warn", "enforce" |
-| the "?" texts of Mode, Decision model, Second look model, Rules, Require approval and Passes | Settings, Guard: the server's (guard/view.py PAGE_HELP, names filled in; GET /api/guard/rules `help`) | plain |
-| Rules, Off, Warn, Stop, Freeze, Require approval | Settings, Guard: what each rule does when it finds something (Off its switch, else Warn, Stop or Freeze), and the tools that wait for your answer every time | ESLint "off", "warn"; GitHub "Require approval"; Freeze as Bastet says it |
+| the "?" texts of Mode, Decision model, Second look model, Rules and Passes | Settings, Guard: the server's (guard/view.py PAGE_HELP, names filled in; GET /api/guard/rules `help`) | plain |
+| Rules, Off, Warn, Stop, Freeze | Settings, Guard: what each rule does when it finds something (Off its switch, else Warn, Stop or Freeze) | ESLint "off", "warn"; Freeze as Bastet says it |
 | Sandbox escape, Prompt injection, Data exfiltration, Destructive steps, Typing on other sites, Bypassing a stop, Too many stopped steps, Injected instructions | Bastet's rules as Settings, Guard and Events name them (guard/rules.py `label`): a way out of the shellbox; a step that carries out instructions from text someone else wrote (indirect prompt injection); private data sent out; a destructive step you did not ask for; typing on a site outside the task; the same stopped step tried another way; the stop count of one turn; the page check's mark on outside text written to an AI | OWASP LLM01 "Prompt injection", LLM02 "Sensitive information disclosure"; MITRE ATT&CK "Exfiltration", "Escape to host" |
 | Passes, End | Settings, Guard, shown only while a pass holds: each pass with where and until when, and the piece it lets through; End ends it now | Zoom "End" |
 | Waiting for Bastet., Waiting for Bastet. {why} | a step's line while Bastet checks it, and while her decision model cannot answer, with the server's why once per new why (guard/flow.py `_until`) | as Waiting for {model} |
@@ -310,6 +310,7 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Sub-agents | the helpers it gives instructions to; also the side panel's tab with every sub-agent of the chain, each under the one that started it | Claude Code "Sub-agents" |
 | Sub-agent, Mission, Folder, Step, Model, Provider; Instructions, Task, Messages | the facts of a request to use a cloud model the agent picked itself (the sub-agent, mission, coding folder or plan step, then the model and the provider by their labels), and Details: the whole text it gets | OpenRouter, Anthropic: cloud providers; Claude Code "Sub-agents" |
 | Discord, WhatsApp | read live from your accounts | their own names |
+| Require approval, Add, Search tools, Remove | Settings, Tools: the tools whose every call waits for your answer, the guard on or off, each by its skill and its name; Add picks one from every tool, its search finds it by either name; Remove takes it off | GitHub "Require approval" |
 
 ### Events
 
@@ -351,7 +352,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Clear recent searches | empty the recent searches | Google, YouTube |
 | Close tab, Close terminal | close one of its tabs or terminals | Chrome "Close tab", VS Code "Close terminal" |
 | Copy link, Copy message link, Copy prompt | copy one of these | Slack "Copy link", Discord "Copy Message Link" |
-| Approve, Deny | say yes or no to a request (its card in the chat, on the Vault page and in Waiting for you; Bastet's banner of an ask) | macOS, Android permissions |
+| Approve, Deny | say yes or no to a request (its card in the chat, on the Vault page and in Waiting for you) | macOS, Android permissions |
 | Details | a request's long text, whole, in a sheet (Instructions, Arguments, the text of an edit) | macOS Finder, Windows "Details" |
 | Entry, Sites, File, Reason, Read right before | a request's facts: the vault entry, its sites, the file in the shellbox, the agent's reason in its words, the last tool that read text from outside before it asked | Bitwarden "Entry"; plain |
 | Waiting, Waiting for you | the rail item, shown with its count only while something waits on you, and its page: every request as its card, every mission that asks you, every lost login and every Intercom thread that waits | GitHub "Waiting for your review" |

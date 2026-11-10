@@ -1,19 +1,21 @@
 /* Tools: the default for every conversation; each conversation can switch tools in its
    side panel. Where: all of them, or the skills one place offers (its chats, Missions,
    Routines; the server's places), picked in the Toolbar.
-   Three groups: On, Not set up (shown off until it works), Off, each A to Z (toolOrder,
-   the panel's order too). One block per skill (ToolBlock, as in the panel). On or off,
-   nothing asks for approval. */
+   Require approval first: the tools whose every call waits for your answer, each by its
+   skill and its name with Remove; Add picks one from every tool (the menu's search finds
+   it by either name). Then three groups: On, Not set up (shown off until it works), Off,
+   each A to Z (toolOrder, the panel's order too). One block per skill (ToolBlock, as in
+   the panel). */
 import { useState } from 'react'
-import { MapPin } from 'lucide-react'
+import { MapPin, Trash2 } from 'lucide-react'
 import { conversationApi } from '../../lib/api'
-import { useOnline } from '../../lib/socket'
+import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { TOOL_GROUPS, settingsApi, toolGroup, toolOrder, type SkillView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { ToolBlock } from '../../components/ToolBlock'
-import { InlineError, Loaded, Section, Toolbar } from '../../ui'
+import { ToolBlock, shortLabel } from '../../components/ToolBlock'
+import { IconButton, InlineError, ListRow, Loaded, MenuButton, Section, Toolbar } from '../../ui'
 import { Page } from './parts'
 import './settings.css'
 
@@ -45,6 +47,7 @@ export function Tools() {
                              items: [{ label: 'All', current: where === 'all', onSelect: () => setWhere('all') },
                                      ...places.map(p => ({ label: p.label, current: where === p.name, onSelect: () => setWhere(p.name) }))] }]} />
       )}
+      {res.data && <Approval skills={res.data.skills} writable={online} onSaved={async () => res.set(await load())} />}
       {!skills ? (
         <Section>{<Loaded res={res} label="Loading tools" />}</Section>
       ) : TOOL_GROUPS.map(([g, title]) => {
@@ -67,5 +70,28 @@ export function Tools() {
         )
       })}
     </Page>
+  )
+}
+
+/* ── Require approval: the tools on it, Remove on each; Add from every other tool ── */
+function Approval({ skills, writable, onSaved }: { skills: SkillView[]; writable: boolean; onSaved: () => Promise<void> }) {
+  const save = useAction(async (tool: string, on: boolean) => { await settingsApi.putApproval(tool, on); await onSaved() })
+  const tools = skills.flatMap(s => s.tools.map(t => ({ wire: t.wire_name, name: `${s.label}: ${shortLabel(t.label)}`, on: t.approval })))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const lock = writable ? undefined : OFFLINE_TITLE
+  return (
+    <Section title="Require approval"
+             action={<MenuButton text="Add" label="Add" size="sm" search="Search tools"
+                                 items={tools.filter(t => !t.on).map(t => ({ label: t.name, disabled: !writable, title: lock,
+                                                                            onSelect: () => void save.run(t.wire, true) }))} />}>
+      {save.error && <InlineError compact message={save.error} />}
+      <div className="rows">
+        {tools.filter(t => t.on).map(t => (
+          <ListRow key={t.wire} title={t.name} trailingAlways
+                   trailing={<IconButton icon={Trash2} label="Remove" disabled={!writable || save.busy} title={lock}
+                                         onClick={() => void save.run(t.wire, false)} />} />
+        ))}
+      </div>
+    </Section>
   )
 }

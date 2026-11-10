@@ -242,7 +242,7 @@ const side = (el: HTMLElement): 'start' | 'end' => {
 
 /* A button that opens a Menu under itself: an icon button, or with `text` a quiet text
    button with a chevron (the version menu: text "Version 4, 18:04", one item per version). */
-export function MenuButton({ icon, text, label, items, size = 'md', className }: {
+export function MenuButton({ icon, text, label, items, size = 'md', className, search }: {
   icon?: LucideIcon
   /** shown on the button instead of an icon */
   text?: ReactNode
@@ -251,6 +251,8 @@ export function MenuButton({ icon, text, label, items, size = 'md', className }:
   items: MenuItem[]
   size?: ButtonSize
   className?: string
+  /** the placeholder of its search field, when it is long (Menu `search`) */
+  search?: string
 }) {
   const btn = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -262,7 +264,7 @@ export function MenuButton({ icon, text, label, items, size = 'md', className }:
       {text != null || !icon
         ? <Button {...props} variant="ghost" iconEnd={ChevronDown} title={label}>{text ?? label}</Button>
         : <IconButton {...props} icon={icon} label={label} />}
-      {open && btn.current && <Menu anchor={btn.current} items={items} align={side(btn.current)} label={label} onClose={() => setOpen(false)} />}
+      {open && btn.current && <Menu anchor={btn.current} items={items} align={side(btn.current)} label={label} search={search} onClose={() => setOpen(false)} />}
     </>
   )
 }
