@@ -100,7 +100,7 @@ async def approval(app, tool: str, on: bool) -> dict:
         return await reload.commit(app, {"approval": new})
 
 
-async def addresses(app,changes: dict[str, Any], if_match: str | None = None) -> dict:
+async def addresses(app, changes: dict[str, Any], if_match: str | None = None) -> dict:
     """Only the services in `changes` ({sid: {url}}, services.merged): "" clears one, None
     forgets it so the compose's variable fills it again; the others stay as saved. A
     service whose address changed starts again while its feature is on."""

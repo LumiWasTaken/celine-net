@@ -174,7 +174,7 @@ type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 type AskKind = 'vault' | 'tool' | 'agent' | 'share' | 'settings' | 'model'
 
 /** one request of the agent's that waits for you, as its card (server/celine/approvals.py
-    Ask.card): `vault` a tap, `gate` a tool Bastet asks you about, `agent` an edit of
+    Ask.card): `vault` a tap, `tool` a tool on Require approval, `agent` an edit of
     itself, `share` a public share, `settings` a change of Settings, `model` work it
     sends to a cloud model you did not pick (a sub-agent, a mission, a coding task, a plan
     step, messages to it). Every word is the server's: the title, the call's own data as

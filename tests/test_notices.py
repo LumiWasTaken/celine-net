@@ -73,10 +73,10 @@ async def test_an_approval_opens_where_it_is_answered(store):
     cid = await conversations.create(store)
     a = Approvals(SimpleNamespace(user="sam", name="Celine"), store=store)
     fut = asyncio.get_running_loop().create_future()
-    for kind in ("vault", "gate"):
+    for kind in ("vault", "tool"):
         await a._notice(Ask(id=kind, kind=kind, title="Celine asks to do it.", facts=[],
                             detail=None, help="", conversation=cid, expires=0, answer=fut,
                             where="Chat Untitled"))
     assert [(n["title"], n["body"], n["link"], n["tag"]) for n in await _notices(store)] == [
         ("Celine asks to do it.", "Chat Untitled", "/settings/vault", "ask:vault"),
-        ("Celine asks to do it.", "Chat Untitled", f"/chat/{cid}", "ask:gate")]
+        ("Celine asks to do it.", "Chat Untitled", f"/chat/{cid}", "ask:tool")]
