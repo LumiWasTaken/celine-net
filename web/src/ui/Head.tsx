@@ -78,7 +78,7 @@ export function PlaceHead({
   count?: number
   /** a state beside the title, muted (a terminal's program, "Deleted") */
   detail?: ReactNode
-  /** the title's tooltip (a path) */
+  /** the title's tooltip (a path); the title's own words show only once it ends in an ellipsis */
   titleAttr?: string
   level?: 1 | 2
   /** the way back to the list, where list and page share one pane (a phone) */
@@ -210,7 +210,8 @@ export function PlaceHead({
         )}
         {lead}
         {(title != null || open) && (
-          <H className={cx('place-head__title', clip && 'place-head__title--clip')} title={titleAttr}>
+          <H className={cx('place-head__title', clip && 'place-head__title--clip')}
+             title={clip || titleAttr !== name ? titleAttr : undefined}>
             {open && <IconButton icon={ChevronLeft} label="Back to the list" size="sm" iconSize="md" onClick={() => shelf!.onChange('list')} />}
             <span className="place-head__name">{open ? SHELF[open].label : title}</span>
             {count != null && <span className="place-head__count">{count}</span>}
