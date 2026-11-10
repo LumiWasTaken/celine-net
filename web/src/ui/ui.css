@@ -788,7 +788,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .card__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-lg); font-weight: var(--fw-medium); }
 .card__meta { flex: none; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .card__sub { min-width: 0; font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card__more { position: absolute; top: var(--s-3); right: var(--s-3); }
 
 /* ── Segmented: one of six or fewer, picked. A thumb at surface-4 slides to it. One row
