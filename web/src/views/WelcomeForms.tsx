@@ -364,12 +364,14 @@ function SearchForm({ value, onChange, saveRef, reprobe }: FormProps<Picks>) {
    the way to one (Connect a model in the onboarding, Open Models in Settings) ── */
 type Guard = { decision: string; chain: string }
 
-/** the picked model's state: its provider's reach, or that it is gone */
-function ModelState({ offers, value }: { offers: Offer[]; value: string }) {
+/** the picked model's state: the server's sentence when something is wrong with it
+    (`problem`), else its provider's reach */
+function ModelState({ offers, value, problem }: { offers: Offer[]; value: string; problem?: string | null }) {
   if (!value) return null
+  if (problem) return <StateWord tone="warn">{problem}</StateWord>
   const ref = value.replace(/^\+/, '')
   const o = offers.find(x => ref.startsWith(`${x.p.id}/`))
-  if (!o || (!value.startsWith('+') && !o.p.models.some(m => m.ref === ref))) return <StateWord tone="warn">This model is no longer on its provider. Pick another one.</StateWord>
+  if (!o) return null
   const { tone, word } = reach(o.p)
   return <StateWord tone={tone}>{`${o.p.provider.label}: ${word}`}</StateWord>
 }
@@ -428,12 +430,13 @@ function GuardForm({ value, onChange, saveRef, reprobe }: FormProps<Guard>) {
       <Field label="Decision model" group help={rules.data.help.decision}>
         <Choice list label="Decision model" value={d.decision} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', false)}
                 onChange={v => void pick.run({ ...d, decision: v })} />
-        <ModelState offers={offers.data} value={d.decision} />
+        <ModelState offers={offers.data} value={d.decision}
+                    problem={roles.data.roles.guard?.models.find(m => m.ref === d.decision)?.problem} />
       </Field>
       <Field label="Second look model" group help={rules.data.help.second_look}>
         <Choice list label="Second look model" value={d.chain} disabled={!online || pick.busy} options={modelOptions(offers.data, 'chat', true)}
                 onChange={v => void pick.run({ ...d, chain: v })} />
-        <ModelState offers={offers.data} value={d.chain} />
+        <ModelState offers={offers.data} value={d.chain} problem={d.chain === chain ? rules.data.chain_problem : null} />
       </Field>
       {pick.error && <InlineError compact message={pick.error} />}
     </>

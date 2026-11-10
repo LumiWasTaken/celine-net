@@ -295,7 +295,8 @@ export type FeaturesView = {
 }
 
 /* ── Bastet's rules and her services ── */
-type GuardRules = GuardPage & { chain: { provider: string; model: string } & Record<string, unknown> }
+/** `chain_problem`: the server's sentence when the second look's model left its provider */
+type GuardRules = GuardPage & { chain: { provider: string; model: string } & Record<string, unknown>; chain_problem: string | null }
 /** `source`: where `url` comes from (saved here, the compose's variable, else the field's
     default); `default`: the address Use the default puts back while a saved one hides the
     variable or the field's default, else null */

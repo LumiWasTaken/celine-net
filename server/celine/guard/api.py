@@ -14,6 +14,7 @@ from ..api.deps import cfg_of, etag, json_body, person_only, services_of, settin
 from ..errors import CelineError, NotFound
 from ..settings import files, write
 from ..settings.files import Invalid, version
+from ..settings.views import GONE
 from . import banners, freeze as freezes, owner, passes as passes_mod, persona, view
 from . import prompts, questions, rules as rule_set, store as decisions
 from .small_role import Unavailable
@@ -169,7 +170,10 @@ async def end_pass(pid: int, request: Request) -> dict:
 def _rules_view(request: Request) -> dict:
     s, cfg = settings_of(request), cfg_of(request)
     current = rule_set.current(cfg)
+    second = current["chain"]
+    gone = bool(second["model"]) and s.model(f"{second['provider']}/{second['model']}") is None
     return {**current, "version": version(s.guard), "saved": bool(s.saved.get("guard")),
+            "chain_problem": GONE if gone else None,
             "rows": rule_set.rows(current), "acts": rule_set.ACTS,
             "help": {k: cfg.substitute(v) for k, v in view.PAGE_HELP.items()}}
 
@@ -177,7 +181,8 @@ def _rules_view(request: Request) -> dict:
 @router.get("/guard/rules")
 async def get_guard_rules(request: Request, response: Response) -> dict:
     """The rules in use: the saved values over guard/rules.py DEFAULTS (model, chain,
-    patrol, learn, gates and the rule tables), plus version and saved; `rows` (each rule
+    patrol, learn, gates and the rule tables), plus version and saved; `chain_problem`
+    (the sentence when the second look's model left its provider, else None); `rows` (each rule
     Settings, Guard sets: its label and what it does now, rules.rows), `acts` (the words
     of what a rule can do) and `help` (the page's "?" texts, names filled in)."""
     person_only(request)
