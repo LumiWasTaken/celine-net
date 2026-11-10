@@ -33,23 +33,24 @@ GUARD = CONFIG_DIR / "guard"
 # is for); tests/test_prompts_page.py holds it equal to the files
 APP: dict[str, tuple[str, str]] = {
     "turns.title": ("Chat titles", "Names a chat in a few words."),
-    "turns.compact": ("Chat summary", "Writes the memory of a long chat when its older "
-                                      "messages no longer fit."),
+    "turns.compact": ("Compaction", "Summarises the older messages of a long chat when "
+                                    "they no longer fit in the context."),
     "turns.ask_before_setup": ("Ask before setting up", "Added while Ask before setting up "
                                                         "services is on."),
     "turns.pronouns": ("Pronouns", "Gives {{name}} the pronouns set in Settings."),
     "turns.user_here": ("Live chat", "Tells {{name}} that {{username}} is in the chat right "
                                      "now."),
-    "turns.user_away": ("Background conversation", "Tells {{name}} that a conversation runs "
-                                                   "in the background."),
+    "turns.user_away": ("Background chat", "Tells {{name}} that a chat runs in the "
+                                           "background."),
     "turns.fallback": ("Fallback model", "Tells {{name}} that a fallback model answers "
                                          "instead of the first one."),
-    "kb.describe": ("Document cards", "Describes a document in a few sentences, so Search "
+    "kb.describe": ("Document descriptions", "Describes a document in a few sentences, so Search "
                                       "finds it."),
     "kb.describe_part": ("Document parts", "Describes one part of a long document."),
     "kb.describe_part_late": ("Later document parts", "Names the topics of a part from the "
                                                       "second half of a long document."),
-    "kb.describe_check": ("Spoiler check", "Takes the spoilers out of a document's card."),
+    "kb.describe_check": ("Spoiler check", "Takes the spoilers out of a document's "
+                                                    "description."),
     "kb.image": ("Photo descriptions", "Describes a photo, so Search finds it by what it "
                                        "shows."),
     "vision": ("Questions about an image", "Answers one question about one image."),
@@ -78,14 +79,14 @@ APP: dict[str, tuple[str, str]] = {
                                       "feel."),
     "skills.mind_places": ("Places in the app", "The places of the app, as you see them."),
     "skills.writer": ("Writing", "Drafts a post or a message in {{name}}'s own voice."),
-    "skills.writer_ask": ("Writing brief", "Asks the Writing model for one post, comment or "
-                                           "message from a brief."),
+    "skills.writer_ask": ("Writing instructions", "Asks the Writing model for one post, "
+                                                  "comment or message from its instructions."),
     "skills.writer_context": ("Writing context", "Tells the Writing model what the text "
                                                  "answers and where it goes."),
-    "skills.tool_off": ("Off here", "Names a skill or a tool that is off in this "
-                                    "conversation."),
-    "skills.read_only": ("Read access", "Answers a sub-agent with read access that calls a "
-                                        "tool that writes."),
+    "skills.tool_off": ("Tool turned off", "Names a skill or a tool that is off in this "
+                                           "chat."),
+    "skills.read_only": ("Read-only", "Answers a read-only sub-agent that calls a tool that "
+                                      "writes."),
     "backends.json_only": ("JSON answers", "Asks an Anthropic model for one JSON object."),
     "api.frozen": ("Frozen model calls", "Answers a model call from the box or a device "
                                          "while {{name}} is frozen."),
@@ -93,21 +94,21 @@ APP: dict[str, tuple[str, str]] = {
                                                       "gets."),
     "sub_agents.drone": ("Device sub-agent instructions", "Frames the instructions a "
                                                           "sub-agent on a device gets."),
-    "sub_agents.can_read": ("Sub-agent with read access", "Tells a sub-agent with read "
-                            "access what it may do."),
-    "sub_agents.can_work": ("Sub-agent with work access", "Tells a sub-agent with work "
-                            "access what it may do."),
-    "sub_agents.where_read": ("Notebook to read", "Tells a sub-agent with read access that "
-                              "it sees {{name}}'s whole notebook."),
-    "sub_agents.where_read_folder": ("Notebook folder to read", "Tells a sub-agent with read "
-                                     "access which folder of the notebook it sees."),
-    "sub_agents.where_work": ("Notebook to write", "Tells a sub-agent with work access that "
-                              "it works in {{name}}'s whole notebook."),
-    "sub_agents.where_work_folder": ("Notebook folder to write", "Tells a sub-agent with "
-                                     "work access which folder of the notebook it sees "
-                                     "and writes."),
-    "sub_agents.read_parent": ("Read access passes down", "Answers a sub-agent with read "
-                               "access that asks for a sub-agent with more."),
+    "sub_agents.can_read": ("Read-only sub-agent", "Tells a read-only sub-agent what it "
+                            "may do."),
+    "sub_agents.can_work": ("Sub-agent that can edit", "Tells a sub-agent that can edit "
+                            "what it may do."),
+    "sub_agents.where_read": ("Notebook to read", "Tells a read-only sub-agent that it sees "
+                              "{{name}}'s whole notebook."),
+    "sub_agents.where_read_folder": ("Notebook folder to read", "Tells a read-only "
+                                     "sub-agent which folder of the notebook it sees."),
+    "sub_agents.where_work": ("Notebook to write", "Tells a sub-agent that can edit that it "
+                              "works in {{name}}'s whole notebook."),
+    "sub_agents.where_work_folder": ("Notebook folder to write", "Tells a sub-agent that "
+                                     "can edit which folder of the notebook it sees and "
+                                     "writes."),
+    "sub_agents.read_parent": ("Read-only passes down", "Answers a read-only sub-agent "
+                               "that asks for a sub-agent with more."),
     "conversations.impersonate": ("Impersonate", "Asks the chat model to write "
                                   "{{username}}'s next message in their voice."),
     "conversations.impersonate_sample": ("Impersonate samples", "Shows the chat model "

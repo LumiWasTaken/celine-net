@@ -146,7 +146,7 @@ async def test_a_save_drops_the_texts_problem_and_names_its_entry(api):
     await api.put("/api/prompts/turns.compact", json={"text": "Sum up in {{wordz}} words."})
     package_texts.fill(api.cfg, compact.__file__, "compact.md", words=100)
     assert [str(p) for p in api.cfg.problems if "nothing fills" in p.message] == \
-        ["Prompts, Chat summary: nothing fills {{wordz}}"]
+        ["Prompts, Compaction: nothing fills {{wordz}}"]
     await api.put("/api/prompts/turns.compact", json={"text": "Sum up in {{words}} words."})
     assert [p for p in api.cfg.problems if "nothing fills" in p.message] == []
 
