@@ -230,6 +230,14 @@ async def test_bastets_filters_and_undecided_apart_from_her_stops(store, monkeyp
                                                      "mode": "on"})
         assert bad.status_code == 400
         assert (await h.get("/api/events", params={"state": "nope"})).status_code == 400
+        assert one["rule_word"] == "Prompt injection"
+        # a Require approval row 0031 kept: no rule the Rule filter or its dialog names
+        await store.write(lambda c: c.execute(
+            "INSERT INTO guard_decisions(conversation_id, turn_id, tool_call_id, tool, mode, "
+            "layer, rule, decision, created_at) VALUES(?, 't1', 'a', 'shell__run', 'on', 1, "
+            "'approval', 'approved', ?)", (cid, _at("10:30"))))
+        assert "approval" not in [r["id"] for r in (await get(tab="guard"))["guard"]["rules"]]
+        assert (await decisions.one(store, 4))["rule_word"] is None
 
 
 @pytest.mark.anyio

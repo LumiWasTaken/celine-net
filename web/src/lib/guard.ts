@@ -48,6 +48,8 @@ type GuardDecision = {
   conversation_id: string | null
   tool: string
   rule: string
+  /** its rule as Events names it; null for a rule the app no longer has */
+  rule_word: string | null
   mode: string
   decision: string
   /** Bastet's line for you, as her banner says it */

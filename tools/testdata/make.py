@@ -774,13 +774,13 @@ class Gen:
         # Glorpi froze the agent by hand once, a while ago
         self.x("INSERT INTO freezes(at, by, why, unfrozen_at, unfrozen_by) VALUES(?,?,?,?,?)",
                (self.at(3000), "user", "Paused for the night.", self.at(2500), "user"))
-        # allowed, could not decide, approved
+        # allowed, could not decide, and a Require approval ask from before 0031
         row(box, t_box, "shell__run", "on", "damage", "stop", "allow", "A dry run changes "
             "nothing.", 199, p=0.04)
         row(hike, t_hike, "web__read_page", "watch", "hijack", "watch", "unreachable",
             "No judge answered in time.", 298)
-        row(ids["reading"], ids["t_read"], "artifacts__write", "on", "confirm", "ask",
-            "approved", "Glorpi allowed it once.", 118)
+        row(ids["reading"], ids["t_read"], "artifacts__write", "on", "approval", "ask",
+            "approved", None, 118)
         # a pass on a rule
         self.x("INSERT INTO guard_passes(rule, conversation_id, until, by, why, created_at) "
                "VALUES(?,?,?,?,?,?)", ("damage", box, self.at(-120), "user",

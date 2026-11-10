@@ -96,11 +96,6 @@ def _label(tool: str) -> str:
     return TOOLS.get(tool, {}).get("label") or humanize(tool)
 
 
-def _cap(s: str) -> str:
-    """The first letter up, the rest as written ("Injected instructions")."""
-    return s[:1].upper() + s[1:]
-
-
 def _join(*parts: str) -> str:
     return ", ".join(p for p in parts if p)
 
@@ -503,14 +498,13 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
 
 def guard_filters(c: sqlite3.Connection) -> dict:
     """Bastet's filters: the decisions, rules and modes her rows hold, in her words."""
-    from .guard.rules import label
+    from .guard.rules import word
 
     def have(col: str) -> list[str]:
         return [r[0] for r in c.execute(
             f"SELECT DISTINCT {col} FROM guard_decisions ORDER BY {col}")]
     return {"decisions": [{"id": d, "label": _GUARD.get(d, (d,))[0]} for d in have("decision")],
-            "rules": [{"id": r, "label": _cap(label(r))}
-                      for r in have("rule")],
+            "rules": [{"id": r, "label": w} for r in have("rule") if (w := word(r))],
             "modes": [{"id": m, "label": MODE_WORDS.get(m, m)} for m in have("mode")]}
 
 

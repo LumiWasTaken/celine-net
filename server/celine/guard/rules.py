@@ -184,7 +184,7 @@ SET = ("escape", "hijack", "leak", "damage", "sites", "persist", "stops")
 
 def rows(current: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     """The rules Settings, Guard sets, in a rule set (current): {rule, label, act}."""
-    return [{"rule": r, "label": TABLE[r].label[:1].upper() + TABLE[r].label[1:],
+    return [{"rule": r, "label": word(r),
              "act": current[r]["does"] if current[r]["on"] else "off"} for r in SET]
 
 
@@ -200,6 +200,12 @@ def label(rule: str) -> str:
     if rule == ALL:
         return ALL_WORDS
     return TABLE[rule].label if rule in TABLE else rule
+
+
+def word(rule: str) -> str | None:
+    """A rule as Events names it, its first letter up; None for a rule no longer in TABLE
+    (a Require approval row, which 0031 kept as `approval`)."""
+    return TABLE[rule].label[:1].upper() + TABLE[rule].label[1:] if rule in TABLE else None
 
 
 def escalates(rule: str, fired: set[str]) -> bool:

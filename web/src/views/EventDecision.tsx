@@ -26,9 +26,8 @@ export async function answer(id: number, action: GuardAction) {
 
 type Label = (id: string) => string
 
-export function EventDecision({ id, rule, mode, onClose }: {
+export function EventDecision({ id, mode, onClose }: {
   id: number
-  rule: Label
   mode: Label
   onClose: () => void
 }) {
@@ -36,7 +35,7 @@ export function EventDecision({ id, rule, mode, onClose }: {
   const d = res.data
   const facts = d ? [
     { label: 'Decision', value: d.line },
-    { label: 'Rule', value: rule(d.rule) },
+    d.rule_word && { label: 'Rule', value: d.rule_word },
     { label: 'Mode', value: mode(d.mode) },
     d.question && { label: 'Question', value: d.question },
     // a confirmed yes or a no is 1 or 0: only a probability is a score

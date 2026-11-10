@@ -143,7 +143,7 @@ export function Events({ active }: { active: boolean }) {
         )}
       </Loaded>
       {active && decision && data && (
-        <EventDecision id={decision} rule={words(data.guard.rules)} mode={words(data.guard.modes)}
+        <EventDecision id={decision} mode={words(data.guard.modes)}
                        onClose={() => nav.back({ section: 'events', tab: 'guard' })} />
       )}
       {ctx.menu}
