@@ -47,7 +47,8 @@ export type Mission = {
 
 /** a step as the server sends it: `model_label` its model's name, the server's (null:
     the mission's own model) */
-export type MissionStep = PlanStep & { model_label: string | null }
+/** `words`: its state as the server says it, null for a step to do */
+export type MissionStep = PlanStep & { model_label: string | null; words: string | null }
 
 /** GET /missions: the page's numbers, the server's (each status of the list, all of it,
     the Archive and the Trash) */

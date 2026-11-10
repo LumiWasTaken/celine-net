@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..conversations import store as conversations
 from ..core.ids import iso, parse_when
-from ..core.states import MISSION, said, table
+from ..core.states import MISSION, PLAN, said, table
 from ..errors import MISSION_STOPPED, CelineError, NotFound
 from . import store as missions
 from .store import book_time_limit
@@ -194,9 +194,11 @@ async def list_missions(request: Request, status: str | None = None,
 
 def _labelled(settings, row: dict) -> dict:
     """A mission as a client gets it: each step's `model_label` (attachments.label),
-    None for a step on the mission's own model."""
+    None for a step on the mission's own model, and its state's `words` (core/states
+    PLAN), None for a step to do."""
     from ..attachments import label
-    return {**row, "steps": [{**s, "model_label": label(settings, s.get("model")) or None}
+    return {**row, "steps": [{**s, "model_label": label(settings, s.get("model")) or None,
+                              "words": PLAN[s["state"]][0] if s["state"] in PLAN else None}
                              for s in row["steps"]]}
 
 

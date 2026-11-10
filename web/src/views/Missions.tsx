@@ -429,7 +429,6 @@ const underTitle = (plan: string) => plan.replace(/^(#{1,4}) /gm, (_, h: string)
 
 /* The plan's steps, the one it is at marked, each with its model and Change model */
 function Steps({ m }: { m: Mission }) {
-  const states = useContext(States)
   const online = useOnline()
   const [choosing, setChoosing] = useState<number | null>(null)
   const providers = useResource(() => settingsApi.providers().then(r => r.providers), [], { events: SETTINGS_EVENTS })
@@ -446,7 +445,7 @@ function Steps({ m }: { m: Mission }) {
       <div className="missions-rows">
         {m.steps.map((s, i) => (
           <ListRow key={i} density="lg" leading={<Step n={i + 1} done={s.state === 'done'} current={s.state === 'doing'} />} title={s.title} tooltip={s.title}
-                   muted={s.state === 'done'} subtitle={nameOf(s)} aside={s.state === 'done' ? states?.done.words : s.state === 'doing' ? states?.active.words : undefined}
+                   muted={s.state === 'done'} subtitle={nameOf(s)} aside={s.words ?? undefined}
                    trailing={<IconButton icon={ArrowLeftRight} size="sm" label="Change model" disabled={!online || save.busy || !!m.trashed_at}
                                          onClick={() => setChoosing(i)} />} />
         ))}
