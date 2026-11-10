@@ -275,8 +275,12 @@ export const api = {
     if (model) q.set('model', model)
     return request<ChatModel>(`/chat-model?${q}`)
   },
-  /** words inside Celine's conversations (not the archive: that is kbApi.search) */
-  search: (q: string) => request<{ hits: ConversationHit[] }>(`/messages?q=${encodeURIComponent(q)}`),
+  /** words in every place but the Messages archive (that is kbApi.search), each of `places` with its count */
+  search: (q: string, places: SearchPlace[], signal?: AbortSignal) => {
+    const p = new URLSearchParams({ q })
+    places.forEach(x => p.append('places', x))
+    return request<{ places: PlaceHits[] }>(`/search?${p}`, { signal })
+  },
   renameConversation: (id: string, title: string) =>
     request<{ ok: boolean }>(`/conversations/${id}`, json('PATCH', { title })),
   pinConversation: (id: string, pinned: boolean) =>
@@ -405,15 +409,19 @@ export type Job = {
 type QueueEntry = { turn_id: string | null; role: string; priority: 'interactive' | 'agent' | 'background'; model: string }
 type QueueSnapshot = { running: QueueEntry[]; waiting: QueueEntry[] }
 
-type ConversationHit = {
-  conversation_id: string
+/** a place GET /search looks in; `celine` the agent's chats */
+export type SearchPlace = 'celine' | 'missions' | 'routines' | 'notebook' | 'documents' | 'intercom'
+export type PlaceHit = {
   title: string
-  role: Role
-  created_at: string
+  /** what it is part of: a sub-agent's mission, a document's folder, a thread's subject */
+  detail: string | null
+  /** escaped text with the words found in <mark> */
   snippet: string
-  /** the path that opens its conversation where it lives, the server's (homes.py) */
+  time: string
+  /** the app path that opens it, the server's */
   link: string
 }
+export type PlaceHits = { place: SearchPlace; count: number; results: PlaceHit[] }
 
 export type TurnState =
   | 'queued' | 'preparing' | 'streaming' | 'tools'

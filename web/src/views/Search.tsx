@@ -1,31 +1,36 @@
-/* Search: word search across every chat source, or its own conversations, on every
-   keystroke. No model is involved. One page, no place sidebar. Before you
-   type: the recent searches, and of the Toolbar only Source. Then the results, each its chat,
-   who and the words found; Source, Person, Chat, Type and Date narrow them, Sort orders them.
+/* Search: word search across every place on every keystroke. No model is involved. One page,
+   no place sidebar. Before you type: the recent searches, and of the Toolbar only Search in
+   and Source. Then the results grouped by place, each head with the server's count: its chats,
+   Missions, Routines, Notebook, Documents and the Intercom (GET /search, each result opens
+   at the server's link), then Messages, the chat archive, which pages on. Search in picks the
+   places (this device keeps the ones taken out); Source, Person, Chat, Type and Date narrow
+   Messages and leave the other places out, Sort orders Messages.
    People and dates are words in the box (from:, after:), shown as chips under it; a rare
    word's swap is offered, never applied. A result opens in its chat with its message
    marked (the messages around it); its menu copies its link or asks Celine about it.
 
-   Three requests, each debounced and aborted: the hits (60 ms), the counts per source,
-   chat and person (220 ms, over the same filtered set) and query understanding for the
-   chips (150 ms, text only). */
+   Four requests, each debounced and aborted: the other places (60 ms), the archive hits
+   (60 ms), the counts per source, chat and person (220 ms, over the same filtered set) and
+   query understanding for the chips (150 ms, text only). */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useName } from '../lib/name'
 import {
-  ArrowUpRight, BookHeart, CalendarDays, Copy, Eraser, History, MessagesSquare, Plus, Search as SearchIcon, SearchX, Shapes, User,
+  ArrowUpRight, BookHeart, CalendarDays, Copy, Eraser, History, ListFilter, MessagesSquare, Plus, Search as SearchIcon, SearchX, Shapes, User,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   chatText, kbApi, type MediaType, type SearchChip, type SearchHit,
 } from '../lib/kb'
-import { api } from '../lib/api'
+import { api, type ConfigStatus, type PlaceHit, type SearchPlace } from '../lib/api'
 import { useDebounced } from '../lib/useDebounced'
 import { useResource } from '../lib/useResource'
 import { askCeline, copyMessageLink } from '../lib/ask'
-import { format, useNav, type SearchFilters } from '../lib/nav'
+import { format, useNav, type SearchFilters, type Section } from '../lib/nav'
 import { errorText, listTime, num } from '../lib/format'
-import { getJson, setJson } from '../lib/prefs'
+import { getJson, setJson, usePref } from '../lib/prefs'
+import { PLACES, TITLE } from '../routes'
 import {
-  Avatar, Button, Chip, EmptyState, GroupHead, IconButton, InlineError, ListRow, ListSection, Loaded, LoadingRow, MenuButton, PlaceHead,
+  Avatar, Button, Chip, EmptyState, GroupHead, IconButton, InlineError, ListRow, ListSection, LoadingRow, MenuButton, PlaceHead,
   coarse, Snippet, toast, Toolbar, useContextMenu, VirtualList, type MenuItem, type VirtualListHandle,
 } from '../ui'
 import './Search.css'
@@ -34,8 +39,11 @@ const PAGE = 50
 const RECENTS_KEY = 'search:recent'
 type Sort = 'best' | 'recent' | 'oldest'
 const SORT_LABEL: Record<Sort, string> = { best: 'Best matches', recent: 'Recent', oldest: 'Oldest' }
-/** its own conversations, the one source that is not the archive */
-const OWN = 'conversations'
+/** the places Search looks in, in the order of their groups; `chats` is Messages, the archive */
+const IN: Section[] = ['celine', 'missions', 'routines', 'notebook', 'documents', 'intercom', 'chats']
+const OUT_KEY = 'search:out'
+const icon = (p: Section): LucideIcon => PLACES.find(x => x.id === p)?.icon ?? SearchIcon
+const results = (n: number) => `${num(n)} ${n === 1 ? 'result' : 'results'}`
 const TYPES: [MediaType, string][] = [['photo', 'Photo'], ['video', 'Video'], ['voice', 'Voice message'], ['audio', 'Audio'], ['document', 'File'],
                                       ['sticker', 'Sticker'], ['gif', 'GIF'], ['location', 'Location'], ['contact', 'Contact']]
 
@@ -62,7 +70,7 @@ function Found({ html }: { html: string }) {
   return <Snippet text={parts.join('')} words={parts.filter((_, i) => i % 2)} />
 }
 
-export function Search({ active }: { active: boolean }) {
+export function Search({ active, status }: { active: boolean; status: ConfigStatus | null }) {
   const name = useName()
   const nav = useNav()
   const route: SearchFilters = nav.route.section === 'search' ? nav.route : {}
@@ -89,7 +97,14 @@ export function Search({ active }: { active: boolean }) {
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<VirtualListHandle>(null)
   const ctx = useContextMenu()
-  const own = kb === OWN
+  // Search in: every place that is on, but the ones taken out on this device
+  const [left, setLeft] = usePref<string[]>(OUT_KEY, [])
+  const offered = IN.filter(p => !status?.places_off.includes(p))
+  const included = offered.filter(p => !left.includes(p))
+  const archive = included.includes('chats')
+  const placeWord = (p: Section) => (p === 'celine' ? name || 'Chats' : TITLE[p])
+  // Source, Chat and Person narrow Messages, so the other places are left out
+  const others = archive && (kb || chat || person) ? '' : included.filter(p => p !== 'chats').join(',')
   const sources = useResource(() => kbApi.list().then(r => r.kbs), [])
   const kbs = useMemo(() => sources.data ?? [], [sources.data])
   const chatKbs = useMemo(() => kbs.filter(k => k.kind === 'chat'), [kbs])
@@ -104,8 +119,13 @@ export function Search({ active }: { active: boolean }) {
     nav.go(r, { replace: true })
   }, [q, kb, chat, person, active]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const params = useMemo(() => ({ q: own ? '' : q.trim(), kb: kb || undefined, chat: chat?.ref, person: person?.ref, sort, literal }),
-                         [q, kb, chat, person, sort, literal, own])
+  const params = useMemo(() => ({ q: archive ? q.trim() : '', kb: kb || undefined, chat: chat?.ref, person: person?.ref, sort, literal }),
+                         [q, kb, chat, person, sort, literal, archive])
+  // the other places, every keystroke
+  const there = q.trim() && others ? q.trim() : ''
+  const elsewhere = useResource(signal => (there ? api.search(there, others.split(',') as SearchPlace[], signal) : Promise.resolve(null)),
+                                [there, others], { debounce: 60 })
+  const groups = useMemo(() => (there ? elsewhere.data?.places ?? [] : []), [there, elsewhere.data])
 
   // hits, every keystroke; `paging`: the later page loading, if one is
   const found = useResource(signal => (params.q ? kbApi.search({ ...params, limit: PAGE, top: 0 }, signal) : Promise.resolve(null)), [params], { debounce: 60 })
@@ -115,10 +135,10 @@ export function Search({ active }: { active: boolean }) {
   const nextCursor = page?.next_cursor ?? null
   const paging = useRef<AbortController | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
-  useEffect(() => { setCursor(0); setPageError(null); paging.current?.abort(); paging.current = null }, [params])
-  const loading = found.loading && !!params.q
-  const error = (params.q ? found.error : null) ?? pageError
-  const retry = () => { setPageError(null); found.reload() }
+  useEffect(() => { setCursor(0); setPageError(null); paging.current?.abort(); paging.current = null }, [params, there, others])
+  const loading = (found.loading && !!params.q) || (elsewhere.loading && !!there)
+  const error = (params.q ? found.error : null) ?? (there ? elsewhere.error : null) ?? pageError
+  const retry = () => { setPageError(null); found.reload(); elsewhere.reload() }
 
   // the counts per source, chat and person, over the same filtered set
   const counts = useResource(signal => (params.q
@@ -127,7 +147,7 @@ export function Search({ active }: { active: boolean }) {
   const facets = params.q ? counts.data ?? null : null
 
   // query understanding for the chips
-  const words = q.trim() && !own ? q.trim() : ''
+  const words = q.trim()
   const parse = useResource(signal => (words ? kbApi.searchParse(words, signal) : Promise.resolve(null)), [words], { debounce: 150 })
   const parsed = words ? parse.data ?? null : null
 
@@ -149,6 +169,7 @@ export function Search({ active }: { active: boolean }) {
     } catch (e) { if (!ctl.signal.aborted) setPageError(errorText(e)) } finally { if (paging.current === ctl) paging.current = null }
   }
   const total = page?.total ?? null
+  const everywhere = groups.reduce((n, g) => n + g.count, total ?? 0)
   const corrected = page?.corrected ?? null
   const didYouMean = page?.did_you_mean ?? null
   const indexing = !!page?.indexing
@@ -169,43 +190,58 @@ export function Search({ active }: { active: boolean }) {
     { label: `Ask ${name || 'your agent'}`, icon: BookHeart, onSelect: () => askCeline(nav, '', [h.ref]) },
   ]
 
-  // Group: Chat puts a head over each run of results from one chat
-  type Row = { key: string; head: string; parent?: string | null } | { key: string; h: SearchHit; i: number }
+  // a head over each place with its count; in Messages, Group: Chat puts a head over each run of results from one chat
+  type Row = { key: string; head: string; icon: LucideIcon; count?: string; parent?: string | null }
+    | { key: string; h: SearchHit; i: number } | { key: string; p: PlaceHit; place: Section; i: number }
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = []
+    let i = 0
+    for (const g of groups) {
+      out.push({ key: `in-${g.place}`, head: g.place === 'celine' ? name || 'Chats' : TITLE[g.place], icon: icon(g.place), count: results(g.count) })
+      g.results.forEach((p, k) => out.push({ key: `${g.place}-${k}`, p, place: g.place, i: i++ }))
+    }
+    if (hits.length) out.push({ key: 'in-chats', head: TITLE.chats, icon: icon('chats'), count: total !== null ? results(total) : undefined })
     let at = ''
-    hits.forEach((h, i) => {
+    hits.forEach((h, k) => {
       const key = `${h.kb}:${h.chat?.id}`
-      if (group === 'Chat' && key !== at) { out.push({ key: `g-${key}-${i}`, head: h.chat?.name ?? h.ref, parent: h.chat?.parent }); at = key }
-      out.push({ key: `${h.ref}-${i}`, h, i })
+      if (group === 'Chat' && key !== at) { out.push({ key: `g-${key}-${k}`, head: h.chat?.name ?? h.ref, icon: MessagesSquare, parent: h.chat?.parent }); at = key }
+      out.push({ key: `${h.ref}-${k}`, h, i: i++ })
     })
     return out
-  }, [hits, group])
+  }, [groups, hits, group, total, name])
+  const targets = useMemo(() => rows.filter(r => 'i' in r), [rows])
+  const go = (r: Row) => ('h' in r ? open(r.h) : 'p' in r ? nav.goPath(r.p.link) : undefined)
 
   // the box is a combobox over the results: arrows move, Enter opens, Esc clears
   useEffect(() => {
-    const at = rows.findIndex(r => 'h' in r && r.i === cursor)
+    const at = rows.findIndex(r => 'i' in r && r.i === cursor)
     if (at >= 0) list.current?.scrollToIndex(at)
   }, [cursor, rows])
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape' && q) { e.preventDefault(); setQ('') }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(c + 1, hits.length - 1)) }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(c + 1, targets.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)) }
-    else if (e.key === 'Enter' && hits[cursor]) { e.preventDefault(); open(hits[cursor]!) }
+    else if (e.key === 'Enter' && targets[cursor]) { e.preventDefault(); go(targets[cursor]!) }
   }
 
-  const sourceWord = own ? (name ? `${name}'s chats` : 'Chats') : kb ? kbs.find(k => k.id === kb)?.title ?? kb : undefined
+  const sourceWord = kb ? kbs.find(k => k.id === kb)?.title ?? kb : undefined
   const typed = parsed?.has[0] as MediaType | undefined
   const typeWord = TYPES.find(([t]) => t === typed)?.[1]
   const dated = DATES.find(([d]) => q.includes(`during:${d}`))
   const count = (k: string) => facets?.kbs.find(f => f.kb === k)?.count
   const filters = [
-    { label: 'Source', icon: MessagesSquare, picked: sourceWord, onClear: () => setKb(''),
-      items: [{ label: 'All', current: !kb, detail: facets ? `${num(facets.total)} results` : undefined, onSelect: () => setKb('') },
-              ...chatKbs.map(k => ({ label: k.title, current: kb === k.id, detail: count(k.id) !== undefined ? `${num(count(k.id))} results` : undefined,
-                                     onSelect: () => { setKb(k.id); if (chat && !chat.ref.startsWith(`${k.id}:`)) setChat(null) } })),
-              { label: name ? `${name}'s chats` : 'Chats', current: own, onSelect: () => { setKb(OWN); setChat(null); setPerson(null) } }] },
-    ...(own ? [] : [
+    { label: 'Search in', icon: ListFilter, onClear: () => setLeft([]),
+      picked: included.length === offered.length ? undefined : included.length === 1 ? placeWord(included[0]!) : `${included.length} places`,
+      items: offered.map(p => {
+        const on = included.includes(p)
+        return { label: placeWord(p), icon: icon(p), current: on, disabled: on && included.length === 1,
+                 onSelect: () => setLeft(on ? [...left, p] : left.filter(x => x !== p)) }
+      }) },
+    ...(!archive ? [] : [
+      { label: 'Source', icon: MessagesSquare, picked: sourceWord, onClear: () => setKb(''),
+        items: [{ label: 'All', current: !kb, detail: facets ? results(facets.total) : undefined, onSelect: () => setKb('') },
+                ...chatKbs.map(k => ({ label: k.title, current: kb === k.id, detail: count(k.id) !== undefined ? results(count(k.id)!) : undefined,
+                                       onSelect: () => { setKb(k.id); if (chat && !chat.ref.startsWith(`${k.id}:`)) setChat(null) } }))] },
       { label: 'Person', icon: User, picked: person?.name, onClear: () => setPerson(null),
         items: (facets?.people ?? []).filter(p => p.ref).map(p => ({ label: p.name, face: <Avatar name={p.name} size={28} />, detail: num(p.count),
                                                                      current: p.ref === person?.ref, onSelect: () => setPerson({ ref: p.ref!, name: p.name }) })) },
@@ -220,24 +256,19 @@ export function Search({ active }: { active: boolean }) {
   ]
   const typedNothing = !q.trim()
   // a filter with nothing to pick is left out (Person and Chat wait for the counts); a picked one stays
-  // before you type: only what you search in (and what is picked), no Sort or Group
-  const offered = filters.filter(f => (f.items.length || f.picked) && (!typedNothing || f.label === 'Source' || f.picked))
-  const ordered = !typedNothing && !own
-  // the archive found nothing: its chats may still hold the words (they are a Source of their own)
-  const archiveEmpty = !own && !typedNothing && !loading && !error && hits.length === 0
-  const ownHits = useResource(() => (archiveEmpty ? api.search(q.trim()) : Promise.resolve(null)), [archiveEmpty, q], { debounce: 150 })
-  const ownCount = new Set((ownHits.data?.hits ?? []).map(h => h.conversation_id)).size
-  const ownWord = name ? `${name}'s chats` : 'your chats'
+  // before you type: only where you search (and what is picked), no Sort or Group
+  const shown = filters.filter(f => (f.items.length || f.picked) && (!typedNothing || f.label === 'Search in' || f.label === 'Source' || f.picked))
+  const ordered = !typedNothing && archive
 
   return (
     <div className="list-page">
-      <PlaceHead level={1} title="Search" count={!typedNothing && total !== null && !own ? total : undefined}
+      <PlaceHead level={1} title="Search" count={!typedNothing && (total !== null || groups.length) ? everywhere : undefined}
                  search={{ value: q, onChange: v => { setQ(v); setLiteral(false) }, placeholder: 'Search', label: 'Search',
                            loading, inputRef: input, onKeyDown: onKey }}
-                 actions={hits.length > 0 && <IconButton icon={BookHeart} label={`Ask ${name || 'your agent'}`} onClick={askAll} />}
+                 actions={targets.length > 0 && <IconButton icon={BookHeart} label={`Ask ${name || 'your agent'}`} onClick={askAll} />}
                  more={[{ label: 'Clear recent searches', icon: Eraser, disabled: !recents.length, onSelect: () => { setRecents([]); saveRecents([]) } }]} />
       <div className="list-page__top">
-        <Toolbar filters={offered}
+        <Toolbar filters={shown}
                  sort={!ordered ? undefined : { label: 'Sort', value: sort, onChange: v => setSort(v as Sort),
                                            options: (Object.keys(SORT_LABEL) as Sort[]).map(v => ({ value: v, label: SORT_LABEL[v] })) }}
                  group={!ordered ? undefined : { label: 'Group', value: group, onChange: setGroup, options: ['Chat', 'None'].map(v => ({ value: v, label: v })) }} />
@@ -265,8 +296,7 @@ export function Search({ active }: { active: boolean }) {
         )}
       </div>
       {error && <div className="list-page__note"><InlineError message={error} onRetry={retry} /></div>}
-      {own ? <ConversationResults q={q.trim()} />
-        : typedNothing ? (
+      {typedNothing ? (
           recents.length ? (
             <div className="list-page__rows">
               <VirtualList items={recents} estimate={48} getKey={r => r} label="Recent" before={<ListSection label="Recent" />}
@@ -279,22 +309,24 @@ export function Search({ active }: { active: boolean }) {
             </div>
           ) : <div className="list-page__empty"><EmptyState icon={SearchIcon} title="No searches yet" /></div>
         )
-        : !loading && !error && hits.length === 0 ? (
+        : !loading && !error && rows.length === 0 ? (
           <div className="list-page__empty">
-            <EmptyState icon={SearchX} title="No results match"
-                        action={ownCount > 0 ? <Button onClick={() => { setKb(OWN); setChat(null); setPerson(null) }}>{`Search ${ownWord}`}</Button>
-                          : <Button onClick={() => setQ('')}>Clear search</Button>}>
-              {ownCount > 0 ? `${ownCount === 1 ? 'One' : num(ownCount)} of ${ownWord} ${ownCount === 1 ? 'matches' : 'match'}.`
-                : indexing ? 'Search is still indexing your messages, so some results may be missing.' : undefined}
+            <EmptyState icon={SearchX} title="No results match" action={<Button onClick={() => setQ('')}>Clear search</Button>}>
+              {indexing ? 'Search is still indexing your messages, so some results may be missing.' : undefined}
             </EmptyState>
           </div>
         ) : (
           <div className="list-page__rows">
             <VirtualList handleRef={list} items={rows} estimate={92} overscan={8} getKey={r => r.key}
-                         onEndReached={() => void more()} label="Results" resetOn={`${params.q}|${kb}|${chat?.ref}|${person?.ref}|${sort}|${group}`}
+                         onEndReached={() => void more()} label="Results" resetOn={`${q.trim()}|${others}|${archive}|${kb}|${chat?.ref}|${person?.ref}|${sort}|${group}`}
                          after={nextCursor ? <LoadingRow label="Loading more" /> : null}
                          renderRow={r => {
-                           if ('head' in r) return <GroupHead icon={MessagesSquare} title={r.head} detail={r.parent ?? undefined} />
+                           if ('head' in r) return <GroupHead icon={r.icon} title={r.head} count={r.count} detail={r.parent ?? undefined} />
+                           if ('p' in r) return (
+                             <ListRow density="lg" selected={r.i === cursor} icon={icon(r.place)} title={r.p.title} subtitle={<Found html={r.p.snippet} />}
+                                      meta={listTime(r.p.time)} detail={r.p.detail ?? undefined} href={r.p.link}
+                                      onClick={e => { e.preventDefault(); nav.goPath(r.p.link) }} />
+                           )
                            const { h, i } = r
                            const who = h.from_me ? 'You' : h.sender?.name
                            return (
@@ -312,29 +344,6 @@ export function Search({ active }: { active: boolean }) {
         )}
       {ctx.menu}
     </div>
-  )
-}
-
-/* Words in its own conversations, chats and missions (GET /search, what the chat list's
-   search finds); a result opens its conversation where it lives */
-function ConversationResults({ q }: { q: string }) {
-  const nav = useNav()
-  const list = useResource(() => api.listConversations(), [])
-  const hits = useResource(() => (q ? api.search(q) : Promise.resolve({ hits: [] })), [q], { debounce: 150 })
-  const byId = useMemo(() => new Map((list.data ?? []).map(c => [c.id, c])), [list.data])
-  if (!q) return <div className="list-page__empty"><EmptyState icon={SearchIcon} title="No searches yet" /></div>
-  return (
-    <Loaded page res={hits} icon={SearchX} label="Searching" empty={hits.data?.hits.length === 0 && { title: 'No results match' }}>{data => (
-    <div className="list-page__rows">
-      <VirtualList items={data.hits} estimate={68} label="Results" getKey={(h, i) => `${h.conversation_id}-${i}`}
-                   renderRow={h => {
-                     const c = byId.get(h.conversation_id)
-                     return <ListRow density="lg" icon={MessagesSquare} title={c?.mission_name || h.title || 'Untitled'} subtitle={<Found html={h.snippet} />}
-                                     meta={listTime(h.created_at)}
-                                     onClick={() => nav.goPath(h.link)} />
-                   }} />
-    </div>
-    )}</Loaded>
   )
 }
 

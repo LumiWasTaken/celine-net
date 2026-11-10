@@ -84,7 +84,7 @@ export const VIEWS: { id: Section; view: (c: ViewContext) => ReactNode }[] = [
   { id: 'waiting', view: c => <Waiting active={c.active} /> },
   { id: 'events', view: c => <Events active={c.active} /> },
   { id: 'chats', view: c => <Chats active={c.active} /> },
-  { id: 'search', view: c => <SearchPage active={c.active} /> },
+  { id: 'search', view: c => <SearchPage active={c.active} status={c.status} /> },
   { id: 'documents', view: c => <Documents active={c.active} /> },
   { id: 'gallery', view: c => <Gallery active={c.active} /> },
   { id: 'settings', view: c => <Settings active={c.active} status={c.status} /> },
