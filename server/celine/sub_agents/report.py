@@ -128,6 +128,11 @@ def head(name: str, state: str, w: dict) -> str:
     return f"[{out}]"
 
 
+def answer_of(text: str) -> str:
+    """A stored report's answer: its text after the head line (`_report` writes both)."""
+    return text.split("\n\n", 1)[1] if text.startswith("[") and "\n\n" in text else text
+
+
 def window_of(c: sqlite3.Connection, cid: str) -> int:
     """The window of the model that last answered in `cid`, as its request stored it."""
     r = c.execute("SELECT r.window FROM requests r JOIN turns t ON t.id = r.turn_id "
