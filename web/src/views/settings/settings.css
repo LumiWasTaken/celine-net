@@ -167,7 +167,7 @@
 .batches__grid { align-items: start; } /* a batch card is as tall as its pictures, not its row */
 .batches__head { display: flex; align-items: center; gap: var(--s-3); min-height: var(--h-sm); font-size: var(--t-md); }
 .batches__time { flex: none; font-variant-numeric: tabular-nums; color: var(--text-muted); }
-a.batches__time { color: var(--accent); text-decoration: none; }
+a.batches__time { display: inline-flex; align-items: center; min-height: var(--hit-min); color: var(--accent); text-decoration: none; }
 a.batches__time:hover { text-decoration: underline; }
 .batches__what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .batches__count { flex: none; font-size: var(--t-xs); font-variant-numeric: tabular-nums; color: var(--text-muted); }

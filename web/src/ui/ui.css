@@ -585,7 +585,9 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 /* quiet: a line among messages, no surface of its own, the tool row's left edge */
 .event-line--quiet { background: none; }
 .event-line--quiet .event-line__head { min-height: var(--row-sm); padding: 0 var(--s-2); margin: 0 calc(-1 * var(--s-2)); border-radius: var(--r-sm); }
-.event-line__text a { color: var(--accent); text-decoration: none; }
+/* a link in the line: its hit box grows to --hit-min inside the text's padding, the line keeps its height */
+.event-line__text:has(> a) { padding-block: var(--s-1); }
+.event-line__text a { padding-block: var(--s-1); color: var(--accent); text-decoration: none; }
 .event-line__text a:hover { text-decoration: underline; }
 
 /* ── VirtualList ─────────────────────────────────────────────────────────── */
@@ -741,7 +743,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
   font-size: var(--t-lg); line-height: var(--lh-title); font-weight: var(--fw-medium); text-decoration: none; }
 .group-head__title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-head__title > svg { flex: none; color: var(--text-muted); align-self: center; }
-.group-head__title--link { cursor: pointer; text-underline-offset: 4px; text-decoration-color: var(--border-strong); }
+.group-head__title--link { min-height: var(--hit-min); cursor: pointer; text-underline-offset: 4px; text-decoration-color: var(--border-strong); }
 .group-head__title--link:hover { text-decoration-line: underline; }
 .group-head__detail { min-width: 0; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-head__count { flex: none; margin-left: auto; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
