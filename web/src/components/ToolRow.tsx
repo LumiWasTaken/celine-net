@@ -35,6 +35,7 @@ import { useNow } from '../lib/useNow'
 import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
 import { Button, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
 import { BatchGallery, GalleryContext, StopBatch, doneWords, type Made } from './Batch'
+import { useToolLabels } from './ToolList'
 import './ToolRow.css'
 
 
@@ -150,7 +151,7 @@ function outcome(call: ToolCall): string | null {
   const d = call.display
   if (!d) return null
   if (d.ambiguous === true) return 'More than one match for this name'
-  if (typeof d.exit === 'number' && d.exit !== 0) return `exit ${d.exit}`
+  if (typeof d.exit === 'number' && d.exit !== 0) return `Exit code ${d.exit}`
   return null
 }
 
@@ -208,7 +209,7 @@ function useView(call: ToolCall): View {
     const log = str(d?.log)
     return {
       icon: Terminal, tone: exit ? 'error' : toneOf(call), words: rowWords(call),
-      meta: exit ? `exit ${exit}` : took(call),
+      meta: exit ? `Exit code ${exit}` : took(call),
       under: <Files call={call} />,
       detail: <>
         {log && <Part label="Log"><code className="tool__log">{log}</code></Part>}
@@ -531,9 +532,10 @@ function ToolDetail({ call }: { call: ToolCall }) {
   const where = call.words.where
   const chats = scopeChats(d)
   const kbs = new Set([...list(d?.scope_kbs), ...chats.map(c => c.platform ?? '').filter(Boolean), 'documents'])
+  const toolLabel = useToolLabels()
   return (
     <>
-      {/* an empty section is left out; the tool's own name is the Result's tooltip */}
+      {/* an empty section is left out; the tool's label is the Result's tooltip */}
       {args && Object.keys(args).length > 0 ? (
         <Part label="Arguments">
           <dl className="tool__args">
@@ -548,7 +550,7 @@ function ToolDetail({ call }: { call: ToolCall }) {
         </Part>
       ) : !args && call.arguments ? <Part label="Arguments"><pre>{call.arguments}</pre></Part> : null}
       {where && (
-        <Part label="Where">
+        <Part label="Searched in">
           <div>{where}</div>
           {chats.length > 2 && (
             <ul className="tool__chats">
@@ -557,7 +559,7 @@ function ToolDetail({ call }: { call: ToolCall }) {
           )}
         </Part>
       )}
-      <Part label="Result" tip={call.name}>
+      <Part label="Result" tip={toolLabel(call.name)}>
         {call.result == null || call.result === ''
           ? <div className="tool__none">{busy(call) ? 'No result yet.' : 'The tool returned nothing.'}</div>
           : <pre>{withRefs(call.result, kbs)}</pre>}
