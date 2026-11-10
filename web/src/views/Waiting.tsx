@@ -21,7 +21,7 @@ import './Waiting.css'
 
 /** each kind's glyph and the noun its group's count is said with */
 const KIND: Record<Wait['kind'], { icon: LucideIcon; noun: string }> = {
-  approval: { icon: Hand, noun: 'request' }, mission: { icon: Flag, noun: 'mission' },
+  approval: { icon: Hand, noun: 'approval request' }, mission: { icon: Flag, noun: 'mission' },
   login: { icon: Plug, noun: 'source' }, thread: { icon: Mail, noun: 'thread' },
 }
 
