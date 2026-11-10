@@ -1,10 +1,11 @@
-/* One decision of Bastet's on the Events page (GET /api/guard/decisions/{id}): her line,
-   then the question the decision model was asked, its score, the model, how long it took,
-   the call's arguments, the quote and the matched text. Allow once and Allow for 7 days on this answer it as its
-   banner's buttons do (POST /guard/banners/{id}/replies); Open goes where it happened. Its title is Details (its line wraps
-   to four lines at 400 px), its line the first fact. Every
-   word of the row is the server's. server/celine/guard/store.py one, api.py. */
-import { Markdown } from '../components/Markdown'
+/* One decision of Bastet's on the Events page (GET /api/guard/decisions/{id}, URL
+   /events/guard/<id>): her line, then the question the decision model was asked, its
+   score, the model, how long it took, the quote, the matched text and the call's
+   arguments one field each. Allow once and Allow for 7 days on this answer it as its
+   banner's buttons do (POST /guard/banners/{id}/replies); Open goes where it happened.
+   Its title is its row's (the server's `title`), its line the first fact. Every word of
+   the row is the server's. server/celine/guard/store.py one, api.py. */
+import { ToolArgs } from '../components/ToolRow'
 import { errorText } from '../lib/format'
 import { ACTION_ICONS, ACTION_WORDS, guardApi, type GuardAction } from '../lib/guard'
 import { useResource } from '../lib/useResource'
@@ -25,10 +26,8 @@ export async function answer(id: number, action: GuardAction) {
 
 type Label = (id: string) => string
 
-export function EventDecision({ id, open, rule, mode, onClose }: {
+export function EventDecision({ id, rule, mode, onClose }: {
   id: number
-  /** where it happened, the event's link */
-  open: string | null
   rule: Label
   mode: Label
   onClose: () => void
@@ -52,14 +51,14 @@ export function EventDecision({ id, open, rule, mode, onClose }: {
       value: [VERDICT_WORDS[l.verdict], l.why, l.model].filter(Boolean)
         .map(s => String(s).replace(/[.!?]+$/, '')).join('. ') + '.',
     })),
-    { label: 'Arguments', value: <div className="prose"><Markdown text={'```json\n' + JSON.stringify(d.arguments, null, 2) + '\n```'} /></div> },
+    Object.keys(d.arguments).length > 0 && { label: 'Arguments', value: <div className="tool__body"><ToolArgs args={d.arguments} /></div> },
   ].filter(x => !!x) as { label: string; value: React.ReactNode }[] : []
   const act = (a: GuardAction) => { void answer(id, a).then(res.reload) }
   return (
-    <Dialog title="Details" onClose={onClose} size="lg"
+    <Dialog title={d?.title ?? ''} onClose={onClose} size="lg"
             actions={<>
               {d?.actions.map(a => <Button key={a} icon={ACTION_ICONS[a]} onClick={() => act(a)}>{ACTION_WORDS[a]}</Button>)}
-              {open && <Button variant="primary" href={open}>Open</Button>}
+              {d?.open && <Button variant="primary" href={d.open}>Open</Button>}
             </>}>
       {res.error ? <InlineError message={res.error} /> : !d ? <LoadingRow /> : <Facts items={facts} />}
     </Dialog>

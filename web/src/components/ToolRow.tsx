@@ -537,17 +537,7 @@ function ToolDetail({ call }: { call: ToolCall }) {
     <>
       {/* an empty section is left out; the tool's label is the Result's tooltip */}
       {args && Object.keys(args).length > 0 ? (
-        <Part label="Arguments">
-          <dl className="tool__args">
-            {Object.entries(args).map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                {/* text as it was written (a command keeps its lines), anything else as JSON */}
-                <dd><pre>{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</pre></dd>
-              </div>
-            ))}
-          </dl>
-        </Part>
+        <Part label="Arguments"><ToolArgs args={args} /></Part>
       ) : !args && call.arguments ? <Part label="Arguments"><pre>{call.arguments}</pre></Part> : null}
       {where && (
         <Part label="Searched in">
@@ -565,6 +555,21 @@ function ToolDetail({ call }: { call: ToolCall }) {
           : <pre>{withRefs(call.result, kbs)}</pre>}
       </Part>
     </>
+  )
+}
+
+/** a call's arguments, one field each: text as it was written (a command keeps its lines),
+    anything else as JSON; inside .tool__body, which wraps them */
+export function ToolArgs({ args }: { args: Record<string, unknown> }) {
+  return (
+    <dl className="tool__args">
+      {Object.entries(args).map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd><pre>{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</pre></dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 

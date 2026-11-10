@@ -20,7 +20,9 @@
    /terminal/<terminal id>?reply=<command id>   the same, with that command quoted into its message box
    /browser                           its browser: the live view, its tabs, take over (Browser)
    /artifact/<id>                     one of its artifacts as a page of its own
-   /events                            everything it did and everything that ran (Events)
+   /events  /events/<tab>             everything it did and everything that ran (Events), on a
+                                      tab (guard, agent, background; agent without)
+   /events/guard/<decision id>        the Guard tab with one of Bastet's decisions open
    /intercom  /intercom/<thread id>   the Intercom: threads between you, its conversations and the app
    /waiting                           Waiting for you: everything that waits on you
    /waiting/thread/<thread id>        the same with an Intercom thread open to answer
@@ -66,7 +68,7 @@ export type Route =
   | { section: 'terminals'; mission?: string; terminal?: string; reply?: string }
   | { section: 'browser' }
   | { section: 'artifact'; id: string }
-  | { section: 'events' }
+  | { section: 'events'; tab?: 'guard' | 'background'; decision?: number }
   | { section: 'intercom'; thread?: number }
   | { section: 'waiting'; thread?: number; mission?: string }
   | { section: 'chats'; kb?: string; chat?: number; message?: number; resolve?: boolean }
@@ -143,6 +145,8 @@ function parse(pathname: string, search = ''): Parsed {
     case 'browser':
       return { route: { section: 'browser' } }
     case 'events':
+      if (a === 'guard') return { route: { section: 'events', tab: a, decision: num(b) }, redirect: (!!b && !num(b)) || !!c }
+      if (a === 'background') return { route: { section: 'events', tab: a }, redirect: !!b }
       return { route: { section: 'events' }, redirect: !!a }
     case 'artifact':
       return a ? { route: { section: 'artifact', id: a } } : { route: { section: 'celine' }, redirect: true }
@@ -229,7 +233,7 @@ export function format(r: Route): string {
     case 'browser':
       return '/browser'
     case 'events':
-      return '/events'
+      return '/events' + (r.tab ? `/${r.tab}` : '') + (r.tab === 'guard' && r.decision ? `/${r.decision}` : '')
     case 'artifact':
       return `/artifact/${e(r.id)}`
     case 'intercom':

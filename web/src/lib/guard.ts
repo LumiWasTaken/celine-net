@@ -66,6 +66,10 @@ type GuardDecision = {
   /** each judge's verdict, first look first (server/celine/guard/chain.py) */
   chain: ChainLevel[]
   actions: GuardAction[]
+  /** its title as its Events row says it */
+  title: string
+  /** the app path of its conversation */
+  open: string | null
   created_at: string
 }
 

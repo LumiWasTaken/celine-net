@@ -30,6 +30,8 @@ type EventsPage = {
   failed: number | null
   /** Bastet's decisions she could not make, apart from `failed` */
   undecided: number | null
+  /** the calls Bastet stopped */
+  stopped: number | null
   next: string | null
   /** the tabs with their counts of the day: the first page's; null below `before` */
   tabs: { id: EventsTab; label: string; total: number; failed: number }[] | null
@@ -41,12 +43,12 @@ type EventsPage = {
 }
 
 type Choice = { id: string; label: string }
-export type EventsState = 'failed' | 'undecided'
+export type EventsState = 'failed' | 'undecided' | 'stopped'
 export type EventsTab = 'guard' | 'agent' | 'background'
 
 type EventsQuery = {
   tab?: EventsTab; kind?: string | null; day?: string | null; state?: EventsState | null
-  /** Bastet's filters; with them (or undecided) the list is her rows only */
+  /** Bastet's filters; with them (or undecided, stopped) the list is her rows only */
   decision?: string | null; rule?: string | null; mode?: string | null
   before?: string; limit?: number
 }
