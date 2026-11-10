@@ -10,6 +10,7 @@ The map of the code and the rules it follows.
 | `web/src/` | the UI: React, TypeScript, Vite |
 | `web/src/ui/` | the kit: the only code that draws buttons, heads, menus, dialogs, sheets, toasts, fields ([docs/ui/components.md](docs/ui/components.md)) |
 | `tests/` | pytest on fakes; `*_fixtures.py` build data, `data/` holds small files; `-m live` needs a model server |
+| `tools/testdata/` | `make.py` builds a data dir of made-up data, `demo.sh` starts an instance on it with `model_stub.py` as its model server |
 | `config/` | shipped config: `celine.toml`, `llm.toml`, `kb.toml`, `skills.toml`, `mcp.toml`, `context.toml`, `agent/` (the agent's shipped name, pronouns, persona, talk, voice), `guard/` (the guard's persona, talk and judge prompts), `notebook_seed/` (first notes, copied once), `image_presets/`, `music_presets/`, `schedules/`, `searxng/` |
 | `connectors/discord/` | discord-link, the Discord connector (Python) |
 | `wa-link/` | the WhatsApp connector (Go) |
@@ -60,7 +61,7 @@ The map of the code and the rules it follows.
 |---|---|
 | `App.tsx`, `main.tsx` | routes, the rail, the socket, the global overlays |
 | `ui/` | the kit; `ui/index.ts` exports it; `ui/ui.css` styles it |
-| `views/` | one place each: `Celine`, `Missions`, `Routines`, `Notebook`, `Documents`, `Chats`, `Intercom`, `Waiting`, `Terminals`, `Terminal`, `Browser`, `Events`, `Search`, `Artifact`, `Welcome`, `settings/` |
+| `views/` | one place each: `Celine`, `Missions`, `Routines`, `Notebook`, `Documents`, `Chats`, `Intercom`, `Waiting`, `Terminals`, `Terminal`, `Browser`, `Events` (`EventDecision`: one decision of the guard's), `Search`, `Artifact`, `Welcome` (`WelcomeForms`: the forms of its steps and of Settings, Features), `settings/` |
 | `components/` | app parts made of kit parts: Transcript, Composer, ToolRow, ConversationList, ConversationPanel, Markdown, Plan, MissionAsk, ProviderFields |
 | `lib/` | api clients, socket and bus, `nav.tsx`, `prefs.ts` (this device's conveniences in localStorage), `states.ts` (a state as the server says it), hooks (`useResource`, `useAction`, `useReveal`, `useConversation`) |
 | `styles/` | `tokens.css` (every value), `base.css` (keyframes, resets) |
