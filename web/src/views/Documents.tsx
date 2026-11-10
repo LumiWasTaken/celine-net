@@ -489,7 +489,7 @@ function DocumentPage({ id, folder, active, menu, onFolder }: {
   const detail = [TYPE_WORD[it.kind], it.pages ? count(it.pages, 'page') : '', bytes(it.size), it.n_words ? count(it.n_words, 'word') : ''].filter(Boolean).join(', ')
   return (
     <div className="doc-page">
-      <PlaceHead level={1} crumbs={crumbsOf(it.folder, onFolder)} title={it.title} titleAttr={it.path} detail={it.trashed ? 'Trash' : detail}
+      <PlaceHead level={1} crumbs={crumbsOf(it.folder, onFolder)} title={it.title} titleAttr={it.path} detail={it.trashed ? 'In the Trash' : detail}
                  actions={<>
                    {canEdit && <Segmented label="Show" value={mode} onChange={setMode}
                                           options={[{ value: 'view', label: 'View', icon: Eye }, { value: 'edit', label: 'Edit', icon: Pencil }]} />}
