@@ -56,7 +56,7 @@ KNOBS = (
     knob("web.per_hour", "Searches per hour", None, 0, 1_000_000, 0,
          "The most web searches in one hour; past it a search fails with the reason. 0 "
          "means no limit."),
-    knob("web.read_tokens", "Page part", "tokens", 100, 1_000_000, 6000,
+    knob("web.read_tokens", "Page read length", "tokens", 100, 1_000_000, 6000,
          "How much of a page one read brings; a longer page is read in parts."),
     knob("web.timeout", "Page time limit", "seconds", 1, 3600, 20,
          "How long one page fetch may take, redirects included."),

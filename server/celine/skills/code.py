@@ -33,7 +33,7 @@ POLL_SECONDS = 20          # between two code__status looks (it is told)
 RESULT_CHARS = 2000        # of the agent's last answer code__result carries
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
-    knob("code.poll_seconds", "Status look every", "seconds", 1, 3600, POLL_SECONDS,
+    knob("code.poll_seconds", "Check a coding session every", "seconds", 1, 3600, POLL_SECONDS,
          "How long to wait between two looks at a running coding session."),
     knob("code.result_chars", "Answer length", "characters", 100, 1_000_000, RESULT_CHARS,
          "How much of the coding agent's last answer one result brings."),

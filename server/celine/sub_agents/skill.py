@@ -55,7 +55,7 @@ CLOUD_ASK = "start a sub-agent on a cloud model"
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
     knob("sub_agents.max_running", "Sub-agents at once", None, 1, 1000, 4,
-         "How many sub-agents of one conversation work at once; a start over it waits "
+         "How many sub-agents of one chat work at once; a start over it waits "
          "its turn."),
     knob("sub_agents.cli_minutes", "Agent CLI time limit", "minutes", 1, 100_000, 120,
          "The longest one sub-agent may work through an agent CLI in the shellbox."),

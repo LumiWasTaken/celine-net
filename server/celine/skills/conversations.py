@@ -21,7 +21,7 @@ from ..clock import zone
 # Settings, Advanced, read at use (cfg.r)
 KNOBS = (
     knob("past_conversations.max_results", "Matches per search", None, 1, 1000, 20,
-         "The most matches one search of past conversations brings."),
+         "The most matches one search of past chats brings."),
     knob("past_conversations.snippet_chars", "Snippet length", "characters", 40, 10_000, 240,
          "How much text each match shows around the words found."),
 )
