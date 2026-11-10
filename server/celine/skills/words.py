@@ -820,6 +820,19 @@ GROUPS = {
     "email__read": "Read {n} emails", "email__search": "Searched the emails {n} times",
 }
 GROUPS_OF = {"browser": "Used the browser {n} times"}
+# a group that counts things, not calls: the argument that names the thing
+TARGET = {"notebook__read": "path", "notebook__write": "path", "notebook__edit": "path",
+          "routines__read": "name", "web__read_page": "url",
+          "user_documents__read": "document", "chat_archive__read_period": "chat",
+          "past_conversations__read": "conversation", "email__read": "id"}
+
+
+def _things(calls: list[dict]) -> int:
+    """How many the group's words count: the things its calls name (TARGET), else its calls."""
+    arg = TARGET.get(calls[0]["name"])
+    if not arg:
+        return len(calls)
+    return len({str(_args(c["arguments"]).get(arg) or c["id"]) for c in calls})
 
 
 def group(name: str, a: Args, own: Own | None = None) -> str | None:
@@ -863,8 +876,8 @@ def _apart(call: dict) -> bool:
 
 def _stretch_words(calls: list[dict], own: Own | None) -> str:
     """A stretch in words: one part per group, in the order first seen ("Read 2 notes,
-    read the settings 4 times, ran 4 commands"); a group of one, or a call of no group,
-    says its own sentence."""
+    read the settings 4 times, ran 4 commands"); a group of one (calls of one thing, as
+    TARGET counts them), or a call of no group, says its own sentence."""
     parts: dict[str, list[dict]] = {}
     for c in calls:
         a = _args(c["arguments"])
@@ -872,8 +885,8 @@ def _stretch_words(calls: list[dict], own: Own | None) -> str:
         parts.setdefault(key, []).append(c)
     out: list[tuple[str, bool]] = []      # (words, as_written: its own words keep their casing)
     for key, members in parts.items():
-        if len(members) > 1:
-            out.append((key.replace("{n}", f"{len(members):,}"), False))
+        if (n := _things(members)) > 1:
+            out.append((key.replace("{n}", f"{n:,}"), False))
         else:
             c = members[0]
             a = _args(c["arguments"])

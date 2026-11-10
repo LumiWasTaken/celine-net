@@ -185,6 +185,12 @@ def test_a_stretch_of_work_is_one_line_in_words():
     assert runs([block]) == [{"ids": ["n1", "c1", "n2", "c2", "c3", "c4"],
                               "words": "Read 2 notes, ran 3 commands in terminal main, "
                                        "ran ls 4 in terminal other", "failed": 2}]
+    # a group of notes counts notes, not calls: two edits of one note say that note
+    edit = {**note, "name": "notebook__edit"}
+    assert runs([[edit, {**edit, "id": "n2"}, {**edit, "id": "n3", "arguments": note2["arguments"]},
+                  call(1)]])[0]["words"] == "Edited 2 notes, ran ls 1 in terminal main"
+    assert runs([[edit, {**edit, "id": "n2", "state": "error"}]])[0] == {
+        "ids": ["n1", "n2"], "words": "Edited the note a.md", "failed": 1}
     # plumbing sits between them unseen; one call alone is no stretch
     plumbing = {"id": "p", "name": "skills__read_guide", "state": "ok", "arguments": "{}"}
     assert runs([[call(1), plumbing, call(2)]])[0]["ids"] == ["c1", "c2"]
