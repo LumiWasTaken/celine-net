@@ -133,7 +133,9 @@ details[open]::details-content { height: auto; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    /* 0s: any longer and every element (transition-property starts as all) eases each
+       style change, so a layout measured right after a class change reads the old one */
+    transition-duration: 0s !important;
     scroll-behavior: auto !important;
   }
   .spin, .dots i, .face.is-speaking::after, .progress__bar--indeterminate, .chip--busy > svg:first-child, .event-line--running .event-line__text {
