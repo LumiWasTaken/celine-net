@@ -142,34 +142,34 @@ export function stateTone(word: StateWord): WordTone {
   }
 }
 
-/** words side by side with a wide gap, never a dot: `cmake  exit 1` */
+/** words side by side with a wide gap, never a dot: `cmake  Exit code 1` */
 export function spaced(...parts: (string | null | undefined | false)[]): string {
   return parts.filter(Boolean).join('\u00a0\u00a0')
 }
 
 /** the words after the state: what runs (`cmake`), or an exit only when it failed */
 export function stateDetail(t: TerminalRow): string {
-  if (t.ended_at) return t.exit ? `exit ${t.exit}` : ''
+  if (t.ended_at) return t.exit ? `Exit code ${t.exit}` : ''
   const l = t.live
   if (!l) return ''
-  if (stateWord(t) === 'Idle') return l.last_exit ? `exit ${l.last_exit}` : ''
+  if (stateWord(t) === 'Idle') return l.last_exit ? `Exit code ${l.last_exit}` : ''
   return l.program ?? ''
 }
 
 /* ── command rows ── */
 
-/** the command as a row shows it: the first line typed, the keys, `read`, or `watch` */
+/** the command as a row shows it: the first line typed, the keys, `Read the screen`, or `Waited for output` */
 export function commandWords(c: CommandRow): string {
-  if (c.kind === 'read') return 'read'
+  if (c.kind === 'read') return 'Read the screen'
   if (c.kind === 'line' || c.kind === 'control') return c.text
   const text = c.text.split('\n').find(l => l.trim())?.trim() ?? ''
-  return keysAndText(c.keys, text) || 'watch'
+  return keysAndText(c.keys, text) || 'Waited for output'
 }
 
-/** what a step sent: `keys: K  text: T`, either alone, or '' (it only watched) */
+/** what a step sent: `Keys: K  Text: T`, either alone, or '' (it only watched) */
 export function keysAndText(keys: string | null | undefined, text: string): string {
-  if (keys && text) return `keys: ${keys}  text: ${text}`
-  if (keys) return `keys: ${keys}`
+  if (keys && text) return `Keys: ${keys}  Text: ${text}`
+  if (keys) return `Keys: ${keys}`
   return text
 }
 
@@ -179,7 +179,7 @@ export function keysAndText(keys: string | null | undefined, text: string): stri
 export function outcomeWords(c: CommandRow): { words: string; tone: WordTone } {
   const o = c.outcome
   if (!o) return { words: c.kind === 'control' ? c.result ?? '' : '', tone: 'muted' }
-  const failed = (exit: number | null) => ({ words: exit ? `Failed, exit ${exit}` : 'Failed', tone: 'error' as const })
+  const failed = (exit: number | null) => ({ words: exit ? `Failed, exit code ${exit}` : 'Failed', tone: 'error' as const })
   switch (o.state) {
     case 'pending': case 'running': case 'detached': return { words: 'Running', tone: 'running' }
     case 'error': case 'gated': return failed(o.exit)

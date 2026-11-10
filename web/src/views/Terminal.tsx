@@ -364,7 +364,7 @@ function XTermBox({ id, yours, detail, onEnd, onLine }: {
     <div className={cx('term-box', yours && 'term-box--yours')}>
       <div ref={box} className={cx('term-xterm', (ended || paused) && 'term-xterm--dim')}
            aria-label={yours ? 'Your terminal' : `Terminal ${detail.name}`} />
-      {lost && <div className="term-lost" role="status">The history could not be loaded.</div>}
+      {lost && <div className="term-lost" role="status">The scrollback could not be loaded.</div>}
     </div>
   )
 }
