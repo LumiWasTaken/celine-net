@@ -47,7 +47,7 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "smart_search_refresh_minutes", "label": "Update the search index every",
      "type": "number", "unit": "minutes", "min": 0, "max": 1440,
      "help": "How often new messages are added to Search. 0 turns the updates off.",
-     "default": 15},
+     "default": 15, "zero": "Off"},
     {"key": "lock_archived", "label": "Lock archived chats", "type": "bool",
      "help": "An archived chat takes no messages but yours, and its running work and missions "
              "stop.", "default": True},
