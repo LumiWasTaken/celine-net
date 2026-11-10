@@ -295,3 +295,12 @@ async def test_a_step_model_the_user_set_on_the_missions_page_asks_nothing(
                                      {"title": "Write", "model": "or/kimi"}])
     assert out.is_error and asked == ["run a plan step on a cloud model"], \
         "a model the agent set asks"
+
+
+def test_an_ended_mission_is_at_no_step():
+    from celine.missions.api import _labelled
+    row = {"status": "stopped", "step": 2,
+           "steps": [{"title": "Read", "state": "done"}, {"title": "Build", "state": "doing"}]}
+    out = _labelled(None, row)
+    assert (out["step"], [s["words"] for s in out["steps"]]) == (None, ["Done", None])
+    assert _labelled(None, {**row, "status": "active"})["steps"][1]["words"] == "In progress"

@@ -195,11 +195,16 @@ async def list_missions(request: Request, status: str | None = None,
 def _labelled(settings, row: dict) -> dict:
     """A mission as a client gets it: each step's `model_label` (attachments.label),
     None for a step on the mission's own model, and its state's `words` (core/states
-    PLAN), None for a step to do."""
+    PLAN), None for a step to do. A done or stopped mission is at no step: the step it
+    was doing says no word and `step` is None."""
     from ..attachments import label
-    return {**row, "steps": [{**s, "model_label": label(settings, s.get("model")) or None,
-                              "words": PLAN[s["state"]][0] if s["state"] in PLAN else None}
-                             for s in row["steps"]]}
+    ended = row["status"] in ("done", "stopped")
+
+    def words(state: str) -> str | None:
+        return None if state not in PLAN or (ended and state == "doing") else PLAN[state][0]
+    return {**row, "step": None if ended else row["step"],
+            "steps": [{**s, "model_label": label(settings, s.get("model")) or None,
+                       "words": words(s["state"])} for s in row["steps"]]}
 
 
 def _announce(store, row: dict | None) -> None:
