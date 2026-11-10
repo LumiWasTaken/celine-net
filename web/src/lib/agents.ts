@@ -17,7 +17,8 @@ export type Agent = {
   folder: string | null
   /** at work (its last turn has not reported) */
   working: boolean
-  /** Running while it works, else Done: the server's words */
+  state: TreeAgent['state']
+  /** that state as the pages say it, the server's */
   words: string
   tone: Said['tone']
   /** the tool its live turn runs, null between steps */

@@ -16,7 +16,7 @@ MISSION = {"active": ("Running", RUNNING), "needs_you": ("Waiting for you", WARN
            "done": ("Done", OK), "stopped": ("Stopped", MUTED)}
 # a node of a tree: a sub-agent (queued, working, done, failed, paused) or a mission
 TREE = {**MISSION, "queued": ("Queued", RUNNING), "working": ("Running", RUNNING),
-        "failed": ("Failed", ERROR), "paused": ("Paused", WARN)}
+        "failed": ("Failed", ERROR), "paused": ("Stopped", WARN)}
 # a run; planned: a schedule's slot of the day with no run yet
 RUN = {"waiting": ("Queued", MUTED), "running": ("Running", RUNNING), "done": ("Done", OK),
        "failed": ("Failed", ERROR), "skipped": ("Skipped", MUTED),

@@ -49,7 +49,7 @@ import './Missions.css'
 const firstLine = (text: string) => text.trim().split('\n')[0] ?? ''
 
 /** every status of a mission as the server says it (GET /missions `states`): the list's
-    filter and group heads, a step's and a sub-agent's Running and Done */
+    filter and group heads */
 const States = createContext<Record<MissionStatus, Said> | undefined>(undefined)
 type TreeNode = (TreeAgent & { kind: 'agent' }) | (TreeMission & { kind: 'mission' })
 
@@ -71,6 +71,8 @@ type AgentRow = Agent & { model?: string | null; cli?: string | null; device?: s
 
 type Show = 'all' | MissionStatus
 const STATUSES: MissionStatus[] = ['active', 'needs_you', 'done', 'stopped']
+/** the order of a sub-agent's states in the State filter */
+const AGENT_STATES: Agent['state'][] = ['queued', 'working', 'done', 'stopped', 'paused', 'failed']
 const SORTS = ['Recent', 'Name', 'Created']
 const GROUPS = ['State', 'None']
 
@@ -583,7 +585,6 @@ function AgentPage({ a, mission, active }: { a: AgentRow; mission: Mission; acti
 /* every sub-agent of every mission */
 function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Mission[] }) {
   const nav = useNav()
-  const states = useContext(States)
   const ctx = useContextMenu()
   const [q, setQ] = useState('')
   const [show, setShow] = useState('all')
@@ -592,7 +593,7 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
   const name = useMemo(() => new Map(missions.map(m => [m.conversation_id, m.name])), [missions])
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
-    const out = agents.filter(a => (show === 'all' || (show === 'running') === a.working) && (!of || a.parent === of)
+    const out = agents.filter(a => (show === 'all' || show === a.words) && (!of || a.parent === of)
       && (!s || [a.name, agentLine(a), name.get(a.parent) ?? ''].some(x => x.toLowerCase().includes(s))))
     return sort === 'Name' ? [...out].sort((a, b) => a.name.localeCompare(b.name))
       : sort === 'Created' ? [...out].sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -604,6 +605,8 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
     ...(a.working ? ['sep' as const, { label: 'Stop', icon: CircleStop, onSelect: () => void agentsApi.stop(a.id) }] : []),
   ]
   const parents = [...new Set(agents.map(a => a.parent))].filter(p => name.has(p))
+  // one option per state word: Stopped holds a stopped and a paused one
+  const words = [...new Set(AGENT_STATES.flatMap(s => agents.filter(a => a.state === s).map(a => a.words)))]
   return (
     <div className="list-page">
       <PlaceHead level={1} title="Sub-agents" count={agents.length || undefined} search={{ value: q, onChange: setQ, placeholder: 'Search sub-agents' }} />
@@ -611,8 +614,7 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
         <div className="list-page__top">
           <Toolbar state={{ label: 'State', value: show, onChange: setShow, options: [
                      { value: 'all', label: 'All', count: agents.length },
-                     { value: 'running', label: states?.active.words ?? '', count: agents.filter(a => a.working).length },
-                     { value: 'done', label: states?.done.words ?? '', count: agents.filter(a => !a.working).length }] }}
+                     ...words.map(w => ({ value: w, label: w, count: agents.filter(a => a.words === w).length }))] }}
                    filters={parents.length === 0 ? [] : [{ label: 'Mission', icon: Flag, picked: of ? name.get(of) : undefined, onClear: () => setOf(null),
                                items: parents.map(p => ({ label: name.get(p) ?? p, current: p === of, onSelect: () => setOf(p) })) }]}
                    sort={{ label: 'Sort', value: sort, onChange: setSort, options: SORTS.map(v => ({ value: v, label: v })) }} />

@@ -526,8 +526,8 @@ def max_running(cfg) -> int:
 def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
               agent: str | None = None, own: dict) -> list[dict]:
     """Sub-agents, newest first, as the overview shows them: who, where, its `home` and
-    `link` (homes.of: where it opens), working (report.quiet says) with its `words` and
-    `tone` (core/states TREE), the step at work,
+    `link` (homes.of: where it opens), working (report.quiet says), its state with its
+    `words` and `tone` (core/states TREE), the step at work,
     the latest report, its last words. Those of `parent`, the one `agent`, or (neither
     given) every one not in the archive. `own`: the MCP servers' row words (store.tool_words)."""
     if agent:
@@ -543,8 +543,7 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
         f"s.created_at, s.updated_at FROM conversations s "
         f"{where} ORDER BY s.created_at DESC, s.id DESC", args).fetchall()
     out = [{**dict(r), **_look(c, r["id"], own), **homes.of(c, r["id"])} for r in rows]
-    # Running while it works, else Done, as the pages say it
-    return [{**a, **said(TREE, "working" if a["working"] else "done")} for a in out]
+    return [{**a, **said(TREE, a["state"])} for a in out]
 
 
 def labelled(settings, agents: list[dict]) -> list[dict]:
@@ -556,6 +555,9 @@ def labelled(settings, agents: list[dict]) -> list[dict]:
 
 ENDED = {"aborted": "stopped", "failed": "failed", "interrupted": "failed",
          "capped": "paused"}     # how a done one's last turn ended, in the tree's words
+# a turn's reason code as its row says it
+REASONS = {"max_tool_iterations": "Stopped at the tool round limit.",
+           "wall_clock": "Stopped at the turn time limit.", "frozen": "Stopped by a freeze."}
 
 
 def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
@@ -709,7 +711,8 @@ def _look(c: sqlite3.Connection, sub: str, own: dict) -> dict:
         ENDED.get(last["state"] if last else "", "done")
     top = homes.root(c, sub)
     return {"quiet": quiet, "queued": queued, "working": queued or not quiet,
-            "state": state, "reason": _first_line(last["reason"])
+            "state": state,
+            "reason": REASONS.get(last["reason"], _first_line(last["reason"]))
             if last and state in ("failed", "stopped", "paused") else None,
             "root": top["id"] if top is not None else None,
             "step": step["name"] if step else flown,
