@@ -97,7 +97,7 @@ def _label(tool: str) -> str:
 
 
 def _cap(s: str) -> str:
-    """The first letter up, the rest as written ("Words aimed at an AI")."""
+    """The first letter up, the rest as written ("Injected instructions")."""
     return s[:1].upper() + s[1:]
 
 

@@ -76,7 +76,7 @@ HELP = {
     "vault": ("A password in a file of the shellbox can be read by everything there, "
               "and a new password changes a live account. These two vault steps always "
               "wait for you."),
-    "gate": ("You put this tool on Ask you first in Settings, Guard. Take it off that "
+    "gate": ("You put this tool on Require approval in Settings, Guard. Take it off that "
              "list to let it run without asking."),
     "agent": ("{{name}}'s persona, example lines and banned words go into every chat, so "
               "every edit waits for you. You edit them yourself in Settings, {{name}}."),

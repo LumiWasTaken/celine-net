@@ -116,7 +116,7 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         guard = await get(tab="guard")
         assert [(e["kind"], e["title"], e["outcome"]) for e in guard["events"]] == [
             ("freeze", "Unfreeze", "Done"),
-            ("pass", "Pass for sending private data", "Allowed"),
+            ("pass", "Pass for data exfiltration", "Allowed"),
             ("freeze", "Freeze", "Frozen"),
             ("guard", "Terminals: run a command", "Would have stopped"),
             ("guard", "Browser: open a page", "Stopped"),
@@ -217,7 +217,7 @@ async def test_bastets_filters_and_undecided_apart_from_her_stops(store, monkeyp
         assert got["guard"]["modes"] == [{"id": "on", "label": "Enforce"},
                                          {"id": "watch", "label": "Warn"}]
         assert {"id": "unreachable", "label": "Could not decide"} in got["guard"]["decisions"]
-        assert {"id": "hijack", "label": "Following words from outside"} in got["guard"]["rules"]
+        assert {"id": "hijack", "label": "Prompt injection"} in got["guard"]["rules"]
         bad = await h.get("/api/events", params={"tab": "guard", "kind": "turn",
                                                      "mode": "on"})
         assert bad.status_code == 400

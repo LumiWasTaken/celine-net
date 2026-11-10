@@ -76,7 +76,7 @@ async def test_passes_are_listed_and_end_and_the_old_grant_route_is_gone(store):
         assert (await c.post(f"/api/guard/decisions/{leak}/grant",
                              json={"grant": "pass"})).status_code in (404, 405)
         [p] = (await c.get("/api/guard/passes")).json()["passes"]
-        assert (p["id"], p["label"], p["piece"]) == (held["id"], "Sending private data",
+        assert (p["id"], p["label"], p["piece"]) == (held["id"], "Data exfiltration",
                                                      "12 Example Road")
         assert p["line"].startswith("In a chat without a title until ")
         assert (await c.delete(f"/api/guard/passes/{held['id']}")).json() == \
@@ -89,7 +89,7 @@ async def test_the_rules_carry_their_rows_and_the_page_help(store):
     from celine.guard import view
     async with await _client(store) as c:
         got = (await c.get("/api/guard/rules")).json()
-    assert {"rule": "leak", "label": "Sending private data", "act": "stop"} in got["rows"]
+    assert {"rule": "leak", "label": "Data exfiltration", "act": "stop"} in got["rows"]
     assert {"rule": "sites", "label": "Typing on other sites", "act": "watch"} in got["rows"]
     assert [a["value"] for a in got["acts"]] == ["off", "watch", "stop", "freeze"]
     assert set(got["help"]) == set(view.PAGE_HELP) and "{{" not in "".join(got["help"].values())

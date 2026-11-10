@@ -86,21 +86,21 @@ class Rule:
 
 TABLE: dict[str, Rule] = {
     "escape": Rule(
-        plain="a way out of the box or around a limit", label="ways out of the shellbox",
+        plain="a way out of the box or around a limit", label="sandbox escape",
         to_agent="this looks like a way out of your box or around a limit",
         to_owner="it looks like a way out of the shellbox or around a limit ({fact})",
         banner="It looks like a way out of the shellbox or around a limit ({piece}).",
         found="a way out of the shellbox or around a limit",
         asked=True, reviewed=True, repeatable=True),
     "hijack": Rule(
-        plain="following words someone else wrote", label="following words from outside",
+        plain="following words someone else wrote", label="prompt injection",
         to_agent="this follows words from {source}, not you or {{user}}",
         to_owner="it follows words from {source}",
         banner="It follows words from {source}{quoted}.",
         found="an order from text someone else wrote, carried out",
         reviewed=True, repeatable=True),
     "leak": Rule(
-        plain="private text leaving the house", label="sending private data",
+        plain="private text leaving the house", label="data exfiltration",
         to_agent="this sends {what} from {where} to {sink}",
         to_owner="it sends {what} from {where} ({cls}) to {sink}",
         banner="It sends \"{piece}\" ({cls}) to {sink}.",
@@ -113,10 +113,10 @@ TABLE: dict[str, Rule] = {
         found="something destructive you did not ask for",
         asked=True, reviewed=True, repeatable=True),
     "confirm": Rule(
-        plain="a step {{user}} wants to be asked about", label="Ask you first",
+        plain="a step {{user}} wants to be asked about", label="Require approval",
         to_agent="{{user}} said this tool waits for an answer every time",
-        to_owner="this tool is on Ask you first",
-        banner="You put this tool on Ask you first in Settings, Guard."),
+        to_owner="this tool is on Require approval",
+        banner="You put this tool on Require approval in Settings, Guard."),
     "sites": Rule(
         plain="typing on a site that is not part of the task", label="typing on other sites",
         to_agent="this types on {site}, which is not part of this task",
@@ -128,14 +128,14 @@ TABLE: dict[str, Rule] = {
         to_owner="{count} steps were stopped in one turn",
         banner="Too many steps were stopped in one turn."),
     "persist": Rule(
-        plain="trying again what was stopped", label="trying again what was stopped",
+        plain="trying again what was stopped", label="bypassing a stop",
         to_agent="I said no, {{name}}. This is {what} again, another way",
         to_owner="it tries again, another way, what {prev} stopped on {tool} at {at}: the "
                  "same {same}",
         banner="It tries again, another way, what was stopped before: the same \"{piece}\".",
         asked=True, reviewed=True),
     "injection": Rule(
-        plain="words aimed at an AI", label="words aimed at an AI",
+        plain="words aimed at an AI", label="injected instructions",
         to_agent="the text from {source} talks to an AI reading it",
         to_owner="the text from {source} talks to an AI reading it ({quote})",
         banner="It read words from {source} aimed at an AI{quoted}."),

@@ -89,7 +89,7 @@ export const useCanPush = () => useSyncExternalStore(subscribe, () => canPush)
 const keyBytes = (b64: string) =>
   Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
 
-/** Push to this device on: the browser's subscription (asking for the permission first),
+/** Push notifications on: the browser's subscription (asking for the permission first),
     given to the server with this device's kinds */
 export async function subscribePush() {
   const reg = await worker
@@ -106,7 +106,7 @@ export async function subscribePush() {
   changed()
 }
 
-/** Push to this device off: out of the server's list, and the browser's subscription ended */
+/** Push notifications off: out of the server's list, and the browser's subscription ended */
 export async function unsubscribePush(devices: PushDevice[]) {
   const sub = await (await worker)?.pushManager.getSubscription()
   const row = devices.find(d => d.endpoint === sub?.endpoint)

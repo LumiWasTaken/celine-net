@@ -47,7 +47,7 @@ export function Notifications() {
         {granted && <StateWord>Allowed</StateWord>}
         <Switch label="Show notifications" checked={usable && prefs.on} disabled={!usable}
                 onChange={on => (on && !granted ? void ask.run() : setPrefs({ on }))} />
-        <Switch label="Push to this device" checked={usable && pushing} disabled={!usable || !canPush || toggle.busy || !devices.data}
+        <Switch label="Push notifications" checked={usable && pushing} disabled={!usable || !canPush || toggle.busy || !devices.data}
                 onChange={on => void toggle.run(on)} />
         {toggle.error && <InlineError compact message={toggle.error} />}
       </Section>

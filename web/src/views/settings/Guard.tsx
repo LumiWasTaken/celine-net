@@ -3,7 +3,7 @@
    Enforce, the general setting), its two models (the Decision model is the guard role, the second
    look is guard.toml's chain) through the same form the onboarding's Guard card uses
    (WelcomeForms.tsx), its Rules (what each rule does: Off, Warn, Stop, Freeze, and the tools
-   that ask you first; guard.toml), the Passes that hold (only while one does, each with End),
+   on Require approval; guard.toml), the Passes that hold (only while one does, each with End),
    and its own texts: Persona, Replies to <its name>, Messages to you, each a long text on a
    surface that opens in the large editor (BastetText below: History and Ask Celine, keys
    bastet:persona, bastet:talk, bastet:note; the shipped file is the default, Use the default
@@ -96,7 +96,7 @@ export function Guard() {
 }
 
 /* ── what each rule does, one Segmented per rule (Off is its switch, else its `does`), and the
-   tools that ask you first, saved when the field is left ── */
+   tools on Require approval, saved when the field is left ── */
 function Rules({ rules, set, disabled }: { rules: GuardRules; set: (r: GuardRules) => void; disabled: boolean }) {
   const save = useAction(async (tables: Record<string, Record<string, unknown>>) => set(await guardApi.putRules(tables)))
   const tools = rules.confirm.tools.join(', ')
@@ -113,7 +113,7 @@ function Rules({ rules, set, disabled }: { rules: GuardRules; set: (r: GuardRule
           <Segmented label={r.label} value={r.act} options={rules.acts} disabled={disabled || save.busy} onChange={v => act(r.rule, v)} />
         </Field>
       ))}
-      <Field label="Ask you first" help={rules.help.confirm}>
+      <Field label="Require approval" help={rules.help.confirm}>
         <Input value={draft ?? tools} disabled={disabled} onChange={e => setDraft(e.target.value)} onBlur={keep}
                onKeyDown={e => { if (e.key === 'Enter') keep() }} />
       </Field>

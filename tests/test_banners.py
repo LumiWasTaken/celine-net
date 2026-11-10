@@ -129,7 +129,7 @@ async def test_his_answers_become_a_pass_an_allow_once_and_an_unfreeze(store, mo
     [mine, hers] = got["thread"]
     assert (mine["by"], mine["text"]) == ("user", "that's fine, let her for half an hour")
     assert hers["by"] == "guard" and hers["text"].startswith(
-        "Allowed sending private data in this chat until ")
+        "Allowed data exfiltration in this chat until ")
     assert (await _banner_events(store, cid))[-1]["thread"] == got["thread"]
     await passes.end(store, held["id"])
 
@@ -192,7 +192,7 @@ async def test_approve_and_deny_on_an_ask_banner_answer_the_waiting_request(stor
             changed = anyio.Event()
             [b] = [x for x in (await view.snapshot(store, cid))["guard"] if x["id"] == v.row]
             assert b["kind"] == "ask" and b["line"] == (
-                "Asks you before a notebook step. You put this tool on Ask you first in Settings, Guard.")
+                "Asks you before a notebook step. You put this tool on Require approval in Settings, Guard.")
             got = await banners.answer(app, v.row, by=OWNER, said=button, decided={
                 "grant": grant, "rule": "all", "minutes": 60, "where": "here"})
             assert got["thread"][-1]["text"] == said
@@ -315,7 +315,7 @@ async def test_page_check_and_patrol_rows_read_as_banners(store):
                            mode="on", rule="leak", does="patrol", decision="found", p=0.8)
     got = (await view.snapshot(store, cid))["guard"]
     assert [(b["kind"], b["line"], b["actions"], b["help"]) for b in got] == [
-        ("patrol", "Looked back at this turn. Found: sending private data.", [], None)]
+        ("patrol", "Looked back at this turn. Found: data exfiltration.", [], None)]
 
 
 async def _to_agent(store, cid):
