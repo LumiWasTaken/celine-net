@@ -305,8 +305,9 @@ export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
   const first = msgs[0]
   // (the app's senders, like Bastet, wrote to you alone: their name)
   const to = first ? first.to.split(', ').filter(a => a !== 'user') : []
-  const title = first?.subject ?? (theirs ? senderName(theirs)
-    : first && to.length ? to.map(a => addressName(a, first.to_names)).join(', ') : first ? senderName(first) : 'Intercom')
+  const toNames = first && to.length ? to.map(a => addressName(a, first.to_names)).join(', ') : ''
+  const answerer = theirs ? senderName(theirs) : toNames
+  const title = first?.subject ?? (theirs ? senderName(theirs) : toNames || (first ? senderName(first) : 'Intercom'))
   const src = thread.data?.source
   let day = ''
   return (
@@ -348,7 +349,7 @@ export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
         <div className="intercom-reply">
           {send.error && <InlineError compact message={send.error} />}
           <ComposerBox value={text} onChange={setText} onSend={() => void send.run()} autoFocus={focus}
-                       placeholder={theirs ? `Reply to ${senderName(theirs)}` : 'Reply'}
+                       placeholder={answerer ? `Reply to ${answerer}` : 'Reply'}
                        ready={!!text.trim() && !send.busy} disabled={online ? undefined : OFFLINE_TITLE} />
         </div>
       )}

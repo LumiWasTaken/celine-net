@@ -384,7 +384,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Saved, Remove | a stored secret in a form: it is there, never shown; take it out | Bitwarden "Remove"; Chrome passwords "Saved" |
 | Save key | keep a stored value | GitHub "Save" |
 | Set new Discord token | put in a new token | GitHub "Regenerate token" |
-| Reply, Reply to Bastet | answer a message; answer Bastet in her banner's thread | Gmail, Slack; built on Reply like Intercom's "Reply to" a sender |
+| Reply, Reply to Bastet | answer a message; answer Bastet in her banner's thread; a reply box says "Reply to" and whom it goes to (a thread, what a mission asks) | Gmail, Slack; built on Reply like Intercom's "Reply to" a sender |
 | Restart | start a stopped thing again (a terminal, a server) | Windows, VS Code |
 | Start mission | start a mission | plain |
 | Sync now | sync at once | Google Drive, Thunderbird |

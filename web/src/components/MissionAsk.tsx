@@ -32,7 +32,7 @@ export function MissionAsk({ w, stop = true }: { w: MissionWait; stop?: boolean 
     <div className="mission-ask">
       {w.why && <p className="mission-ask__why">{w.why}</p>}
       {w.text && <p className="mission-ask__text">{w.text}</p>}
-      <ComposerBox value={text} onChange={setText} onSend={() => void send.run()} placeholder="Reply"
+      <ComposerBox value={text} onChange={setText} onSend={() => void send.run()} placeholder={`Reply to ${w.title}`}
                    ready={!!text.trim() && !send.busy} disabled={online ? undefined : OFFLINE_TITLE} />
       <div className="mission-ask__actions">
         {w.open && <Button icon={CircleCheck} loading={done.busy} onClick={() => void done.run()}>Mark as done</Button>}
