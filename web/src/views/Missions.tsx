@@ -408,11 +408,10 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
             {nodes.length > 0 && tree.data && (
               <Section id="m-agents" title="Sub-agents" count={nodes.length}>
                 <div className="missions-rows">{nodes.map(n => <TreeLine key={n.id} n={n} />)}</div>
-                <Facts items={[{ label: 'Tokens', value: `${tree.data.total.prompt_tokens.toLocaleString('en-GB')} input, ${tree.data.total.completion_tokens.toLocaleString('en-GB')} output` }]} />
               </Section>
             )}
             {m.artifact && <Section id="m-result" title="Result"><Result m={m} /></Section>}
-            <Section id="m-set" title="Settings"><Settings m={m} live={convo.settings} agents={agents.length} origin={tree.data?.origin.at(-1)} onChange={onChange} /></Section>
+            <Section id="m-set" title="Settings"><Settings m={m} live={convo.settings} agents={agents.length} origin={tree.data?.origin.at(-1)} total={tree.data?.top === m.conversation_id ? tree.data.total : undefined} onChange={onChange} /></Section>
           </PageIndex>
         </div></div>
       )}
@@ -495,9 +494,12 @@ function Result({ m }: { m: Mission }) {
 }
 
 /* `origin`: the chat or run that started it, the server's (the tree's origin) */
-function Settings({ m, live, agents, origin, onChange }: {
+function Settings({ m, live, agents, origin, total, onChange }: {
   m: Mission; live: ReturnType<typeof useConversation>['settings']; agents: number
-  origin?: { name: string; link: string | null }; onChange: () => void
+  origin?: { name: string; link: string | null }
+  /** what it and everything under it took, the server's (the tree's total, when it is the top) */
+  total?: { prompt_tokens: number; completion_tokens: number }
+  onChange: () => void
 }) {
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(m.conversation_id, on); onChange() })
   return (
@@ -513,6 +515,8 @@ function Settings({ m, live, agents, origin, onChange }: {
         { label: 'Created', value: stamp(m.created_at) },
         ...(origin ? [{ label: 'Started from', value: origin.link ? <a href={origin.link}>{origin.name}</a> : origin.name }] : []),
         ...(agents ? [{ label: 'Sub-agents', value: agentsNoun(agents) }] : []),
+        ...(total && total.prompt_tokens + total.completion_tokens > 0 ? [{ label: 'Tokens',
+          value: `${total.prompt_tokens.toLocaleString('en-GB')} input, ${total.completion_tokens.toLocaleString('en-GB')} output` }] : []),
       ]} />
     </>
   )
