@@ -40,7 +40,7 @@ async def test_the_form_saves_write_only_and_says_how_the_vault_is(vault_app):
     assert r.json()["unlocked"] is True and r.json()["status"] == "Unlocked"
 
     r = await api.put("/api/vault", json={**FORM, "client_secret": "a wrong secret"})
-    assert r.json()["status"] == "The vault refuses the client id or the client secret"
+    assert r.json()["status"] == "The Client ID or client secret is wrong"
     bw.change(reachable=False)
     r = await api.put("/api/vault", json=FORM)
     assert r.json()["status"] == "The vault server is not reachable"
@@ -74,7 +74,7 @@ async def test_the_master_password_is_typed_to_unlock_and_kept_nowhere(vault_app
     out = await vault_app.skill.get(ctx_for(store))
     assert out.is_error and "the vault is locked" in out.content
     r = await api.post("/api/vault/unlock", json={"master_password": "not it"})
-    assert r.json()["status"] == "The vault refuses the master password"
+    assert r.json()["status"] == "The master password is wrong"
     r = await api.post("/api/vault/unlock", json={"master_password": MASTER})
     assert r.json()["status"] == "Unlocked"
     await vault_app.vault.connect()            # what a restart or a save does

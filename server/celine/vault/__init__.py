@@ -49,14 +49,14 @@ ALPHABET = string.ascii_letters + string.digits + SYMBOLS
 NOT_SET = "Not set up"
 UNLOCKED = "Unlocked"
 LOCKED = "Locked: type the master password to unlock it"
-REFUSED_MASTER = "The vault refuses the master password"
+REFUSED_MASTER = "The master password is wrong"
 NO_COLLECTION = ("The collection in Settings, Vault is not one the agent's account is in: invite and "
                  "confirm that account in the organization and give it that collection")
 NO_COLLECTION_SET = ("No collection in Settings, Vault: the agent's entries live only in a "
                      "collection the user shares with it")
 TWO_COLLECTIONS = ("Two of the agent's collections have the name in Settings, Vault: give its id "
                    "instead")
-REFUSED_KEY = "The vault refuses the client id or the client secret"
+REFUSED_KEY = "The Client ID or client secret is wrong"
 UNREACHABLE = "The vault server is not reachable"
 NO_BW = "The app has no bw program: install the Bitwarden CLI where the app runs (the Docker image has it)"
 BROKEN = "The vault could not start"
