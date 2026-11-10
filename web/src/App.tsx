@@ -210,7 +210,7 @@ function Shell() {
             </Button>
           )}
           {paused && (
-            <Button variant="ghost" className="rail__item" href="/settings/models"
+            <Button variant="ghost" className="rail__item" href="/settings/models" title="No chat model answers"
                     onClick={e => { e.preventDefault(); nav.goPath('/settings/models') }}>
               <PauseCircle size={ICON.lg} aria-hidden />
               <span className="rail__label">Paused</span>
