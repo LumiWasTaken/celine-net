@@ -232,7 +232,9 @@ def asked(c: sqlite3.Connection, cid: str | None) -> str | None:
 def facts(c: sqlite3.Connection, r, cfg) -> list[dict]:
     """A run's facts as its page shows them, each {label, value}: Started and Ended
     ("Sun 11 Oct 01:13" in the app's zone), Duration, Started by (a run the clock did not
-    start), Model (the models that answered in its conversation)."""
+    start), Model (the models that answered in its conversation, else the one it was sent
+    to, each its label as the sub-agents tree says it)."""
+    from ..attachments import label
     from ..events import _took
     from ..sub_agents.report import work
     from ..texts import who
@@ -247,8 +249,11 @@ def facts(c: sqlite3.Connection, r, cfg) -> list[dict]:
         out.append({"label": "Duration", "value": took})
     if r["started_by"] != "clock":
         out.append({"label": "Started by", "value": who(cfg, r["started_by"])})
-    if r["conversation_id"] and (models := work(c, r["conversation_id"], whole=True)["models"]):
-        out.append({"label": "Model", "value": ", ".join(dict.fromkeys(models))})
+    cid = r["conversation_id"]
+    models = cid and (work(c, cid, whole=True)["models"] or [c.execute(
+        "SELECT model_id FROM conversations WHERE id = ?", (cid,)).fetchone()[0]])
+    if names := [label(getattr(cfg, "settings", None), m) for m in dict.fromkeys(models or ()) if m]:
+        out.append({"label": "Model", "value": ", ".join(dict.fromkeys(names))})
     return out
 
 

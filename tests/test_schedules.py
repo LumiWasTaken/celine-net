@@ -1142,3 +1142,17 @@ async def test_routines_list_and_read_tell_a_run_in_the_app_zone(store, cfg):
     listed = (await skill.list(ctx)).content
     assert listed.endswith(", last run Fri 30 Oct 02:00 waiting"), listed
     assert "- run:r Fri 30 Oct 02:00 waiting" in (await skill.read(ctx, "world")).content
+
+
+async def test_a_run_no_model_answered_names_the_model_it_was_sent_to(store, cfg):
+    from celine.attachments import label
+    from celine.schedules.api import facts
+
+    def fn(c):
+        c.execute("INSERT INTO conversations(id, title, kind, model_id, created_at, "
+                  "updated_at) VALUES ('cv1', 'Run', 'background', 'main/qwen', ?, ?)",
+                  ("2026-10-10T04:00:00+00:00",) * 2)
+        return facts(c, {"conversation_id": "cv1", "started_at": None, "finished_at": None,
+                         "started_by": "clock"}, cfg)
+    assert await store.write(fn) == [{"label": "Model",
+                                      "value": label(cfg.settings, "main/qwen")}]
