@@ -62,7 +62,7 @@ def _client(request: Request) -> str:
 def not_limited(request: Request) -> None:
     """The per-address limit of the three login routes."""
     if _auth(request).login_limited(_client(request)):
-        raise CelineError("rate_limited", "Too many failed logins. Try again in 15 minutes.",
+        raise CelineError("rate_limited", "Too many failed attempts. Try again in 15 minutes.",
                           429)
 
 
@@ -144,7 +144,7 @@ def _invalid(kind: str, secret: str) -> str | None:
 
 _LOCKED = {"code": "Too many wrong codes. Code entry is locked.",
            "secret": "Too many wrong passwords or PINs from here. Logging in with them is locked.",
-           "pin": "Too many wrong PINs. PIN login is paused."}
+           "pin": "Too many wrong PINs. PIN login is locked."}
 
 
 async def _try(request: Request, lock: str, kind: str, typed: str,
@@ -228,7 +228,7 @@ def _registration_options(request: Request) -> tuple[bytes, dict]:
     return opts.challenge, options_to_json_dict(opts)
 
 
-_SETUP_FAILED = ("register_failed", "The passkey setup failed. Start again.", 400)
+_SETUP_FAILED = ("register_failed", "The passkey setup failed. Press Add passkey to try again.", 400)
 
 
 def _new_passkey(request: Request, kind: str, c: Ceremony, credential: dict):
@@ -241,7 +241,8 @@ def _new_passkey(request: Request, kind: str, c: Ceremony, credential: dict):
             expected_origin=auth.party(c.origin).origins, require_user_verification=True)
     except Exception as e:                          # py_webauthn raises several kinds
         return _reject(request, kind, "verification failed", _err(
-            "register_failed", "The app could not add the passkey. Start again.", 400),
+            "register_failed", "The app could not add the passkey. Press Add passkey to try "
+            "again.", 400),
             error=type(e).__name__)
     if c.code is not None and not _claim(auth, c.code):
         return _reject(request, kind, "code already used", _err(*_SETUP_FAILED))
@@ -414,7 +415,7 @@ async def remove_credential(request: Request, cid: str):
     if this is None:
         return _err("not_found", "That login method is not set up.", 404)
     if len(mine) == 1:
-        return _err("last_credential", "This is your last way to log in.", 409)
+        return _err("last_credential", "Add another way to log in before you remove this one.", 409)
     if this["kind"] == "passkey":
         auth.store.remove_passkey(base64url_to_bytes(cid))
     else:

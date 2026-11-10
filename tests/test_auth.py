@@ -390,7 +390,7 @@ def test_the_last_way_to_log_in_stays(app):
     assert setup_password(app, c).status_code == 200
     [pw] = c.get("/api/auth/credentials").json()["credentials"]
     r = c.delete(f"/api/auth/credentials/{pw['id']}")
-    assert r.status_code == 409 and r.json()["error"]["message"] == "This is your last way to log in."
+    assert r.status_code == 409 and r.json()["error"]["message"] == "Add another way to log in before you remove this one."
     assert c.delete("/api/auth/credentials/999").status_code == 404
     added = c.post("/api/auth/credentials", json={"kind": "pin", "secret": "11112222", "label": "phone"})
     assert added.status_code == 200
