@@ -21,8 +21,9 @@ first that does not, in words:
    ("Runs after World news");
 2. the first model of its role can answer now, the Router says ("Waiting for <model>.
    <why>", the why in the server's words); a server known to be failing is asked again
-   at most every RETRY_DOWN (backends/router.py), and the run starts by itself when the
-   model comes back, the same night or days later;
+   at most every RETRY_DOWN, a model whose try failed is tried again after the busy
+   model backoff (backends/router.py), and the run starts by itself when the model
+   comes back, the same night or days later;
 3. no turn a person waits on is live: a chat (not a trigger's), a turn the user
    started in a mission ("Waiting until your chat is done"); a mission's
    turns that go on by themselves hold no run unless Routines wait for missions is on
@@ -66,9 +67,11 @@ when its conversation and its sub-agents are quiet and every sub-agent has repor
 night's backups (schedules/backups.py: once a night, the later runs find them made).
 
 When a run fails. A run is never re-asked or rewritten. When its turn fails and the
-Router says the role's model cannot answer (it is unreachable, or none is set), the run
-is `waiting` for it ("Waiting for <model>"), its conversation kept (after a cut stream
-the server is asked first, `_failed_why`); the first run of a night that waits so sends
+Router says the role's model cannot answer (it is unreachable, none is set, or it does
+not serve), the run is `waiting` for it ("Waiting for <model>"), its conversation kept
+(after an error the model may answer again, a cut stream or a 5xx, the server is asked
+first, and the model gets one token's try, Router.serves: `_failed_why`); the first run
+of a night that waits so sends
 one notice; when the Router sees
 the model answer, the run starts again and continues that failed turn in the same
 conversation (turns/store.continue_turn: the stored context, no new prompt). Any other
@@ -837,14 +840,18 @@ class Scheduler:
 
     async def _failed_why(self, role: str, code: str, error: str) -> str | None:
         """Why a run whose turn failed waits instead of failing, else None: its turn got
-        no model (`no_model`), or the Router's state, as the failure left it (after a
-        cut stream: as its server answers now), says the run's model cannot answer. A model that answered with an error it may answer
-        again fails the run, as its schedule's When a run fails says (`_fail`)."""
+        no model (`no_model`), or the Router's state, as the failure left it (after an
+        error it may answer again: as its server answers now, and as one token's try of
+        its model says), says the run's model cannot answer. A model that answers that
+        try fails the run, as its schedule's When a run fails says (`_fail`)."""
         router = getattr(self.app.llm, "router", None)
         if code == "backend_retryable" and getattr(router, "probe", None) is not None \
                 and (refs := router.chain(role)):
-            # the stream was cut: the server is asked now, so one that went away is known
+            # the server is asked now, so one that went away is known; a server that
+            # answers is asked whether the model serves, which its model list cannot say
             await router.probe(router.s.split(refs[0])[0], max_age=0, strict=True)
+            if getattr(router, "serves", None) is not None:
+                await router.serves(refs[0])
         if (why := await self._model_why(role, probe=False)) is not None:
             return why
         if code == "no_model":
