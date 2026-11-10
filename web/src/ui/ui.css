@@ -1242,7 +1242,8 @@ span.picture__fav { display: grid; place-items: center; width: var(--h-sm); heig
 /* ── Help: the "?" after a name, opening what it does (a native popover, top layer) ── */
 .help {
   display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; flex: none;
-  padding: var(--s-1); margin: calc(-1 * var(--s-1)) 0 calc(-1 * var(--s-1)) var(--s-0);
+  padding: calc((var(--hit-min) - var(--icon-sm)) / 2);
+  margin: calc(-1 * (var(--hit-min) - var(--icon-sm)) / 2) 0 calc(-1 * (var(--hit-min) - var(--icon-sm)) / 2) var(--s-0);
   border-radius: var(--r-full); color: var(--text-muted); cursor: pointer;
   transition: color var(--dur-fast) var(--ease);
 }
