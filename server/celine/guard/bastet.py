@@ -101,12 +101,11 @@ TOOL_WORDS = {"shell__run": "a command", "shell__type": "a command",
 
 
 def tool_words(name: str) -> str:
-    """A tool as people read it, in plain words: shell__run is "a command"."""
+    """A tool as people read it: shell__run is "a command", else its Tools page label."""
+    from ..settings.tools_meta import label
     if name in TOOL_WORDS:
         return TOOL_WORDS[name]
-    if name.startswith("browser__"):
-        return "a browser step"
-    return f"a {name.split('__')[0].replace('_', ' ')} step"
+    return label(name)
 
 
 def plain(cfg, rule: str | None, tool: str | None = None) -> str:
@@ -115,7 +114,7 @@ def plain(cfg, rule: str | None, tool: str | None = None) -> str:
     what = sub(cfg, rules.plain(rule))
     if tool == "patrol":
         return f"{what}, found looking back at an earlier turn"
-    return f"{what} ({tool.replace('__', ' ').replace('_', ' ')})" if tool else what
+    return f"{what} ({tool_words(tool)})" if tool else what
 
 
 def sub(cfg, text: str) -> str:

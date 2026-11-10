@@ -23,6 +23,7 @@ import shlex
 from dataclasses import dataclass
 from urllib.parse import unquote, unquote_plus, urlsplit
 
+from ..settings.tools_meta import label
 from .trigger import EGRESS, EMAIL, HANDLE, URL, norm, shared_run, strings, texts, to_house
 
 CLASSES = ("public", "informal", "nsfw", "unclassed", "sensitive")   # loosest first
@@ -144,7 +145,7 @@ async def private(store, turn: dict, request: list[dict]) -> list[Private]:
             d = json.loads(r["display"] or "{}") or {}
             content = tools[r["id"]].get("content")
             if isinstance(content, str) and d.get("class"):
-                out.append(Private(content, d["class"], d.get("path") or r["name"]))
+                out.append(Private(content, d["class"], d.get("path") or label(r["name"])))
     return [p for p in out if p.cls != "public" and p.text.strip()]
 
 
@@ -362,7 +363,7 @@ def damage(call: dict) -> str | None:
     that removes what matters or overwrites."""
     bare = call["name"].split("__", 1)[-1]
     if not call.get("read_only") and DESTROY_TOOL.search(bare):
-        return f"{call['name']} {bare.replace('_', ' ')}s"
+        return label(call["name"])
     has, cmd = _command(call)
     if m := DESTROY.search(cmd):
         return f"{has}{m.group(0).strip()}"

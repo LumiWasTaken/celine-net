@@ -196,7 +196,7 @@ async def test_the_private_corpus_holds_its_notes_and_classed_results_not_public
         {"role": "tool", "tool_call_id": "a", "content": "Bob's number is 0151 2345678"},
         {"role": "tool", "tool_call_id": "b", "content": "a public page"}])
     assert [(p.where, p.cls) for p in got] == [("people/sam.md", "sensitive"),
-                                               ("email__read", "sensitive")]
+                                               ("Email: read", "sensitive")]
 
 
 # ---- each rule: its trigger and its outcome --------------------------------------------

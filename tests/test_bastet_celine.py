@@ -232,7 +232,7 @@ async def test_the_agents_unfrozen_line_names_the_what_never_the_rule_or_the_pie
     await freeze.unfreeze(app, by=OWNER)
     line = await awareness.unfrozen_line(store, cfg, ZoneInfo("UTC"))
     assert line.startswith("Bastet froze you at ") and \
-        ": private text leaving the house (web search). User unfroze you at " in line
+        ": private text leaving the house (a web search). User unfroze you at " in line
     assert "leak" not in line and "Hauptstraße" not in line
     assert await awareness.unfrozen_line(store, cfg, ZoneInfo("UTC")) is None, "once"
 

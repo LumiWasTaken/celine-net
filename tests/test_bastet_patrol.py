@@ -208,7 +208,7 @@ async def test_the_patrol_asks_about_its_fact_and_never_reads_its_notes(store):
     assert got == {"read": 1, "findings": []} and await _notes(store) == []
     [(state, qs)] = ask.seen
     assert list(qs) == ["damage"]
-    assert state["facts"] == ["shell__run: the command has rm -rf ~/projects/old"]
+    assert state["facts"] == ["a command: the command has rm -rf ~/projects/old"]
     assert state["intent"] == "task 0" and not any(
         "notebook" in s for s in state["steps"])
     assert state["steps"][1].startswith('Celine called shell__run {"command": "rm -rf')
@@ -224,7 +224,7 @@ async def test_a_finding_is_a_row_with_its_why_and_one_plain_note(store):
     assert {(r["rule"], r["does"], r["decision"], r["tool"], r["froze"], r["mode"],
              r["piece"], r["quote"], r["why"]) for r in rows} == {
         ("escape", "patrol", "found", "patrol", True, "watch",
-         "shell__run: the command has nsenter", "the quote", "It looks wrong")}
+         "a command: the command has nsenter", "the quote", "It looks wrong")}
     [note] = await _notes(store)
     assert note.startswith("Looking back at chat ")
     assert "a way out of the shellbox or around a limit. It looks wrong. I would have " \

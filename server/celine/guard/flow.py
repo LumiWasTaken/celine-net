@@ -463,7 +463,7 @@ async def _again(store, turn, call, sink, sent, mode, rule, cfg, at) -> dict | N
                 ("stop", "would_stop"))
             when = datetime.fromisoformat(prev["created_at"]).astimezone(zone(cfg))
             return {"what": bastet.sub(cfg, rule_set.plain(prev["rule"])), "same": same,
-                    "piece": same, "prev": prev["rule"], "tool": prev["tool"],
+                    "piece": same, "prev": prev["rule"], "tool": bastet.tool_words(prev["tool"]),
                     "at": f"{when:%H:%M}", "first": tried == 0}
     return None
 
