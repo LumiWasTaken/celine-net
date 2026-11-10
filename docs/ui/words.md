@@ -245,7 +245,7 @@ block at the end of this file lists the words no UI string uses.
 | Trigger, Triggers, Folder, Event | what starts a run: changes in a folder, or an event of a source | Zapier, GitHub Actions |
 | Schedule, Runs after, Reviewer, Turns | Routines | GitHub Actions "schedule" |
 | No runs | a day in Routines with nothing in it | GitHub Actions "no workflow runs" |
-| When a run fails, Retry, Skip | a schedule's choice in Limits: Retry runs a failed run again for the same day, 15 minutes after it failed, then 1 hour and 4 hours after each failed retry, never past the next run; Skip ends it Skipped with no notice | GitHub Actions "Re-run jobs", "Skipped" |
+| When a run fails, Retry, Skip | a schedule's choice in Limits: Retry runs a failed run again for the same day, 15 minutes after it failed, then 1 hour and 4 hours after each failed retry, never past the next run; Skip ends it Skipped with no notice, and its day is marked as one with a failed run; a day with a run that waits for its model is marked too, and the first such run of a day sends one notice | GitHub Actions "Re-run jobs", "Skipped" |
 | Retry, Retry of, Retried | on a failed, skipped or stopped run's page: run it again now; the facts that link a retry and the run it retries | GitHub Actions "Re-run", "Attempt #2" |
 | Only when the app is idle, Time limit | a schedule's Limits: it starts only while nobody uses the app; the most minutes a run may work | plain |
 | Cron | only the label of a cron expression field | cron, Vercel "Cron Jobs" |

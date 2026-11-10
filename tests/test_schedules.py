@@ -231,6 +231,11 @@ async def test_a_run_waits_for_a_model_and_for_what_it_follows_then_runs_its_own
             ("2026-10-09", "world", "waiting"), ("2026-10-09", "day", "waiting")]
         assert rows[0]["reason"] == "Waiting for a model. llama-swap does not answer"
         assert rows[1]["reason"] == "Runs after World"
+        assert await _notices(store) == 1, "the night's first wait for its model is told"
+        router.why = "llama-swap is loading"
+        await sched.tick()
+        assert (await _runs(store))[0]["reason"] == "Waiting for a model. llama-swap is loading"
+        assert await _notices(store) == 1, "once a night"
 
         router.why = None                                 # the next day, Nix is on
         await sched.tick()
@@ -471,6 +476,47 @@ async def test_a_turn_that_got_no_model_leaves_the_run_waiting_not_failed(store,
     assert await _turns(store, row["conversation_id"]) == 1, "continued, not asked again"
 
 
+class Cut(FakeBackend):
+    """Every stream is cut: an error the model may answer again."""
+
+    async def stream(self, messages, tools, body=None):
+        raise BackendError("the stream was cut", retryable=True)
+        yield  # unreachable: makes this a generator
+
+
+class Asked(Router):
+    """Answers until its server is asked (`probe`), which finds it gone."""
+
+    def __init__(self):
+        self.why, self.asked = None, []
+        self.s = SimpleNamespace(split=lambda ref: ref.split("/"), providers={},
+                                 model=lambda ref: None)
+
+    def chain(self, role):
+        return ["gpu-box/heretic"]
+
+    async def probe(self, pid, max_age=0, strict=False):
+        self.asked.append((pid, max_age, strict))
+        self.why = "gpu-box does not answer."
+
+
+async def test_a_cut_stream_asks_the_server_and_a_gone_model_leaves_the_run_waiting(
+        store, cfg):
+    cfg.schedules = {"world": _s("world")}
+    router, backend = Asked(), Cut()
+    app = _app(store, cfg, backend, llm=SimpleNamespace(router=router))
+    async with _scheduler(store, cfg, app, backend, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)),
+                          routed=True) as sched:
+        run = await sched.run_now("world")
+        await sched.tick()
+        await until(lambda: router.asked)
+        await until(lambda: _state(store, run["id"], "waiting"))
+        await until(lambda: _idle(sched))
+    [row] = await _runs(store)
+    assert router.asked == [("gpu-box", 0, True)]
+    assert row["reason"] == "Waiting for heretic on gpu-box. gpu-box does not answer."
+
+
 async def test_time_waiting_for_a_model_does_not_count_against_the_ceiling(store, cfg):
     """A run whose calls wait for a model (a slot, a busy server, a GPU lease) past its
     limit is still running: the limit counts work. Past it with no wait, it fails."""
@@ -492,6 +538,37 @@ async def test_time_waiting_for_a_model_does_not_count_against_the_ceiling(store
     await sched._watch()
     assert sched.current == "r1", "50 minutes waiting for a model are not work"
     assert sched._clock.left() == timedelta(minutes=30)
+    clock.at += timedelta(minutes=31)
+    await sched._watch()
+    [row] = await _runs(store)
+    assert row["state"] == "failed" and row["error"] == "Ran over 30 minutes"
+
+
+async def test_a_run_whose_turn_waits_for_the_pause_does_not_reach_its_ceiling(store, cfg):
+    """Its model went away mid-run: its next turn stays queued while the agent is paused.
+    That time is no work of the run's; after the pause its limit counts on."""
+    from celine.backends.llm import HeldClock
+    cfg.schedules = {"world": _s("world")}
+    clock = Clock(datetime(2026, 10, 10, 2, tzinfo=UTC))
+    router = SimpleNamespace(paused=True, answering=lambda: [])
+    sched = Scheduler(_app(store, cfg, FakeBackend(echo=True),
+                           llm=SimpleNamespace(router=router)), clock)
+    cid = await conversations.for_trigger(store, "run:r1", "World news")
+    await store.write(lambda c: c.execute(
+        "INSERT INTO runs (id, schedule, label, slot, night, state, conversation_id, "
+        "created_at) VALUES ('r1', 'world', 'World news', ?, '2026-10-09', 'running', ?, ?)",
+        (iso(clock.at), cid, iso(clock.at))))
+    assert (await Intercom(store).send("system:schedules", f"agent:{cid}", "Go.",
+                                       kind="trigger"))["turn_id"], "its turn is queued"
+    sched.current = "r1"
+    sched._clock, sched._over = HeldClock(timedelta(minutes=30), clock), "Ran over 30 minutes"
+    await sched._watch()
+    clock.at += timedelta(minutes=50)
+    await sched._watch()
+    [row] = await _runs(store)
+    assert row["state"] == "running", "50 minutes paused are not work"
+    router.paused = False
+    await sched._watch()
     clock.at += timedelta(minutes=31)
     await sched._watch()
     [row] = await _runs(store)

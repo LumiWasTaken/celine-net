@@ -110,7 +110,7 @@ async def test_a_skip_routine_that_fails_ends_skipped_with_no_notice_and_no_run_
         await until(lambda: _state(store, run["id"], "skipped"))
         await until(lambda: _idle(sched))
     [row] = await _runs(store)
-    assert "the model broke" in row["reason"] and row["error"] is None
+    assert "the model broke" in row["reason"] and row["error"] == row["reason"]
     assert await _notices(store) == 0
     from celine.skills.conversations import _ended
     assert await store.read(lambda c: _ended(c, row["conversation_id"], f"run:{row['id']}")) \
@@ -282,9 +282,22 @@ async def test_a_night_is_failed_only_when_a_newest_try_failed(tmp_path, monkeyp
     await _row(store, state="done", night=a, slot="02:15", again_of=first)
     await _row(store, state="done", night=b)
     await _row(store, schedule="day", night=b, slot="03:00")
+    # a Skip routine's failed run keeps its error; a run waits for its model
+    c_, d = (tonight - timedelta(days=3)).isoformat(), (tonight - timedelta(days=4)).isoformat()
+    skipped = await _row(store, state="skipped", night=c_)
+    held = await _row(store, state="waiting", night=d)
+    quiet = await _row(store, schedule="day", state="skipped", night=d, slot="03:00")
+    await store.write(lambda c: (
+        c.execute("UPDATE runs SET error='the model broke' WHERE id=?", (skipped,)),
+        c.execute("UPDATE runs SET reason='Waiting for a model. gpu-box does not answer.' "
+                  "WHERE id=?", (held,)),
+        c.execute("UPDATE runs SET reason=? WHERE id=?", (runs_mod.IN_USE, quiet))))
     async with client(app) as api:
-        nights = {n["night"]: n["failed"] for n in (await api.get("/api/runs")).json()["nights"]}
+        got = (await api.get("/api/runs")).json()["nights"]
+    nights = {n["night"]: n["failed"] for n in got}
     assert (nights[a], nights[b], nights[tonight.isoformat()]) == (False, True, False)
+    assert (nights[c_], nights[d]) == (True, False)
+    assert {n["night"] for n in got if n["waiting"]} == {d}
 
 
 def test_reason_why_leaves_out_the_waiting_its_state_word_says():

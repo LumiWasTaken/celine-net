@@ -97,8 +97,9 @@ export type Run = {
   retried: { id: string; at: string } | null
 }
 
-/** one of the fourteen days: failed when a schedule's newest try that day failed */
-export type Night = { night: string; failed: boolean }
+/** one of the fourteen days: failed when a schedule's newest try that day failed or ended
+    with an error, waiting while a run of it waits for its model */
+export type Night = { night: string; failed: boolean; waiting: boolean }
 
 export type Runs = { runs: Run[]; nights: Night[]; tonight: string }
 

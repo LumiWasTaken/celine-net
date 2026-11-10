@@ -67,12 +67,15 @@ night's backups (schedules/backups.py: once a night, the later runs find them ma
 
 When a run fails. A run is never re-asked or rewritten. When its turn fails and the
 Router says the role's model cannot answer (it is unreachable, or none is set), the run
-is `waiting` for it ("Waiting for <model>"), its conversation kept; when the Router sees
+is `waiting` for it ("Waiting for <model>"), its conversation kept (after a cut stream
+the server is asked first, `_failed_why`); the first run of a night that waits so sends
+one notice; when the Router sees
 the model answer, the run starts again and continues that failed turn in the same
 conversation (turns/store.continue_turn: the stored context, no new prompt). Any other
 failure ends it, in one place (`_fail`), as its schedule's When a run fails (`on_fail`)
 says: a model error, a tool error that ends its turn, its turn stopped, or its ceiling.
-Skip: the run is `skipped` with the error as its reason, and nothing tells it. Retry:
+Skip: the run is `skipped` with the error as its reason and its `error`, with no
+notice; its day shows it. Retry:
 the run is `failed` with the error; a run that failed on an error (not its ceiling, not
 a stop) runs again as a fresh run of its prompt, up to three times (RUN_AGAIN: 15
 minutes, 1 hour, then 4 hours after the try before): a waiting run `again_of` it, for the
@@ -141,6 +144,7 @@ PASSED = f"More than {IDLE_MINUTES} minutes late"
 NEXT_DUE = "The next run was due"     # a Skip routine's older waiting run, at a newer slot
 RETRY_OF = "Retry of the {at} run"    # a Retry routine's run again, until its time
 HELD = "Waiting for the model"         # a running run's reason while its work waits (view)
+MODEL_WAIT = "Waiting for "            # how a waiting run's reason starts while its model cannot answer
 # a run's row for `view`, with the slot of the run it runs again and the id and slot of
 # the run that runs it again (`retried`)
 ROW = ("SELECT r.*, a.slot AS again_slot, x.id AS retried, x.slot AS retried_slot "
@@ -310,13 +314,14 @@ def _insert(c: sqlite3.Connection, store, cfg, name: str, slot: datetime,
 def _fail(c: sqlite3.Connection, store, cfg, rid: str, s, error: str, again: bool,
           at: datetime) -> dict:
     """Inside a write: the one place a run ends unfinished, as its schedule's When a run
-    fails says. Skip: `skipped`, `error` its reason, no notice. Retry: `failed` with
+    fails says. Skip: `skipped`, `error` its reason and its error, no notice. Retry: `failed` with
     `error`; a run that failed on an error (`again`: not its time limit, not a stop) with
     fewer than len(RUN_AGAIN) tries before it runs again, RUN_AGAIN[tries] from `at` for
     the same night, when that is before the schedule's next slot: a waiting run `again_of`
     it, its notice left to how that ends. Otherwise the notice. -> the run's view."""
     if s is not None and s.on_fail == "skip":
-        return _set(c, store, cfg, rid, state="skipped", reason=error, finished_at=now())
+        return _set(c, store, cfg, rid, state="skipped", reason=error, error=error,
+                    finished_at=now())
     r = c.execute("SELECT * FROM runs WHERE id = ?", (rid,)).fetchone()
     tz = zone(cfg)
     tries = len(_chain(c, r)) - 1
@@ -459,6 +464,7 @@ class Scheduler:
         self._over = ""                       # the reason it fails with past the limit
         self._scope: anyio.CancelScope | None = None   # its work, for `end`
         self._turn_ended = anyio.Event()      # set and replaced at every turn or job end
+        self._told: set[str] = set()          # the nights whose wait for a model was told
         on_end = getattr(app.dispatcher, "on_end", None)
         if on_end is not None:               # a turn ended: a run may start or be over
             on_end(self._ended)
@@ -705,8 +711,18 @@ class Scheduler:
                 self._start(r)
                 continue
             if why != r["reason"]:
-                await store.write(lambda c, r=r, why=why: _set(
-                    c, store, self.app.cfg, r["id"], reason=why))
+                # the first run of a night that waits for its model tells the user
+                tell = why.startswith(MODEL_WAIT) and r["night"] not in self._told
+                if tell:
+                    self._told.add(r["night"])
+
+                def fn(c: sqlite3.Connection, r=r, why=why, tell=tell) -> None:
+                    out = _set(c, store, self.app.cfg, r["id"], reason=why)
+                    if tell:
+                        from ..events import notice
+                        notice(store, c, "run", out["label"], why,
+                               homes.run_link(out["night"], r["id"]), f"run:{r['id']}:waits")
+                await store.write(fn)
 
     def _start(self, r: dict) -> None:
         """Run `r` runs now, in the task group, with a new clock for its ceiling."""
@@ -736,16 +752,40 @@ class Scheduler:
     async def _watch(self) -> None:
         """The running run's ceiling (module docstring) fails it. The ceiling counts the
         run's work: while a call of its conversation or of a sub-agent under it waits for
-        a model, its clock stands still (backends/llm.HeldClock). A request of the agent's that
+        a model, or a turn of theirs waits for the pause (`_paused`), its clock stands
+        still (backends/llm.HeldClock). A request of the agent's that
         waits for the user runs on the clock; when the limit ends the run meanwhile, the
         reason names it (approvals.lapsed)."""
-        left = self._clock.left() if self._clock is not None else None
+        rid, clock = self.current, self._clock
+        row = await self.app.store.read(lambda c: c.execute(
+            "SELECT conversation_id FROM runs WHERE id = ?", (rid,)).fetchone())
+        if clock is not None and row and row[0]:
+            # ponytail: looked at once a tick, so up to TICK seconds of a pause count as work
+            idle = await self._paused(row[0])
+            if idle != getattr(clock, "idle", False):
+                clock.idle = idle
+                clock.hold() if idle else clock.release()
+        left = clock.left() if clock is not None else None
         if left is not None and left < timedelta(0):
-            rid, approvals = self.current, getattr(self.app, "approvals", None)
-            row = await self.app.store.read(lambda c: c.execute(
-                "SELECT conversation_id FROM runs WHERE id = ?", (rid,)).fetchone())
+            approvals = getattr(self.app, "approvals", None)
             why = approvals.lapsed(row[0]) if approvals is not None and row and row[0] else None
             await self.end(rid, "failed", why or self._over, ("running",))
+
+    async def _paused(self, cid: str) -> bool:
+        """A turn of the run's conversation `cid`, or of a sub-agent under it, is queued
+        and waits for the pause (hold.py): the run's clock stands still meanwhile."""
+        from .. import hold
+        models = hold.answering(getattr(self.app, "llm", None))
+        if models is None:
+            return False
+
+        def fn(c: sqlite3.Connection) -> bool:
+            family = conversations.family(c, cid)
+            return c.execute(
+                "SELECT 1 FROM turns t JOIN conversations c ON c.id = t.conversation_id "
+                f"WHERE t.state = 'queued' AND {hold.held_sql(models)} AND c.id IN "
+                f"({','.join('?' * len(family))}) LIMIT 1", family).fetchone() is not None
+        return await self.app.store.read(fn)
 
     def _idle_skip(self, r: dict, s, unused: bool) -> str | None:
         """Why an `idle_only` run is skipped now, None when it may wait on: one that
@@ -791,18 +831,22 @@ class Scheduler:
         refs = router.chain(role) if getattr(router, "chain", None) else []
         if refs:
             from ..settings.agent_models import label
-            return f"Waiting for {label(router.s, refs[0])}. {why}"
-        return f"Waiting for a model. {why}"
+            return f"{MODEL_WAIT}{label(router.s, refs[0])}. {why}"
+        return f"{MODEL_WAIT}a model. {why}"
 
     async def _failed_why(self, role: str, code: str, error: str) -> str | None:
         """Why a run whose turn failed waits instead of failing, else None: its turn got
-        no model (`no_model`), or the Router's state, as the failure left it, says the
-        run's model cannot answer. A model that answered with an error it may answer
+        no model (`no_model`), or the Router's state, as the failure left it (after a
+        cut stream: as its server answers now), says the run's model cannot answer. A model that answered with an error it may answer
         again fails the run, as its schedule's When a run fails says (`_fail`)."""
+        router = getattr(self.app.llm, "router", None)
+        if code == "backend_retryable" and getattr(router, "probe", None) is not None \
+                and (refs := router.chain(role)):
+            # the stream was cut: the server is asked now, so one that went away is known
+            await router.probe(router.s.split(refs[0])[0], max_age=0, strict=True)
         if (why := await self._model_why(role, probe=False)) is not None:
             return why
         if code == "no_model":
-            router = getattr(self.app.llm, "router", None)
             return self._waiting(router, role, error) if router is not None else None
         return None
 

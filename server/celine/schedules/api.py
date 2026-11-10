@@ -2,6 +2,7 @@
 schedules/edit.py's, the same as its own (schedules/skill.py)."""
 from __future__ import annotations
 
+import sqlite3
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
@@ -13,7 +14,7 @@ from ..settings.files import Invalid
 from ..settings.registry import ROLES
 from ..clock import zone
 from . import VARIABLES, fill, night_of, run_date, run_roles, shown, words
-from .runs import IDLE_MINUTES, ROW, STOPPED, first_slot, results, \
+from .runs import IDLE_MINUTES, MODEL_WAIT, ROW, STOPPED, first_slot, results, \
     view as run_view
 
 router = APIRouter(prefix="/api")
@@ -179,7 +180,8 @@ async def list_runs(request: Request, night: str | None = None,
     """{runs, nights, tonight}: the runs of `night` (default: tonight) or of one
     `schedule` (its newest 50), oldest slot first; `nights` the NIGHTS nights up to
     `until` (default and at most tonight), newest first, each {night, failed: the newest
-    try of one of its schedules failed}. A run's `asked`: an approval waits in it or in a
+    try of one of its schedules failed or ended with an error, waiting: a run of it
+    waits for its model}. A run's `asked`: an approval waits in it or in a
     sub-agent of it (approvals.asked)."""
     from ..approvals import asked
     services = request.app.state.services
@@ -198,14 +200,17 @@ async def list_runs(request: Request, night: str | None = None,
         else:
             rows = c.execute(f"{ROW} WHERE r.night = ? ORDER BY r.slot", (which,)).fetchall()
         # each schedule's newest try of each night (a later slot replaces an earlier one)
-        newest: dict[tuple[str, str], str] = {}
-        for d in c.execute("SELECT night, schedule, state FROM runs WHERE night >= ? AND "
-                           "night <= ? ORDER BY slot", (first, last.isoformat())):
-            newest[(d["night"], d["schedule"])] = d["state"]
+        newest: dict[tuple[str, str], sqlite3.Row] = {}
+        for d in c.execute("SELECT night, schedule, state, error, reason FROM runs WHERE "
+                           "night >= ? AND night <= ? ORDER BY slot",
+                           (first, last.isoformat())):
+            newest[(d["night"], d["schedule"])] = d
         return [run_view(r, cfg, r["id"] == held) for r in rows], newest
     runs, newest = await store.read(fn)
-    failed = {n for (n, _), state in newest.items() if state == "failed"}
-    nights = [{"night": n, "failed": n in failed} for n in
+    failed = {n for (n, _), d in newest.items() if d["state"] == "failed" or d["error"]}
+    waiting = {n for (n, _), d in newest.items()
+               if d["state"] == "waiting" and d["reason"].startswith(MODEL_WAIT)}
+    nights = [{"night": n, "failed": n in failed, "waiting": n in waiting} for n in
               ((last - timedelta(days=i)).isoformat() for i in range(NIGHTS))]
     runs = [{**r, "asked": r["conversation_id"] in waits} for r in runs]
     return {"runs": runs, "nights": nights, "tonight": tonight.isoformat()}

@@ -2,7 +2,8 @@
    Triggers with their counts, then the day's runs. Runs: one day as a timeline (the
    schedules at their times, a run on each, a run that runs after another drawn as a line to
    it), fourteen days as a row above it (a day whose newest try of a schedule failed in
-   the error tone; Earlier and Later step through older ones), the state and the schedule
+   the error tone, one with a run that waits for its model in the warn tone; Earlier and
+   Later step through older ones), the state and the schedule
    to narrow it. Each run says its state as a word and the server's line under it. A run
    opens on its page (its result, the turns with a reviewer, what it started, what it was
    asked; Run now, Retry, Stop). A schedule opens to edit (when, what it runs after, who,
@@ -255,7 +256,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
   const [of, setOf] = useState<string | null>(null)
   const act = useAction(async (fn: () => Promise<unknown>) => { await fn() })
   const OF: Record<string, State[]> = { all: ['planned', 'waiting', 'running', 'done', 'failed', 'skipped', 'stopped'],
-                                        running: ['running'], waiting: ['waiting'], failed: ['failed'], done: ['done'] }
+                                        running: ['running'], waiting: ['waiting'], failed: ['failed'], skipped: ['skipped'], done: ['done'] }
   const shown = nodes.filter(n => OF[show]!.includes(n.state) && (!of || n.schedule?.name === of)
     && (!q.trim() || n.label.toLowerCase().includes(q.trim().toLowerCase())))
   const ran = nodes.filter(n => n.run)
@@ -267,7 +268,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
       : n.schedule ? [{ label: 'Run now', icon: Play, onSelect: () => void act.run(async () => { const r = await routinesApi.runNow(n.schedule!.name); go({ night: r.run.night, run: r.run.id }) }) }] : []),
     ...(n.schedule ? ['sep' as const, { label: 'Edit', icon: Pencil, detail: n.schedule.title, onSelect: () => go({ schedule: n.schedule!.name }) }] : []),
   ]
-  // the strip: fourteen days, oldest left, a failed one in the error tone
+  // the strip: fourteen days, oldest left, a failed one in the error tone, one that waits for its model in the warn tone
   const newest = days[0]?.night ?? today
   const strip = useRef<HTMLDivElement>(null)
   useEffect(() => { strip.current?.querySelector('[aria-checked="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, [night, days])
@@ -282,9 +283,10 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
           <Segmented label="Day" className="routines-days__strip" value={night} onChange={d => go({ night: d }, true)}
                      options={[...days].reverse().map(n => {
                        const day = `${weekdayOf(n.night)} ${Number(n.night.slice(8))}`
-                       // the error tone is not the only sign: its name says a run failed
-                       return { value: n.night, title: n.failed ? `${nightWords(n.night)}, a run failed` : nightWords(n.night),
-                                label: n.failed ? <StateWord tone="error">{day}</StateWord> : day }
+                       // the tone is not the only sign: its name says a run failed or waits
+                       const said = n.failed ? 'a run failed' : n.waiting ? 'a run waits for its model' : ''
+                       return { value: n.night, title: said ? `${nightWords(n.night)}, ${said}` : nightWords(n.night),
+                                label: said ? <StateWord tone={n.failed ? 'error' : 'warn'}>{day}</StateWord> : day }
                      })} />
           <IconButton icon={ChevronRight} size="sm" label="Later" disabled={newest >= today} onClick={onLater} />
         </div>
@@ -293,6 +295,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                    { value: 'running', label: STATE_WORD.running, count: ran.filter(n => n.state === 'running').length },
                    { value: 'waiting', label: STATE_WORD.waiting, count: ran.filter(n => n.state === 'waiting').length },
                    { value: 'failed', label: STATE_WORD.failed, count: ran.filter(n => n.state === 'failed').length },
+                   { value: 'skipped', label: STATE_WORD.skipped, count: ran.filter(n => n.state === 'skipped').length },
                    { value: 'done', label: STATE_WORD.done, count: ran.filter(n => n.state === 'done').length }] }}
                  filters={[{ label: 'Schedule', icon: CalendarClock, picked: of ? label(of) : undefined, onClear: () => setOf(null),
                              items: all.map(s => ({ label: s.title, current: s.name === of, onSelect: () => setOf(s.name) })) }]} />
