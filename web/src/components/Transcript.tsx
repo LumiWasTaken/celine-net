@@ -72,7 +72,7 @@ function eventOf(m: Message, user: string, assistant: string): { heading: ReactN
   if (ic.kind === 'message' && ic.from === 'user' && !ic.due_at) return null
   if (ic.due_at) return { heading: 'Reminder', body: m.content, icon: Bell }
   if (ic.kind === 'brief') {
-    return { heading: ic.data.changed ? 'Instructions changed' : `Instructions from ${ic.from === 'user' ? you : assistant}`, body: m.content }
+    return { heading: ic.data.changed ? 'Instructions changed' : `Instructions from ${sender}`, body: m.content }
   }
   if (ic.kind === 'notice') return { heading: ic.data.time_limit ? 'Time limit' : `Notice from ${sender}`, body: m.content }
   if (ic.kind === 'report' && ic.data.mission) {
@@ -215,8 +215,9 @@ export function Transcript(
 
   const { hide_thinking, hide_tools, collapse_thinking } = useAppearance()
   const sawTitle = 'Model requests'
+  // whose conversation this is: a sub-agent's thoughts carry its own name
   const owner = useOwner()
-  const thoughtsTitle = `${owner} thoughts`
+  const thoughtsTitle = `${assistant ? `${assistant}'s` : owner} thoughts`
   // the message being written now: its row keeps its place, empty
   const liveId = running ? live?.message_id ?? (streaming ? last?.id : undefined) : undefined
   const thoughtsOf = (msgs: Message[]) => {
