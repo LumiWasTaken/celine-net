@@ -287,11 +287,11 @@ def queue_turn(c: sqlite3.Connection, store, cid: str, root: str | None, *,
     """A queued turn answering `root`; None: the active leaf when a worker takes it
     (turns/store.py claim), so turns queued together answer one after the other.
     `again` is the message it writes a new version of (an answer again: text only).
-    -> (turn id, seq). ValueError: a stopped mission's conversation, where nothing runs
-    again."""
+    -> (turn id, seq). ValueError: a stopped mission's conversation: the user's
+    message starts it again (intercom/service.py send), nothing else does."""
     if c.execute("SELECT 1 FROM missions WHERE conversation_id=? AND status='stopped'",
                  (cid,)).fetchone():
-        raise ValueError("The mission is stopped. Start a new one.")
+        raise ValueError(errors.MISSION_STOPPED)
     if origin == "user":
         from ..plans.store import answered_sync
         answered_sync(c, store, cid)

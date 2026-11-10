@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..conversations import store as conversations
 from ..core.ids import iso, parse_when
-from ..errors import CelineError, NotFound
+from ..errors import MISSION_STOPPED, CelineError, NotFound
 from . import store as missions
 from .store import book_time_limit
 from ..clock import zone
@@ -202,12 +202,12 @@ def _announce(store, row: dict | None) -> None:
 @router.patch("/missions/{cid}")
 async def edit_mission(request: Request, cid: str, body: MissionEdit) -> dict:
     """The given fields only; a changed one reaches it as a message. A stopped
-    mission takes no change: nobody would read it."""
+    mission takes none until the user writes to it."""
     store, cfg = request.app.state.services.store, request.app.state.services.cfg
     tz = zone(cfg)
     row = await _mission(request, cid)
     if row["status"] == "stopped":
-        raise CelineError("stopped", "The mission is stopped. Start a new one.", 409)
+        raise CelineError("stopped", MISSION_STOPPED, 409)
     given = body.model_fields_set
     changes: dict = {}
     for key in ("name", "brief", "report_to"):

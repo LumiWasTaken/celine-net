@@ -10,7 +10,7 @@ import anyio
 from ..core.ids import now
 from ..missions import store as missions
 from . import deliver
-from .store import insert, read
+from .store import in_bug_thread, insert, read
 from ..core.event_types import INTERCOM_STATE
 
 log = logging.getLogger("celine.intercom")
@@ -27,7 +27,11 @@ async def send(store, from_addr: str, to: str, text: str, *, kind: str = "messag
     conversation it was delivered to at once, else None for those three.
     `attachments`: draft ids, bound to the message when it is delivered. `only_if(c)`:
     checked in the same write; when it is false nothing is sent and this is None.
-    The user's reply marks what waits for them in that thread read. `turn`: the
+    The user's reply marks what waits for them in that thread read. The user's message
+    to a stopped mission (in its chat, or a reply on its thread) starts it again, with
+    its time limit counted from now; a reply on a bug report it filed leaves it
+    stopped, and so does a message that lands later (a reminder, one that was waiting
+    when it stopped: deliver.py). `turn`: the
     sender's turn, so a message without reply_to still answers in its thread
     (store.follows).
     KeyError: no such conversation. ValueError: a bad address or attachment."""
@@ -47,13 +51,18 @@ async def send(store, from_addr: str, to: str, text: str, *, kind: str = "messag
                      created_at=created_at, store=store, turn=turn)
         out = {"intercom_id": iid, "message_id": None, "turn_id": None, "seq": None,
                "conversations": [], "resumed": []}
+        restarts = from_addr == "user" and kind == "message" and not due_at and \
+            not in_bug_thread(c, iid)
         for (cid,) in c.execute("SELECT conversation_id FROM intercom_deliveries WHERE "
                                 "intercom_id=? AND conversation_id IS NOT NULL",
                                 (iid,)).fetchall():
             out["conversations"].append(cid)
-            # the user's reply to its message resumes a stopped mission
-            if from_addr == "user" and reply_to is not None and \
+            # the user writes to a stopped mission: it works again
+            if restarts and \
                     (row := missions.set_status_sync(c, store, cid, "active", None, "stopped")):
+                c.execute("UPDATE missions SET held_seconds = CAST((julianday(?) - "
+                          "julianday(created_at)) * 86400 AS INTEGER) WHERE "
+                          "conversation_id=?", (now(), cid))
                 out["resumed"].append(row)
             r = deliver.deliver_idle_sync(c, store, cid)
             if r and out["message_id"] is None and iid in r["messages"]:

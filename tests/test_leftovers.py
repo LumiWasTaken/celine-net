@@ -219,12 +219,13 @@ async def test_a_done_or_stopped_mission_and_a_quiet_sub_agent_close_what_they_o
     sub = await conversations.create(store, "s", agent_of=await conversations.create(store),
                                      agent_name="s")
     done = await _quiet_mission(store, "done")
-    stopped = await _quiet_mission(store, "stopped")
+    stopped = await _quiet_mission(store, "active")
     active = await _quiet_mission(store, "active")
     chat = await conversations.create(store)
     for i, (cid, tab) in enumerate([(sub, "s-ab12"), (done, "cars"), (stopped, "c2"),
                                     (active, "c3"), (chat, "c4")]):
         await _call(store, cid, tab, T0, i)
+    await store.write(lambda c: missions.set_status_sync(c, store, stopped, "stopped", None))
 
     looks: list[int] = []
 

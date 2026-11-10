@@ -23,7 +23,7 @@ from ..plans import store as plans
 from ..core.ids import now
 from ..core.states import LIVE_SQL
 from ..core.event_types import INTERCOM_STATE
-from .store import NAMES, notice_user
+from .store import NAMES, in_bug_thread, notice_user
 
 
 def author_of(row) -> str:
@@ -72,7 +72,9 @@ def land(c, store, row, cid: str, parent: str | None, turn_id: str | None) -> di
     brings it back to the list (with Lock archived chats only the user's get there:
     _due)."""
     conversations.set_archived(c, store, cid, False)
-    if row["from_addr"] == "user":         # the user spoke here now, not when they sent it
+    # the user spoke here now, not when they sent it; a word on a bug report it filed
+    # answers the report, not what the mission asked
+    if row["from_addr"] == "user" and not in_bug_thread(c, row["id"]):
         plans.answered_sync(c, store, cid)
     data = json.loads(row["data"] or "{}")
     says = bool(data.get("say"))

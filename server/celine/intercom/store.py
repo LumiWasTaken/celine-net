@@ -306,6 +306,12 @@ BACKGROUND = ("EXISTS (SELECT 1 FROM intercom r JOIN intercom_deliveries d ON "
 # A bug report's thread (bugreports/store.py): an Intercom thread of its own, whoever filed it.
 BUG = "i.thread IN (SELECT thread FROM bugreports WHERE thread IS NOT NULL)"
 
+def in_bug_thread(c: sqlite3.Connection, iid: int) -> bool:
+    """Whether message `iid` is in a bug report's thread."""
+    return c.execute(f"SELECT 1 FROM intercom i WHERE i.id=? AND {BUG}", (iid,)).fetchone() \
+        is not None
+
+
 # Sent by a mission outside a bug report: what it writes to the user has the mission as its
 # home (its page's Waiting for you, waits.py), not the Intercom's Waiting for you.
 MISSION_FROM = ("(i.from_addr IN (SELECT 'agent:' || conversation_id FROM missions) AND "

@@ -239,7 +239,13 @@ def _json_in(text: str):
     return inner if isinstance(inner, (dict, list)) else None
 
 
+# what a stopped mission answers to a change of its fields, a Retry or a Continue; the
+# user's message to it starts it again (intercom/service.py send)
+MISSION_STOPPED = "The mission is stopped. Write to it to start it again."
+
+
 @dataclass
+
 class CelineError(Exception):
     """An error with a code the UI knows how to place. `message` is shown to the user
     as it is."""

@@ -52,7 +52,7 @@ def _talk(c, cid: str) -> list[dict]:
 
 async def record(app, store, cid: str, word: str, note: str | None) -> dict | None:
     """The one way a mission's status changes (its missions__update, the watch, the
-    user's Stop; a user's reply resumes a stopped one inside its send, with nothing to
+    user's Stop; the user's message starts a stopped one again inside its send, with nothing to
     follow): the row and the feed (missions.set_status_sync); done or stopped cancels what
     it scheduled; stopped reads what it asked the user, so nothing of it waits for them;
     any status but active is reported in the conversation it reports to, and a stop

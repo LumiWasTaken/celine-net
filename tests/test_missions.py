@@ -170,17 +170,28 @@ async def test_done_cancels_what_the_mission_scheduled_and_stopped_takes_no_retr
 
 
 @pytest.mark.anyio
-async def test_a_reply_to_the_agents_message_resumes_a_stopped_mission(store):
-    """The user's reply to what it sent from a stopped mission makes it active again,
-    wakes it and puts its time limit back; a message without reply_to wakes nothing."""
+async def test_the_users_message_starts_a_stopped_mission_again(store):
+    """The user's message to a stopped mission, in its chat or as a reply on its thread,
+    makes it active again, wakes it and puts its time limit back, counted from now. A
+    reply on a bug report it filed leaves it stopped."""
+    from celine.bugreports import store as bugs
     intercom = Intercom(store)
-    cid = await conversations.create(store, "RSS feed")
     later = "2999-01-01T00:00:00.000+00:00"
-    await missions.create(store, cid, {"name": "RSS feed", "terminal": "rss-feed",
-                                       "brief": "g", "until": later})
+
+    async def stopped(name: str) -> str:
+        cid = await conversations.create(store, name)
+        await missions.create(store, cid, {"name": name, "terminal": name, "brief": "g",
+                                           "until": later})
+        await store.write(lambda c: c.execute(
+            "UPDATE missions SET created_at='2020-01-01T00:00:00.000+00:00' WHERE "
+            "conversation_id=?", (cid,)))
+        return cid
+
+    cid = await stopped("feed")
     asked = (await intercom.send(f"agent:{cid}", "user", "which branch?"))["intercom_id"]
+    bug = await store.write(lambda c: bugs.file(c, store, cid, "Short", "low", "w", "", ""))
     await missions.update(store, cid, {"status": "stopped", "note": "x", "wake_id": None})
-    await intercom.send("user", f"agent:{cid}", "a plain message")
+    await intercom.send("user", "", "thanks, fixed", reply_to=bug["thread"])
     assert (await missions.get(store, cid))["status"] == "stopped"
     assert await _turns(store, cid) == []
     out = await intercom.send("user", "", "the feed branch", reply_to=asked)
@@ -192,6 +203,30 @@ async def test_a_reply_to_the_agents_message_resumes_a_stopped_mission(store):
         (int(row["wake_id"]),)).fetchone()[:])
     assert wake == ("notice", "system:app", "2998-12-31T23:45:00.000+00:00", None), \
         "the time limit is back"
+    assert row["held_seconds"] > 5 * 365 * 86400, "its time limit counts from the restart"
+
+    chat = await stopped("prices")
+    await missions.update(store, chat, {"status": "stopped", "note": None})
+    await intercom.send("user", f"agent:{chat}", "go on with the prices")
+    assert (await missions.get(store, chat))["status"] == "active"
+    assert await _turns(store, chat) == [("user", "queued")]
+
+
+@pytest.mark.anyio
+async def test_a_message_that_waited_when_stop_was_pressed_leaves_it_stopped(store):
+    """The user writes while a turn runs, then presses Stop: the message lands when the
+    turn ends and the mission stays stopped."""
+    from celine.intercom import deliver
+    cid = await conversations.create(store, "feed")
+    await missions.create(store, cid, {"name": "feed", "terminal": "feed", "brief": "g"})
+    await user_says(store, cid, "start")
+    await turns.claim(store, "w")
+    assert (await user_says(store, cid, "and the other feed"))[1] is None, "it waits"
+    await store.write(lambda c: missions.set_status_sync(c, store, cid, "stopped", None))
+    await store.write(lambda c: c.execute("UPDATE turns SET state='aborted'"))
+    await store.write(lambda c: deliver.deliver_idle_sync(c, store, cid))
+    assert (await missions.get(store, cid))["status"] == "stopped"
+    assert await _turns(store, cid) == [("user", "aborted")]
 
 
 @pytest.mark.anyio

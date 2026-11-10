@@ -14,7 +14,7 @@ from .. import attachments as files
 from ..conversations import tree, view
 from ..core.ids import new_id, now
 from ..core.states import LIVE, LIVE_SQL, QUEUE_ORDER, TERMINAL
-from ..errors import mask_all
+from ..errors import MISSION_STOPPED, mask_all
 from ..guard import mark
 from ..skills import words
 from .. import homes
@@ -345,6 +345,9 @@ async def continue_turn(store, cid: str, turn_id: str, registry=None, *,
         if c.execute(f"SELECT 1 FROM turns WHERE conversation_id=? AND state IN {LIVE_SQL}",
                      (cid,)).fetchone():
             raise tree.Busy()
+        if c.execute("SELECT 1 FROM missions WHERE conversation_id=? AND status='stopped'",
+                     (cid,)).fetchone():
+            raise ValueError(MISSION_STOPPED)
         verdict = view.continuable(c, cid, turn)
         if not verdict["ok"]:
             raise ValueError(verdict["reason"])
