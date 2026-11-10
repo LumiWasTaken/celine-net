@@ -206,7 +206,7 @@ export function Routines({ active }: { active: boolean }) {
                         onSaved={name => { drafts.current.delete(route.schedule!); schedules.reload(); runs.reload(); go({ schedule: name }, true) }}
                         onDeleted={() => { drafts.current.delete(route.schedule!); schedules.reload(); setView('schedules'); go({}) }} go={go} />
     )
-    : route.task ? <TaskPage key={route.task} id={route.task} night={night} tasks={tasks.data ?? []} active={active} go={go} onBack={() => { setView('triggers'); go({}) }} />
+    : route.task ? <TaskPage key={route.task} id={route.task} night={night} tasks={tasks.data ?? []} triggers={triggers.data} active={active} go={go} onBack={() => { setView('triggers'); go({}) }} />
     : view === 'schedules' ? <SchedulesList list={list} night={night} all={schedules.data?.schedules ?? []} go={go} onChange={schedules.reload} />
     : view === 'triggers' ? <TriggersList list={list} triggers={triggers} tasks={tasks} night={night} go={go} />
     : (
@@ -434,6 +434,10 @@ function DeleteSchedule({ s, onClose, onDone }: { s: Schedule; onClose: () => vo
 type TriggerRow = { t: Trigger } | { b: EventTask }
 type Res<T> = ReturnType<typeof useResource<T>>
 
+/** a trigger by its label (its name only when it is gone) */
+const triggerLabel = (triggers: Trigger[] | undefined, name: string | null) =>
+  (name ? triggers?.find(t => t.name === name)?.label ?? name : '')
+
 function TriggersList({ list, triggers, tasks, night, go }: {
   list: React.RefObject<HTMLDivElement | null>
   triggers: Res<Trigger[]>; tasks: Res<EventTask[]>; night: string; go: (r: Open) => void
@@ -457,9 +461,9 @@ function TriggersList({ list, triggers, tasks, night, go }: {
     ...(both ? [{ key: 'g:r', head: 'Background tasks', n: bs.length, icon: History }] : []), ...bs.map(b => ({ key: b.id, row: { b } })),
   ]
   const nothing = triggers.data !== undefined && !triggers.data.length && !tasks.data?.length
-  // a trigger by its label (its name only when it is gone); a run by its title, else its trigger's
-  const byName = (name: string | null) => (name ? triggers.data?.find(t => t.name === name)?.label ?? name : '')
-  const taskTitle = (b: EventTask) => (b.title && b.title !== b.trigger ? b.title : byName(b.trigger) || 'Run')
+  // a task by its title, else its trigger's label
+  const byName = (name: string | null) => triggerLabel(triggers.data, name)
+  const taskTitle = (b: EventTask) => (b.title && b.title !== b.trigger ? b.title : byName(b.trigger) || 'Background task')
   const taskMenu = (id: string): MenuItem[] => [{ label: 'Open', icon: ArrowUpRight, onSelect: () => go({ task: id }) }]
   return (
     <div className="list-page" ref={list}>
@@ -507,8 +511,8 @@ const isTaskEvent = (ev: { type: string }) => ev.type === 'conversation.created'
 
 /* What a trigger started, or one of its sub-agents: its sub-agents, the talk and a box to
    write in */
-function TaskPage({ id, night, tasks, active, go, onBack }: {
-  id: string; night: string; tasks: { id: string; title: string; trigger: string | null }[]; active: boolean
+function TaskPage({ id, night, tasks, triggers, active, go, onBack }: {
+  id: string; night: string; tasks: { id: string; title: string; trigger: string | null }[]; triggers: Trigger[] | undefined; active: boolean
   go: (r: Open) => void; onBack: () => void
 }) {
   const agents = useAgents()
@@ -516,10 +520,10 @@ function TaskPage({ id, night, tasks, active, go, onBack }: {
   const t = tasks.find(b => b.id === id)
   const agent = agents.find(a => a.id === id)
   const kids = agents.filter(a => a.parent === id)
-  const title = t ? t.title || t.trigger || 'Run' : agent?.name ?? convo.conversation?.title ?? ''
+  const title = t ? t.title || triggerLabel(triggers, t.trigger) || 'Background task' : agent?.name ?? convo.conversation?.title ?? ''
   const parent = agent && tasks.find(b => b.id === agent.parent)
   const crumbs: Crumb[] = [{ label: 'Triggers', onClick: e => { e.preventDefault(); onBack() } },
-                           ...(parent ? [{ label: parent.title || parent.trigger || 'Run', href: format({ section: 'routines', night, task: parent.id }) }] : [])]
+                           ...(parent ? [{ label: parent.title || triggerLabel(triggers, parent.trigger) || 'Background task', href: format({ section: 'routines', night, task: parent.id }) }] : [])]
   return (
     <div className="routines-page">
       <PlaceHead level={1} crumbs={crumbs} title={title} titleAttr={title} actions={<PlanButton plan={convo.plan} />} />
@@ -722,7 +726,7 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
                  more={fresh ? [] : [{ label: 'Delete', icon: Trash2, danger: true, onSelect: () => setDeleting(true) }]} />
       {((save.error && !field) || runNow.error) && <div className="list-page__note"><InlineError compact message={(field ? null : save.error) ?? runNow.error!} /></div>}
       <div className="page"><div className="page__col page__col--wide">
-        <PageIndex sections={[{ id: 's-when', label: 'Schedule' }, ...(roles.length > 1 ? [{ id: 's-who', label: 'Model' }] : []), { id: 's-prompt', label: 'Prompt' },
+        <PageIndex sections={[{ id: 's-when', label: 'Schedule' }, ...(roles.length > 1 ? [{ id: 's-who', label: 'Role' }] : []), { id: 's-prompt', label: 'Prompt' },
                               { id: 's-rev', label: 'Reviewer' }, { id: 's-limits', label: 'Limits' },
                               ...(fresh ? [] : [{ id: 's-runs', label: 'Runs', count: theirs.length }])]}>
           <Section id="s-when" title="Schedule" action={<Switch label="On" checked={d.on} onChange={on => put({ on })} />}>
