@@ -61,7 +61,7 @@ The map of the code and the rules it follows.
 |---|---|
 | `App.tsx`, `main.tsx` | routes, the rail, the socket, the global overlays |
 | `ui/` | the kit; `ui/index.ts` exports it; `ui/ui.css` styles it |
-| `views/` | one place each: `Celine`, `Missions`, `Routines`, `Notebook`, `Documents`, `Chats`, `Intercom`, `Waiting`, `Terminals`, `Terminal`, `Browser`, `Events` (`EventDecision`: one decision of the guard's), `Search`, `Artifact`, `Welcome` (`WelcomeForms`: the forms of its steps and of Settings, Features), `settings/` |
+| `views/` | one place each: `Celine`, `Missions`, `Routines`, `Notebook`, `Documents`, `Chats`, `Intercom`, `Waiting`, `Terminals`, `Terminal`, `Browser`, `Events` (`EventDecision`: one decision of the guard's), `Search`, `Gallery` (the images and music made), `Artifact`, `Welcome` (`WelcomeForms`: the forms of its steps and of Settings, Features), `settings/` |
 | `components/` | app parts made of kit parts: Transcript, Composer, ToolRow, ConversationList, ConversationPanel, Markdown, Plan, MissionAsk, ProviderFields |
 | `lib/` | api clients, socket and bus, `nav.tsx`, `prefs.ts` (this device's conveniences in localStorage), `states.ts` (a state as the server says it), hooks (`useResource`, `useAction`, `useReveal`, `useConversation`) |
 | `styles/` | `tokens.css` (every value), `base.css` (keyframes, resets) |

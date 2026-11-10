@@ -31,6 +31,7 @@ block at the end of this file lists the words no UI string uses.
 | Notebook | its own notes | ChatGPT "Memory" for the same job |
 | Intercom | messages between it, missions and sub-agents; Everyone is the recipient that reaches every running agent | |
 | Documents | your files | Google Docs, Apple Files |
+| Gallery | every image and track it made and you made, newest first; its Type filter: Images, Music; No images or music yet | Samsung, Android "Gallery"; Apple Photos, Google Photos for the same job |
 | Messages | the WhatsApp and Discord archive. A chat is yours with the agent (Lock archived chats), or inside Messages a WhatsApp or Discord chat (Search chats, Choose chats): the place says which | Apple "Messages", Google "Messages" |
 | Terminals | its terminals | macOS Terminal |
 | Browser | its browser (never the engine's name); Current tab is the tab on its screen | Chrome "Current tab" |
