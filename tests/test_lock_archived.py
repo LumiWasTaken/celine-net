@@ -176,12 +176,12 @@ async def test_a_deleted_chat_is_always_locked(store, monkeypatch):
         "SELECT count(*) FROM intercom_deliveries WHERE state='pending' AND "
         "conversation_id=?", (cid,)).fetchone()[0]) == 0, "nothing waits there"
     review = await conversations.create(store, "Self-review", kind="background")
-    with pytest.raises(Refused, match="^That chat is deleted.$"):
+    with pytest.raises(Refused, match="^That chat is in the Trash.$"):
         await ic.send(f"agent:{review}", f"agent:{cid}", "go on")
     # a turn queued there anyway (a restart's resume) ends at once
     await store.write(lambda c: tree.queue_turn(c, store, cid, None, origin="intercom"))
     assert await turns.claim(store, "w") is None
-    assert (await _turns(store, cid))[-1] == ("intercom", "aborted", "That chat is deleted.")
+    assert (await _turns(store, cid))[-1] == ("intercom", "aborted", "That chat is in the Trash.")
 
 
 async def test_the_setting_reaches_the_database_where_the_locks_read_it(store):

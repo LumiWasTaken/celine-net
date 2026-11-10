@@ -400,7 +400,7 @@ def _refuse_busy(c: sqlite3.Connection, ids: list[str], users_only: bool = False
 LOCK_KEY = "settings.lock_archived"
 _LOCK_ON = f"coalesce((SELECT v FROM kv WHERE k='{LOCK_KEY}'), '1') = '1'"
 ARCHIVED = "That chat is archived."
-DELETED = "That chat is deleted."
+DELETED = "That chat is in the Trash."
 
 
 def set_lock_archived(c: sqlite3.Connection, on: bool) -> None:
