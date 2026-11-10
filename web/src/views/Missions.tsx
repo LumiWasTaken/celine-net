@@ -551,6 +551,9 @@ function AgentPage({ a, mission, active }: { a: AgentRow; mission: Mission; acti
   const [result, setResult] = useState(false)
   const convo = useConversation(a.id)
   const stop = useAction(() => agentsApi.stop(a.id))
+  // what its turns took, the server's tree node of it
+  const tree = useResource(() => agentsApi.tree(a.id), [a.id], { enabled: result, events: ev => ev.type === 'agent.state' })
+  const took = tree.data?.agents.find(n => n.id === a.id)
   // until its conversation answered: Missions and its mission
   const crumbs = convo.conversation?.path ? above(convo.conversation.path)
     : [{ label: 'Missions', href: '/missions' }, { label: mission.name, href: format({ section: 'missions', conversation: mission.conversation_id }) }]
@@ -571,12 +574,14 @@ function AgentPage({ a, mission, active }: { a: AgentRow; mission: Mission; acti
             {a.report ? <div className="prose"><Markdown text={a.report.text} /></div>
               : <p className="missions-prose missions-prose--quiet">{a.working ? a.step_words ?? a.words : 'No result'}</p>}
             <Facts grid items={[
-              { label: 'Model', value: a.model ?? 'Default' },
+              { label: 'Model', value: took?.model ?? a.model ?? 'Default' },
               ...(a.cli ? [{ label: 'Agent CLI', value: a.cli }] : []),
               ...(a.device ? [{ label: 'Device', value: a.device }] : []),
               { label: 'Access', value: a.access === 'read' ? 'Read-only' : 'Can edit' },
               ...(a.folder ? [{ label: 'Folder', value: a.folder }] : []),
               { label: 'Created', value: stamp(a.created_at) },
+              ...(took && took.prompt_tokens + took.completion_tokens > 0 ? [{ label: 'Tokens',
+                value: `${took.prompt_tokens.toLocaleString('en-GB')} input, ${took.completion_tokens.toLocaleString('en-GB')} output` }] : []),
             ]} />
           </Section>
         </div></div>
