@@ -86,6 +86,7 @@ APP: dict[str, tuple[str, str]] = {
                                     "conversation."),
     "skills.read_only": ("Read access", "Answers a sub-agent with read access that calls a "
                                         "tool that writes."),
+    "backends.json_only": ("JSON answers", "Asks an Anthropic model for one JSON object."),
     "sub_agents.fragment": ("Sub-agent instructions", "Frames the instructions a sub-agent "
                                                       "gets."),
     "sub_agents.drone": ("Device sub-agent instructions", "Frames the instructions a "

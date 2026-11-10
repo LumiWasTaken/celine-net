@@ -21,11 +21,12 @@ from typing import Any
 
 import httpx
 
+from .. import prompts
 from .base import Done, ReasoningDelta, TextDelta, ToolCallDelta, Usage
 from .ollama import _arguments
 from .openai import OpenAIBackend, RawReply, _sse_data, http_error, read_chunk
 
-JSON_ONLY = "Answer with one JSON object and nothing else."
+# a request for JSON (response_format) adds json_only.md to the system blocks
 # a reply cut off before its end (the token cap, the context window, a paused turn) is
 # "length", as max_tokens is
 _STOP = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
@@ -56,7 +57,8 @@ class AnthropicBackend(OpenAIBackend):
         fields = {**self.cfg.params, **(extra or {})}
         fields.pop("temperature", None)
         if fields.pop("response_format", None):
-            system.append({"type": "text", "text": JSON_ONLY})
+            system.append({"type": "text",
+                           "text": prompts.text(__file__, "json_only.md").strip()})
         body: dict[str, Any] = {"model": model or self.model, "messages": wire,
                                 "stream": True, **fields}
         if "thinking" in body and isinstance(body["thinking"], dict):
