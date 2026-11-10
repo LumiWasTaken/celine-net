@@ -105,7 +105,7 @@ async def test_a_real_error_fails_at_once_with_its_reason(store):
     assert await pool.run_one(item, "w") == "failed"
     row = await _row(store, wid)
     assert row["state"] == "failed"
-    assert row["error"] == "RuntimeError: the answer was not JSON"
+    assert row["error"] == "the answer was not JSON"
     assert await work.claim(store, "w", ["x"], now=now[0] + s(3600)) is None
 
 

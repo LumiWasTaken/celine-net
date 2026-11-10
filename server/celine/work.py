@@ -298,10 +298,10 @@ class Pool:
         self._wake = anyio.Event()
 
     def _down(self, roles: tuple[str, ...]) -> str | None:
-        """The sentence why no host of `roles` answers, else None."""
+        """The sentence why no server of `roles` answers, else None."""
         if self.llm is None or not roles or not self.llm.router.all_down(roles):
             return None
-        return "No host of its models answers."
+        return "No server of its models answers."
 
     async def run_one(self, item: dict[str, Any], worker: str) -> str:
         """One claimed item. -> done, deferred, queued (a try failed) or failed."""
@@ -327,7 +327,7 @@ class Pool:
         if err is None:
             await finish(self.store, wid, worker, now=self.clock())
             return self._count(kind, "done")
-        why = f"{type(err).__name__}: {err}"
+        why = str(err) or type(err).__name__
         if deferrable(err):
             await defer(self.store, wid, worker, str(err), now=self.clock())
             return self._count(kind, "deferred", why)
