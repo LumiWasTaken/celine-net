@@ -138,7 +138,7 @@ function Preview({ hideThinking, hideTools, collapseThinking }: { hideThinking: 
                  actions={<><IconButton size="sm" icon={RefreshCw} label="Regenerate" /><IconButton size="sm" icon={Copy} label="Copy" /></>}
                  menu={[
                    ...(hideThinking ? [{ label: thoughtsTitle, icon: Brain, onSelect: () => {} }] : []),
-                   { label: 'Activity', icon: Activity, onSelect: () => {} }, { label: `What ${name || 'your agent'} saw`, icon: Eye, onSelect: () => {} },
+                   { label: 'Activity', icon: Activity, onSelect: () => {} }, { label: 'Model requests', icon: Eye, onSelect: () => {} },
                  ]}>
           <div className="reply">
             {!hideThinking && (

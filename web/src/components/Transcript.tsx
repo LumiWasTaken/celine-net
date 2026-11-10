@@ -29,7 +29,7 @@ import { Markdown, StreamText, TextWithRefs } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
 import { Status, TurnEnd, endWords } from './Status'
-import { useName, useOwner } from '../lib/name'
+import { useOwner } from '../lib/name'
 import { useAppearance } from '../lib/appearance'
 import { titleOf } from '../lib/pictures'
 import type { Forming } from '../lib/useConversation'
@@ -214,9 +214,7 @@ export function Transcript(
   })
 
   const { hide_thinking, hide_tools, collapse_thinking } = useAppearance()
-  const name = useName()
-  // by its name, as chosen ("What Celine saw")
-  const sawTitle = `What ${name || 'your agent'} saw`
+  const sawTitle = 'Model requests'
   const owner = useOwner()
   const thoughtsTitle = `${owner} thoughts`
   // the message being written now: its row keeps its place, empty

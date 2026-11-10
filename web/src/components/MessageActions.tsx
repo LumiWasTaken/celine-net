@@ -5,7 +5,7 @@
    Edit, Copy, Previous version, Next version, Continue (when its turn can be carried on),
    Branch from here (a new conversation with every message up to this one), More like this
    (its voice keeps it as a sample), Activity (the reply's tool calls, in a Drawer; a Sheet
-   on a phone), Thoughts (when they are not shown above it) and What it saw (the
+   on a phone), Thoughts (when they are not shown above it) and Model requests (the
    requests and the raw answer of each step), and Delete last, asked first. While it
    writes, what would change the conversation under it waits. */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
@@ -27,7 +27,7 @@ import { useReplySpeech } from './Speech'
 type Props = {
   conversationId: string
   message: Message
-  /** its reply's steps, one model request each ("What it saw" shows them all) */
+  /** its reply's steps, one model request each (Model requests shows them all) */
   steps?: Message[]
   /** the reply's tool calls (Activity) */
   calls?: ToolCall[]
@@ -39,7 +39,7 @@ type Props = {
   /** the conversation's latest turn (Continue when it can be carried on) */
   turn: Turn | null
   onEdit: () => void
-  /** "What Celine saw", by the agent's name */
+  /** "Model requests" */
   sawTitle: string
   /** read-only: no Regenerate, Edit, Continue or Branch */
   closed?: boolean

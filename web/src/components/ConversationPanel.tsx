@@ -111,7 +111,7 @@ function AgentsTab({ agents, here }: { agents: TreeAgent[]; here: string | null 
         <ListRow key={a.id} density="md" depth={a.depth - 1} running={a.state === 'working' || a.state === 'queued'} icon={Bot} title={a.name}
                  subtitle={a.state === 'working' ? a.step_words ?? a.words : <StateWord tone={toneOf(a.tone)}>{a.words}</StateWord>}
                  meta={duration(a.seconds * 1000)} aside={a.model ?? undefined}
-                 detail={`${num(a.prompt_tokens)} tokens in, ${num(a.completion_tokens)} out`}
+                 detail={`${num(a.prompt_tokens)} input tokens, ${num(a.completion_tokens)} output tokens`}
                  muted={a.state !== 'working' && a.state !== 'queued'} selected={a.id === here} href={a.link} />
       ))}
     </div>
@@ -261,7 +261,7 @@ export function ModelRow({ cid, enabled = true, live, head = false }: {
    the list. ── */
 type Block = ContextView['blocks'][number]['name']
 const BLOCK: Record<Block, string> = {
-  persona: 'Persona', talk: 'Example lines', about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Chat',
+  persona: 'Persona', talk: 'Example lines', about: 'About you', notes: 'Notebook', tools: 'Tools', history: 'Chat history',
 }
 
 /** one block's text as it goes out, with Copy */

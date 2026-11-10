@@ -1,4 +1,4 @@
-/* "What it saw" for one of its replies: its own block for the message it answers (On
+/* Model requests for one of its replies: its own block for the message it answers (On
    its mind: its mood, the time since), then each step's request as it went out (the
    system text, the tools, the conversation) and what the model's server answered, raw. GET .../messages/{id}/context,
    .../requests and .../raw per step; Copy all copies them with the conversation's id. A step
@@ -82,9 +82,9 @@ function StepView({ n, step }: { n: number | null; step: Step }) {
   const system = msgs.filter(m => m.role === 'system')
   const talk = msgs.filter(m => m.role !== 'system')
   const tools = req?.body.tools ?? []
-  const facts = req && [req.model, req.prompt_tokens != null && `${num(req.prompt_tokens)} tokens in`,
+  const facts = req && [req.model, req.prompt_tokens != null && `${num(req.prompt_tokens)} input tokens`,
     req.cache_read != null && `${num(req.cache_read)} cached`,
-    req.completion_tokens != null && `${num(req.completion_tokens)} out`,
+    req.completion_tokens != null && `${num(req.completion_tokens)} output tokens`,
     req.first_token_ms != null && `first token ${(req.first_token_ms / 1000).toFixed(1)} s`,
     req.finish_reason && req.finish_reason !== 'stop' && req.finish_reason].filter(Boolean).join(', ')
   return (
