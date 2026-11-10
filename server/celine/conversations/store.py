@@ -802,14 +802,16 @@ async def prune_events(store, keep: int, cid: str | None = None,
     replies another model answered (`llm.queue` with `fallback`). A client resuming
     from below trim_below gets a resync instead of a gap. The global feed keeps its
     newest GLOBAL_KEEP rows the same way (a client below the oldest gets a resync).
-    `requests_days` (the requests_keep setting): the request bodies in log.db older
-    than that many days go too; 0 keeps them."""
+    `requests_days` (the requests_keep setting): a request in log.db older than that
+    many days loses its body and keeps its row (model, tokens, times: what a turn
+    took is summed from them); 0 keeps every body."""
     def fn(c: sqlite3.Connection) -> int:
         c.execute("DELETE FROM global_events WHERE id <= "
                   "(SELECT max(id) FROM global_events) - ?", (GLOBAL_KEEP,))
         if requests_days > 0:
             since = datetime.fromisoformat(now()) - timedelta(days=requests_days)
-            c.execute("DELETE FROM requests WHERE created_at < ?", (iso(since),))
+            c.execute("UPDATE requests SET body = x'' WHERE created_at < ? AND "
+                      "length(body) > 0", (iso(since),))
         sql = ("SELECT id, next_seq FROM conversations WHERE id NOT IN "
                f"(SELECT conversation_id FROM turns WHERE state IN {LIVE_SQL})")
         args: list = []

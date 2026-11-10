@@ -134,8 +134,9 @@ FIELDS: list[dict[str, Any]] = [
             "How many log entries a chat keeps after its turn ends."),
     _number("Storage", "backup_keep_days", "Backups kept", "days", 1, 3650, 7,
             "How long a backup is kept before it is deleted."),
-    _number("Storage", "requests_keep", "Model requests kept", "days", 0, 36_500, 0,
-            "How long to keep what each step sent to its model. 0 keeps it forever."),
+    _number("Storage", "requests_keep", "Model requests kept", "days", 0, 36_500, 30,
+            "How long to keep what each step sent to its model; its token counts and "
+            "times stay. 0 keeps it forever."),
 ]
 
 

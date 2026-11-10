@@ -1,6 +1,8 @@
 """Config reload in place, event pruning."""
 from __future__ import annotations
 
+import zlib
+
 import time
 
 import pytest
@@ -162,21 +164,27 @@ async def test_a_hand_edit_of_the_features_file_stops_the_runner(store, monkeypa
 
 async def test_request_bodies_past_requests_keep_days_go_with_the_prune(store, clock,
                                                                          monkeypatch):
+    """The body goes, the row with its numbers stays, and the request view reads {}."""
     from celine.settings import general
-    assert general.value({}, "requests_keep") == 0, "kept forever unless the owner says"
+    from celine.turns import store as turns
+    assert general.value({}, "requests_keep") == 30
     monkeypatch.setattr(conversations, "now", clock.iso)
 
     def add(c):
         for mid, days in (("old", 8), ("new", 6)):
             c.execute("INSERT INTO requests(message_id, step, turn_id, provider, model, "
-                      "body, created_at) VALUES(?, 0, 't', 'p', 'm', x'00', ?)",
-                      (mid, clock.iso(-days * 86400)))
+                      "body, prompt_tokens, created_at) VALUES(?, 0, 't', 'p', 'm', ?, 7, ?)",
+                      (mid, zlib.compress(b'{"messages": []}'), clock.iso(-days * 86400)))
     await store.write(add)
 
     def left():
-        return store.read(lambda c: [r[0] for r in c.execute(
-            "SELECT message_id FROM requests ORDER BY message_id")])
+        return store.read(lambda c: [tuple(r) for r in c.execute(
+            "SELECT message_id, length(body) > 0, prompt_tokens FROM requests "
+            "ORDER BY message_id")])
     await conversations.prune_events(store, keep=500)
-    assert await left() == ["new", "old"]
+    assert await left() == [("new", 1, 7), ("old", 1, 7)]
     await conversations.prune_events(store, keep=500, requests_days=7)
-    assert await left() == ["new"]
+    assert await left() == [("new", 1, 7), ("old", 0, 7)]
+    [old] = await turns.requests_of(store, "old")
+    assert (old["body"], old["prompt_tokens"]) == ({}, 7)
+    assert (await turns.requests_of(store, "new"))[0]["body"] == {"messages": []}

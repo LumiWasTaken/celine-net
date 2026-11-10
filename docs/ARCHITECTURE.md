@@ -128,7 +128,7 @@ a save applies at once. They are listed here in the page's sections (`general.GR
 | `document_pdf_seconds` | PDF read time limit | 600 | time spent reading one PDF, looked at between pages |
 | `events_keep` | Log entries per chat | 500 | log entries kept per conversation once it is idle |
 | `backup_keep_days` | Backups kept | 7 | nights of backups kept |
-| `requests_keep` | Model requests kept | 0 | days a model request body is kept in log.db; 0 keeps it forever |
+| `requests_keep` | Model requests kept | 30 | days a model request body is kept in log.db, its row with the token counts and times stays; 0 keeps the body forever |
 
 FIELDS also holds the settings shown on other pages: `user_name` (Your name, default
 "User"), `timezone` (Time zone, UTC) and `user_bio` (About you) in General's You section
@@ -307,7 +307,8 @@ At startup and every ten minutes after (`keep_pruned`), `prune_events` drops all
 entries of every idle conversation and raises `trim_below`, keeping what the snapshot
 reads back (`images.notice`, `llm.queue` with `fallback`); the global feed keeps its newest
 20000 rows (`GLOBAL_KEEP`). A client resuming from below gets `resync`. At startup it
-also drops the `requests` older than `requests_keep` days (0, the default, keeps them).
+also empties the body of each of the `requests` older than `requests_keep` days (30 by
+default; 0 keeps them); the row keeps its model, token counts and times.
 
 ### The message tree
 

@@ -550,12 +550,13 @@ def _ref(c: sqlite3.Connection, b64: str, whole: str | None = None) -> str:
 
 async def requests_of(store, message_id: str) -> list[dict]:
     """Every step's request that streamed into one reply, oldest first, the body as
-    it went out."""
+    it went out ({} once the prune emptied it: conversations.prune_events)."""
     def fn(c: sqlite3.Connection) -> list[dict]:
         rows = c.execute("SELECT * FROM requests WHERE message_id=? ORDER BY step",
                          (message_id,)).fetchall()
         return [{**{k: r[k] for k in r.keys() if k != "body"},
-                 "body": json.loads(zlib.decompress(r["body"]))} for r in rows]
+                 "body": json.loads(zlib.decompress(r["body"])) if r["body"] else {}}
+                for r in rows]
     return await store.read(fn)
 
 
