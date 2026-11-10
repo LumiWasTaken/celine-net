@@ -48,7 +48,8 @@ FIELDS: list[dict[str, Any]] = [
      "help": "How often new messages are added to Search. 0 turns the updates off.",
      "default": 15},
     {"key": "lock_archived", "label": "Lock archived chats", "type": "bool",
-     "help": "An archived chat stays as it is until you write in it again.", "default": True},
+     "help": "An archived chat takes no messages but yours, and its running work and missions "
+             "stop.", "default": True},
     {"key": "image_captions_auto", "label": "Describe new photos in Messages",
      "type": "bool",
      "help": "Each new photo gets a description, so Search finds it by what it shows.",
@@ -79,26 +80,26 @@ FIELDS: list[dict[str, Any]] = [
             "time limit applies.", zero="No limit"),
     _number("Turns", "turn_wall_clock_seconds", "Turn time limit", "seconds", 1, 86_400, 1800,
             "The longest one turn may work, tools included."),
-    _number("Turns", "last_step_seconds", "Last answer time", "seconds", 1, 3600, 180,
-            "After the turn time limit, the step that is running gets this long to finish."),
+    _number("Turns", "last_step_seconds", "Grace period", "seconds", 1, 3600, 180,
+            "After the turn time limit, the tool round under way gets this long to finish."),
     _number("Turns", "tool_timeout_seconds", "Tool time limit", "seconds", 1, 86_400, 180,
             "The longest one tool call may take before it fails."),
     _number("Turns", "job_timeout_seconds", "Job time limit", "seconds", 1, 604_800, 3600,
             "A tool that runs in the background is stopped after this."),
     # turns/reply.py: the [[kb:id]] citations of an answer
     _switch("Turns", "verify_citations", "Check citations", True,
-            "Every message or document an answer cites must be one a tool showed."),
+            "Every message or document a reply cites must be one a tool showed."),
     # turns/warm.py
-    _number("Models", "keep_warm_minutes", "Keep the chat ready", "minutes", 0, 1440, 0,
-            "After the newest chat's last reply, its request goes to its model server again "
-            "every 4 minutes for this long. The server keeps the model loaded and the chat "
-            "in its cache, so your next message starts at once.", zero="Off"),
+    _number("Models", "keep_warm_minutes", "Keep cache warm", "minutes", 0, 1440, 0,
+            "After the newest chat's last reply, the app resends its request every 4 minutes for "
+            "this long, so the model stays loaded and its prompt cache stays warm.", zero="Off"),
     _number("Models", "embed_query_timeout_seconds", "Search embedding time limit", "seconds",
-            1, 3600, 60, "How long a search waits for the Topic search model."),
-    _number("Models", "busy_retry_seconds", "Busy model wait", "seconds", 1, 86_400, 10,
-            "Background work asks a busy model again after this, twice as long each time."),
-    _number("Models", "busy_retry_max_seconds", "Longest busy model wait", "seconds", 1,
-            86_400, 600, "The longest wait between two asks of a busy model."),
+            1, 3600, 60, "How long a search waits for the Embeddings model."),
+    _number("Models", "busy_retry_seconds", "Busy model retry delay", "seconds", 1, 86_400, 10,
+            "Background work retries a busy model after this delay, doubling it after each "
+            "retry."),
+    _number("Models", "busy_retry_max_seconds", "Busy model max retry delay", "seconds", 1,
+            86_400, 600, "The longest delay between two retries of a busy model."),
     _number("Routines and missions", "routine_max_minutes", "Routine time limit", "minutes",
             0, 100_000, 180, "The longest one routine run may take. 0 means no limit.", zero="No limit"),
     _switch("Routines and missions", "routines_wait_for_missions",
@@ -122,16 +123,17 @@ FIELDS: list[dict[str, Any]] = [
     _number("Files", "max_message_bytes", "Largest message", "bytes", 1, 100_000_000,
             1_000_000, "The longest text one message may hold."),
     # kb/documents_extract.py: what one document may cost to read
-    _number("Files", "document_part_mb", "Largest part in a document", "MB", 1, 100_000, 256,
-            "An EPUB or Word file with a larger part unpacked is not read whole."),
-    _number("Files", "document_html_mb", "Largest web page document", "MB", 1, 100_000, 64,
+    _number("Files", "document_part_mb", "Largest file inside an EPUB or Word file", "MB", 1,
+            100_000, 256, "An EPUB or Word file with a larger file inside is not read whole."),
+    _number("Files", "document_html_mb", "Largest HTML document", "MB", 1, 100_000, 64,
             "A larger saved web page in Documents is not read."),
     _number("Files", "document_pdf_pages", "PDF pages read", "pages", 1, 1_000_000, 5000,
             "The most pages of one PDF that are read."),
     _number("Files", "document_pdf_seconds", "PDF read time limit", "seconds", 1, 86_400, 600,
             "The longest reading one PDF may take."),
-    _number("Storage", "events_keep", "Log entries per chat", "entries", 0, 1_000_000, 500,
-            "How many log entries a chat keeps after its turn ends."),
+    _number("Storage", "events_keep", "Stream events per chat", "entries", 0, 1_000_000, 500,
+            "How many live-update events an idle chat keeps; a page further behind reloads "
+            "the chat."),
     _number("Storage", "backup_keep_days", "Backups kept", "days", 1, 3650, 7,
             "How long a backup is kept before it is deleted."),
     _number("Storage", "requests_keep", "Model requests kept", "days", 0, 36_500, 30,
@@ -190,6 +192,6 @@ def validate(data: Any) -> dict[str, Any]:
         raise Invalid("general.job_timeout_seconds", "The job time limit must be longer "
                                                       "than the tool time limit.")
     if value(out, "busy_retry_max_seconds") < value(out, "busy_retry_seconds"):
-        raise Invalid("general.busy_retry_max_seconds", "The longest busy model wait "
-                                                         "must be at least the first.")
+        raise Invalid("general.busy_retry_max_seconds", "Busy model max retry delay "
+                                                         "must be at least Busy model retry delay.")
     return out
