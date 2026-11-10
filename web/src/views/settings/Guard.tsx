@@ -2,8 +2,8 @@
    (features.toml guard) with its sentence while on and not ready, its mode while on (Warn or
    Enforce, the general setting), its two models (the Decision model is the guard role, the second
    look is guard.toml's chain) through the same form the onboarding's Guard card uses
-   (WelcomeForms.tsx), its Rules (what each rule does: Off, Warn, Stop, Freeze, and the tools
-   on Require approval; guard.toml), the Passes that hold (only while one does, each with End),
+   (WelcomeForms.tsx), its Rules (what each rule does: Off, Warn, Stop, Freeze; guard.toml),
+   the Passes that hold (only while one does, each with End),
    and its own texts: Persona, Replies to <its name>, Messages to you, each a long text on a
    surface that opens in the large editor (BastetText below: History and Ask Celine, keys
    bastet:persona, bastet:talk, bastet:note; the shipped file is the default, Use the default
@@ -20,7 +20,7 @@ import { settingsApi, type FeaturesView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { Button, EmptyState, Field, InlineError, Input, ListRow, Loaded, LoadingRow, Section, Segmented, StatusLine, Switch } from '../../ui'
+import { Button, EmptyState, Field, InlineError, ListRow, Loaded, LoadingRow, Section, Segmented, StatusLine, Switch } from '../../ui'
 import { GeneralFields } from './General'
 import { TextPreview } from './Agent'
 import { FORMS, type SaveRef } from '../WelcomeForms'
@@ -95,17 +95,10 @@ export function Guard() {
   )
 }
 
-/* ── what each rule does, one Segmented per rule (Off is its switch, else its `does`), and the
-   tools on Require approval, saved when the field is left ── */
+/* ── what each rule does, one Segmented per rule (Off is its switch, else its `does`) ── */
 function Rules({ rules, set, disabled }: { rules: GuardRules; set: (r: GuardRules) => void; disabled: boolean }) {
   const save = useAction(async (tables: Record<string, Record<string, unknown>>) => set(await guardApi.putRules(tables)))
-  const tools = rules.confirm.tools.join(', ')
-  const [draft, setDraft] = useState<string | null>(null)
   const act = (rule: string, v: RuleAct) => void save.run({ [rule]: v === 'off' ? { on: false } : { on: true, does: v } })
-  const keep = () => {
-    if (draft === null || draft === tools) { setDraft(null); return }
-    void save.run({ confirm: { tools: draft.split(',').map(t => t.trim()).filter(Boolean) } }).then(() => setDraft(null))
-  }
   return (
     <div className="stack">
       {rules.rows.map(r => (
@@ -113,10 +106,6 @@ function Rules({ rules, set, disabled }: { rules: GuardRules; set: (r: GuardRule
           <Segmented label={r.label} value={r.act} options={rules.acts} disabled={disabled || save.busy} onChange={v => act(r.rule, v)} />
         </Field>
       ))}
-      <Field label="Require approval" help={rules.help.confirm}>
-        <Input value={draft ?? tools} disabled={disabled} onChange={e => setDraft(e.target.value)} onBlur={keep}
-               onKeyDown={e => { if (e.key === 'Enter') keep() }} />
-      </Field>
       {save.error && <InlineError compact message={save.error} />}
     </div>
   )

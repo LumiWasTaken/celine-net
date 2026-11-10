@@ -7,12 +7,12 @@
   account. Each needs the agent's reason (`why`), shown as its Reason fact. Nothing else asks:
   a new entry, a list of names, a placeholder, typing into its browser (only on the
   entry's own sites, browserd checks that every time), a lock.
-- `gate`, Bastet's confirm rule (guard/rules.py): a tool the user listed waits for their
-  answer every time. Its `ref` is Bastet's row, so her banner in the chat answers it too
-  (guard/banners.py).
+- `tool`, a tool on Require approval (Settings, Tools; turns/tools.py): every call
+  waits for the user's answer before it runs, guard or no guard.
 - `agent`, an edit of the agent itself (me__edit, skills/me.py): its persona, talk and slop list
   are in every chat, so every edit waits for the user, guard or no guard. A call the
-  user already approved on Bastet's ask (`call`, its tool call id) is not asked again.
+  user already approved as a tool on Require approval (`call`, its tool call id) is not
+  asked again.
 - `share`, a public share: anyone with its link opens it, so it waits for the user,
   guard or no guard, as an edit of the agent itself does.
 - `settings`, a change of the settings (settings__propose, skills/settings.py): every
@@ -28,8 +28,7 @@ Every request is one card (`Ask.card`): a title "{who} asks to {action}.", facts
 (label, value) pairs from the call's own data, its whole long text apart (`detail`,
 opened under Details, never cut), why the kind is asked (HELP, the server fills the agent's
 name), where its work lives (`where`, the root's name) and the link that opens
-it. Every request but a gate (Bastet's banner is its ask there) shows in the chat that
-asked, after the message that made the call: the conversation event `approval.asked`
+it. Every request shows in the chat that asked, after the message that made the call: the conversation event `approval.asked`
 {approval} (the card), and `approval.closed` {id} once it is answered, stopped or out
 of time; the snapshot's `approvals` are the ones asked and not closed (`open_in`). A
 restart closes what the last run left open (`close_left`). Waiting for you
@@ -68,16 +67,16 @@ from .guard.sources import OUTSIDE   # skills whose results others wrote: one li
 log = logging.getLogger("celine.approvals")
 
 ASK_FOR = 120       # seconds a request outside a turn waits for the user
-KINDS = ("vault", "gate", "agent", "share", "settings", "model")
-APPROVED_KEPT = 64  # tool calls approved on Bastet's ask, kept so the tool asks no more
+KINDS = ("vault", "tool", "agent", "share", "settings", "model")
+APPROVED_KEPT = 64  # calls approved as a tool on Require approval: the tool asks no more
 
 # why each kind is asked and where that changes; {{name}}: the agent's name
 HELP = {
     "vault": ("A password in a file of the shellbox can be read by everything there, "
               "and a new password changes a live account. These two vault steps always "
               "wait for you."),
-    "gate": ("You put this tool on Require approval in Settings, Guard. Take it off that "
-             "list to let it run without asking."),
+    "tool": ("This tool is on Require approval in Settings, Tools. Remove it there to let "
+             "it run without asking."),
     "agent": ("{{name}}'s persona, example lines and banned words go into every chat, so "
               "every edit waits for you. You edit them yourself in Settings, {{name}}."),
     "share": ("Anyone with the link opens a public share, so each one waits for you. A "
@@ -117,7 +116,6 @@ class Ask:
     conversation: str
     expires: float | None   # time.time(); None: it waits inside a turn
     answer: asyncio.Future = field(repr=False)
-    ref: int | None = None  # gate: Bastet's row, so her banner can answer it
     call: str | None = None  # the tool call it is for
     home: str | None = None  # where its conversation lives (homes.of), and the link
     link: str | None = None
@@ -206,17 +204,12 @@ def _where(c, cid: str) -> dict:
     return {**homes.of(c, cid), "root": top["id"], "where": name}
 
 
-def _read_label(tool: str) -> str:
-    from .settings.tools_meta import TOOLS, humanize
-    return TOOLS.get(tool, {}).get("label") or humanize(tool)
-
-
 class Approvals:
     def __init__(self, cfg, emit=None, store=None):
         self.cfg, self.emit, self.store = cfg, emit, store
         self.waiting: dict[str, Ask] = {}
         self.read: dict[str, str] = {}      # conversation -> last outside tool
-        self.approved: dict[str, None] = {}  # calls approved on a gate ask, newest last
+        self.approved: dict[str, None] = {}  # calls approved on a tool ask, newest last
 
     # ---- what the runner tells it -------------------------------------------------------
 
@@ -242,16 +235,16 @@ class Approvals:
     async def ask(self, kind: str, conversation: str, action: str, *,
                   facts: list[tuple[str, str]] | tuple = (),
                   detail: tuple[str, str] | None = None, why: str = "",
-                  ref: int | None = None, call: str | None = None) -> str | None:
+                  call: str | None = None) -> str | None:
         """Wait for the user's answer to "{who} asks to {action}.". `facts`: (label,
         value) pairs of the call's own data, whole; `detail`: (title, text), its long
         text; `why`: the agent's reason, its Reason fact (the vault needs one). -> None when
         approved, else one sentence for its tool result: denied, no answer (it starts
         with `{user} did not answer`), no reason given (vault), or another one waits.
-        `call`: the tool call it is for; one the user approved on Bastet's ask (a gate)
-        is not asked again by its tool, but a change of settings is: its request shows
-        each field before and after."""
-        if call and kind not in ("gate", "settings") and call in self.approved:
+        `call`: the tool call it is for; one the user approved as a tool on Require
+        approval is not asked again by its tool, but a change of settings is: its request
+        shows each field before and after."""
+        if call and kind not in ("tool", "settings") and call in self.approved:
             del self.approved[call]
             return None
         user = self.cfg.user
@@ -269,14 +262,15 @@ class Approvals:
         who = getattr(self.cfg, "name", "") or ""
         rows = [*facts, *([(REASON, why)] if why else [])]
         if (read := self.read.get(conversation)) is not None:
-            rows.append((READ_BEFORE, _read_label(read)))
+            from .settings.tools_meta import label
+            rows.append((READ_BEFORE, label(read)))
         ask = Ask(id=secrets.token_urlsafe(16), kind=kind,
                   title=f"{who} asks to {action}." if who else
                   action[:1].upper() + action[1:] + ".",
                   facts=rows, detail=detail, help=self._help(kind),
                   conversation=conversation,
                   expires=None if turn is not None else time.time() + ASK_FOR,
-                  answer=asyncio.get_running_loop().create_future(), ref=ref, call=call,
+                  answer=asyncio.get_running_loop().create_future(), call=call,
                   home=where.get("home"), link=where.get("link"), root=where.get("root"),
                   where=where.get("where"))
         self.waiting[ask.id] = ask
@@ -296,7 +290,7 @@ class Approvals:
         if ok is STOPPED:
             return f"{user} did not answer; nothing was done."
         if ok:
-            if call and kind == "gate":
+            if call and kind == "tool":
                 self.approved[call] = None
                 while len(self.approved) > APPROVED_KEPT:
                     del self.approved[next(iter(self.approved))]
@@ -341,11 +335,6 @@ class Approvals:
         log.info("approval answered", extra={"event": "approvals.answered", "ok": bool(ok)})
         return True
 
-    def by_ref(self, ref: int) -> str | None:
-        """The id of the request that waits for Bastet's row `ref` (her banner)."""
-        return next((a.id for a in self.waiting.values()
-                     if a.ref == ref and not a.answer.done()), None)
-
     def view(self, kind: str | None = None) -> list[dict]:
         """The cards that wait, of `kind` or all, oldest first."""
         return [a.card() for a in self.waiting.values() if kind in (None, a.kind)]
@@ -379,9 +368,8 @@ class Approvals:
             self.emit({"type": APPROVALS_CHANGED})
 
     async def _landed(self, ask: Ask) -> None:
-        """In its chat: `approval.asked`, after the message that made the call (a gate
-        is asked on Bastet's banner)."""
-        if self.store is None or ask.kind == "gate":
+        """In its chat: `approval.asked`, after the message that made the call."""
+        if self.store is None:
             return
         store = self.store
 
@@ -393,8 +381,7 @@ class Approvals:
         await store.write(fn)
 
     def _link(self, c, ask: Ask) -> str | None:
-        """Where its notice opens: Settings, Vault for the vault's, else its chat (for a
-        gate, Bastet's banner there)."""
+        """Where its notice opens: Settings, Vault for the vault's, else its chat."""
         from . import homes
         return "/settings/vault" if ask.kind == "vault" else \
             homes.of(c, ask.conversation)["link"]
@@ -409,8 +396,7 @@ class Approvals:
         store = self.store
 
         def fn(c) -> None:
-            if ask.kind != "gate":
-                store.event(c, ask.conversation, APPROVAL_CLOSED, {"id": ask.id})
+            store.event(c, ask.conversation, APPROVAL_CLOSED, {"id": ask.id})
             notice(store, c, "approval", ask.title, CLOSED[ok], self._link(c, ask),
                    f"ask:{ask.id}", closed=True)
         await store.write(fn)

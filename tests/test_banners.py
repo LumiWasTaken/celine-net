@@ -6,14 +6,12 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-import anyio
 import httpx
 import pytest
 
 from test_bastet import FakeAsk, _app, _cfg, _never, _search, _shell
 
 from celine import guard
-from celine.approvals import Approvals
 from celine.conversations import store as conversations, tree, view
 from celine.core.services import Services
 from celine.guard import banners, freeze, passes, store as decisions
@@ -165,78 +163,6 @@ async def test_his_answers_become_a_pass_an_allow_once_and_an_unfreeze(store, mo
     assert [t["text"] for t in got["thread"]] == ["Unfreeze", "Unfrozen. Celine continues."]
 
 
-async def test_approve_and_deny_on_an_ask_banner_answer_the_waiting_request(store):
-    from celine.guard.calls import gated as _gated
-    cfg = _cfg(confirm={"tools": ["notebook"]})
-    changed = anyio.Event()
-
-    def on(_ev):
-        changed.set()
-    approvals = Approvals(cfg, emit=on)
-    app = Services(cfg=cfg, store=store, approvals=approvals)
-    turn, mid = await _chat(store)
-    cid = turn["conversation_id"]
-    call = {"id": "k3", "name": "notebook__write", "message_id": mid, "read_only": False,
-            "args": {"path": "a.md", "text": "x"}}
-    for button, grant, want, said in (("Approve", "once", "approved", "Allowed this once. It runs now."),
-                                      ("Deny", "keep", "denied", "Denied. It does not run.")):
-        v = await guard.check(turn, call, [], mode="on", judge=_never, store=store,
-                              ask=FakeAsk(0.0), cfg=cfg)
-        out = {}
-
-        async def run():
-            out["r"] = await _gated(v, turn, call, store, cfg, app)
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(run)
-            await changed.wait()
-            changed = anyio.Event()
-            [b] = [x for x in (await view.snapshot(store, cid))["guard"] if x["id"] == v.row]
-            assert b["kind"] == "ask" and b["line"] == (
-                "Asks you before a notebook step. You put this tool on Require approval in Settings, Guard.")
-            got = await banners.answer(app, v.row, by=OWNER, said=button, decided={
-                "grant": grant, "rule": "all", "minutes": 60, "where": "here"})
-            assert got["thread"][-1]["text"] == said
-        b = [x for x in (await view.snapshot(store, cid))["guard"] if x["id"] == v.row][0]
-        assert b["kind"] == want
-    assert approvals.view() == []
-
-    # a pass granted on an ask approves the request that waits
-    v = await guard.check(turn, call, [], mode="on", judge=_never, store=store,
-                          ask=FakeAsk(0.0), cfg=cfg)
-    out = {}
-
-    async def run():
-        out["r"] = await _gated(v, turn, call, store, cfg, app)
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(run)
-        await changed.wait()
-        got = await banners.answer(app, v.row, by=OWNER, said="fine for today", decided={
-            "grant": "pass", "rule": "confirm", "minutes": 60, "where": "here"})
-        assert got["thread"][-1]["text"].endswith(" It runs now.")
-    assert out["r"] == ["Bastet: User said yes to this notebook__write call."] and \
-        approvals.view() == []
-
-    # an ask nothing waits for: an answer closes it; one the last run left: startup does
-    [held] = await passes.listing(store)
-    await passes.end(store, held["id"])
-    v = await guard.check(turn, call, [], mode="on", judge=_never, store=store,
-                          ask=FakeAsk(0.0), cfg=cfg)
-    got = await banners.answer(app, v.row, by=OWNER, said="Approve", decided={
-        "grant": "once", "rule": "all", "minutes": 60, "where": "here"})
-    assert got["thread"][-1]["text"] == "Nothing waits for you here."
-    assert got["kind"] == "closed", "its buttons go"
-    assert await store.read(lambda c: c.execute(
-        "SELECT count(*) FROM kv WHERE k LIKE 'guard.once.%'").fetchone()[0]) == 0
-    v = await guard.check(turn, call, [], mode="on", judge=_never, store=store,
-                          ask=FakeAsk(0.0), cfg=cfg)
-    assert await decisions.close_asked(store) == 1
-    assert (await banners_of(store, cid, v.row))["kind"] == "closed"
-
-
-async def banners_of(store, cid, rid):
-    return [x for x in (await view.snapshot(store, cid))["guard"] if x["id"] == rid][0]
-
-
 async def test_the_route_answers_for_the_owner_only(store, monkeypatch):
     cfg = _cfg()
     app = _app(store, cfg)
@@ -259,10 +185,8 @@ async def test_the_route_answers_for_the_owner_only(store, monkeypatch):
         assert r.status_code == 503 and r.json()["error"]["code"] == "bastet_away"
         assert (await c.post(url, json={"button": "nap"})).status_code == 400
         assert (await c.post(url, json={})).status_code == 400
-        assert (await c.post("/api/guard/banners/999/replies", json={"button": "deny"})).status_code \
+        assert (await c.post("/api/guard/banners/999/replies", json={"button": "once"})).status_code \
             == 404
-        r = await c.post(url, json={"button": "deny"})
-        assert r.json()["banner"]["thread"][-1]["text"] == "Still stopped."
         app.state.auth = SimpleNamespace()            # passkeys on, no session: a token
         r = await c.post(url, json={"button": "unfreeze"})
         assert r.status_code == 403 and r.json()["error"]["code"] == "passkey_only"

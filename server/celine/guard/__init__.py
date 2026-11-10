@@ -16,7 +16,7 @@ asks the flow:
 `call` is {id, name, args, description, read_only, message_id, sends}. None: no rule had
 a reason to look; else the Verdict (verdict.py) its rows are written for, and calls.gated
 acts on it: v.decision allow / would_stop / failed runs the call, stop refuses it with
-v.sentence, asked waits for the owner (v.ask), v.freeze freezes it (freeze.freeze),
+v.sentence, v.freeze freezes it (freeze.freeze),
 v.note goes to the owner (talk.to_owner) unless the second look takes it
 (rules.REVIEWED, chain.after_stop).
 
@@ -24,7 +24,7 @@ The modules, one concern each:
 - switch.py   the one switch: General `guard` off, watch or on
 - rules.py    guard.toml, and TABLE: every rule's words and which parts take it
 - calls.py    one call of its turn: frozen, at_call (gates, the judges in Watch or On,
-  the owner's confirm, the freeze, the passes it has not heard of)
+  the freeze, the passes it has not heard of)
 - flow.py     one call: closed gates, facts, passes, judges, verdict, the stops rule
 - verdict.py  Judgement, Verdict, Ruling, the evidence rule (confirm)
 - facts.py, persist.py, trigger.py, sources.py, patterns.py   plain code, no model

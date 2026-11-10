@@ -375,7 +375,6 @@ def test_nothing_celine_reads_about_bastet_says_how_she_decides():
     from pathlib import Path
     lines = [*(r.to_agent for r in rules.TABLE.values()), *(r.plain for r in rules.TABLE.values()),
              bastet.STOPPED, bastet.AGAIN, bastet.FROZEN_NOW, bastet.PASSED,
-             bastet.APPROVED, bastet.DENIED, bastet.UNANSWERED, bastet.NOT_ASKED,
              bastet.UNFROZEN, bastet.UNFROZEN_BY_USER, bastet.HIJACKED]
     folder = Path(__file__).parents[1] / "server" / "celine" / "skills" / "guides"
     for name in ("intercom.md", "notebook.md"):

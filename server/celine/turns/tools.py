@@ -238,6 +238,14 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
         return "error", ToolResult(content=f"invalid arguments: {wrong}{full}",
                                    is_error=True), None
 
+    if call["name"] in getattr(getattr(cfg, "settings", None), "approval", ()):
+        no = await _approval(turn, call, args, cfg, registry)
+        if token.cancelled and token.shutdown:
+            return None
+        if no is not None:
+            return "gated", ToolResult(content=no, display={"gated": True,
+                                                            "tool": call["name"]}), None
+
     said: list[str] = []
 
     async def progress(note: str) -> None:
@@ -264,6 +272,20 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     state, result, withheld = out
     return state, replace(result, display={**(result.display or {}),
                                            "bastet": gate.lines}), withheld
+
+
+async def _approval(turn, call, args, cfg, registry) -> str | None:
+    """A tool on Require approval (Settings, Tools): the user's answer before it runs
+    (approvals.py, kind "tool"), the guard on or off. -> None on their yes, else the
+    approvals' sentence for its result."""
+    from ..settings.tools_meta import label
+    approvals = getattr(getattr(registry, "app", None), "approvals", None)
+    if approvals is None:
+        return f"{cfg.user} did not answer; nothing was done."
+    return await approvals.ask(
+        "tool", turn["conversation_id"], f"run {label(call['name'])}",
+        detail=("Arguments", json.dumps(args or {}, indent=2, ensure_ascii=False)),
+        call=call["id"])
 
 
 async def _replayed(store, turn, call):

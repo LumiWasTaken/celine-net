@@ -8,15 +8,16 @@ import sqlite3
 from .bastet import OWNER_SINKS, sentence, tool_words
 from .rules import TABLE, label
 
-# only what acted, in On: a stop, an ask and how it ended, a confirmed patrol finding.
-# Watch's "would have" rows and a rule set to watch are rows for Events, never banners
-BANNER_DECISIONS = ("found", "stop", "asked", "approved", "denied", "closed")
+# only what acted, in On: a stop, a confirmed patrol finding, and the asks of the rule
+# that moved to Settings, Tools with how they ended. Watch's "would have" rows and a rule
+# set to watch are rows for Events, never banners
+BANNER_DECISIONS = ("found", "stop", "approved", "denied", "closed")
 
 # what it did, then why: the owner reads everything (rows, facts), the agent none of it
 DID = {"stop": "Stopped {tool}.", "freeze": "Stopped {tool} and froze everything.",
        "would_stop": "Would have stopped {tool}.",
        "would_freeze": "Would have stopped {tool} and frozen everything.",
-       "ask": "Asks you before {tool}.", "approved": "You approved {tool}.",
+       "approved": "You approved {tool}.",
        "denied": "You denied {tool}.", "closed": "No answer on {tool}, it did not run.",
        "patrol": "Looked back at this turn.", "gate": "Stopped {tool}.",
        "allow": "Allowed {tool}.", "passed": "Allowed {tool} on your pass.",
@@ -25,12 +26,10 @@ DID = {"stop": "Stopped {tool}.", "freeze": "Stopped {tool} and froze everything
 
 
 def kind(r: sqlite3.Row) -> str:
-    """What a row is to the owner: patrol, ask, freeze, would_freeze, else its decision."""
+    """What a row is to the owner: patrol, freeze, would_freeze, else its decision."""
     d = r["decision"]
     if r["does"] == "patrol" or d == "found":
         return "patrol"
-    if d == "asked":
-        return "ask"
     if d == "stop" and r["froze"]:
         return "freeze"
     if d == "would_stop" and r["froze"]:
@@ -55,8 +54,6 @@ PAGE_HELP = {
                    "{{name}} is frozen.",
     "rules": "What Bastet does when a rule finds something in a step. Warn only writes "
              "it down in Events.",
-    "confirm": "Steps that wait for your answer every time: a tool, a whole skill, or "
-               "tool:argument, separated by commas.",
     "passes": "Steps you let through on a banner. End stops a pass now.",
 }
 
@@ -69,7 +66,7 @@ def actions(r: sqlite3.Row) -> list[str]:
     """What the owner can answer on a stop or a freeze, on its banner and from the Events
     page: "once" (allow this call once) and "pass" (allow for 7 days: its rule and its piece
     in its conversation, only for a row with a piece). Not a closed gate (only
-    guard.toml opens it), not the patrol (no call to allow), not an ask (Approve, Deny)."""
+    guard.toml opens it), not the patrol (no call to allow)."""
     if not shown(r) or r["rule"] == "gates" or kind(r) not in ("stop", "freeze"):
         return []
     return ["once", "pass"] if r["piece"] else ["once"]
@@ -106,7 +103,6 @@ def banner(r: sqlite3.Row, thread: list[dict], frozen_turn: str | None) -> dict:
 
 
 def repeats(a: dict, b: dict) -> bool:
-    """A stop or patrol banner that repeats another: the same rule, kind and words (an
-    ask never collapses: it waits for their answer)."""
+    """A stop or patrol banner that repeats another: the same rule, kind and words."""
     return a["kind"] in ("stop", "patrol") and \
         (a["rule"], a["kind"], a["line"]) == (b["rule"], b["kind"], b["line"])

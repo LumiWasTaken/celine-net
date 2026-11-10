@@ -12,7 +12,7 @@ import { Check, Ticket, type LucideIcon } from 'lucide-react'
 import { del, json, request } from './api'
 import { useResource } from './useResource'
 
-export type BannerKind = 'stop' | 'freeze' | 'ask' | 'approved' | 'denied' | 'closed' | 'patrol'
+export type BannerKind = 'stop' | 'freeze' | 'approved' | 'denied' | 'closed' | 'patrol'
 
 type BannerLine = { by: 'user' | 'guard'; text: string; at: string }
 
@@ -79,12 +79,11 @@ export type GuardPass = { id: number; rule: string; label: string; piece: string
 /** what a rule does, as Settings, Guard sets it */
 export type RuleAct = 'off' | 'watch' | 'stop' | 'freeze'
 /** guard.toml as the Guard page reads it: each rule it sets with its label and what it does, the words of
-    what a rule can do, the ask-first list, and the page's help texts (names filled in) */
+    what a rule can do, and the page's help texts (names filled in) */
 export type GuardRules = {
   rows: { rule: string; label: string; act: RuleAct }[]
   acts: { value: RuleAct; label: string }[]
-  confirm: { on: boolean; tools: string[] }
-  help: Record<'mode' | 'decision' | 'second_look' | 'rules' | 'confirm' | 'passes', string>
+  help: Record<'mode' | 'decision' | 'second_look' | 'rules' | 'passes', string>
 }
 
 const enc = encodeURIComponent
@@ -100,12 +99,12 @@ export const guardApi = {
   /** null: the default again */
   putText: (field: BastetField, text: string | null) => request<BastetTexts>(`/guard/texts/${field}`, json('PUT', { text })),
   /** your words in a banner's thread, or one of its buttons */
-  answer: (id: number, body: { text: string } | { button: 'approve' | 'deny' | 'unfreeze' | GuardAction }) =>
+  answer: (id: number, body: { text: string } | { button: 'unfreeze' | GuardAction }) =>
     request<{ banner: GuardBanner }>(`/guard/banners/${enc(String(id))}/replies`, json('POST', body)),
   passes: () => request<{ passes: GuardPass[] }>('/guard/passes'),
   endPass: (id: number) => del<{ ended: number }>(`/guard/passes/${enc(String(id))}`),
   rules: () => request<GuardRules>('/guard/rules'),
-  /** the rule tables to change: { leak: { on, does } }, { confirm: { tools } } */
+  /** the rule tables to change: { leak: { on, does } } */
   putRules: (tables: Record<string, Record<string, unknown>>) => request<GuardRules>('/guard/rules', json('PUT', tables)),
   decision: (id: number) => request<{ decision: GuardDecision }>(`/guard/decisions/${enc(String(id))}`),
   frozen: () => request<{ frozen: Freeze | null }>('/guard/freeze'),

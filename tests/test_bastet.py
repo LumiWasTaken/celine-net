@@ -402,68 +402,6 @@ async def test_hijack_freezes_when_the_order_also_leaks(store):
         {("hijack", True), ("leak", False)}
 
 
-async def test_confirm_asks_the_owner_and_his_answer_decides(store):
-    from celine.guard.calls import gated as _gated
-    cfg = _cfg(confirm={"tools": ["notebook"]})
-    changed = anyio.Event()
-    approvals = Approvals(cfg, emit=lambda ev: changed.set())
-    app = Services(cfg=cfg, store=store, approvals=approvals)
-    call = {"id": "k1", "name": "notebook__write", "message_id": None, "read_only": False,
-            "args": {"path": "a.md", "text": "x"}}
-    yes = ["Bastet: User said yes to this notebook__write call."]
-    no = "Not run: Bastet asked User first, and User said no to this notebook__write call."
-    for ok, want in ((True, yes), (False, no)):
-        v = await guard.check(TURN, call, [], mode="on", judge=_never, store=store,
-                              ask=FakeAsk(0.0), cfg=cfg)
-        assert v.decision == "asked"
-        out = {}
-
-        async def run():
-            out["r"] = await _gated(v, TURN, call, store, cfg, app)
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(run)
-            await changed.wait()
-            changed = anyio.Event()
-            [ask] = approvals.view()
-            assert ask["kind"] == "gate" and ask["title"].endswith(" asks to run notebook__write.")
-            assert ask["detail"]["title"] == "Arguments" and \
-                json.loads(ask["detail"]["text"]) == {"path": "a.md", "text": "x"}
-            assert approvals.decide(ask["id"], ok, OWNER)
-        got = out["r"]
-        assert got == want if ok else got[1].content == want
-    assert [r["decision"] for r in await decisions.listing(store, rule="confirm")] == \
-        ["denied", "approved"]
-
-
-async def test_a_fresh_install_confirms_the_steps_that_reach_out_or_change_the_agent(store):
-    """The seed of the confirm list: a public share and an edit of the agent wait for the
-    owner; a private share, a sub-agent and the coding agent on its own machines do
-    not. The owner's own list replaces the seed."""
-    cfg = _cfg()
-    assert rules.current(cfg)["confirm"]["tools"] == ["shell__share:public", "me__edit"]
-
-    def call(tool, **args):
-        return {"id": f"s-{tool}-{sorted(args.items())}", "name": tool,
-                "message_id": None, "read_only": False, "args": args}
-    for c in (call("shell__share", title="Snake", port=8000, public=True),
-              call("me__edit", what="phrases", add=["you were right"])):
-        v = await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
-                              ask=FakeAsk(0.0), cfg=cfg)
-        assert v is not None and v.decision == "asked" and v.rule == "confirm", c["name"]
-    for c in (call("shell__share", title="Snake", port=8000, public=False),
-              call("shell__share", title="Snake", port=8000),
-              call("code__start", dir="site", task="build it", model="main/big"),
-              call("sub_agents__start", brief="tidy up", name="helper", cli="opencode"),
-              call("sub_agents__start", brief="tidy up", name="helper", device="mac"),
-              call("sub_agents__start", brief="tidy up", name="helper")):
-        assert await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
-                                 ask=FakeAsk(0.0), cfg=cfg) is None, c["args"]
-    mine = _cfg(confirm={"tools": []})
-    c = call("me__edit", what="talk", new="short.")
-    assert await guard.check(TURN, c, [], mode="on", judge=_never, store=store,
-                             ask=FakeAsk(0.0), cfg=mine) is None
-
-
 # ---- passes ------------------------------------------------------------------------------
 
 async def test_a_pass_holds_until_its_time_and_its_next_result_hears_of_it_once(store):
@@ -743,26 +681,6 @@ async def test_the_small_role_holds_each_yes_to_a_quote_from_the_call():
                                    "- destructive: the command has rm -rf ~/a" in t
                                    for t in asked)
     assert asked[0].endswith("No quote you can copy: N.")
-
-
-async def test_a_stop_while_the_owner_is_asked_closes_the_row_and_the_ask(store):
-    from celine.guard.calls import gated as _gated
-    cfg = _cfg(confirm={"tools": ["notebook"]})
-    changed = anyio.Event()
-    approvals = Approvals(cfg, emit=lambda ev: changed.set())
-    app = Services(cfg=cfg, store=store, approvals=approvals)
-    call = {"id": "k1", "name": "notebook__write", "message_id": None, "read_only": False,
-            "args": {"path": "a.md", "text": "x"}}
-    v = await guard.check(TURN, call, [], mode="on", judge=_never, store=store,
-                          ask=FakeAsk(), cfg=cfg)
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(_gated, v, TURN, call, store, cfg, app)
-        await changed.wait()
-        assert len(approvals.view()) == 1
-        tg.cancel_scope.cancel()
-    assert approvals.view() == []
-    [row] = await decisions.listing(store, rule="confirm")
-    assert row["decision"] == "closed"
 
 
 async def _rows(store, n: int) -> bool:

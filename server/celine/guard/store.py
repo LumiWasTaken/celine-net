@@ -7,8 +7,8 @@ a reason to ask). Durable: the events table is pruned, this one is not (migratio
 
 decision: allow (asked, the judge said no; a page check's mark), stop, would_stop (Watch,
 or a rule set to watch: it would have acted), found (a patrol finding the chain
-confirmed), passed (a pass covered it), asked, approved,
-denied, closed (a confirm ask nobody answered in time), waiting (the judge has not
+confirmed), passed (a pass covered it), approved, denied, closed (the asks of the
+rule that moved to Settings, Tools: their history), waiting (the judge has not
 answered yet), failed (it broke), unreachable (no judge could answer: counted apart
 from a stop and from a failure). `froze`: this decision froze it, or would have in
 Watch. Every row that is not a silent allow is a banner in its conversation
@@ -32,7 +32,7 @@ from . import bastet, view
 from .rules import REPEATABLE
 
 DECISIONS = ("waiting", "allow", "would_stop", "stop", "failed", "unreachable", "found",
-             "closed", "asked", "approved", "denied", "passed")
+             "closed", "approved", "denied", "passed")
 _COLS = ("id", "conversation_id", "turn_id", "message_id", "tool_call_id", "tool", "mode",
          "layer", "rule", "does", "decision", "link", "source", "quote", "why", "class",
          "sink", "piece", "froze", "p", "scores", "model", "ms", "created_at")
@@ -113,7 +113,7 @@ async def record(store, *, turn: dict, call: dict, mode: str, rule: str, does: s
 
 async def mark(store, rid: int, *, decision: str | None = None,
                froze: bool | None = None) -> None:
-    """A row's later turn: a confirm answered, a decision that froze it."""
+    """A row's later turn: a decision that froze it."""
     def fn(c: sqlite3.Connection) -> None:
         c.execute("UPDATE guard_decisions SET decision=coalesce(?, decision), "
                   "froze=coalesce(?, froze) WHERE id=?",
@@ -122,21 +122,11 @@ async def mark(store, rid: int, *, decision: str | None = None,
     await store.write(fn)
 
 
-async def close_asked(store) -> int:
-    """At startup, the rows the last run left open: a confirm ask is closed (requests
-    live in memory, approvals.py; nothing waits for them any more), its banner without
-    Approve and Deny; a check still "waiting" failed, its why "stopped". -> how many
-    asks were closed."""
-    def fn(c: sqlite3.Connection) -> int:
-        c.execute("UPDATE guard_decisions SET decision='failed', why='stopped' WHERE "
-                  "decision='waiting'")
-        rids = [r[0] for r in c.execute(
-            "UPDATE guard_decisions SET decision='closed' WHERE decision='asked' "
-            "RETURNING id").fetchall()]
-        for rid in rids:
-            emit(c, store, rid)
-        return len(rids)
-    return await store.write(fn)
+async def close_waiting(store) -> None:
+    """At startup, the checks the last run left "waiting" failed, their why "stopped"."""
+    await store.write(lambda c: c.execute(
+        "UPDATE guard_decisions SET decision='failed', why='stopped' WHERE "
+        "decision='waiting'"))
 
 
 def _stops(c: sqlite3.Connection, turn_id: str, decision: str = "stop") -> int:
@@ -302,15 +292,6 @@ def call_args(c: sqlite3.Connection, tool_call_id: str) -> dict:
     return args_of(r[0]) if r else {}
 
 
-async def close_ask(store, rid: int) -> None:
-    """An ask nothing waits for any more is closed: its banner without Approve and Deny."""
-    def fn(c: sqlite3.Connection) -> None:
-        if c.execute("UPDATE guard_decisions SET decision='closed' WHERE id=? AND "
-                     "decision='asked'", (rid,)).rowcount:
-            emit(c, store, rid)
-    await store.write(fn)
-
-
 # ---- kv: the guard's keys --------------------------------------------------------------
 
 def kv(c: sqlite3.Connection, k: str) -> str | None:
@@ -433,10 +414,10 @@ async def add_to_thread(store, rid: int, lines: list[dict]) -> dict | None:
 # ---- what Bastet reads back ---------------------------------------------------------------
 
 def decided(c: sqlite3.Connection, n: int) -> list[sqlite3.Row]:
-    """Bastet's newest n decisions the agent heard of (mode On: a stop, an ask and how it ended,
-    a patrol finding), newest first."""
+    """Bastet's newest n decisions the agent heard of (mode On: a stop, an ask of the rule
+    that moved to Settings, Tools and how it ended, a patrol finding), newest first."""
     return c.execute(
-        "SELECT * FROM guard_decisions WHERE mode='on' AND (decision IN ('stop','asked',"
+        "SELECT * FROM guard_decisions WHERE mode='on' AND (decision IN ('stop',"
         "'approved','denied','closed') OR (does='patrol' AND decision='found')) "
         "ORDER BY id DESC LIMIT ?", (n,)).fetchall()
 

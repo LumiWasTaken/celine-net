@@ -158,7 +158,7 @@ async def test_every_edit_of_the_agent_waits_for_the_owner_guard_or_not(store, c
                                                                       monkeypatch):
     """me__edit asks the owner (celine/approvals.py) before it writes, whatever the guard
     is; denied, unanswered or with nobody to ask, nothing changes. A call the owner
-    already approved on Bastet's ask is not asked again."""
+    already approved as a tool on Require approval is not asked again."""
     from celine import approvals as ap
     from celine.guard.owner import _SEAL, Owner
     from chat_fixtures import until
@@ -187,11 +187,11 @@ async def test_every_edit_of_the_agent_waits_for_the_owner_guard_or_not(store, c
     got = await Me(cfg).edit(_ctx(store, cfg, "k3"), what="phrases", add=["x y"])
     assert got.is_error and "nobody" in got.content
     assert "x y" not in cfg.agent.voice["phrases"]
-    # Bastet's confirm ask for this very call was approved: it is not asked again
+    # the Require approval ask for this very call was approved: it is not asked again
     monkeypatch.setattr(ap, "ASK_FOR", 5)
-    gate, _ = await asyncio.gather(a.ask("gate", "c1", "run me__edit", call="k4"),
-                                   answer(True, "gate"))
-    assert gate is None
+    first, _ = await asyncio.gather(a.ask("tool", "c1", "run me__edit", call="k4"),
+                                    answer(True, "tool"))
+    assert first is None
     got = await _me(cfg, a).edit(_ctx(store, cfg, "k4"), what="phrases", add=["x y"])
     assert not got.is_error and "x y" in cfg.agent.voice["phrases"] and not a.waiting
 

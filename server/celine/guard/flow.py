@@ -10,8 +10,7 @@ judges given (tests, a bare runner); `closed` the closed gates before either.
 - Code first (facts.py, trigger.py): a rule is asked only where code found a hard fact:
   outside text the call copies (hijack), a piece classed sensitive or nsfw it sends out
   (leak), a command or tool that breaks out (escape) or destroys what matters (damage),
-  a site the task never named (sites), a tool the owner listed (confirm). No fact: no
-  judge, no row.
+  a site the task never named (sites). No fact: no judge, no row.
 - The judge confirms the fact: the hijack rule keeps its own two stages (judge.py, its
   deny held to a quote found in the outside text); every other rule is one question to
   questions.Judge, answered as JSON {verdict, quote, why}, a yes held to a quote found
@@ -19,8 +18,8 @@ judges given (tests, a bare runner); `closed` the closed gates before either.
   the quote and the why.
 - What a rule does (`does`): watch (its row only), stop (not run, a fixed sentence with
   the judge's why; the owner hears it once per rule and evidence and conversation in a
-  day), freeze (stop, and it is frozen: freeze.py). confirm asks the owner
-  (celine/approvals.py). `stops`: this many stops in one turn, then its `does`.
+  day), freeze (stop, and it is frozen: freeze.py). `stops`: this many stops in one
+  turn, then its `does`.
   `persist`: after a stop in this conversation, a call code finds trying the same thing
   another way (persist.again), its first such try `first`, the next `does`.
 - Passes (passes.py): a rule the owner suspended runs, its row "passed"; so does a call
@@ -39,7 +38,6 @@ what would have frozen it), on. Read at call time, so a change applies at once.
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -72,7 +70,7 @@ def _decision(act: str | None, mode: str) -> str:
         return "allow"
     if mode == "watch" or act == "watch":
         return "would_stop"
-    return "asked" if act == "ask" else "stop"
+    return "stop"
 
 
 async def _until(fn, mode: str, tool: str, *, progress=None, cfg=None,
@@ -137,7 +135,7 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
     """Bastet on one call. -> None when no rule had a reason to look (no row), else the
     verdict, its rows written. `call`: {id, name, args, description, read_only,
     message_id, sends}. `judge`: the hijack rule's judge; `ask`: the questions.Judge for
-    the other rules (None: only hijack and confirm are answered);
+    the other rules (None: only hijack is answered);
     `cfg`: the rule set and the names in Bastet's sentences; `at`: now (persist's
     window; a test fixes it).
     `progress(note)`: told when a judge starts, and why while it waits. On waits as long
@@ -156,7 +154,7 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
     found: dict[str, dict] = {}
     stated = None
     # image and music prompts are never checked (image moderation is left to the ComfyUI
-    # server), the vault has its own taps: only the owner's confirm list reaches them
+    # server), the vault has its own taps
     if ask is not None and not call["name"].startswith(NEVER):
         if on["leak"] and sink != "house" and (pieces := [
                 p for p in facts.copies(await facts.private(store, turn, request), sent,
@@ -178,9 +176,6 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
         if on["persist"] and persist.can_again(call, sink) and (same := await _again(store, turn, call, sink, sent, mode,
                                                    rules["persist"], cfg, at)):
             found["persist"] = same
-    if on["confirm"] and rule_set.listed(rules["confirm"]["tools"], call["name"],
-                                         call.get("args") or {}):
-        found["confirm"] = {}
     if hit is None and not found:
         return None
 
@@ -235,7 +230,7 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
                            why=why)
             metrics.record_guard("unreachable", names[0], 0, mode=mode)
             # On waits until it answers: no answer there means Bastet was turned off
-            if mode == "on" or (hit is None and "confirm" not in found):
+            if mode == "on" or hit is None:
                 return Verdict("failed", None, why=why)
         else:
             for r in names:
@@ -253,11 +248,6 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
                                      waited_ms=waited["ms"])
                 waited["ms"] = 0.0                       # one wait, counted once
                 answers.append(rule)
-    if "confirm" in found:
-        act = "ask"
-        answers.append(Ruling("confirm", act, {}, None, await _row(
-            store, turn, call, mode, rules, "confirm", _decision(act, mode), {}, sink,
-            layer=1)))
     if hit is not None:
         h = await _hijack(turn, call, hit, mode, judge, store, rules, progress, cfg)
         if h is None:              # Watch never answered, or On and Bastet was turned off
@@ -356,7 +346,7 @@ async def _verdict(v: Verdict, answers: list[Ruling], rules, mode, store, turn, 
         for r in acting:
             if r.act == "freeze" and r.rid is not None:
                 await decisions.mark(store, r.rid, froze=True)
-        if any(r.act in ("stop", "freeze", "ask") for r in acting):
+        if any(r.act in ("stop", "freeze") for r in acting):
             v.decision = "would_stop"
             await _stops_rule(v, rules, mode, store, turn, call, cfg)
         elif v.decision != "failed":
@@ -367,39 +357,31 @@ async def _verdict(v: Verdict, answers: list[Ruling], rules, mode, store, turn, 
     # persist speaks first on a tie: "I said no" is the plainest word on a try again
     top = max(acting, key=lambda r: (STRENGTH[r.act], r.name == "persist"))
     v.rule, v.row = top.name, top.rid
-    if top.act in ("stop", "freeze"):
-        v.decision = "stop"
-        if top.name != "hijack":
-            v.stops = await decisions.stops(store, turn["id"])
-        if top.act == "freeze":
-            v.freeze = _owner(cfg, call, said(rule_set.TABLE[top.name].to_owner, top), top)
-            if top.rid is not None:
-                await decisions.mark(store, top.rid, froze=True)
-        else:
-            await _stops_rule(v, rules, mode, store, turn, call, cfg)
-            if not v.note and not v.freeze and await _fresh(store, turn, top):
-                v.note = bastet.fill(cfg, bastet.NOTE, tool=bastet.tool_words(call["name"]),
-                                     said=said(rule_set.TABLE[top.name].to_owner, top),
-                                     why=_why(top), done=bastet.sub(cfg, bastet.DONE["stop"]))
-        # it reads that it is frozen, else that it carries on
-        then = bastet.sub(cfg, bastet.FROZEN_NOW) if v.freeze else bastet.CARRY
-        if top.name == "hijack":
-            v.text = v.hijacked(then)
-        else:
-            # a try again that another rule stops too is still "I said no"
-            again = next((r for r in answers if r.name == "persist" and r.act is not None),
-                         None)
-            v.text = bastet.fill(cfg, bastet.STOPPED, said=said(rule_set.TABLE[top.name].to_agent, top),
-                                 why=_why(top), then=then) if again is None else \
-                bastet.fill(cfg, bastet.AGAIN, said=said(rule_set.TABLE["persist"].to_agent, again),
-                            why=_why(again), then=then)
-        return v
-    if top.act == "ask":
-        v.decision = "asked"
-        # the card (approvals.py): the call's arguments whole under Details
-        v.ask = {"action": bastet.ASK.format(tool=call["name"]), "rid": top.rid,
-                 "detail": ("Arguments", json.dumps(call.get("args") or {}, indent=2,
-                                                    ensure_ascii=False))}
+    v.decision = "stop"
+    if top.name != "hijack":
+        v.stops = await decisions.stops(store, turn["id"])
+    if top.act == "freeze":
+        v.freeze = _owner(cfg, call, said(rule_set.TABLE[top.name].to_owner, top), top)
+        if top.rid is not None:
+            await decisions.mark(store, top.rid, froze=True)
+    else:
+        await _stops_rule(v, rules, mode, store, turn, call, cfg)
+        if not v.note and not v.freeze and await _fresh(store, turn, top):
+            v.note = bastet.fill(cfg, bastet.NOTE, tool=bastet.tool_words(call["name"]),
+                                 said=said(rule_set.TABLE[top.name].to_owner, top),
+                                 why=_why(top), done=bastet.sub(cfg, bastet.DONE["stop"]))
+    # it reads that it is frozen, else that it carries on
+    then = bastet.sub(cfg, bastet.FROZEN_NOW) if v.freeze else bastet.CARRY
+    if top.name == "hijack":
+        v.text = v.hijacked(then)
+    else:
+        # a try again that another rule stops too is still "I said no"
+        again = next((r for r in answers if r.name == "persist" and r.act is not None),
+                     None)
+        v.text = bastet.fill(cfg, bastet.STOPPED, said=said(rule_set.TABLE[top.name].to_agent, top),
+                             why=_why(top), then=then) if again is None else \
+            bastet.fill(cfg, bastet.AGAIN, said=said(rule_set.TABLE["persist"].to_agent, again),
+                        why=_why(again), then=then)
     return v
 
 

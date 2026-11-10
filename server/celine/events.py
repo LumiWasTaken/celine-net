@@ -118,9 +118,9 @@ _GUARD = {"allow": ("Allowed", OK), "would_stop": ("Would have stopped", WARN),
           "stop": ("Stopped", ERROR), "freeze": ("Frozen", ERROR), "failed": ("Failed", ERROR),
           "unreachable": ("Could not decide", WARN),
           "found": ("Found", WARN), "closed": ("No answer", ERROR),
-          "ask": ("Waiting for you", WARN), "approved": ("Approved", OK),
+          "approved": ("Approved", OK),
           "denied": ("Denied", ERROR), "passed": ("Pass", MUTED), "patrol": ("Found", WARN),
-          "asked": ("Waiting for you", WARN), "waiting": ("Running", RUNNING)}
+          "waiting": ("Running", RUNNING)}
 # the Mode filter's words: Bastet's mode when she decided
 MODE_WORDS = {"on": "Enforce", "watch": "Warn"}
 _WORK_STATE = {"queued": ("Queued", MUTED), "deferred": ("Paused", WARN), "done": ("Done", OK),

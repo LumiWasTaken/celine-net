@@ -43,7 +43,7 @@ async def test_a_check_stopped_while_the_judge_works_fails_its_row(store):
 
 async def test_a_restart_fails_the_checks_the_last_run_left_waiting(store):
     rid = await decisions.begin(store, turn=TURN, call=CURL, mode="on", link="x", source=None)
-    await decisions.close_asked(store)
+    await decisions.close_waiting(store)
     row = await decisions.one(store, rid)
     assert (row["decision"], row["why"]) == ("failed", "stopped")
 

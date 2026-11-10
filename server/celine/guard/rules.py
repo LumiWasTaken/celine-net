@@ -9,9 +9,6 @@ values stay on a reload.
     on = true
     does = "stop"        # watch (a row only), stop, freeze
 
-    [confirm]            # a tool, a whole skill by its name, or "tool:arg": that tool
-    tools = ["email__send", "shell__share:public"]   # only when its argument is set
-
     [stops]
     count = 3            # stops in one turn, then `does`
 
@@ -112,11 +109,6 @@ TABLE: dict[str, Rule] = {
         banner="It is destructive ({piece}) and you did not ask for it.",
         found="something destructive you did not ask for",
         asked=True, reviewed=True, repeatable=True),
-    "confirm": Rule(
-        plain="a step {{user}} wants to be asked about", label="Require approval",
-        to_agent="{{user}} said this tool waits for an answer every time",
-        to_owner="this tool is on Require approval",
-        banner="You put this tool on Require approval in Settings, Guard."),
     "sites": Rule(
         plain="typing on a site that is not part of the task", label="typing on other sites",
         to_agent="this types on {site}, which is not part of this task",
@@ -166,10 +158,6 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "hijack": {"on": True, "does": "stop"},
     "leak": {"on": True, "does": "stop"},
     "damage": {"on": True, "does": "stop"},
-    # what reaches out of the agent's machines or changes the agent, until the owner's own
-    # list replaces it: a public share, its persona. What runs on its own box or Mac (the
-    # coding agent, a CLI sub-agent, a drone) is its own and not on it
-    "confirm": {"on": True, "tools": ["shell__share:public", "me__edit"]},
     "sites": {"on": True, "does": "watch"},
     "stops": {"on": True, "does": "freeze", "count": 3},
     # after a stop, the same thing again another way: `first` the first
@@ -221,16 +209,6 @@ def escalates(rule: str, fired: set[str]) -> bool:
     return rule == "hijack" and bool(fired & {"leak", "damage"})
 
 
-def listed(tools: list[str], name: str, args: dict) -> bool:
-    """Is the call on the confirm list: its tool, its skill, or "tool:arg" with that
-    argument set (shell__share:public, sub_agents__start:cli)?"""
-    for entry in tools:
-        what, _, arg = entry.partition(":")
-        if what in (name, name.split("__")[0]) and (not arg or (args or {}).get(arg)):
-            return True
-    return False
-
-
 def gate(rules: dict, cls: str, sink: str) -> str:
     """The gate of class `cls` to `sink` in a rule set (current): open, judge, closed."""
     return rules["gates"].get(cls, {}).get(sink, "open")
@@ -275,9 +253,6 @@ _KEYS: dict[str, tuple[Any, str]] = {
     "first": (lambda v: v in DOES, _DOES),
     "minutes": (_count, _COUNT),
     "count": (_count, _COUNT),
-    "tools": (lambda v: isinstance(v, list) and all(isinstance(t, str) and t.strip()
-                                                    for t in v),
-              "This must be a list of tool or skill names."),
     "every_minutes": (_count, _COUNT),
     "turns": (_count, _COUNT),
     "rules": (lambda v: isinstance(v, list) and all(r in PATROLLED for r in v),

@@ -781,6 +781,11 @@ is up (`display.time_up`).
 (`guard/calls.py`: `frozen`, then `at_call`, which asks `guard.closed` and `guard.on_call`)
 are in `guard/__init__.py`; this section is the contract with the rest of the app.
 
+Require approval is no rule of Bastet's: a tool on it (Settings, Tools; `var/settings/approval.toml`
+`tools`, set by `PUT /api/tool-defaults/{tool}` `{approval}`) asks you in `_resolve`, after the
+argument check and before Bastet, guard on or off (`approvals.py`, kind `tool`); a no or no
+answer is the call's result.
+
 Bastet's character is the user's to edit on Settings, Guard (`guard/persona.py`: Bastet's Persona, Replies to {name} on the Intercom and Messages to you, kv `bastet:<field>` with History, the shipped `config/guard/bastet.md`, `talk.md`, `note.md` the defaults; `GET /api/guard/texts`, `PUT /api/guard/texts/{field}`); Bastet's Intercom address is `system:guard`. In `_resolve`, after
 the argument check and before the time check (`guard/calls.at_call`), Bastet answers the rule set on the call. The
 one switch is `guard/switch.py`, asked through the port in `guard/__init__.py`: `off`
@@ -795,7 +800,7 @@ background and only write rows; a closed gate still holds) or `on` (Enforce).
   and freezes). A rule is asked only where code found a hard fact
   (`guard/facts.py`), and a finding needs the judge's yes with a quote code finds in the
   evidence (`verdict.confirm`). Each rule's words and which parts of Bastet take it are
-  one row of `rules.TABLE`. The rules: `escape`, `hijack`, `leak`, `damage`, `confirm`, `sites`, `stops`,
+  one row of `rules.TABLE`. The rules: `escape`, `hijack`, `leak`, `damage`, `sites`, `stops`,
   `persist`, `injection`.
 - **Gates** (`[gates]` in guard.toml, `rules.gate`): per data class and sink, `open`,
   `judge` or `closed`. A closed gate is plain code (`guard.closed`), the same in Warn and
@@ -817,7 +822,7 @@ background and only write rows; a closed gate still holds) or `on` (Enforce).
   reading.
 - **Patrol** (`guard/patrol.py`): at random intervals Bastet looks back at finished turns
   and reports findings on the Intercom.
-- **What the agent reads**: every stop, freeze, confirm and pass is one line from Bastet in
+- **What the agent reads**: every stop, freeze and pass is one line from Bastet in
   the tool result (`bastet.py`), in plain words and never a rule name, threshold or
   score. An Allow once or an Allow for 7 days on a stop's banner is Bastet's line on the Intercom that
   wakes the agent (`talk.to_agent`), so it does the step again now. The agent's chat
@@ -825,7 +830,7 @@ background and only write rows; a closed gate still holds) or `on` (Enforce).
   item; its reply is sent as the model wrote it, and it never grants anything.
 - **Rows**: `guard_decisions`, one per rule that had a reason. A check stopped while the
   judge works fails its row with why `stopped`; a restart fails what the last run left
-  waiting (`store.close_asked`). A stop the second look overruled counts as none: not
+  waiting (`store.close_waiting`). A stop the second look overruled counts as none: not
   for the stops rule, not as a stop persist tries again, not as a message to you already sent.
 - **Freeze** (`guard/freeze.py`, kv `frozen`): every live turn ends `aborted` with
   `reason_code` `frozen`, every job is stopped, no worker claims a turn (`hold.agent_hold`)
@@ -849,10 +854,9 @@ background and only write rows; a closed gate still holds) or `on` (Enforce).
 - `GET /api/guard/rules` (the rule set, its `rows`, `acts` and the page's `help`), `PUT
   /api/guard/rules` (the tables to change)
 - `GET /api/guard/freeze`, `POST /api/guard/freeze` `{why}`, `DELETE /api/guard/freeze`
-- `POST /api/guard/banners/{id}/replies` `{text}` or `{button: approve | deny | unfreeze | once |
-  pass}`; 503 `bastet_away` when the reader cannot answer
+- `POST /api/guard/banners/{id}/replies` `{text}` or `{button: unfreeze | once | pass}`; 503 `bastet_away` when the reader cannot answer
 - `POST /api/approvals/{id}/answer` `{ok}` → `{"ok": true}` (`api/approvals.py`; the
-  cards are listed by `GET /api/waits`); every request but a gate also waits in its chat, after the message that made the call, with Approve and Deny
+  cards are listed by `GET /api/waits`); every request also waits in its chat, after the message that made the call, with Approve and Deny
   (snapshot `approvals`, events `approval.asked`, `approval.closed`). Inside any turn the
   call waits for your answer or Stop, and the turn's wall clock and the tool's time do
   not run meanwhile: a chat or a mission waits until you answer (a mission's time limit

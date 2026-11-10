@@ -1,8 +1,8 @@
 """Bastet on one call of the agent's turn: what the tool chokepoint (turns/tools.py) asks, and
 what it does with the answer. The chokepoint asks two things and nothing else of the
 guard: `frozen` before any check of its own, and `at_call` after its own checks, right
-before the call runs. Everything between (the closed gates, the judges, the owner's
-confirm, the freeze, the note to the owner, the passes it has not heard of) is here.
+before the call runs. Everything between (the closed gates, the judges, the freeze,
+the note to the owner, the passes it has not heard of) is here.
 
 Off, at_call lets every call run and says nothing. Watch never makes it wait: the call
 runs at once and the rules are answered in the background, writing only their rows. On,
@@ -17,7 +17,6 @@ import anyio
 from ..devices import hosts as device_hosts
 from ..skills import ToolResult
 from . import bastet, facts, freeze as freezes, passes, rules
-from . import store as rows
 from .flow import check, closed, on_call
 from .small_role import Unanswerable, Unavailable, Unreadable
 from .switch import mode as guard_mode
@@ -116,8 +115,7 @@ async def watch(turn, call, store, cfg, registry, ask=None) -> None:
 
 async def _ask(turn, call, store, cfg, registry, token, progress):
     """On: -> the lines its result gains (the call runs), the refusal, or None on a
-    shutdown while Bastet was asked. A Stop ends the wait, for the judge and for the
-    owner's answer to a confirm."""
+    shutdown while Bastet was asked. A Stop ends the wait for the judge."""
     from ..turns.cancel import until_stop
     app = getattr(registry, "app", None)
 
@@ -151,8 +149,7 @@ async def _ask(turn, call, store, cfg, registry, token, progress):
 
 async def gated(v, turn, call, store, cfg, app):
     """What a verdict means for the call: [] or advice lines (it runs), or the refusal
-    (state, ToolResult). The owner hears the note, a confirm asks them, a freeze
-    freezes it."""
+    (state, ToolResult). The owner hears the note, a freeze freezes it."""
     cid, tid = turn["conversation_id"], turn["id"]
     if v is None or v.decision in ("allow", "failed", "would_stop"):
         return []
@@ -164,29 +161,6 @@ async def gated(v, turn, call, store, cfg, app):
         chain.later(app, chain.after_stop, v.row, v.note, cid, tid)
     if v.note and app is not None and not second:
         await talk.to_owner(app, v.note, cid, tid)
-    if v.decision == "asked":
-        approvals = getattr(app, "approvals", None)
-        try:
-            no = await approvals.ask("gate", cid, v.ask["action"], detail=v.ask["detail"],
-                                     ref=v.ask["rid"], call=call.get("id")) \
-                if approvals is not None \
-                else f"{cfg.user} did not answer"
-        except anyio.get_cancelled_exc_class():
-            # a Stop while they were asked: the ask is gone (approvals' finally), the row
-            # is closed
-            with anyio.CancelScope(shield=True):
-                await rows.mark(store, v.ask["rid"], decision="closed")
-            raise
-        if no is None:
-            await rows.mark(store, v.ask["rid"], decision="approved")
-            return [bastet.fill(cfg, bastet.APPROVED, tool=call["name"])]
-        late = no.startswith(f"{cfg.user} did not answer")
-        denied = not late and " denied it" in no
-        await rows.mark(store, v.ask["rid"], decision="denied" if denied else "closed")
-        text = bastet.fill(cfg, bastet.DENIED if denied else bastet.UNANSWERED,
-                           tool=call["name"]) if denied or late else \
-            bastet.fill(cfg, bastet.NOT_ASKED, said=no)
-        return _gated(text, call["name"], rule="confirm")
     if v.freeze and app is not None:
         # the freeze stops this turn too: it finishes (the owner hears it) all the same
         with anyio.CancelScope(shield=True):

@@ -48,12 +48,6 @@ PASSED_THIS = ("Bastet: {{user}} lets the step I stopped ({tool}) through {where
                "{until}. " + AGAIN_NOW)
 # plain words only: what it did and why it looked wrong; no score, id or bracket
 FINDING = "Looking back at {title} on {when}: {said}. {why}{froze}"
-ASK = "run {tool}"
-APPROVED = "Bastet: {{user}} said yes to this {tool} call."
-DENIED = "Not run: Bastet asked {{user}} first, and {{user}} said no to this {tool} call."
-UNANSWERED = ("Not run: Bastet asked {{user}} first, and {{user}} did not answer in time "
-              "about this {tool} call.")
-NOT_ASKED = "Not run. Bastet: {said}"      # the approvals' own sentence (another ask waits)
 UNFROZEN = "Bastet froze you at {at}: {what}. {{user}} unfroze you at {back}."
 # guard/chain.py: the second look said no to what froze it
 SECOND_LOOK = ("I unfroze {{name}} myself: a second look says it was not a real problem. "

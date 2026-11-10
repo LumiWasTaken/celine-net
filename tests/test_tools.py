@@ -64,6 +64,38 @@ async def test_every_failure_path_still_writes_a_result(store, cfg, registry):
         assert snap["turn"]["state"] == "done"
 
 
+async def test_a_tool_on_require_approval_waits_for_a_yes_with_the_guard_off(store, cfg, registry):
+    """Settings, Tools' Require approval asks before the call, the guard off: a yes runs
+    it, a no refuses it with the approvals' sentence."""
+    import anyio
+    from chat_fixtures import until
+    from celine import approvals as ap, guard
+    from celine.core.services import Services
+    from celine.guard.owner import _SEAL, Owner
+    cfg.settings.approval = ["notebook__write"]
+    a = ap.Approvals(cfg, store=store)
+    registry.app = Services(cfg=cfg, store=store, approvals=a)
+    assert not guard.enabled(cfg)
+    for ok, state in ((True, "ok"), (False, "gated")):
+        async def answer():
+            await until(lambda: a.waiting)
+            [card] = a.view()
+            assert card["kind"] == "tool" and card["title"].endswith(
+                " asks to run Notebook: write a note.") and "Settings, Tools" in card["help"]
+            assert a.decide(card["id"], ok, Owner("test", _SEAL))
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(answer)
+            cid, _ = await _one_call(store, cfg, registry, "notebook__write",
+                                     f'{{"path": "a{ok}.md", "content": "x", "summary": "x"}}')
+        [call] = await store.read(lambda c: c.execute(
+            "SELECT t.state FROM tool_calls t JOIN messages m ON m.id = t.message_id "
+            "WHERE m.conversation_id=?", (cid,)).fetchall())
+        assert call[0] == state
+    snap = await view.snapshot(store, cid)
+    assert [m["content"] for m in snap["messages"] if m["role"] == "tool"] == [
+        f"{cfg.user} denied it; nothing was done."]
+
+
 async def test_an_override_takes_the_newest_seq_and_a_whole_skill(store, cfg, registry, monkeypatch):
     """A tool turned off never runs: test_skills; here an older seq and a whole skill."""
     cid = await conversations.create(store)
@@ -164,3 +196,19 @@ async def test_a_failed_call_logs_why(store, cfg, registry, caplog):
     done = [r for r in caplog.records if getattr(r, "event", None) == "tool.done"]
     assert done and done[-1].state == "error"
     assert done[-1].reason.startswith("invalid arguments")
+
+
+async def test_require_approval_is_set_per_tool_on_the_tool_route(tmp_path, monkeypatch, store):
+    from settings_fixtures import client, make_app, scratch
+    scratch(tmp_path, monkeypatch)
+    app = make_app(load(), store)
+    async with client(app) as api:
+        r = await api.put("/api/tool-defaults/notebook__write", json={"approval": True})
+        assert r.status_code == 200
+        tools = {t["wire_name"]: t for s in r.json()["skills"] for t in s["tools"]}
+        assert tools["notebook__write"]["approval"] and not tools["notebook__read"]["approval"]
+        assert app.state.services.cfg.settings.approval == ["notebook__write"]
+        assert (await api.put("/api/tool-defaults/notebook",
+                              json={"approval": True})).status_code == 400, "a tool only"
+        await api.put("/api/tool-defaults/notebook__write", json={"approval": False})
+    assert app.state.services.cfg.settings.approval == []

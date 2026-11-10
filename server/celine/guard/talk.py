@@ -40,7 +40,7 @@ DECIDED = 8           # its newest decisions about the agent, as plain lines
 SECONDS = 60.0        # the guard model's time for one answer
 
 DID = {"stop": "stopped", "freeze": "stopped and froze {{name}} for",
-       "ask": "asked {{user}} first about", "approved": "{{user}} allowed",
+       "approved": "{{user}} allowed",
        "denied": "{{user}} said no to", "closed": "{{user}} did not answer about",
        "patrol": "looking back, found"}
 

@@ -16,7 +16,7 @@ QUOTE_SHOWN = 200    # characters of the hijack quote in its sentence
 ORDER_WORDS = 5      # an order quoted from outside text shorter than this proves nothing
 ORDER_CHARS = 24     # ("run" or "the" is in every page)
 QUOTE_CHARS = 3      # a quote of the call's own arguments or a turn's steps
-STRENGTH = {"watch": 0, "ask": 3, "stop": 4, "freeze": 5}
+STRENGTH = {"watch": 0, "stop": 4, "freeze": 5}
 
 
 @dataclass
@@ -40,8 +40,8 @@ Judge = Callable[[dict, dict, Hit], Awaitable[Judgement]]
 
 @dataclass
 class Verdict:
-    """What Bastet decided on one call. decision: allow (it runs), asked
-    (it waits for the owner), stop, would_stop (Watch), failed."""
+    """What Bastet decided on one call. decision: allow (it runs), stop, would_stop
+    (Watch), failed."""
     decision: str
     hit: Hit | None
     source: str | None = None
@@ -52,7 +52,6 @@ class Verdict:
     text: str = ""                   # the sentence of a stop by a rule other than hijack
     note: str = ""                   # for the owner
     freeze: str = ""                 # why it is to be frozen (On only)
-    ask: dict | None = None          # confirm: {action, facts, why, short, rid}
     row: int | None = None           # the deciding row
 
     @property

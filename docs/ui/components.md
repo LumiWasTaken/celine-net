@@ -347,7 +347,7 @@ lives.
 Escape or a tap outside close it, a second "?" closes the first; it stays inside the window.
 Its click never reaches the row it sits in. Switch, Field, NumberField, Slider, SubHead,
 Section and PlaceHead take `help` and draw it after their label. A request's card
-(components/ApprovalCard.tsx: Bastet's banner row with a raised hand, Approve, Deny and
+(components/ApprovalCard.tsx: a banner row with a raised hand, Approve, Deny and
 Details) draws why it is asked as its Help.
 **Don't:** give a self-explaining label a "?" (Name, Key; an Address shows the form it takes, so it has one); write the text on the
 client; put explanation inline or in a tip.

@@ -1,13 +1,12 @@
-/* Bastet's banner: one decision of hers that acted (a stop, a freeze, an ask, a patrol finding)
+/* Bastet's banner: one decision of hers that acted (a stop, a freeze, a patrol finding)
    after the message that made the call, as one compact row: its name and its line (the
    server's words, the rule in plain words), its "?" when it has answers, and the answers in reach:
-   Unfreeze while its freeze holds, Allow once on a stop or a freeze, Approve and Deny while an ask
-   waits. Allow for 7 days and Reply (which opens a field in place) sit in the quiet group, shown on
+   Unfreeze while its freeze holds, Allow once on a stop or a freeze. Allow for 7 days and Reply (which opens a field in place) sit in the quiet group, shown on
    hover, focus or a tap as a reply's action row is. Under it the thread: your answers and its
    own. What an answer grants is the server's (guard/banners.py); the banner changes by the event
    guard.banner. */
 import { useState } from 'react'
-import { Ban, CornerUpLeft, Eye, Hand, ShieldCheck, Snowflake, type LucideIcon } from 'lucide-react'
+import { Ban, CornerUpLeft, Eye, ShieldCheck, Snowflake, type LucideIcon } from 'lucide-react'
 import { Button, ComposerBox, Help, ICON, IconButton, InlineError, cx } from '../ui'
 import { ACTION_ICONS, ACTION_WORDS, guardApi, type BannerKind, type GuardBanner as Banner } from '../lib/guard'
 import { fullDate } from '../lib/format'
@@ -15,7 +14,7 @@ import { useAction } from '../lib/useAction'
 import './GuardBanner.css'
 
 const ICONS: Record<BannerKind, LucideIcon> = {
-  stop: Ban, freeze: Snowflake, ask: Hand, approved: ShieldCheck, denied: Ban, closed: Ban, patrol: Eye,
+  stop: Ban, freeze: Snowflake, approved: ShieldCheck, denied: Ban, closed: Ban, patrol: Eye,
 }
 
 export function GuardBanner({ banner: b, user }: { banner: Banner; user: string }) {
@@ -44,10 +43,6 @@ export function GuardBanner({ banner: b, user }: { banner: Banner; user: string 
           {b.actions.includes('once') && (
             <Button size="sm" variant="ghost" icon={ACTION_ICONS.once} disabled={answer.busy} onClick={() => void answer.run({ button: 'once' })}>{ACTION_WORDS.once}</Button>
           )}
-          {b.kind === 'ask' && <>
-            <Button size="sm" loading={answer.busy} onClick={() => void answer.run({ button: 'approve' })}>Approve</Button>
-            <Button size="sm" variant="ghost" disabled={answer.busy} onClick={() => void answer.run({ button: 'deny' })}>Deny</Button>
-          </>}
           {/* Allow for 7 days and Reply: on hover, focus or a tap, their room kept */}
           <span className="guard-banner__quiet">
             {b.actions.includes('pass') && (

@@ -1,17 +1,17 @@
 """Bastet in the chat: every decision of hers that is not a silent allow shows in the
 conversation where it happened, as a banner after the message that made the call. A
-banner is one guard_decisions row (a stop, a confirm ask and how it ended, a patrol
-finding; a stop that froze it is a freeze); view.py says what it shows, store.py reads
+banner is one guard_decisions row (a stop, a patrol finding; a stop that froze it is
+a freeze); view.py says what it shows, store.py reads
 the banners (`store.banners`, the snapshot's `guard`) and emits every change as the
 conversation event `guard.banner` {banner}: a row written or settled, a freeze or
 unfreeze of its turn, a line in its thread.
 
 Each banner is a thread with Bastet: the owner answers in it (only from a logged-in
 session, guard/api.py) with a button or their own words. Their words go to the guard
-role (`read`) that gives one grant; `answer` turns it into what it does: allow once (an
-ask waiting for them is approved, else the next identical call passes), a pass (Allow
-for 7 days: the banner's rule and piece, in its chat, for passes.MOST_MINUTES; their words: a
-rule for as long as they said), an unfreeze, keep (an ask waiting is denied). Bastet
+role (`read`) that gives one grant; `answer` turns it into what it does: allow once (the
+next identical call passes), a pass (Allow for 7 days: the banner's rule and piece, in
+its chat, for passes.MOST_MINUTES; their words: a rule for as long as they said), an
+unfreeze, keep. Bastet
 answers in the thread with one line from a template, and an allow once or a pass on a
 stop wakes the agent with Bastet's line (talk.to_agent), so it does the step again now.
 """
@@ -36,21 +36,16 @@ WHERE = ("here", "everywhere")
 MINUTES = 60                 # a pass whose length they did not say
 LONGEST = 2000               # characters of their answer kept
 # a button: its word in the thread, its grant and rule (None: the banner's own rule)
-BUTTONS = {"approve": ("Approve", "once", ALL), "deny": ("Deny", "keep", ALL),
-           "unfreeze": ("Unfreeze", "unfreeze", ALL), "once": ("Allow once", "once", ALL),
+BUTTONS = {"unfreeze": ("Unfreeze", "unfreeze", ALL), "once": ("Allow once", "once", ALL),
            "pass": ("Allow for 7 days", "pass", None)}
 
 # Bastet's answers in a thread; {{name}} filled by cfg.substitute
 SAID = {
-    "approved": "Allowed this once. It runs now.",
     "once": "Allowed once: the next step like this one runs.",
     "pass": "Allowed {rule} {where} until {until}.",
-    "pass_runs": "Allowed {rule} {where} until {until}. It runs now.",
     "pass_this": "Allowed \"{piece}\" {where} until {until}.",
-    "gone": "Nothing waits for you here.",
     "unfreeze": "Unfrozen. {{name}} continues.",
     "not_frozen": "{{name}} is not frozen.",
-    "denied": "Denied. It does not run.",
     "keep_frozen": "Still frozen.",
     "keep_stopped": "Still stopped.",
     "keep": "Nothing changed.",
@@ -141,21 +136,10 @@ async def answer(app, rid: int, *, by, text: str | None = None,
 
 
 async def _apply(app, banner: dict, g: dict, by) -> str:
-    """The grant done; -> Bastet's template for the thread. On an ask: once and a pass
-    approve the request that waits, keep denies it; nothing waits any more (answered,
-    expired, a restart): the ask is closed, once and keep do nothing."""
+    """The grant done; -> Bastet's template for the thread."""
     store, cfg = app.store, app.cfg
-    approvals = getattr(app, "approvals", None)
-    ask = banner["kind"] == "ask"
-    waiting = approvals.by_ref(banner["id"]) if approvals is not None and ask else None
     if banner["rule"] == "gates" and g["grant"] in ("once", "pass"):
         return SAID["gate"]                # a closed gate: no answer opens it
-    if ask and waiting is None:            # nothing waits: closed, no Approve or Deny
-        await decisions.close_ask(store, banner["id"])
-    if g["grant"] in ("once", "keep") and ask:
-        if waiting is not None and approvals.decide(waiting, g["grant"] == "once", by):
-            return SAID["approved" if g["grant"] == "once" else "denied"]
-        return SAID["gone"]
     tool = tool_words(banner["tool"])
     if g["grant"] == "once":
         args = await store.read(lambda c: decisions.call_args(c, banner["tool_call_id"]))
@@ -172,16 +156,14 @@ async def _apply(app, banner: dict, g: dict, by) -> str:
                                   why=f"answer on Bastet's banner {banner['id']}")
         until = passes_mod.until_words(cfg, p["until"])
         where = "in this chat" if g["where"] == "here" else "everywhere"
-        runs = waiting is not None and approvals.decide(waiting, True, by)
-        if not runs:                     # a stop: the agent hears it now and does it again
-            await talk.to_agent(app, banner["conversation_id"], bastet.fill(
-                cfg, bastet.PASSED_THIS if piece else bastet.PASSED_NOW, tool=tool,
-                rule=bastet.plain(cfg, g["rule"]), where=where, until=until))
-            await passes_mod.told(store, p["id"])
+        # the agent hears it now and does it again
+        await talk.to_agent(app, banner["conversation_id"], bastet.fill(
+            cfg, bastet.PASSED_THIS if piece else bastet.PASSED_NOW, tool=tool,
+            rule=bastet.plain(cfg, g["rule"]), where=where, until=until))
+        await passes_mod.told(store, p["id"])
         if piece:
             return SAID["pass_this"].format(piece=piece, where=where, until=until)
-        return SAID["pass_runs" if runs else "pass"].format(rule=label(g["rule"]),
-                                                            until=until, where=where)
+        return SAID["pass"].format(rule=label(g["rule"]), until=until, where=where)
     if g["grant"] == "unfreeze":
         return SAID["unfreeze"] if await freezes.unfreeze(app, by=by) \
             else SAID["not_frozen"]

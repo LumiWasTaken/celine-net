@@ -352,7 +352,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
 
             async def guard_run() -> None:          # Bastet: its answers, its patrol
                 from .guard import patrol, store as guard_rows, talk
-                await guard_rows.close_asked(store)     # its asks of the last run
+                await guard_rows.close_waiting(store)   # its checks of the last run
                 talk.start(services)                    # Bastet answers the agent on the Intercom
                 dispatcher.work.notify()
                 try:
