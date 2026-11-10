@@ -140,7 +140,7 @@ STOPPED = "Stopped by {{username}}"
 IDLE_MINUTES = 30
 IN_USE = "The app was in use"
 FROZEN = "Frozen"            # a freeze cut its turn, or it may not start while frozen
-PASSED = f"More than {IDLE_MINUTES} minutes late"
+PASSED = f"Not started within {IDLE_MINUTES} minutes of its time"
 NEXT_DUE = "The next run was due"     # a Skip routine's older waiting run, at a newer slot
 RETRY_OF = "Retry of the {at} run"    # a Retry routine's run again, until its time
 HELD = "Waiting for the model"         # a running run's reason while its work waits (view)
@@ -814,7 +814,7 @@ class Scheduler:
             label = await self.app.store.read(lambda c: c.execute(
                 "SELECT schedule FROM runs WHERE id = ?", (self.current,)).fetchone())
             other = self.schedules.get(label["schedule"]) if label else None
-            return f"While {shown(other) if other else 'another run'} runs"
+            return f"Starts when {shown(other) if other else 'another run'} is done"
         return None
 
     async def _model_why(self, role: str, probe: bool = True) -> str | None:
@@ -926,7 +926,7 @@ class Scheduler:
                 error = await self._stale(cid, note)
             elif not final:
                 error = (f"The note {note} was not written: the run ended with a tool call "
-                         "and no answer after it.")
+                         "and no reply after it.")
             else:
                 error = await self._write_note(cid, note, answer, s, day.isoformat())
         except Exception as e:                   # noqa: BLE001 - every failure ends it
@@ -985,7 +985,7 @@ class Scheduler:
         await self._settle(cid)
         answer, final = await self.app.store.read(lambda c: _said(c, cid))
         if not answer:
-            raise RunFailed("No answer")
+            raise RunFailed("The run ended without a reply.")
         return answer, final
 
     async def _backups(self, night: date) -> None:

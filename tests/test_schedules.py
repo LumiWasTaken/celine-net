@@ -943,7 +943,7 @@ async def test_a_turn_that_ends_with_another_write_leaves_the_note_unwritten(sto
     assert not (cfg.agent.notebook / NOTE).exists()
     assert row["state"] == "done" and row["result"] == "Merged the notes:"
     assert row["error"] == (f"The note {NOTE} was not written: the run ended with a tool "
-                            "call and no answer after it.")
+                            "call and no reply after it.")
 
 
 async def test_a_note_the_agent_wrote_then_went_on_past_is_the_result_and_the_run_says_so(
