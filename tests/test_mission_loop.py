@@ -269,7 +269,7 @@ async def test_past_the_mission_time_limit_of_advanced_it_stops_with_the_reason(
     assert await watch.ceilings(app, start + timedelta(hours=2)) == []
     assert await watch.ceilings(app, start + timedelta(hours=2, seconds=1)) == [cid]
     row = await missions.get(store, cid)
-    assert (row["status"], row["note"]) == ("stopped", "Stopped at its time limit of 2 hours.")
+    assert (row["status"], row["note"]) == ("stopped", "Stopped at the Mission time limit of 2 hours.")
     assert aborted == [cid], "its turn and its sub-agents are stopped"
     assert await watch.ceilings(app, start + timedelta(hours=3)) == [], "once"
 
@@ -443,7 +443,7 @@ async def test_a_mission_whose_turn_failed_names_the_reason_in_its_note(store):
         ("5090 returned 503: The model server is paused.\nmore", tid)))
     assert await watch.check(app, cid, tid) == "needs_you"
     assert (await missions.get(store, cid))["note"] == \
-        "Its last turn failed: 5090 returned 503: The model server is paused."
+        "The mission's last turn failed: 5090 returned 503: The model server is paused."
 
 
 async def test_a_request_that_waits_in_a_mission_moves_its_limit_and_holds_its_ceiling(store):
@@ -509,7 +509,7 @@ async def test_a_stop_reaches_the_missions_started_under_it_with_one_notice(stor
     other = await _started(store, "other", None)
     before = await store.read(lambda c: c.execute(
         "SELECT count(*) FROM global_events WHERE type='notice'").fetchone()[0])
-    await stop(app, top, "Stopped at its time limit of 2 hours.")
+    await stop(app, top, "Stopped at the Mission time limit of 2 hours.")
     assert await _statuses(store, top, child, by_sub, grandchild, done, other) == [
         "stopped", "stopped", "stopped", "stopped", "done", "active"]
     assert sorted(aborted) == sorted([top, child, by_sub, grandchild])

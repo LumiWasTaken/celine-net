@@ -55,9 +55,9 @@ from .skill import record, stop
 
 log = logging.getLogger("celine.missions")
 LOOK = 60.0         # seconds between two looks for a check-in that is due
-NOTE = "The mission stopped without saying whether it is done."
-FAILED = "Its last turn failed: {reason}"
-PAST = "The time limit passed before the mission was closed."
+NOTE = "The mission's last turn ended without marking the mission done."
+FAILED = "The mission's last turn failed: {reason}"
+PAST = "The time limit passed before the mission was marked done."
 WAITING = "A question for you at step {n}: {title}."
 KEEP_GOING = ("The mission is still active and nothing is set to wake you. Do the next "
               "step; when you wait on something, missions__wait until the time to look "
@@ -197,7 +197,7 @@ async def check_ins(app, at: datetime) -> list[str]:
 
 
 def _over(hours: int) -> str:
-    return f"Stopped at its time limit of {hours} hour{'' if hours == 1 else 's'}."
+    return f"Stopped at the Mission time limit of {hours} hour{'' if hours == 1 else 's'}."
 
 
 async def ceilings(app, at: datetime, asking: frozenset[str] = frozenset()) -> list[str]:
