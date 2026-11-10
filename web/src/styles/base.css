@@ -82,7 +82,9 @@ svg.lucide { stroke-width: var(--icon-stroke); flex: none; }
 /* a touch screen never zooms into a field (iOS zooms below 16 px), at every text size */
 @media (pointer: coarse) { input, textarea, select { font-size: max(1rem, var(--t-md)); } }
 
-[disabled], [aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+[disabled], [aria-disabled='true'] { opacity: var(--disabled-opacity); cursor: not-allowed; }
+/* inside a disabled part it is dimmed once, by the outer one */
+[aria-disabled='true'] :is([disabled], [aria-disabled='true']) { opacity: 1; }
 
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

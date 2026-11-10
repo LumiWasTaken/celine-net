@@ -103,6 +103,9 @@
   --r-xl: 24px;    /* dialogs, sheets, the composer */
   --r-full: 999px; /* circles and pills */
 
+  /* ── a control that cannot be used now: drawn once at this opacity (base.css) ── */
+  --disabled-opacity: 0.45;
+
   /* ── motion. Enter is slower than exit; hover gets the short one.
      Only opacity and transform animate. Reduced motion: base.css. ── */
   --dur-fast: 120ms;        /* hover, press, small exits */

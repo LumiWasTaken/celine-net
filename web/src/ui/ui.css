@@ -37,7 +37,7 @@
 .btn:not(.btn--primary)[aria-pressed='true'] { background: var(--accent-wash); color: var(--accent); }
 .btn:not(.btn--primary)[aria-pressed='true']:hover { background: var(--accent-wash-strong); color: var(--accent); }
 /* cannot act: the same button, faded; its tip says why */
-.btn[aria-disabled='true'] { opacity: 0.45; cursor: default; }
+.btn[aria-disabled='true'] { opacity: var(--disabled-opacity); cursor: default; }
 /* busy is not unable: the spinner says it, the button keeps its colour */
 .btn[aria-busy='true'] { opacity: 1; cursor: progress; }
 /* pressed: a colour step and a small give (.98); rows and cards the same */
