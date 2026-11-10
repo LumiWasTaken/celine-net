@@ -511,10 +511,10 @@ def unanswered(c: sqlite3.Connection, cid: str) -> dict | None:
         if tried else None
     if t is None:
         return {"message_id": mid, "turn_id": None, "state": None,
-                "reason": "No reply yet.", "continues": False}
+                "reason": "Not sent.", "continues": False}
     told = t["reason"] if t["state"] in ("failed", "interrupted") else None
     return {"message_id": mid, "turn_id": t["id"], "state": t["state"],
-            "reason": told or _NO_ANSWER.get(t["state"], "No reply yet."),
+            "reason": told or _NO_ANSWER[t["state"]],
             "continues": said and continuable(c, cid, t)["ok"] and _prefills(cid)}
 
 

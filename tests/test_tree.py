@@ -473,3 +473,16 @@ async def test_a_quiet_notice_after_the_message_leaves_it_unanswered(store):
     assert snap["unanswered"]["message_id"] == mid
     await tree.regenerate(store, cid)
     assert (await turns.claim(store, "w"))["root_message_id"] == mid
+
+
+async def test_a_message_no_turn_took_reads_not_sent(store):
+    """A message whose turn never ran (gone from the queue): "Not sent.", no turn named."""
+    cid = await conversations.create(store)
+    mid, tid, _ = await user_says(store, cid, "hello")
+
+    def drop(c):
+        c.execute("UPDATE intercom_deliveries SET turn_id=NULL WHERE turn_id=?", (tid,))
+        c.execute("DELETE FROM turns WHERE id=?", (tid,))
+    await store.write(drop)
+    assert (await view.snapshot(store, cid))["unanswered"] == {
+        "message_id": mid, "turn_id": None, "state": None, "reason": "Not sent.", "continues": False}

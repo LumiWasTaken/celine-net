@@ -7,7 +7,8 @@
    TurnEnd is the line where an answer did not come, in soft words: "Paused." with
    Continue ("Stopped." with Continue for a reply you stopped), "The reply failed." with Retry, the server's sentence as their tooltip. Under
    your message that has no answer (the server's `unanswered`: a turn that failed, was
-   interrupted, answered nothing or was stopped) its reason, with Regenerate, and Continue
+   interrupted, answered nothing or was stopped) its reason, with Regenerate (Send under
+   "Not sent.", a message no turn took), and Continue
    before it when the server offers it (a failed reply that said something, on a model
    that continues a reply). A line
    that needs the user (it names a setting, or the failure carries a reason) says it
@@ -25,7 +26,7 @@ import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import type { QueueWait } from '../lib/useConversation'
 import { settingsApi } from '../lib/settingsApi'
 import { useResource } from '../lib/useResource'
-import { ArrowLeftRight, Hourglass, Play, RefreshCw, Settings } from 'lucide-react'
+import { ArrowLeftRight, Hourglass, Play, RefreshCw, Send, Settings } from 'lucide-react'
 import { Button, Dots, EventLine, InlineError, cx } from '../ui'
 import { ModelChooser } from './ModelChooser'
 import './Transcript.css'
@@ -107,6 +108,8 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
   const busyTurn = ended && turn.state === 'failed' && turn.reason_code === 'busy'
   // your message has no answer: Regenerate, in place of Continue and Retry
   const regen = !busyTurn && !!unanswered
+  // no turn ever took it ("Not sent."): Send, as nothing was generated to regenerate
+  const unsent = regen && !unanswered.turn_id
   const canContinue = !busyTurn && !regen && !!(ended && turn.continuable?.ok)
   // a stop you asked for needs no Retry; everything else that left no answer does
   const canRetry = !busyTurn && !regen && !canContinue && (turn?.state === 'failed' || turn?.state === 'interrupted' || !!error?.retryable)
@@ -157,9 +160,9 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
         </Button>
       )}
       {(canContinue || canRetry || regen) && (
-        <Button size="sm" icon={canContinue ? Play : RefreshCw} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
+        <Button size="sm" icon={canContinue ? Play : unsent ? Send : RefreshCw} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
                 onClick={e => { const el = e.currentTarget; void act(canContinue ? () => conversationApi.continueTurn(conversationId, turn!.id) : onRetry, el) }}>
-          {canContinue ? 'Continue' : regen ? 'Regenerate' : 'Retry'}
+          {canContinue ? 'Continue' : unsent ? 'Send' : regen ? 'Regenerate' : 'Retry'}
         </Button>
       )}
       {failed && <InlineError compact message={failed} />}
