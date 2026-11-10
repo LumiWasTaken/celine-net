@@ -21,6 +21,7 @@ from celine.backends.base import BackendError, Done, TextDelta, ToolCallDelta
 from fake_backend import FakeBackend
 from celine.boot import load
 from celine.conversations import store as conversations, view
+from celine.missions import store as missions
 from celine.core.bus import EventBus
 from celine.core.ids import iso
 from celine.core.services import Services
@@ -302,9 +303,15 @@ async def test_stop_ends_a_waiting_run_and_aborts_a_running_one(
         run = await sched.run_now("world")
         await sched.tick()
         await until(lambda: _live(store, run["id"]))
+        [at] = [r["conversation_id"] for r in await _runs(store) if r["id"] == run["id"]]
+        started = await conversations.create(store, "feed", kind="mission")
+        await missions.create(store, started, {"name": "feed", "terminal": "feed",
+                                               "brief": "b", "started_by": at})
         out = await sched.end(run["id"], "stopped", "Stopped by Joe")
         assert (out["state"], out["reason"]) == ("stopped", "Stopped by Joe")
         cid = out["conversation_id"]
+        assert (await missions.get(store, started))["status"] == "stopped", \
+            "the mission the run started"
         await until(lambda: _quiet(store, cid))
         assert (await store.read(lambda c: runs_mod.outcome(c, cid)))[0] == "aborted"
         await until(lambda: _idle(sched))

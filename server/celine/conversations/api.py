@@ -230,7 +230,7 @@ async def archive_conversation(request: Request, cid: str) -> dict:
     """The conversation and its sub-agents leave the list, every message kept. A
     message to it brings it back. Refused while any of them works. With Lock archived
     chats refused only while a turn of the user's is live: its turns and jobs there are
-    stopped."""
+    stopped, and an open mission there stops within a minute (missions/watch.archived)."""
     try:
         out = await store.archive(store_of(request), cid, True)
     except tree.Busy:

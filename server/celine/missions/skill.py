@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from .. import prompts
+from ..conversations import store as conversations
 from ..core import ids
 from ..core.ids import clock, iso, parse_when, when
 from . import store as missions
@@ -92,11 +93,36 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
 
 async def stop(app, cid: str, note: str | None) -> None:
     """The mission stops (the user's Stop, note None, or its ceiling, the note why): its
-    status, its turns and sub-agents aborted, its terminals and tabs closed."""
+    status, its turns and sub-agents aborted, its terminals and tabs closed, and the
+    missions started under it stopped (`stop_started`)."""
     await record(app, app.store, cid, "stopped", note)
     await app.dispatcher.abort_conversation(cid)
     from .. import leftovers             # no turn ran: nothing else closes its terminals
     await leftovers.on_end(app, cid)
+    await stop_started(app, cid)
+
+
+async def stop_started(app, cid: str) -> None:
+    """Every open mission that `cid` or a sub-agent of it started stops as the user's
+    Stop does (no note, so the one Stop raises one notice), and so on down."""
+    def fn(c) -> list[str]:
+        family = conversations.family(c, cid)
+        return [r[0] for r in c.execute(
+            "SELECT conversation_id FROM missions WHERE status IN ('active', 'needs_you') "
+            f"AND started_by IN ({','.join('?' * len(family))})", family)]
+    for started in await app.store.read(fn):
+        await stop(app, started, None)
+
+
+async def end_under(app, cid: str) -> None:
+    """Mission `cid` is done: what still runs under it ends, its sub-agents' turns and
+    the missions started under it. Its own turn, which said so, runs on."""
+    subs = await app.store.read(lambda c: [r[0] for r in c.execute(
+        "SELECT id FROM conversations WHERE agent_of=?", (cid,))])
+    for sub in subs:
+        await app.intercom.cancel_scheduled(sub)
+        await app.dispatcher.abort_conversation(sub)
+    await stop_started(app, cid)
 
 
 async def report_title(store, row: dict) -> str | None:
@@ -368,6 +394,8 @@ class Missions:
         if artifact:
             await missions.update(ctx.store, ctx.conversation_id, {"artifact": artifact})
         await record(self.app, ctx.store, ctx.conversation_id, word, note)
+        if word == "done" and self.app is not None:
+            await end_under(self.app, ctx.conversation_id)
         return ToolResult(content=f"Recorded: {status.lower()}.",
                           display={"status": word, "note": note,
                                    "artifact": artifact})

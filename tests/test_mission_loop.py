@@ -19,7 +19,7 @@ from celine.core.ids import iso
 from celine.intercom import Intercom
 from celine.missions import store as missions, watch
 from celine.missions.store import book_time_limit
-from celine.missions.skill import Missions
+from celine.missions.skill import Missions, stop
 from celine.plans import store as plans
 from celine.skills import Registry, ToolContext
 from celine.turns import store as turns
@@ -472,3 +472,77 @@ async def test_a_request_that_waits_in_a_mission_moves_its_limit_and_holds_its_c
     assert await watch.asking(app, t0 + timedelta(seconds=3600), asked) == {}
     row = await missions.get(store, cid)
     assert (row["held_seconds"], row["until"]) == (3600, iso(until + timedelta(hours=1)))
+
+
+def _stopping(store, intercom, cfg) -> tuple[SimpleNamespace, list[str]]:
+    """An app whose dispatcher records what it was told to stop."""
+    aborted: list[str] = []
+
+    async def abort(cid):
+        aborted.append(cid)
+    return SimpleNamespace(store=store, intercom=intercom, cfg=cfg, terminals=None,
+                           dispatcher=SimpleNamespace(abort_conversation=abort)), aborted
+
+
+async def _started(store, name: str, by: str | None) -> str:
+    cid = await conversations.create(store, name, kind="mission")
+    await missions.create(store, cid, {"name": name, "terminal": name, "brief": "b",
+                                       "started_by": by})
+    return cid
+
+
+async def _statuses(store, *cids: str) -> list[str]:
+    return [(await missions.get(store, c))["status"] for c in cids]
+
+
+async def test_a_stop_reaches_the_missions_started_under_it_with_one_notice(store):
+    """A mission its time limit stops: the missions it, a sub-agent of it and those
+    missions started stop too, and the user gets the one notice."""
+    intercom = Intercom(store)
+    app, aborted = _stopping(store, intercom, load())
+    top = await _started(store, "top", None)
+    sub = await conversations.create(store, "s", agent_of=top, agent_name="s")
+    child, by_sub = await _started(store, "child", top), await _started(store, "bysub", sub)
+    grandchild = await _started(store, "grandchild", child)
+    done = await _started(store, "done", top)
+    await store.write(lambda c: missions.set_status_sync(c, store, done, "done", None))
+    other = await _started(store, "other", None)
+    before = await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM global_events WHERE type='notice'").fetchone()[0])
+    await stop(app, top, "Stopped at its time limit of 2 hours.")
+    assert await _statuses(store, top, child, by_sub, grandchild, done, other) == [
+        "stopped", "stopped", "stopped", "stopped", "done", "active"]
+    assert sorted(aborted) == sorted([top, child, by_sub, grandchild])
+    after = await store.read(lambda c: c.execute(
+        "SELECT count(*) FROM global_events WHERE type='notice'").fetchone()[0])
+    assert after - before == 1
+
+
+async def test_a_mission_that_is_done_ends_what_runs_under_it(store):
+    intercom = Intercom(store)
+    cfg = load()
+    app, aborted = _stopping(store, intercom, cfg)
+    top = await _started(store, "top", None)
+    sub = await conversations.create(store, "s", agent_of=top, agent_name="s")
+    child = await _started(store, "child", sub)
+    skill = Missions(cfg)
+    skill.app = app
+    out = await skill.update(ToolContext(top, "t", "k", store, cfg, None), status="Done",
+                             note="all in")
+    assert not out.is_error
+    assert await _statuses(store, top, child) == ["done", "stopped"]
+    assert aborted == [sub, child], "its sub-agent's turn and the mission that one started"
+
+
+async def test_an_archived_mission_stops_under_lock_archived_chats(store):
+    intercom = Intercom(store)
+    app, aborted = _stopping(store, intercom, load())
+    kept, gone = await _started(store, "kept", None), await _started(store, "gone", None)
+    await conversations.archive(store, gone, True)
+    await store.write(lambda c: conversations.set_lock_archived(c, False))
+    assert await watch.archived(app) == [], "a plain Archive stops nothing"
+    await store.write(lambda c: conversations.set_lock_archived(c, True))
+    assert await watch.archived(app) == [gone]
+    assert await _statuses(store, kept, gone) == ["active", "stopped"]
+    assert await watch.archived(app) == [], "once"
+

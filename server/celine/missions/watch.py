@@ -47,6 +47,7 @@ from datetime import datetime, timedelta, timezone
 import anyio
 
 from .. import homes
+from ..conversations import store as conversations
 from ..core import ids
 from . import store as missions
 from ..plans import flow, store as plans
@@ -301,10 +302,27 @@ async def go_on(app) -> list[str]:
     return out
 
 
+async def archived(app) -> list[str]:
+    """Every open mission in a conversation the user archived, while Lock archived
+    chats is on, stops as their Stop does. -> the missions stopped."""
+    def fn(c: sqlite3.Connection) -> list[str]:
+        if not conversations.lock_archived(c):
+            return []
+        return [r[0] for r in c.execute(
+            "SELECT m.conversation_id FROM missions m JOIN conversations cv ON cv.id = "
+            "m.conversation_id WHERE m.status IN ('active', 'needs_you') AND "
+            "cv.archived_at IS NOT NULL AND cv.trashed_at IS NULL")]
+    out = await app.store.read(fn)
+    for cid in out:
+        await stop(app, cid, None)
+    return out
+
+
 async def run(app) -> None:
     """The app's loop: every LOOK seconds a look for due check-ins, for the house's hold
     (no ceiling counts while it stands), for the requests that wait inside turns, for
-    missions past their ceiling and for missions a restart or a freeze cut."""
+    missions past their ceiling, for missions a restart or a freeze cut and for
+    missions archived under Lock archived chats."""
     since = None
     asked: dict[str, datetime] = {}
 
@@ -323,10 +341,13 @@ async def run(app) -> None:
 
     async def cut(app, _at) -> None:
         await go_on(app)
+
+    async def lock(app, _at) -> None:
+        await archived(app)
     while True:
         at = datetime.now(timezone.utc)
         for look, what in ((check_ins, "check_in"), (hold, "hold"), (ask, "asking"),
-                           (ceiling, "ceiling"), (cut, "go_on")):
+                           (ceiling, "ceiling"), (cut, "go_on"), (lock, "archived")):
             try:
                 await look(app, at)
             except Exception:

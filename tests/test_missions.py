@@ -151,7 +151,7 @@ async def test_done_cancels_what_the_mission_scheduled_and_stopped_takes_no_retr
     for_user = (await intercom.send(f"agent:{cid}", "user", "look at the MR",
                                     due_at=later))["intercom_id"]
     skill = Missions(cfg)
-    skill.app = Services(intercom=intercom)
+    skill.app = Services(store=store, intercom=intercom)
     out = await skill.update(ToolContext(cid, "t", "k", store, cfg, None),
                              status="Done", note="The feed works.")
     assert not out.is_error

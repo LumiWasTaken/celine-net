@@ -629,7 +629,8 @@ class Scheduler:
                   from_states: tuple[str, ...] = ("waiting", "running")) -> dict | None:
         """Run `rid`, while in one of `from_states`, ends as `state` with `why` (its
         reason; failed goes through `_fail`, its time limit, never run again); a running
-        one's work is cancelled and its turns aborted as a chat's Stop does. None: no
+        one's work is cancelled, its turns aborted as a chat's Stop does and the
+        missions it started stopped. None: no
         such run, or it is in no such state."""
         store, cfg = self.app.store, self.app.cfg
         if rid == self.current and self._scope is not None:
@@ -647,6 +648,8 @@ class Scheduler:
         abort = getattr(self.app.dispatcher, "abort_conversation", None)
         if cid and abort is not None:
             await abort(cid)
+            from ..missions.skill import stop_started
+            await stop_started(self.app, cid)       # the missions it started stop too
         log.info("run ended", extra={"event": "schedules.ended", "run": rid,
                                      "state": state, "why": why})
         self.wake()
