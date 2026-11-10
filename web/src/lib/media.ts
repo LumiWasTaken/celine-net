@@ -2,8 +2,9 @@
    anything is made. A batch has one slot per item, in order; the server fills them and
    says so with `images.batch` / `music.batch` ({batch}) on the conversation's stream
    and the global feed. The agent's calls carry the same batch as their display. */
-import { del, json, post, request } from './api'
+import { del, json, post, query, request } from './api'
 import type { ServerEvent } from './bus'
+import type { Source } from './intercom'
 import type { FormField } from '../ui'
 
 export type Kind = 'images' | 'music'
@@ -34,8 +35,8 @@ export type Batch = {
   id: string
   kind: Kind
   conversation_id: string | null
-  /** where its conversation opens, the server's (homes.py); null for yours */
-  link: string | null
+  /** the conversation it was made in, as the Intercom names a sender; null for yours */
+  source: Source | null
   tool_call_id: string | null
   state: 'running' | 'done' | 'stopped'
   created_at: string
@@ -96,6 +97,10 @@ export function batchEvent(ev: ServerEvent, kind?: Kind): Batch | null {
   return asBatch((ev as { batch?: unknown }).batch)
 }
 
+/** `list` with `b` in its place, or first when it is new */
+export const withBatch = (list: Batch[], b: Batch): Batch[] =>
+  list.some(x => x.id === b.id) ? list.map(x => (x.id === b.id ? b : x)) : [b, ...list]
+
 /** an attachment's file under its own name; `download` saves even an image */
 export const fileUrl = (f: { id: string }, download = false) => `/api/attachments/${f.id}/file${download ? '?download=1' : ''}`
 /** the width of a picture on a message or a tool row (.msg__picture, .tool__picture: 18rem) */
@@ -107,7 +112,9 @@ export const tileUrl = (f: { id: string }, px: number) =>
 
 export const mediaApi = {
   presets: (kind: Kind) => request<{ presets: Preset[] }>(`/generation-presets?kind=${kind}`),
-  batches: (kind: Kind, limit = 12) => request<{ batches: Batch[] }>(`/batches?kind=${kind}&limit=${limit}`),
+  /** newest first, every kind without `kind`; `next` is the `before` of the next page */
+  batches: (q: { kind?: Kind | null; limit?: number; before?: string | null }, signal?: AbortSignal) =>
+    request<{ batches: Batch[]; next: string | null }>(`/batches${query(q)}`, { signal }),
   start: (kind: Kind, items: Record<string, unknown>[], count: number) =>
     request<Batch>('/batches', json('POST', { kind, items, count })),
   stop: (id: string) =>

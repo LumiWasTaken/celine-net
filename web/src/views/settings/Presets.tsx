@@ -14,7 +14,7 @@ import { ArrowDown, ArrowUp, Download, FileUp, Play, Star, Trash2, Undo2, Upload
 import { uploadAttachment } from '../../lib/api'
 import { useServerEvents } from '../../lib/bus'
 import { clock, errorText } from '../../lib/format'
-import { batchEvent, fileUrl, mediaApi, ROLE, tileUrl, workflowUrl, type Batch, type Kind, type Param, type Preset } from '../../lib/media'
+import { batchEvent, fileUrl, mediaApi, ROLE, tileUrl, withBatch, workflowUrl, type Batch, type Kind, type Param, type Preset } from '../../lib/media'
 import { useOnline } from '../../lib/socket'
 import { SETTINGS_EVENTS, settingsApi, type Cap, type ProviderView, type RoleView } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
@@ -155,10 +155,9 @@ function UploadDialog({ kind, file, onClose, onAdded }: { kind: Kind; file: File
 
 /* ── the newest batches of a kind, kept as the server says them ── */
 function useRecent(kind: Kind) {
-  const res = useResource(() => mediaApi.batches(kind), [kind], { events: ev => ev.type === 'open' })
+  const res = useResource(() => mediaApi.batches({ kind, limit: 12 }), [kind], { events: ev => ev.type === 'open' })
   const add = (b: Batch) => res.set(d => {
-    const list = d?.batches ?? []
-    return { batches: list.some(x => x.id === b.id) ? list.map(x => (x.id === b.id ? b : x)) : [b, ...list] }
+    return { next: d?.next ?? null, batches: withBatch(d?.batches ?? [], b) }
   })
   useServerEvents(ev => { const b = batchEvent(ev, kind); if (b) add(b) })
   return { ...res, add }
@@ -175,7 +174,7 @@ function Recent({ kind, batches, error, reload }: { kind: Kind; batches?: Batch[
   const more = (total: number) => total > limit && (
     <div><Button onClick={() => setLimit(l => l + STEP[kind])}>Show more</Button></div>
   )
-  const link = (b: Batch) => b.link ?? undefined
+  const link = (b: Batch) => b.source?.link ?? undefined
   if (kind === 'music') {
     // a row per track: its title (or what it was asked for), the style, its time; Play opens the player
     const rows = batches.flatMap(b => b.items.map(i => ({ b, i })))

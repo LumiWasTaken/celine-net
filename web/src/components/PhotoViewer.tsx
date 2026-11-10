@@ -3,7 +3,7 @@
    made: its prompt's first phrase), never by its file name; its prompt shown whole under
    it; how it was made (preset, size and seed) in "..." under Copy prompt
    . Its menu also has Use as portrait: the picture becomes its own. */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Copy, UserRound } from 'lucide-react'
 import { api } from '../lib/api'
 import { errorText } from '../lib/format'
@@ -11,13 +11,15 @@ import { titleOf } from '../lib/pictures'
 import { InlineError, Viewer, type MenuItem, copied, toast } from '../ui'
 import './PhotoViewer.css'
 
-export function PhotoViewer({ src, name, prompt, details, onClose, onPrev, onNext, index, total }: {
+export function PhotoViewer({ src, name, prompt, details, actions, onClose, onPrev, onNext, index, total }: {
   src: string
   /** what it shows, when there is no prompt to say it */
   name: string
   prompt?: string | null
   /** how it was made: "anima-turbo, 832 x 1216, seed 1234" */
   details?: string | null
+  /** the caller's buttons in the bar */
+  actions?: ReactNode
   onClose: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -27,7 +29,7 @@ export function PhotoViewer({ src, name, prompt, details, onClose, onPrev, onNex
   const [error, setError] = useState<string | null>(null)
   const portrait = () => { setError(null); api.setPortrait(src).then(() => toast({ text: 'Portrait set' })).catch(e => setError(errorText(e))) }
   return (
-    <Viewer src={src} name={prompt ? titleOf(prompt) : name} more={madeMenu({ prompt, details, onPortrait: portrait })}
+    <Viewer src={src} name={prompt ? titleOf(prompt) : name} more={madeMenu({ prompt, details, onPortrait: portrait })} actions={actions}
             caption={<>{prompt && <p className="photo-viewer__prompt">{prompt}</p>}{error && <InlineError compact message={error} />}</>}
             onClose={onClose} onPrev={onPrev} onNext={onNext} index={index} total={total} />
   )
