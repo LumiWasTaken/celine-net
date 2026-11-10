@@ -91,7 +91,16 @@ async def tools(app, changes: dict[str, str | None], if_match: str | None = None
         return await reload.commit(app, {"tools": new})
 
 
-async def addresses(app, changes: dict[str, Any], if_match: str | None = None) -> dict:
+async def approval(app, tool: str, on: bool) -> dict:
+    """One tool on Require approval (on) or off it."""
+    if not isinstance(on, bool):
+        raise Invalid("approval", "This must be true or false.")
+    async with write.lock():
+        new = [t for t in app.cfg.settings.approval if t != tool] + ([tool] if on else [])
+        return await reload.commit(app, {"approval": new})
+
+
+async def addresses(app,changes: dict[str, Any], if_match: str | None = None) -> dict:
     """Only the services in `changes` ({sid: {url}}, services.merged): "" clears one, None
     forgets it so the compose's variable fills it again; the others stay as saved. A
     service whose address changed starts again while its feature is on."""

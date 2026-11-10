@@ -1,5 +1,5 @@
-"""Settings the app writes: var/settings/*.toml (providers, roles, tools, general,
-email, vault, triggers, appearance, guard, features, services, address) and var/secrets/*.key..
+"""Settings the app writes: var/settings/*.toml (providers, roles, tools, approval,
+general, email, vault, triggers, appearance, guard, features, services, address) and var/secrets/*.key..
 
 boot.load() calls `apply(cfg)` once config/ is read: `load(cfg)` reads each
 var/settings file, validates it and the result goes on the Config (settings/registry.py). A file that does
@@ -18,8 +18,8 @@ from . import general as general_mod
 from . import mail as mail_mod, services as services_mod, vault as vault_mod
 from .files import Invalid
 from .registry import (
-    Settings, compile_into, validate_providers, validate_roles, validate_tools,
-    validate_triggers,
+    Settings, compile_into, validate_approval, validate_providers, validate_roles,
+    validate_tools, validate_triggers,
 )
 from .secrets import secrets_dir
 
@@ -38,6 +38,8 @@ def file_to_section(section: str, data: dict[str, Any]) -> Any:
         return data.get("providers") or {}
     if section == "tools":
         return data.get("defaults") or {}
+    if section == "approval":
+        return data.get("tools") or []
     return data
 
 
@@ -46,6 +48,8 @@ def section_to_file(section: str, value: Any) -> dict[str, Any]:
         return {"providers": value}
     if section == "tools":
         return {"defaults": value}
+    if section == "approval":
+        return {"tools": value}
     if section == "general":            # a skill's knobs in a table of its own
         out: dict[str, Any] = {}
         for k, v in value.items():
@@ -80,11 +84,12 @@ def load(cfg) -> Settings:
                 s.saved[section] = True
                 return value
         s.saved[section] = False
-        return validate({})
+        return validate(file_to_section(section, {}))
 
     s.providers = pick("providers", validate_providers)
     s.roles = pick("roles", lambda v: validate_roles(v, s.providers))
     s.tools = pick("tools", validate_tools)
+    s.approval = pick("approval", validate_approval)
     s.general = pick("general", lambda v: general_mod.validate(v))
     s.email = pick("email", mail_mod.validate)
     s.vault = pick("vault", vault_mod.validate)

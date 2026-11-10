@@ -151,6 +151,8 @@ type ToolDefault = 'on' | 'off'
 type ToolView = {
   wire_name: string; name: string; label: string; summary: string
   mutating: boolean; default: ToolDefault; set_in_settings: boolean
+  /** on Require approval: every call waits for your answer */
+  approval: boolean
 }
 export type SkillView = {
   name: string; label: string; summary: string; source: 'built-in' | 'mcp'
@@ -169,7 +171,7 @@ type EmailView = {
 
 type SecretState = { state: 'set' | 'not set'; set_at: string | null }
 
-type AskKind = 'vault' | 'gate' | 'agent' | 'share' | 'settings' | 'model'
+type AskKind = 'vault' | 'tool' | 'agent' | 'share' | 'settings' | 'model'
 
 /** one request of the agent's that waits for you, as its card (server/celine/approvals.py
     Ask.card): `vault` a tap, `gate` a tool Bastet asks you about, `agent` an edit of
@@ -363,6 +365,9 @@ export const settingsApi = {
   /** a skill or a tool; null: follow the skill / config again */
   putTool: (target: string, value: ToolDefault | null) =>
     request<{ skills: SkillView[] }>(`/tool-defaults/${enc(target)}`, json('PUT', { default: value })),
+  /** a tool on Require approval (true) or off it */
+  putApproval: (tool: string, approval: boolean) =>
+    request<{ skills: SkillView[] }>(`/tool-defaults/${enc(tool)}`, json('PUT', { approval })),
 
   /** `general`: what was saved, a key not there is its field's `default`; `saved`: saved at least once */
   general: () => request<{ fields: FormField[]; general: Record<string, unknown>; version: string; saved: boolean }>('/settings'),

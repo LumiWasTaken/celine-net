@@ -316,13 +316,21 @@ async def put_tools(request: Request, response: Response,
 @router.put("/tool-defaults/{target}")
 async def put_tool_default(request: Request, response: Response, target: str,
                            if_match: str | None = Header(default=None)) -> dict:
-    """One target: a skill ("chat_archive") or a tool ("chat_archive__search"). null
-    removes the Settings entry, so the tool follows its skill / config again. Setting a skill
-    clears the tool entries under it (the skill's switch is the bulk verb)."""
-    body = await json_body(request, need=("default",), allow=("default",))
-    if body["default"] not in ("on", "off", None):
-        raise Invalid("default", "A default is \"on\", \"off\" or null.")
-    out = await saves.tools(services_of(request), {target: body["default"]}, if_match)
+    """One target: a skill ("chat_archive") or a tool ("chat_archive__search").
+    `default`: null removes the Settings entry, so the tool follows its skill / config
+    again; setting a skill clears the tool entries under it (the skill's switch is the
+    bulk verb). `approval` (a tool only): true puts it on Require approval, false takes
+    it off."""
+    body = await json_body(request, allow=("default", "approval"))
+    if not body:
+        raise Invalid("default", "Send default or approval.")
+    out: dict = {}
+    if "default" in body:
+        if body["default"] not in ("on", "off", None):
+            raise Invalid("default", "A default is \"on\", \"off\" or null.")
+        out = await saves.tools(services_of(request), {target: body["default"]}, if_match)
+    if "approval" in body:
+        out = await saves.approval(services_of(request), target, body["approval"])
     view = views.tools(services_of(request))
     etag(response, view["version"])
     return {**view, **out}

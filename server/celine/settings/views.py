@@ -189,7 +189,8 @@ def tools(services) -> dict[str, Any]:
                 on = default_enabled(t, cfg)
                 rows.append({"wire_name": t.wire_name, "name": t.name, **tm,
                              "mutating": t.mutating, "default": "on" if on else "off",
-                             "set_in_settings": t.wire_name in s.tools})
+                             "set_in_settings": t.wire_name in s.tools,
+                             "approval": t.wire_name in s.approval})
             rows.sort(key=lambda x: x["label"].lower())
             states = {x["default"] for x in rows}
             down = getattr(skill, "search_down", None)     # web: SearXNG does not answer

@@ -408,6 +408,11 @@ def humanize(name: str) -> str:
     return s[:1].upper() + s[1:]
 
 
+def label(wire: str) -> str:
+    """A tool by the label the Tools page shows (its name in words without one)."""
+    return TOOLS.get(wire, {}).get("label") or humanize(wire)
+
+
 # the places a skill is offered in (skills/places.py), as the UI names them
 PLACE_LABELS = {"chat": "{{name}}", "mission": "Missions", "background": "Routines"}
 

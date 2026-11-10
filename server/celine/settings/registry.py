@@ -188,6 +188,7 @@ class Settings:
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     roles: dict[str, dict[str, Any]] = field(default_factory=dict)
     tools: dict[str, str] = field(default_factory=dict)           # target -> on|off
+    approval: list[str] = field(default_factory=list)  # tools whose every call waits for a yes
     general: dict[str, Any] = field(default_factory=dict)
     email: dict[str, Any] = field(default_factory=dict)       # settings/mail.py
     vault: dict[str, Any] = field(default_factory=dict)       # settings/vault.py
@@ -533,6 +534,20 @@ def validate_tools(data: Any) -> dict[str, str]:
         if v not in ("on", "off"):
             raise Invalid(f"defaults.{t}", "A default is \"on\" or \"off\".")
         out[str(t)] = v
+    return out
+
+
+def validate_approval(data: Any) -> list[str]:
+    """approval.toml: the tools (wire names) whose every call waits for the user's yes
+    (turns/tools.py), whether the guard is on or off."""
+    if not isinstance(data, list):
+        raise Invalid("tools", "Require approval is a list of tools.")
+    out: list[str] = []
+    for t in data:
+        if not isinstance(t, str) or not TARGET.match(t) or "__" not in t:
+            raise Invalid("tools", f"'{t}' is not a tool (chat_archive__search).")
+        if t not in out:
+            out.append(t)
     return out
 
 

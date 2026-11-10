@@ -13,7 +13,9 @@ from . import address as address_mod, features as features_mod, files, form
 from . import general as general_mod
 from . import mail as mail_mod, section_to_file, services as services_mod
 from . import vault as vault_mod
-from .registry import validate_providers, validate_role, validate_tools, validate_triggers
+from .registry import (
+    validate_approval, validate_providers, validate_role, validate_tools, validate_triggers,
+)
 from ..core.event_types import SETTINGS_CHANGED
 
 log = logging.getLogger("celine.settings")
@@ -30,7 +32,7 @@ def lock() -> asyncio.Lock:
 
 def _current(s) -> dict[str, Any]:
     return {"providers": copy.deepcopy(s.providers), "roles": copy.deepcopy(s.roles),
-            "tools": dict(s.tools), "general": dict(s.general), "email": dict(s.email),
+            "tools": dict(s.tools), "approval": list(s.approval), "general": dict(s.general), "email": dict(s.email),
             "vault": dict(s.vault), "triggers": copy.deepcopy(s.triggers),
             "features": dict(s.features),
             "guard": copy.deepcopy(s.guard), "services": copy.deepcopy(s.services),
@@ -45,6 +47,7 @@ def _validate_all(new: dict[str, Any]) -> dict[str, Any]:
     for role, r in new["roles"].items():
         roles[role] = validate_role(role, r, providers)
     return {"providers": providers, "roles": roles, "tools": validate_tools(new["tools"]),
+            "approval": validate_approval(new["approval"]),
             "general": general_mod.validate(new["general"]),
             "email": mail_mod.validate(new["email"]),
             "vault": vault_mod.validate(new["vault"]),

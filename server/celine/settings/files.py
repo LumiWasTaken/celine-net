@@ -27,7 +27,7 @@ HEADER = ("Written by celine-net Settings. Hand edits are fine. The app reads th
           "you save.\nThe app does not keep comments you add here when it writes this "
           "file.")
 
-SECTIONS = ("providers", "roles", "tools", "general", "email", "vault", "triggers",
+SECTIONS = ("providers", "roles", "tools", "approval", "general", "email", "vault", "triggers",
             "appearance", "guard", "features", "services", "address")
 
 _lock = threading.Lock()
