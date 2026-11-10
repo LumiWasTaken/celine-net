@@ -19,7 +19,8 @@ The TOML:
   gives -> the node's value). The names of each kind are PARAMETERS;
 - size: images only, {step, max_pixels} (default 32 and 4.3 megapixels);
 - [catalog]: images only, which models and LoRAs of the server are this preset's own
-  (image_catalog.py): models and loras (name prefixes), lora_after (the node a LoRA
+  (image_catalog.py): models and loras (name prefixes, compared without case, ".", "-"
+  and "_"; none means none of that kind), lora_after (the node a LoRA
   chain follows), sampler (the node a model's settings go to), text ([node, input] that
   trigger words are put in front of), max_loras, full_settings (the sampler settings of
   a model that is not turbo).
