@@ -79,9 +79,9 @@ export function Appearance() {
           <Field group label="Text size">
             <Segmented label="Text size" value={look.text_size} onChange={put('text_size')} options={SIZES} />
           </Field>
-          <Switch label="Hide thinking" checked={look.hide_thinking} onChange={put('hide_thinking')} />
+          <Switch label="Hide thinking" help={help?.hide_thinking} checked={look.hide_thinking} onChange={put('hide_thinking')} />
           <Switch label="Hide tool calls" checked={look.hide_tools} onChange={put('hide_tools')} />
-          <Switch label="Collapse thinking by default" checked={look.collapse_thinking} onChange={put('collapse_thinking')}
+          <Switch label="Collapse thinking by default" help={help?.collapse_thinking} checked={look.collapse_thinking} onChange={put('collapse_thinking')}
                   disabled={look.hide_thinking} />
           {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
         </Section>

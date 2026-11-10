@@ -36,7 +36,7 @@ export const CONTRAST_MAX = 110
 
 /** Settings, Appearance; a key sent as null goes back to the server's default */
 export const appearanceApi = {
-  /** `help`: the "?" of the sliders whose name does not say what they do */
+  /** `help`: the "?" of the controls whose name does not say what they do */
   get: () => request<{ appearance: Appearance; help: Record<string, string> }>('/appearance'),
   put: (appearance: { [K in keyof Appearance]?: Appearance[K] | null }) =>
     request<{ appearance: Appearance }>('/appearance', json('PUT', { appearance })),

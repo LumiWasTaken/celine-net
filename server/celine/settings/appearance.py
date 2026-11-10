@@ -30,10 +30,14 @@ APPEARANCE: dict[str, tuple[tuple, Any]] = {
     "collapse_thinking": ((False, True), True),
 }
 
-# the "?" of the sliders whose name does not say what they do
+# the "?" of the controls whose name does not say what they do
 HELP = {"tint": "How much the accent colours the background and surfaces. At 0 % they stay "
                 "plain grey.",
-        "contrast": "The step in lightness between the background and surfaces."}
+        "contrast": "The step in lightness between the background and surfaces.",
+        "hide_thinking": "A reply shows without the model's thinking. The reply's menu "
+                         "still opens it.",
+        "collapse_thinking": "The thinking shows as one closed line above the reply. A "
+                             "click opens it."}
 
 
 def validate(data: Any) -> dict[str, Any]:
