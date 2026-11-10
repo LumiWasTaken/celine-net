@@ -125,13 +125,13 @@ async def test_a_closed_gate_never_runs_in_watch_with_a_pass_or_allowed_once(sto
     assert events._guard(r, cfg)["outcome"] == "Stopped"      # not "No answer"
     b = await store.read(lambda c: decisions.banner(c, row["id"]))
     assert b["kind"] == "closed" and b["line"] == (
-        'Stopped a web search. It sends "12 Example Road" (sensitive) to the public, and that '
-        'gate is closed in guard.toml. A closed gate applies in Warn too.')
+        'Stopped a web search. It sends "12 Example Road" (sensitive) to the public, and '
+        'guard.toml blocks sensitive text from going there. This block applies in Warn too.')
     for grant in ("once", "pass"):
         got = await banners.answer(app, row["id"], by=OWNER, said="let her", decided={
             "grant": grant, "rule": "all", "minutes": 60, "where": "here"})
-        assert got["thread"][-1]["text"] == "That gate is closed in guard.toml. Only the " \
-                                            "file opens it."
+        assert got["thread"][-1]["text"] == "guard.toml blocks this text from going " \
+                                            "there. Only an edit of guard.toml allows it."
     _, rows = await _turn(store, cfg, reg)
     assert web.queries == [] and rows[1]["content"] == CLOSED
 

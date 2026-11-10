@@ -132,10 +132,10 @@ TABLE: dict[str, Rule] = {
         banner="It read injected instructions in text from {source}{quoted}."),
     # the [gates] table: plain code before every rule, no `on` and no `does`
     "gates": Rule(
-        plain="private text that does not leave the house", label="gates",
+        plain="private text that does not leave the app", label="data loss prevention",
         to_agent="that is private and does not leave the house",
-        banner="It sends \"{piece}\" ({cls}) to {sink}, and that gate is closed in "
-               "guard.toml. A closed gate applies in Warn too."),
+        banner="It sends \"{piece}\" ({cls}) to {sink}, and guard.toml blocks {cls} text "
+               "from going there. This block applies in Warn too."),
 }
 ALL = "all"                    # a pass on every rule
 ALL_WORDS = "every rule"
