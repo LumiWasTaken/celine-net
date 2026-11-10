@@ -62,8 +62,8 @@ One line per finding, in the review's list:
 
 ### Layout and visual
 19. One primary (filled) button per screen; other actions are lower emphasis.
-20. Every size, gap, colour and duration comes from tokens.css; at most three text sizes
-    on a screen.
+20. Every size, gap, colour and duration comes from tokens.css; at most four text sizes
+    on a screen: meta (--t-xs), UI (--t-md), prose and card titles (--t-lg), titles (--t-xl).
 21. The page never scrolls; one inner region does. No region scrolls inside another
     scrolling region (a dialog's list shows whole or the dialog is the one scroller).
 22. A dialog's title and close button stay in view while its body scrolls.
