@@ -19,7 +19,7 @@
 .routines-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--s-2) var(--s-4); }
 .routines-when { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
 .routines-when__value { flex: 0 1 12rem; min-width: 8rem; }
-.routines-talk { display: grid; gap: var(--s-4); }
+.routines-chat .transcript__inner { padding: 0; }
 .routines-kids { flex: none; display: grid; padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--border); }
 .routines-work { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 

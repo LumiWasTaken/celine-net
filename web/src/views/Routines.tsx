@@ -5,7 +5,7 @@
    the error tone, one with a run that waits for its model in the warn tone; Earlier and
    Later step through older ones), the state and the schedule
    to narrow it. Each run says its state as a word and the server's line under it. A run
-   opens on its page (its result, the turns with a reviewer, what it started, what it was
+   opens on its page (its result and facts, its chat as the chat draws it, what it started, what it was
    asked; Run now, Retry, Stop). A schedule opens to edit (when, what it runs after, who,
    the prompt, the reviewer, the Limits with When a run fails, its runs; Run now, Delete
    asks first); its prompts open in the large editor with History. Triggers:
@@ -17,7 +17,7 @@
    /routines/<day>/schedule/<name>/edit/<key>[/history], /routines/<day>/task/<id>. */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUpRight, Bot, Braces, CalendarClock, ChevronLeft, ChevronRight, CircleStop, History, MoreHorizontal, NotebookPen, Pencil,
+  ArrowUpRight, Bot, Braces, CircleAlert, CalendarClock, ChevronLeft, ChevronRight, CircleStop, History, MoreHorizontal, NotebookPen, Pencil,
   Play, Plus, RotateCcw, SearchX, Trash2, Zap,
 } from 'lucide-react'
 import type { Message as ChatMessage } from '../lib/api'
@@ -38,12 +38,13 @@ import { useAction } from '../lib/useAction'
 import { useConversation } from '../lib/useConversation'
 import { useResource } from '../lib/useResource'
 import { Markdown } from '../components/Markdown'
-import { Portrait } from '../components/Portrait'
+import { waitWords } from '../components/Status'
+import { Transcript } from '../components/Transcript'
 import { PlanButton } from '../components/Plan'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
-  Avatar, Button, Checkbox, Choice, ConfirmDialog, copied, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input,
-  ListRow, ListSection, Loaded, LoadingRow, MenuButton, Message, NumberField, PageIndex, Place, PlaceHead, Section, Segmented,
+  Button, Checkbox, Choice, ConfirmDialog, copied, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input,
+  ListRow, ListSection, Loaded, LoadingRow, MenuButton, NumberField, PageIndex, Place, PlaceHead, Section, Segmented,
   StateWord, Switch, Toolbar, useContextMenu, VirtualList, type Crumb, type MenuItem,
 } from '../ui'
 import './Routines.css'
@@ -178,7 +179,6 @@ export function Routines({ active }: { active: boolean }) {
   })
 
   const toList = (v: View) => { setView(v); if (detail) go({}) }
-  const done = (runs.data?.runs ?? []).length
   const error = schedules.error ?? runs.error
   const s = route.schedule && route.schedule !== 'new' ? byName.get(route.schedule) ?? null : null
   const draft = (name: string) => {
@@ -219,7 +219,7 @@ export function Routines({ active }: { active: boolean }) {
     <States.Provider value={runs.data?.states}>
     <Place title="Routines" action={<IconButton icon={Plus} label="New schedule" onClick={() => go({ schedule: 'new' })} />}
            side={<>
-             <ListRow density="sm" icon={History} title="Runs" meta={done} selected={!detail && view === 'runs'} onClick={() => toList('runs')} />
+             <ListRow density="sm" icon={History} title="Runs" meta={runs.data?.runs.length} selected={!detail && view === 'runs'} onClick={() => toList('runs')} />
              <ListRow density="sm" icon={CalendarClock} title="Schedules" meta={schedules.data?.schedules.length}
                       selected={!detail && view === 'schedules'} onClick={() => toList('schedules')} />
              <ListRow density="sm" icon={Zap} title="Triggers" meta={triggers.data?.length} selected={!detail && view === 'triggers'}
@@ -293,7 +293,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                        // the tone is not the only sign: its name says a run failed or waits
                        const said = n.failed ? 'a run failed' : n.waiting ? 'a run is waiting for the model' : ''
                        return { value: n.night, title: said ? `${nightWords(n.night)}, ${said}` : nightWords(n.night),
-                                label: said ? <StateWord tone={n.failed ? 'error' : 'warn'}>{day}</StateWord> : day }
+                                label: said ? <StateWord tone={n.failed ? 'error' : 'warn'}>{n.failed && <CircleAlert size={ICON.xs} aria-hidden />}{day}</StateWord> : day }
                      })} />
           <IconButton icon={ChevronRight} size="sm" label="Later" disabled={newest >= today} onClick={onLater} />
         </div>
@@ -587,7 +587,7 @@ function RunPage({ id, night, go, active, schedules }: {
       {!d && !res.error && <LoadingRow />}
       {r && d && (
         <div className="page"><div className="page__col page__col--wide">
-          <PageIndex sections={[{ id: 'r-res', label: 'Result' }, ...(s?.reviewer || cid ? [{ id: 'r-talk', label: 'Turns' }] : []),
+          <PageIndex sections={[{ id: 'r-res', label: 'Result' }, ...(s?.reviewer || cid ? [{ id: 'r-talk', label: 'Chat' }] : []),
                                 ...(nodes.length ? [{ id: 'r-agents', label: 'Sub-agents', count: nodes.length }] : []),
                                 { id: 'r-ask', label: 'Prompt' }]}>
             <Section id="r-res" title="Result">
@@ -604,11 +604,14 @@ function RunPage({ id, night, go, active, schedules }: {
                 ) }] : []),
                 ...(r.again_of ? [{ label: 'Retry of', value: <RunLink run={r.again_of} night={r.night} go={go} /> }] : []),
                 ...(r.retried ? [{ label: 'Retried', value: <RunLink run={r.retried} night={r.night} go={go} /> }] : []),
+                ...d.facts,
+                ...(tree.data && tree.data.total.prompt_tokens + tree.data.total.completion_tokens > 0 ? [{ label: 'Tokens',
+                  value: `${tree.data.total.prompt_tokens.toLocaleString('en-GB')} input, ${tree.data.total.completion_tokens.toLocaleString('en-GB')} output` }] : []),
               ]} />
             </Section>
             {(s?.reviewer || cid) && (
-              <Section id="r-talk" title="Turns">
-                {cid ? <Talk key={cid} cid={cid} active={active} waits={r.reason} /> : <p className="routines-prose routines-prose--quiet">{r.words}</p>}
+              <Section id="r-talk" title="Chat">
+                {cid ? <RunChat key={cid} cid={cid} active={active} waits={r.reason} /> : <p className="routines-prose routines-prose--quiet">{r.words}</p>}
               </Section>
             )}
             {nodes.length > 0 && (
@@ -629,28 +632,24 @@ function RunPage({ id, night, go, active, schedules }: {
   )
 }
 
-/* The run's conversation as turns: the reviewer's lines and its own, what it was asked left
-   out (it is the Prompt section); while it works, what its model call waits for, else the
-   run's reason (`waits`: the server's, while its work waits for a model) */
-function Talk({ cid, active, waits }: { cid: string; active: boolean; waits: string }) {
+/* The run's conversation as the chat draws it (Transcript, read-only): its replies with their
+   thinking and tool calls, the reviewer's lines; what the app sent it is the Prompt section.
+   While it works, what its model call waits for, else the run's reason (`waits`: the
+   server's, while its work waits for a model) */
+function RunChat({ cid, active, waits }: { cid: string; active: boolean; waits: string }) {
   const agentName = useName()
   const convo = useConversation(active ? cid : null)
-  const items = (convo.messages as ChatMessage[]).filter(m => (m.role === 'user' || m.role === 'assistant') && m.intercom?.from !== 'system:schedules'
-    && m.content.trim())
-  const running = useContext(States)?.running.words ?? ''
-  const working = waitLine(convo.waiting) || waits || running
-  if (!items.length) return convo.conversation ? <p className="routines-prose routines-prose--quiet">{convo.running ? working : 'No turns'}</p> : <LoadingRow />
+  const messages = useMemo(() => convo.messages.filter(m => m.intercom?.from !== 'system:schedules'), [convo.messages])
+  if (!convo.conversation) return <LoadingRow />
+  if (!messages.length && !convo.running) return <p className="routines-prose routines-prose--quiet">No turns</p>
   return (
-    <div className="routines-talk">
-      {items.map(m => {
-        const name = m.role === 'user' ? m.intercom?.from_name ?? 'Reviewer' : agentName
-        return (
-          <Message key={m.id} name={name} face={m.role === 'user' ? <Avatar name={name} size={28} /> : <Portrait size="sm" />}>
-            <div className="prose"><Markdown text={m.content} /></div>
-          </Message>
-        )
-      })}
-      {convo.running && <p className="routines-prose routines-prose--quiet">{working}</p>}
+    <div className="routines-chat">
+      <Transcript conversationId={cid} messages={messages} toolCalls={convo.toolCalls} runs={convo.runs} turn={convo.turn}
+                  unanswered={null} running={convo.running} error={convo.error} pending={null} compactions={convo.compactions}
+                  onRetry={async () => {}} live={convo.live} switched={convo.switched} imageNotices={convo.imageNotices}
+                  banners={convo.banners} approvals={convo.approvals} forming={convo.forming}
+                  waiting={waitWords(convo.waiting, convo.live) ?? (waits || null)} queue={convo.queue} swaps={convo.swaps}
+                  assistant={agentName} user="" closed held={convo.conversation.held} />
     </div>
   )
 }

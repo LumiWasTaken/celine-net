@@ -118,8 +118,9 @@ block at the end of this file lists the words no UI string uses.
 | Model requests, Request 2 | one reply's requests to its model and the raw responses, from its "...", numbered when there are several; the same name as Model requests kept on Advanced | Chrome DevTools "Request", "Response" |
 | Plan, Asks you, Waiting for you, In progress, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
 | Daily at 04:00, Sundays at 03:00, Weekdays, Weekends, Every 2 hours from 10:00 to 22:00 | when a Routine's schedule runs, 24h times, from the server (schedules.words); a shape it cannot say stays the cron line | Google Calendar "Daily", "Weekly on Sunday" |
+| Started, Ended, Duration, Tokens | a Routine run's facts on its page, from the server; Tokens as on a mission's page | GitHub Actions "Started", "Duration" |
 | Waiting for the model | a running Routine run's reason while its work waits for a model (its clock stands still) | plain |
-| Started by | a Routine run you or it started by hand, in Events | GitHub Actions "Triggered by" for the same job |
+| Started by | a Routine run you or it started by hand, in Events and among its facts | GitHub Actions "Triggered by" for the same job |
 | (Its possessive pronoun) thoughts, Collapse thinking by default | its reasoning, and how its fold starts | Claude "Thinking", ChatGPT "Thought for" |
 | Thinking, Writing, Using a tool, Queued | the line while it thinks; a turn's step in lists (lib/format.ts); Queued: it waits for its turn at the model | Claude, ChatGPT |
 | Compacted | the chat's older part was summarised | Claude Code "Compacted" |
@@ -377,7 +378,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Close sidebar, Open sidebar | fold the chat list away to the left and bring it back | ChatGPT "Close sidebar", "Open sidebar" |
 | Open, Act, Scroll, Read, Close | the names of its browser tools, in the History's filter and the manual call (Read is what it did when it looked at the page) | automation "open", "click", "scroll"; browser "Reader" |
 | 1 screenshot, 3 screenshots, Screenshots | the pictures a browser call took; Screenshots heads those of its latest call on the Browser page | macOS, Windows "Screenshot" |
-| Chat | the title of a mission's or a sub-agent's chat page (the Open chat link opens it) | ChatGPT, Claude "chat" |
+| Chat | the title of a mission's or a sub-agent's chat page (the Open chat link opens it), and the section of a Routine run's page that draws its conversation | ChatGPT, Claude "chat" |
 | Open Browser, Open mission | a link that names where it goes | VS Code "Open Settings" |
 | Remove key, Remove current Discord token | take a stored key or token out | Bitwarden "Remove" |
 | Saved, Remove | a stored secret in a form: it is there, never shown; take it out | Bitwarden "Remove"; Chrome passwords "Saved" |
