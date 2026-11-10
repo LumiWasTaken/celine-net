@@ -221,7 +221,7 @@ export function Transcript(
   // the message being written now: its row keeps its place, empty
   const liveId = running ? live?.message_id ?? (streaming ? last?.id : undefined) : undefined
   const thoughtsOf = (msgs: Message[]) => {
-    const text = msgs.map(m => m.reasoning).filter(Boolean).join('\n\n')
+    const text = msgs.map(m => m.reasoning).filter(r => r?.trim()).join('\n\n')
     return text ? { title: thoughtsTitle, text } : null
   }
   const replyEdit = (m: Message) => editing === m.id && !!conversationId
@@ -280,7 +280,7 @@ export function Transcript(
                                        || (toolCalls[m.id] ?? []).length)
     // a reply stopped before it said anything: nothing to draw
     if (!steps.length) return null
-    const reasoning = seg.msgs.map(m => m.reasoning).filter(Boolean).join('\n\n')
+    const reasoning = seg.msgs.map(m => m.reasoning).filter(r => r?.trim()).join('\n\n')
     // its thinking: the fold above its reply, open by the Appearance setting. While it
     // thinks with no words yet: one shimmering "Thinking".
     const thinkingNow = writingHere && live?.phase === 'thinking' && !lastM.content
