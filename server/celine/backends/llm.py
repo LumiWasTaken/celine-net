@@ -226,6 +226,7 @@ class LLM:
         self.publish = publish
         self._build = build
         self.router = router or app_router(cfg, publish)
+        self.router.make = self.make         # Router.serves tries a model with its backend
         try:                                 # events leave from the server's loop
             import asyncio
             self.router.bind(asyncio.get_running_loop())

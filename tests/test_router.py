@@ -6,9 +6,12 @@ import httpx
 import pytest
 
 from celine.backends import router as router_mod
+from celine.backends.base import TextDelta
+from celine.backends.openai import http_error
 from celine.backends.router import Router
 from celine.boot import load
 from celine.settings.secrets import set_key
+from fake_backend import FakeBackend
 from settings_fixtures import KEY, scratch
 
 pytestmark = pytest.mark.anyio
@@ -124,6 +127,57 @@ async def test_a_failure_shows_only_while_it_is_current(tmp_path, monkeypatch):
     r.note_failed("swap/emb", "could_not_load", "out of memory", frozenset({"big"}))
     cfg.settings.providers["swap"]["models"]["emb"]["context"] = 4096
     assert r.model_state("swap/emb") is None
+
+
+ABORTED = '{"detail": "Chat completion aborted. Maybe the model was unloaded?"}'
+
+
+class Tabby(FakeBackend):
+    """A server that lists its model and aborts every completion of it with a 503 while
+    `aborts`; else it answers. Keeps each request's body."""
+
+    def __init__(self):
+        super().__init__(model="one")
+        self.aborts, self.status, self.bodies = True, 503, []
+
+    async def stream(self, messages, tools, body=None, model=None):
+        self.bodies.append(body)
+        if self.aborts:
+            raise http_error("server", self.model, self.status, ABORTED)
+        yield TextDelta("H")
+
+
+async def test_a_model_its_server_lists_but_aborts_holds_a_run_until_a_token_answers(
+        tmp_path, monkeypatch):
+    """The server answers its model list (up), the model aborts every completion: one
+    token's try says it does not serve, in the server's words; a run waiting on it tries
+    again only after the busy model backoff, and starts once the try answers."""
+    r, _, _ = _router(tmp_path, monkeypatch, roles={"chat": {"chain": ["srv/one"]}})
+    tabby = Tabby()
+    r.make = lambda ref: tabby if ref == "srv/one" else None
+    assert await r.can_answer("chat") is None, "nothing known against it: no try"
+    assert tabby.bodies == []
+    await r.serves("srv/one")
+    assert tabby.bodies == [{"max_tokens": 1}], "one token, to exactly the run's model"
+    why = await r.can_answer("chat", probe=False)
+    assert "Chat completion aborted. Maybe the model was unloaded?" in why, why
+    assert r.hosts()["srv"] == "up", "the server is up, its model does not serve"
+    assert await r.can_answer("chat") == why and len(tabby.bodies) == 1, \
+        "no second try before the Busy model retry delay"
+    r._models["srv/one"].at -= 10_000            # Busy model retry delay: 10 s
+    assert await r.can_answer("chat") == why and len(tabby.bodies) == 2
+    assert r.model_state("srv/one").tried == 2
+    tabby.aborts = False
+    r._models["srv/one"].at -= 10_000
+    assert await r.can_answer("chat") == why and len(tabby.bodies) == 2, \
+        "the delay doubles after each failed try"
+    r._models["srv/one"].at -= 10_000
+    assert await r.can_answer("chat") is None and len(tabby.bodies) == 3
+    assert r.model_state("srv/one") is None
+    # an answer under 500 says the model is there: nothing against it
+    tabby.aborts, tabby.status = True, 404
+    await r.serves("srv/one")
+    assert r.model_state("srv/one") is None
 
 
 CMD = ("start-llama-server --fit on --fit-ctx 32768 -fa on --parallel 2 --kv-unified --jinja\n"

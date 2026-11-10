@@ -25,6 +25,14 @@ Everything here comes from the servers' own answers, nothing from guesses or tim
        `revisit` for its roles);
      - a run waits with its slot come: the scheduler's tick asks `can_answer` (probe
        on) for the first model of its role (schedules/runs.py).
+  A server that lists a model may still abort every request for it, so whether one model
+  serves is asked with one completion of one token to exactly that model (`serves`),
+  only for a Routine's run:
+  1. once after its turn failed with an error it may answer again (schedules/runs.py
+     `_failed_why`), after the strict probe;
+  2. while a run waits on a model whose try failed (`tried`), when the scheduler's tick
+     asks `can_answer` and the Busy model retry delay (Settings, Advanced), doubled at
+     each failed try, the Busy model max retry delay at most, has passed since the last.
   Nothing polls: no heartbeat, no timer, no clock of how long anything was down.
 - **Provider state**: reachable (up) or unreachable (down, with the server's or the
   connection's sentence), and `loaded`: the models loaded now (llama-swap `/running`,
@@ -40,7 +48,8 @@ Everything here comes from the servers' own answers, nothing from guesses or tim
 - **Model state**: ok, or failed with `kind` could_not_load (the server could not
   start it), error (it answered with an error) or busy (it asked to be asked later), the
   server's sentence, and `loaded_then`: what the server had loaded when the load was
-  asked for. `problem` gives the one sentence a model row shows.
+  asked for; `tried`, the failed tries in a row of `serves`: the model does not serve, and
+  a run waits for it (`can_answer`). `problem` gives the one sentence a model row shows.
 - **Requests per hour**: each request to a provider is counted as it goes out
   (`take`, keyed by the provider); while a provider used its Requests per hour
   (Settings, Models), `full` says so with the sentence "<provider> reached its <n>
@@ -134,6 +143,7 @@ class ModelState:
     at: int
     loaded_then: frozenset[str] | None = None
     sig: str = ""                          # the model's settings when it failed
+    tried: int = 0                         # failed tries in a row of `serves`
 
     def public(self) -> dict[str, Any]:
         return {"state": "failed", "kind": self.kind, "message": self.message}
@@ -217,6 +227,7 @@ class Router:
         # ponytail: in memory, a restart resets the hour
         self.sent: dict[str, deque] = {}
         self.now: Callable[[], float] = time.monotonic     # tests: a fixed clock
+        self.make: Callable[[str], Any] | None = None   # LLM.make: one model's backend (serves)
 
     # ---- settings ---------------------------------------------------------------------
 
@@ -776,9 +787,9 @@ class Router:
             self._changed()
 
     def note_failed(self, ref: str, kind: str, message: str,
-                    loaded_then: frozenset[str] | None = None) -> None:
+                    loaded_then: frozenset[str] | None = None, tried: int = 0) -> None:
         m = ModelState(kind=kind, message=message, at=now_ms(),
-                       loaded_then=loaded_then, sig=self._sig(ref))
+                       loaded_then=loaded_then, sig=self._sig(ref), tried=tried)
         with self._lock:
             old = self._models.get(ref)
             self._models[ref] = m
@@ -911,10 +922,11 @@ class Router:
 
     async def can_answer(self, role: str, *, probe: bool = True) -> str | None:
         """None when the first model of `role` can answer now, else the sentence why
-        not (its provider's used-up hour too). Work that waits for it (a scheduled run)
-        runs on that model alone. `probe`:
-        a server known to be failing is asked again as `revisit` asks it (`_ask`), so a
-        waiting run starts once it is back; False reads the state as it stands."""
+        not (its provider's used-up hour too, the words of its failed try). Work that
+        waits for it (a scheduled run) runs on that model alone. `probe`: a server known
+        to be failing is asked again as `revisit` asks it (`_ask`), and a model whose try
+        failed is tried again once its wait is over (`serves`), so a waiting run starts
+        once it is back; False reads the state as it stands."""
         chain = self.chain(role)
         if not chain:
             return Ordered(role, [], chain).sentence()
@@ -925,8 +937,58 @@ class Router:
         else:
             if probe:
                 await self._look(pid, chain[:1])
+                if (ms := self.model_state(ref)) is not None and ms.tried and \
+                        now_ms() - ms.at >= 1000 * self._retry_after(ms):
+                    await self.serves(ref)
             st = self.provider_state(pid)
-        return self._lacks(role, ref) or self._check(ref, st) or self.full(pid)
+        ms = self.model_state(ref)
+        return self._lacks(role, ref) or self._check(ref, st) or self.full(pid) or \
+            (ms.message if ms is not None and ms.tried else None)
+
+    def _retry_after(self, ms: ModelState) -> float:
+        """Seconds after a failed try before the next: the busy model backoff."""
+        from .llm import backoff
+        return backoff(ms, ms.tried - 1, self.cfg)
+
+    async def serves(self, ref: str) -> None:
+        """Whether `ref` serves: one completion of one token (serves.md) to exactly that
+        model, FIRST_EVENT seconds at most, so a model its server loads on demand fits.
+        The answer is recorded as a request's: an event is note_ok; a refused connection
+        or a 502 is its provider down; an answer of 500 or more, a stream cut or no event
+        in time is a failure `tried` once more, in the server's own words; any other
+        answer (4xx) says the model is there, and nothing is recorded."""
+        from .. import prompts
+        from .llm import FIRST_EVENT, busy
+        pid = self.s.split(ref)[0]
+        backend = self.make(ref) if self.make is not None else None
+        if backend is None or self._down(pid):
+            return
+        # ponytail: past the queue's slots and GPU leases; asked only for a model whose
+        # last answer was a failure, so nothing of its own runs there
+        events = backend.stream([{"role": "user",
+                                  "content": prompts.text(__file__, "serves.md").strip()}],
+                                [], body={"max_tokens": 1})
+        e: BackendError | None = None
+        try:
+            with anyio.fail_after(FIRST_EVENT):
+                await events.__anext__()
+        except StopAsyncIteration:
+            pass
+        except TimeoutError:
+            e = BackendError(f"{backend.model} produced nothing for {FIRST_EVENT:g} s.")
+        except BackendError as err:
+            e = err
+        finally:
+            await events.aclose()
+        if e is None:
+            loaded = self.provider_state(pid).loaded
+            self.note_ok(ref, swapped=loaded is not None and backend.model not in loaded)
+        elif e.unreachable or e.status == 502:
+            self.note_unreachable(pid, str(e))
+        elif e.status is None or e.status >= 500:
+            old = self.model_state(ref)
+            self.note_failed(ref, "busy" if busy(e) else "error", str(e),
+                             tried=(old.tried if old is not None else 0) + 1)
 
     def order_sync(self, role: str) -> Ordered:
         chain = self.chain(role)
