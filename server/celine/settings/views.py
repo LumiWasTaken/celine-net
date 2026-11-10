@@ -170,7 +170,7 @@ def place_labels(cfg) -> dict[str, str]:
 
 
 def tools(services) -> dict[str, Any]:
-    from ..skills.catalog import status_of
+    from ..skills.catalog import state_of
     from ..skills.gating import default_enabled
     from ..skills.places import PLACE_NAMES, offered
     cfg = services.cfg
@@ -193,11 +193,9 @@ def tools(services) -> dict[str, Any]:
                              "approval": t.wire_name in s.approval})
             rows.sort(key=lambda x: x["label"].lower())
             states = {x["default"] for x in rows}
-            down = getattr(skill, "search_down", None)     # web: SearXNG does not answer
             skills.append({"name": name, **meta,
                            "source": "mcp" if name in mcp_skills else "built-in",
-                           "status": "down" if down else status_of(services, name, skill),
-                           "error": down or getattr(skill, "error", None),
+                           **state_of(services, name, skill),
                            "default": states.pop() if len(states) == 1 else "mixed",
                            "set_in_settings": name in s.tools,
                            "places": [p for p in PLACE_NAMES if offered(name, p)],

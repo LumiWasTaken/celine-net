@@ -1,6 +1,7 @@
 /* One skill as a block, the same in Settings, Tools and a conversation's Tools tab: its
-   switch (every tool of the skill at once; mixed when they differ), its name, a muted word
-   when it is down, stopped or not set up (its error on hover; a stopped one has Restart),
+   switch (every tool of the skill at once; mixed when they differ), its name, the server's
+   muted word when it is not connected or not set up (its error on hover; a server of ours
+   that stopped has Restart),
    and the first sentence of what it does. "N tools" folds open to one switch per tool,
    each with the pen when it changes data and, where the place has a default to go back
    to, Use the default. Folded by default; this device keeps the click per place and skill.
@@ -8,7 +9,7 @@
 import { PenLine, RotateCcw } from 'lucide-react'
 import { OFFLINE_TITLE } from '../lib/socket'
 import { count } from '../lib/format'
-import { SKILL_WORD, type SkillView } from '../lib/settingsApi'
+import type { SkillView } from '../lib/settingsApi'
 import { Fold, ICON, IconButton, Switch } from '../ui'
 import './ToolBlock.css'
 
@@ -16,7 +17,7 @@ import './ToolBlock.css'
 export type BlockTool = { wire: string; label: string; summary: string; mutating: boolean; on: boolean; here: boolean }
 export type BlockSkill = {
   name: string; label: string; summary: string; tools: BlockTool[]
-  status: SkillView['status']; error: string | null
+  status: SkillView['status']; word: string | null; error: string | null
 }
 
 /** the first sentence of a description: one line */
@@ -45,9 +46,9 @@ export function ToolBlock({ skill: s, place, writable, open, onSet, onReset, onR
 }) {
   const lock = writable ? undefined : OFFLINE_TITLE
   const on = s.tools.filter(t => t.on).length
-  const usable = !SKILL_WORD[s.status]
+  const usable = !s.word
   const state = !usable || on === 0 ? false : on === s.tools.length ? true : 'mixed' as const
-  const word = SKILL_WORD[s.status] ?? (state === 'mixed' ? `${on} of ${s.tools.length} on` : null)
+  const word = s.word ?? (state === 'mixed' ? `${on} of ${s.tools.length} on` : null)
   const rows = (
     <div className="tool-rows">
       {s.tools.map(t => (

@@ -452,6 +452,8 @@ export type SkillInfo = {
   description: string
   enabled_globally: boolean
   status: 'up' | 'starting' | 'down' | 'dead' | 'unset' | 'unconnected'
+  /** its state in the sources' words; null while it works */
+  word: string | null
   error: string | null
   tools: { name: string; wire_name: string; label: string; summary: string; description: string
            mutating: boolean

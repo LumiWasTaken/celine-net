@@ -211,6 +211,20 @@ def test_a_source_without_its_account_is_not_connected():
     assert status_of(services, "shell", up) == "up"
 
 
+def test_a_skill_says_its_state_in_the_word_of_its_feature():
+    from types import SimpleNamespace as NS
+
+    from celine.skills.catalog import state_of
+    services = NS(cfg=NS(mcp={}), connectors=None, feature_probes=(0.0, {
+        "web": {"state": "missing", "detail": "SearXNG did not answer at searxng:8080."},
+        "shellbox": {"state": "ready", "detail": ""}}))
+    assert state_of(services, "web", NS(status="up")) == {
+        "status": "down", "word": "Not connected",
+        "error": "SearXNG did not answer at searxng:8080."}
+    assert state_of(services, "shell", NS(status="up"))["word"] is None
+    assert state_of(services, "whatsapp", NS(status="dead"))["word"] == "Not connected"
+
+
 async def test_a_failed_prompt_part_or_message_context_reaches_the_agent(cfg):
     class Broken:
         name = "broken"

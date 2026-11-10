@@ -51,7 +51,7 @@ export function Tools() {
       {!skills ? (
         <Section>{<Loaded res={res} label="Loading tools" />}</Section>
       ) : TOOL_GROUPS.map(([g, title]) => {
-        const shown = skills.filter(s => toolGroup(s.status, s.default !== 'off') === g)
+        const shown = skills.filter(s => toolGroup(s.word, s.default !== 'off') === g)
         if (!shown.length) return null
         return (
           <Section key={g} title={title}>

@@ -6,6 +6,30 @@ from ..settings import tools_meta
 from .gating import default_enabled, is_enabled, reason
 
 
+# a skill's state as every place says it (Settings, Tools; a chat's panel), in the words
+# the sources use; a state without a word works
+WORDS = {"down": "Not connected", "dead": "Not connected", "unconnected": "Not connected",
+         "unset": "Not set up"}
+
+
+def state_of(services, name: str, skill) -> dict[str, str | None]:
+    """{status, word, error}: status_of, but a skill whose feature's last probe blocks its
+    switch (Settings, Features greys it) is unset or down with the probe's sentence, and
+    web whose last search failed is down with why."""
+    from ..settings import features
+    hit = getattr(services, "feature_probes", None)
+    probe = hit[1].get(features.skill_owners().get(name, "")) if hit else None
+    down = getattr(skill, "search_down", None)
+    if probe is not None and features.shown(probe)["blocks"]:
+        status = "unset" if probe["state"] == "unset" else "down"
+        error = probe.get("detail") or None
+    elif down:
+        status, error = "down", down
+    else:
+        status, error = status_of(services, name, skill), getattr(skill, "error", None)
+    return {"status": status, "word": WORDS.get(status), "error": error}
+
+
 def status_of(services, name: str, skill) -> str:
     """The skill's state; a source's server (Discord, WhatsApp) that answers while its
     account is not connected is `unconnected`: its tools have nothing to work on."""
@@ -45,8 +69,7 @@ def catalog(services, over: dict, here: set | None) -> list[dict]:
             "name": name, **meta,
             "description": cfg.substitute(skill.description),
             "enabled_globally": cfg.skill_enabled(name),
-            "status": status_of(services, name, skill),
-            "error": getattr(skill, "error", None),
+            **state_of(services, name, skill),
             "tools": rows,
         })
     return out

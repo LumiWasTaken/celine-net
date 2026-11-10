@@ -31,7 +31,7 @@ export function useToolLabels(): (wire: string) => string {
 
 function fromView(s: SkillView): Skill {
   return {
-    name: s.name, label: s.label, summary: s.summary, status: s.status, error: s.error,
+    name: s.name, label: s.label, summary: s.summary, status: s.status, word: s.word, error: s.error,
     tools: s.tools.map(t => ({ wire: t.wire_name, label: t.label, summary: t.summary, mutating: t.mutating, on: t.default === 'on', here: false })),
   }
 }
@@ -46,7 +46,7 @@ async function loadDefaults(): Promise<Loaded> {
 /* A conversation: its own switches (GET /api/skills?conversation=). */
 function fromConversation(s: SkillInfo): Skill {
   return {
-    name: s.name, label: s.label, summary: s.summary, status: s.status, error: s.error,
+    name: s.name, label: s.label, summary: s.summary, status: s.status, word: s.word, error: s.error,
     tools: s.tools.map(t => ({ wire: t.wire_name, label: t.label, summary: t.summary, mutating: t.mutating,
                                on: t.enabled, here: t.enabled !== t.default })),
   }
@@ -93,7 +93,7 @@ export function ToolList({ conversationId, draft }: {
     const hit = (t: Tool) => !f || t.label.toLowerCase().includes(f) || t.wire.toLowerCase().includes(f) || t.summary.toLowerCase().includes(f)
     return TOOL_GROUPS.map(([g, label]) => ({
       g, label,
-      skills: skills.filter(s => toolGroup(s.status, s.tools.some(t => t.on)) === g).flatMap(s => {
+      skills: skills.filter(s => toolGroup(s.word, s.tools.some(t => t.on)) === g).flatMap(s => {
         if (!f || s.label.toLowerCase().includes(f) || s.name.toLowerCase().includes(f)) return [s]
         const tools = s.tools.filter(hit)
         return tools.length ? [{ ...s, tools }] : []

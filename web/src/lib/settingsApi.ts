@@ -156,7 +156,10 @@ type ToolView = {
 }
 export type SkillView = {
   name: string; label: string; summary: string; source: 'built-in' | 'mcp'
-  status: 'up' | 'starting' | 'down' | 'dead' | 'unset' | 'unconnected'; error: string | null
+  status: 'up' | 'starting' | 'down' | 'dead' | 'unset' | 'unconnected'
+  /** its state in the sources' words (Not connected, Not set up); null while it works */
+  word: string | null
+  error: string | null
   default: ToolDefault | 'mixed'; set_in_settings: boolean
   tools: ToolView[]
 }
@@ -450,16 +453,11 @@ export const agentApi = {
 const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label, LOCALE, { sensitivity: 'base' })
 /** the one word set for anything it connects to: a source, a tool, a provider, the browser */
 export const LINK = { up: 'Connected', down: 'Not connected', unset: 'Not set up' } as const
-/** a skill's state in that word set; null while it works */
-export const SKILL_WORD: Record<SkillView['status'], string | null> = {
-  up: null, starting: null, down: LINK.down, dead: 'Stopped', unset: LINK.unset, unconnected: LINK.down,
-}
-
 /* Settings → Tools and a conversation's panel group skills the same way: On, Not set up
    (shown off until it works), Off */
 export const TOOL_GROUPS = [['on', 'On'], ['setup', 'Not set up'], ['off', 'Off']] as const
-export const toolGroup = (status: SkillView['status'], anyOn: boolean) =>
-  SKILL_WORD[status] ? 'setup' : anyOn ? 'on' : 'off'
+export const toolGroup = (word: string | null, anyOn: boolean) =>
+  word ? 'setup' : anyOn ? 'on' : 'off'
 
 export function toolOrder<T extends { label: string; tools: { label: string }[] }>(skills: T[]): T[] {
   return [...skills].sort(byLabel).map(s => ({ ...s, tools: [...s.tools].sort(byLabel) }))
