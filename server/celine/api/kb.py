@@ -222,7 +222,7 @@ async def patch_person(request: Request, sid: str, pid: int, body: PersonPatch) 
     kb = chat_kb(request, sid)
     p = await in_thread(kb.update_person, pid, body.name)
     if p is None:
-        raise _nf(f"no person {pid} in {sid}")
+        raise _nf(f"There is no person {pid} in {sid}.")
     return p
 
 
