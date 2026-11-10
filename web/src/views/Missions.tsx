@@ -504,10 +504,13 @@ function Settings({ m, live, agents, origin, total, onChange }: {
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(m.conversation_id, on); onChange() })
   return (
     <>
-      <Switch label={AUTO_CONTEXT} title={AUTO_CONTEXT_TIP} checked={m.auto_context} disabled={auto.busy || !!m.trashed_at}
-              onChange={on => void auto.run(on)} />
-      {auto.error && <InlineError compact message={auto.error} />}
-      <div className="missions-model"><ModelRow cid={m.conversation_id} live={live} /></div>
+      <Field label="Context" group error={auto.error}>
+        <Switch label={AUTO_CONTEXT} title={AUTO_CONTEXT_TIP} checked={m.auto_context} disabled={auto.busy || !!m.trashed_at}
+                onChange={on => void auto.run(on)} />
+      </Field>
+      <Field label="Model" group>
+        <div className="missions-model"><ModelRow cid={m.conversation_id} live={live} /></div>
+      </Field>
       <Facts grid items={[
         ...(m.until ? [{ label: 'Runs until', value: stamp(m.until) }] : []),
         ...(m.min_until ? [{ label: 'Runs at least until', value: stamp(m.min_until) }] : []),
