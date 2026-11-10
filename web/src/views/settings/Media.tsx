@@ -38,8 +38,7 @@ export function Media() {
           more={comfy ? [{ label: 'Remove this provider', icon: Trash2, danger: true, disabled: comfy.used_by.length > 0 || !online,
                            title: comfy.used_by.length ? `Used for ${comfy.used_by.join(', ')}` : undefined, onSelect: () => setRemoving(true) }] : undefined}>
       {!providers.data ? <Section><Loaded res={providers} /></Section> : <>
-        {(problem || check.error) && <InlineError message={check.error ?? problem} />}
-        <Comfy p={comfy} others={list} kinds={providers.data.kinds} onChanged={reload} />
+        <Comfy p={comfy} others={list} kinds={providers.data.kinds} onChanged={reload} problem={check.error ?? problem} />
         {comfy && (kindInfo(providers.data.kinds, 'comfyui')?.key === 'required' || comfy.key.state === 'set') && (
           <KeySection p={comfy} required={kindInfo(providers.data.kinds, 'comfyui')?.key === 'required'} onChanged={reload} />
         )}
@@ -63,8 +62,10 @@ export function Media() {
 
 /* ── the ComfyUI server: its Address (saved when the field is left or on Enter: the saved
    provider's, else a new one the server fills with every preset) and its options ── */
-function Comfy({ p, others, kinds, onChanged }: {
+function Comfy({ p, others, kinds, onChanged, problem }: {
   p: ProviderView | undefined; others: ProviderView[]; kinds: Parameters<typeof kindInfo>[0]; onChanged: () => void
+  /** why the server does not answer (its last test, or Check's error): under its Address */
+  problem?: string | null
 }) {
   const online = useOnline()
   const saved = p?.provider.base_url ?? ''
@@ -87,7 +88,7 @@ function Comfy({ p, others, kinds, onChanged }: {
                          [kinds, others])
   return (
     <Section title="ComfyUI">
-      <Field label="Address" error={save.error}>
+      <Field label="Address" error={save.error ?? problem}>
         <Input value={url} placeholder="http://192.168.1.20:8188" spellCheck={false} disabled={!online || save.busy}
                onChange={e => setUrl(e.target.value)} onBlur={() => void save.run()}
                onKeyDown={e => { if (e.key === 'Enter') void save.run(); if (e.key === 'Escape') setUrl(saved) }} />

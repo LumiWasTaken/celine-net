@@ -54,7 +54,7 @@ export function Presets({ kind, providers, roles, onChanged }: {
   return (
     <Section title={kind === 'images' ? 'Images' : 'Music'}
              action={<FileButton icon={Upload} accept=".json,application/json" disabled={!online} onFiles={([f]) => { if (f) setFile(f) }}>Upload workflow</FileButton>}>
-      {probe.data && probe.data.state !== 'none' && <StateWord tone={probe.data.state === 'missing' ? 'error' : 'muted'}>{probe.data.detail}</StateWord>}
+      {probe.data?.state === 'ready' && probe.data.detail && <StateWord tone="muted">{probe.data.detail}</StateWord>}
       {list.error && !list.data ? <InlineError message={list.error} onRetry={list.reload} />
         : !list.data ? <LoadingRow label="Loading presets" /> : (
         <CardGrid on={list.data?.presets} className="presets">

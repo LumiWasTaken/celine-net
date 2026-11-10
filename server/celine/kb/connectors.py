@@ -134,7 +134,7 @@ class Connector:
         return auth[7:] if auth.startswith("Bearer ") else None
 
     def _down(self) -> str:
-        return f"The {self.title} connection is not running."
+        return no_answer(self.title, self.server, self.base)
 
     # ---- the admin doors -----------------------------------------------------------------
     def _send(self, c, method: str, path: str, body: Any):
