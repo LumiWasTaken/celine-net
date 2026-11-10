@@ -25,7 +25,7 @@ import { format } from '../lib/nav'
 import { getPref, setPref } from '../lib/prefs'
 import { Bell, Brain, Download, FileText, ImageIcon, Mail, Megaphone, Repeat, Shrink, type LucideIcon } from 'lucide-react'
 import { Button, EventLine, Fold, ICON, InlineError, LoadingRow, Message as Said, Picture, TextArea, Thoughts, cx, curve, ms, reduced, isSendKey, useMove } from '../ui'
-import { Markdown, StreamText, TextWithRefs } from './Markdown'
+import { Markdown, StreamText } from './Markdown'
 import { useMessageActions } from './MessageActions'
 import { Portrait } from './Portrait'
 import { Status, TurnEnd, endWords } from './Status'
@@ -252,7 +252,7 @@ export function Transcript(
       return (
         <div key={m.id} data-id={m.id} ref={arrive(m)} className="msg-event">
           <EventLine quiet icon={ev.icon ?? Mail} meta={<Stamp at={m.created_at} />}
-                     detail={ev.body && <TextWithRefs text={ev.body} />}>{ev.heading}</EventLine>
+                     detail={ev.body && <div className="prose"><Markdown text={ev.body} breaks /></div>}>{ev.heading}</EventLine>
         </div>
       )
     }
