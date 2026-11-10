@@ -149,6 +149,10 @@ async def test_a_missions_message_waits_on_the_mission_once(store):
     again = await waits.items(services)
     assert [i["kind"] for i in again] == ["mission", "thread"], "still once"
     assert again[0]["asked"] == [asked["intercom_id"]], "the mission's page reads what waits"
+    # read, its question stays with the item until the user writes in it
+    await store.write(lambda c: rows.read(c, [asked["intercom_id"]]))
+    [read] = [i for i in await waits.items(services) if i["kind"] == "mission"]
+    assert (read["asked"], read["text"]) == ([], "Which hotel, the cheap one?")
     assert [t["thread"] for t in await store.read(lambda c: rows.threads(
         c, "user", unread=True, received=True))] == [flats["intercom_id"]], \
         "the Intercom's Waiting for you leaves it to the mission"

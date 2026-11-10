@@ -60,7 +60,8 @@ def _missions(c) -> list[dict]:
     """Every open or done mission outside the Archive and the Trash that is in Needs you
     or has a message to the user that waits (its home is the mission: intercom/store.py
     MISSION_FROM), once. `why`: its note in Needs you. `text`: what it wrote the user
-    that waits, oldest first, else its last answer. `asked`: those messages' ids, the
+    that waits or came since the user last wrote in it, read or not, oldest first, else
+    its last answer. `asked`: those messages' ids, the
     newest last (a reply answers that one). `open`: it still works (active or in Needs
     you); a done one that wrote the user is listed too. `origin`: the conversation it was
     started from, as a crumb (homes.path)."""
@@ -76,14 +77,19 @@ def _missions(c) -> list[dict]:
     out = []
     for r in rows:
         cid = r["conversation_id"]
-        asked = c.execute(
-            "SELECT i.id, i.text, i.created_at FROM intercom i WHERE i.from_addr = ? AND "
-            f"i.kind <> 'job' AND {_UNREAD} AND NOT {BUG} ORDER BY i.id",
-            (f"agent:{cid}", "user", now())).fetchall()
+        # its messages to the user that wait, and those since the user last wrote in it
+        said = c.execute(
+            f"SELECT i.id, i.text, i.created_at, {_UNREAD} AS waits FROM intercom i "
+            "JOIN intercom_deliveries d ON d.intercom_id = i.id AND d.to_addr = 'user' "
+            f"WHERE i.from_addr = ? AND i.kind <> 'job' AND NOT {BUG} AND ({_UNREAD} OR "
+            "i.created_at > (SELECT coalesce(max(created_at), '') FROM messages WHERE "
+            "conversation_id = ? AND author = 'user')) ORDER BY i.id",
+            ("user", now(), f"agent:{cid}", "user", now(), cid)).fetchall()
+        asked = [a for a in said if a["waits"]]
         if r["status"] != "needs_you" and not asked:
             continue
         why = (r["note"] or "").strip() if r["status"] == "needs_you" else ""
-        text = "\n\n".join(a["text"] for a in asked) or last_answer(c, cid).strip()
+        text = "\n\n".join(a["text"] for a in said) or last_answer(c, cid).strip()
         above = homes.path(c, cid)[:-1]
         out.append({
             "kind": "mission", "id": cid, "title": r["name"], "why": why,
