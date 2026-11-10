@@ -291,7 +291,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                      options={[...days].reverse().map(n => {
                        const day = `${weekdayOf(n.night)} ${Number(n.night.slice(8))}`
                        // the tone is not the only sign: its name says a run failed or waits
-                       const said = n.failed ? 'a run failed' : n.waiting ? 'a run waits for its model' : ''
+                       const said = n.failed ? 'a run failed' : n.waiting ? 'a run is waiting for the model' : ''
                        return { value: n.night, title: said ? `${nightWords(n.night)}, ${said}` : nightWords(n.night),
                                 label: said ? <StateWord tone={n.failed ? 'error' : 'warn'}>{day}</StateWord> : day }
                      })} />
@@ -760,9 +760,9 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
             </div>
           </Section>
           {roles.length > 1 && (
-            <Section id="s-who" title="Model">
-              <Field label="Model" group error={err('role')}>
-                <Choice label="Model" value={d.role} onChange={role => put({ role })} options={roles.map(r => ({ value: r.name, label: r.label }))} />
+            <Section id="s-who" title="Role">
+              <Field label="Role" group error={err('role')}>
+                <Choice label="Role" value={d.role} onChange={role => put({ role })} options={roles.map(r => ({ value: r.name, label: r.label }))} />
               </Field>
             </Section>
           )}
@@ -775,7 +775,7 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
                 {preview.error ? <InlineError compact message={preview.error} /> : <div className="prose routines-preview"><Markdown text={preview.data ?? ''} /></div>}
               </Field>
             )}
-            <Field label="Note" error={err('note')}>
+            <Field label="Save result to note" error={err('note')}>
               <Input mono value={d.note} placeholder="diary/{{day_before}}.md" onChange={e => put({ note: e.target.value })} />
             </Field>
             {d.note.trim() && notePath.data && notePath.data !== d.note.trim() && <p className="routines-prose routines-prose--quiet routines-mono">{notePath.data}</p>}
