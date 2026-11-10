@@ -56,10 +56,11 @@ assert.equal(landing(more, 'routines'), 'features')
 assert.equal(landing(start, 'nonsense'), 'features')
 assert.deepEqual(stepsOf(null), ['agent', 'you', 'model', 'features', 'done'])
 // shares come after the shellbox: greyed while its switch, as flipped, is off; off with it
-const shareOf = v => waits(v, v.catalog.find(x => x.id === 'shares'))
+const shareOf = (v, free = true) => waits(v, v.catalog.find(x => x.id === 'shares'), free)
 assert.equal(shareOf(start), true)
 const box = { ...start, features: flip(start, 'shellbox', true) }
 assert.equal(shareOf(box), false, 'the shellbox switched on: shares switch, its box not set up yet')
+assert.equal(shareOf(box, false), true, 'Settings: the shellbox on but blocked is greyed, shares with it')
 const withShares = { ...box, features: flip(box, 'shares', true) }
 assert.equal(toSave(withShares, fresh.features).shares, true)
 assert.equal(flip(withShares, 'shellbox', false).shares, false, 'the shellbox off: shares off')

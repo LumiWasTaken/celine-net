@@ -448,12 +448,14 @@ export function Checkbox({ checked, indeterminate = false, onChange, disabled, c
 /* ── Switch: for settings that are on or off. The whole row is the button; with help the
    track and the label are the button and the "?" sits after it, outside, while a click on
    the rest of the row still flips it. ── */
-export function Switch({ checked, onChange, label, help, disabled, hideLabel = false, className, title }: {
+export function Switch({ checked, onChange, label, name, help, disabled, hideLabel = false, className, title }: {
   /** 'mixed' when some of a group are on (a skill with some tools off), or while the server
       has not said the value yet (a provider's Cloud before its check) */
   checked: boolean | 'mixed'
   onChange: (next: boolean) => void
   label: ReactNode
+  /** the label's words for its Help's name ("About Shellbox") when the label is not a string */
+  name?: string
   /** what it does, behind a "?" after the label */
   help?: string
   disabled?: boolean
@@ -473,7 +475,7 @@ export function Switch({ checked, onChange, label, help, disabled, hideLabel = f
           <span className="switch" data-checked={state} aria-hidden />
           <span className="switch-row__text">{label}</span>
         </button>
-        <Help text={help} label={named(label)} />
+        <Help text={help} label={name ?? named(label)} />
       </div>
     )
   }

@@ -91,24 +91,27 @@ export function FeatureTiers({ view, disabled = false, about = false, free = fal
         <div key={t.id} className="feature-tier">
           <SubHead>{t.label}</SubHead>
           {t.id === 'core' ? view.core.map(c => (
-            <div key={c.id} className="feature-row">
-              <Switch checked disabled help={about ? undefined : c.about} onChange={() => undefined}
+            <div key={c.id} className="feature-row feature-row--core">
+              <Switch checked disabled name={c.label} help={about ? undefined : c.about} onChange={() => undefined}
                       label={<>{c.label}{about && <span className="feature-about">{c.about}</span>}</>} />
             </div>
           )) : view.catalog.filter(f => f.tier === t.id).map(f => {
-            // a feature with a page of its own links to it (Guard; Images & Music and a
-            // plugin's form page while on); a plugin's form lives only on its page
+            // a feature with a page of its own links to it (Guard; Images & Music, a
+            // plugin's form page and a connector's source page while on); a plugin's form
+            // lives only on its page
             const on = view.features[f.id] !== false
-            const page = f.id === 'guard' ? 'guard' : MEDIA.has(f.id) && on ? 'media' : f.form && on ? f.form : null
+            const page = f.id === 'guard' ? 'guard' : MEDIA.has(f.id) && on ? 'media' : f.form && on ? f.form
+              : f.archive && on && f.kbs[0] ? 'sources' : null
             const Form = onOpen && !page && !f.form ? formOf(f) : undefined
             const isOpen = open === f.id
             return (
               <div key={f.id}>
                 <div className="feature-line">
                   <FeatureSwitch feature={f} on={view.features[f.id] !== false} about={about} free={free && f.step}
-                                 waiting={waits(view, f)} disabled={disabled} onChange={v => onChange(flip(view, f.id, v))} />
+                                 waiting={waits(view, f, free)} disabled={disabled} onChange={v => onChange(flip(view, f.id, v))} />
                   {onOpen && page && (
-                    <Button variant="ghost" size="sm" icon={ArrowUpRight} href={format({ section: 'settings', page })}>
+                    <Button variant="ghost" size="sm" icon={ArrowUpRight}
+                            href={format({ section: 'settings', page, ...(page === 'sources' ? { sub: f.kbs[0] } : {}) })}>
                       {page === 'guard' ? 'Open Guard' : page === 'media' ? 'Open Images & Music' : `Open ${f.label}`}
                     </Button>
                   )}
@@ -144,12 +147,11 @@ function SetupForm({ Form, feature, value, onChange, reprobe }: {
 
 /** one feature's switch and its label; switched on but missing or not set up, the probe's
     sentence under it in the warn tone.
-    Blocked (its service missing or not set up): off and greyed, its `needs` sentence under
-    it, and a click shows it as a toast; `free` (the onboarding, a feature whose setup step
+    Blocked (its service missing or not set up): off and greyed, the probe's sentence under
+    it (`needs` when the probe has none), and a click shows it as a toast; `free` (the onboarding, a feature whose setup step
     comes next): it switches as any other. `waiting` (the feature it comes `after` is switched
     off, as flipped on this page): off and greyed as when blocked. With `about` the sentence is a second line and
-    its "?" is `off_when`; without, its "?" is the server's `help`. A "?" never repeats what
-    the row shows: an off row has none. A feature with `warn` (shares) asks first when
+    its "?" is `off_when`; without, its "?" is the server's `help`, on an off row too. A feature with `warn` (shares) asks first when
     switched on (Turn on); off needs no confirm */
 export function FeatureSwitch({ feature: f, on, disabled = false, about = false, free = false, waiting = false, onChange }: {
   feature: Feature
@@ -164,13 +166,14 @@ export function FeatureSwitch({ feature: f, on, disabled = false, about = false,
   const off = (blocked(f) && !free) || waiting
   // switched on but the probe found it missing or not set up: its sentence, in the warn tone
   const problem = on && !off && (f.state === 'missing' || f.state === 'unset') && f.detail
-  const line = off ? f.needs : problem ? <StateWord tone="warn">{f.detail}</StateWord> : about ? f.about : ''
-  const help = off ? undefined : (about ? f.off_when : f.help) || undefined
+  const why = waiting ? f.needs : f.detail || f.needs
+  const line = off ? why : problem ? <StateWord tone="warn">{f.detail}</StateWord> : about ? f.about : ''
+  const help = (about ? f.off_when : f.help) || undefined
   const [asking, setAsking] = useState(false)
   return (
     <div className={cx('feature-row', off && 'feature-row--off')}
-         onClick={off ? () => toast({ text: f.needs }) : undefined}>
-      <Switch checked={!off && on} disabled={disabled || off} help={help}
+         onClick={off ? () => toast({ text: why }) : undefined}>
+      <Switch checked={!off && on} disabled={disabled || off} name={f.label} help={help}
               onChange={v => (v && f.warn ? setAsking(true) : onChange(v))}
               label={<>
                 {f.label}

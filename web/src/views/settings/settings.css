@@ -249,6 +249,9 @@ a.batches__time:hover { text-decoration: underline; }
 .feature-about { display: block; font-size: var(--t-xs); line-height: var(--lh-ui); color: var(--text-muted); }
 .feature-line { display: flex; align-items: center; gap: var(--s-2); }
 .feature-line > .feature-row { flex: 1; min-width: 0; }
-.feature-row--off .switch-row { pointer-events: none; }
+/* the switch lets the click through to the row; its "?" still opens */
+.feature-row--off :is(.switch-row__button, button.switch-row) { pointer-events: none; }
+/* a core row is on and fixed: drawn at full colour, never greyed */
+.feature-row--core :is(.switch-row, .switch-row__button) { opacity: 1; cursor: default; }
 .feature-setup { display: grid; gap: var(--s-4); padding: var(--s-3) 0 var(--s-4) var(--s-6); }
 .settings__caps { display: flex; align-items: center; gap: var(--s-4); }

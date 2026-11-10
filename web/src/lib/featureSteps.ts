@@ -5,8 +5,13 @@ import type { Feature, FeaturesView } from './settingsApi'
 /** a feature's switch cannot be on: the server says so (its probe's `blocks`) */
 export const blocked = (f: Feature) => f.blocks
 
-/** a feature `after` another whose switch, as flipped, is off: off and greyed */
-export const waits = (view: FeaturesView, f: Feature) => !!f.after && view.features[f.after] === false
+/** a feature `after` another whose switch, as flipped, is off, or whose switch is greyed
+    because the server says it is blocked: off and greyed. `free` (the onboarding): a
+    blocked one with a setup step switches as any other, so only its switch counts */
+export const waits = (view: FeaturesView, f: Feature, free = false) => {
+  const after = view.catalog.find(x => x.id === f.after)
+  return !!after && (view.features[after.id] === false || (blocked(after) && !(free && after.step)))
+}
 
 /** the switches with `id` flipped to `on`: off, every feature after it goes off too */
 export const flip = (view: FeaturesView, id: string, on: boolean) => ({
