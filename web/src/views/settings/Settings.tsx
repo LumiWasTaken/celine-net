@@ -149,7 +149,7 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
         )}
         <VirtualList items={items} label="Settings pages" inset={8} className="settings__list"
                      getKey={(it, i) => it.type === 'source' ? `s:${it.source.id}` : it.type === 'page' ? it.id : `${it.type}:${i}`}
-                     estimate={i => { const it = items[i]; return it?.type === 'section' ? 36 : it?.type === 'filter' ? 48 : 44 }}
+                     estimate={i => { const it = items[i]; return it?.type === 'section' ? 36 : it?.type === 'filter' ? 48 : 32 }}
                      renderRow={it => {
                        if (it.type === 'section') return <ListSection label={it.label} />
                        if (it.type === 'filter') {
@@ -157,13 +157,13 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
                        }
                        if (it.type === 'none') return <EmptyState compact>{noneMatch('settings')}</EmptyState>
                        if (it.type === 'setup') {
-                         return <ListRow href={format({ section: 'welcome', step: 'agent' })} title="Setup"
+                         return <ListRow density="sm" href={format({ section: 'welcome', step: 'agent' })} title="Setup"
                                          leading={<span className="settings__icon"><ListChecks size={ICON.md} aria-hidden /></span>} />
                        }
                        if (it.type === 'source') {
                          const s = it.source
                          return (
-                           <ListRow href={format({ section: 'settings', page: 'sources', sub: s.id })}
+                           <ListRow density="sm" href={format({ section: 'settings', page: 'sources', sub: s.id })}
                                     selected={selected(it)} tooltip={s.sentence || undefined}
                                     leading={<span className="settings__icon"><SourceGlyph source={s.platform} label={s.title} /></span>}
                                     title={s.title}
@@ -173,7 +173,7 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
                          )
                        }
                        return (
-                         <ListRow href={format({ section: 'settings', page: it.id })} selected={selected(it)}
+                         <ListRow density="sm" href={format({ section: 'settings', page: it.id })} selected={selected(it)}
                                   leading={<span className="settings__icon"><it.icon size={ICON.md} aria-hidden /></span>}
                                   title={it.label}
                                   meta={it.id === 'people' && sources.data && !people
