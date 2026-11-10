@@ -80,8 +80,8 @@ async def test_missions_read_gives_one_mission_whole_and_list_its_brief(store):
     h = await _house(store)
     skill, ctx, user = Missions(cfg), _ctx(h, store, cfg), cfg.user
     out = (await skill.read(ctx, "photos")).content
-    assert out.startswith(f"Mission Photos, from {user} ({h.m}): needs you. Which year first?")
-    assert "Brief:\nSort the photos by year.\nThen tag." in out
+    assert out.startswith(f"Mission Photos, from {user} ({h.m}): waiting for you. Which year first?")
+    assert "Instructions:\nSort the photos by year.\nThen tag." in out
     assert f'Reports in: "Groceries" ({h.chat}).' in out
     assert f"[x] 1. Sort\n[>] 2. Tag (ask {user} when done)" in out
     assert f"- scout (done, conversation {h.sub[:8]}): report #{h.report}: Found 400 photos." in out

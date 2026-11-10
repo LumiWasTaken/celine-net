@@ -131,7 +131,7 @@ async def test_a_mission_turn_that_ends_with_nothing_to_wake_it_goes_on_once(sto
     assert (row["status"], row["note"]) == ("needs_you", watch.NOTE)
     said = await store.read(lambda c: c.execute(
         "SELECT text FROM intercom WHERE kind='report'").fetchone()[0])
-    assert said == f"Mission Learn Blender needs you: {watch.NOTE}"
+    assert said == f"Mission Learn Blender waiting for you: {watch.NOTE}"
 
 
 async def test_a_mission_with_a_wake_set_or_done_gets_no_line(store):

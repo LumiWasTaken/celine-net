@@ -24,7 +24,7 @@ from ..clock import zone
 from ..turns.compact import one_line
 
 STATUS = {"Active": "active", "Needs you": "needs_you", "Done": "done"}
-WORDS = {"active": "active", "needs_you": "needs you", "done": "done",
+WORDS = {"active": "active", "needs_you": "waiting for you", "done": "done",
          "stopped": "stopped by {{username}}"}
 ARTIFACT = re.compile(r"(artifact|documents):\S.*")
 ASK = "start a mission on a cloud model"   # the approval card's action (agent_models.ask_cloud)
@@ -143,10 +143,10 @@ def brief_lines(row: dict, title: str | None, tz, only: set[str] | None = None,
     now_ = now_ or datetime.now(timezone.utc)
     out = []
     if only is None or "brief" in only:
-        out.append(f"Brief:\n{row['brief'].strip()}")
+        out.append(f"Instructions:\n{row['brief'].strip()}")
     if only is None or "report_to" in only:
         if row.get("report_to") or only is not None:
-            out.append(f"Report in: {title or 'here'}.")
+            out.append(f"Result goes to: {title or 'this mission'}.")
     if only is None or "until" in only:
         if row.get("until"):
             out.append(f"Time limit: {clock(datetime.fromisoformat(row['until']), tz, now_)}.")
@@ -162,7 +162,7 @@ def brief_lines(row: dict, title: str | None, tz, only: set[str] | None = None,
 
 
 def head(row: dict) -> str:
-    by = "you" if row.get("started_by") else "{{username}}"
+    by = "{{name}}" if row.get("started_by") else "{{username}}"
     return f"Mission {row['name']}, from {by}."
 
 
@@ -222,7 +222,7 @@ class Missions:
         if row is None:
             return None
         lines = [*brief_lines(row, None, self.tz)[1:], f"Status: {WORDS[row['status']]}."]
-        lines = [x for x in lines if not x.startswith("Report in:")]
+        lines = [x for x in lines if not x.startswith("Result goes to:")]
         if not row["steps"]:
             lines.append("No plan yet.")
         if row["artifact"]:
@@ -287,7 +287,7 @@ class Missions:
         cid, tz = row["conversation_id"], self.tz
         lines = [f"{head(row)[:-1]} ({cid}): {WORDS[row['status']]}" +
                  (f". {row['note']}" if row.get("note") else "."),
-                 *[x for x in brief_lines(row, None, tz) if not x.startswith("Report in:")],
+                 *[x for x in brief_lines(row, None, tz) if not x.startswith("Result goes to:")],
                  f"Reports in: \"{where['title'] or 'Untitled'}\" ({row['report_to']})."
                  if where else "Reports to {{username}}."]
         if row["artifact"]:

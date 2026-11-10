@@ -38,7 +38,7 @@ async def test_the_agent_starts_a_mission_with_what_the_form_takes(store):
     assert row["min_until"] < row["until"]
     first = (await view.snapshot(store, cid))["messages"][0]
     assert first["intercom"]["from"] == f"agent:{chat}", "the brief is the agent's"
-    assert first["content"].startswith("Mission Photos, from you.")
+    assert first["content"].startswith("Mission Photos, from Celine.")
     assert "Minimum time: until " in first["content"]
 
     bad = await skill.start(ctx, brief="x", time_limit="1 h", min_time="2 h")

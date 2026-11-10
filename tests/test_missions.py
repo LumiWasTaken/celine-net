@@ -72,7 +72,7 @@ async def test_a_mission_starts_reports_and_stops(db_path):
             first = (await view.snapshot(store, cid))["messages"][0]
             assert (first["role"], first["author"]) == ("user", "intercom")
             assert (first["intercom"]["kind"], first["intercom"]["from"]) == ("brief", "user")
-            assert f"Brief:\n{BRIEF['brief']}" in first["content"]
+            assert f"Instructions:\n{BRIEF['brief']}" in first["content"]
             assert await _turns(store, cid) == [("intercom", "queued")] and notified == [1]
 
             # its tool: refused elsewhere; a note waits for the report conversation's turn
@@ -88,7 +88,7 @@ async def test_a_mission_starts_reports_and_stops(db_path):
             await dispatcher.deliver_idle(report)        # as at the turn's end
             note = (await view.snapshot(store, report))["messages"][-1]
             assert (note["author"], note["role"]) == ("intercom", "user")
-            assert note["content"] == "Mission RSS feed needs you: The MR is up."
+            assert note["content"] == "Mission RSS feed waiting for you: The MR is up."
             assert (note["intercom"]["kind"], note["intercom"]["data"]) == \
                 ("report", {"mission": cid})
             assert await _turns(store, report) == [("user", "done")], "no turn for a note"
@@ -261,7 +261,7 @@ async def test_the_agent_plans_then_records_what_it_delivered(store):
     skill = Missions(cfg)
     ctx = ToolContext(cid, "t", "k", store, cfg, None)
     before = await skill.prompt_fragment(ctx)
-    assert "Brief:\nCompare the three offers." in before and "No plan yet." not in before
+    assert "Instructions:\nCompare the three offers." in before and "No plan yet." not in before
     assert "No plan yet." in await skill.tail_part(ctx)
     from celine.plans.skill import Plan
     assert not (await Plan(cfg).set(ctx, steps=[{"title": "Read the offers"},
