@@ -5,16 +5,15 @@ nothing stored; the text goes back to the composer as the model wrote it, for th
 to edit or send."""
 from __future__ import annotations
 
+from .. import prompts
 from ..backends.base import text_of
 from ..turns import tokens
 from . import tree
 
-PROMPT = ("Write {{username}}'s next message in this conversation, as {{username}} writes "
-          "it, not as {name}. One message, nothing else.")
-SAMPLE = "How {{username}} writes, their last messages:\n\n{lines}"
+# what the model is told: impersonate.md, the sample impersonate_sample.md, and for a
+# model that cannot be prefilled (it writes the whole message, from these words on)
+# impersonate_start.md
 SAMPLES = 3               # the user's last messages that show how they write
-# a model that cannot be prefilled writes the whole message, from these words on
-STARTS = "The message starts with these words; write the whole message:\n\n{start}"
 
 
 async def write(store, cfg, backend, cid: str, start: str = "") -> str:
@@ -44,13 +43,14 @@ async def write(store, cfg, backend, cid: str, start: str = "") -> str:
         lines.append(line)
     start = start.strip()
     prefill = bool(start) and supports_prefill(backend)
-    system = cfg.substitute(PROMPT.replace("{name}", cfg.name))
+    system = prompts.fill(cfg, __file__, "impersonate.md", agent=cfg.name).strip()
     sample = theirs[:SAMPLES]
     if sample:
-        system += "\n\n" + cfg.substitute(SAMPLE).replace(
-            "{lines}", "\n\n".join(reversed(sample)))
+        system += "\n\n" + cfg.substitute(prompts.text(__file__, "impersonate_sample.md").strip()
+                                          ).replace("{{lines}}", "\n\n".join(reversed(sample)))
     if start and not prefill:
-        system += "\n\n" + STARTS.format(start=start)
+        system += "\n\n" + prompts.text(__file__, "impersonate_start.md").strip().replace(
+            "{{start}}", start)
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": "\n\n".join(reversed(lines))}]
     if prefill:

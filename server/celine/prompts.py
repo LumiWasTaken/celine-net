@@ -72,6 +72,14 @@ APP: dict[str, tuple[str, str]] = {
                                                       "gets."),
     "sub_agents.drone": ("Device sub-agent instructions", "Frames the instructions a "
                                                           "sub-agent on a device gets."),
+    "conversations.impersonate": ("Impersonate", "Asks the chat model to write "
+                                  "{{username}}'s next message in their voice."),
+    "conversations.impersonate_sample": ("Impersonate samples", "Shows the chat model "
+                                         "{{username}}'s last messages, so it writes the "
+                                         "way they do."),
+    "conversations.impersonate_start": ("Impersonate start", "Gives a model that cannot "
+                                        "continue a message the words {{username}} "
+                                        "already typed."),
 }
 _edited: Path | None = None                       # <data>/prompts, set by settings.apply
 _cache: dict[Path, tuple[int, str]] = {}

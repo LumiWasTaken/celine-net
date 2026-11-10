@@ -22,6 +22,9 @@ FILLS = {
     "schedules/reviewer_first.md": {"who": "mentor"},
     "schedules/talk_over.md": {"who": "mentor", "final": "Your answer is the result."},
     "schedules/line.md": {"n": 1, "turns": 8},
+    "conversations/impersonate.md": {"agent": "Celine"},
+    "conversations/impersonate_sample.md": {"lines": "hi"},
+    "conversations/impersonate_start.md": {"start": "I think"},
 }
 
 
