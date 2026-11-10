@@ -5,7 +5,7 @@
    rest is in the More sheet. */
 import { lazy, type ComponentProps, type ReactNode } from 'react'
 import {
-  Activity, CalendarClock, FileText, Flag, Globe, Heart, Mail, MessagesSquare, NotebookPen, Search, Terminal,
+  Activity, CalendarClock, FileText, Flag, Globe, Heart, Images, Mail, MessagesSquare, NotebookPen, Search, Terminal,
   type LucideIcon,
 } from 'lucide-react'
 import type { ConfigStatus } from './lib/api'
@@ -21,6 +21,7 @@ export const Intercom = lazy(() => import('./views/Intercom').then(m => ({ defau
 export const Waiting = lazy(() => import('./views/Waiting').then(m => ({ default: m.Waiting })))
 export const SearchPage = lazy(() => import('./views/Search').then(m => ({ default: m.Search })))
 export const Documents = lazy(() => import('./views/Documents').then(m => ({ default: m.Documents })))
+export const Gallery = lazy(() => import('./views/Gallery').then(m => ({ default: m.Gallery })))
 export const Settings = lazy(() => import('./views/settings/Settings').then(m => ({ default: m.Settings })))
 export const TerminalPage = lazy(() => import('./views/Terminal').then(m => ({ default: m.Terminal })))
 export const BrowserPage = lazy(() => import('./views/Browser').then(m => ({ default: m.Browser })))
@@ -34,7 +35,7 @@ export type RailEntry = { id: Section; icon: LucideIcon }
 export const PLACES: RailEntry[] = [
   { id: 'celine', icon: Heart }, { id: 'missions', icon: Flag },
   { id: 'routines', icon: CalendarClock },
-  { id: 'notebook', icon: NotebookPen }, { id: 'documents', icon: FileText }, { id: 'chats', icon: MessagesSquare },
+  { id: 'notebook', icon: NotebookPen }, { id: 'documents', icon: FileText }, { id: 'gallery', icon: Images }, { id: 'chats', icon: MessagesSquare },
   { id: 'intercom', icon: Mail }, { id: 'terminals', icon: Terminal }, { id: 'browser', icon: Globe }, { id: 'events', icon: Activity },
   { id: 'search', icon: Search },
 ]
@@ -47,7 +48,7 @@ export const BAR: Section[] = ['celine', 'missions', 'notebook', 'intercom']
 
 export const TITLE: Record<Section, string> = {
   celine: '', missions: 'Missions', routines: 'Routines', notebook: 'Notebook', terminals: 'Terminals',
-  browser: 'Browser', artifact: 'Page', intercom: 'Intercom', waiting: 'Waiting for you', events: 'Events', chats: 'Messages', search: 'Search', documents: 'Documents', settings: 'Settings', welcome: 'Setup',
+  browser: 'Browser', artifact: 'Page', intercom: 'Intercom', waiting: 'Waiting for you', events: 'Events', chats: 'Messages', search: 'Search', documents: 'Documents', gallery: 'Gallery', settings: 'Settings', welcome: 'Setup',
 }
 
 export function sectionHref(s: Section): string {
@@ -85,5 +86,6 @@ export const VIEWS: { id: Section; view: (c: ViewContext) => ReactNode }[] = [
   { id: 'chats', view: c => <Chats active={c.active} /> },
   { id: 'search', view: c => <SearchPage active={c.active} /> },
   { id: 'documents', view: c => <Documents active={c.active} /> },
+  { id: 'gallery', view: c => <Gallery active={c.active} /> },
   { id: 'settings', view: c => <Settings active={c.active} status={c.status} /> },
 ]

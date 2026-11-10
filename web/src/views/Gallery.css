@@ -1,0 +1,6 @@
+/* Gallery (Gallery.tsx): a day's pictures as a grid of squares, its tracks as rows under
+   them, the player at the page's foot */
+.gallery__day { display: grid; gap: var(--s-2); padding-bottom: var(--s-3); }
+.gallery__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--card-min), 100%), 1fr)); gap: var(--s-2);
+  padding-inline: var(--s-3); }
+.gallery__player { flex: none; padding: var(--s-2) max(var(--gutter), (100% - var(--page-max, 100%)) / 2) var(--s-3); }

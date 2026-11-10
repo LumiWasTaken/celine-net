@@ -32,6 +32,7 @@
    /chats                             /chats/<source>  /chats/<source>/<chat>  /chats/<source>/<chat>/<message>
    /m/<source>/<message>              a message link; Chats resolves it to its chat and replaces the URL
    /documents?folder=…  /documents/<item id>?folder=…   your documents, one folder (Documents)
+   /gallery                           the images and music it made (Gallery)
    /settings  /settings/<page>[/<sub>]  a list on the left, one page on the right:
        general, it, sources/<source id>, people, search,
        models[/<provider id>], tools, email,
@@ -60,7 +61,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 
-export type Section = 'celine' | 'missions' | 'routines' | 'notebook' | 'terminals' | 'browser' | 'artifact' | 'events' | 'intercom' | 'waiting' | 'chats' | 'search' | 'documents' | 'settings' | 'welcome'
+export type Section = 'celine' | 'missions' | 'routines' | 'notebook' | 'terminals' | 'browser' | 'artifact' | 'events' | 'intercom' | 'waiting' | 'chats' | 'search' | 'documents' | 'gallery' | 'settings' | 'welcome'
 
 export type Route =
   | { section: 'celine'; conversation?: string }
@@ -76,6 +77,7 @@ export type Route =
   | { section: 'chats'; kb?: string; chat?: number; message?: number; resolve?: boolean }
   | ({ section: 'search' } & SearchFilters)
   | { section: 'documents'; item?: number; folder?: string }
+  | { section: 'gallery' }
   | ({ section: 'settings'; page?: string; sub?: string } & Editing)
   | { section: 'welcome'; step?: string }
 
@@ -169,6 +171,8 @@ function parse(pathname: string, search = ''): Parsed {
       const folder = new URLSearchParams(search).get('folder') || undefined
       return { route: { section: 'documents', item: num(a), folder } }
     }
+    case 'gallery':
+      return { route: { section: 'gallery' }, redirect: !!a }
     case 'settings':
       // the agent's page's and Bastet's long texts, and the prompts: /settings/agent|guard|prompts/edit/<key>[/history]
       if ((a === 'agent' || a === 'guard' || a === 'prompts') && b === 'edit' && c) return { route: { section: 'settings', page: a, ...editing(c, d) }, redirect: !!d && d !== 'history' }
@@ -251,6 +255,8 @@ export function format(r: Route): string {
       return formatSearch(r)
     case 'documents':
       return '/documents' + (r.item ? `/${r.item}` : '') + (r.folder ? `?folder=${encodeURIComponent(r.folder)}` : '')
+    case 'gallery':
+      return '/gallery'
     case 'settings':
       return '/settings' + (r.page ? `/${e(r.page)}` : '') + (r.page && r.edit ? editPath(r) : r.page && r.sub ? `/${e(r.sub)}` : '')
     case 'welcome':
