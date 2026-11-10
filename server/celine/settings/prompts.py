@@ -46,14 +46,18 @@ GUIDE = "skills.guides."
 
 
 def _guides() -> dict[str, tuple[str, str]]:
-    """Each guide: its skill's label, its frontmatter description as what it is for."""
+    """Each guide: its skill's label and summary (tools_meta, written for you); a guide
+    without a skill there has its frontmatter description."""
     out = {}
     for p in sorted((prompts.PACKAGE / "skills" / "guides").glob("*.md")):
-        try:
-            about = Guide(p.stem).description
-        except ValueError:          # an edit in var/prompts that no longer parses stays listed, to fix
-            about = ""
-        out[GUIDE + p.stem] = (SKILLS.get(p.stem, {}).get("label") or humanize(p.stem), about)
+        meta = SKILLS.get(p.stem, {})
+        about = meta.get("summary")
+        if about is None:
+            try:
+                about = Guide(p.stem).description
+            except ValueError:      # an edit in var/prompts that no longer parses stays listed, to fix
+                about = ""
+        out[GUIDE + p.stem] = (meta.get("label") or humanize(p.stem), about)
     return out
 
 

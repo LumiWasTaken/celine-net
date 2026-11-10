@@ -57,10 +57,13 @@ async def test_the_list_names_its_groups_and_fills_the_name(api):
     assert bastet == ["Persona", f"Replies to {api.cfg.name}", "Messages to you"], "its editors' titles"
 
 
-async def test_a_guide_says_what_its_frontmatter_says(api):
+async def test_a_guide_says_what_its_skill_does_for_you(api):
+    from celine.settings.tools_meta import SKILLS
     from celine.skills import Guide
-    got = (await api.get("/api/prompts/skills.guides.web")).json()
-    assert got["about"] == api.cfg.substitute(Guide("web").description) and "{{" not in got["about"]
+    got = (await api.get("/api/prompts/skills.guides.shell")).json()
+    assert got["about"] == api.cfg.substitute(SKILLS["shell"]["summary"]) and "{{" not in got["about"]
+    texts = (await api.get("/api/prompts/skills.guides.texts")).json()
+    assert texts["about"] == Guide("texts").description, "a guide with no skill row"
 
 
 async def test_an_edit_is_read_first_kept_in_history_and_the_default_comes_back(api):

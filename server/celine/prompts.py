@@ -88,7 +88,7 @@ APP: dict[str, tuple[str, str]] = {
     "skills.read_only": ("Read-only", "Answers a read-only sub-agent that calls a tool that "
                                       "writes."),
     "backends.json_only": ("JSON answers", "Asks an Anthropic model for one JSON object."),
-    "api.frozen": ("Frozen model calls", "Answers a model call from the box or a device "
+    "api.frozen": ("Frozen model calls", "Answers a model call from the shellbox or a device "
                                          "while {{name}} is frozen."),
     "sub_agents.fragment": ("Sub-agent instructions", "Frames the instructions a sub-agent "
                                                       "gets."),
