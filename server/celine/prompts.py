@@ -47,6 +47,10 @@ APP: dict[str, tuple[str, str]] = {
     "kb.image": ("Photo descriptions", "Describes a photo, so Search finds it by what it "
                                        "shows."),
     "vision": ("Questions about an image", "Answers one question about one image."),
+    "vision_id": ("Answer with an id", "Asks for the id of one marked element on a page."),
+    "vision_box": ("Answer with a box", "Asks for the box around what the question names."),
+    "vision_text": ("Answer in sentences", "Asks for an answer about an image in a few "
+                                           "short sentences."),
     "missions.steps": ("How a mission goes", "The steps every mission follows."),
     "schedules.final": ("A run's final answer", "Tells a routine run that its last answer "
                                                 "is its result."),

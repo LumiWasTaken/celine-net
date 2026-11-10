@@ -28,17 +28,8 @@ from .backends.base import BackendError, text_of
 from .backends.queue import Priority
 from .settings.thinking import OFF
 
-# what the model is told: vision.md beside this module
-# the last line of the request, by the form of the answer
-FORM = {
-    "id": "Each element has a pink box with its id in the box's top-right corner, like e14. "
-          "Answer with the id only, or none.",
-    "box": "Locate what the question asks about and output its bounding box as JSON: "
-           "{\"bbox_2d\": [x1, y1, x2, y2]}, with coordinates normalized to 0-1000. Output "
-           "the JSON only, or none.",
-    "text": "Answer in at most 5 short sentences. If asked whether something is there, say "
-            "where it is, or none.",
-}
+# what the model is told: vision.md beside this module, and as the last line of the
+# request, by the form of the answer, vision_id.md, vision_box.md or vision_text.md
 TOKENS = {"id": 20, "box": 60, "text": 200}    # the most an answer may take
 ID = re.compile(r"e?(\d+)", re.I)
 # where a box begins: {"bbox_2d": [...]} (code fences and words around it are fine),
@@ -83,7 +74,8 @@ def media_type(image: bytes) -> str:
 
 
 def messages(image: bytes, question: str, answer_as: str) -> list[dict]:
-    text = f"{prompts.text(__file__, 'vision.md').rstrip()}\n\nQuestion: {question}\n{FORM[answer_as]}"
+    form = prompts.text(__file__, f"vision_{answer_as}.md").strip()
+    text = f"{prompts.text(__file__, 'vision.md').rstrip()}\n\nQuestion: {question}\n{form}"
     url = f"data:{media_type(image)};base64,{base64.b64encode(image).decode()}"
     return [{"role": "user", "content": [{"type": "text", "text": text},
                                          {"type": "image_url", "image_url": {"url": url}}]}]
