@@ -920,10 +920,11 @@ class Scheduler:
                     [prompt, _say(cfg, "background.md", final=where)]), "trigger",
                     {"run": rid})
             answer, own = self._take(note, start, answer, await self._wrote(cid, note))
+            stale = None
             if not note:
                 error = None
             elif own:
-                error = await self._stale(cid, note)
+                error, stale = None, await self._stale(cid, note)
             elif not final:
                 error = (f"The note {note} was not written: the run ended with a tool call "
                          "and no reply after it.")
@@ -945,7 +946,8 @@ class Scheduler:
                                           "waits": bool(why), "error": error})
             return
         await store.write(lambda c: _set(c, store, cfg, rid, state="done", result=answer,
-                                         error=error, finished_at=now()))
+                                         error=error, reason=stale or "",
+                                         finished_at=now()))
         log.info("run done", extra={"event": "schedules.done", "run": rid})
 
     async def _resume(self, cid: str) -> tuple[str, bool]:
@@ -1042,21 +1044,24 @@ class Scheduler:
         return any(_of_note(args, note) for (args,) in rows)
 
     async def _stale(self, cid: str, note: str) -> str | None:
-        """`note`, which the run wrote: the sentence when ok tool calls ran after its last
-        write of it and the note is older than the last of them; else None."""
+        """`note`, which the run wrote: the sentence when ok calls that change something
+        (no read, no plan step) ran after its last write of it and the note is older than
+        the last of them; else None."""
         rows = await self.app.store.read(lambda c: c.execute(
             "SELECT tc.name, tc.arguments, tc.finished_at FROM tool_calls tc JOIN messages m "
             "ON m.id = tc.message_id WHERE m.conversation_id=? AND tc.state='ok' ORDER BY "
             "tc.finished_at", (cid,)).fetchall())
-        later: list[str] = []
+        tools = getattr(self.app.registry, "tools", {})
+        last: str | None = None
         for name, args, at in rows:
-            later = [] if name in ("notebook__write", "notebook__edit") and \
-                _of_note(args, note) else later + [at]
-        if not later or self._note_touched(note, later[-1]):
+            if name in ("notebook__write", "notebook__edit") and _of_note(args, note):
+                last = None
+            elif not name.startswith("plan__") and (
+                    (spec := tools.get(name)) is None or spec.mutating):
+                last = at
+        if last is None or self._note_touched(note, last):
             return None
-        n = len(later)
-        calls = "last tool call" if n == 1 else f"last {n} tool calls"
-        return f"The note {note} was last written before the run's {calls}."
+        return f"The note {note} may miss what the run did after it last wrote it."
 
     async def _write_note(self, cid: str, path: str, answer: str, s, day: str) -> str | None:
         """The agent's answer into the notebook at `path`: a note there already gets it appended

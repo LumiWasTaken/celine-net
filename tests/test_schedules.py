@@ -959,10 +959,16 @@ async def test_a_turn_that_ends_with_another_write_leaves_the_note_unwritten(sto
                             "call and no reply after it.")
 
 
+@pytest.mark.parametrize("later, args, says", [
+    ("notebook__read", {"path": NOTE}, ""),
+    ("notebook__write", {"path": "thoughts/x.md", "content": "x", "summary": "x"},
+     f"The note {NOTE} may miss what the run did after it last wrote it."),
+])
 async def test_a_note_the_agent_wrote_then_went_on_past_is_the_result_and_the_run_says_so(
-        store, cfg, monkeypatch):
-    """The agent writes the note, reads it, then answers with a correction: the note is the
-    result, untouched, and the run's error says the note is older than its later calls."""
+        store, cfg, monkeypatch, later, args, says):
+    """The agent writes the note, makes one more call, then answers with a correction: the
+    note is the result, untouched; a call that changes something after the write leaves the
+    run's quiet reason saying the note may miss it, a read leaves none."""
     from celine.skills.notebook import unstamped
     from celine.turns import store as turns
     clock = Clock(datetime(2026, 10, 10, 4, tzinfo=UTC))
@@ -970,18 +976,17 @@ async def test_a_note_the_agent_wrote_then_went_on_past_is_the_result_and_the_ru
     draft = "# Self-review\n\nDiagnosis: the mail."
     note = cfg.agent.notebook / NOTE
 
-    def read_it():
+    def call_it():
         os.utime(note, (clock.at.timestamp(), clock.at.timestamp()))
         clock.at += timedelta(minutes=1)
-        return [ToolCallDelta(index=0, id="r", name="notebook__read",
-                              arguments=json.dumps({"path": NOTE})),
+        return [ToolCallDelta(index=0, id="r", name=later, arguments=json.dumps(args)),
                 Done(reason="tool_calls")]
+    steps = iter([call_it, lambda: [TextDelta("corrected diagnosis"), Done(reason="stop")]])
     backend = Writer({"Review the night": _write(NOTE, draft),     # no text: it goes on
-                      "Saved": read_it,
-                      "Diagnosis": [TextDelta("corrected diagnosis"), Done(reason="stop")]})
+                      "Saved": lambda: next(steps)(), "Diagnosis": lambda: next(steps)()})
     row = await _one_run(store, cfg, backend, clock)
-    assert (row["state"], row["result"]) == ("done", draft)
-    assert row["error"] == f"The note {NOTE} was last written before the run's last tool call."
+    assert (row["state"], row["result"], row["error"]) == ("done", draft, None)
+    assert row["reason"] == says
     assert unstamped(note.read_text()).strip() == draft, "its note stays as it wrote it"
 
 
