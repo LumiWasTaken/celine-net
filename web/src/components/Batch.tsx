@@ -3,7 +3,7 @@
    sentence why it failed; a track its title and player, or the server's words. Used in its
    replies (ToolRow ToolLines) and the Generate surface on the Models page; both follow the
    batch's events and never guess an item's state. */
-import { createContext, useState } from 'react'
+import { createContext } from 'react'
 import type { Message, ToolCall } from '../lib/api'
 import { asBatch, fileUrl, mediaApi, type Batch, type BatchItem } from '../lib/media'
 import { madeWords, pictureOf, retryItem } from '../lib/pictures'
@@ -68,34 +68,17 @@ export function StopBatch({ batch }: { batch: Batch }) {
   )
 }
 
-/** a batch's pictures or tracks */
-export function BatchGallery({ batch: initialBatch }: { batch: Batch }) {
-  const [optimistic, setOptimistic] = useState<Batch | null>(null)
-  const batch = (optimistic && optimistic.id === initialBatch.id && initialBatch.state !== 'running') ? optimistic : initialBatch
+/** a batch's pictures or tracks, as the server's batch events say (Retry only asks; the
+    item's state comes back on those events) */
+export function BatchGallery({ batch }: { batch: Batch }) {
   const stop = useAction(() => mediaApi.stop(batch.id))
-  const handleRetry = async (index: number) => {
-    setOptimistic({
-      ...batch,
-      state: 'running',
-      items: batch.items.map(it => (it.state === 'failed' || it.state === 'stopped')
-        ? { ...it, state: 'waiting', error: undefined, seconds: undefined, note: undefined }
-        : it),
-    })
-    try {
-      const updated = await retryItem(batch.id, index)
-      setOptimistic(updated)
-    } catch (e) {
-      setOptimistic(null)
-      throw e
-    }
-  }
   if (batch.kind === 'images') {
     const items = batch.items
     return (
       <div className="batch batch--images">
         {items.map(i => (
           <PictureBlock key={i.index} pic={pictureOf(i)}
-                        onRetry={batch.state !== 'running' ? () => handleRetry(i.index) : undefined}
+                        onRetry={batch.state !== 'running' ? () => retryItem(batch.id, i.index) : undefined}
                         onStop={batch.state === 'running' ? () => void stop.run() : undefined} />
         ))}
         {stop.error && <InlineError compact message={stop.error} />}
