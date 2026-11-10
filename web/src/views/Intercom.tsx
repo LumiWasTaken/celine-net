@@ -413,7 +413,7 @@ function NewMessage({ onClose, onSent }: { onClose: () => void; onSent: (thread:
   const inChats = chats.some(r => r.to === to)
   const whens: { value: When; label: string }[] = [
     { value: 'now', label: 'Now' }, { value: 'in', label: 'In' }, { value: 'at', label: 'At' },
-    ...(to === 'all' ? [{ value: 'until' as const, label: 'Until' }] : []),
+    ...(to === 'all' ? [{ value: 'until' as const, label: 'Pin until' }] : []),
   ]
   useEffect(() => { if (to !== 'all' && when === 'until') setWhen('now') }, [to, when])
   const ready = online && !!text.trim() && (when === 'now' || !!whenText.trim())
@@ -444,7 +444,7 @@ function NewMessage({ onClose, onSent }: { onClose: () => void; onSent: (thread:
           <div className="intercom-when">
             <Segmented label="When" value={when} onChange={v => { setWhen(v); setWhenText('') }} options={whens} />
             {when !== 'now' && (
-              <Input className="intercom-when__value" aria-label={when === 'in' ? 'In' : when === 'at' ? 'At' : 'Until'}
+              <Input className="intercom-when__value" aria-label={when === 'in' ? 'In' : when === 'at' ? 'At' : 'Pin until'}
                      type={when === 'at' ? 'time' : 'text'} placeholder={when === 'in' ? '30 min' : when === 'until' ? '05:00' : undefined}
                      value={whenText} onChange={e => setWhenText(e.target.value)} />
             )}

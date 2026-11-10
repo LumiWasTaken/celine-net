@@ -62,11 +62,12 @@ async def send(request: Request, body: MessageIn) -> dict:
     if body.in_ or body.at:
         due = parse_when(body.in_, body.at, tz, now_)
         if due is None:
-            raise CelineError("bad_request", 'When is like "30 min" or "08:00".', 400)
+            raise CelineError("bad_request", 'In takes a duration such as "30 min".' if body.in_
+                              else 'At takes a time such as "08:00".', 400)
     if body.until:
         until_at = parse_when(body.until, body.until, tz, now_)
         if until_at is None:
-            raise CelineError("bad_request", 'until is like "05:00" or "2 h".', 400)
+            raise CelineError("bad_request", 'Pin until takes a time such as "05:00" or a duration such as "2 h".', 400)
     try:
         out = await request.app.state.services.intercom.send(
             sender, body.to, text, subject=body.subject, reply_to=body.reply_to,
