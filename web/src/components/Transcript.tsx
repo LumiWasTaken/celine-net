@@ -55,7 +55,7 @@ function Stamp({ at }: { at: string }) {
 /* A message that reached the conversation other than as you typed it: one quiet line,
    its text behind the line. `Reminder` (one it set or you set), `Instructions from
    Sam` (in a sub-agent's conversation `Instructions from Celine`), `Instructions changed`, `Time
-   limit`, a mission's note `Mission RSS feed needs you` (a link to the mission's
+   limit`, a mission's note `Mission RSS feed waiting for you` (a link to the mission's
    conversation), `From scout`, `Result from scout` (`Result from scout, stopped` when
    its turn did not end done), `Announcement to everyone`. Null for your own message, a trigger's prompt and a job's result (the
    result shows in its tool row). */
@@ -77,10 +77,10 @@ function eventOf(m: Message, user: string, assistant: string): { heading: ReactN
   if (ic.kind === 'notice') return { heading: ic.data.time_limit ? 'Time limit' : `Notice from ${sender}`, body: m.content }
   if (ic.kind === 'report' && ic.data.mission) {
     const [first = '', ...rest] = m.content.trimEnd().split('\n')
-    const said = /^(Mission .+?) (needs you|done): ?(.*)$/.exec(first)
-    const state = said ? (said[2] === 'needs you' ? 'waiting for you' : 'done') : ''
-    const title = said ? `${said[1]} ${state}` : first
-    const body = [said ? said[3]! : '', ...rest].join('\n').trim()
+    // the server's words (missions/skill.py WORDS): its note after the colon goes under the line
+    const said = /^(Mission .+? (?:waiting for you|done|stopped)): ?(.*)$/.exec(first)
+    const title = said ? said[1]! : first
+    const body = [said ? said[2]! : '', ...rest].join('\n').trim()
     return { heading: <a href={format({ section: 'missions', conversation: ic.data.mission })}>{title}</a>, body }
   }
   if (ic.kind === 'report') {
