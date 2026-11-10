@@ -108,13 +108,17 @@ def _threads(c, q: str) -> dict:
     _, exact, prefixes = match_expr(q)
     words = normalize.tokens(q)
     out = _empty()
-    listed = {t["thread"]: t for t in intercom.threads(c, None, reader="user")}
-    if not words or not listed:
+    if not words:
         return out
     has = " AND ".join("instr(lower(text || ' ' || coalesce(subject, '')), ?) > 0" for _ in words)
+    # ponytail: a scan of the intercom table per query; an FTS table if it grows large
+    rows = c.execute(f"SELECT thread, subject, text, created_at FROM intercom WHERE {has} "
+                     "ORDER BY id DESC", words).fetchall()
+    if not rows:
+        return out
+    listed = {t["thread"]: t for t in intercom.threads(c, None, reader="user")}
     seen: set[int] = set()
-    for r in c.execute(f"SELECT thread, subject, text, created_at FROM intercom WHERE {has} "
-                       "ORDER BY id DESC", words):
+    for r in rows:
         t = listed.get(r["thread"])
         if t is None or r["thread"] in seen:
             continue
