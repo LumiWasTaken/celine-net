@@ -1,4 +1,4 @@
-/* The agent's plan in a conversation's head: one small button with where it is ("4 of 5",
+/* The agent's plan in a conversation's head: one small button with where it is ("4 of 5 done",
    "Waiting for you", "Done"; a phone shows the count only), shown while the plan has
    steps. It opens the kit's Dialog "Plan": its words, then every step with its number,
    its state, where it asks you, and its time (done when, doing since). */
@@ -14,7 +14,7 @@ export function PlanButton({ plan }: { plan: Plan | null }) {
   const phone = usePhone()
   if (!plan || plan.steps.length === 0) return null
   const done = plan.steps.filter(s => s.state === 'done').length
-  const count = `${done} of ${plan.steps.length}`
+  const count = `${done} of ${plan.steps.length} done`
   const label = plan.waiting ? 'Waiting for you' : done === plan.steps.length ? 'Done' : count
   return (
     <>

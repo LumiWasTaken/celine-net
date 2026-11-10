@@ -117,7 +117,7 @@ block at the end of this file lists the words no UI string uses.
 | New messages | the jump to the newest messages | Slack, Discord |
 | Activity | the tool calls of one reply, from its "..." | ChatGPT (agent and deep research "Activity") |
 | Model requests, Request 2 | one reply's requests to its model and the raw responses, from its "...", numbered when there are several; the same name as Model requests kept on Advanced | Chrome DevTools "Request", "Response" |
-| Plan, Asks you, Waiting for you, In progress, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
+| Plan, Asks you, Waiting for you, In progress, Done, 2 of 5 done, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
 | Daily at 04:00, Sundays at 03:00, Weekdays, Weekends, Every 2 hours from 10:00 to 22:00 | when a Routine's schedule runs, 24h times, from the server (schedules.words); a shape it cannot say stays the cron line | Google Calendar "Daily", "Weekly on Sunday" |
 | Started, Ended, Duration, Tokens | a Routine run's facts on its page, from the server; Tokens as on a mission's page | GitHub Actions "Started", "Duration" |
 | Waiting for the model | a running Routine run's reason while its work waits for a model (its clock stands still) | plain |
