@@ -241,7 +241,7 @@ def _json_in(text: str):
 
 # what a stopped mission answers to a change of its fields, a Retry or a Continue; the
 # user's message to it starts it again (intercom/service.py send)
-MISSION_STOPPED = "The mission is stopped. Write to it to start it again."
+MISSION_STOPPED = "The mission is stopped; send it a message to start it again."
 
 
 @dataclass
