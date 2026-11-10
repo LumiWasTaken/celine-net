@@ -123,7 +123,7 @@ in `.env`.
 |---|---|---|---|---|
 | `shellbox` | Shellbox | A Linux computer of its own in a container, with a terminal, files and programs, apart from your machine. | the shellbox service | `shellbox` |
 | `shares` | Shares | Shows you a page, game, tool or file from the shellbox in a new tab. | the shellbox feature on | |
-| `browser` | Browser | An isolated Brave browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch. | the browser service | `browser` |
+| `browser` | Browser | An isolated browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch. | the browser service | `browser` |
 | `images` | Images | Images made with ComfyUI, in the styles of your presets. | a ComfyUI provider | |
 | `music` | Music | Music made with ComfyUI from a few words about the track. | a ComfyUI provider | |
 | `speech_input` | Dictation | Speak a message, read it over, then send it. | a Dictation model | |

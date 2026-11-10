@@ -118,7 +118,7 @@ BASE: tuple[Feature, ...] = (
                  "script until it ends (24 hours, or what you set) or you stop it. A public "
                  "share opens for anyone."),
     Feature("browser", "Browser", "Turns on once the browser answers.",
-            "An isolated Brave browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch.",
+            "An isolated browser with ad blocking: pages, logins and forms, with a history you can review and a live view you can watch.",
             "Turn it off if you do not run the browser container.",
             skills=("browser",), places=("browser",), probe="celine.browser.sync:probe",
             setup="service"),

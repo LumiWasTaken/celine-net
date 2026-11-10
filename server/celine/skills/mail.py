@@ -826,5 +826,5 @@ async def probe(cfg, services) -> dict[str, str]:
     here; the mail skill says when the server refuses."""
     a = account(cfg)
     if a is None:
-        return {"state": "unset", "detail": "Fill in the account below."}
+        return {"state": "unset", "detail": "No email account yet."}
     return {"state": "ready", "detail": f"{a.user} on {a.host}."}

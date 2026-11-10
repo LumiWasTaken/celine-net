@@ -435,7 +435,7 @@ async def probe(cfg, services) -> dict[str, str]:
     import shutil
     a = account(cfg)
     if a is None:
-        return {"state": "unset", "detail": "Fill in the Vaultwarden details below."}
+        return {"state": "unset", "detail": "No Vaultwarden login yet."}
     if shutil.which("bw") is None:
         return {"state": "missing", "detail": "The bw program is not installed where Celine "
                                               "runs. Install the Bitwarden CLI."}

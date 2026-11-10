@@ -42,7 +42,7 @@ SKILLS: dict[str, dict[str, str]] = {
                                        "reads web pages."},
     "email": {"label": "Email", "summary": "{{name}}'s inbox: lists, searches and reads it, "
                                            "gets attachments, marks, moves and deletes."},
-    "browser": {"label": "Browser", "summary": "{{name}}'s own Brave: opens pages, clicks, types "
+    "browser": {"label": "Browser", "summary": "{{name}}'s own browser: opens pages, clicks, types "
                                                "and reads them."},
     "vault": {"label": "Vault", "summary": "{{name}}'s passwords on your Vaultwarden, typed "
                                            "into forms without {{name}} seeing them."},
