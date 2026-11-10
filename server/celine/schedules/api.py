@@ -15,8 +15,8 @@ from ..settings.files import Invalid
 from ..settings.registry import ROLES
 from ..clock import zone
 from . import VARIABLES, fill, night_of, run_date, run_roles, shown, words
-from .runs import IDLE_MINUTES, MODEL_WAIT, ROW, STOPPED, first_slot, results, \
-    view as run_view
+from .runs import IDLE_MINUTES, MODEL_WAIT, ROW, STOPPED, first_slot, night_words, \
+    results, view as run_view
 
 router = APIRouter(prefix="/api")
 NIGHTS = 14                     # the past nights the page shows
@@ -219,16 +219,52 @@ async def list_runs(request: Request, night: str | None = None,
             "states": table(RUN)}
 
 
+def asked(c: sqlite3.Connection, cid: str | None) -> str | None:
+    """What run conversation `cid` was asked: the first message system:schedules sent
+    it, as the agent got it; None before it began."""
+    r = cid and c.execute(
+        "SELECT m.content FROM messages m JOIN intercom i ON i.id = m.intercom_id "
+        "WHERE m.conversation_id = ? AND i.from_addr = 'system:schedules' "
+        "ORDER BY m.created_at, m.rowid LIMIT 1", (cid,)).fetchone()
+    return r[0] if r else None
+
+
+def facts(c: sqlite3.Connection, r, cfg) -> list[dict]:
+    """A run's facts as its page shows them, each {label, value}: Started and Ended
+    ("Sun 11 Oct 01:13" in the app's zone), Duration, Started by (a run the clock did not
+    start), Model (the models that answered in its conversation)."""
+    from ..events import _took
+    from ..sub_agents.report import work
+    from ..texts import who
+    tz = zone(cfg)
+
+    def when(at: str) -> str:
+        t = datetime.fromisoformat(at).astimezone(tz)
+        return f"{night_words(t.date().isoformat())} {t:%H:%M}"
+    out = [{"label": k, "value": when(r[f])} for k, f in
+           (("Started", "started_at"), ("Ended", "finished_at")) if r[f]]
+    if took := _took(r["started_at"], r["finished_at"]):
+        out.append({"label": "Duration", "value": took})
+    if r["started_by"] != "clock":
+        out.append({"label": "Started by", "value": who(cfg, r["started_by"])})
+    if r["conversation_id"] and (models := work(c, r["conversation_id"], whole=True)["models"]):
+        out.append({"label": "Model", "value": ", ".join(dict.fromkeys(models))})
+    return out
+
+
 @router.get("/runs/{rid}")
 async def get_run(request: Request, rid: str) -> dict:
-    """{run, prompt, reviewer_prompt, note}: the run, and what its schedule asks filled
-    for its date (run_date of its first try, first_slot; null for a deleted schedule)."""
+    """{run, prompt, reviewer_prompt, note, facts}: the run; `prompt` what it was asked
+    (asked), before it began its schedule's prompt filled for its date (run_date of its
+    first try, first_slot); `reviewer_prompt` and `note` its schedule's filled so; each
+    null for a deleted schedule; `facts` as `facts` words them."""
     services = request.app.state.services
     cfg, store = services.cfg, services.store
     def one(c):
         r = c.execute(f"{ROW} WHERE r.id = ?", (rid,)).fetchone()
-        return r, r and first_slot(c, r)
-    r, slot = await store.read(one)
+        return (r, first_slot(c, r), asked(c, r["conversation_id"]), facts(c, r, cfg)) \
+            if r else (None, None, None, [])
+    r, slot, got, said = await store.read(one)
     if r is None:
         raise NotFound("run")
     s = _schedules(request).get(r["schedule"])
@@ -238,9 +274,10 @@ async def get_run(request: Request, rid: str) -> dict:
         return fill(cfg, text, run_date(s, datetime.fromisoformat(slot), zone(cfg)),
                     res) if s and text else None
     held = getattr(services.schedules, "held", None) == rid
-    return {"run": run_view(r, cfg, held), "prompt": filled(s.prompt if s else ""),
+    return {"run": run_view(r, cfg, held),
+            "prompt": got if got is not None else filled(s.prompt if s else ""),
             "reviewer_prompt": filled(s.reviewer_prompt if s else ""),
-            "note": filled(s.note if s else "")}
+            "note": filled(s.note if s else ""), "facts": said}
 
 
 @router.post("/runs/{rid}/stop")

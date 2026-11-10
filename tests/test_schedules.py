@@ -934,6 +934,19 @@ async def test_a_note_the_agent_wrote_is_the_result_not_the_line_beside_the_writ
     assert len(backend.calls) == 1, "its turn ended with the write, no step more"
 
 
+async def test_a_run_page_shows_the_prompt_the_agent_got_and_its_times(store, cfg):
+    from celine.schedules.api import asked, facts
+    backend = Writer({"Review the night": [TextDelta("Writing the review now."),
+                                           *_write(NOTE, "# Self-review")]})
+    row = await _one_run(store, cfg, backend)
+    got = await store.read(lambda c: asked(c, row["conversation_id"]))
+    assert got.startswith("Review the night.") and len(got) > len("Review the night."), \
+        "the prompt as sent, with what the app added"
+    said = await store.read(lambda c: facts(c, row, cfg))
+    assert [f["label"] for f in said] == ["Started", "Ended", "Duration", "Started by"]
+    assert await store.read(lambda c: asked(c, None)) is None
+
+
 async def test_a_turn_that_ends_with_another_write_leaves_the_note_unwritten(store, cfg):
     """Its lead-in beside a write of another note is no answer: the note is not written,
     the run says so, the lead-in stays its result as it came."""
