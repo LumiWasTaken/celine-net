@@ -96,12 +96,12 @@ export const intercomApi = {
   thread: (id: number, signal?: AbortSignal) =>
     request<{ messages: IntercomMessage[]; source: Source | null }>(`/intercom?thread=${id}`, { signal }),
   bugOf: (thread: number, signal?: AbortSignal) =>
-    request<{ reports: BugReport[] }>(`/bugreports?thread=${thread}`, { signal }).then(r => r.reports[0] ?? null),
+    request<{ reports: BugReport[] }>(`/bug-reports?thread=${thread}`, { signal }).then(r => r.reports[0] ?? null),
   /** Continue in a chat: a new chat with it that carries the thread; what waits in it is read */
   toChat: (thread: number) =>
     post<{ conversation_id: string }>(`/intercom/threads/${thread}/conversations`).then(r => r.conversation_id),
   /** a bug report's Close, on its thread: what waits in it is read too */
-  closeBug: (id: number, why = '') => why ? request<BugReport>(`/bugreports/${id}/close`, json('POST', { why })) : post<BugReport>(`/bugreports/${id}/close`),
+  closeBug: (id: number, why = '') => why ? request<BugReport>(`/bug-reports/${id}/close`, json('POST', { why })) : post<BugReport>(`/bug-reports/${id}/close`),
   /** `in` ("30 min"), `at` ("19:00") land it later; `until` (to `all`) makes it an announcement that stands until then */
   send: (body: { to: string; text: string; subject?: string; reply_to?: number; in?: string; at?: string; until?: string }) =>
     request<{ intercom_id: number }>('/intercom', json('POST', body)),

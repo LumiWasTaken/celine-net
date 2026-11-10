@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api")
 STATES = ("open", "closed")
 
 
-@router.get("/bugreports")
+@router.get("/bug-reports")
 async def list_reports(request: Request, state: str | None = None,
                        thread: int | None = None) -> dict:
     """{reports}: newest first; `state` open or closed, none for all; `thread`: the one
@@ -28,7 +28,7 @@ async def list_reports(request: Request, state: str | None = None,
     return {"reports": rows}
 
 
-@router.post("/bugreports/{rid}/close")
+@router.post("/bug-reports/{rid}/close")
 async def close(request: Request, rid: int) -> dict:
     """`{why?}`. Closes an open report and reads what waits in its thread; a closed one
     stays as it is. `why` goes into the thread as the app's line ("Report #3 closed:

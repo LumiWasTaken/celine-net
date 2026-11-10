@@ -71,20 +71,20 @@ async def test_a_report_is_a_thread_he_closes_and_events_lists_it_once(store, cf
     assert sorted(t["thread"] for t in waiting) == [1, 2], "each report waits for them"
 
     async with _http(_app(store, cfg)) as h:
-        got = (await h.get("/api/bugreports", params={"state": "open"})).json()["reports"]
+        got = (await h.get("/api/bug-reports", params={"state": "open"})).json()["reports"]
         assert [(r["id"], r["title"], r["where"], r["thread"]) for r in got] == [
             (2, "tabs cap", "", 2), (1, "read cuts results", "self-review", 1)]
         async def of(thread):
-            return (await h.get("/api/bugreports", params={"thread": thread})).json()["reports"]
+            return (await h.get("/api/bug-reports", params={"thread": thread})).json()["reports"]
         assert [(r["id"], r["state"]) for r in await of(1)] == [(1, "open")]
         assert [r["id"] for r in await of(2)] == [2]
         assert await of(99) == [], "a thread that is no report"
-        closed = (await h.post("/api/bugreports/1/close")).json()
+        closed = (await h.post("/api/bug-reports/1/close")).json()
         assert closed["state"] == "closed" and closed["closed_at"]
         assert (await h.get("/api/intercom", params={"thread": 1})).json()[
             "messages"][0]["unread"] is False, "closing reads its thread"
-        assert (await h.post("/api/bugreports/9/close")).status_code == 404
-        assert (await h.get("/api/bugreports", params={"state": "x"})).status_code == 400
+        assert (await h.post("/api/bug-reports/9/close")).status_code == 404
+        assert (await h.get("/api/bug-reports", params={"state": "x"})).status_code == 400
         ev = (await h.get("/api/events", params={"kind": "bugreport"})).json()
         assert [(e["title"], e["outcome"], e["links"]["open"]) for e in ev["events"]] == [
             ("tabs cap", "Open, low", "/intercom/2"), ("read cuts results", "Closed", "/intercom/1")]
@@ -160,11 +160,11 @@ async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows
     assert out.content.splitlines() == ["#2 open, low: tabs cap (" + out.content[out.content.index("(") + 1:out.content.index(")")] + ")",
                                         "#1 open, high: read cuts results (" + out.content[out.content.rindex("(") + 1:out.content.rindex(")")] + ")"]
     async with _http(_app(store, cfg)) as h:
-        closed = (await h.post("/api/bugreports/1/close", json={"why": "DNS failed, fixed"})).json()
+        closed = (await h.post("/api/bug-reports/1/close", json={"why": "DNS failed, fixed"})).json()
         assert closed["state"] == "closed"
-        again = await h.post("/api/bugreports/1/close", json={"why": "once more"})
+        again = await h.post("/api/bug-reports/1/close", json={"why": "once more"})
         assert again.status_code == 200, "a closed one stays as it is"
-        assert (await h.post("/api/bugreports/2/close")).json()["state"] == "closed", "why is optional"
+        assert (await h.post("/api/bug-reports/2/close")).json()["state"] == "closed", "why is optional"
     first = await store.read(lambda c: rows.thread(c, 1))
     assert [(m["from"], m["text"]) for m in first][1:] == [
         ("system:app", "Report #1 closed: DNS failed, fixed")], "the app's line, once"

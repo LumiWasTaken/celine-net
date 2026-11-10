@@ -91,7 +91,7 @@ async def list_messages(request: Request, to: str | None = None,
     `after`, oldest first, each with its state (pending, sent, cancelled) and whether it
     waits for the user (`unread`) and where it came from (`source`); `scheduled`: only
     those with a due time. With `thread`, also where the thread comes from (`source`);
-    the bug report it is: GET /api/bugreports?thread=."""
+    the bug report it is: GET /api/bug-reports?thread=."""
     def fn(c):
         out = {"messages": rows.listed(c, to=to, from_addr=from_, scheduled=scheduled,
                                        thread=thread, after=after, limit=limit)}
