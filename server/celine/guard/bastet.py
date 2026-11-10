@@ -47,7 +47,7 @@ PASSED_NOW = PASSED + " " + AGAIN_NOW
 PASSED_THIS = ("Bastet: {{user}} lets the step I stopped ({tool}) through {where} until "
                "{until}. " + AGAIN_NOW)
 # plain words only: what it did and why it looked wrong; no score, id or bracket
-FINDING = "Looking back at {title} on {when}: {said}. {why}{froze}"
+FINDING = "Audit of {title} on {when}: {said}. {why}{froze}"
 UNFROZEN = "Bastet froze you at {at}: {what}. {{user}} unfroze you at {back}."
 # guard/chain.py: the second look said no to what froze it
 SECOND_LOOK = ("I unfroze {{name}} myself: a second look says it was not a real problem. "
@@ -113,7 +113,7 @@ def plain(cfg, rule: str | None, tool: str | None = None) -> str:
     never a piece, a number or how it was decided."""
     what = sub(cfg, rules.plain(rule))
     if tool == "patrol":
-        return f"{what}, found looking back at an earlier turn"
+        return f"{what}, found in a turn audit"
     return f"{what} ({tool_words(tool)})" if tool else what
 
 

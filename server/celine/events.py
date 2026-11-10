@@ -212,8 +212,8 @@ def _guard(r, cfg) -> dict:
     # a closed gate's row is decision closed too: it stopped the call, nobody was asked
     word, tone = ("Stopped", ERROR) if r["rule"] == "gates" else _GUARD.get(
         view.kind(r), ("Running", RUNNING))
-    return {"title": _label(r["tool"]), "outcome": word, "tone": tone,
-            "detail": _first(r["why"] or view.line(r)),
+    return {"title": "Turn audit" if r["tool"] == "patrol" else _label(r["tool"]),
+            "outcome": word, "tone": tone, "detail": _first(r["why"] or view.line(r)),
             "guard": {"id": r["gid"], "actions": view.actions(r)}}
 
 

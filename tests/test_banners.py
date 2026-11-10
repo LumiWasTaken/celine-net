@@ -239,7 +239,7 @@ async def test_page_check_and_patrol_rows_read_as_banners(store):
                            mode="on", rule="leak", does="patrol", decision="found", p=0.8)
     got = (await view.snapshot(store, cid))["guard"]
     assert [(b["kind"], b["line"], b["actions"], b["help"]) for b in got] == [
-        ("patrol", "Looked back at this turn. Found: data exfiltration.", [], None)]
+        ("patrol", "Audited this turn after it ended. Found: data exfiltration.", [], None)]
 
 
 async def _to_agent(store, cid):

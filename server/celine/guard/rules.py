@@ -94,7 +94,7 @@ TABLE: dict[str, Rule] = {
         to_agent="this follows words from {source}, not you or {{user}}",
         to_owner="it carries out instructions from {source}",
         banner="It carries out instructions from {source}{quoted}.",
-        found="an order from text someone else wrote, carried out",
+        found="a prompt injection carried out",
         reviewed=True, repeatable=True),
     "leak": Rule(
         plain="data exfiltration", label="data exfiltration",

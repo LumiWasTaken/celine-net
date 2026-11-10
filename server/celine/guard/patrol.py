@@ -166,8 +166,8 @@ async def _report(app, gm: str, read: int, found: list[dict]) -> None:
     await bastet.tell_owner(app, text, first["conversation_id"], first["id"])
     if stop is not None and gm == "on":
         await freeze_mod.freeze(
-            app, by="guard", why=bastet.fill(cfg, "looking back at {title}: {said}. {why}",
-                            title=stop["title"], why=stop["why"],
+            app, by="guard", why=bastet.fill(cfg, "Audit of {title}: {said}. {why}",
+                            title=stop["title"], why=bastet.sentence(stop["why"]),
                             said=bastet.sub(cfg, rule_set.TABLE[stop["rule"]].found)).strip(),
             conversation_id=stop["conversation_id"], turn_id=stop["id"],
             decision_id=stop["row"])

@@ -19,7 +19,7 @@ DID = {"stop": "Stopped {tool}.", "freeze": "Stopped {tool} and froze everything
        "would_freeze": "Would have stopped {tool} and frozen everything.",
        "approved": "You approved {tool}.",
        "denied": "You denied {tool}.", "closed": "No answer on {tool}, it did not run.",
-       "patrol": "Looked back at this turn.", "gate": "Stopped {tool}.",
+       "patrol": "Audited this turn after it ended.", "gate": "Stopped {tool}.",
        "allow": "Allowed {tool}.", "passed": "Allowed {tool} by your exception.",
        "failed": "Bastet could not decide on {tool}.", "waiting": "Checking {tool}.",
        "unreachable": "Bastet could not decide on {tool}. It ran."}

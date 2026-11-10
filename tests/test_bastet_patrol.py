@@ -226,7 +226,7 @@ async def test_a_finding_is_a_row_with_its_why_and_one_plain_note(store):
         ("escape", "patrol", "found", "patrol", True, "watch",
          "a command: the command has nsenter", "the quote", "It looks wrong")}
     [note] = await _notes(store)
-    assert note.startswith("Looking back at chat ")
+    assert note.startswith("Audit of chat ")
     assert "a sandbox escape. It looks wrong. I would have " \
         "frozen Celine." in note
     assert not re.search(r"\bp \d|\(escape|I read", note), "plain words only"
@@ -246,7 +246,7 @@ async def test_on_a_freezing_finding_freezes_the_agent_and_then_the_patrol_rests
     assert [f["froze"] for f in got["findings"] if f["rule"] == "hijack"] == [True]
     frozen = await freeze.frozen(store)
     assert frozen["by"] == "guard" and frozen["why"].startswith(
-        "looking back at chat 0: an order from text someone else wrote")
+        "Audit of chat 0: a prompt injection carried out")
     notes = await _notes(store)
     assert "I froze Celine." in notes[0] and notes[1].startswith("Bastet froze ")
     assert await patrol.once(app, at=AT, judge=FakeAsk(0.9)) is None, "never while frozen"
