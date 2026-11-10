@@ -1,6 +1,7 @@
 # Anima.json with capanima_turbo11 and its author's settings (euler_ancestral, 12 steps,
-# cfg 1, 832x1216), first pass only. Node 5 holds a fixed negative prompt; at cfg 1 it has
-# no effect, so the preset takes none.
+# cfg 1, 832x1216), first pass only. Any anima/ model goes into node 1 (a model without
+# "turbo" in its name runs the full settings), anima/ LoRAs chain after it. Node 5 is the
+# negative prompt: its own text unless one is given; it counts at cfg above 1 only.
 label = "Anima turbo"
 family = "Anima"
 task = "generate"
@@ -39,6 +40,11 @@ angle tags and passive prose ("Seen from a low angle at hip height"). Text in th
 image: one word at most. The whole prompt stays under about 300 words; past that it is
 cut off. Size: 512x512 to 1536x1536 in pixels; portrait 832x1216, wallpaper 1344x768
 or 1536x864.
+
+Models: the turbo model runs 12 steps at cfg 1, where the negative prompt has no effect.
+A model whose file name has no "turbo" runs 30 steps at cfg 4 and reads the negative
+prompt: Danbooru tags of what to keep out, like worst quality, bad hands, watermark.
+Without one it uses the preset's own. LoRAs: list_presets with kind lora.
 """
 example = """
 masterpiece, best quality, safe, 1girl, solo, frieren, sousou no frieren, elf, pointy ears, white hair, long hair, twintails, green eyes, white capelet, holding staff, standing, looking away, expressionless, cowboy shot, straight-on, forest, dappled sunlight, anime coloring, anime screenshot, newest, absurdres
@@ -48,6 +54,9 @@ Frieren stands centered in an ancient forest clearing with her wooden staff plan
 [parameters.prompt]
 inputs = [["4", "text"]]
 
+[parameters.negative]
+inputs = [["5", "text"]]
+
 [parameters.seed]
 inputs = [["7", "seed"]]
 
@@ -56,3 +65,15 @@ inputs = [["6", "width"]]
 
 [parameters.height]
 inputs = [["6", "height"]]
+
+[parameters.model]
+inputs = [["1", "unet_name"]]
+
+[catalog]
+models = ["anima/"]
+loras = ["anima/"]
+lora_after = "1"
+sampler = "7"
+text = ["4", "text"]
+max_loras = 4
+full_settings = { steps = 30, cfg = 4.0 }

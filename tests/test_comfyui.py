@@ -600,6 +600,21 @@ def test_a_preset_without_models_has_none_and_a_folder_matches_in_any_spelling()
     assert not presets.under("qwen2.10/x", ["qwen2.1/"]), "a folder is matched whole"
 
 
+def test_anima_takes_a_model_loras_and_a_negative():
+    p = presets.of("images")["anima-turbo"]
+    cat = Catalog([
+        Resource("model", "anima/anima_base.safetensors", "Anima", "base", turbo=False),
+        Resource("lora", "anima/flat_color.safetensors", "Flat", "style"),
+    ])
+    c = presets.choose(p, cat, model="anima_base", loras=["flat_color"])
+    g = presets.attach(p.build({"prompt": "1girl", "negative": "blurry", "seed": 1,
+                                "width": 64, "height": 64}), p, c)
+    assert g["1"]["inputs"]["unet_name"] == "anima/anima_base.safetensors"
+    assert g["7"]["inputs"]["model"] == ["celine_lora_1", 0]
+    assert (g["7"]["inputs"]["steps"], g["7"]["inputs"]["cfg"]) == (30, 4.0)
+    assert g["5"]["inputs"]["text"] == "blurry"
+
+
 # ---- the user's presets (Settings, Images & Music) -------------------------------------
 
 UPLOAD = {
