@@ -28,5 +28,6 @@ def restarted(rows, flags: Flags | None) -> str | None:
         r["state"], r["mutating"], r["mode"], flags(r["name"]) if flags else None)})
     if not unsafe:
         return None
-    return (f"The server restarted while {', '.join(unsafe)} was running. The app does "
-            f"not know if it finished.")
+    from ..settings.tools_meta import label
+    labels = ", ".join(label(n) for n in unsafe)
+    return f"The server restarted while a tool call was running ({labels}), so it may not have finished."
