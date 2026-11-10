@@ -74,7 +74,7 @@ async def call(cfg, direction: str, path: str, *, limit: int, **kw) -> tuple[byt
                 return b"".join(chunks), r.headers.get("content-type", "").split(";")[0].strip().lower()
     except httpx.HTTPError:
         raise CelineError("speech_provider", "The speech model's server did not answer. Make sure it is "
-                          "running, and check its address in Settings, Providers.", 502) from None
+                          "running, and check its address in Settings, Models.", 502) from None
 
 
 async def transcribe(cfg, audio: bytes, mime: str, language: str) -> dict:
@@ -94,7 +94,7 @@ async def transcribe(cfg, audio: bytes, mime: str, language: str) -> dict:
     except (ValueError, UnicodeError):
         result = None
     if not isinstance(result, dict) or not isinstance(result.get("text"), str):
-        raise CelineError("speech_provider", "The speech model's server sent no transcript. Check it in Settings, Providers.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent no transcript. Check it in Settings, Models.", 502)
     return {"text": result["text"].strip()}
 
 
@@ -104,7 +104,7 @@ async def synthesize(cfg, text: str, voice: str) -> tuple[bytes, str]:
                             json={"model": model, "input": text, "voice": voice.strip() or "alloy",
                                   "response_format": "wav"})
     if not body or not mime.startswith("audio/"):
-        raise CelineError("speech_provider", "The speech model's server sent no audio. Check it in Settings, Providers.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent no audio. Check it in Settings, Models.", 502)
     return body, mime
 
 
@@ -116,7 +116,7 @@ async def voices(cfg) -> dict:
         result = None
     raw = result.get("voices") if isinstance(result, dict) else None
     if not isinstance(raw, list):
-        raise CelineError("speech_provider", "The speech model's server sent no voice list. Check it in Settings, Providers.", 502)
+        raise CelineError("speech_provider", "The speech model's server sent no voice list. Check it in Settings, Models.", 502)
     ids = [v if isinstance(v, str) else v.get("id") if isinstance(v, dict) else None for v in raw]
     if any(not isinstance(v, str) or not v or len(v) > 200 for v in ids):
         raise CelineError("speech_provider", "The speech model's server sent a voice list the app cannot read.", 502)
