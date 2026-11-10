@@ -286,9 +286,13 @@ async def test_a_night_is_failed_only_when_a_newest_try_failed(tmp_path, monkeyp
     c_, d = (tonight - timedelta(days=3)).isoformat(), (tonight - timedelta(days=4)).isoformat()
     skipped = await _row(store, state="skipped", night=c_)
     held = await _row(store, state="waiting", night=d)
+    # a done run with a warning (its note) is done
+    noted = await _row(store, schedule="news", state="done", night=d, slot="04:00")
     quiet = await _row(store, schedule="day", state="skipped", night=d, slot="03:00")
     await store.write(lambda c: (
         c.execute("UPDATE runs SET error='the model broke' WHERE id=?", (skipped,)),
+        c.execute("UPDATE runs SET error='The note a.md was not written.' WHERE id=?",
+                  (noted,)),
         c.execute("UPDATE runs SET reason='Waiting for a model. gpu-box does not answer.' "
                   "WHERE id=?", (held,)),
         c.execute("UPDATE runs SET reason=? WHERE id=?", (runs_mod.IN_USE, quiet))))

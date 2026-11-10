@@ -180,7 +180,7 @@ async def list_runs(request: Request, night: str | None = None,
     """{runs, nights, tonight, states}: the runs of `night` (default: tonight) or of one
     `schedule` (its newest 50), oldest slot first; `nights` the NIGHTS nights up to
     `until` (default and at most tonight), newest first, each {night, failed: the newest
-    try of one of its schedules failed or ended with an error, waiting: a run of it
+    try of one of its schedules failed, or was skipped on an error, waiting: a run of it
     waits for its model}; `states` every state of a run as {words, tone}, `planned` a
     slot with no run yet. A run's `asked`: an approval waits in it or in a
     sub-agent of it (approvals.asked)."""
@@ -208,7 +208,8 @@ async def list_runs(request: Request, night: str | None = None,
             newest[(d["night"], d["schedule"])] = d
         return [run_view(r, cfg, r["id"] == held) for r in rows], newest
     runs, newest = await store.read(fn)
-    failed = {n for (n, _), d in newest.items() if d["state"] == "failed" or d["error"]}
+    failed = {n for (n, _), d in newest.items()
+              if d["state"] == "failed" or d["state"] == "skipped" and d["error"]}
     waiting = {n for (n, _), d in newest.items()
                if d["state"] == "waiting" and d["reason"].startswith(MODEL_WAIT)}
     nights = [{"night": n, "failed": n in failed, "waiting": n in waiting} for n in
