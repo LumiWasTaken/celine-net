@@ -1,4 +1,4 @@
-/* the onboarding (Welcome.tsx): "Step 4 of 16" and its percentage centred at the top with a
+/* the onboarding (Welcome.tsx): "Step 4 of 16" centred at the top with a
    thin bar under them (Back to Settings at the right), the step's card in the form column
    under them, its foot with Back at the left and Skip and Next at the right (the error
    between them) */
@@ -6,7 +6,7 @@
 .onb__top { flex: none; display: grid; grid-template-columns: auto 1fr; align-items: center; row-gap: var(--s-2); column-gap: var(--s-3);
   padding: var(--s-4) var(--gutter) 0; }
 .onb__steps { grid-column: 2; display: flex; justify-content: center; align-items: baseline; gap: var(--s-3); font-size: var(--t-xl); color: var(--text-secondary); }
-.onb__count { font-weight: var(--fw-bold); color: var(--text-primary); }
+.onb__count { font-weight: var(--fw-medium); color: var(--text-primary); }
 .onb__bar { grid-column: 2; display: flex; width: 100%; max-width: var(--measure-form); margin: 0 auto; }
 .onb__back { grid-column: 1; grid-row: 1 / span 2; }
 /* with room, Back to Settings sits at the left edge and the count stays centred on the page */

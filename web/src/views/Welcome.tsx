@@ -1,6 +1,6 @@
 /* The onboarding (/welcome/<step>), a page without the rail, shown until it was finished once
-   (GET /status `setup`). One card per step with Back and Next, "Step 4 of 7" with its
-   percentage and a thin Progress bar above, Skip where a step may be left: it (name,
+   (GET /status `setup`). One card per step with Back and Next, "Step 4 of 7" with a thin
+   Progress bar above, Skip where a step may be left: it (name,
    pronouns, colour, its persona and how it talks: PUT /agent), you (your name, time zone,
    about you: PUT /settings), model (an address checked and saved as a provider, or the saved
    provider with that address again, one chat model picked, no Skip: PUT /providers/<id>,
@@ -94,7 +94,6 @@ export function Welcome({ status, onSaved }: { status: ConfigStatus | null; onSa
       <div className="onb__top">
         <div className="onb__steps">
           <span className="onb__count">Step {at + 1} of {steps.length}</span>
-          <span className="onb__pct">{Math.round(((at + 1) / steps.length) * 100)}%</span>
         </div>
         <div className="onb__bar"><Progress value={at + 1} max={steps.length} label={`Step ${at + 1} of ${steps.length}`} /></div>
         {res.data?.done && <span className="onb__back"><Button variant="ghost" icon={ArrowLeft} href={format({ section: 'settings' })}>Back to Settings</Button></span>}

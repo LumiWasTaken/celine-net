@@ -172,7 +172,7 @@ block at the end of this file lists the words no UI string uses.
 | Core, Built-in, Plugins | the three headings of Features (Settings and Setup): what it is made of (on, no switch), what ships with it, the plugins you add | VS Code, Obsidian "Built-in", "Plugins" |
 | Chat, Notebook, Mood and thoughts, Plan, Intercom, Past chats, Bugs, Skills | the Core rows of Features, each with its one line | plain; as their places and skills |
 | Next, Back, Skip | the onboarding's steps: on, back one, leave this one as it is | Apple setup, Android setup "Next", "Back", "Skip" |
-| Step 4 of 7 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
+| Step 4 of 7 | where the onboarding is, with a bar | Shopify, Typeform "Step 2 of 5" |
 | Decision model, Second look model | Bastet's two models on the Guard Setup step and Settings, Guard: the one that decides (the Decision model role on Settings, Models), the one that looks again; each one's "?" is the server's help (guard/view.py PAGE_HELP) | First look and Second look in Events |
 | Decision model (a role) | Settings, Models: Bastet's own role, the models that decide and write its notes and answers (settings/registry.py ROLES); the same name as its pick on Settings, Guard | as Settings, Guard |
 | About {thing} | the accessible name of a "?" (Help) after a name: About Context, About Tasks | Apple, Google "About" |
