@@ -1,8 +1,8 @@
 /* What a mission asks you (lib/waits MissionWait, the server's): why it waits (its note)
    and what it wrote you, your reply into its conversation (to the newest message that
-   waits, so its thread stops waiting, else as a chat message), Mark as done, Stop and
-   Dismiss (its messages are read, it works on). On the Waiting page and on the mission's
-   own page, whose head has Stop already. */
+   waits, so its thread stops waiting, else as a chat message), Mark as done and Stop while
+   it still works, and Dismiss (its messages are read). On the Waiting page and on the
+   mission's own page, whose head has Stop already. */
 import { useState } from 'react'
 import { CheckCheck, CircleCheck, CircleStop } from 'lucide-react'
 import { conversationApi } from '../lib/api'
@@ -35,8 +35,8 @@ export function MissionAsk({ w, stop = true }: { w: MissionWait; stop?: boolean 
       <ComposerBox value={text} onChange={setText} onSend={() => void send.run()} placeholder="Reply"
                    ready={!!text.trim() && !send.busy} disabled={online ? undefined : OFFLINE_TITLE} />
       <div className="mission-ask__actions">
-        <Button icon={CircleCheck} loading={done.busy} onClick={() => void done.run()}>Mark as done</Button>
-        {stop && <Button icon={CircleStop} onClick={() => setStopping(true)}>Stop</Button>}
+        {w.open && <Button icon={CircleCheck} loading={done.busy} onClick={() => void done.run()}>Mark as done</Button>}
+        {w.open && stop && <Button icon={CircleStop} onClick={() => setStopping(true)}>Stop</Button>}
         {w.asked.length > 0 && <Button variant="ghost" icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}
       </div>
       {error && <InlineError compact message={error} />}

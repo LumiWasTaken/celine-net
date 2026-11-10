@@ -132,12 +132,16 @@ async def test_a_mission_says_what_it_asks_and_where_it_was_started(store):
     [item] = await waits.items(services)
     assert (item["why"], item["text"], item["asked"]) == (
         "", "Which hotel?\n\nAnd which night?", [first, second])
-    assert item["origin"] == {"name": "Plans", "link": f"/chat/{chat}"}
+    assert item["origin"] == {"name": "Plans", "link": f"/chat/{chat}"} and item["open"]
     await intercom.send("user", "", "The Adler, Friday.", reply_to=second)
     assert await waits.items(services) == []
 
     await store.write(lambda c: missions.set_status_sync(c, store, night, "needs_you", "x"))
     assert len(await waits.items(services)) == 1
+    await store.write(lambda c: missions.set_status_sync(c, store, night, "done", None))
+    await intercom.send(f"agent:{night}", "user", "The table is in the result.")
+    [done] = await waits.items(services)
+    assert not done["open"], "done, and what it wrote waits: no Mark as done"
     await store.write(lambda c: missions.set_status_sync(c, store, night, "stopped", None))
     assert await waits.items(services) == []
 

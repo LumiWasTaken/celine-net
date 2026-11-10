@@ -61,7 +61,9 @@ def _missions(c) -> list[dict]:
     or has a message to the user that waits (its home is the mission: intercom/store.py
     MISSION_FROM), once. `why`: its note in Needs you. `text`: what it wrote the user
     that waits, oldest first, else its last answer. `asked`: those messages' ids, the
-    newest last (a reply answers that one). `origin`: the conversation it was started from, as a crumb (homes.path)."""
+    newest last (a reply answers that one). `open`: it still works (active or in Needs
+    you); a done one that wrote the user is listed too. `origin`: the conversation it was
+    started from, as a crumb (homes.path)."""
     from . import homes
     from .core.ids import now
     from .intercom.store import _UNREAD, BUG
@@ -85,6 +87,7 @@ def _missions(c) -> list[dict]:
         above = homes.path(c, cid)[:-1]
         out.append({
             "kind": "mission", "id": cid, "title": r["name"], "why": why,
+            "open": r["status"] in ("active", "needs_you"),
             "text": "" if text == why else text, "line": _line(text or why),
             "asked": [a["id"] for a in asked],
             "at": asked[-1]["created_at"] if asked else r["updated_at"],

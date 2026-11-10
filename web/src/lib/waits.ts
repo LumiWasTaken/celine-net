@@ -9,11 +9,12 @@ import type { Approval } from './settingsApi'
 import { useResource } from './useResource'
 
 /** a mission that asks you: `why` its note, `text` what it wrote you that waits (else its
-    last answer), `asked` those messages (a reply answers the last), `origin` where it was
-    started, `home` its own page */
+    last answer), `asked` those messages (a reply answers the last), `open` it still works
+    (a done one that wrote you is listed too), `origin` where it was started, `home` its
+    own page */
 export type MissionWait = {
   group: string; kind: 'mission'; id: string; title: string; line: string; link: string; home: string | null
-  why: string; text: string; asked: number[]; at: string; origin: { name: string; link: string | null } | null
+  why: string; text: string; asked: number[]; at: string; open: boolean; origin: { name: string; link: string | null } | null
 }
 export type Wait =
   | { group: string; kind: 'approval'; approval: Approval }
