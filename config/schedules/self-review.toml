@@ -1,6 +1,6 @@
 label = "Self-review"
 summary = "Reviews the day's chats at night."
-cron = "0 4 * * *"
+cron = "20 4 * * *"
 after = ["user-day"]
 reviewer = ""
 turns = 8

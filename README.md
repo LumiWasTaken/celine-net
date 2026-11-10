@@ -91,26 +91,34 @@ OpenAI-compatible server, and with OpenRouter or Anthropic if you have a key.
 
 ## Run it
 
+It runs on an x86-64 Linux machine with Docker Engine 26 or newer.
+
 ```sh
-cp .env.example .env
-docker compose up -d
+cp .env.example .env          # set TZ to your time zone; CELINE_PUBLISH=8766 to reach it from other devices
+docker compose pull
+docker compose up -d --no-build
 docker compose exec -u celine celine cat /data/app/setup-code.txt
 ```
 
-`.env` starts the agent's Linux box, its browser, web search and the Discord and WhatsApp
-connectors along with the app. Remove the services you don't want from `COMPOSE_PROFILES`.
+`.env` pulls the images from GitHub and starts the agent's Linux box, its browser, web
+search and the Discord and WhatsApp connectors along with the app. Remove the services
+you don't want from `COMPOSE_PROFILES`. To build the images on your machine instead,
+remove `CELINE_IMAGES` and `CELINE_TAG` from `.env` and run `docker compose up -d --build`.
 
-Open http://localhost:8766, enter the setup code (the last command above prints it) and
-pick a way to log in: a passkey, a password or a PIN. After that Setup walks you through
-creating your agent (its name, pronouns and persona), telling it about you, connecting a
-model and turning features on.
+With `CELINE_PUBLISH=8766` in `.env`, open `http://<this machine's LAN address>:8766` on any
+device of your network (your phone, the agent's Mac), enter the setup code (the last command
+above prints it) and pick a way to log in: a password or a PIN. The app remembers the
+address where you entered the setup code. You can change it later in Settings, General,
+Network. Without `CELINE_PUBLISH` the app answers only on the machine itself, at
+http://localhost:8766, where a passkey works too.
 
-To use it from other machines on your network (the agent's Mac, your phone) without a domain:
-put `CELINE_PUBLISH=8766` in `.env`, run `docker compose up -d` again, open
-`http://<this machine's LAN address>:8766` and enter the setup code there. The app remembers
-the address where you entered the setup code. You can change it later in Settings, General,
-Network. Log in with a password or a PIN: passkeys need https or
-localhost.
+After that Setup walks you through creating your agent (its name, pronouns and persona),
+telling it about you, connecting a model and turning features on.
+
+- A model server on the same machine has the address `http://host.docker.internal:<its port>`
+  in Settings, Models, and listens on 0.0.0.0.
+- Passkeys, dictation and push notifications are given by a browser on https or localhost.
+  Everything else works over plain http.
 
 More about running it for real is in [docs/DEPLOY.md](docs/DEPLOY.md).
 

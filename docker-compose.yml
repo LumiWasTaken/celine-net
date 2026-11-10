@@ -30,6 +30,13 @@
 # named here once. Both boxes are built with it, the app gives its home to it.
 x-agent-uid: &agent-uid "1000"
 
+# Every service's log: Docker's json-file, at most three files of 10 MB each
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   celine:
     build:
@@ -37,12 +44,17 @@ services:
       dockerfile: Dockerfile
     image: ${CELINE_IMAGES:-celine}/celine-app:${CELINE_TAG:-latest}
     restart: unless-stopped
+    logging: *logging
     ports:
       # loopback by default; CELINE_PUBLISH=8766 (or a LAN address) opens it to the
       # network
       - "${CELINE_PUBLISH:-127.0.0.1:8766}:8766"
+    # a model server on this machine is http://host.docker.internal:<its port>
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       CELINE_TRUSTED_PROXIES: ${CELINE_TRUSTED_PROXIES:-}
+      CELINE_ALLOWED_HOSTS: ${CELINE_ALLOWED_HOSTS:-}
       DISCORD_LINK_URL: http://discord-link:8768/mcp
       WA_LINK_URL: http://wa-link:8767/mcp
       CELINE_SEARXNG_URL: http://searxng:8080
@@ -82,6 +94,7 @@ services:
         AGENT_UID: *agent-uid
     image: ${CELINE_IMAGES:-celine}/celine-shellbox:${CELINE_TAG:-latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       celine:
         condition: service_healthy
@@ -151,6 +164,7 @@ services:
         AGENT_UID: *agent-uid
     image: ${CELINE_IMAGES:-celine}/celine-browser:${CELINE_TAG:-latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       celine:
         condition: service_healthy
@@ -199,6 +213,7 @@ services:
       dockerfile: shellbox-manager/Dockerfile
     image: ${CELINE_IMAGES:-celine}/celine-shellbox-manager:${CELINE_TAG:-latest}
     restart: unless-stopped
+    logging: *logging
     network_mode: none
     environment:
       # a host folder for its home's snapshots (DEPLOY.md "Shellbox"); empty: beside its home
@@ -221,6 +236,7 @@ services:
       dockerfile: connectors/discord/Dockerfile
     image: ${CELINE_IMAGES:-celine}/celine-discord-link:${CELINE_TAG:-latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       celine:
         condition: service_healthy
@@ -251,6 +267,7 @@ services:
       dockerfile: wa-link/Dockerfile
     image: ${CELINE_IMAGES:-celine}/celine-wa-link:${CELINE_TAG:-latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       celine:
         condition: service_healthy
@@ -287,6 +304,7 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server-b11151
     profiles: [reranker]
     restart: unless-stopped
+    logging: *logging
     user: "1000:1000"
     depends_on:
       celine:
@@ -319,6 +337,7 @@ services:
     profiles: [web]
     image: docker.io/searxng/searxng:2026.9.23-3cd69d30e
     restart: unless-stopped
+    logging: *logging
     depends_on:
       celine:
         condition: service_healthy

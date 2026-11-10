@@ -25,7 +25,7 @@ have uv  || { echo "celine: uv is not installed - https://docs.astral.sh/uv/"; e
 have npm || { echo "celine: npm is not installed"; exit 1; }
 
 [ -d .venv ]          || { echo "installing python deps..."; uv sync --group dev; }
-[ -d web/node_modules ] || { echo "installing web deps..."; (cd web && npm install); }
+[ -d web/node_modules ] || { echo "installing web deps..."; (cd web && npm ci); }
 
 # Rebuild only when something under web/src has changed since the last bundle.
 # Checking is cheap; a 1.2s build on every start is not.

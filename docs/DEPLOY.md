@@ -48,12 +48,15 @@ of the volume, which older engines cannot do).
 
 ```sh
 cd celine-net
-docker compose up -d      # builds the images the first time
+cp .env.example .env      # the images from the registry, the profiles, the time zone
+docker compose pull && docker compose up -d --no-build
 docker compose ps         # every service turns "healthy" within a minute
 ```
 
-Nothing to type first: `.env` is optional (`.env.example` lists what it may set, the
-profiles, the published port, the time zone). The stack makes its own keys: the app,
+Without a `.env`, `docker compose up -d` builds the images here and starts the app
+alone (`.env.example` lists what it may set: the images, the profiles, the published
+port, the time zone). The images are built for x86-64. A model server on the same
+machine is reached at `http://host.docker.internal:<its port>` and listens on 0.0.0.0. The stack makes its own keys: the app,
 at its start and before it reports healthy, writes the volume's `app/keys/` once, `shell.key`, `browser.key`, `connector.key`, `shellbox-llm.key` and
 `searxng.key` (mode 600), and what the other containers get instead of a key:
 `shell.hash` and `browser.hash` (the sha256 the boxes check), `connector-clients` (the
@@ -92,8 +95,11 @@ back, press Sync now to catch up.
 
 To pull prebuilt images instead of building: set
 `CELINE_IMAGES=ghcr.io/lumiwastaken/celine-net` (a fork: its own `ghcr.io/<owner>/<repo>`)
-and `CELINE_TAG` in `.env`, then `docker compose pull && docker compose up -d --no-build`. The machine then needs only
-`docker-compose.yml`, `.env` and `config/searxng/settings.yml`.
+and `CELINE_TAG` in `.env`, then `docker compose pull && docker compose up -d --no-build`
+(`.env.example` sets both). The machine then needs `docker-compose.yml`, `.env` and, with
+the `web` profile, `config/searxng/limiter.toml` at that path beside them: the compose
+file mounts it into SearXNG. Docker makes the `user-plugins/` folder, where your plugins
+go.
 
 ## Where the data lives
 
@@ -213,7 +219,10 @@ turn that starts before then sees it.
 | `CELINE_LOGIN=on`, `CELINE_HEALTH_PORT=8765` (in the image) | The login is always on in the container. The health check asks port 8765 on the container's loopback, which nothing outside can reach. |
 | `CELINE_METRICS_PORT=8772` (in the image) | Prometheus numbers at `GET /metrics` on their own port, loopback only. See Monitoring. |
 | `CELINE_IMAGES`, `CELINE_TAG` | Where the images come from and which tag. Default: built here as `celine/celine-*:latest`. |
-| `TZ` | The containers' time zone, default UTC: log lines, the Discord connector's dates and the app's day and hour counts. Set it to the zone chosen in Settings, General. |
+| `TZ` | The time zone of the containers beside the app, default UTC: the clock in the agent's shellbox and browser, the hour of the shellbox's daily reset and the connectors' dates. The app's own zone is the one chosen in Settings, General; set `TZ` to the same. |
+| `CELINE_ALLOWED_HOSTS` | More host names or addresses the app answers at, comma separated, without a port. A page opened at one of them reads and writes like one at the app's own address. Default: none. |
+| `logging` (every service) | Docker's `json-file` log, at most three files of 10 MB each per service. |
+| `extra_hosts: host.docker.internal` (`celine`) | The machine itself by name, so a model server that runs on it has the address `http://host.docker.internal:<its port>`. |
 | `CELINE_SHELL_URL`, `CELINE_BROWSER_URL`, `CELINE_SEARXNG_URL` | Where the app reaches the shellbox, the browser and SearXNG. Each one fills its service's address until you save that address in Settings, Features (`var/settings/services.toml`, one service at a time); a change here then reaches every address you never saved. It calls the boxes with `keys/shell.key` and `keys/browser.key`. |
 | `/etc/shellbox/llm.key` (the shellbox, from `app/keys/shellbox-llm.key`) | The model proxy's key, the app's and the shellbox's (with `SHELLBOX_LLM_URL`, `http://celine:8766/llm`): the agent's CLIs call its models with it. Not a provider key. |
 
@@ -485,8 +494,10 @@ from `CELINE_TRUSTED_PROXIES` (used for the login limit and the log). A request 
 any other address that carries `X-Forwarded-For`, `Forwarded` or `X-Real-IP` is logged
 once as a warning: every client behind that proxy counts as its one address. Behind two
 proxies in a row, list both. Changing the public address later means registering the
-passkeys again. `[server] allowed_hosts` in `config/celine.toml` adds more host names
-for the `Host` check.
+passkeys again. `[server] allowed_hosts` in `config/celine.toml` (`CELINE_ALLOWED_HOSTS`
+in `.env`) adds more host names the app answers at: a request whose `Origin` is its own
+`Host`, that host on the list, is taken like one from the app's own address. A request
+from any other page is refused with the address to open instead.
 
 The server accepts a request only if its `Origin` and `Host` headers name it. Chat files open in the browser only as pictures, video or audio, in a sandbox; the rest is a download. Your agent's artifact pages (`/api/artifacts/<id>/versions/<n>`) run their scripts in a sandbox with an origin of their own.
 

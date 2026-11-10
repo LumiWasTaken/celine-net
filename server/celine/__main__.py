@@ -525,8 +525,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
         @app.get("/", include_in_schema=False)
         async def _no_build():
             return JSONResponse({
-                "message": "The frontend is not built. Run `make web` for the dev "
-                           "server, or `make build` to bundle it here.",
+                "message": "The web UI is not built. Start the app with ./start.sh, "
+                           "which builds it.",
             })
 
     return app
