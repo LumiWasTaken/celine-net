@@ -645,7 +645,8 @@ function RunChat({ cid, active, waits }: { cid: string; active: boolean; waits: 
   const convo = useConversation(active ? cid : null)
   const messages = useMemo(() => convo.messages.filter(m => m.intercom?.from !== 'system:schedules'), [convo.messages])
   if (!convo.conversation) return <LoadingRow />
-  if (!messages.length && !convo.running) return <p className="routines-prose routines-prose--quiet">No turns</p>
+  // a turn that failed before it said anything: why no answer came, the server's
+  if (!messages.length && !convo.running) return <p className="routines-prose routines-prose--quiet">{convo.unanswered?.reason || 'No turns'}</p>
   return (
     <div className="routines-chat">
       <Transcript conversationId={cid} messages={messages} toolCalls={convo.toolCalls} runs={convo.runs} turn={convo.turn}
