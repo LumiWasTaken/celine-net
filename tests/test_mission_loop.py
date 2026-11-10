@@ -546,3 +546,17 @@ async def test_an_archived_mission_stops_under_lock_archived_chats(store):
     assert await _statuses(store, kept, gone) == ["active", "stopped"]
     assert await watch.archived(app) == [], "once"
 
+
+async def test_mark_as_done_ends_the_mission_and_nothing_of_it_waits(store):
+    from celine import waits
+    intercom = Intercom(store)
+    app, aborted = _stopping(store, intercom, load())
+    cid = await _started(store, "feed", None)
+    await intercom.send(f"agent:{cid}", "user", "Which branch?")
+    await store.write(lambda c: missions.set_status_sync(c, store, cid, "needs_you", "A question."))
+    services = SimpleNamespace(store=store, approvals=None, connectors=None)
+    assert len(await waits.items(services)) == 1
+    await stop(app, cid, None, "done")
+    assert await _statuses(store, cid) == ["done"] and aborted == [cid]
+    assert await waits.items(services) == []
+

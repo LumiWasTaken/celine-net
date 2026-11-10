@@ -276,3 +276,14 @@ async def stop_mission(request: Request, cid: str) -> dict:
     await _mission(request, cid)
     await skill.stop(request.app.state.services, cid, None)
     return {"ok": True}
+
+
+@router.post("/missions/{cid}/done")
+async def mark_done(request: Request, cid: str) -> dict:
+    """The user's Mark as done on an open mission: it ends as done, as a Stop ends it
+    (skill.stop)."""
+    row = await _mission(request, cid)
+    if row["status"] not in ("active", "needs_you"):
+        raise CelineError("closed", "The mission has ended.", 409)
+    await skill.stop(request.app.state.services, cid, None, "done")
+    return {"ok": True}

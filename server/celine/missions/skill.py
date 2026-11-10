@@ -55,8 +55,7 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
     """The one way a mission's status changes (its missions__update, the watch, the
     user's Stop; the user's message starts a stopped one again inside its send, with nothing to
     follow): the row and the feed (missions.set_status_sync); done or stopped cancels what
-    it scheduled; stopped reads what it asked the user, so nothing of it waits for them;
-    any status but active is reported in the conversation it reports to, and a stop
+    it scheduled; any status but active is reported in the conversation it reports to, and a stop
     (the user's, or the app's at its time limit) in the conversation that started it. ->
     the row, None when there is no such mission."""
     row = await store.write(lambda c: missions.set_status_sync(c, store, cid, word, note))
@@ -65,15 +64,6 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
     if word in ("done", "stopped"):
         await app.intercom.cancel_scheduled(cid)
         await missions.update(store, cid, {"wake_id": None})
-    if word == "stopped":
-        from ..core.event_types import INTERCOM_STATE
-        from ..intercom import store as intercom_rows
-
-        def close(c) -> None:
-            for iid in intercom_rows.read_from(c, f"agent:{cid}"):
-                store.global_event(c, INTERCOM_STATE, {"intercom_id": iid,
-                                                       "conversation_id": None})
-        await store.write(close)
     to = row["report_to"]
     if word == "stopped" and not to and row["started_by"] not in (None, "user"):
         to = row["started_by"]          # a stop: the chat that started it hears
@@ -91,12 +81,22 @@ async def record(app, store, cid: str, word: str, note: str | None) -> dict | No
     return await missions.get(store, cid)
 
 
-async def stop(app, cid: str, note: str | None) -> None:
-    """The mission stops (the user's Stop, note None, or its ceiling, the note why): its
-    status, its turns and sub-agents aborted, its terminals and tabs closed, and the
-    missions started under it stopped (`stop_started`)."""
-    await record(app, app.store, cid, "stopped", note)
+async def stop(app, cid: str, note: str | None, word: str = "stopped") -> None:
+    """The mission ends from outside: stopped (the user's Stop, note None, or its
+    ceiling, the note why) or done (the user's Mark as done). Its status, then its
+    turns and sub-agents aborted, then what it asked the user read, so nothing of it
+    waits for them; its terminals and tabs closed, and the missions started under it
+    stopped (`stop_started`)."""
+    from ..core.event_types import INTERCOM_STATE
+    from ..intercom import store as intercom_rows
+    await record(app, app.store, cid, word, note)
     await app.dispatcher.abort_conversation(cid)
+
+    def read(c) -> None:
+        for iid in intercom_rows.read_from(c, f"agent:{cid}"):
+            app.store.global_event(c, INTERCOM_STATE, {"intercom_id": iid,
+                                                       "conversation_id": None})
+    await app.store.write(read)
     from .. import leftovers             # no turn ran: nothing else closes its terminals
     await leftovers.on_end(app, cid)
     await stop_started(app, cid)

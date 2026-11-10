@@ -10,7 +10,7 @@ import anyio
 from ..core.ids import now
 from ..missions import store as missions
 from . import deliver
-from .store import in_bug_thread, insert, read
+from .store import in_bug_thread, insert, read, read_from
 from ..core.event_types import INTERCOM_STATE
 
 log = logging.getLogger("celine.intercom")
@@ -27,7 +27,8 @@ async def send(store, from_addr: str, to: str, text: str, *, kind: str = "messag
     conversation it was delivered to at once, else None for those three.
     `attachments`: draft ids, bound to the message when it is delivered. `only_if(c)`:
     checked in the same write; when it is false nothing is sent and this is None.
-    The user's reply marks what waits for them in that thread read. The user's message
+    The user's reply marks what waits for them in that thread read, and their message
+    to a mission everything it asked them. The user's message
     to a stopped mission (in its chat, or a reply on its thread) starts it again, with
     its time limit counted from now; a reply on a bug report it filed leaves it
     stopped, and so does a message that lands later (a reminder, one that was waiting
@@ -64,6 +65,11 @@ async def send(store, from_addr: str, to: str, text: str, *, kind: str = "messag
                           "julianday(created_at)) * 86400 AS INTEGER) WHERE "
                           "conversation_id=?", (now(), cid))
                 out["resumed"].append(row)
+            if restarts and c.execute("SELECT 1 FROM missions WHERE conversation_id=?",
+                                      (cid,)).fetchone():
+                # the user answered the mission: everything it asked them is read
+                for rid in read_from(c, f"agent:{cid}"):
+                    _changed(c, store, rid, [])
             r = deliver.deliver_idle_sync(c, store, cid)
             if r and out["message_id"] is None and iid in r["messages"]:
                 out.update(message_id=r["messages"][iid], turn_id=r["turn_id"], seq=r["seq"])

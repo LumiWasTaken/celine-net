@@ -1,10 +1,10 @@
 """Waiting for you: everything that waits on the user, in one list (GET /api/waits,
-api/waits.py; the rail's Waiting and its sheet). The server's one answer; the client counts nothing.
+api/waits.py; the rail's Waiting and its page). The server's one answer; the client counts nothing.
 
 - every request of the agent's (approvals.py), as its card;
 - every mission in Needs you or with a message of its own that waits for the user, once,
-  that message or its note as the line (missions/watch.py); a bug report it filed is
-  an Intercom thread;
+  with why it waits and what it wrote (missions/watch.py); a stopped one waits for
+  nobody; a bug report it filed is an Intercom thread;
 - every chat source whose login was lost and is not back (kb/connectors.py);
 - every other Intercom thread with a message that waits for the user (intercom/store.py).
 
@@ -37,7 +37,7 @@ CHANGES = frozenset({APPROVALS_CHANGED, MISSION_STATE, SOURCE_STATE, INTERCOM_ST
 LOST_BY = {"whatsapp": "Not connected to WhatsApp. Log in with QR code in Settings, WhatsApp.",
            "discord": "Not connected to Discord. Log in again in Settings, Discord."}
 LOST = "Not connected to {title}. Log in again in Settings, {title}."
-LINE = 320          # characters of a message on its item (the sheet shows three lines)
+LINE = 320          # characters of a message on its row in the list
 
 
 def _line(text: str | None) -> str:
@@ -57,23 +57,40 @@ def lost_logins(connectors) -> list[dict]:
 
 
 def _missions(c) -> list[dict]:
-    """Every mission outside the Archive and the Trash that is in Needs you or has a
-    message to the user that waits (its home is
-    the mission: intercom/store.py MISSION_FROM), once; the line is the newest waiting
-    message, else its note."""
+    """Every open or done mission outside the Archive and the Trash that is in Needs you
+    or has a message to the user that waits (its home is the mission: intercom/store.py
+    MISSION_FROM), once. `why`: its note in Needs you. `text`: what it wrote the user
+    that waits, oldest first, else its last answer. `reply_to`: the newest of those
+    messages. `origin`: the conversation it was started from, as a crumb (homes.path)."""
     from . import homes
     from .core.ids import now
     from .intercom.store import _UNREAD, BUG
+    from .sub_agents.report import last_answer
     rows = c.execute(
-        "SELECT * FROM (SELECT m.conversation_id, m.name, m.note, m.status, m.updated_at, "
-        "(SELECT i.text FROM intercom i WHERE i.from_addr = 'agent:' || m.conversation_id "
-        f"AND i.kind <> 'job' AND {_UNREAD} AND NOT {BUG} ORDER BY i.id DESC LIMIT 1) AS asked "
-        "FROM missions m JOIN conversations cv ON cv.id = m.conversation_id "
-        "WHERE cv.trashed_at IS NULL AND cv.archived_at IS NULL) WHERE status = 'needs_you' OR asked IS NOT NULL "
-        "ORDER BY updated_at DESC", ("user", now())).fetchall()
-    return [{"kind": "mission", "id": r["conversation_id"], "title": r["name"],
-             "line": _line(r["asked"] or r["note"]),
-             "link": homes.of(c, r["conversation_id"])["link"]} for r in rows]
+        "SELECT m.conversation_id, m.name, m.note, m.status, m.updated_at FROM missions m "
+        "JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.trashed_at IS NULL "
+        "AND cv.archived_at IS NULL AND m.status <> 'stopped' ORDER BY m.updated_at DESC"
+    ).fetchall()
+    out = []
+    for r in rows:
+        cid = r["conversation_id"]
+        asked = c.execute(
+            "SELECT i.id, i.text, i.created_at FROM intercom i WHERE i.from_addr = ? AND "
+            f"i.kind <> 'job' AND {_UNREAD} AND NOT {BUG} ORDER BY i.id",
+            (f"agent:{cid}", "user", now())).fetchall()
+        if r["status"] != "needs_you" and not asked:
+            continue
+        why = (r["note"] or "").strip() if r["status"] == "needs_you" else ""
+        text = "\n\n".join(a["text"] for a in asked) or last_answer(c, cid).strip()
+        above = homes.path(c, cid)[:-1]
+        out.append({
+            "kind": "mission", "id": cid, "title": r["name"], "why": why,
+            "text": "" if text == why else text, "line": _line(text or why),
+            "reply_to": asked[-1]["id"] if asked else None,
+            "at": asked[-1]["created_at"] if asked else r["updated_at"],
+            "origin": {"name": above[-1]["name"], "link": above[-1]["link"]} if above else None,
+            "link": f"/waiting/mission/{cid}", "home": homes.of(c, cid)["link"]})
+    return out
 
 
 def _threads(c) -> list[dict]:
@@ -83,11 +100,12 @@ def _threads(c) -> list[dict]:
         v = thread_view(c, t)
         out.append({"kind": "thread", "id": str(t["thread"]),
                     "title": v["subject"] or v["name"], "line": _line(v["last"]["text"]),
-                    "link": f"/intercom/{t['thread']}"})
+                    "from": v["last"].get("from_name") or v["name"],
+                    "at": v["last"]["created_at"], "link": f"/waiting/thread/{t['thread']}"})
     return out
 
 
-# the head each kind is listed under in the sheet, the Notifications words
+# the head each kind is listed under on the page, the Notifications words
 GROUPS = {"approval": "Approvals", "mission": "Missions", "login": "Sources",
           "thread": "Intercom"}
 
@@ -95,7 +113,9 @@ GROUPS = {"approval": "Approvals", "mission": "Missions", "login": "Sources",
 async def items(services) -> list[dict]:
     """Every item that waits, each with its `group` (GROUPS): the requests first (oldest
     first), then missions, lost logins and Intercom threads (newest first). A request is
-    {kind: "approval", approval: its card}; every other {kind, id, title, line, link}."""
+    {kind: "approval", approval: its card}; every other {kind, id, title, line, link},
+    `link` the page that answers it; a thread with `from` and `at` (its newest message),
+    a mission as _missions says."""
     a = getattr(services, "approvals", None)
     asks = [{"kind": "approval", "approval": card} for card in (a.view() if a else [])]
     rows = await services.store.read(lambda c: _missions(c) + _threads(c))
@@ -103,6 +123,11 @@ async def items(services) -> list[dict]:
     threads = [r for r in rows if r["kind"] == "thread"]
     out = [*asks, *missions, *lost_logins(getattr(services, "connectors", None)), *threads]
     return [{**i, "group": GROUPS[i["kind"]]} for i in out]
+
+
+def counts(items: list[dict]) -> dict[str, int]:
+    """How many of `items` each group holds, the groups in their order."""
+    return {g: n for g in GROUPS.values() if (n := sum(i["group"] == g for i in items))}
 
 
 async def run(store, bus) -> None:

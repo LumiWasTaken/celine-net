@@ -123,6 +123,9 @@ async def test_a_mission_starts_reports_and_stops(db_path):
             assert job.state == "cancelled"
             # a stopped mission takes no change
             assert (await c.patch(f"/api/missions/{cid}", json={"brief": "x"})).status_code == 409
+            ended = await c.post(f"/api/missions/{cid}/done")
+            assert (ended.status_code, ended.json()["error"]["message"]) == (
+                409, "The mission has ended.")
             # a model picked at the start
             bad = await c.post("/api/missions", json={**BRIEF, "model": "nope/x"})
             assert bad.status_code == 400 and "There is no model 'nope/x'" in bad.text

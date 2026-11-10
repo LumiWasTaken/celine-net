@@ -51,13 +51,17 @@ async def test_an_ask_a_mission_a_lost_login_and_a_thread_are_four_items(store):
     assert [i["group"] for i in got] == ["Approvals", "Missions", "Sources", "Intercom"]
     assert got[0]["approval"]["title"] == "Celine asks to change the Persona."
     assert got[0]["approval"]["where"] == "Chat Plans"
-    assert {k: got[1][k] for k in ("title", "line", "link")} == {
-        "title": "Night", "line": "A question for you at step 3: Book the hotel.",
-        "link": f"/mission/{night}"}
+    assert {k: got[1][k] for k in ("title", "why", "text", "reply_to", "origin", "link",
+                                   "home")} == {
+        "title": "Night", "why": "A question for you at step 3: Book the hotel.",
+        "text": "", "reply_to": None, "origin": None,
+        "link": f"/waiting/mission/{night}", "home": f"/mission/{night}"}
     assert got[2] == {"kind": "login", "id": "wa", "title": "WhatsApp", "group": "Sources",
                       "line": waits.LOST_BY["whatsapp"], "link": "/settings/sources/wa"}
     assert got[3]["line"] == "I found three flats. more"
-    assert got[3]["link"] == f"/intercom/{got[3]['id']}"
+    assert got[3]["link"] == f"/waiting/thread/{got[3]['id']}"
+    assert got[3]["from"] == "Celine" and got[3]["at"]
+    assert waits.counts(got) == {"Approvals": 1, "Missions": 1, "Sources": 1, "Intercom": 1}
     [aid] = a.waiting
     a.decide(aid, True, Owner("test", _SEAL))
     await task
@@ -112,3 +116,29 @@ async def test_waits_changed_follows_each_event_that_changes_the_list(db_path):
         await until(lambda: "waits.changed" in seen)
         assert seen.count("waits.changed") == 1
         tg.cancel_scope.cancel()
+
+
+async def test_a_mission_says_what_it_asks_and_where_it_was_started(store):
+    """What it wrote the user that waits is its text, the newest its reply_to; one
+    started from a chat names that chat. The user's reply reads all of it; a stopped
+    mission waits for nobody."""
+    services = SimpleNamespace(store=store, approvals=None, connectors=None)
+    intercom = Intercom(store)
+    chat = await conversations.create(store, "Plans")
+    night = await conversations.create(store, "Night", kind="mission")
+    await missions.create(store, night, {"name": "Night", "terminal": "n", "brief": "b",
+                                         "started_by": chat})
+    await intercom.send(f"agent:{night}", "user", "Which hotel?")
+    second = (await intercom.send(f"agent:{night}", "user", "And which night?"))["intercom_id"]
+    [item] = await waits.items(services)
+    assert (item["why"], item["text"], item["reply_to"]) == (
+        "", "Which hotel?\n\nAnd which night?", second)
+    assert item["origin"] == {"name": "Plans", "link": f"/chat/{chat}"}
+    await intercom.send("user", "", "The Adler, Friday.", reply_to=second)
+    assert await waits.items(services) == []
+
+    await store.write(lambda c: missions.set_status_sync(c, store, night, "needs_you", "x"))
+    assert len(await waits.items(services)) == 1
+    await store.write(lambda c: missions.set_status_sync(c, store, night, "stopped", None))
+    assert await waits.items(services) == []
+
