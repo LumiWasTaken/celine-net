@@ -430,8 +430,8 @@ class Email:
         "mail.new", source="new_mail", every=300, label="New email",
         about="Reads new emails and asks you only when one needs your answer.",
         outside=("from", "subject"),
-        prompt="New mail in the inbox: {id}, from {from}, \"{subject}\", {date}. Read it "
-               "with email__read if the subject is not enough to judge it."),)
+        prompt="New email from {from}: \"{subject}\", {date}. Read it with "
+               "email__read(id=\"{id}\") if the subject is not enough to judge it."),)
 
     def __init__(self, cfg):
         self.cfg = cfg

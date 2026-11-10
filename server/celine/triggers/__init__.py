@@ -127,12 +127,14 @@ class Triggers:
                     elif isinstance(t, Event):
                         tg.start_soon(self._event, skill, t)
 
-    async def fire(self, skill_name: str, name: str, prompt: str,
+    async def fire(self, skill_name: str, t: Watch | Event, prompt: str,
                    outside: dict | None = None) -> str:
-        """The fire's message to the trigger's background conversation. -> its id.
-        `outside`: the guard's label of the parts others wrote (guard/sources.py)."""
+        """The fire's message to the trigger's background conversation, titled with the
+        trigger's label. -> its id. `outside`: the guard's label of the parts others
+        wrote (guard/sources.py)."""
         cfg = self.app.cfg
-        cid = await conversations.for_trigger(self.app.store, f"trigger:{name}", name)
+        name = t.name
+        cid = await conversations.for_trigger(self.app.store, f"trigger:{name}", t.label)
         await self.app.intercom.send(f"system:{skill_name}", f"agent:{cid}",
                                      cfg.substitute(f"{prompt}\n\n{RULE}"), kind="trigger",
                                      data={"trigger": name,
@@ -140,15 +142,15 @@ class Triggers:
         log.info("trigger fired", extra={"event": "trigger.fired", "trigger": name})
         return cid
 
-    async def _fire(self, skill_name: str, name: str, prompt: str,
+    async def _fire(self, skill_name: str, t: Watch | Event, prompt: str,
                     outside: dict | None = None) -> None:
         """`fire` from a trigger's loop: a failure is logged, never raised up into the
         lifespan task group (that takes the app down)."""
         try:
-            await self.fire(skill_name, name, prompt, outside)
+            await self.fire(skill_name, t, prompt, outside)
         except Exception:
             log.exception("trigger fire failed", extra={"event": "trigger.fire_failed",
-                                                        "trigger": name})
+                                                        "trigger": t.name})
 
     async def _watch(self, skill, t: Watch) -> None:
         import watchfiles
@@ -163,7 +165,7 @@ class Triggers:
                                                  rust_timeout=500):
             hits = sorted((p, kinds[c]) for c, p in changes if kinds[c] in t.events)
             if hits:
-                await self._fire(skill.name, t.name, t.prompt.format_map(_Fill(
+                await self._fire(skill.name, t, t.prompt.format_map(_Fill(
                     path="\n".join(p for p, _ in hits),
                     event=", ".join(sorted({e for _, e in hits})))))
 
@@ -182,6 +184,6 @@ class Triggers:
                 continue
             for ev in events:
                 parts = [str(ev[k]) for k in t.outside if ev.get(k)]
-                await self._fire(skill.name, t.name, t.prompt.format_map(_Fill(ev)), {
+                await self._fire(skill.name, t, t.prompt.format_map(_Fill(ev)), {
                     "source": skill.name, "by": str(ev.get("from") or "") or None,
                     "parts": parts} if parts else None)

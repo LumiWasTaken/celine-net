@@ -50,9 +50,12 @@ def _app(store, cfg, registry=None):
 
 
 async def test_a_fire_is_a_background_task_hidden_from_the_chat_list(store, api):
+    from celine.skills.mail import Email
     t = Triggers(_app(store, boot.load()))
-    cid = await t.fire("email", "mail.new", "New mail.")
-    assert await t.fire("email", "mail.new", "More mail.") == cid
+    [new] = Email.triggers
+    cid = await t.fire("email", new, "New mail.")
+    assert await t.fire("email", new, "More mail.") == cid
+    assert await conversations.title(store, cid) == "New email"
     turn = await turns.claim(store, "w")
     await turns.transition(store, turn["id"], cid, "done")
     await t.app.intercom.deliver_idle(cid)
