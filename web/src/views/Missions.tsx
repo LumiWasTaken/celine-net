@@ -413,7 +413,7 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
               </Section>
             )}
             {m.artifact && <Section id="m-result" title="Result"><Result m={m} /></Section>}
-            <Section id="m-set" title="Settings"><Settings m={m} live={convo.settings} agents={agents.length} onChange={onChange} /></Section>
+            <Section id="m-set" title="Settings"><Settings m={m} live={convo.settings} agents={agents.length} origin={tree.data?.origin.at(-1)} onChange={onChange} /></Section>
           </PageIndex>
         </div></div>
       )}
@@ -497,8 +497,10 @@ function Result({ m }: { m: Mission }) {
   return null
 }
 
-function Settings({ m, live, agents, onChange }: {
-  m: Mission; live: ReturnType<typeof useConversation>['settings']; agents: number; onChange: () => void
+/* `origin`: the chat or run that started it, the server's (the tree's origin) */
+function Settings({ m, live, agents, origin, onChange }: {
+  m: Mission; live: ReturnType<typeof useConversation>['settings']; agents: number
+  origin?: { name: string; link: string | null }; onChange: () => void
 }) {
   const auto = useAction(async (on: boolean) => { await contextApi.setAuto(m.conversation_id, on); onChange() })
   return (
@@ -512,11 +514,18 @@ function Settings({ m, live, agents, onChange }: {
         ...(m.min_until ? [{ label: 'Runs at least until', value: stamp(m.min_until) }] : []),
         ...(m.check_in ? [{ label: 'Check-in', value: `Every ${every(m.check_in)}` }] : []),
         { label: 'Created', value: stamp(m.created_at) },
+        ...(origin ? [{ label: 'Started from', value: origin.link ? <a href={origin.link}>{origin.name}</a> : origin.name }] : []),
         ...(agents ? [{ label: 'Sub-agents', value: agentsNoun(agents) }] : []),
       ]} />
     </>
   )
 }
+
+/* the pages above a sub-agent's conversation: Missions, then the chain above it as the
+   server names it (homes.path: the run or chat that started its mission, the mission, the
+   sub-agents between) */
+const above = (path: { name: string; link: string | null }[] | undefined) =>
+  [{ label: 'Missions', href: '/missions' }, ...(path ?? []).slice(0, -1).map(c => ({ label: c.name, href: c.link ?? undefined }))]
 
 /* one sub-agent of a mission: its conversation; its result and details are a page under it */
 /* a sub-agent another sub-agent started, or one in the Archive or the Trash (the
@@ -525,7 +534,7 @@ function ShelvedAgent({ cid, active }: { cid: string; active: boolean }) {
   const convo = useConversation(cid)
   const row = useResource(() => request<{ conversation: { title: string; agent_of: string | null } }>(`/conversations/${cid}`), [cid])
   const c = row.data?.conversation
-  const crumbs = [{ label: 'Missions', href: '/missions' }]
+  const crumbs = above(convo.conversation?.path)
   if (!c && !row.missing && !row.error) return <LoadingRow label="Loading the chat" />
   if (!c?.agent_of) return <div className="missions-page"><PlaceHead level={1} title="Missions" crumbs={crumbs} />
     <EmptyState icon={SearchX} title="Not found">Nothing at this link.</EmptyState></div>
@@ -538,14 +547,12 @@ function ShelvedAgent({ cid, active }: { cid: string; active: boolean }) {
 }
 
 function AgentPage({ a, mission, active }: { a: AgentRow; mission: Mission; active: boolean }) {
-  const nav = useNav()
   const [result, setResult] = useState(false)
   const convo = useConversation(a.id)
   const stop = useAction(() => agentsApi.stop(a.id))
-  const go = (r: Route) => (e: React.MouseEvent) => { e.preventDefault(); nav.go(r) }
-  const crumbs = [{ label: 'Missions', href: '/missions', onClick: go({ section: 'missions' }) },
-                  { label: mission.name, href: format({ section: 'missions', conversation: mission.conversation_id }),
-                    onClick: go({ section: 'missions', conversation: mission.conversation_id }) }]
+  // until its conversation answered: Missions and its mission
+  const crumbs = convo.conversation?.path ? above(convo.conversation.path)
+    : [{ label: 'Missions', href: '/missions' }, { label: mission.name, href: format({ section: 'missions', conversation: mission.conversation_id }) }]
   const self = format({ section: 'missions', conversation: a.id })
   return (
     <div className="missions-page">

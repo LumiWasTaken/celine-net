@@ -102,7 +102,7 @@ function MissionPage({ w, crumbs }: { w: MissionWait; crumbs: Crumb[] }) {
       <div className="page"><div className="page__col waiting-page__col">
         <MissionAsk w={w} />
         {w.origin && <Facts items={[{ label: 'Started from', value: w.origin.link
-          ? <a href={w.origin.link} onClick={go(w.origin.link)}>{w.origin.name}</a> : w.origin.name }]} />}
+          ? <a href={w.origin.link}>{w.origin.name}</a> : w.origin.name }]} />}
       </div></div>
     </div>
   )
