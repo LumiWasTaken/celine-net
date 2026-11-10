@@ -34,7 +34,7 @@ def _skill(request: Request):
 async def list_agents(request: Request, conversation: str | None = None) -> dict:
     """The sub-agents of one conversation, or every one not in the archive, newest
     first: id, parent, name, access, folder, model, cli, device, working, the step at
-    work, the latest report, its last words."""
+    work, the latest report, its last words (skill.agents_of)."""
     services = request.app.state.services
     rows = await services.store.read(lambda c: agents_of(c, conversation, own=services.store.tool_words))
     return {"agents": labelled(getattr(services.cfg, "settings", None), rows)}

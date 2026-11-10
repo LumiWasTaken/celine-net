@@ -4,6 +4,7 @@
 import { createContext, useState } from 'react'
 import { post, request, type Crumb, type Home } from './api'
 import { useServerEvents } from './bus'
+import type { Said } from './states'
 import { useResource } from './useResource'
 
 export type Agent = {
@@ -16,6 +17,9 @@ export type Agent = {
   folder: string | null
   /** at work (its last turn has not reported) */
   working: boolean
+  /** Running while it works, else Done: the server's words */
+  words: string
+  tone: Said['tone']
   /** the tool its live turn runs, null between steps */
   step: string | null
   /** that step in words, the server's ("Reading the note") */
@@ -38,6 +42,9 @@ export type TreeAgent = {
   depth: number
   name: string
   state: 'queued' | 'working' | 'done' | 'stopped' | 'failed' | 'paused'
+  /** that state as the pages say it, the server's */
+  words: string
+  tone: Said['tone']
   /** why it failed, stopped or paused, the server's words */
   reason: string | null
   step_words: string | null
@@ -61,6 +68,7 @@ export const agentsApi = {
   tree: (cid: string) => request<{
     top: string; origin: Crumb[]; agents: TreeAgent[]; missions: TreeMission[]
     total: { prompt_tokens: number; completion_tokens: number; seconds: number }
+    states: Record<TreeAgent['state'] | TreeMission['state'], Said>
   }>(`/conversations/${encodeURIComponent(cid)}/sub-agents`),
   stop: (id: string) => post<{ stopped: boolean }>(`/sub-agents/${encodeURIComponent(id)}/stop`),
 }

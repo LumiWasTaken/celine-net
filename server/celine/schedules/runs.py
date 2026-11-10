@@ -113,7 +113,7 @@ from ..backends.base import Done, TextDelta, ToolCallDelta
 from ..backends.llm import HeldClock
 from ..conversations import store as conversations, tree
 from ..core.ids import iso, new_id, now
-from ..core.states import LIVE_SQL
+from ..core.states import LIVE_SQL, RUN, said
 from ..skills import ToolContext
 from ..clock import zone
 from ..sub_agents.report import asked, last_answer, quiet
@@ -237,7 +237,7 @@ def view(r: sqlite3.Row | dict, cfg, held: bool = False) -> dict:
     """A run as the API and the feed give it (a ROW): `at` its slot's time of day in the
     app's zone, `label` its schedule's (the one it kept once the schedule is gone);
     `state` waiting and `reason` HELD while it runs and its work waits for a model
-    (`held`, its RunClock), `reason_why` its reason without the "Waiting" (why_alone);
+    (`held`, its RunClock), `words` and `tone` that state as the pages say it (RUN), `reason_why` its reason without the "Waiting" (why_alone);
     `again_of` the run it runs again and `retried` the run that runs it again, each
     {id, at} or None."""
     s = (getattr(cfg, "schedules", None) or {}).get(r["schedule"])
@@ -249,6 +249,7 @@ def view(r: sqlite3.Row | dict, cfg, held: bool = False) -> dict:
     return {"id": r["id"], "schedule": r["schedule"],
             "label": shown(s) if s else r["label"], "slot": r["slot"], "at": at(r["slot"]),
             "night": r["night"], "state": "waiting" if waits else r["state"],
+            **said(RUN, "waiting" if waits else r["state"]),
             "reason": reason, "reason_why": why_alone(reason),
             "conversation_id": r["conversation_id"], "result": r["result"],
             "error": r["error"], "created_at": r["created_at"],

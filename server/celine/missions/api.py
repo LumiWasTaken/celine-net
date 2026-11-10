@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..conversations import store as conversations
 from ..core.ids import iso, parse_when
+from ..core.states import MISSION, said, table
 from ..errors import MISSION_STOPPED, CelineError, NotFound
 from . import store as missions
 from .store import book_time_limit
@@ -176,14 +177,19 @@ async def list_missions(request: Request, status: str | None = None,
     trash, with `archived` only the archived ones (a mission is archived and deleted as
     its conversation is: POST /conversations/{cid}/archive, DELETE /conversations/{cid}).
     `counts`: the page's numbers (store.counts), whatever the filters. `asked`: an
-    approval waits in it or in a sub-agent of it (approvals.asked)."""
+    approval waits in it or in a sub-agent of it (approvals.asked). `words` and `tone`:
+    its status as the pages say it (Waiting for you while `asked`); `states`: every
+    status so (core/states MISSION)."""
     from ..approvals import asked
     store = request.app.state.services.store
     settings = getattr(request.app.state.services.cfg, "settings", None)
     waits = asked(request.app.state.services)
-    return {"missions": [{**_labelled(settings, r), "asked": r["conversation_id"] in waits}
-                         for r in await missions.list(store, status, trashed, archived)],
-            "counts": await missions.counts(store)}
+    def row(r: dict) -> dict:
+        asked_ = r["conversation_id"] in waits
+        return {**_labelled(settings, r), "asked": asked_,
+                **said(MISSION, "needs_you" if asked_ else r["status"])}
+    return {"missions": [row(r) for r in await missions.list(store, status, trashed, archived)],
+            "counts": await missions.counts(store), "states": table(MISSION)}
 
 
 def _labelled(settings, row: dict) -> dict:

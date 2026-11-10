@@ -23,7 +23,7 @@ The map of the code and the rules it follows.
 | Module | What |
 |---|---|
 | `__main__.py`, `config.py`, `boot.py`, `reload.py`, `saves.py` | preflight and lifespan; celine.toml into a Config and the readers' helpers; the whole load (every config file, var/settings, its row), which writes nothing; config reloaded in place; the Settings saves, one function each, for the routes and the agent's `settings` skill |
-| `core/` | the single writer and event append, EventBus, ids and times, Services |
+| `core/` | the single writer and event append, EventBus, ids and times, Services, `states.py` (turn states; the words a mission's, a tree node's and a run's state is said in) |
 | `db/` | `migrations/0001_schema.sql`, the later `NNNN_*.sql` and `NNNN_*.py` (a `.py` one moves stored data), and the chains for `log/` and `notebook/`; `migrate.py` applies them |
 | `conversations/` | conversation rows, the message tree, snapshot and replay, routes |
 | `turns/` | one turn: dispatcher, runner, tool chokepoint, context, compaction, titles; `reply.py` the one place that touches a stored reply (citation tokens only); `warm.py` keeps the newest chat ready on its model server |
@@ -62,7 +62,7 @@ The map of the code and the rules it follows.
 | `ui/` | the kit; `ui/index.ts` exports it; `ui/ui.css` styles it |
 | `views/` | one place each: `Celine`, `Missions`, `Routines`, `Notebook`, `Documents`, `Chats`, `Intercom`, `Waiting`, `Terminals`, `Terminal`, `Browser`, `Events`, `Search`, `Artifact`, `Welcome`, `settings/` |
 | `components/` | app parts made of kit parts: Transcript, Composer, ToolRow, ConversationList, ConversationPanel, Markdown, Plan, MissionAsk, ProviderFields |
-| `lib/` | api clients, socket and bus, `nav.tsx`, `prefs.ts` (this device's conveniences in localStorage), hooks (`useResource`, `useAction`, `useReveal`, `useConversation`) |
+| `lib/` | api clients, socket and bus, `nav.tsx`, `prefs.ts` (this device's conveniences in localStorage), `states.ts` (a state as the server says it), hooks (`useResource`, `useAction`, `useReveal`, `useConversation`) |
 | `styles/` | `tokens.css` (every value), `base.css` (keyframes, resets) |
 
 ## Words

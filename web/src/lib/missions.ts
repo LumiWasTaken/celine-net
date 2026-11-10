@@ -1,9 +1,10 @@
 /* Missions: the api clients (POST /missions, GET, PATCH, POST /stop; a mission is a
    conversation, so it is archived, goes to the Trash, comes back and is deleted
-   permanently as one), the row types and the words a mission's state is said in
-   (docs/ARCHITECTURE.md). A mission is its instructions: it writes the plan, works with its
+   permanently as one) and the row types (docs/ARCHITECTURE.md); a mission's state is said
+   in the server's words (lib/states). A mission is its instructions: it writes the plan, works with its
    sub-agents and delivers an artifact. */
 import { del, json, post, request, type PlanStep } from './api'
+import type { Said } from './states'
 
 export type MissionStatus = 'active' | 'needs_you' | 'done' | 'stopped'
 
@@ -28,6 +29,9 @@ export type Mission = {
   /** minutes between two check-ins (a notice to you, or a report to whoever it reports to); null: none */
   check_in: number | null
   status: MissionStatus
+  /** its status as the pages say it, the server's: Waiting for you while `asked` */
+  words: string
+  tone: Said['tone']
   note: string | null
   /** its plan's steps, each with the model it runs on (null: the mission's own) */
   steps: MissionStep[]
@@ -59,7 +63,7 @@ export const missionsApi = {
     })),
   /** the archived or the trashed ones instead */
   list: (which?: 'archived' | 'trashed') =>
-    request<{ missions: Mission[]; counts: MissionCounts }>(`/missions${which ? `?${which}=1` : ''}`),
+    request<{ missions: Mission[]; counts: MissionCounts; states: Record<MissionStatus, Said> }>(`/missions${which ? `?${which}=1` : ''}`),
   /** a new name, or the brief changed (both reach it as a message) */
   edit: (cid: string, body: { name?: string; brief?: string }) =>
     request<{ ok: boolean }>(`/missions/${cid}`, json('PATCH', body)),
@@ -87,9 +91,3 @@ export const isMissionEvent = (ev: { type: string }) =>
 
 /** a mission still at work: active or waiting for you */
 export const isOpen = (status: string | null | undefined) => status === 'active' || status === 'needs_you'
-
-/** the one word for where a mission is */
-export const STATE_WORD: Record<MissionStatus, string> = {
-  active: 'Running', needs_you: 'Waiting for you', done: 'Done', stopped: 'Stopped',
-}
-

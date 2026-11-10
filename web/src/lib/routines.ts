@@ -4,7 +4,7 @@
    docs/ARCHITECTURE.md, Schedules. */
 import { LOCALE } from './format'
 import { del, json, post, request } from './api'
-import type { WordTone } from '../ui'
+import type { Said } from './states'
 
 export type Schedule = {
   name: string
@@ -81,6 +81,9 @@ export type Run = {
   at: string
   night: string
   state: RunState
+  /** that state as the pages say it, the server's */
+  words: string
+  tone: Said['tone']
   /** why it waits or why it was skipped, in words; '' when nothing holds it */
   reason: string
   /** the reason without the "Waiting" its state word says, for a row under that word */
@@ -101,7 +104,8 @@ export type Run = {
     with an error, waiting while a run of it waits for its model */
 export type Night = { night: string; failed: boolean; waiting: boolean }
 
-export type Runs = { runs: Run[]; nights: Night[]; tonight: string }
+/** `states`: every state of a run as the server says it; planned: a slot with no run yet */
+export type Runs = { runs: Run[]; nights: Night[]; tonight: string; states: Record<RunState | 'planned', Said> }
 
 /** GET /schedules: a field's choices and its "?" text, the server's */
 export type ScheduleWords = { choices: { on_fail: { value: OnFail; label: string }[] }; help: Record<'on_fail' | 'idle_only' | 'wall_minutes', string> }
@@ -145,17 +149,6 @@ export const isRunEvent = (ev: { type: string }) => ev.type === 'run.state' || e
 
 /** a row an approval waits in */
 export const ASKED_WORD = 'Waiting for you'
-
-/** the one word for a run's state */
-export const STATE_WORD: Record<RunState | 'planned', string> = {
-  waiting: 'Queued', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped', stopped: 'Stopped',
-  planned: 'Scheduled',
-}
-
-/** the tone of a run's state word */
-export const RUN_TONE: Record<RunState | 'planned', WordTone> = {
-  waiting: 'muted', running: 'running', done: 'success', failed: 'error', skipped: 'muted', stopped: 'muted', planned: 'muted',
-}
 
 /** a run that is over: Retry or Run now instead of Stop */
 export const FINISHED: (RunState | 'planned')[] = ['done', 'failed', 'skipped', 'stopped']

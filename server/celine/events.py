@@ -35,6 +35,7 @@ from fastapi import APIRouter, Request
 
 from . import homes
 from .core.ids import iso
+from .core.states import ERROR, MUTED, OK, RUN, RUNNING, WARN
 from .api.cursor import page_cursor
 from .clock import day_label, zone
 from .core.bus import NOTEBOOK_TOOLS
@@ -104,7 +105,6 @@ def _join(*parts: str) -> str:
     return ", ".join(p for p in parts if p)
 
 
-RUNNING, OK, ERROR, MUTED, WARN = "running", "ok", "error", "muted", "warn"
 # a state as (word, tone)
 _TURN = {"queued": ("Queued", MUTED), "done": ("Done", OK), "aborted": ("Stopped", MUTED), "failed": ("Failed", ERROR),
          "interrupted": ("Interrupted", ERROR), "capped": ("Stopped", WARN)}
@@ -112,8 +112,6 @@ _CALL = {"ok": ("Done", OK), "error": ("Failed", ERROR), "gated": ("Stopped", ER
          "interrupted": ("Interrupted", ERROR), "cancelled": ("Stopped", MUTED)}
 _JOB = {"done": ("Done", OK), "failed": ("Failed", ERROR), "timeout": ("Timed out", ERROR),
         "interrupted": ("Interrupted", ERROR), "cancelled": ("Stopped", MUTED)}
-_RUN = {"waiting": ("Queued", MUTED), "done": ("Done", OK), "failed": ("Failed", ERROR),
-        "skipped": ("Skipped", MUTED), "stopped": ("Stopped", MUTED)}
 # Bastet's decision as banners.py names it (_kind: Watch's would-be acts too)
 _GUARD = {"allow": ("Allowed", OK), "would_stop": ("Would have stopped", WARN),
           "would_freeze": ("Would have frozen", WARN),
@@ -201,7 +199,7 @@ def _message(r, cfg) -> dict:
 
 def _run(r, cfg) -> dict:
     from .texts import who
-    word, tone = _RUN.get(r["state"], ("Running", RUNNING))
+    word, tone = RUN[r["state"]]
     by = f"Started by {who(cfg, r['started_by'])}" if r["started_by"] != "clock" else ""
     return {"title": r["label"], "outcome": word, "tone": tone,
             "detail": _join(by, _first(r["error"] or r["reason"]) or

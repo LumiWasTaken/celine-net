@@ -15,7 +15,7 @@
    saves the schedule.
    URL: /routines, /routines/<day>, /routines/<day>/run/<id>, /routines/<day>/schedule/<name>,
    /routines/<day>/schedule/<name>/edit/<key>[/history], /routines/<day>/task/<id>. */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight, Bot, Braces, CalendarClock, ChevronLeft, ChevronRight, CircleStop, History, MoreHorizontal, NotebookPen, Pencil,
   Play, Plus, RotateCcw, SearchX, Trash2, Zap,
@@ -28,9 +28,10 @@ import { TreeLine, Work, treeOrder } from './Missions'
 import { isSaveKey, isTyping } from '../lib/keys'
 import { format, useNav, type Route } from '../lib/nav'
 import {
-  ASKED_WORD, FINISHED, RETRIES, RUN_TONE, STATE_WORD, isRunEvent, nightWords, routinesApi, type EventTask, type Night, type OnFail, type Run, type Runs, type RunState,
+  ASKED_WORD, FINISHED, RETRIES, isRunEvent, nightWords, routinesApi, type EventTask, type Night, type OnFail, type Run, type Runs, type RunState,
   type Schedule, type ScheduleBody, type ScheduleWords, type Trigger,
 } from '../lib/routines'
+import { toneOf } from '../lib/states'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useName } from '../lib/name'
 import { useAction } from '../lib/useAction'
@@ -48,6 +49,9 @@ import {
 import './Routines.css'
 
 type State = RunState | 'planned'
+/** every state of a run as the server says it (GET /runs `states`): a planned slot's word,
+    the state filter, Running and Done of what an event started */
+const States = createContext<Runs['states'] | undefined>(undefined)
 type Node = {
   key: string
   label: string
@@ -212,6 +216,7 @@ export function Routines({ active }: { active: boolean }) {
                onLater={() => { const to = shift(runs.data!.nights[0]!.night, 14); setUntil(today && to >= today ? undefined : to) }} />
     )
   return (
+    <States.Provider value={runs.data?.states}>
     <Place title="Routines" action={<IconButton icon={Plus} label="New schedule" onClick={() => go({ schedule: 'new' })} />}
            side={<>
              <ListRow density="sm" icon={History} title="Runs" meta={done} selected={!detail && view === 'runs'} onClick={() => toList('runs')} />
@@ -221,7 +226,7 @@ export function Routines({ active }: { active: boolean }) {
                       onClick={() => toList('triggers')} />
              {nodes.some(n => n.run) && <ListSection label={night ? dayShort(night) : 'Recent'} />}
              {nodes.filter(n => n.run).slice(0, 8).map(n => (
-               <ListRow key={n.key} density="sm" title={`${n.at} ${n.label}`} meta={<StateWord tone={RUN_TONE[n.state]}>{STATE_WORD[n.state]}</StateWord>}
+               <ListRow key={n.key} density="sm" title={`${n.at} ${n.label}`} meta={<StateWord tone={toneOf(n.run!.tone)}>{n.run!.words}</StateWord>}
                         href={format({ section: 'routines', night, run: n.run!.id })} onClick={click(() => go({ run: n.run!.id }))}
                         selected={route.run === n.run!.id} />
              ))}
@@ -229,6 +234,7 @@ export function Routines({ active }: { active: boolean }) {
       {error && schedules.data && runs.data && <div className="list-page__note"><InlineError compact message={error} onRetry={reloadAll} /></div>}
       {page}
     </Place>
+    </States.Provider>
   )
 }
 
@@ -250,6 +256,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
   go: (r: Open, replace?: boolean) => void
   onEarlier: () => void; onLater: () => void
 }) {
+  const states = runs.data?.states
   const ctx = useContextMenu()
   const [q, setQ] = useState('')
   const [show, setShow] = useState('all')
@@ -292,11 +299,8 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
         </div>
         <Toolbar state={{ label: 'State', value: show, onChange: setShow, options: [
                    { value: 'all', label: 'All', count: ran.length },
-                   { value: 'running', label: STATE_WORD.running, count: ran.filter(n => n.state === 'running').length },
-                   { value: 'waiting', label: STATE_WORD.waiting, count: ran.filter(n => n.state === 'waiting').length },
-                   { value: 'failed', label: STATE_WORD.failed, count: ran.filter(n => n.state === 'failed').length },
-                   { value: 'skipped', label: STATE_WORD.skipped, count: ran.filter(n => n.state === 'skipped').length },
-                   { value: 'done', label: STATE_WORD.done, count: ran.filter(n => n.state === 'done').length }] }}
+                   ...(['running', 'waiting', 'failed', 'skipped', 'done'] as const).map(v => (
+                     { value: v, label: states?.[v].words ?? '', count: ran.filter(n => n.state === v).length }))] }}
                  filters={[{ label: 'Schedule', icon: CalendarClock, picked: of ? label(of) : undefined, onClear: () => setOf(null),
                              items: all.map(s => ({ label: s.title, current: s.name === of, onSelect: () => setOf(s.name) })) }]} />
       </div>
@@ -319,7 +323,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                                         ? <LiveStep run={r} turns={n.schedule?.reviewer ? n.schedule.turns : 0} active={active} />
                                         : r?.reason_why || (r?.error ?? (r?.result ? r.result.split('\n')[0] : n.schedule?.after.length
                                           ? `Runs after ${label(n.schedule.after[0]!)}` : n.schedule?.every))}
-                                      cell={r?.asked ? <StateWord tone="warn">{ASKED_WORD}</StateWord> : <StateWord tone={RUN_TONE[n.state]}>{STATE_WORD[n.state]}</StateWord>}
+                                      cell={r?.asked ? <StateWord tone="warn">{ASKED_WORD}</StateWord> : states && <StateWord tone={toneOf(states[n.state].tone)}>{states[n.state].words}</StateWord>}
                                       meta={n.at}
                                       href={n.run ? format({ section: 'routines', night, run: n.run.id })
                                         : n.schedule ? format({ section: 'routines', night, schedule: n.schedule.name }) : undefined}
@@ -346,7 +350,7 @@ function LiveStep({ run, turns, active }: { run: Run; turns: number; active: boo
   const convo = useConversation(active ? run.conversation_id : null)
   const calls = Object.values(convo.toolCalls).flat()
   const tool = [...calls].reverse().find(c => c.state === 'running' || c.state === 'pending')
-  const words = waitLine(convo.waiting) || run.reason_why || tool?.words.step || turnStep(convo.turn?.state) || STATE_WORD.running
+  const words = waitLine(convo.waiting) || run.reason_why || tool?.words.step || turnStep(convo.turn?.state) || run.words
   const said = (convo.messages as ChatMessage[]).filter(m => m.role === 'user' && m.intercom?.from?.startsWith('system:')
     && m.intercom.from !== 'system:schedules').length
   return <>{words}{turns > 0 && said > 0 && `, turn ${Math.min(said, turns)} of ${turns}`}</>
@@ -434,6 +438,7 @@ function TriggersList({ list, triggers, tasks, night, go }: {
   list: React.RefObject<HTMLDivElement | null>
   triggers: Res<Trigger[]>; tasks: Res<EventTask[]>; night: string; go: (r: Open) => void
 }) {
+  const states = useContext(States)
   const online = useOnline()
   const ctx = useContextMenu()
   const [q, setQ] = useState('')
@@ -479,7 +484,7 @@ function TriggersList({ list, triggers, tasks, night, go }: {
                              <ListRow density="lg" title={taskTitle(r.row.b)}
                                       subtitle={r.row.b.last_line || undefined} column={byName(r.row.b.trigger) === taskTitle(r.row.b) ? '' : byName(r.row.b.trigger)}
                                       cell={r.row.b.asked ? <StateWord tone="warn">{ASKED_WORD}</StateWord>
-                                        : r.row.b.working ? <StateWord tone="running">{STATE_WORD.running}</StateWord> : <StateWord tone="success">{STATE_WORD.done}</StateWord>}
+                                        : states && <StateWord tone={r.row.b.working ? 'running' : 'success'}>{states[r.row.b.working ? 'running' : 'done'].words}</StateWord>}
                                       meta={listTime(r.row.b.updated_at)}
                                       muted={!r.row.b.working}
                                       href={format({ section: 'routines', night, task: r.row.b.id })}
@@ -522,8 +527,8 @@ function TaskPage({ id, night, tasks, active, go, onBack }: {
         <div className="routines-kids">
           {kids.map(a => (
             <ListRow key={a.id} icon={Bot} title={a.name} href={format({ section: 'routines', night, task: a.id })} onClick={click(() => go({ task: a.id }))}
-                     subtitle={a.working ? a.step_words ?? STATE_WORD.running : a.report?.text.split('\n')[0] ?? STATE_WORD.done}
-                     meta={a.working ? <StateWord tone="running">{STATE_WORD.running}</StateWord> : undefined} />
+                     subtitle={a.working ? a.step_words ?? a.words : a.report?.text.split('\n')[0] ?? a.words}
+                     meta={a.working ? <StateWord tone={toneOf(a.tone)}>{a.words}</StateWord> : undefined} />
           ))}
         </div>
       )}
@@ -566,7 +571,7 @@ function RunPage({ id, night, go, active, schedules }: {
   return (
     <div className="routines-page">
       <PlaceHead level={1} crumbs={crumbs} title={r?.label ?? ''} titleAttr={r?.label}
-                 detail={r && <StateWord tone={RUN_TONE[r.state]}>{`${STATE_WORD[r.state]}, ${r.at}`}</StateWord>}
+                 detail={r && <StateWord tone={toneOf(r.tone)}>{`${r.words}, ${r.at}`}</StateWord>}
                  actions={r && (!FINISHED.includes(r.state)
                    ? <Button icon={CircleStop} loading={stop.busy} disabled={!online} onClick={() => void stop.run()}>Stop</Button>
                    : s && RETRIES.includes(r.state) && !r.retried
@@ -585,7 +590,7 @@ function RunPage({ id, night, go, active, schedules }: {
               {r.reason && <p className="routines-prose routines-prose--quiet">{r.reason}</p>}
               {r.error && r.error !== r.reason && <InlineError compact message={r.error} />}
               {r.result ? <div className="prose"><Markdown text={r.result} /></div>
-                : !r.reason && <p className="routines-prose routines-prose--quiet">{LIVE.includes(r.state) ? STATE_WORD[r.state] : 'No result'}</p>}
+                : !r.reason && <p className="routines-prose routines-prose--quiet">{LIVE.includes(r.state) ? r.words : 'No result'}</p>}
               <Facts grid items={[
                 ...(d.note && r.state === 'done' ? [{ label: 'Note', value: (
                   <a className="routines-link" href={format({ section: 'notebook', note: d.note })}
@@ -599,7 +604,7 @@ function RunPage({ id, night, go, active, schedules }: {
             </Section>
             {(s?.reviewer || cid) && (
               <Section id="r-talk" title="Turns">
-                {cid ? <Talk key={cid} cid={cid} active={active} waits={r.reason} /> : <p className="routines-prose routines-prose--quiet">{STATE_WORD.waiting}</p>}
+                {cid ? <Talk key={cid} cid={cid} active={active} waits={r.reason} /> : <p className="routines-prose routines-prose--quiet">{r.words}</p>}
               </Section>
             )}
             {nodes.length > 0 && (
@@ -628,7 +633,8 @@ function Talk({ cid, active, waits }: { cid: string; active: boolean; waits: str
   const convo = useConversation(active ? cid : null)
   const items = (convo.messages as ChatMessage[]).filter(m => (m.role === 'user' || m.role === 'assistant') && m.intercom?.from !== 'system:schedules'
     && m.content.trim())
-  const working = waitLine(convo.waiting) || waits || STATE_WORD.running
+  const running = useContext(States)?.running.words ?? ''
+  const working = waitLine(convo.waiting) || waits || running
   if (!items.length) return convo.conversation ? <p className="routines-prose routines-prose--quiet">{convo.running ? working : 'No turns'}</p> : <LoadingRow />
   return (
     <div className="routines-talk">
@@ -796,7 +802,7 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
                 <div className="routines-rows">
                   {theirs.map(r => (
                     <ListRow key={r.id} density="lg" title={dayShort(r.night)} subtitle={r.reason_why || r.error || undefined}
-                             cell={<StateWord tone={RUN_TONE[r.state]}>{STATE_WORD[r.state]}</StateWord>} meta={r.at}
+                             cell={<StateWord tone={toneOf(r.tone)}>{r.words}</StateWord>} meta={r.at}
                              href={format({ section: 'routines', night: r.night, run: r.id })} onClick={click(() => go({ night: r.night, run: r.id }))} />
                   ))}
                 </div>

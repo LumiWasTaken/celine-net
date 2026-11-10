@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Request
 
 from ..core.ids import iso
+from ..core.states import RUN, table
 from ..errors import CelineError, NotFound
 from ..settings import files, seed
 from ..settings.files import Invalid
@@ -177,11 +178,12 @@ async def preview(request: Request) -> dict:
 @router.get("/runs")
 async def list_runs(request: Request, night: str | None = None,
                     schedule: str | None = None, until: str | None = None) -> dict:
-    """{runs, nights, tonight}: the runs of `night` (default: tonight) or of one
+    """{runs, nights, tonight, states}: the runs of `night` (default: tonight) or of one
     `schedule` (its newest 50), oldest slot first; `nights` the NIGHTS nights up to
     `until` (default and at most tonight), newest first, each {night, failed: the newest
     try of one of its schedules failed or ended with an error, waiting: a run of it
-    waits for its model}. A run's `asked`: an approval waits in it or in a
+    waits for its model}; `states` every state of a run as {words, tone}, `planned` a
+    slot with no run yet. A run's `asked`: an approval waits in it or in a
     sub-agent of it (approvals.asked)."""
     from ..approvals import asked
     services = request.app.state.services
@@ -213,7 +215,8 @@ async def list_runs(request: Request, night: str | None = None,
     nights = [{"night": n, "failed": n in failed, "waiting": n in waiting} for n in
               ((last - timedelta(days=i)).isoformat() for i in range(NIGHTS))]
     runs = [{**r, "asked": r["conversation_id"] in waits} for r in runs]
-    return {"runs": runs, "nights": nights, "tonight": tonight.isoformat()}
+    return {"runs": runs, "nights": nights, "tonight": tonight.isoformat(),
+            "states": table(RUN)}
 
 
 @router.get("/runs/{rid}")

@@ -35,6 +35,7 @@ import anyio
 from .. import homes, metrics, prompts
 from ..conversations import store as conversations, tree
 from ..core.ids import now
+from ..core.states import TREE, said, table
 from ..skills import ToolContext, ToolResult, guide, knob, tool, described
 from ..settings import agent_models
 from ..skills import words
@@ -528,7 +529,8 @@ def max_running(cfg) -> int:
 def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
               agent: str | None = None, own: dict) -> list[dict]:
     """Sub-agents, newest first, as the overview shows them: who, where, its `home` and
-    `link` (homes.of: where it opens), working (report.quiet says), the step at work,
+    `link` (homes.of: where it opens), working (report.quiet says) with its `words` and
+    `tone` (core/states TREE), the step at work,
     the latest report, its last words. Those of `parent`, the one `agent`, or (neither
     given) every one not in the archive. `own`: the MCP servers' row words (store.tool_words)."""
     if agent:
@@ -543,7 +545,9 @@ def agents_of(c: sqlite3.Connection, parent: str | None = None, *,
         f"s.agent_device AS device, s.agent_template AS template, "
         f"s.created_at, s.updated_at FROM conversations s "
         f"{where} ORDER BY s.created_at DESC, s.id DESC", args).fetchall()
-    return [{**dict(r), **_look(c, r["id"], own), **homes.of(c, r["id"])} for r in rows]
+    out = [{**dict(r), **_look(c, r["id"], own), **homes.of(c, r["id"])} for r in rows]
+    # Running while it works, else Done, as the pages say it
+    return [{**a, **said(TREE, "working" if a["working"] else "done")} for a in out]
 
 
 def labelled(settings, agents: list[dict]) -> list[dict]:
@@ -564,7 +568,8 @@ def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
     parent, depth, name, state (queued, working, done, stopped, failed, paused; a
     mission's status: active, needs_you, done, stopped), reason (why it failed, stopped
     or paused; a mission's note), step_words, model (the newest that answered, else its
-    own), what all its turns took (report.work) and link. `origin`: where the top came
+    own), `words` and `tone` (its state as the pages say it, core/states TREE), what
+    all its turns took (report.work) and link. `states`: every state so. `origin`: where the top came
     from (homes.path above it: the run that started a mission); `total`: tokens and
     seconds of the top and everything under it. None: no such conversation."""
     top = homes.root(c, cid)
@@ -583,7 +588,8 @@ def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
         w = report.work(c, r["id"], whole=True)
         add(w)
         out.append({"id": r["id"], "kind": kind, "parent": parent, "depth": depth,
-                    "name": name, "state": state, "reason": reason, "step_words": step,
+                    "name": name, "state": state, **said(TREE, state), "reason": reason,
+                    "step_words": step,
                     "model": (w["models"] or [r["model_id"]])[-1],
                     "prompt_tokens": w["prompt_tokens"],
                     "completion_tokens": w["completion_tokens"],
@@ -613,7 +619,8 @@ def tree_of(c: sqlite3.Connection, cid: str, own: dict) -> dict | None:
     walk(top["id"], 1)
     return {"top": top["id"], "origin": homes.path(c, top["id"])[:-1],
             "agents": [n for n in out if n["kind"] == "agent"],
-            "missions": [n for n in out if n["kind"] == "mission"], "total": total}
+            "missions": [n for n in out if n["kind"] == "mission"], "total": total,
+            "states": table(TREE)}
 
 
 def queued_sql(conversation: str = "?") -> str:
