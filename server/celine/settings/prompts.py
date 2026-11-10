@@ -26,8 +26,8 @@ JUDGES: dict[str, tuple[str, str]] = {
                                               "instructions injected into outside text."),
     "guard.page": ("Injected instructions check", "Asks whether outside text holds "
                                                  "instructions aimed at {{name}}."),
-    "guard.patrol": ("Turn audit", "Audits one finished turn for prompt injection, sandbox "
-                                  "escape and destructive tool calls."),
+    "guard.patrol": ("Turn audit", "Audits one finished turn for prompt injection, data "
+                                  "exfiltration, sandbox escape and destructive tool calls."),
     "guard.review": ("Second look", "Takes a second look at a finding the first check "
                                     "confirmed."),
     "guard.reader": ("Your replies", "Reads your reply to one of Bastet's decisions."),
