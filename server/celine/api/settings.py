@@ -41,7 +41,7 @@ router = APIRouter(prefix="/api")
 @router.get("/providers")
 async def list_providers(request: Request, response: Response) -> dict:
     """Every provider with what the app last learned of it (backends/router.py: from its
-    requests); nothing is asked here, Check provider asks."""
+    requests); nothing is asked here, Check asks."""
     s = settings_of(request)
     router = views.model_router(services_of(request))
     return {"providers": [views.provider(s, pid, router) for pid in s.providers],
@@ -100,7 +100,7 @@ async def delete_provider(request: Request, pid: str,
 
 @router.post("/providers/{pid}/test")
 async def test_saved_provider(request: Request, pid: str) -> dict:
-    """Check provider: the provider asked now, strict (a timeout counts as down), and
+    """Check: the provider asked now, strict (a timeout counts as down), and
     its model list read once. Models that could not be loaded get another chance, and
     saved models pick up capabilities, context and thinking levels the server now
     reports. Returns the provider's view with its state."""

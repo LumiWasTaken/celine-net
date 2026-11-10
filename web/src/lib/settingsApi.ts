@@ -327,7 +327,7 @@ export const settingsApi = {
     request<ProviderView>(`/providers/${enc(saved?.id ?? 'comfyui')}`,
                           json('PUT', { kind: 'comfyui', label: saved?.provider.label ?? 'ComfyUI', base_url, models: saved?.provider.models ?? {} })),
   deleteProvider: (pid: string) => del<{ deleted: boolean }>(`/providers/${enc(pid)}`),
-  /** "Check provider": the provider's state, asked now */
+  /** Check: the provider's state, asked now */
   test: (pid: string) => post<ProviderView>(`/providers/${enc(pid)}/test`),
   /** no kind: the server says what it is (`kind` in the answer; null when it could not tell) */
   testNew: (body: { kind?: ProviderKind; base_url?: string; key?: string }) =>

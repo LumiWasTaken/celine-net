@@ -7,7 +7,7 @@ Everything here comes from the servers' own answers, nothing from guesses or tim
   a proxy's 502 says down; a busy answer or an error is the model's state. A server is
   asked directly (`probe`, a GET with a PROBE_TIMEOUT timeout) only:
   1. once each at startup (`check_all`, __main__);
-  2. on Check provider (Settings, Models), and once when a new provider is saved;
+  2. on Check (Settings, Models), and once when a new provider is saved;
   3. once after a request landed on a model the server did not list as loaded (a
      swap: `note_ok`), so what it has loaded is known again;
   4. when a request got no event for FIRST_EVENT seconds on a server that says what it
@@ -68,7 +68,7 @@ Everything here comes from the servers' own answers, nothing from guesses or tim
    A failure is the model's state only while it is current: every probe forgets a
    could-not-load failure once its cause is gone (the model is loaded now, or what
    was loaded then was freed), a later answer from the model forgets any failure,
-   and Check provider forgets them all. So a failure from hours ago never shows as
+   and Check forgets them all. So a failure from hours ago never shows as
    the model's state now.
 
 Images never change the order: the model that answers gets them as it can take them
@@ -431,7 +431,7 @@ class Router:
     async def probe(self, pid: str, *, max_age: float = PROBE_TTL,
                     strict: bool = False) -> ProviderState:
         """The provider's state, asked again when older than `max_age` seconds
-        (0: always, as Check provider asks). `strict`: a timeout marks it down even when
+        (0: always, as Check asks). `strict`: a timeout marks it down even when
         it was up (`_failed`)."""
         if (st := self._fresh(pid, max_age)) is not None:
             return st
@@ -614,7 +614,7 @@ class Router:
             await self._look(pid, chain)
 
     async def discover(self, pid: str) -> list[dict[str, Any]] | None:
-        """The provider's own model list (settings/kinds.py), read now: Check provider,
+        """The provider's own model list (settings/kinds.py), read now: Check,
         and once each time it comes back (`_came_back`); a read already in flight is
         shared. The context it states for each model is the window turns budget with
         (turns/tokens.py), over the number in Settings; not Ollama's (Settings is its
@@ -688,7 +688,7 @@ class Router:
             cleared = []
             for ref in [r for r in self._models if r.partition("/")[0] == pid]:
                 # a server that came back (maybe restarted), or a probe asked fresh
-                # (Check provider): its models get another chance to load; otherwise
+                # (Check): its models get another chance to load; otherwise
                 # only the failures whose cause is gone
                 if back or fresh or _cause_gone(self._models[ref], ref.partition("/")[2],
                                                 loaded):

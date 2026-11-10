@@ -175,7 +175,7 @@ def _offline_router(monkeypatch):
     shim.Client = client(httpx.Client)
     shim.AsyncClient = client(httpx.AsyncClient)
     monkeypatch.setattr(router_mod, "httpx", shim)
-    from celine.settings import kinds   # discovery too (the ping, "Check provider")
+    from celine.settings import kinds   # discovery too (the ping, Check)
     monkeypatch.setattr(kinds, "_client", lambda transport=None, timeout=8.0: client(
         httpx.AsyncClient)(timeout=timeout, transport=transport))
     kinds.reset()

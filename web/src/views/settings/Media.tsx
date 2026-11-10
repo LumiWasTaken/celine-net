@@ -1,6 +1,6 @@
 /* Images & Music (/settings/media), listed while the Images or the Music feature is on:
    the ComfyUI server (its Address, saved when the field is left; its key; its options,
-   each saved on change; Check provider; Remove this provider), then the presets of each
+   each saved on change; Check; Remove this provider), then the presets of each
    kind that is on (Presets.tsx). The one place ComfyUI is set up in Settings: the Models
    page leaves it out. Every state comes from the server (the provider's, each feature's
    probe). API: lib/settingsApi.ts, lib/media.ts. */
@@ -34,7 +34,7 @@ export function Media() {
 
   return (
     <Page title="Images & Music" detail={comfy && <ReachWord p={comfy} />}
-          actions={comfy && <Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check provider</Button>}
+          actions={comfy && <Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check</Button>}
           more={comfy ? [{ label: 'Remove this provider', icon: Trash2, danger: true, disabled: comfy.used_by.length > 0 || !online,
                            title: comfy.used_by.length ? `Used for ${comfy.used_by.join(', ')}` : undefined, onSelect: () => setRemoving(true) }] : undefined}>
       {!providers.data ? <Section><Loaded res={providers} /></Section> : <>

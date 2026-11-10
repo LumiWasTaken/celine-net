@@ -1,5 +1,5 @@
 """Settings, Models shows what the app last learned of each provider: opening the page
-asks no server, a new provider is asked once when it is saved, and Check provider asks
+asks no server, a new provider is asked once when it is saved, and Check asks
 now, strict, and reads its model list once."""
 from __future__ import annotations
 

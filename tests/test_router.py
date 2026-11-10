@@ -172,7 +172,7 @@ async def test_the_context_the_server_reports_wins_over_settings(tmp_path, monke
     server first answers (the modality router's /v1/models) wins for a model that is not
     loaded yet, so its first turn budgets with the new number. Ollama's list counts for
     its caps only: Settings is its num_ctx, the list says the model's most. The list is
-    read again on Check provider, never on a timer."""
+    read again on Check, never on a timer."""
     import asyncio
     from types import SimpleNamespace
     from celine.turns import tokens
@@ -210,7 +210,7 @@ async def test_the_context_the_server_reports_wins_over_settings(tmp_path, monke
     ctx["big"] = 196608
     await r.order("chat")
     assert tokens.window(big) == 262144, "a request reads no list"
-    await r.discover("swap")                            # "Check provider"
+    await r.discover("swap")                            # Check
     assert tokens.window(big) == 196608
     ctx["big"] = None
     await r.discover("swap")

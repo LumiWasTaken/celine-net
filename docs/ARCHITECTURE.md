@@ -616,7 +616,7 @@ through the same Router (below) but do not queue here.
   them.
   `order(task)` gives the task's models that can answer now, in order, and a sentence for
   each one left out: no key yet, provider unreachable, could not be loaded (left out
-  until the set of loaded models on that server changes, Check provider, or a change of
+  until the set of loaded models on that server changes, Check, or a change of
   the model's settings). A cloud model is an
   entry like any other: a model in a role's list is the user's pick, fallback included. Every change goes out once as
   `models.state` on the global feed and is logged once.
@@ -626,7 +626,7 @@ through the same Router (below) but do not queue here.
   model's state, in the server's words (`Router.problem`). A server is asked directly
   (its own cheap GET, 2 s timeout) only:
   1. once each at startup (`check_all`);
-  2. on Check provider, and once when a new provider is saved or a provider's key is
+  2. on Check, and once when a new provider is saved or a provider's key is
      stored (`saves.provider_key`);
   3. once after a request landed on a model the server did not list as loaded (a swap),
      and once after a GPU lease unloaded its models;
@@ -641,7 +641,7 @@ through the same Router (below) but do not queue here.
      turn of its own is held.
   Nothing polls, and no time of how long anything was down is kept. A probe that times out keeps a server seen up as up (a busy box lists its
   models late); a strict probe or a failed request marks it down. A server's model list
-  (context, caps) is read when it first answers and on Check provider. The state is in
+  (context, caps) is read when it first answers and on Check. The state is in
   `GET /api/status` (`hosts`) and the metrics `celine_host_up` and
   `celine_host_down_total`.
 - **Paused.** While every model of the chat and tasks roles is on a provider seen

@@ -173,7 +173,7 @@ block at the end of this file lists the words no UI string uses.
 | Decision model, Second look model | Bastet's two models on the Guard Setup step and Settings, Guard: the one that decides (the Decision model role on Settings, Models), the one that looks again; each one's "?" is the server's help (guard/view.py PAGE_HELP) | First look and Second look in Events |
 | Decision model (a role) | Settings, Models: Bastet's own role, the models that decide and write its notes and answers (settings/registry.py ROLES); the same name as its pick on Settings, Guard | as Settings, Guard |
 | About {thing} | the accessible name of a "?" (Help) after a name: About Context, About Tasks | Apple, Google "About" |
-| Address, Check | a service's address and the button that saves and tests it (its Setup step, Settings, Features, Edit; the Vault form too); its help is "The shellbox's address, such as http://shellbox:8770."; an error about it ends with what to do, then press Check | plain; Check as in Check provider |
+| Address, Check | a service's address and the button that saves and tests it (its Setup step, Settings, Features, Edit; the Vault form too); its help is "The shellbox's address, such as http://shellbox:8770."; an error about it ends with what to do, then press Check | plain; the same Check on a provider's page (Models, Images & Music) |
 | Connect a model | the Setup step that saves the first provider and picks its chat model | ChatGPT desktop "Connect", LM Studio "Connect to server" |
 | Type, Auto-detect | a provider's type (never kind, also in errors: "The type must be one of"), the first row of its form (Setup, Add provider, a provider's edit dialog); Auto-detect, first and chosen at the start, lets the server say what answers at the address | Windows "Type"; printers, Wi-Fi "Auto-detect" |
 | Pick the type if you know it. | the tail of the sentence after a Check with Auto-detect found no known kind | plain |
@@ -352,7 +352,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Apply | use the picked settings or filter | everyone |
 | Change, Change model | pick another value or model | ChatGPT "Change model" |
 | Default, <model> | the model chooser's first row, and the Model row while none is picked: the model a chat (or a mission) comes to without its own | ChatGPT "Default" model; macOS "Default" |
-| Check and add, Check email, Check provider, Checking | test a connection (and add it when it works); Checking while it runs | Thunderbird "Check mail", Open WebUI "Verify connection" |
+| Check and add, Check email, Checking | test a connection (and add it when it works); Checking while it runs | Thunderbird "Check mail", Open WebUI "Verify connection" |
 | Check again | ask a feature's probe anew (the Features page, the onboarding); read the browser's notification permission anew (Notifications) | Chrome "Check again" (connectivity), macOS Software Update "Check Again" |
 | Choose channels, Choose chats | pick what the connection reads (WhatsApp and Discord chats: their apps' word stays) | WhatsApp "Choose chats" |
 | Clear recent searches | empty the recent searches | Google, YouTube |

@@ -226,7 +226,7 @@ function ProviderPage({ p, providers, kinds, cloudHelp, onChanged, onSaved }: {
 
   return (
     <Page title={cfg.label} up={{ page: 'models', label: 'Models' }} detail={<ReachWord p={p} />}
-          actions={<Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check provider</Button>}
+          actions={<Button icon={RefreshCw} loading={check.busy} disabled={!online} onClick={() => void check.run()}>Check</Button>}
           more={[{ label: 'Edit', icon: Pencil, disabled: !online, onSelect: () => setRenaming(true) },
                  { label: 'Remove this provider', icon: Trash2, danger: true, disabled: p.used_by.length > 0 || !online,
                    title: p.used_by.length ? `Used for ${p.used_by.join(', ')}` : undefined, onSelect: () => setRemove(true) }]}>

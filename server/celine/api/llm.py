@@ -20,7 +20,7 @@ async def queue(request: Request) -> dict:
 @router.get("/loaded-models")
 async def loaded(request: Request) -> dict:
     """What the model servers had loaded when the app last asked them (a model's first
-    answer, a load, Check provider); nothing is asked here: {models: [{ref, loaded,
+    answer, a load, Check); nothing is asked here: {models: [{ref, loaded,
     loading, load_seconds}]} (backends/router.py loaded_view). `model.loaded` says the same when
     it changes."""
     llm = request.app.state.services.llm

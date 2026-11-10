@@ -23,7 +23,7 @@ from ..errors import answered, said
 # (`probe`: the path under the address root, "/..." on the server root), how that answer
 # lists the loaded models (`loaded`: llama-swap's /running, Ollama's /api/ps, a /models
 # list; None: it does not say), and whether it has a model list that states each model's
-# context and caps (`lists`; the router reads it on first answer and on Check provider).
+# context and caps (`lists`; the router reads it on first answer and on Check).
 KINDS: dict[str, dict[str, Any]] = {
     "llama-swap": {"label": "llama-swap", "backend": "llama-server", "key": "optional",
                    "probe": "/running", "loaded": "running", "lists": True},

@@ -29,7 +29,7 @@ export function Page({ title, help, detail, actions, more, children, wide = fals
   help?: string
   /** a muted state beside the title (a provider's health) */
   detail?: ReactNode
-  /** the page's own action in its head (Check provider) */
+  /** the page's own action in its head (Check) */
   actions?: ReactNode
   /** the page's rare actions behind "..." (Remove this provider) */
   more?: MenuItem[]
