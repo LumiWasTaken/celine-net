@@ -22,19 +22,29 @@ def keeps_going(plan: dict | None) -> bool:
     return plans.is_open(plan) and not plan["waiting"]
 
 
+MARK = {"done": "[x]", "doing": "[>]", "todo": "[ ]"}
+
+
+def step_lines(steps: list[dict]) -> list[str]:
+    """Each step as one line: its mark, number and title, then where it asks the user
+    and the model it runs on."""
+    out = []
+    for n, s in enumerate(steps, 1):
+        extra = [x for x in ("ask {{username}} when done" if s.get("checkpoint") == "ask"
+                             else "", f"model {s['model']}" if s.get("model") else "") if x]
+        out.append(f"{MARK[s['state']]} {n}. {s['title']}" +
+                   (f" ({', '.join(extra)})" if extra else ""))
+    return out
+
+
 def block(plan: dict | None) -> str | None:
     """The plan as it reads it, {{username}} unsubstituted; None when it is empty."""
     if not plan or not (plan["steps"] or plan["text"].strip()):
         return None
-    mark = {"done": "[x]", "doing": "[>]", "todo": "[ ]"}
     lines = ["Your plan here (plan__step moves a step, plan__set rewrites it):"]
     if plan["text"].strip():
         lines.append(plan["text"].strip())
-    for n, s in enumerate(plan["steps"], 1):
-        extra = [x for x in ("ask {{username}} when done" if s["checkpoint"] == "ask"
-                             else "", f"model {s['model']}" if s["model"] else "") if x]
-        lines.append(f"{mark[s['state']]} {n}. {s['title']}" +
-                     (f" ({', '.join(extra)})" if extra else ""))
+    lines += step_lines(plan["steps"])
     if plan["waiting"]:
         lines.append("You asked {{username}} at a checkpoint: go on when they answer.")
     elif plans.is_open(plan):

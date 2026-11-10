@@ -451,6 +451,7 @@ async def test_a_long_wait_for_a_model_ends_the_call_stale_and_sends_nothing(
     from celine.backends import llm as llm_mod
     llm, nets = routed(tmp_path, monkeypatch, {"chat": {"chain": ["main/big"]}})
     monkeypatch.setattr(llm_mod, "time", SimpleNamespace(monotonic=clock))
+    monkeypatch.setattr(llm_mod, "RECHECK", 0.01)     # the wait looks again at once
 
     async def probe(pid, **_):
         return llm.router.provider_state(pid)

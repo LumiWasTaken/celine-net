@@ -19,7 +19,8 @@ KINDS = ("agent", "bastet", "routine", "mission", "lyrics", "prompt")
 PAGE = 50
 CUT = 80                       # the most characters of a sentence a change line quotes
 _SENTENCE = re.compile(r"[^.!?\n]+[.!?]*")
-_DASHES = re.compile(r"\s*(?:[\u2013\u2014]| \u00b7 )\s*")
+# a dash or a middle dot between words, with the spaces around it: becomes a comma
+DASHES = re.compile(r"\s*(?:[\u2012-\u2015]| \u00b7 )\s*")
 
 
 def sentences(text: str) -> list[str]:
@@ -27,7 +28,7 @@ def sentences(text: str) -> list[str]:
 
 
 def _quote(s: str) -> str:
-    s = _DASHES.sub(", ", s)
+    s = DASHES.sub(", ", s)
     return s if len(s) <= CUT else s[:CUT - 1].rstrip() + "\u2026"
 
 

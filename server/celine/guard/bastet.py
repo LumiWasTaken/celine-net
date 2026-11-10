@@ -9,8 +9,8 @@ the template itself when no model answers.
 from __future__ import annotations
 
 import logging
-import re
 
+from ..texts import DASHES
 from . import rules
 
 log = logging.getLogger("celine.guard")
@@ -82,13 +82,12 @@ INTRO = ("I am Bastet, I guard this house for you and {{user}}. You can write to
 UNFROZEN_BY_USER = "{{user}} froze you at {at}: {why}. {{user}} unfroze you at {back}."
 
 
-_DASHES = re.compile(r"\s*[\u2012-\u2015]\s*| \u00b7 ")
 
 
 def undash(text: str) -> str:
     """A model's or a page's words as it and the owner read them: a dash or a " \u00b7 "
     becomes a comma."""
-    return _DASHES.sub(", ", text)
+    return DASHES.sub(", ", text)
 
 
 def sentence(why: str | None) -> str:

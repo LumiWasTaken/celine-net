@@ -18,7 +18,7 @@ from ..conversations import store as conversations
 from ..core import ids
 from ..core.ids import clock, iso, parse_when, when
 from . import store as missions
-from ..plans.flow import chat_models
+from ..plans.flow import chat_models, step_lines
 from ..skills import ToolContext, ToolResult, guide, tool, described
 from ..clock import zone
 from ..turns.compact import one_line
@@ -292,11 +292,8 @@ class Missions:
                  if where else "Reports to {{username}}."]
         if row["artifact"]:
             lines.append(f"Delivered: {row['artifact']}.")
-        mark = {"done": "[x]", "doing": "[>]", "todo": "[ ]"}
         lines.append("Plan:" if row["steps"] else "No plan yet.")
-        lines += [f"{mark[s['state']]} {n}. {s['title']}" +
-                  (" (ask {{username}} when done)" if s.get("checkpoint") == "ask" else "")
-                  for n, s in enumerate(row["steps"], 1)]
+        lines += step_lines(row["steps"])
         if subs:
             lines.append("Sub-agents:")
             for a in subs:
