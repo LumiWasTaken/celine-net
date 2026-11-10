@@ -167,16 +167,18 @@ type View = {
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
-/** a message it sent (intercom__send): `Message to user`, or with a time `Reminder 17:21`
-    (to itself) and `Message to user 17:21`, and its text */
+/** a message it sent (intercom__send): `Message to Ana` (display.to_name, the server's
+    names for the recipients), or with a time `Reminder 17:21` (to itself) and
+    `Message to Ana 17:21`, and its text */
 function reminderWords(call: ToolCall) {
   const d = call.display
   const a = argsOf(call)
   const due = str(d?.due_at)
   const time = due ? stamp(due) : ''
   const to = str(d?.to) ?? str(a?.to)
+  const toName = str(d?.to_name)
   const label = to === 'me' ? `Reminder ${time}`.trim()
-    : `Message to ${to ?? ''} ${time}`.trim()
+    : `${toName ? `Message to ${toName}` : 'Message'} ${time}`.trim()
   const cancelLabel = `Cancel the ${to === 'me' ? 'reminder' : 'message'} at ${time}`
   return { label, cancelLabel, text: str(d?.text) ?? str(a?.text) ?? '' }
 }

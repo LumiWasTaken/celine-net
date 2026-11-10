@@ -201,8 +201,11 @@ class IntercomSkill:
                                       f"or a conversation id.",
                               is_error=True)
         iid = out["intercom_id"]
-        tid, stored = await ctx.store.read(lambda c: tuple(c.execute(
-            "SELECT thread, to_addr FROM intercom WHERE id=?", (iid,)).fetchone()))
+        def sent(c):
+            r = c.execute("SELECT thread, to_addr FROM intercom WHERE id=?", (iid,)).fetchone()
+            names = ", ".join(rows.name_of(c, a) or "Everyone" for a in r[1].split(", "))
+            return r[0], r[1], names
+        tid, stored, to_name = await ctx.store.read(sent)
         if GUARD in stored.split(", "):
             from ..guard import talk         # Bastet answers, as background work
             await talk.heard(self.app, iid, ctx.conversation_id,
@@ -215,7 +218,8 @@ class IntercomSkill:
         if told is not None:
             said = f"{told.content} {said}"
         return ToolResult(content=said, display={
-            "id": iid, "to": to, "text": text, "due_at": iso(due) if due else None})
+            "id": iid, "to": to, "to_name": to_name, "text": text,
+            "due_at": iso(due) if due else None})
 
     async def _to_user(self, ctx: ToolContext, text: str, subject: str | None,
                        due: datetime | None, files: list[str]) -> ToolResult | None:
@@ -228,7 +232,8 @@ class IntercomSkill:
         cid, user = ctx.conversation_id, self.cfg.user
         kind = await ctx.store.read(lambda c: (c.execute(
             "SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
-        shown = {"to": "user", "text": text, "due_at": iso(due) if due else None}
+        shown = {"to": "user", "to_name": rows.NAMES["user"], "text": text,
+                 "due_at": iso(due) if due else None}
         if kind == "chat" and due is None and ctx.turn_id and await ctx.store.read(
                 lambda c: (rows.answering(c, cid, ctx.turn_id) or {"from_addr": ""})
                 ["from_addr"] == "user"):
