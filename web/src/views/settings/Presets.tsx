@@ -63,7 +63,7 @@ export function Presets({ kind, providers, roles, onChanged }: {
             const facts = [p.family, TASK[p.task], p.size && `${p.size.width}x${p.size.height}`].filter(Boolean).join(', ')
             return (
               <Card key={p.id} title={p.label} subtitle={facts} selected={open === p.id}
-                    meta={at >= 0 ? <span title={`Used ${at === 0 ? 'first' : `as number ${at + 1}`}`}><Step n={at + 1} /></span> : undefined}
+                    meta={at >= 0 && chain.length > 1 ? <span title={`Used ${at === 0 ? 'first' : `as number ${at + 1}`}`}><Step n={at + 1} /></span> : undefined}
                     onClick={() => setOpen(o => (o === p.id ? null : p.id))}
                     menu={[
                       ...(at >= 0 ? [
@@ -74,7 +74,7 @@ export function Presets({ kind, providers, roles, onChanged }: {
                       ] : []),
                       { label: 'Download workflow', icon: Download, onSelect: () => { window.location.href = workflowUrl(p.id) } },
                     ]}
-                    actions={<Switch label="On" checked={at >= 0} disabled={busy || (at < 0 && comfy.length === 0)}
+                    actions={<Switch label={p.label} hideLabel checked={at >= 0} disabled={busy || (at < 0 && comfy.length === 0)}
                                      onChange={on => void (on ? use.run(p) : save.run(chain.filter(r => r !== p.ref)))} />}>
                 {p.good_at && <span className="preset__about">{p.good_at}</span>}
               </Card>
