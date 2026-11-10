@@ -12,8 +12,8 @@ export class SectionBoundary extends Component<{ children: ReactNode }, { error:
     if (!error) return this.props.children
     const chunk = /dynamically imported module|Importing a module script failed|Loading chunk|ChunkLoadError/i.test(`${error.name} ${error.message}`)
     return (
-      <Notice tone="error" action={{ label: 'Retry', onClick: () => (chunk ? location.reload() : this.setState({ error: null })) }}>
-        {error.message}
+      <Notice tone="error" action={{ label: chunk ? 'Reload' : 'Retry', onClick: () => (chunk ? location.reload() : this.setState({ error: null })) }}>
+        {chunk ? 'The app was updated.' : error.message}
       </Notice>
     )
   }
