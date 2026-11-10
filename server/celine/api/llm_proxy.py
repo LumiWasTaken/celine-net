@@ -50,7 +50,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from .. import keys, metrics
+from .. import keys, metrics, prompts
 from ..backends.queue import Priority, Ticket
 from ..core.ids import iso, reached
 from ..settings import agent_models
@@ -225,8 +225,7 @@ async def _forward(request: Request, path: str):
     from ..guard.freeze import frozen
     if await frozen(services.store) is not None:
         return _error(403, services.cfg.substitute(
-            "You are frozen. Nothing runs until {{user}} unfreezes you."),
-            "permission_error")
+            prompts.text(__file__, "frozen.md").strip()), "permission_error")
     s = getattr(services.cfg, "settings", None)
     if services.llm is None or s is None:
         return _error(503, "The app's models are not running.", "unavailable")
