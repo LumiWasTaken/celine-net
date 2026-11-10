@@ -106,7 +106,7 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
   const ended = !!turn && !RUNNING.includes(turn.state)
   // the provider is busy: Switch provider or Keep waiting, in place of Continue and Retry
   const busyTurn = ended && turn.state === 'failed' && turn.reason_code === 'busy'
-  // your message has no answer: Regenerate, in place of Continue and Retry
+  // your message has no answer: Regenerate (Retry when its turn failed), in place of Continue and Retry
   const regen = !busyTurn && !!unanswered
   // no turn ever took it ("Not sent."): Send, as nothing was generated to regenerate
   const unsent = regen && !unanswered.turn_id
@@ -162,7 +162,7 @@ export function TurnEnd({ conversationId, turn, running, error, unanswered, onRe
       {(canContinue || canRetry || regen) && (
         <Button size="sm" icon={canContinue ? Play : unsent ? Send : RefreshCw} loading={busy} disabled={!online} title={online ? undefined : OFFLINE_TITLE}
                 onClick={e => { const el = e.currentTarget; void act(canContinue ? () => conversationApi.continueTurn(conversationId, turn!.id) : onRetry, el) }}>
-          {canContinue ? 'Continue' : unsent ? 'Send' : regen ? 'Regenerate' : 'Retry'}
+          {canContinue ? 'Continue' : unsent ? 'Send' : regen && !lost ? 'Regenerate' : 'Retry'}
         </Button>
       )}
       {failed && <InlineError compact message={failed} />}
