@@ -4,9 +4,11 @@
                                       on the first send
    /chat/<conversation id>            one chat; a mission moves to /mission/<id>
    /missions                          Missions: the missions
+   /missions/sub-agents               Missions: the missions' sub-agents
    /mission/<conversation id>         a mission's page, or one of its sub-agents' transcript
    /routines  /routines/<night>       Routines: the night's timeline of runs (a date, default
                                       the server's tonight)
+   /routines/<night>/schedules        the same day with the schedules listed; /triggers the triggers
    /routines/<night>/run/<run id>     the same with a run open beside it
    /routines/<night>/schedule/<name>  the same with a schedule open to edit; `new` for a new one
    /routines/<night>/schedule/<name>/edit/<key>[/history]   one of its prompts in the large
@@ -62,8 +64,8 @@ export type Section = 'celine' | 'missions' | 'routines' | 'notebook' | 'termina
 
 export type Route =
   | { section: 'celine'; conversation?: string }
-  | { section: 'missions'; conversation?: string }
-  | ({ section: 'routines'; night?: string; run?: string; schedule?: string; task?: string } & Editing)
+  | { section: 'missions'; conversation?: string; list?: 'sub-agents' }
+  | ({ section: 'routines'; night?: string; list?: 'schedules' | 'triggers'; run?: string; schedule?: string; task?: string } & Editing)
   | { section: 'notebook'; note?: string; edit?: boolean; history?: boolean }
   | { section: 'terminals'; mission?: string; terminal?: string; reply?: string }
   | { section: 'browser' }
@@ -112,7 +114,7 @@ function parse(pathname: string, search = ''): Parsed {
     case 'chat':
       return a ? { route: { section: 'celine', conversation: a } } : { route: { section: 'celine' }, redirect: true }
     case 'missions':
-      return { route: { section: 'missions' } }
+      return a === 'sub-agents' ? { route: { section: 'missions', list: a }, redirect: !!b } : { route: { section: 'missions' }, redirect: !!a }
     case 'mission':
       return a ? { route: { section: 'missions', conversation: a } } : { route: { section: 'missions' }, redirect: true }
     case 'routines': {
@@ -126,6 +128,7 @@ function parse(pathname: string, search = ''): Parsed {
         return { route: { section: 'routines', night, schedule: c }, redirect: !!d }
       }
       if (b === 'task' && c) return { route: { section: 'routines', night, task: c } }
+      if (b === 'schedules' || b === 'triggers') return { route: { section: 'routines', night, list: b }, redirect: !!c }
       return { route: { section: 'routines', night }, redirect: !!b }
     }
     case 'notebook': {
@@ -220,11 +223,11 @@ export function format(r: Route): string {
     case 'celine':
       return r.conversation ? `/chat/${e(r.conversation)}` : '/new_chat'
     case 'missions':
-      return r.conversation ? `/mission/${e(r.conversation)}` : '/missions'
+      return r.conversation ? `/mission/${e(r.conversation)}` : '/missions' + (r.list ? `/${r.list}` : '')
     case 'routines':
       if (!r.night) return '/routines'
       return `/routines/${r.night}` + (r.run ? `/run/${e(r.run)}` : r.schedule ? `/schedule/${e(r.schedule)}${r.edit ? editPath(r) : ''}`
-        : r.task ? `/task/${e(r.task)}` : '')
+        : r.task ? `/task/${e(r.task)}` : r.list ? `/${r.list}` : '')
     case 'notebook':
       return '/notebook' + (r.note ? `?note=${e(r.note)}${r.history ? '&history=1' : r.edit ? '&edit=1' : ''}` : '')
     case 'terminals':

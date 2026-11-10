@@ -66,7 +66,7 @@ type Node = {
   schedule?: Schedule
 }
 type View = 'runs' | 'schedules' | 'triggers'
-type Open = { night?: string; run?: string; schedule?: string; task?: string; edit?: string; history?: boolean }
+type Open = { night?: string; list?: 'schedules' | 'triggers'; run?: string; schedule?: string; task?: string; edit?: string; history?: boolean }
 
 const weekdayOf = (night: string) => new Date(`${night}T12:00:00`).toLocaleDateString(LOCALE, { weekday: 'short' })
 /** in a row: "Sat 10 Oct" */
@@ -108,7 +108,7 @@ export function Routines({ active }: { active: boolean }) {
   const last = useRef<Extract<Route, { section: 'routines' }>>({ section: 'routines' })
   if (nav.route.section === 'routines') last.current = nav.route
   const route = last.current
-  const [view, setView] = useState<View>('runs')
+  const view: View = route.list ?? 'runs'
   const schedules = useResource(signal => routinesApi.schedules(signal), [], { events: ev => ev.type === 'settings.changed' })
   const night = route.night ?? schedules.data?.tonight
   // the strip's last day: today, or an older one after Earlier (or a link to an old day)
@@ -156,7 +156,7 @@ export function Routines({ active }: { active: boolean }) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       if (e.key === 'Escape') {
         if (isTyping(e.target)) (e.target as HTMLElement).blur()
-        else if (detail && !route.edit) { e.preventDefault(); go({}) }
+        else if (detail && !route.edit) { e.preventDefault(); go(route.schedule ? { list: 'schedules' } : route.task ? { list: 'triggers' } : {}) }
         return
       }
       if (isTyping(e.target) || !night || detail) return
@@ -178,7 +178,7 @@ export function Routines({ active }: { active: boolean }) {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const toList = (v: View) => { setView(v); if (detail) go({}) }
+  const toList = (v: View) => go({ list: v === 'runs' ? undefined : v })
   const error = schedules.error ?? runs.error
   const s = route.schedule && route.schedule !== 'new' ? byName.get(route.schedule) ?? null : null
   const draft = (name: string) => {
@@ -199,14 +199,14 @@ export function Routines({ active }: { active: boolean }) {
     )
     : route.run ? <RunPage key={route.run} id={route.run} night={night} go={go} active={active} schedules={byName} />
     : route.schedule ? (
-      route.schedule !== 'new' && !s ? <Missing title="Schedules" onBack={() => go({})} loaded={!!schedules.data} />
+      route.schedule !== 'new' && !s ? <Missing title="Schedules" onBack={() => go({ list: 'schedules' })} loaded={!!schedules.data} />
         : <SchedulePage key={route.schedule} name={route.schedule} s={s} all={schedules.data?.schedules ?? []} roles={schedules.data?.roles ?? []}
                         words={schedules.data}
                         night={night} draft={draft(route.schedule)} onDraft={d => drafts.current.set(route.schedule!, d)} save={save}
                         onSaved={name => { drafts.current.delete(route.schedule!); schedules.reload(); runs.reload(); go({ schedule: name }, true) }}
-                        onDeleted={() => { drafts.current.delete(route.schedule!); schedules.reload(); setView('schedules'); go({}) }} go={go} />
+                        onDeleted={() => { drafts.current.delete(route.schedule!); schedules.reload(); go({ list: 'schedules' }) }} go={go} />
     )
-    : route.task ? <TaskPage key={route.task} id={route.task} night={night} tasks={tasks.data ?? []} triggers={triggers.data} active={active} go={go} onBack={() => { setView('triggers'); go({}) }} />
+    : route.task ? <TaskPage key={route.task} id={route.task} night={night} tasks={tasks.data ?? []} triggers={triggers.data} active={active} go={go} />
     : view === 'schedules' ? <SchedulesList list={list} night={night} all={schedules.data?.schedules ?? []} go={go} onChange={schedules.reload} />
     : view === 'triggers' ? <TriggersList list={list} triggers={triggers} tasks={tasks} night={night} go={go} />
     : (
@@ -511,9 +511,9 @@ const isTaskEvent = (ev: { type: string }) => ev.type === 'conversation.created'
 
 /* What a trigger started, or one of its sub-agents: its sub-agents, the talk and a box to
    write in */
-function TaskPage({ id, night, tasks, triggers, active, go, onBack }: {
+function TaskPage({ id, night, tasks, triggers, active, go }: {
   id: string; night: string; tasks: { id: string; title: string; trigger: string | null }[]; triggers: Trigger[] | undefined; active: boolean
-  go: (r: Open) => void; onBack: () => void
+  go: (r: Open) => void
 }) {
   const agents = useAgents()
   const convo = useConversation(id)
@@ -521,12 +521,16 @@ function TaskPage({ id, night, tasks, triggers, active, go, onBack }: {
   const agent = agents.find(a => a.id === id)
   const kids = agents.filter(a => a.parent === id)
   const title = t ? t.title || triggerLabel(triggers, t.trigger) || 'Background task' : agent?.name ?? convo.conversation?.title ?? ''
-  const parent = agent && tasks.find(b => b.id === agent.parent)
-  const crumbs: Crumb[] = [{ label: 'Triggers', onClick: e => { e.preventDefault(); onBack() } },
-                           ...(parent ? [{ label: parent.title || triggerLabel(triggers, parent.trigger) || 'Background task', href: format({ section: 'routines', night, task: parent.id }) }] : [])]
+  // the run's day or Triggers, then the chain above it as the server names it (homes.path)
+  const path = convo.conversation?.path ?? []
+  const top: Crumb = path[0]?.kind === 'run'
+    ? { label: dayShort(night), href: format({ section: 'routines', night }), onClick: e => { e.preventDefault(); go({}) } }
+    : { label: 'Triggers', href: format({ section: 'routines', night, list: 'triggers' }), onClick: e => { e.preventDefault(); go({ list: 'triggers' }) } }
+  const crumbs: Crumb[] = convo.conversation ? [top, ...path.slice(0, -1).map(c => ({ label: c.name, href: c.link ?? undefined }))] : []
   return (
     <div className="routines-page">
-      <PlaceHead level={1} crumbs={crumbs} title={title} titleAttr={title} actions={<PlanButton plan={convo.plan} />} />
+      <PlaceHead level={1} crumbs={crumbs} title={title} titleAttr={title} actions={<PlanButton plan={convo.plan} />}
+                 detail={agent && <StateWord tone={toneOf(agent.tone)}>{agent.words}</StateWord>} />
       {kids.length > 0 && (
         <div className="routines-kids">
           {kids.map(a => (
@@ -711,7 +715,7 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
   const others = all.filter(o => o.name !== name)
   const cycle = followers(all, fresh ? null : name)
   const edit = (k: TextKey) => go({ schedule: name, edit: k })
-  const crumbs: Crumb[] = [{ label: 'Schedules', onClick: e => { e.preventDefault(); onDeleted() } }]
+  const crumbs: Crumb[] = [{ label: 'Schedules', href: format({ section: 'routines', night, list: 'schedules' }), onClick: e => { e.preventDefault(); onDeleted() } }]
   const runs = useResource(signal => routinesApi.runsOf(name, signal), [name], { enabled: !fresh, events: isRunEvent })
   const theirs = [...(runs.data ?? [])].reverse().slice(0, 20)
   return (
@@ -830,7 +834,7 @@ function ScheduleText({ name, s, k, history, night, draft, variables, onDraft, o
   const value = draft[t.field]
   const saved = s ? (k === 'prompt' ? s.prompt : s.reviewer_prompt) : ''
   const of = s ? `routine:${s.name}:${k}` : undefined
-  const crumbs: Crumb[] = [{ label: 'Schedules', href: format({ section: 'routines', night }) },
+  const crumbs: Crumb[] = [{ label: 'Schedules', href: format({ section: 'routines', night, list: 'schedules' }) },
                            { label: s?.title ?? 'New schedule', href: format({ section: 'routines', night, schedule: name }),
                              onClick: e => { e.preventDefault(); go({ schedule: name }) } }]
   if (history && of) {

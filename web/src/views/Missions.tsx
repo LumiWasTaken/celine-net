@@ -82,7 +82,7 @@ export function Missions({ active }: { active: boolean }) {
   const last = useRef<Extract<Route, { section: 'missions' }>>({ section: 'missions' })
   if (nav.route.section === 'missions') last.current = nav.route
   const selected = last.current.conversation ?? null
-  const [view, setView] = useState<'missions' | 'agents'>('missions')
+  const view = last.current.list === 'sub-agents' ? 'agents' : 'missions'
   const [shelf, setShelf] = useState<Shelf>('list')
   const [starting, setStarting] = useState(false)
   const missions = useResource(() => missionsApi.list(), [], { events: isMissionEvent })
@@ -104,7 +104,7 @@ export function Missions({ active }: { active: boolean }) {
     if (active && agent && agent.home !== 'missions') nav.goPath(agent.link, { replace: true })
   }, [active, agent, nav])
 
-  const toList = (v: 'missions' | 'agents') => { setView(v); if (selected) nav.go({ section: 'missions' }) }
+  const toList = (v: 'missions' | 'agents') => nav.go(v === 'agents' ? { section: 'missions', list: 'sub-agents' } : { section: 'missions' })
   const recent = (missions.data?.missions ?? []).slice(0, 8)
   return (
     <States.Provider value={missions.data?.states}>
