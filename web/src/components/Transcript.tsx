@@ -67,7 +67,7 @@ function eventOf(m: Message, user: string, assistant: string): { heading: ReactN
   const ic = m.intercom
   if (!ic || ic.kind === 'job' || ic.kind === 'trigger') return null
   const you = user || 'you'
-  const sender = ic.from === 'user' ? you : ic.from.startsWith('agent:') ? (ic.from_name ?? assistant) : (ic.from_name ?? 'the app')
+  const sender = ic.from === 'user' ? you : ic.from.startsWith('agent:') ? (ic.from_name ?? assistant) : (ic.from_name ?? 'App')
   if (ic.to === 'all') return { heading: ic.from === 'user' ? 'Announcement to everyone' : `Announcement from ${sender}`, body: m.content, icon: Megaphone }
   if (ic.kind === 'message' && ic.from === 'user' && !ic.due_at) return null
   if (ic.due_at) return { heading: 'Reminder', body: m.content, icon: Bell }

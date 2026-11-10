@@ -95,7 +95,7 @@ def follows(c: sqlite3.Connection, sender: str, to: str, turn: str) -> int | Non
 # (settings.compile_agent)
 NAMES: dict = {"user": "you", "agent": ""}
 # the app's own senders by name: the app, and Bastet, the guard (guard/bastet.py)
-SYSTEM_NAMES = {"app": "the app", "guard": "Bastet"}
+SYSTEM_NAMES = {"app": "App", "guard": "Bastet"}
 
 
 def name_of(c: sqlite3.Connection, addr: str) -> str | None:
