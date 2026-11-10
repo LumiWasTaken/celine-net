@@ -910,7 +910,8 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
   border-radius: var(--r-full); background: var(--text-primary); box-shadow: var(--e-float); }
 .slider__track::-moz-range-thumb { width: var(--s-4); height: var(--s-4); border: 0; border-radius: var(--r-full); background: var(--text-primary); }
 .slider__track:focus-visible { outline: none; }
-.slider__track:focus-visible::-webkit-slider-thumb { box-shadow: var(--focus-ring); }
+.slider__track:focus-visible::-webkit-slider-thumb { outline: var(--focus-outline); outline-offset: 2px; }
+.slider__track:focus-visible::-moz-range-thumb { outline: var(--focus-outline); outline-offset: 2px; }
 @media (max-width: 767px) { .slider { grid-template-columns: minmax(0, 1fr) 3rem; } .slider__track { grid-column: 1 / -1; grid-row: 2; } }
 
 
