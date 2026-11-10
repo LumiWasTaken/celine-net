@@ -318,9 +318,9 @@ The words of the Events place (`server/celine/events.py` gives them).
 
 | Word | In Celine | Same word in |
 |---|---|---|
-| Guard, (its name), Background tasks | the tabs: what Bastet decided, what the agent did in its chats, what ran without you (runs, tasks, missions, sub-agents, jobs); Guard is also the Intercom tab of Bastet's threads | Guard as the setting; Background as in the transcript |
-| Turn, Turns, Tools, Notebook, Background jobs, Intercom, Runs, Freeze, Exceptions, Titles and moods, Persona, Bugs | the Type filter, and a turn's row; Persona: the agent's own edits of its persona and Example lines | Turns as in Routines; Tools as in the side panel; GitHub Actions "workflow runs"; Intercom as the place; Freeze as Bastet says it; Exceptions as Windows Security says it |
-| Title, Mood, Document descriptions | the items of Titles and moods: a chat's title, its mood after a turn, the documents' descriptions | plain |
+| Guard, (its name), Background | the tabs: what Bastet decided, what the agent did in its chats, what ran without you (runs, tasks, missions, sub-agents, jobs); Guard is also the Intercom tab of Bastet's threads | Guard as the setting; Background as in the transcript |
+| Turn, Turns, Tools, Notebook, Background jobs, Intercom, Runs, Decisions, Freezes, Exceptions, Titles, moods and descriptions, Persona, Bugs | the Type filter, and a turn's row; Persona: the agent's own edits of its persona and Example lines | Turns as in Routines; Tools as in the side panel; GitHub Actions "workflow runs"; Intercom as the place; Freeze as Bastet says it; Exceptions as Windows Security says it |
+| Title, Mood, Document descriptions | the items of Titles, moods and descriptions: a chat's title, its mood after a turn, the documents' descriptions | plain |
 | Bastet | the guard's decisions (her name) | |
 | Wrote, Edited, Deleted, Moved ... to ... | its notebook writes ("Wrote people/noor.md") | Google Docs activity "edited", "moved" |
 | To (the user's name) | a message it sent you | Gmail "To" |
@@ -331,8 +331,8 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Could not decide | a decision Bastet could not make (her model gave no answer: it was down, timed out or the call did not fit), counted apart from Failed | |
 | Decision, Rule, Mode, Enforce, Warn | Bastet's filters: what she decided, by which rule, and whether she acted (Enforce) or only warned (Warn) | GitHub code scanning "Rule"; as Bastet's setting |
 | Details | open one decision of Bastet's from its row | macOS Finder, Windows "Details" |
-| First look, Second look, Yes, No | one decision's chain: the decision model's decision and why, then the big model's second look (guard/chain.py) | a second opinion, as people say it |
-| Question, Score, Model, Time, Source, Quote, Piece, Arguments | one decision's facts: what its decision model was asked, the score it gave, which model, how long, where the text came from, what it quoted, the private piece, the call's arguments | OpenAI evals "score"; Chrome DevTools "Time" |
+| First look, Second look, Flagged, Not flagged | one decision's chain: the decision model's decision and why, then the big model's second look (guard/chain.py) | a second opinion, as people say it; OpenAI Moderation "flagged" |
+| Question, Score, Model, Time, Source, Quote, Matched text, Arguments | one decision's facts: what its decision model was asked, the score it gave, which model, how long, where the text came from, what it quoted, the text the rule matched, the call's arguments | Purview "matched content"; OpenAI evals "score"; Chrome DevTools "Time" |
 | Allow once, Allow for 7 days | answer a stop or a freeze, on its banner or from its row: the same call runs once; tool calls with the same finding run in that chat for 7 days (an exception, listed under Exceptions). Either wakes the agent with Bastet's line, so it makes the tool call again now | Chrome site permissions "Allow this time", "Always allow" |
 | Open, Closed, Close, High, Medium, Low | a bug it filed: open until you close it (Close on its Intercom thread); its severity, beside Open in its row ("Open, high") | GitHub Issues "Open", "Closed", "Close issue"; Jira priority "High", "Medium", "Low" |
 | No events yet, No events match | the empty list, and a list the filters empty | plain |

@@ -112,7 +112,7 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         assert got["tabs"] == [
             {"id": "guard", "label": "Guard", "total": 5, "failed": 1},
             {"id": "agent", "label": "Celine", "total": 8, "failed": 2},
-            {"id": "background", "label": "Background tasks", "total": 3, "failed": 2}]
+            {"id": "background", "label": "Background", "total": 3, "failed": 2}]
         guard = await get(tab="guard")
         assert [(e["kind"], e["title"], e["outcome"]) for e in guard["events"]] == [
             ("freeze", "Unfreeze", "Done"),
@@ -288,5 +288,5 @@ async def test_a_turn_names_the_tokens_its_requests_used(store):
     await store.write(fn)
     got = await store.read(lambda c: events.listing(c, CFG, kinds=["turn"]))
     t1, t2 = got["events"]
-    assert t1["detail"] == "m, 12 s, 2700 tokens in, 75 out"
+    assert t1["detail"] == "m, 12 s, 2,700 input tokens, 75 output tokens"
     assert t2["detail"] == "m, 3 s", "a server that counted nothing: no count"

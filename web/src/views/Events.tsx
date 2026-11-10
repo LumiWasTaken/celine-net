@@ -1,7 +1,7 @@
 /* Events: everything it did and everything that ran, newest first, day by day (GET
    /api/events): its turns, tool calls, notebook writes, background jobs, messages to you,
    Routine runs and Bastet's decisions. One page, no place sidebar. Three tabs the server
-   fills (Guard, Celine, Background tasks: events.py TABS), then the Toolbar: All,
+   fills (Guard, Celine, Background: events.py TABS), then the Toolbar: All,
    Failed or Could not decide (Bastet could not decide, apart from what failed), Type and Date;
    on Guard also Decision, Rule and Mode. A row opens where it happened; a row of
    Bastet's opens her decision (EventDecision), and its menu gives Allow once and Pass.

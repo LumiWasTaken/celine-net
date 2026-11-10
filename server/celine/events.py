@@ -123,7 +123,7 @@ _GUARD = {"allow": ("Allowed", OK), "would_stop": ("Would have stopped", WARN),
           "waiting": ("Running", RUNNING)}
 # the Mode filter's words: Bastet's mode when she decided
 MODE_WORDS = {"on": "Enforce", "watch": "Warn"}
-_WORK_STATE = {"queued": ("Queued", MUTED), "deferred": ("Paused", WARN), "done": ("Done", OK),
+_WORK_STATE = {"queued": ("Queued", MUTED), "deferred": ("Queued", MUTED), "done": ("Done", OK),
                "failed": ("Failed", ERROR)}
 # its text -> (the title, the key of its page's editor: web/src/lib/nav.tsx)
 _HER = {"agent:talk": ("Changed the Example lines", "talk"),
@@ -291,7 +291,7 @@ SOURCES = {s.kind: s for s in (
            "AS at, r.state = 'failed' AS failed, r.conversation_id AS cid, NULL AS mid, "
            "NULL AS tid, 'background' AS tab, r.id AS rid, r.label, r.night, r.state, r.reason, r.error, "
            "r.finished_at, r.started_by FROM runs r WHERE r.state != 'waiting'", _run),
-    Source("guard", "Bastet",
+    Source("guard", "Decisions",
            "SELECT 'guard:' || g.id AS id, g.created_at AS at, "
            "(g.decision IN ('stop','failed','closed','denied') OR g.froze) AS failed, "
            "g.conversation_id AS cid, g.message_id AS mid, g.turn_id AS tid, 'guard' AS tab, "
@@ -300,7 +300,7 @@ SOURCES = {s.kind: s for s in (
            "g.decision, g.why, g.does, g.froze, g.mode, g.rule, g.piece, g.source, g.quote, "
            "g.class, g.sink FROM guard_decisions g",
            _guard),
-    Source("freeze", "Freeze",
+    Source("freeze", "Freezes",
            "SELECT 'freeze:' || f.id AS id, f.at, 0 AS failed, f.conversation_id AS cid, "
            "NULL AS mid, f.turn_id AS tid, 'guard' AS tab, 0 AS unfreeze, f.by, f.why, "
            "NULL AS frozen_at FROM freezes f UNION ALL "
@@ -311,7 +311,7 @@ SOURCES = {s.kind: s for s in (
            "SELECT 'pass:' || p.id AS id, p.created_at AS at, 0 AS failed, "
            "p.conversation_id AS cid, NULL AS mid, NULL AS tid, 'guard' AS tab, p.rule, p.until, p.why "
            "FROM guard_passes p", _pass),
-    Source("work", "Titles and moods",
+    Source("work", "Titles, moods and descriptions",
            "SELECT 'work:' || w.id AS id, w.created_at AS at, w.state = 'failed' AS failed, "
            "w.conversation_id AS cid, NULL AS mid, NULL AS tid, 'background' AS tab, w.kind, w.state, w.error, "
            "w.finished_at FROM work w", _work),
@@ -330,7 +330,7 @@ SOURCES = {s.kind: s for s in (
 # or a notebook write lands by its conversation (_TAB); the rest by their source.
 TABS = (("guard", "Guard", ("guard", "freeze", "pass")),
         ("agent", None, ("turn", "tool", "notebook", "message", "agent", "bugreport")),
-        ("background", "Background tasks", ("turn", "tool", "notebook", "job", "run", "work")))
+        ("background", "Background", ("turn", "tool", "notebook", "job", "run", "work")))
 TAB_KINDS = {t: kinds for t, _, kinds in TABS}
 
 
@@ -403,7 +403,7 @@ def tabs(c: sqlite3.Connection, cfg, day: str | None = None) -> list[dict]:
 
 
 def _tokens(c: sqlite3.Connection, tids: list[str]) -> dict[str, str]:
-    """"N tokens in, M out" of each of turns `tids` that sent a request, as the servers
+    """"N input tokens, M output tokens" of each of turns `tids` that sent a request, as the servers
     counted them (log.requests), in one query; nothing for a turn whose server counted
     none."""
     if not tids:
@@ -412,7 +412,7 @@ def _tokens(c: sqlite3.Connection, tids: list[str]) -> dict[str, str]:
         f"SELECT turn_id, sum(prompt_tokens), sum(completion_tokens) "
         f"FROM requests WHERE turn_id IN ({','.join('?' * len(tids))}) GROUP BY turn_id",
         tids).fetchall()
-    return {t: f"{i or 0} tokens in, {o or 0} out" for t, i, o in rows
+    return {t: f"{i or 0:,} input tokens, {o or 0:,} output tokens" for t, i, o in rows
             if i is not None or o is not None}
 
 

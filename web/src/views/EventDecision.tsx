@@ -1,6 +1,6 @@
 /* One decision of Bastet's on the Events page (GET /api/guard/decisions/{id}): her line,
    then the question the decision model was asked, its score, the model, how long it took,
-   the call's arguments, the quote and the piece. Allow once and Pass on this answer it as its
+   the call's arguments, the quote and the matched text. Allow once and Allow for 7 days on this answer it as its
    banner's buttons do (POST /guard/banners/{id}/replies); Open goes where it happened. Its title is Details (its line wraps
    to four lines at 400 px), its line the first fact. Every
    word of the row is the server's. server/celine/guard/store.py one, api.py. */
@@ -11,7 +11,7 @@ import { useResource } from '../lib/useResource'
 import { Button, Dialog, Facts, InlineError, LoadingRow, Quote, toast } from '../ui'
 
 const LEVEL_WORDS: Record<string, string> = { L1: 'First look', L2: 'Second look' }
-const VERDICT_WORDS: Record<string, string> = { Y: 'Yes', N: 'No', unreachable: 'Could not decide' }
+const VERDICT_WORDS: Record<string, string> = { Y: 'Flagged', N: 'Not flagged', unreachable: 'Could not decide' }
 
 /** answer a decision from outside its thread; Bastet's reply is the toast */
 export async function answer(id: number, action: GuardAction) {
@@ -46,7 +46,7 @@ export function EventDecision({ id, open, rule, mode, onClose }: {
     d.ms != null && { label: 'Time', value: `${d.ms} ms` },
     d.source && { label: 'Source', value: d.source },
     d.quote && { label: 'Quote', value: <Quote>{d.quote}</Quote> },
-    d.piece && { label: 'Piece', value: <Quote>{d.piece}</Quote> },
+    d.piece && { label: 'Matched text', value: <Quote>{d.piece}</Quote> },
     ...d.chain.filter(l => VERDICT_WORDS[l.verdict]).map(l => ({
       label: LEVEL_WORDS[l.level] ?? l.level,
       value: [VERDICT_WORDS[l.verdict], l.why, l.model].filter(Boolean)
