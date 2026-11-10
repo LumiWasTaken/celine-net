@@ -291,11 +291,6 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
                 (None, None)
             await turns.transition(store, tid, cid, "done", cut=cut, reason=reason,
                                    reason_code=code, honor_abort=False)
-            if not token.cancelled:
-                # while the model is loaded and it reads: get the next turn's prompt
-                # ready if the conversation is near the limit
-                await context.after_turn(store, cfg, backend, cid, system=system,
-                                         tools=wire_tools)
             return
 
         if not await turns.transition(store, tid, cid, "tools"):

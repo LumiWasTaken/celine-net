@@ -59,6 +59,8 @@ class Dispatcher:
         self.work = work.Pool(store, llm)
         self.work.handle("title", ("small", "chat"),
                          lambda p: self._title(p["conversation_id"]))
+        self.work.handle("compact", ("chat",),
+                         lambda p: self._compact(p["conversation_id"]))
 
     def notify(self) -> None:
         """Called after anything is enqueued. Never awaits."""
@@ -228,6 +230,25 @@ class Dispatcher:
         from ..settings.thinking import OFF
         await make_title(self.store, cid, lambda role: self.bound(
             cid, role=role, priority=Priority.BACKGROUND, thinking=OFF, voice=False))
+
+    async def _compact(self, cid: str) -> None:
+        """After a chat's turn (a work item, work.py): context.after_turn with the
+        chat's own model and the request a turn of it would send. It does nothing while
+        the chat has a live turn, and a turn that starts while it runs cancels it."""
+        from ..backends.queue import Priority
+        from ..core.states import LIVE_SQL
+        from . import context, prompt
+        if await self.store.read(lambda c: c.execute(
+                f"SELECT 1 FROM turns WHERE conversation_id=? AND state IN {LIVE_SQL}",
+                (cid,)).fetchone()):
+            return
+        backend = self.bound(cid, role="chat", priority=Priority.BACKGROUND, fallback=False)
+        if backend is None:
+            return
+        pieces, tools, _ = await prompt.request_parts(self.store, self.cfg, self.registry,
+                                                      backend, cid)
+        await context.after_turn(self.store, self.cfg, backend, cid, tools=tools,
+                                 system="\n\n".join(text for _, text in pieces))
 
     def bound(self, cid: str, *, role: str, priority, **kw):
         """A backend for conversation `cid` in model role `role`: the app's model queue
@@ -470,6 +491,14 @@ class Dispatcher:
             # what reached the conversation after the turn's last step lands now
             await self.deliver_idle(cid)
             await self.ended(cid, turn["id"])
+            # a chat whose turn ended with its answer: its next prompt is made ready
+            # while the user reads (a work item, so this turn is over now)
+            if await self.store.read(lambda c: c.execute(
+                    "SELECT 1 FROM turns t JOIN conversations cv ON cv.id = t.conversation_id "
+                    "WHERE t.id=? AND t.state='done' AND cv.kind='chat' AND cv.agent_of IS NULL",
+                    (turn["id"],)).fetchone()):
+                await self.work.put("compact", {"conversation_id": cid}, conversation_id=cid,
+                                    unique=True)
             # a work item: a title waits behind every turn in the model queue
             if not await conversations.title(self.store, cid):
                 await self.work.put("title", {"conversation_id": cid}, conversation_id=cid,

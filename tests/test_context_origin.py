@@ -159,6 +159,37 @@ async def test_the_background_build_leaves_every_message_when_the_summary_fails(
     _ok(built.messages, cid)
 
 
+async def test_a_turn_that_starts_ends_the_summary_being_made_after_the_last_one(store, cfg):
+    """The after-turn build runs outside the turn (a work item). A turn of the chat that
+    starts while its summary is being written ends it and builds for itself, at once."""
+    import anyio
+    cid = await _too_long(store)
+    context.POLICY = SMALL
+    asked = anyio.Event()
+
+    class Slow(Model):
+        async def stream(self, messages, tools):
+            if messages[0]["content"].startswith("You write the memory"):
+                asked.set()
+                await anyio.Event().wait()           # the summary never comes
+            async for ev in super().stream(messages, tools):
+                yield ev
+
+    done: list = []
+
+    async def background():
+        done.append(await context.after_turn(store, cfg, Slow(window=20_000), cid,
+                                             system="S", tools=[]))
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(background)
+        await asked.wait()
+        with pytest.raises(compact.SummaryFailed):       # the turn's own build asks again
+            await context.build(store, cfg, Model(window=20_000, summary=None), cid,
+                                system="S", tools=[])
+    assert done == [None], "cancelled, no summary saved"
+    assert context._background == {}
+
+
 async def test_a_turn_whose_summary_fails_fails_with_the_reason(store, cfg):
     await _too_long(store)
     context.POLICY = SMALL

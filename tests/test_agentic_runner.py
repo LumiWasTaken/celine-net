@@ -357,3 +357,38 @@ async def test_keep_the_chat_ready_sends_the_start_of_the_next_turns_request(sto
     warmed, next_turn = b.calls[2], b.calls[3]
     assert [m["role"] for m in warmed] == ["system", "user"]
     assert next_turn[:len(warmed)] == warmed
+
+
+async def test_a_chats_finished_turn_leaves_a_compact_item_a_missions_none(store, cfg):
+    """The after-turn compaction is a work item of the chat (turns/dispatcher.py), so the
+    turn itself ends with its answer; a mission's or a sub-agent's turn leaves none."""
+    import anyio
+    from chat_fixtures import until
+    from celine.turns.dispatcher import Dispatcher
+    b = Script([[TextDelta("hello"), Done(reason="stop")]] * 2)
+    chat = await conversations.create(store)                  # untitled: a title item too
+    mission = await conversations.create(store, kind="mission")
+    for cid in (chat, mission):
+        await user_says(store, cid, "hi")
+
+    async def kinds(cid):
+        return await store.read(lambda c: sorted(r[0] for r in c.execute(
+            "SELECT kind FROM work WHERE conversation_id=?", (cid,))))
+
+    async def both_done():
+        return await store.read(lambda c: c.execute(
+            "SELECT count(*) FROM turns WHERE state='done'").fetchone()[0]) == 2
+    async with anyio.create_task_group() as tg:
+        d = Dispatcher(store, cfg, EventBus(), lambda: b, Registry())
+        d.work.handlers.clear()                # the items stay queued: none runs here
+        await d.start(tg)
+        d.notify()
+        await until(both_done)
+
+        async def ended():                     # each turn's end put its title item
+            return "title" in await kinds(chat) and "title" in await kinds(mission)
+        await until(ended)
+        await d.stop()
+        tg.cancel_scope.cancel()
+    assert "compact" in await kinds(chat)
+    assert "compact" not in await kinds(mission)

@@ -121,6 +121,10 @@ class Built:
 _locks: weakref.WeakValueDictionary[str, anyio.Lock] = weakref.WeakValueDictionary()
 
 
+# cid -> the scope of its after-turn build (after_turn): a turn that starts cancels it
+_background: dict[str, anyio.CancelScope] = {}
+
+
 def lock(cid: str) -> anyio.Lock:
     """One context decision per conversation at a time (a turn's build waits for a
     background or manual compaction of the same conversation). A lock no build holds
@@ -545,6 +549,8 @@ async def build(store, cfg, backend, cid: str, *, system: str, tools: list[dict]
     if mode == "dry":                  # reads only: never waits for a summary
         return await _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
                             path)
+    if mode != "background" and (scope := _background.get(cid)) is not None:
+        scope.cancel()                 # the user is back: its turn waits for no summary
     async with lock(cid):
         return await _build(store, cfg, backend, cid, system, tools, mode, focus, policy,
                             path)
@@ -826,16 +832,22 @@ async def _summarise(run: _Run, through_idx: int) -> None:
 # ---- entry points besides a turn ---------------------------------------------------------
 async def after_turn(store, cfg, backend, cid: str, *, system: str,
                      tools: list[dict]) -> Built | None:
-    """Right after a turn, while the model is loaded and the user reads, age and compact
-    if the conversation is near the limit, so the next turn starts from a ready prompt.
-    Never raises: background work, a failed summary waits for the next build."""
+    """After a chat's turn, while the model is loaded and the user reads (a work item,
+    turns/dispatcher.py): age and compact if the conversation is near the limit, so the
+    next turn starts from a ready prompt. A turn of the conversation that starts
+    meanwhile cancels it (build): that turn decides for itself. Never raises: background
+    work, a failed summary waits for the next build. -> None when cancelled or failed."""
     try:
-        return await build(store, cfg, backend, cid, system=system, tools=tools,
-                           mode="background")
+        with anyio.CancelScope() as scope:
+            _background[cid] = scope
+            return await build(store, cfg, backend, cid, system=system, tools=tools,
+                               mode="background")
     except Exception:
         log.exception("background compaction failed",
                       extra={"event": "context.background_failed"})
-        return None
+    finally:
+        _background.pop(cid, None)
+    return None
 
 
 def fits(messages: list[dict], tools: list[dict], backend, share: float) -> bool:
