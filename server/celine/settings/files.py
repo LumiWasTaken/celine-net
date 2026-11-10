@@ -42,10 +42,10 @@ class Invalid(CelineError):
 
 
 class Conflict(CelineError):
-    def __init__(self, section: str, current: str):
+    def __init__(self, current: str):
         super().__init__("version_conflict",
-                         f"The {section} settings changed since you loaded them. "
-                         f"Reload and try again.", 412, {"version": current})
+                         "These settings changed since you loaded them. Reload and try "
+                         "again.", 412, {"version": current})
 
 
 def version(data: Any) -> str:
@@ -120,7 +120,7 @@ def check_version(section: str, current: dict[str, Any], if_match: str | None) -
     want = if_match.strip().removeprefix("W/").strip('"')
     have = version(current)
     if want != have:
-        raise Conflict(section, have)
+        raise Conflict(have)
 
 
 def _strip_none(v: Any) -> Any:
