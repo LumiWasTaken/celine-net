@@ -314,8 +314,8 @@ function NewMission({ onClose, onStarted }: { onClose: () => void; onStarted: (c
         <Field label="Model" group>
           <ModelPick name={model ?? 'Default'} current={model} fallback={null} disabled={start.busy} onModel={setModel} />
         </Field>
-        <Field label="Minimum time"><Input value={minTime} placeholder="Optional" onChange={e => setMinTime(e.target.value)} /></Field>
-        <Field label="Check-in"><Input value={checkIn} placeholder="Optional" onChange={e => setCheckIn(e.target.value)} /></Field>
+        <Field label="Minimum time"><Input value={minTime} placeholder="2 h" onChange={e => setMinTime(e.target.value)} /></Field>
+        <Field label="Check-in"><Input value={checkIn} placeholder="30 min" onChange={e => setCheckIn(e.target.value)} /></Field>
       </div>
       {start.error && <InlineError compact message={start.error} />}
     </Dialog>
@@ -408,7 +408,7 @@ function MissionPage({ m, agents, active, onChange }: { m: Mission; agents: Agen
             {nodes.length > 0 && tree.data && (
               <Section id="m-agents" title="Sub-agents" count={nodes.length}>
                 <div className="missions-rows">{nodes.map(n => <TreeLine key={n.id} n={n} />)}</div>
-                <Facts items={[{ label: 'Tokens', value: `${tree.data.total.prompt_tokens} in, ${tree.data.total.completion_tokens} out` }]} />
+                <Facts items={[{ label: 'Tokens', value: `${tree.data.total.prompt_tokens.toLocaleString('en-GB')} input, ${tree.data.total.completion_tokens.toLocaleString('en-GB')} output` }]} />
               </Section>
             )}
             {m.artifact && <Section id="m-result" title="Result"><Result m={m} /></Section>}
@@ -651,6 +651,6 @@ export function Work({ cid, convo, active, closed }: { cid: string; convo: Retur
   return (
     <Talk cid={cid} convo={convo} active={active} name={name} user=""
           send={(text, attachments) => conversationApi.send(cid, text, attachments)}
-          closed={closed ? 'It is in the Trash. Restore it to continue.' : null} />
+          closed={closed ? 'This mission is in the Trash. Restore it to continue.' : null} />
   )
 }
