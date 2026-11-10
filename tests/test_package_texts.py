@@ -25,6 +25,7 @@ FILLS = {
     "conversations/impersonate.md": {"agent": "Celine"},
     "conversations/impersonate_sample.md": {"lines": "hi"},
     "conversations/impersonate_start.md": {"start": "I think"},
+    "turns/fallback.md": {"first": "main/big", "current": "main/small"},
 }
 
 

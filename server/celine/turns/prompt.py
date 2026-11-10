@@ -158,10 +158,8 @@ async def _chat_line(store, cid: str) -> str | None:
         "SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone())
     if row is None or row["kind"] in ("agent", "mission"):
         return None
-    if row["kind"] != "chat":
-        return ("{{username}} is not here: this runs in the background, and nobody reads "
-                "along live.")
-    return "You are talking with {{username}} in the app right now."
+    return prompts.text(__file__, "user_here.md" if row["kind"] == "chat"
+                        else "user_away.md").strip()
 
 
 # The parts of a tail a later tail in view leaves out while they read the same
@@ -226,9 +224,6 @@ async def tail_parts(store, cfg, registry, backend, cid: str, carried,
     return [p for p in out if p[1]]
 
 
-FALLBACK = "You are running in fallback mode. Instead of {first} you are running on {current}."
-
-
 def answered_ref(backend) -> str | None:
     """The model that answered this turn's last call (backends/llm.py), None before."""
     return getattr(getattr(getattr(backend, "answered", None), "cfg", None), "id", None)
@@ -245,7 +240,7 @@ def _last_answered(c, cid: str, role: str) -> str | None:
 
 async def fallback_line(store, backend, cid: str) -> str | None:
     """While the model that answers the turn's role is not its chain's first
-    (backends/llm.py walks the list): the fixed FALLBACK sentence, what the app knows of
+    (backends/llm.py walks the list): the sentence of fallback.md, what the app knows of
     that model (model_facts), then why each one before it is left out. The model is the
     one that answered this turn's last call; before the turn's first call, the one that
     answered the role last in this conversation (its `llm.queue` running event). None on
@@ -262,8 +257,9 @@ async def fallback_line(store, backend, cid: str) -> str | None:
     passed = ordered.passed_over(current)
     if not passed:
         return None
-    return " ".join([FALLBACK.format(first=ordered.chain[0], current=current),
-                     *model_facts(llm.make(current)), passed])
+    said = prompts.text(__file__, "fallback.md").strip().replace(
+        "{{first}}", ordered.chain[0]).replace("{{current}}", current)
+    return " ".join([said, *model_facts(llm.make(current)), passed])
 
 
 def model_facts(backend) -> list[str]:

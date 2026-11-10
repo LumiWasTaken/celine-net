@@ -38,6 +38,12 @@ APP: dict[str, tuple[str, str]] = {
     "turns.ask_before_setup": ("Ask before setting up", "Added while Ask before setting up "
                                                         "services is on."),
     "turns.pronouns": ("Pronouns", "Gives {{name}} the pronouns set in Settings."),
+    "turns.user_here": ("Live chat", "Tells {{name}} that {{username}} is in the chat right "
+                                     "now."),
+    "turns.user_away": ("Background conversation", "Tells {{name}} that a conversation runs "
+                                                   "in the background."),
+    "turns.fallback": ("Fallback model", "Tells {{name}} that a fallback model answers "
+                                         "instead of the first one."),
     "kb.describe": ("Document cards", "Describes a document in a few sentences, so Search "
                                       "finds it."),
     "kb.describe_part": ("Document parts", "Describes one part of a long document."),
