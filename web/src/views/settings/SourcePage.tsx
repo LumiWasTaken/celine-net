@@ -3,7 +3,7 @@
 
      1. State     its word in the head; the sentence as one calm line when it
                   is not connected
-     2. To fix    only real problems (a lost login, a task or an automatic task that
+     2. Problems only real problems (a lost login, a task or an automatic task that
                   failed), each with the one button that fixes it
      3. Included  what is in the archive from here
 
@@ -51,7 +51,7 @@ export function useSchedules() {
 }
 
 /** an automatic task of this source whose last run failed or found its server
-    unreachable: a problem for To fix, with no button (the schedule is the retry).
+    unreachable: a problem for Problems, with no button (the schedule is the retry).
     `skip`: kinds the page already shows. */
 export function scheduleProblems(kb: string, schedules: Job[] | undefined, skip: string[] = []): ReactNode[] {
   return (schedules ?? []).filter(j => j.kb === kb && (j.state === 'failed' || j.state === 'unreachable') && !skip.includes(j.kind))
@@ -103,7 +103,7 @@ export function Problem({ sentence, detail, action, children, calm = false }: {
 export function ToFix({ children }: { children: ReactNode }) {
   const items = (Array.isArray(children) ? children : [children]).flat(3).filter(Boolean)
   if (items.length === 0) return null
-  return <Section title="To fix" count={items.length}><div className="stack">{items}</div></Section>
+  return <Section title="Problems" count={items.length}><div className="stack">{items}</div></Section>
 }
 
 /** failed tasks of this source (automatic ones appear only when they fail), each with Retry */

@@ -138,7 +138,7 @@ function Sessions() {
       <div className="rows">
         {rows.map(s => (
           <ListRow key={s.id} icon={MonitorSmartphone} title={s.label}
-                   subtitle={`Created ${when(s.created_at)}`}
+                   subtitle={`Logged in ${when(s.created_at)}`}
                    meta={s.this_session ? 'This session' : `Last seen ${when(s.last_seen_at)}`} trailingAlways
                    trailing={<IconButton icon={DoorOpen} label="Log out" onClick={() => void end.run(s)} />} />
         ))}

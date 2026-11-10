@@ -87,7 +87,7 @@ function ModelsHome({ providers, roles, onChanged }: {
         {providers.error && !providers.data ? <InlineError message={providers.error} onRetry={providers.reload} />
           : !providers.data ? <LoadingRow label="Checking providers" />
           : list.length === 0 ? (
-            <EmptyState title="No providers yet."
+            <EmptyState title="No providers yet"
                    action={<Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Add provider</Button>} />
           ) : (
             <div className="rows">
@@ -238,7 +238,7 @@ function ProviderPage({ p, providers, kinds, cloudHelp, onChanged, onSaved }: {
         <Button icon={Plus} disabled={!online} onClick={() => setAdding(true)}>Add models</Button>}>
         {p.models.length === 0 ? (
           <EmptyState compact action={<Button variant="primary" icon={Plus} disabled={!online} onClick={() => setAdding(true)}>Add models</Button>}>
-            No models added yet.
+            No models yet
           </EmptyState>
         ) : (
           <div className="rows">
@@ -387,7 +387,7 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
         <NumberField label="Parallel slots" min={1} {...text('slots')} invalid={invalid(d.slots)} />
         {kind === 'anthropic' && <NumberField label="Max tokens" min={1} {...text('maxTokens')} invalid={invalid(d.maxTokens)} />}
         {kind === 'openrouter' && (
-          <Field label="Provider">
+          <Field label="Upstream provider">
             <Input mono {...text('slug')} placeholder="deepinfra/fp4" spellCheck={false} onChange={e => change({ slug: e.target.value }, 'blur')} />
           </Field>
         )}
@@ -533,7 +533,7 @@ function AddModels({ p, onClose, onAdded }: { p: ProviderView; onClose: () => vo
         {p.provider.kind === 'openrouter' && (
           <>
             <Switch label="Zero data retention" checked={zdr} disabled={add.busy} onChange={setZdr} />
-            <Field label="Provider">
+            <Field label="Upstream provider">
               <Input mono value={provider} disabled={add.busy} placeholder="deepinfra/fp4" spellCheck={false}
                      onChange={e => setProvider(e.target.value)} />
             </Field>

@@ -38,7 +38,7 @@ export function WhatsAppSource({ source, active }: { source: Source; active: boo
 
       <ToFix>
         {lost && (
-          <Problem key="pair" sentence={`Not connected to WhatsApp. Your phone unlinked it ${lostWhen(st.login_lost_at!)}.`}>
+          <Problem key="pair" sentence={`Not connected to WhatsApp. Your phone unlinked this device ${lostWhen(st.login_lost_at!)}.`}>
             {pairing}
           </Problem>
         )}

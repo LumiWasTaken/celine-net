@@ -198,7 +198,7 @@ export function AgentText({ edit, history }: { edit: string; history: boolean })
     : edit === 'talk' ? { title: 'Example lines', of: 'agent:talk', text: agent.talk ?? agent.talk_shipped, hint: 'Add three more lines',
                           save: t => put({ talk: t }),
                           more: agent.talk !== null ? [{ label: 'Use the default', onSelect: () => void put({ talk: null }).then(back) }] : [] }
-    : edit === 'banned' ? { title: 'Banned words', of: 'agent:voice', text: agent.voice.banned.join('\n'), current: agent.voice_text, hint: 'Add ten more',
+    : edit === 'banned' ? { title: 'Banned words', of: 'agent:voice', text: agent.voice.banned.join('\n'), current: agent.voice_text, hint: 'Add ten more banned words',
                             save: t => voice({ banned: words(t) }) }
     : null
   if (!opened) return <Page title=""><EmptyState icon={SearchX} title="Not found">Nothing at this link.</EmptyState></Page>

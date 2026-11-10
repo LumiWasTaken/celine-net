@@ -36,7 +36,7 @@ export function DiscordSource({ source, active }: { source: Source; active: bool
 
   const st = connector.data
   const list = tasks.data ?? []
-  // a sync you started: one line under the sentence until dismissed (failed ones go to To fix)
+  // a sync you started: one line under the sentence until dismissed (failed ones go to Problems)
   const checks = list.filter(t => t.kb === kb.id && t.kind === 'sync' && t.state !== 'failed')
   const syncing = checks.find(t => t.state === 'running')
 

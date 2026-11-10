@@ -296,7 +296,7 @@ function Generate({ preset: p, sources, onStarted }: { preset: Preset; sources: 
       )}
       <div className="generate__numbers">
         {shown.filter(prm => NUMBER.has(prm.type)).map(field)}
-        <NumberField label="How many" min={1} value={count} onChange={setCount} />
+        <NumberField label="Batch count" min={1} value={count} onChange={setCount} />
       </div>
       <div className="generate__go">
         <Button type="submit" variant="primary" loading={go.busy} disabled={!online || !ready}>Generate</Button>

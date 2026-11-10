@@ -142,7 +142,7 @@ export function TaskLine({ task: t, onChanged }: { task: Task; onChanged?: () =>
 function failedText(t: Task): string {
   const e = t.error?.trim()
   if (e && /^[A-Z]/.test(e) && /[.!?]$/.test(e)) return e
-  return `${taskWhat(t)} stopped: ${e || 'no reason given'}.`
+  return `${taskWhat(t)} failed: ${e || 'no reason given'}.`
 }
 
 /* One sentence, never the raw result fields. The server's own sentence wins. */
