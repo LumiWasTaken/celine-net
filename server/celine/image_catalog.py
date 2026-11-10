@@ -21,7 +21,8 @@ answer of it fails the load with the reason.
 All of it is edited in LoRA-Manager's UI or with its API (save-metadata, add-tags,
 exclude). A file LoRA-Manager reports as 0 bytes is still downloading: listed, not
 ready. A preset says which part of the catalog is its own in its [catalog] table (name
-prefixes, like "krea2/" and "krea_2/"; comfyui/presets.py).
+prefixes, like "krea2/"; comfyui/presets.py). Names are compared without case, ".", "-"
+and "_" (presets.fold): the prefix "qwen2.1/" takes the folder qwen2-1/ as well.
 """
 from __future__ import annotations
 
@@ -36,7 +37,7 @@ from typing import Any
 import anyio
 import httpx
 
-from .comfyui.presets import ImageError, options
+from .comfyui.presets import ImageError, fold, options, under
 from .comfyui.server import object_info
 from .errors import answered
 
@@ -106,8 +107,8 @@ class Catalog:
     loaded: float = field(default_factory=time.monotonic)
 
     def scope(self, kind: str, prefixes: list[str] | tuple[str, ...]) -> list[Resource]:
-        return [r for r in self.resources if r.kind == kind and (
-            not prefixes or any(r.name.startswith(p) for p in prefixes))]
+        """The resources of `kind` in the folders `prefixes` name; none without one."""
+        return [r for r in self.resources if r.kind == kind and under(r.name, prefixes)]
 
     def list(self, kind: str, prefixes, *, category: str | None = None,
              search: str | None = None) -> list[Resource]:
@@ -122,13 +123,13 @@ class Catalog:
                                           -r.uses, r.label.lower()))
 
     def find(self, kind: str, ref: str, prefixes) -> Resource | None:
-        """By id, ComfyUI name, file stem or label, case-insensitive. Hidden ones too:
-        the caller decides (a preset's own LoRA is hidden but valid)."""
-        want = ref.strip().lower()
+        """By id, ComfyUI name, file stem or label, folded (presets.fold). Hidden ones
+        too: the caller decides (a preset's own LoRA is hidden but valid)."""
+        want = fold(ref)
         pool = self.scope(kind, prefixes)
         for r in pool:
-            if want in (r.id.lower(), r.name.lower(), r.id.rsplit("/", 1)[-1].lower(),
-                        r.label.lower()):
+            if want in (fold(r.id), fold(r.name), fold(r.id.rsplit("/", 1)[-1]),
+                        fold(r.label)):
                 return r
         return None
 

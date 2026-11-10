@@ -579,6 +579,27 @@ def test_a_lora_chain_and_a_model_go_into_the_graph():
     assert "celine_triggers" not in g
 
 
+def test_a_preset_without_models_has_none_and_a_folder_matches_in_any_spelling():
+    p = presets.of("images")["qwen2.1-smart"]
+    assert p.loras == ("qwen2.1/",) and not p.models
+    cat = Catalog([
+        Resource("model", "anima/anima_base.safetensors", "Anima", "base"),
+        Resource("model", "qwen2.1/qwen_image_2.1_bf16.safetensors", "Qwen raw", "base"),
+        Resource("lora", "qwen2-1/anime_style.safetensors", "Anime", "style"),
+        Resource("lora", "Qwen2_1\\stack.safetensors", "Stack", "concept"),
+        Resource("lora", "krea_2/candid.safetensors", "Candid", "realism"),
+    ])
+    assert cat.list("model", p.models) == [], "no prefix lists nothing"
+    assert cat.nearest("model", "anima_base", p.models) == []
+    with pytest.raises(presets.ImageError, match="Qwen 2.1 takes no model choice."):
+        presets.choose(p, cat, model="anima/anima_base", loras=None)
+    assert [r.id for r in cat.list("lora", p.loras)] == ["qwen2-1/anime_style", "Qwen2_1\\stack"]
+    c = presets.choose(p, cat, model=None, loras=["qwen2.1/anime-style:1"])
+    assert c.recipe()["loras"] == ["qwen2-1/anime_style:1"]
+    assert presets.owns(p, "qwen2-1/anime_style") and not presets.owns(p, "krea_2/candid")
+    assert not presets.under("qwen2.10/x", ["qwen2.1/"]), "a folder is matched whole"
+
+
 # ---- the user's presets (Settings, Images & Music) -------------------------------------
 
 UPLOAD = {

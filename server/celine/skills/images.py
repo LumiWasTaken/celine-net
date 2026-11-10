@@ -293,14 +293,19 @@ class ImageGenerator:
                 f"{'edits' if p.task == 'edit' else 'new images'}: {p.good_at}"
                 for p in found) or "No preset is set.", display={"count": len(found)})
         with_catalog = [p for p in found if p.models or p.loras]
+        of_kind = [p for p in with_catalog if (p.models if kind == "model" else p.loras)]
         want = preset or ""
         p = next((x for x in with_catalog if want in (x.id, x.label)), None) \
-            if want else next((x for x in with_catalog if x.task == "generate"),
-                              with_catalog[0] if with_catalog else None)
+            if want else next((x for x in of_kind if x.task == "generate"),
+                              of_kind[0] if of_kind else None)
         if p is None:
             names = ", ".join(x.id for x in with_catalog) or "none"
             return ToolResult(content=f"No preset with models and LoRAs matches. Those "
                                       f"presets are: {names}.", is_error=True)
+        prefixes = p.models if kind == "model" else p.loras
+        if not prefixes:
+            return ToolResult(content=f"{p.label} takes no model choice." if kind == "model"
+                              else f"{p.label} takes no LoRAs.", is_error=True)
         s = self.cfg.settings
         pid = next(s.split(r)[0] for r in s.chain(presets_mod.ROLES["images"])
                    if s.split(r)[1] == p.id)
@@ -313,7 +318,6 @@ class ImageGenerator:
         except Exception as e:
             return ToolResult(content=f"ComfyUI did not list its models "
                                       f"({type(e).__name__}).", is_error=True)
-        prefixes = p.models if kind == "model" else p.loras
         rows = cat.list(kind, prefixes, category=category, search=search)
         if not rows:
             return ToolResult(content=f"No {kind} of {p.label} matches.")

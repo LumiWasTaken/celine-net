@@ -937,9 +937,21 @@ def parse_loras(loras: list[str] | None) -> list[tuple[str, float | None]]:
     return out
 
 
+def fold(name: str) -> str:
+    """A model or LoRA name as names are compared: lowercase, "\\" as "/", without ".",
+    "-" and "_", so the folders qwen2.1/, qwen2-1/ and qwen2_1/ are one."""
+    return re.sub(r"[._-]", "", name.strip().replace("\\", "/").lower())
+
+
+def under(name: str, prefixes) -> bool:
+    """A name that starts with one of `prefixes`, folded; no prefixes match nothing."""
+    n = fold(name)
+    return any(n.startswith(fold(x)) for x in prefixes)
+
+
 def owns(p: Preset, ref: str) -> bool:
     """A model or LoRA name that is in this preset's part of the catalog."""
-    return any(ref.strip().startswith(x) for x in p.models + p.loras)
+    return under(ref, p.models + p.loras)
 
 
 def choose(p: Preset, cat, *, model: str | None, loras: list[str] | None) -> Choice:
