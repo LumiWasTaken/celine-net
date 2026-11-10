@@ -7,12 +7,13 @@
    oldest first, your lines on the right, where each came from under it, the reply pinned
    at its foot; replying marks it read, Dismiss does too. Continue in a chat takes any thread
    into a new chat with it (the server carries its messages); a bug report's thread shows
-   Open or Closed and its Close. New message: To (its conversation
+   Open or Closed and its Close; Bastet's freeze message's thread shows Unfreeze while that
+   freeze holds (the server's). New message: To (its conversation
    as a second step), Subject, the text and When. Reminders are messages here too.
    URL: /intercom, /intercom/<thread id>. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUpRight, Bot, CheckCheck, CircleCheck, CornerUpLeft, Flag, Info, Link, Mail, MessageCircle, MessageSquarePlus, SearchX, Shapes, Terminal, User,
+  ArrowUpRight, Bot, CheckCheck, CircleCheck, CornerUpLeft, Flag, Info, Link, Mail, MessageCircle, MessageSquarePlus, SearchX, Shapes, Snowflake, Terminal, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Portrait } from '../components/Portrait'
@@ -22,6 +23,7 @@ import {
   KINDS, KIND_PLURAL, KIND_WORD, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
   type IntercomMessage, type Kind, type Source, type Thread, type ThreadsPage,
 } from '../lib/intercom'
+import { guardApi } from '../lib/guard'
 import { useName } from '../lib/name'
 import { useFeatureOn } from '../lib/features'
 import { useNav } from '../lib/nav'
@@ -30,7 +32,7 @@ import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Avatar, Button, Choice, ComposerBox, copied, cx, Dialog, Divider, EventLine, Field, GroupHead, ICON, InlineError, Input,
+  Avatar, Button, Choice, ComposerBox, ConfirmDialog, copied, cx, Dialog, Divider, EventLine, Field, GroupHead, ICON, InlineError, Input,
   ListRow, Loaded, LoadingRow, Message, PlaceHead, Segmented, SelectBar, StateWord, TextArea, Toolbar, useContextMenu, usePicker,
   coarse, VirtualList, type BulkResult, type Crumb, type MenuItem, type PickProps,
 } from '../ui'
@@ -275,7 +277,10 @@ function ThreadRow({ t, waiting, under, pick, menu, onOpen, onMenu }: {
 export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
   const nav = useNav()
   const online = useOnline()
-  const thread = useResource(signal => intercomApi.thread(id, signal), [id], { events: isIntercomEvent })
+  // the thread of a freeze message holds the freeze while it is open (the server's): Unfreeze
+  const thread = useResource(signal => intercomApi.thread(id, signal), [id],
+                             { events: ev => isIntercomEvent(ev) || ev.type === 'frozen.changed' })
+  const [unfreezing, setUnfreezing] = useState(false)
   const msgs = useMemo(() => thread.data?.messages ?? [], [thread.data])
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [msgs.length])
@@ -309,6 +314,7 @@ export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
   const answerer = theirs ? senderName(theirs) : toNames
   const title = first?.subject ?? (theirs ? senderName(theirs) : toNames || (first ? senderName(first) : 'Intercom'))
   const src = thread.data?.source
+  const freeze = thread.data?.freeze
   let day = ''
   return (
     <div className="intercom-thread">
@@ -317,6 +323,7 @@ export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
                  detail={bug ? (bug.state === 'open' ? 'Open' : 'Closed') : undefined}
                  actions={<>
                    {unread.length > 0 && <Button icon={CheckCheck} loading={dismiss.busy} onClick={() => void dismiss.run()}>Dismiss</Button>}
+                   {freeze && <Button icon={Snowflake} onClick={() => setUnfreezing(true)}>Unfreeze</Button>}
                    {bug?.state === 'open' && <Button icon={CircleCheck} loading={close.busy} onClick={() => void close.run()}>Close</Button>}
                    {/* a mission's thread: the mission is its home */}
                    {src?.kind === 'mission' && src.link && <Button icon={Flag} onClick={() => nav.goPath(src.link!)}>Open mission</Button>}
@@ -345,6 +352,10 @@ export function ThreadPage({ id, crumbs }: { id: number; crumbs?: Crumb[] }) {
           <div ref={end} />
         </div>
       </div>
+      {unfreezing && freeze && (
+        <ConfirmDialog title="Unfreeze?" body={freeze.why} confirmLabel="Unfreeze"
+                       onConfirm={async () => { await guardApi.unfreeze(); setUnfreezing(false) }} onClose={() => setUnfreezing(false)} />
+      )}
       {thread.data && msgs.length > 0 && (
         <div className="intercom-reply">
           {send.error && <InlineError compact message={send.error} />}

@@ -371,7 +371,7 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Approved., Denied., No answer. | a request's notice once it closed, replacing the one that asked | Android permissions "Allowed", "Denied" |
 | Paused | the rail item while no model of the agent's answers (it opens Settings, Models), and the mini player; never a reply or an image | plain |
 | Settings, Change {target}., Default, Empty, On, Off, Saved, Not set, New value, Removed | the agent's request to change Settings in a chat: the kind's name, its line, then each field's before and after (a secret by its state only) | macOS "Change Settings"; Bitwarden "Saved" |
-| Freeze, Unfreeze, Frozen | stop everything the agent does until you let it go on (the guard, or you by hand); Frozen in the rail, which opens the confirm Unfreeze? with why it froze, and Unfreeze on Bastet's banner | Revolut, Monzo "Freeze card" |
+| Freeze, Unfreeze, Frozen | stop everything the agent does until you let it go on (the guard, or you by hand); Frozen in the rail, which opens the confirm Unfreeze? with why it froze, and Unfreeze on Bastet's banner and on her freeze message's thread while that freeze holds (the same confirm) | Revolut, Monzo "Freeze card" |
 | Go to the original message | jump to the message a reply or result came from | Slack, Discord "Jump to message" |
 | Lock, Unlock, Client ID | the Vault; the API key's Client ID in its form | Bitwarden "Lock", "Unlock", "client_id" |
 | Log in with QR code | link WhatsApp or Discord with the phone | Discord "Log in with QR Code" |

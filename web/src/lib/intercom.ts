@@ -5,6 +5,7 @@
    one of the six HTTP/1.1 connections a browser keeps per site, so a few open tabs
    would starve every request. /intercom/stream is for other clients (curl, a CLI). */
 import { json, post, query, request, type Attachment } from './api'
+import type { Freeze } from './guard'
 
 /** where a message or a thread came from, from the server: the conversation that sent it
  *  (a chat, a mission, a schedule's run, a background task, a sub-agent) or the app's
@@ -94,9 +95,9 @@ export type Kind = typeof KINDS[number]
 export const intercomApi = {
   threads: (q: { with: ThreadsWith; kind: Kind | null; unread?: boolean; cursor?: string | null }, signal?: AbortSignal) =>
     request<ThreadsPage>(`/intercom/threads${query(q)}`, { signal }),
-  /** a thread's messages, oldest first, and where it comes from */
+  /** a thread's messages, oldest first, where it comes from, and the open freeze it tells of (its Unfreeze) */
   thread: (id: number, signal?: AbortSignal) =>
-    request<{ messages: IntercomMessage[]; source: Source | null }>(`/intercom?thread=${id}`, { signal }),
+    request<{ messages: IntercomMessage[]; source: Source | null; freeze: Freeze | null }>(`/intercom?thread=${id}`, { signal }),
   bugOf: (thread: number, signal?: AbortSignal) =>
     request<{ reports: BugReport[] }>(`/bug-reports?thread=${thread}`, { signal }).then(r => r.reports[0] ?? null),
   /** Continue in a chat: a new chat with it that carries the thread; what waits in it is read */

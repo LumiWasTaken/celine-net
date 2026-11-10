@@ -77,7 +77,7 @@ type GuardDecision = {
 
 type ChainLevel = { level: 'L1' | 'L2'; verdict: string; why?: string; quote?: string; model?: string; ms?: number }
 
-type Freeze = { id: number; at: string; by: 'guard' | 'user'; why: string; conversation_id: string | null }
+export type Freeze = { id: number; at: string; by: 'guard' | 'user'; why: string; conversation_id: string | null }
 
 /** a pass that holds now: its rule's label, the piece it lets through (null: the whole rule), where and until when */
 export type GuardPass = { id: number; rule: string; label: string; piece: string | null; line: string }
