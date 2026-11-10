@@ -259,6 +259,7 @@ block at the end of this file lists the words no UI string uses.
 | Take control | you take its browser | OpenAI Operator "Take control" |
 | Return control | you give its browser back | plain; Operator names only "Take control" |
 | Extract text | read a document's text again | |
+| Title, Description, AI description | a document's Details: the title and description you give it (its file's own title as the placeholder), and the one its describing model wrote | Google Drive "Description"; plain |
 | Retrieval, Passages, Whole file | how a document is read: by its indexed passages or whole at once | Open WebUI "Retrieval", "Full Context Mode" |
 | Exit code, Read the screen, Waited for output, Scrollback | a process's exit status; a shell call that only read the terminal or waited; a terminal's earlier output | POSIX "exit code"; xterm "scrollback" |
 | Batch count, Edit reminder, Pin until, Unknown sender, Suggested fix | Images & Music; the reminder dialog; an Everyone message kept in context until a time; a sender with no name; a bug's proposed fix | A1111 "Batch count"; Slack "Pin"; Gmail "Unknown sender"; GitHub issue templates |

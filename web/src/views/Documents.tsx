@@ -599,11 +599,11 @@ function Details({ item, onSaved, onRewrite, rewriting }: { item: ItemDetail; on
   const ai = item.ai
   return (
     <div className="doc-details">
-      <Field label="Your title">
+      <Field label="Title">
         <Input value={title} placeholder={item.file_title || item.name} onChange={e => setTitle(e.target.value)} onBlur={saveTitle}
                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveTitle() } }} />
       </Field>
-      <Field label="Your description">
+      <Field label="Description">
         <TextArea rows={2} max={12} value={desc} onChange={e => setDesc(e.target.value)} onBlur={saveDesc} />
       </Field>
       {save.error && <InlineError compact message={save.error} />}
