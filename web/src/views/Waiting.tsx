@@ -3,11 +3,12 @@
    the page that answers it, in this pane: an Intercom thread (the Intercom's thread page),
    what a mission asks (its note, its words, Reply, Mark as done, Stop, in one Section as on
    the mission's own page), a lost login's
-   Settings page. The Intercom group's "..." has Dismiss all. An item that is answered
+   Settings page. A row's "..." and right-click have Open and, for what was written to you,
+   Dismiss; the Intercom group's "..." has Dismiss all. An item that is answered
    leaves the list, and its page goes back to the list.
    URL: /waiting, /waiting/thread/<thread id>, /waiting/mission/<conversation id>. */
 import { useEffect, useRef } from 'react'
-import { CheckCheck, Flag, Hand, Mail, Plug, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, CheckCheck, Flag, Hand, Mail, MoreHorizontal, Plug, type LucideIcon } from 'lucide-react'
 import { ApprovalCard } from '../components/ApprovalCard'
 import { MissionAsk } from '../components/MissionAsk'
 import { count, fullDate, listTime } from '../lib/format'
@@ -15,7 +16,9 @@ import { intercomApi } from '../lib/intercom'
 import { useNav, type Route } from '../lib/nav'
 import { useAction } from '../lib/useAction'
 import { useWaits, type MissionWait, type Wait } from '../lib/waits'
-import { Button, Facts, GroupHead, InlineError, ListRow, Loaded, PlaceHead, Section, VirtualList, type Crumb } from '../ui'
+import {
+  Button, Facts, GroupHead, InlineError, ListRow, Loaded, MenuButton, PlaceHead, Section, useContextMenu, VirtualList, type Crumb, type MenuItem,
+} from '../ui'
 import { ThreadPage } from './Intercom'
 import './Waiting.css'
 
@@ -52,7 +55,17 @@ function List() {
   const nav = useNav()
   const waits = useWaits()
   const items = waits.data?.items ?? []
+  const ctx = useContextMenu()
   const dismissAll = useAction(() => intercomApi.readAll())
+  const dismiss = useAction(async (w: Exclude<Wait, { kind: 'approval' }>) => {
+    if (w.kind === 'thread') await intercomApi.dismiss(Number(w.id))
+    else if (w.kind === 'mission') await intercomApi.read(w.asked)
+  })
+  const menu = (w: Exclude<Wait, { kind: 'approval' }>): MenuItem[] => [
+    { label: 'Open', icon: ArrowUpRight, onSelect: () => nav.goPath(w.link) },
+    ...(w.kind === 'thread' || (w.kind === 'mission' && w.asked.length)
+      ? [{ label: 'Dismiss', icon: CheckCheck, onSelect: () => void dismiss.run(w) }] : []),
+  ]
   const rows: Row[] = items.flatMap((w, i) => {
     const key = w.kind === 'approval' ? `a:${w.approval.id}` : `${w.kind}:${w.id}`
     const item: Row = { type: 'item', key, w }
@@ -61,7 +74,7 @@ function List() {
   return (
     <div className="list-page">
       <PlaceHead level={1} title="Waiting for you" count={waits.data?.count || undefined} />
-      {dismissAll.error && <div className="list-page__note"><InlineError compact message={dismissAll.error} /></div>}
+      {(dismissAll.error ?? dismiss.error) && <div className="list-page__note"><InlineError compact message={(dismissAll.error ?? dismiss.error)!} /></div>}
       <Loaded page res={waits} icon={Hand} label="Loading what waits for you"
               empty={rows.length === 0 && { icon: Hand, title: 'Nothing is waiting for you' }}>
         {data => (
@@ -72,23 +85,27 @@ function List() {
                            ? <GroupHead icon={KIND[r.w.kind].icon} title={r.w.group} count={count(data.counts[r.w.group] ?? 0, KIND[r.w.kind].noun)}
                                         menu={r.w.kind === 'thread' ? [{ label: 'Dismiss all', icon: CheckCheck, onSelect: () => void dismissAll.run() }] : undefined} />
                            : r.w.kind === 'approval' ? <div className="waiting__card"><ApprovalCard ask={r.w.approval} onOpen={nav.goPath} /></div>
-                           : <ItemRow w={r.w} />} />
+                           : <ItemRow w={r.w} menu={menu(r.w)} onMenu={ctx.open} />} />
           </div>
         )}
       </Loaded>
+      {ctx.menu}
     </div>
   )
 }
 
 /** a row of the list: what waits, its whole line, who it is from and when */
-function ItemRow({ w }: { w: Exclude<Wait, { kind: 'approval' }> }) {
+function ItemRow({ w, menu, onMenu }: {
+  w: Exclude<Wait, { kind: 'approval' }>; menu: MenuItem[]; onMenu: (e: React.MouseEvent, items: MenuItem[], label?: string) => void
+}) {
   const from = w.kind === 'thread' ? w.from : w.kind === 'mission' ? w.origin?.name : undefined
   const at = w.kind === 'login' ? undefined : w.at
   return (
     <ListRow density="lg" icon={KIND[w.kind].icon} title={w.title} href={w.link}
              subtitle={from && from !== w.title ? from : undefined}
              body={w.kind === 'mission' && w.why && w.text ? <>{w.why}<br />{w.line}</> : w.line || undefined}
-             meta={at && <span title={fullDate(at)}>{listTime(at)}</span>} />
+             meta={at && <span title={fullDate(at)}>{listTime(at)}</span>} onContextMenu={e => onMenu(e, menu, w.title)}
+             trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu} size="sm" />} />
   )
 }
 
