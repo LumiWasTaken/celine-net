@@ -372,7 +372,7 @@ async def test_watch_gives_up_on_a_judge_that_never_answers(store, monkeypatch):
     v = await guard.check(TURN, CURL, _request(), mode="watch", judge=judge, store=store)
     assert v.decision == "failed"
     [row] = await decisions.listing(store, rule="hijack")
-    assert row["decision"] == "unreachable" and row["why"].startswith("no answer in")
+    assert row["decision"] == "unreachable" and row["why"].startswith("No answer in")
 
 
 async def test_watch_without_a_background_runner_writes_a_failed_row(store, box, monkeypatch):
@@ -398,7 +398,7 @@ async def test_any_other_judge_error_fails_the_call_once_with_a_plain_sentence(s
     assert rows[1]["state"] == "error" and rows[1]["content"] == \
         "Not run: Bastet broke while she checked this call."
     [row] = await decisions.listing(store, rule="hijack")
-    assert row["decision"] == "failed" and row["why"] == "KeyError"
+    assert row["decision"] == "failed" and row["why"] == "The check failed with an internal error (KeyError)."
 
 
 # ---- the fixture turn: an order from a page -------------------------------------------
@@ -617,7 +617,7 @@ async def test_three_stops_in_one_turn_freeze_the_agent_and_tell_the_owner(store
     # the first stop, once (the same order again is the same evidence), then the freeze
     assert [n[0] for n in notes] == ["system:guard"] * 2
     assert notes[0][2].startswith("Bastet stopped a command: it carries out instructions from")
-    assert notes[1][2].startswith("Bastet froze Celine: 3 tool calls were stopped") \
+    assert notes[1][2].startswith("Bastet froze Celine. Stopped a command: 3 tool calls were stopped") \
         and "{{" not in notes[1][2]
 
 

@@ -16,7 +16,8 @@ from .small_role import Unavailable
 
 log = logging.getLogger("celine.guard")
 
-NOT_READ = "I could not read that: {why} Say unfreeze, keep, or a pass for a while."
+NOT_READ = ("I could not read that: {why} Answer unfreeze, stay frozen, or an exception for "
+            "a time.")
 
 
 async def from_session(request, iid: int, text: str) -> None:

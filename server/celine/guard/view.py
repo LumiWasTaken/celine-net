@@ -21,7 +21,7 @@ DID = {"stop": "Stopped {tool}.", "freeze": "Stopped {tool} and froze everything
        "denied": "You denied {tool}.", "closed": "No answer on {tool}, it did not run.",
        "patrol": "Audited this turn after it ended.", "gate": "Stopped {tool}.",
        "allow": "Allowed {tool}.", "passed": "Allowed {tool} by your exception.",
-       "failed": "Bastet could not decide on {tool}.", "waiting": "Checking {tool}.",
+       "failed": "Bastet's check of {tool} failed.", "waiting": "Checking {tool}.",
        "unreachable": "Bastet could not decide on {tool}. It ran."}
 
 

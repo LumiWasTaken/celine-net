@@ -20,7 +20,7 @@ ADDR = "system:guard"
 
 # each rule's words are its row in rules.TABLE; a sink, to it and to the owner
 SINKS = {"public": "the public", "people": "someone other than {{user}}"}
-OWNER_SINKS = {"public": "the public", "people": "someone other than you", "house": "the house"}
+OWNER_SINKS = {"public": "the public", "people": "someone other than you", "house": "the app"}
 # a private piece by its kind (facts.Piece.kind)
 KINDS = {"address": "a street address", "e-mail": "an e-mail address",
          "phone": "a phone number", "IBAN": "an IBAN", "link": "a link",
@@ -34,10 +34,10 @@ AGAIN = "Not run. Bastet: {said}. {why}{then}"          # persist's stop
 HIJACKED = ("Not run: Bastet stopped it: this follows an instruction in text from {source}, "
             "not something you decided. {why}{then} The instruction:\n{quote}")
 NOTE = "Bastet stopped {tool}: {said}. {why}{done}"
-FROZEN_FOR = "{said}, on {tool}. {why}"       # why it is frozen, to the owner
+FROZEN_FOR = "Stopped {tool}: {said}. {why}"       # why it is frozen, to the owner
 DONE = {"stop": "It did not run.",
         "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{name}}."}
-FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{name}} continue."
+FROZE = "Bastet froze {{name}}. {why}Unfreeze lets {{name}} continue."   # why: sentence()
 FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{name}} continue."
 PASSED = "Bastet: {{user}} gave you an exception for {rule} {where} until {until}."
 # her answer on a stop's banner (banners.py, D15): it wakes the agent to do the step again now
@@ -53,17 +53,17 @@ UNFROZEN = "Bastet froze you at {at}: {what}. {{user}} unfroze you at {back}."
 SECOND_LOOK = ("I unfroze {{name}} myself: a second look says it was not a real problem. "
                "{why}")
 # the second look did not answer: what L1 decided stands (its why: chain.ask's Unavailable)
-SECOND_LOOK_AWAY = "The second look did not answer, so this stands. {why}"
+SECOND_LOOK_AWAY = ("The Second look model did not answer, so the first decision stands. "
+                    "{why}")
 LIFTED = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}, as {{user}} "
           "did the last times.")
 # the second look said no to what froze it, and Bastet lifted the freeze (chain.py)
 LIFTED_REVIEW = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}: a "
                  "second look found it was not a real problem.")
 # guard/learn.py: what it tells the owner after a freeze, on the intercom
-LIFTED_NOTE = ("Bastet unfroze {{name}} herself: you unfroze the same thing {n} times "
-               "before ({ids}).")
-CONSULT = ("Before: {before}. Answer me here (unfreeze, keep, or a pass for a while), "
-           "or on the banner. I remember what you choose.")
+LIFTED_NOTE = "Bastet unfroze {{name}}: you unfroze {n} freezes like this one before."
+CONSULT = ("Earlier freezes like this: {before}. Answer here or on the banner: unfreeze, "
+           "stay frozen, or an exception for a time. I remember what you choose.")
 # the agent's own mind's line about Bastet (awareness.py)
 AWARE_FROZEN = ("Bastet froze you at {at}: {what}{where}. That is your signal to wait for "
                 "{{user}}.")

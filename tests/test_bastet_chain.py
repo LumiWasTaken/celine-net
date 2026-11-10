@@ -147,7 +147,7 @@ async def test_l1_stands_when_l2_is_away_or_not_configured(store):
     assert await chain.after_stop(app, v.row, v.note, "c1", "t1") == "unreachable"
     [note] = await _notes(store)
     assert note.startswith("Bastet stopped a command"), "L1's stop stands: the owner hears it"
-    assert note.endswith("The second look did not answer, so this stands. "
+    assert note.endswith("The Second look model did not answer, so the first decision stands. "
                          "gpu-server is not reachable (ConnectError)."), \
         "and why the second look did not change it"
     off = await chain.review(Services(cfg=_cfg(), store=store), v.row)
@@ -256,7 +256,7 @@ async def test_the_second_look_saved_on_the_guard_page_is_asked_and_its_failure_
     assert asked == ["small", "small"]
     yes, down = await _notes(store)
     assert yes.startswith("Bastet stopped a command") and "second look" not in yes
-    assert down.endswith("The second look did not answer, so this stands. LAN is not "
+    assert down.endswith("The Second look model did not answer, so the first decision stands. LAN is not "
                          "reachable (ConnectError).")
 
 

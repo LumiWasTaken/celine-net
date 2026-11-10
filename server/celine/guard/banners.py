@@ -52,7 +52,7 @@ SAID = {
     "gate": "guard.toml blocks this text from going there. Only an edit of guard.toml allows it.",
 }
 STILL_FROZEN = " {{name}} stays frozen until you unfreeze {{name}}."
-NOT_READ = "she could not make sense of it, say it in other words."
+NOT_READ = "say it in other words."
 
 
 def same(tool: str, args: dict) -> str:

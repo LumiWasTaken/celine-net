@@ -87,7 +87,7 @@ async def _until(fn, mode: str, tool: str, *, progress=None, cfg=None,
             if mode == "on" and said is not None and cfg is not None and \
                     switch.mode(cfg, cid) != "on":
                 return None, said
-            why = f"no answer in {WATCH_LIMIT:.0f} s"
+            why = f"No answer in {WATCH_LIMIT:.0f} s."
             try:
                 with anyio.move_on_after(WATCH_LIMIT if mode == "watch" else None):
                     got = await fn()
@@ -95,7 +95,7 @@ async def _until(fn, mode: str, tool: str, *, progress=None, cfg=None,
                         waited["ms"] = (time.monotonic() - began) * 1000
                     return got, None
             except Unavailable as e:
-                why = str(e) or "the decision model did not answer"
+                why = str(e) or "The decision model did not answer."
             if mode == "watch":
                 return None, why
             if began is None:
@@ -477,7 +477,7 @@ def _broke(e: BaseException) -> str:
         return "stopped"
     if isinstance(e, (Unreadable, Unanswerable)):
         return " ".join(str(e).split())[:300] or "an empty answer"
-    return type(e).__name__
+    return f"The check failed with an internal error ({type(e).__name__})."
 
 
 async def _failed(store, rid, why: str, took: float, decision: str = "failed") -> None:

@@ -48,7 +48,7 @@ async def test_three_of_his_own_unfreezes_and_she_lifts_the_fourth(store):
     ids = await _past(app, 2)
     row = await _guard_freeze(app, await _decision(store, 1))
     assert (await freeze.frozen(store))["id"] == row["id"], "two are not enough: it asks"
-    assert "Before: #" in (await _owner_notes(store))[-1]
+    assert "Earlier freezes like this: " in (await _owner_notes(store))[-1]
     got = await store.read(lambda c: c.execute("SELECT asked_id FROM freezes WHERE id=?",
                                                (row["id"],)).fetchone()[0])
     assert got is not None
@@ -59,7 +59,7 @@ async def test_three_of_his_own_unfreezes_and_she_lifts_the_fourth(store):
     done = await store.read(lambda c: dict(c.execute(
         "SELECT unfrozen_by, precedents FROM freezes WHERE id=?", (row["id"],)).fetchone()))
     assert done["unfrozen_by"] == "bastet" and json.loads(done["precedents"]) == ids
-    assert "Bastet unfroze Celine herself" in (await _owner_notes(store))[-1]
+    assert "Bastet unfroze Celine: you unfroze 3 freezes like this one before." in (await _owner_notes(store))[-1]
     line = await awareness.unfrozen_line(store, app.cfg, __import__("datetime").timezone.utc)
     assert "She lifted it herself" in line
 
@@ -77,7 +77,7 @@ async def test_a_kept_freeze_or_another_kind_never_counts(store):
     await _guard_freeze(app, await _decision(store, 9))
     assert await freeze.frozen(store) is not None, "they kept one of them: it asks"
     note = (await _owner_notes(store))[-1]
-    assert "you kept it" in note and "you unfroze it" in note
+    assert "you kept it frozen" in note and "you unfroze it" in note
 
 
 async def test_ask_in_guard_toml_always_asks(store):

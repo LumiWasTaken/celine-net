@@ -293,8 +293,8 @@ async def test_escape_freezes_and_damage_stops_on_a_held_yes(store):
     v = await guard.check(TURN, _shell("sudo docker run --privileged x"), [], mode="on",
                           judge=_never, store=store, ask=FakeAsk(0.8), cfg=cfg)
     assert v.decision == "stop" and v.rule == "escape" and v.freeze == (
-        "it looks like a sandbox escape (the command has docker "
-        "run --privileged), on a command. It looks wrong.")
+        "Stopped a command: it looks like a sandbox escape (the command has docker "
+        "run --privileged). It looks wrong.")
     [row] = await decisions.listing(store, rule="escape")
     assert row["froze"] and row["piece"] == "the command has docker run --privileged"
     v = await guard.check(TURN, {**_shell("rm -rf ~/notes"), "id": "k3"}, [], mode="on",

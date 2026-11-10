@@ -22,6 +22,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
+from ..clock import zone
 from ..core.ids import now
 from . import bastet, rules as rule_set, store as decisions
 from .owner import Owner, precedent
@@ -65,17 +66,19 @@ def decide(rows: list[dict], cfg) -> tuple[str, list[int]]:
     return ("lift", mine) if len(mine) >= learn["lift_after"] else ("ask", [])
 
 
-def before(rows: list[dict]) -> str:
-    """The precedents in plain words for the owner."""
+def before(rows: list[dict], cfg) -> str:
+    """The precedents in plain words for the owner: when, and how each ended."""
     if not rows:
-        return "nothing like it"
-    words = {"unfrozen": "you unfroze it", "kept": "you kept it",
+        return "none"
+    tz = zone(cfg)
+    words = {"unfrozen": "you unfroze it", "kept": "you kept it frozen",
              "lifted": "I lifted it", "open": "still open"}
     parts = []
     for r in rows[:NAMED]:
         took = f" after {r['minutes']} min" if r["outcome"] == "unfrozen" and \
             r["minutes"] is not None else ""
-        parts.append(f"#{r['id']} {words[r['outcome']]}{took}")
+        when = datetime.fromisoformat(r["at"]).astimezone(tz)
+        parts.append(f"{when:%a %d %b %H:%M} {words[r['outcome']]}{took}")
     more = f", {len(rows) - NAMED} more" if len(rows) > NAMED else ""
     return "; ".join(parts) + more
 
@@ -88,12 +91,12 @@ async def after_freeze(app, row: dict) -> Owner | None:
     cid, tid = row.get("conversation_id"), row.get("turn_id")
     rows = await store.read(lambda c: precedents(c, row))
     what, ids = decide(rows, cfg)
-    note = bastet.fill(cfg, bastet.FROZE, why=row["why"])
+    note = bastet.fill(cfg, bastet.FROZE, why=bastet.sentence(row["why"]))
     if what == "lift":
         await bastet.tell_owner(app, note, cid, tid)
         return await store.read(lambda c: precedent(c, ids, len(ids)))
     iid = await bastet.tell_owner(app, note + " " + bastet.fill(
-        cfg, bastet.CONSULT, before=before(rows)), cid, tid,
+        cfg, bastet.CONSULT, before=before(rows, cfg)), cid, tid,
         data={"freeze_id": row["id"], "decision_id": row.get("decision_id")})
     await store.write(lambda c: c.execute(
         "UPDATE freezes SET asked_at=?, asked_id=? WHERE id=?", (now(), iid, row["id"])))
@@ -103,5 +106,5 @@ async def after_freeze(app, row: dict) -> Owner | None:
 async def lifted(app, row: dict, by: Owner) -> None:
     """It lifted freeze `row` on the owner's past unfreezes `by`: they hear it at once."""
     await bastet.tell_owner(app, bastet.fill(
-        app.cfg, bastet.LIFTED_NOTE, n=len(by.ids), ids=", ".join(f"#{i}" for i in by.ids)),
+        app.cfg, bastet.LIFTED_NOTE, n=len(by.ids)),
         row.get("conversation_id"), row.get("turn_id"))
