@@ -980,7 +980,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 /* ── ListRow: wrapping text (its face, icon or check at the top), a file on its way ── */
 .list-row--body { align-items: flex-start; padding-block: var(--s-2); }
 .list-row--body > :is(.face, .list-row__icon, .list-row__pick) { margin-top: var(--s-0); }
-.list-row__body { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+.list-row__body { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: var(--t-md); line-height: var(--lh-body); color: var(--text-secondary); white-space: normal; overflow-wrap: anywhere; }
 .list-row__main > .progress { flex: none; margin-top: var(--s-1); }
 

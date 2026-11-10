@@ -68,7 +68,9 @@ export function ListRow({
   const picking = pick?.checked !== undefined
   const box = picking ? pick!.checked : undefined
   const wide = column !== undefined || cell !== undefined
-  const cls = cx('list-row', density !== 'md' && `list-row--${density}`, wide && 'list-row--wide', picking && 'list-row--picking',
+  // a subtitle makes a two-line row, the same height everywhere
+  const size = density === 'md' && (subtitle || aside) ? 'lg' : density
+  const cls = cx('list-row', size !== 'md' && `list-row--${size}`, wide && 'list-row--wide', picking && 'list-row--picking',
                  muted && 'list-row--muted', body != null && 'list-row--body', className)
   const hasMeta = meta != null && meta !== false
   const current = selected && !picking ? 'true' as const : undefined

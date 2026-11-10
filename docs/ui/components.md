@@ -180,10 +180,10 @@ line), `meta` (time on the right), `column` (beside the text on a wide screen: a
 conversation, a folder's faces), `cell` (a short cell before the time: "Ended",
 "20 documents"; on a phone a line under the text), `depth` (a row's steps under the row it
 sits in, drawn as a line to it), `trailing` (actions, shown on hover, focus or tap),
-`trailingAlways`, `selected`, `density` (`lg` only for two lines), `href`, `onClick`,
+`trailingAlways`, `selected`, `density` (a row with a second line, `subtitle` or `aside`, is `lg` by itself), `href`, `onClick`,
 `onContextMenu`, `press` (a long press opens the menu: useContextMenu's `press`, for a
 row with no "..." on touch), `tooltip`, `pick` (the check box while selecting), `muted` (ended or
-settled: the title quiet), `body` (text that wraps under the title, at most three lines: a
+settled: the title quiet), `body` (text that wraps under the title, at most two lines: a
 lore entry, a found passage as a Snippet), `progress` (0 to 1, null while unknown: a file on its way).
 With `column` or `cell` it is a wide row: the column, the cell and the time each keep their
 column, so rows line up; a list whose rows have a cell only sometimes passes `cell={null}`
