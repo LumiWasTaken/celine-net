@@ -30,6 +30,8 @@ FILLS = {
     "skills/read_only.md": {"skill": "notebook", "reads": "notebook__read"},
     "sub_agents/where_read_folder.md": {"folder": "agents/scout"},
     "sub_agents/where_work_folder.md": {"folder": "agents/scout"},
+    "skills/writer_ask.md": {"kind": "a message", "brief": "say hi"},
+    "skills/writer_context.md": {"context": "a message from a friend"},
 }
 
 

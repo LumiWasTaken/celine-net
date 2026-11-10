@@ -1,0 +1,3 @@
+Write {{kind}}.
+
+Brief: {{brief}}

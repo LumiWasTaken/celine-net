@@ -24,7 +24,8 @@ from .notebook import carried_text, read_note
 ROLE = "writer"
 KINDS = {"post": "a post: its title on the first line, a blank line, then the body",
          "comment": "a comment", "message": "a message"}
-# what the writer is told: skills/writer.md
+# what the writer is told: skills/writer.md; what it is asked: writer_ask.md, and
+# writer_context.md with what the text answers
 
 
 def voice_notes(cfg) -> list[tuple[str, str]]:
@@ -44,9 +45,11 @@ def messages(cfg, brief: str, kind: str, context: str) -> list[dict]:
     if identity := read_note(root, "identity.md"):
         parts.append("identity.md:\n" + cfg.substitute(identity))
     parts += [f"### {rel}\n{cfg.substitute(text)}" for rel, text in voice_notes(cfg)]
-    ask = f"Write {KINDS[kind]}.\n\nBrief: {brief.strip()}"
+    ask = prompts.text(__file__, "writer_ask.md").strip().replace(
+        "{{kind}}", KINDS[kind]).replace("{{brief}}", brief.strip())
     if context.strip():
-        ask += f"\n\nWhat it answers, where it goes:\n{context.strip()}"
+        ask += "\n\n" + prompts.text(__file__, "writer_context.md").strip().replace(
+            "{{context}}", context.strip())
     return [{"role": "system", "content": "\n\n".join(p for p in parts if p)},
             {"role": "user", "content": ask}]
 
