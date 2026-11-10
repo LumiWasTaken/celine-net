@@ -115,8 +115,8 @@ async def _think(services, cid: str, text: str, *, wait: bool = False) -> dict:
     note = "" if level in (None, "off") or level in offered else \
         " The model's list does not have this word. The app sends it as typed."
     return {"state": "changed", "thinking": level, "levels": offered,
-            "message": f"Thinking: {level or 'the model default'}, from the next "
-                       f"turn.{note}", "settings": view}
+            "message": f"Thinking: {level or 'the model default'}. This applies from your "
+                       f"next message.{note}", "settings": view}
 
 
 command("think", "How much the model thinks before it answers, in this chat: "
@@ -157,8 +157,9 @@ async def _model(services, cid: str, text: str, *, wait: bool = False) -> dict:
         p = s.providers.get(pid) or {}
         chat = [f"{pid}/{m}" for m, v in (p.get("models") or {}).items()
                 if "chat" in (v.get("caps") or [])]
+        label = (s.model(current) or {}).get("label", current) if current else "none"
         return {"state": "unchanged", "model": current, "models": chat,
-                "message": f"Model: {current or 'none'}."}
+                "message": f"Model: {label}."}
     if name.lower() in ("default", "reset"):
         clean = conv.validate(s, services.registry, {"model": None})
     else:
@@ -175,10 +176,11 @@ async def _model(services, cid: str, text: str, *, wait: bool = False) -> dict:
         key = provider_key(pid, s.secrets_root)
         try:
             found = [m["id"] for m in await kinds.discover(p["kind"], p["base_url"], key)]
-        except Exception as e:                  # it fails with the provider's reason
+        except Exception:                       # it fails with the provider's reason
             check = await kinds.check(p["kind"], p["base_url"], key, key_required=False)
             raise CelineError("unreachable", check.get("sentence") or
-                              f"{label} did not answer ({type(e).__name__}). Make sure it is running and its address is right.",
+                              f"{label} did not answer at {p['base_url']}. Make sure it is running and "
+                              f"its address is right.",
                               502) from None
         by_lower = {i.lower(): i for i in found}
         by_label = {str(v.get("label", "")).lower(): k for k, v in added.items()
@@ -205,8 +207,8 @@ async def _model(services, cid: str, text: str, *, wait: bool = False) -> dict:
     await attachments.after_switch(store, services.cfg, services.llm, cid, current)
     eff = (view.get("effective") or {})
     return {"state": "changed", "model": clean["model"], "settings": view,
-            "message": f"Model: {eff.get('label') or eff.get('model')}, from the next "
-                       f"turn."}
+            "message": f"Model: {eff.get('label') or eff.get('model')}. This applies from "
+                       f"your next message."}
 
 
 command("model", "Which model answers in this chat. Checked against the "
