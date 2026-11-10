@@ -206,7 +206,7 @@ TOOLS: dict[str, dict[str, str]] = {
     "missions__update": {"label": "Missions: update the status",
                          "summary": "Records a mission's status, a short note and what "
                                     "{{name}} delivered."},
-    "missions__wait": {"label": "Missions: wait",
+    "missions__wait": {"label": "Missions: wait until a time",
                        "summary": "Makes a mission wait until a time; its next turn starts "
                                   "then."},
     "missions__list": {"label": "Missions: list",
@@ -251,7 +251,7 @@ TOOLS: dict[str, dict[str, str]] = {
     "email__list_folders": {"label": "Email: list folders",
                             "summary": "Lists the folders with their message and unread "
                                        "counts."},
-    "email__mark": {"label": "Email: mark", "summary": "Marks messages read or unread, "
+    "email__mark": {"label": "Email: mark messages", "summary": "Marks messages read or unread, "
                                                        "flagged or unflagged."},
     "email__move": {"label": "Email: move", "summary": "Moves messages to a folder, and "
                                                        "creates the folder if it does not exist."},
@@ -287,14 +287,14 @@ TOOLS: dict[str, dict[str, str]] = {
                         "summary": "Files a problem with the app for you to review."},
     "bugreport__list": {"label": "Bugs: list bugs",
                         "summary": "Reads the bugs {{name}} filed, with their state and your reply."},
-    "artifacts__write": {"label": "Pages: write",
+    "artifacts__write": {"label": "Pages: write a page",
                          "summary": "Makes a page or a new version of one, with the whole "
                                     "text."},
-    "mind__set_status": {"label": "Status: set",
+    "mind__set_status": {"label": "Mood and thoughts: set the status",
                          "summary": "Sets the emojis or the kaomoji next to {{name}}'s name."},
-    "mind__feel": {"label": "Mood: set",
+    "mind__feel": {"label": "Mood and thoughts: set the mood",
                    "summary": "Says how {{name}} feels now; the mood follows it."},
-    "mind__think": {"label": "Thoughts: write a thought",
+    "mind__think": {"label": "Mood and thoughts: write a thought",
                     "summary": "Writes a thought down in the notebook with the time."},
     "me__read": {"label": "Persona: read",
                  "summary": "Reads {{name}}'s persona, Example lines and Banned words."},

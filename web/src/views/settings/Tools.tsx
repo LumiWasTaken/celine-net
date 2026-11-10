@@ -14,7 +14,7 @@ import { TOOL_GROUPS, settingsApi, toolGroup, toolOrder, type SkillView } from '
 import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
-import { ToolBlock, shortLabel } from '../../components/ToolBlock'
+import { ToolBlock } from '../../components/ToolBlock'
 import { EmptyState, IconButton, InlineError, ListRow, Loaded, MenuButton, Section, Toolbar } from '../../ui'
 import { Page } from './parts'
 import './settings.css'
@@ -76,7 +76,7 @@ export function Tools() {
 /* ── Require approval: the tools on it, Remove on each; Add from every other tool ── */
 function Approval({ skills, writable, onSaved }: { skills: SkillView[]; writable: boolean; onSaved: () => Promise<void> }) {
   const save = useAction(async (tool: string, on: boolean) => { await settingsApi.putApproval(tool, on); await onSaved() })
-  const tools = skills.flatMap(s => s.tools.map(t => ({ wire: t.wire_name, name: `${s.label}: ${shortLabel(t.label)}`, on: t.approval })))
+  const tools = skills.flatMap(s => s.tools.map(t => ({ wire: t.wire_name, name: t.label, on: t.approval })))
     .sort((a, b) => a.name.localeCompare(b.name))
   const lock = writable ? undefined : OFFLINE_TITLE
   return (
