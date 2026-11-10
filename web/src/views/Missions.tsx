@@ -30,7 +30,7 @@ import { useConversation } from '../lib/useConversation'
 import { useResource } from '../lib/useResource'
 import { bulkActions, useArchiveOlder } from '../components/Bulk'
 import { click } from '../components/ConversationList'
-import { ArtifactChip, Markdown } from '../components/Markdown'
+import { ArtifactChip, InlineMarkdown, Markdown } from '../components/Markdown'
 import { Talk } from '../components/Talk'
 import { PlanButton } from '../components/Plan'
 import { MissionAsk, StopMission } from '../components/MissionAsk'
@@ -475,7 +475,7 @@ export function TreeLine({ n }: { n: TreeNode }) {
   ]
   return (
     <ListRow density="lg" depth={n.depth - 1} icon={n.kind === 'mission' ? Flag : Bot} title={n.name} tooltip={stop.error ?? n.name}
-             subtitle={n.reason ?? (n.kind === 'agent' && working ? n.step_words : n.line) ?? undefined}
+             subtitle={n.reason ?? (n.kind === 'agent' && working ? n.step_words : n.line && <InlineMarkdown text={n.line} />) ?? undefined}
              aside={n.model ?? undefined} meta={<StateWord tone={toneOf(n.tone)}>{n.words}</StateWord>} muted={!working && n.kind === 'agent'}
              href={n.link} onClick={click(() => nav.goPath(n.link))}
              trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />

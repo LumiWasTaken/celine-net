@@ -93,6 +93,13 @@ export const Markdown = memo(function Markdown({ text, streaming = false, breaks
   )
 })
 
+/* One line of Markdown inside a row: emphasis and code draw, every block mark (a list
+   item, a heading, a link) leaves its text in the line. */
+const INLINE = ['strong', 'em', 'code', 'del']
+export const InlineMarkdown = memo(function InlineMarkdown({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} allowedElements={INLINE} unwrapDisallowed>{text}</ReactMarkdown>
+})
+
 /* A reply, as it is written or as it was (lib/useReveal): on screen at a steady pace in
    whole words, parsed per block (blank lines outside code) with each finished block never
    parsed again; while it is written the last block has its open markers closed and its
