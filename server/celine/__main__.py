@@ -433,6 +433,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
     app.include_router(jobs_api.router)
     app.include_router(conversations_api.router)
     app.include_router(kb_api.router)
+    from . import search as search_api
+    app.include_router(search_api.router)
     app.include_router(connectors_api.router)
     app.include_router(identity_api.router)
     app.include_router(llm_api.router)

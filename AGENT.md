@@ -40,6 +40,7 @@ The map of the code and the rules it follows.
 | `intercom/` | messages between everyone: rows, delivery, threads |
 | `guard/` | the guard: one switch, one module per concern, prompts in `config/guard/` |
 | `bugreports/` | bug reports the agent files, each an intercom thread |
+| `search.py` | Search in every place but the Messages archive (`kb/` has that one): the agent's chats, missions, routine runs, notes, documents, Intercom threads |
 | `homes.py` | where a conversation lives and the link that opens it, and the one walk up the agent chain (`root`); the client never works it out |
 | `push.py` | web push: the VAPID key, the devices that take pushes, every notice to them while no page is focused |
 | `jobs/` | steps that outlive their turn |

@@ -52,6 +52,7 @@ forbidden_modules =
     celine.reload
     celine.saves
     celine.schedules
+    celine.search
     celine.settings
     celine.shares
     celine.speech

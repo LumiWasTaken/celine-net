@@ -110,20 +110,22 @@ def match_any(query: str) -> str | None:
 
 async def search(store, query: str, limit: int = 10) -> list[dict]:
     """The notes that hold any word of the query (match_any), best first by FTS5's bm25
-    rank: {path, summary, touched_at, terms}. `terms`: the words of its text the query
-    matched, as written there (the porter tokenizer's matches), so a caller finds them
-    on the note's lines."""
+    rank: {path, summary, touched_at, terms, snippet}. `terms`: the words of its text the
+    query matched, as written there (the porter tokenizer's matches), so a caller finds
+    them on the note's lines; `snippet`: the best passage, its matches between \\x02 and
+    \\x03 (kb.chat.snippet_html)."""
     match = match_any(query)
 
     def fn(c: sqlite3.Connection) -> list[dict]:
         rows = c.execute(
             "SELECT f.path, f.summary, i.touched_at, "
-            f"highlight(notebook_fts, 2, '{_A}', '{_B}') AS marked "
+            f"highlight(notebook_fts, 2, '{_A}', '{_B}') AS marked, "
+            "snippet(notebook_fts, -1, char(2), char(3), '...', 24) AS snippet "
             "FROM notebook_fts f LEFT JOIN notebook_index i ON i.path = f.path "
             "WHERE notebook_fts MATCH ? ORDER BY rank LIMIT ?",
             (match, limit)).fetchall()
         return [{"path": r["path"], "summary": r["summary"],
-                 "touched_at": r["touched_at"],
+                 "touched_at": r["touched_at"], "snippet": r["snippet"],
                  "terms": sorted({t.lower() for t in re.findall(
                      f"{_A}(.*?){_B}", r["marked"] or "", re.S)})}
                 for r in rows]
