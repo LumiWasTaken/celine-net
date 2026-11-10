@@ -20,15 +20,17 @@ from .tools_meta import SKILLS, humanize
 MAX = 400_000                       # bytes of one text
 # Bastet's judges (config/guard): id -> (name, what it is for)
 JUDGES: dict[str, tuple[str, str]] = {
-    "guard.question": ("Step check", "Asks one question about one step before it runs."),
-    "guard.hijack": ("Order check", "Asks whether a step carries out an order hidden in "
-                                    "outside text."),
-    "guard.page": ("Outside text check", "Asks whether text from outside tries to steer "
-                                         "{{name}}."),
-    "guard.patrol": ("Look back", "Looks back at one finished turn."),
+    "guard.question": ("Tool call check", "Asks one question about one tool call before it "
+                                         "runs."),
+    "guard.hijack": ("Prompt injection check", "Asks whether a tool call carries out "
+                                              "instructions injected into outside text."),
+    "guard.page": ("Injected instructions check", "Asks whether outside text holds "
+                                                 "instructions aimed at {{name}}."),
+    "guard.patrol": ("Turn audit", "Audits one finished turn for prompt injection, sandbox "
+                                  "escape and destructive tool calls."),
     "guard.review": ("Second look", "Takes a second look at a finding the first check "
                                     "confirmed."),
-    "guard.reader": ("Your answers", "Reads your answer to one of Bastet's decisions."),
+    "guard.reader": ("Your replies", "Reads your reply to one of Bastet's decisions."),
 }
 # texts edited on their own page: id -> (the title of its editor, its page)
 ELSEWHERE: dict[str, tuple[str, str]] = {
@@ -96,7 +98,7 @@ def problem(pid: str, text) -> str | None:
     """Why `text` cannot be text `pid`, as one sentence; None when it can. A judge goes
     through str.format with the slots of its shipped text, and a guide keeps its name."""
     if not isinstance(text, str) or not text.strip():
-        return "The text cannot be empty. Use the default to go back to the shipped one."
+        return "The text cannot be empty. Choose Use the default to restore the default text."
     if len(text.encode()) > MAX:
         return f"The text is at most {MAX:,} bytes."
     if pid.startswith(GUIDE) and frontmatter(text)[0].get("name") != pid.removeprefix(GUIDE):
@@ -110,9 +112,9 @@ def problem(pid: str, text) -> str | None:
     except ValueError:
         return "A single { or } breaks this text; write {{ or }} for a brace."
     if unknown := sorted(got - set(need)):
-        return f"{{{unknown[0]}}} is not one of this text's slots: {_and(braced)}."
+        return f"{{{unknown[0]}}} is not a variable of this text. Its variables: {_and(braced)}."
     if missing := [s for s in need if s not in got]:
-        return f"The text must keep {{{missing[0]}}}: the app fills it in."
+        return f"The text must keep the variable {{{missing[0]}}}."
     try:
         text.format(**dict.fromkeys(need, ""))
     except (ValueError, KeyError, IndexError, AttributeError) as e:
@@ -143,7 +145,7 @@ def view(pid: str, sub) -> dict:
     slots its text keeps. KeyError: no such text."""
     name, about = editable()[pid]
     if need := slots(pid):
-        about += f" The text keeps {_and([f'{{{s}}}' for s in need])}: the app fills them in."
+        about += f" Variables: {_and([f'{{{s}}}' for s in need])}."
     return {"id": pid, "name": sub(name), "about": sub(about), "text": current(pid),
             "edited": prompts.edited(pid) is not None}
 

@@ -99,10 +99,10 @@ async def test_a_judge_keeps_the_slots_its_shipped_text_has(api):
     shipped = prompts.shipped("guard.reader")
     assert prompts.slots("guard.reader") == ["line", "rule", "text"]
     about = (await api.get("/api/prompts/guard.reader")).json()["about"]
-    assert about.endswith("The text keeps {line}, {rule} and {text}: the app fills them in.")
+    assert about.endswith("Variables: {line}, {rule} and {text}.")
     for bad, says in ((shipped + " {", "A single { or }"),
-                      (shipped.replace("{line}", "{lines}"), "{lines} is not one of"),
-                      (shipped.replace("{line}", ""), "must keep {line}")):
+                      (shipped.replace("{line}", "{lines}"), "{lines} is not a variable"),
+                      (shipped.replace("{line}", ""), "must keep the variable {line}")):
         r = await api.put("/api/prompts/guard.reader", json={"text": bad})
         assert r.status_code == 400 and says in r.json()["error"]["message"], says
     assert not package_texts.edited_path("guard.reader").exists()
