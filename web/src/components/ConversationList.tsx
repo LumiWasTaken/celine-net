@@ -15,7 +15,7 @@
    `picker` the rows can be selected (ui/Select); a sub-agent goes with its parent. The
    row menu opens from "..." and on right-click; on touch the row has no "...", a long
    press opens it (Select is in it). */
-import { useMemo, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from 'react'
 import {
   Archive, ArchiveRestore, Bot, Download, Flag, Heart, Inbox, ListChecks, MessageCircle, MoreHorizontal, PenLine, Pin, PinOff, Square, Trash2,
   type LucideIcon,
@@ -26,7 +26,7 @@ import { listTime } from '../lib/format'
 import { usePref } from '../lib/prefs'
 import {
   Button, coarse, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet,
-  StateWord, VirtualList, useContextMenu, type MenuItem, type WordTone, type Picker, type Shelf,
+  StateWord, VirtualList, useContextMenu, type MenuItem, type VirtualListHandle, type WordTone, type Picker, type Shelf,
 } from '../ui'
 
 /** one thing at work, on top of a list without the server's groups */
@@ -174,6 +174,16 @@ export function ConversationList({
     }
     return out
   }, [conversations, archived, deleted, shelf, hits, titles, q, working, away, groups, matches, deletedHeads, folds])
+  // the open chat's row comes into view once, when it is opened (a link, a reload) and listed
+  const list = useRef<VirtualListHandle>(null)
+  const shownFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selected || shownFor.current === selected) return
+    const i = rows.findIndex(r => (r.type === 'conversation' && r.c.id === selected) || (r.type === 'work' && r.w.open === selected))
+    if (i < 0) return
+    shownFor.current = selected
+    list.current?.scrollToIndex(i)
+  }, [selected, rows])
   if (picker) {
     picker.keys.current = rows.flatMap(r => (r.type === 'gone' || (r.type === 'conversation' && !r.sub) ? [r.c.id] : []))
   }
@@ -218,7 +228,7 @@ export function ConversationList({
 
   return (
     <>
-      <VirtualList items={rows} getKey={r => r.key} estimate={i => HEIGHT[rows[i]!.type]} inset={8} label={label}
+      <VirtualList handleRef={list} items={rows} getKey={r => r.key} estimate={i => HEIGHT[rows[i]!.type]} inset={8} label={label}
                    renderRow={r => {
                      if (r.type === 'group') {
                        if (r.open == null) return <ListSection label={r.label} />
