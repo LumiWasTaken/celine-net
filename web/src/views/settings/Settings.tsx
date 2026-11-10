@@ -1,7 +1,7 @@
 /* Settings: a list on the left, one page on the right (like system settings). No tabs.
    /settings/<page>[/<sub>]; on a phone the list is the first screen and a row opens
    its page (with a back arrow). Setup (the onboarding, run again) comes first, then General,
-   then its page (named after it); Advanced (the time limits and sizes, and Prompts under it) is last.
+   Models, then its page (named after it); Advanced (the time limits and sizes, and Prompts under it) is last.
    Sources are rows
    of their own, so 20 sources are 20 calm rows: glyph, name, a dot (amber when there
    is something to fix). */
@@ -41,6 +41,7 @@ type PageId = 'general' | 'agent' | 'features' | 'guard' | 'appearance' | 'notif
 
 const PAGES: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
+  { id: 'models', label: 'Models', icon: Bot },
   { id: 'agent', label: '', icon: Heart },
   { id: 'features', label: 'Features', icon: ToggleRight },
   { id: 'guard', label: 'Guard', icon: ShieldAlert },
@@ -48,7 +49,6 @@ const PAGES: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'people', label: 'People', icon: Users },
   { id: 'search', label: 'Search index', icon: Sparkles },
-  { id: 'models', label: 'Models', icon: Bot },
   { id: 'media', label: 'Images & Music', icon: Images },
   { id: 'tools', label: 'Tools', icon: Wrench },
   { id: 'email', label: 'Email', icon: Mail },
@@ -116,14 +116,16 @@ export function Settings({ active, status }: { active: boolean; status: ConfigSt
   const items = useMemo<Item[]>(() => {
     const q = filter.trim().toLowerCase()
     const shown = q ? list.filter(s => s.title.toLowerCase().includes(q)) : list
-    const out: Item[] = [{ type: 'setup' }, { type: 'page', ...PAGES[0]! }, { type: 'page', ...PAGES[1]!, label: status?.owner.name ?? '' }, { type: 'page', ...PAGES[2]! }]
+    // General, Models (every other page depends on a model), the agent, Features; then the rest under App
+    const out: Item[] = [{ type: 'setup' }, { type: 'page', ...PAGES[0]! }, { type: 'page', ...PAGES[1]! },
+      { type: 'page', ...PAGES[2]!, label: status?.owner.name ?? '' }, { type: 'page', ...PAGES[3]! }]
     // the Sources heading only when there is something under it
     if (list.length > 0) out.push({ type: 'section', label: 'Sources' })
     if (showFilter) out.push({ type: 'filter' })
     for (const s of shown) out.push({ type: 'source', source: s })
     if (q && shown.length === 0) out.push({ type: 'none', query: filter })
     out.push({ type: 'section', label: 'App' })
-    for (const p of PAGES.slice(3)) {
+    for (const p of PAGES.slice(4)) {
       if ((p.id === 'security' && !auth?.login) || off.has(p.id)) continue
       if (p.id === 'advanced') for (const f of forms) if (!off.has(f.id)) out.push({ type: 'page', ...f, icon: Puzzle })
       out.push({ type: 'page', ...p })
