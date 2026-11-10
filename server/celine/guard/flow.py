@@ -221,7 +221,7 @@ async def check(turn: dict, call: dict, request: list[dict], *, mode: str,
             with anyio.CancelScope(shield=True):
                 for r in names:
                     await _row(store, turn, call, mode, rules, r, "failed", found[r],
-                               sink, why=_broke(e))
+                               sink, why=_broke(e), model=getattr(e, "model", None) or None)
             metrics.record_guard("failed", names[0], 0, mode=mode)
             raise
         if got is None:
@@ -305,7 +305,7 @@ async def _hijack(turn, call, hit, mode, judge, store, rules, progress=None, cfg
     except BaseException as e:
         # a Stop or a shutdown too: no row stays "waiting"
         with anyio.CancelScope(shield=True):
-            await _failed(store, rid, _broke(e), took)
+            await _failed(store, rid, _broke(e), took, model=getattr(e, "model", None))
         metrics.record_guard("failed", first or "none", 0, mode=mode)
         raise
     if j is None:
@@ -480,6 +480,8 @@ def _broke(e: BaseException) -> str:
     return f"The check failed with an internal error ({type(e).__name__})."
 
 
-async def _failed(store, rid, why: str, took: float, decision: str = "failed") -> None:
+async def _failed(store, rid, why: str, took: float, decision: str = "failed",
+                  model: str | None = None) -> None:
     await decisions.settle(store, rid, decision=decision, source=None, quote="", why=why,
-                           scores=None, model=None, ms=round((time.monotonic() - took) * 1000))
+                           scores=None, model=model or None,
+                           ms=round((time.monotonic() - took) * 1000))

@@ -141,7 +141,7 @@ class SmallRole:
             v = parse_json(said)
             verdict = str(v.get("verdict") or "").strip().upper()[:1]
             if verdict not in ("Y", "N"):
-                raise Unreadable(said)
+                raise Unreadable(said, out.model)
             quote = " ".join(str(v.get("quote") or "").split())
             yes = verdict == "Y" and confirm(quote, seen)[0] is not None
             out.p[name] = 1.0 if yes else 0.0

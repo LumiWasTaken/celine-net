@@ -36,7 +36,12 @@ HARD = ("context_overflow", "unsupported_input", "out_of_credits")
 
 class Unreadable(Exception):
     """The model answered outside the words it was asked for: nothing passes on it. The
-    exception's text is what the model wrote; the row keeps it as its why."""
+    exception's text is what the model wrote; the row keeps it as its why, and `model`
+    as the model that wrote it."""
+
+    def __init__(self, said: str, model: str = ""):
+        super().__init__(said)
+        self.model = model
 
 
 async def complete(llm, text: str, body: dict, *, turn: dict | None = None,

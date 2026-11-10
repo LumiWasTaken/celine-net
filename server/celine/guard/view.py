@@ -21,7 +21,9 @@ DID = {"stop": "Stopped {tool}.", "freeze": "Stopped {tool} and froze everything
        "denied": "You denied {tool}.", "closed": "No answer on {tool}, it did not run.",
        "patrol": "Audited this turn after it ended.", "gate": "Stopped {tool}.",
        "allow": "Allowed {tool}.", "passed": "Allowed {tool} by your exception.",
-       "failed": "Bastet's check of {tool} failed.", "waiting": "Checking {tool}.",
+       # Warn checks beside the call, On before it: a failed check in On kept it from running
+       "failed": "Bastet's check of {tool} failed. It did not run.",
+       "failed_watch": "Bastet's check of {tool} failed. It ran.", "waiting": "Checking {tool}.",
        "unreachable": "Bastet could not decide on {tool}. It ran."}
 
 
@@ -90,7 +92,8 @@ def line(r: sqlite3.Row) -> str:
     rule = TABLE.get(r["rule"])
     why = (r["why"] or "") if k in ("failed", "unreachable") else \
         (rule.banner.format(**facts) if rule else "")
-    did = DID["gate" if r["rule"] == "gates" else k]
+    did = DID["gate" if r["rule"] == "gates" else
+              "failed_watch" if k == "failed" and r["mode"] == "watch" else k]
     return f"{did.format(tool=tool_words(r['tool']))} {why} {judged}".strip()
 
 

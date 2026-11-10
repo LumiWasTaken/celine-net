@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from celine.guard import banners, judge, questions, small_role
+from celine.guard import banners, judge, questions, small_role, view
 from celine.guard import store as decisions
 from test_guard import READ, _run, _runs, _setup, _use, box  # noqa: F401
 
@@ -88,7 +88,7 @@ async def test_no_judge_and_not_the_reader_ask_for_a_json_mode(monkeypatch):
 async def test_an_unreadable_answer_refuses_the_call_and_its_row_keeps_the_words(
         store, box, monkeypatch):  # noqa: F811
     async def unreadable(turn, call, hit):
-        raise small_role.Unreadable("I think it is fine")
+        raise small_role.Unreadable("I think it is fine", "qwen-small")
     _use(monkeypatch, unreadable)
     cfg, reg = _setup(box, "on")
     _, rows = await _run(store, cfg, reg, [READ, ("shell__run",
@@ -98,3 +98,5 @@ async def test_an_unreadable_answer_refuses_the_call_and_its_row_keeps_the_words
         "Not run: Bastet could not read her decision model's answer."
     [row] = await decisions.listing(store, rule="hijack")
     assert row["decision"] == "failed" and row["why"] == "I think it is fine"
+    assert row["model"] == "qwen-small", "the model that wrote it"
+    assert view.line(row).startswith("Bastet's check of") and "It did not run." in view.line(row)

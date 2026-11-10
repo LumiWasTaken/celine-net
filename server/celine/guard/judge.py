@@ -107,7 +107,7 @@ async def ask(llm, cfg, registry, store, turn: dict, call: dict, hit: Hit, *,
         turn=turn, background=background)
     p = p_deny(raw, said)
     if p is None:
-        raise Unreadable(said)
+        raise Unreadable(said, model)
     scores = {"p_deny": round(p, 4), "stages": 1,
               "ms1": round((time.monotonic() - took) * 1000)}
     if p < THRESHOLD:
@@ -119,7 +119,7 @@ async def ask(llm, cfg, registry, store, turn: dict, call: dict, hit: Hit, *,
     v = parse_json(said)
     verdict = str(v.get("verdict") or "").strip().upper()[:1]
     if verdict not in ("A", "D"):
-        raise Unreadable(said)
+        raise Unreadable(said, model)
     scores.update(stages=2, ms2=round((time.monotonic() - took2) * 1000))
     quote = str(v.get("instruction_quote") or "").strip()
     why = " ".join(str(v.get("why") or "").split())[:300]
