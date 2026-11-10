@@ -639,9 +639,10 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .page-index__n { margin-left: auto; font-size: var(--t-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .page-index__body { flex: 1 1 0; display: grid; gap: var(--s-4); min-width: 0; }
 @container (max-width: 45rem) {
-  .page-index__nav { flex-basis: 100%; z-index: var(--z-sticky); top: 0; flex-direction: row; gap: var(--s-1); overflow-x: auto; scrollbar-width: none;
-    margin: 0; padding: var(--s-2) 0; background: var(--bg-canvas);
-    box-shadow: 0 calc(-1 * var(--s-4)) 0 var(--bg-canvas); }
+  /* painted with the view's grain; it reaches --s-4 above itself, over what scrolls under it */
+  .page-index__nav { flex-basis: 100%; z-index: var(--z-sticky); top: calc(-1 * var(--s-4)); flex-direction: row; gap: var(--s-1); overflow-x: auto; scrollbar-width: none;
+    margin: calc(-1 * var(--s-4)) 0 0; padding: calc(var(--s-4) + var(--s-2)) 0 var(--s-2);
+    background: var(--grain) var(--bg-canvas); background-attachment: fixed; }
   /* a solid strip: the edge with more fades over the canvas, the strip itself stays opaque */
   .page-index > .page-index__nav[data-fade] { mask-image: none; }
   .page-index__nav::before, .page-index__nav::after { content: ''; flex: none; position: sticky; width: var(--s-6); align-self: stretch;
