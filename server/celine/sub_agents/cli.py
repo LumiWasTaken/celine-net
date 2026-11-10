@@ -59,7 +59,7 @@ class CliBackend:
         store = self.services.store
         brief = await store.read(lambda c: brief_of(c, self.cid))
         if not brief:
-            raise BackendError("There is no brief to work on.", retryable=False)
+            raise BackendError("There are no instructions to work on.", retryable=False)
         term = await terminals.default_terminal(store, self.cid)
         folder = f"agents/{term}"
         minutes = float(self.services.cfg.r("sub_agents.cli_minutes"))
@@ -70,7 +70,7 @@ class CliBackend:
             await box_files.put(self.services.cfg, brief.encode(), f"{folder}/brief.md",
                                 transport=shell.transport)
         except Exception as e:              # noqa: BLE001 - the box's own sentence
-            raise BackendError(f"The brief could not be written to the shellbox: {e}",
+            raise BackendError(f"The instructions could not be written to the shellbox: {e}",
                                retryable=False) from None
         command = (f"cd ~/{folder} && rm -f answer.md && agent {self.cli} -m "
                    f"'{self.model}' --minutes {minutes:g} -f brief.md -o answer.md")
@@ -98,7 +98,7 @@ class CliBackend:
             res = await shell._stream("/run", {"terminal": term, "command": command,
                                        "timeout": RUN_MAX}, _ignore)
             if res.get("state") == "busy":
-                raise BackendError(f"Its terminal {term} is busy with another program.",
+                raise BackendError(f"Terminal {term} is running another program.",
                                    retryable=False)
             if res.get("opened") and res.get("id"):      # it closes when this one is done
                 from ..core.ids import now

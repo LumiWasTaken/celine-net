@@ -223,7 +223,7 @@ class DroneBackend:
                 await self._models(oc, server, dev)
                 if session is None:
                     if not brief:
-                        raise BackendError("There is no brief to work on.", retryable=False)
+                        raise BackendError("There are no instructions to work on.", retryable=False)
                     session = await _run(oc.new_session, brief, "", server)
                     await self._set(agent_session=session)
                 busy = await _run(oc._busy_one, session, server)
@@ -295,8 +295,8 @@ class DroneBackend:
             t = tally(msgs, seen)
         except Unseen:
             raise BackendError(
-                f"The answer counted last ({seen}) is no longer in session {session} on "
-                f"{dev.label}, so what came after it cannot be counted.",
+                f"The opencode session on {dev.label} no longer has its earlier messages, "
+                "so the new reply cannot be read.",
                 retryable=False) from None
         except oc.Problem as e:
             raise BackendError(f"{dev.label}: {e}", retryable=False) from None

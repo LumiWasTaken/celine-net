@@ -78,6 +78,6 @@ async def stop_agent(request: Request, sub: str) -> dict:
     if await store.read(lambda c: c.execute(
             "SELECT 1 FROM conversations WHERE id=? AND agent_of IS NOT NULL",
             (sub,)).fetchone()) is None:
-        raise NotFound("agent")
+        raise NotFound("sub-agent")
     await _skill(request).stop_agent(sub)
     return {"stopped": True}
