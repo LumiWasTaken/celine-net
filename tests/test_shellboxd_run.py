@@ -18,17 +18,12 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from chat_fixtures import until_sync
 
 ROOT = Path(__file__).parent.parent
 KEY = "test-key-" + "k" * 16
 
 
-def until(cond, timeout: float = 10) -> None:
-    """Waits until cond() holds, looking every 0.05 s."""
-    end = time.monotonic() + timeout
-    while not cond():
-        assert time.monotonic() < end, "it never happened"
-        time.sleep(0.05)
 
 def reads_syscalls() -> bool:
     """Can this user read /proc/<pid>/syscall of a process it did not start? shellboxd
@@ -171,10 +166,10 @@ def test_a_timeout_returns_what_it_has_and_the_command_keeps_running(box):
     refused = box.run("echo nope")
     assert refused["state"] == "busy" and refused["cmd"] == r["cmd"]
     assert refused["command"] == "echo one; sleep 1; echo two"
-    until(lambda: box.d.ended(r["cmd"]) is not None)
+    until_sync(lambda: box.d.ended(r["cmd"]) is not None)
     page = box.read(**{"from": len("one\n")})
     assert (page["state"], page["exit"], page["output"], page["next"]) == ("done", 0, "two", None)
-    until(lambda: box.read()["state"] == "prompt")
+    until_sync(lambda: box.read()["state"] == "prompt")
     assert box.run("echo free")["output"] == "free"
 
 
@@ -246,7 +241,7 @@ def test_the_listing_reaps_a_terminal_whose_shell_exited(box):
     box.type(terminal="dies")
     pid = int(box.d.tmux("display-message", "-p", "-t", "=dies:", "#{pane_pid}"))
     os.kill(pid, 9)
-    until(lambda: box.d.pane("dies")["dead"])
+    until_sync(lambda: box.d.pane("dies")["dead"])
     rows = {t["name"]: t for t in box.read(None)["terminals"]}
     assert rows["dies"]["dead"] and "gone" not in rows
     assert "dies" not in {t["name"] for t in box.read(None)["terminals"]}

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from test_shellboxd_run import until
+from chat_fixtures import until_sync as until
 
 pytestmark = pytest.mark.shellbox
 
