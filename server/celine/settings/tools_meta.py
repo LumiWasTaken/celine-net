@@ -122,8 +122,8 @@ TOOLS: dict[str, dict[str, str]] = {
                           "summary": "Gives instructions to a new sub-agent; its result comes "
                                      "back later."},
     "sub_agents__read": {"label": "Sub-agents: check on one",
-                         "summary": "Shows whether one is running, its step and its latest "
-                                    "result."},
+                         "summary": "Shows whether one is running, what it is doing now and "
+                                    "its latest result."},
     "sub_agents__stop": {"label": "Sub-agents: stop",
                          "summary": "Stops one of {{name}}'s sub-agents and what it scheduled."},
     "user_documents__list": {"label": "Documents: list",
@@ -184,8 +184,8 @@ TOOLS: dict[str, dict[str, str]] = {
                                "earlier one."},
     "code__status": {"label": "Code: check a session",
                      "summary": "Says whether a coding session is running, done or failed."},
-    "code__result": {"label": "Code: read the answer",
-                     "summary": "Shows a coding session's last answer, the files it changed "
+    "code__result": {"label": "Code: read the result",
+                     "summary": "Shows a coding session's last reply, the files it changed "
                                 "and its test summary."},
     "code__abort": {"label": "Code: stop a session",
                     "summary": "Stops a running coding session."},
@@ -207,12 +207,12 @@ TOOLS: dict[str, dict[str, str]] = {
                          "summary": "Records a mission's status, a short note and what "
                                     "{{name}} delivered."},
     "missions__wait": {"label": "Missions: wait",
-                       "summary": "Pauses a mission until a time; its next turn starts "
+                       "summary": "Makes a mission wait until a time; its next turn starts "
                                   "then."},
     "missions__list": {"label": "Missions: list",
-                       "summary": "Lists the missions with their status, plan and brief."},
+                       "summary": "Lists the missions with their status, plan and instructions."},
     "missions__read": {"label": "Missions: read",
-                       "summary": "Reads one mission whole: brief, plan, sub-agents and "
+                       "summary": "Reads one mission whole: instructions, plan, sub-agents and "
                                   "what it and you wrote each other."},
     "missions__start": {"label": "Missions: start",
                         "summary": "Starts a mission of {{name}}'s own, with the same fields "
@@ -277,7 +277,7 @@ TOOLS: dict[str, dict[str, str]] = {
     "browser__close": {"label": "Browser: close a tab",
                        "summary": "Closes one of {{name}}'s browser tabs."},
     "vault__get": {"label": "Vault: get an entry",
-                   "summary": "Gives {{name}} a browser step that types an entry's password "
+                   "summary": "Gives {{name}} a browser action that types an entry's password "
                               "into a form, or writes it to a file in the shellbox."},
     "vault__set": {"label": "Vault: add an entry",
                    "summary": "Makes an entry with a new 24-character password."},
@@ -286,7 +286,7 @@ TOOLS: dict[str, dict[str, str]] = {
     "bugreport__file": {"label": "Bugs: file a bug",
                         "summary": "Files a problem with the app for you to review."},
     "bugreport__list": {"label": "Bugs: list bugs",
-                        "summary": "Reads {{name}}'s reports with their state and your reply."},
+                        "summary": "Reads the bugs {{name}} filed, with their state and your reply."},
     "artifacts__write": {"label": "Pages: write",
                          "summary": "Makes a page or a new version of one, with the whole "
                                     "text."},
@@ -308,7 +308,7 @@ TOOLS: dict[str, dict[str, str]] = {
                           "summary": "Proposes a change of settings; it is saved once you "
                                      "approve it."},
     "me__whoami": {"label": "Persona: check setup",
-                   "summary": "Says which model answers {{name}}'s turn and why, how full "
+                   "summary": "Says which model writes {{name}}'s replies and why, how full "
                               "the context is, where {{name}} works, which devices "
                               "and servers answer, and the guard's mode."},
     "appearance__set_portrait": {"label": "Portrait: set",
@@ -338,7 +338,7 @@ TOOLS: dict[str, dict[str, str]] = {
                               "summary": "Stops a batch; what was made stays."},
     "models__list": {"label": "Models: list", "summary": "The models {{name}} may use."},
     "models__ask": {"label": "Models: ask", "summary": "Sends one request to one of {{name}}'s "
-                                                       "models and returns its answer."},
+                                                       "models and returns its reply."},
     "writer__draft": {"label": "Writing: write a draft",
                       "summary": "Writes one post, comment or message in {{name}}'s voice "
                                  "from {{name}}'s instructions."},

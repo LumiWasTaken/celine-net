@@ -73,8 +73,8 @@ APPROVED_KEPT = 64  # calls approved as a tool on Require approval: the tool ask
 # why each kind is asked and where that changes; {{name}}: the agent's name
 HELP = {
     "vault": ("A password in a file of the shellbox can be read by everything there, "
-              "and a new password changes a live account. These two vault steps always "
-              "wait for you."),
+              "and a new password changes a live account. These two vault tool calls "
+              "always wait for you."),
     "tool": ("This tool is on Require approval in Settings, Tools. Remove it there to let "
              "it run without asking."),
     "agent": ("{{name}}'s persona, example lines and banned words go into every chat, so "
