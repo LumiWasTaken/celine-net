@@ -48,10 +48,10 @@ def make(c: sqlite3.Connection, name: str) -> str:
     """A new token named `name`; the token itself is returned only here.
     ValueError: a bad name or one in use."""
     if not NAME.fullmatch(name):
-        raise ValueError("A name is letters, digits, dot, dash or underscore, up to 40.")
+        raise ValueError("A token name has up to 40 letters, digits, dots, dashes or underscores.")
     if c.execute("SELECT 1 FROM intercom_tokens WHERE name=? AND revoked_at IS NULL",
                  (name,)).fetchone():
-        raise ValueError(f"A token named {name} exists.")
+        raise ValueError(f"A token named {name} already exists.")
     token = secrets.token_urlsafe(32)
     c.execute("INSERT INTO intercom_tokens (name, hash, created_at) VALUES (?,?,?)",
               (name, _hash(token), now()))
