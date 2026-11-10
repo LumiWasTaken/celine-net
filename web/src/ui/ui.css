@@ -748,7 +748,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .group-head { display: flex; align-items: baseline; gap: var(--s-3); min-width: 0; padding: var(--s-5) var(--s-3) var(--s-2); }
 .group-head:first-child { padding-top: var(--s-2); }
 .group-head__title { display: inline-flex; align-items: center; gap: var(--s-2); min-width: 0; color: var(--text-primary);
-  font-size: var(--t-lg); line-height: var(--lh-title); font-weight: var(--fw-medium); text-decoration: none; }
+  font-size: var(--t-md); line-height: var(--lh-title); font-weight: var(--fw-medium); text-decoration: none; }
 .group-head__title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-head__title > svg { flex: none; color: var(--text-muted); align-self: center; }
 .group-head__title--link { min-height: var(--hit-min); cursor: pointer; text-underline-offset: 4px; text-decoration-color: var(--border-strong); }
