@@ -550,7 +550,7 @@ async def lock_vault(request: Request) -> dict:
 @router.get("/status")
 async def config_status(request: Request) -> dict:
     """Configuration problems (a broken file, an unknown key, a missing model), for
-    Settings, General ("To fix"), plus your name and `owner`: it, as every page draws
+    Settings, General ("A setting needs a fix"), plus your name and `owner`: it, as every page draws
     it (agent.view: name, pronouns, color, portrait, named). `hosts`: each provider as
     the app last learned it (up, down, or null: not asked yet); `hold`: "paused" while
     it is paused, else null (event `agent.hold`); `build`:

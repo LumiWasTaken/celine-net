@@ -836,7 +836,7 @@ background and only write rows; a closed gate still holds) or `on` (Enforce).
   `reason_code` `frozen`, every job is stopped, no worker claims a turn (`hold.agent_hold`)
   or work item, no tool runs, the model proxy answers its shellbox 403, and a named token
   only reads the intercom. Global event `frozen.changed`.
-- **Passes** (`guard/passes.py`, `guard_passes`): a rule (or `all`) in one conversation
+- **Exceptions** (`guard/passes.py`, `guard_passes`; Exceptions on Settings, Guard): a rule (or `all`) in one conversation
   (or everywhere) until a time; with a `piece` (Allow for 7 days on a banner), only
   calls whose evidence for that rule is that exact piece. A pass on the rule that stopped
   something covers a try again at it (persist). Global event `guard.passes`.
@@ -1760,8 +1760,8 @@ first columns and a view that gives the row its words: `turn`, `tool`, `notebook
 `message`, `run`, `guard`, `freeze`, `pass`, `work`, `agent` (its own edits of its persona,
 Example lines and banned words) and `bugreport`. Each tab of the place lists its own
 sources (`events.TABS`): Guard (`guard`, `freeze`, `pass`), the agent's own tab (`agent`, labelled with its name)
-and Background tasks; a turn, a call or a notebook write lands in the agent's own tab or
-Background tasks by its conversation.
+and Background; a turn, a call or a notebook write lands in the agent's own tab or
+Background by its conversation.
 
 `GET /api/events` merges them newest first
 by `(at, id)`; a page's `next` is that pair. `links.open` is the app path where it
