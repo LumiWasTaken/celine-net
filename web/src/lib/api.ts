@@ -618,6 +618,8 @@ export type NotebookNode = {
   protected?: boolean
   owner?: 'config' | 'marked' | 'generated' | null
   virtual?: boolean
+  /** a guide's skill label (tools/) */
+  label?: string
   children?: NotebookNode[]
 }
 

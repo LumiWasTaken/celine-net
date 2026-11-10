@@ -45,7 +45,8 @@ def reference(registry, skill_name: str, cfg) -> str:
     """The guide and every tool of the skill."""
     skill = registry.skills.get(skill_name)
     g = getattr(skill, "guide", None)
-    lines = [f"# {skill_name}", ""]
+    from ..settings.tools_meta import SKILLS, humanize
+    lines = [f"# {SKILLS.get(skill_name, {}).get('label') or humanize(skill_name)}", ""]
     lines += [g.body, ""] if g is not None \
         else [str(getattr(skill, "description", "")), ""]
     status = getattr(skill, "status", None)

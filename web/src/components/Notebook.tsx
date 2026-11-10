@@ -28,7 +28,7 @@ import './Notebook.css'
 
 /** a note as the tree has it: when it last changed and the line its index keeps of it */
 type Node = NotebookNode & { updated_at?: string; line?: string | null }
-type Note = { path: string; name: string; folder: string; line: string | null; updated_at: string; locked: boolean; config: boolean }
+type Note = { path: string; name: string; label: string; folder: string; line: string | null; updated_at: string; locked: boolean; config: boolean }
 type Row = { key: string; head: string; n: number } | { key: string; note: Note }
 type Ask =
   | { kind: 'new-note'; folder: string }
@@ -49,7 +49,7 @@ const DRAG = 'text/x-notebook-path'
 function notesOf(nodes: Node[], out: Note[] = []): Note[] {
   for (const n of nodes) {
     if (n.kind === 'dir') notesOf(n.children ?? [], out)
-    else out.push({ path: n.path, name: bare(n.name), folder: parentOf(n.path), line: n.line ?? null, updated_at: n.updated_at ?? '',
+    else out.push({ path: n.path, name: bare(n.name), label: n.label ?? bare(n.name), folder: parentOf(n.path), line: n.line ?? null, updated_at: n.updated_at ?? '',
                     locked: !!n.protected || !!n.virtual, config: n.owner === 'config' || !!n.virtual })
   }
   return out
@@ -201,7 +201,7 @@ export function Notebook({ active, note, edit, history }: { active: boolean; not
                         goNote(note, { edit: true })
                       }} />
   } else if (note && !(edit && editors[note])) {
-    page = <NotePage key={note} path={note} note={opened} name={name} menu={opened ? noteMenu(opened) : []}
+    page = <NotePage key={note} path={note} note={opened} menu={opened ? noteMenu(opened) : []}
                      onEdit={() => goNote(note, { edit: true })} onFolder={f => goList(f)}
                      onOpenEditor={(text) => setEditors(e => (e[note] ? e : { ...e, [note]: { text, saved: text, n: 0 } }))}
                      wantsEditor={edit} />
@@ -366,7 +366,7 @@ function NotesList({ notes, folder, shelf, onShelf, picker, tree, menu, folderMe
 function GuidesList({ guides, tree, onOpen }: { guides: Note[]; tree: Resource<Node[]>; onOpen: (path: string) => void }) {
   const [q, setQ] = useState('')
   const ctx = useContextMenu()
-  const shown = guides.filter(g => g.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const shown = guides.filter(g => g.label.toLowerCase().includes(q.trim().toLowerCase()))
   const menu = (g: Note): MenuItem[] => [{ label: 'Open', icon: ArrowUpRight, onSelect: () => onOpen(g.path) }]
   return (
     <div className="list-page">
@@ -375,9 +375,9 @@ function GuidesList({ guides, tree, onOpen }: { guides: Note[]; tree: Resource<N
         {() => (
           <div className="list-page__rows">
             <VirtualList items={shown} estimate={68} getKey={g => g.path} label="Guides" resetOn={q}
-                         renderRow={g => <ListRow icon={Lock} title={g.name.replace(/_/g, ' ')} subtitle={g.path} tooltip="Read-only"
+                         renderRow={g => <ListRow icon={Lock} title={g.label} tooltip="Read-only"
                                                   href={format({ section: 'notebook', note: g.path })}
-                                                  onContextMenu={e => ctx.open(e, menu(g), g.name)} press={ctx.press(() => menu(g), g.name)}
+                                                  onContextMenu={e => ctx.open(e, menu(g), g.label)} press={ctx.press(() => menu(g), g.label)}
                                                   trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(g)} size="sm" />} />} />
           </div>
         )}
@@ -388,10 +388,9 @@ function GuidesList({ guides, tree, onOpen }: { guides: Note[]; tree: Resource<N
 }
 
 /* ── a note as it reads it ── */
-function NotePage({ path, note, name, menu, onEdit, onFolder, onOpenEditor, wantsEditor }: {
+function NotePage({ path, note, menu, onEdit, onFolder, onOpenEditor, wantsEditor }: {
   path: string
   note: Note | undefined
-  name: string
   menu: MenuItem[]
   onEdit: () => void
   onFolder: (f: string) => void
@@ -405,8 +404,7 @@ function NotePage({ path, note, name, menu, onEdit, onFolder, onOpenEditor, want
   const folder = parentOf(path)
   const crumbs = [{ label: 'Notebook', onClick: () => onFolder('') },
                   ...(folder ? [{ label: folder, onClick: () => onFolder(folder) }] : [])]
-  // its own notes in its words; "Who it is" for identity.md
-  const title = path === 'identity.md' && name ? `Who ${name} is` : bare(leaf(path))
+  const title = note?.label ?? bare(leaf(path))
   const doc = file.data
   return (
     <div className="nb-page">

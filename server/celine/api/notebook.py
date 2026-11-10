@@ -61,7 +61,8 @@ def _mtime(p: Path) -> str:
 @router.get("/notebook/tree")
 async def notebook_tree(request: Request) -> dict:
     """Every folder and note; a note with `updated_at` (ISO, UTC) and `line`, the summary
-    its index keeps of it (null before it has one)."""
+    its index keeps of it (null before it has one); a guide in tools/ with `label`, its
+    skill's label."""
     ch = _who(request)
     nb = _notebook_skill(request)
     lines = {r["path"]: r["summary"] for r in await notebook_index.list(store_of(request))
@@ -90,9 +91,16 @@ async def notebook_tree(request: Request) -> dict:
     tree = walk(root, "") if root.is_dir() else []
     virtual = _virtual(request)
     if virtual:
+        from ..settings.tools_meta import SKILLS, humanize
+        cfg = cfg_of(request)
+
+        def label(p: str) -> str:
+            skill = Path(p).stem
+            return cfg.substitute(SKILLS.get(skill, {}).get("label") or humanize(skill))
         tree.append({"name": "tools", "path": "tools", "kind": "dir", "virtual": True,
                      "children": [{"name": p.split("/", 1)[1], "path": p, "kind": "file",
-                                   "bytes": len(c), "protected": True, "virtual": True}
+                                   "bytes": len(c), "protected": True, "virtual": True,
+                                   "label": label(p)}
                                   for p, c in virtual.items()]})
     return {"tree": tree}
 
