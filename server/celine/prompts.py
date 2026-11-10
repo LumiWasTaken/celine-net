@@ -78,6 +78,10 @@ APP: dict[str, tuple[str, str]] = {
                                       "feel."),
     "skills.mind_places": ("Places in the app", "The places of the app, as you see them."),
     "skills.writer": ("Writing", "Drafts a post or a message in {{name}}'s own voice."),
+    "skills.tool_off": ("Off here", "Names a skill or a tool that is off in this "
+                                    "conversation."),
+    "skills.read_only": ("Read access", "Answers a sub-agent with read access that calls a "
+                                        "tool that writes."),
     "sub_agents.fragment": ("Sub-agent instructions", "Frames the instructions a sub-agent "
                                                       "gets."),
     "sub_agents.drone": ("Device sub-agent instructions", "Frames the instructions a "

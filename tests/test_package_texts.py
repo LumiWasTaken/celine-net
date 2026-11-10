@@ -26,6 +26,8 @@ FILLS = {
     "conversations/impersonate_sample.md": {"lines": "hi"},
     "conversations/impersonate_start.md": {"start": "I think"},
     "turns/fallback.md": {"first": "main/big", "current": "main/small"},
+    "skills/tool_off.md": {"tool": "shell"},
+    "skills/read_only.md": {"skill": "notebook", "reads": "notebook__read"},
 }
 
 

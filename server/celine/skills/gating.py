@@ -12,18 +12,25 @@ from __future__ import annotations
 
 import sqlite3
 
+from .. import prompts
 from ..core.ids import now
 from . import ToolSpec
 from ..core.event_types import OVERRIDES_CHANGED
 
-# A tool that is off is not in its list (turns/prompt.py wire_tools); the tail says so
-# and a call to it is refused with OFF. A skill that is down keeps its tools listed; the
-# tail says it is down and a call is refused with down_sentence.
-OFF = "{name} is off here."
-# A sub-agent with read access (sub_agents/skill.py) has only read-only tools, the
-# intercom and its own sub-agents (they start with read access too) in its list. A call to another one is refused with this and what it has of
-# that skill.
-READ_ONLY_REFUSAL = "You have read access; the read-only tools of {skill} are: {reads}."
+
+def off(name: str) -> str:
+    """A tool that is off is not in its list (turns/prompt.py wire_tools); the tail says
+    so and a call to it is refused with this (tool_off.md). A skill that is down keeps
+    its tools listed; the tail says it is down and a call is refused with down_sentence."""
+    return prompts.text(__file__, "tool_off.md").strip().replace("{{tool}}", name)
+
+
+def read_only_refusal(skill: str, reads: str) -> str:
+    """A sub-agent with read access (sub_agents/skill.py) has only read-only tools, the
+    intercom and its own sub-agents (they start with read access too) in its list. A call
+    to another one is refused with this (read_only.md) and what it has of that skill."""
+    return prompts.text(__file__, "read_only.md").strip().replace(
+        "{{skill}}", skill).replace("{{reads}}", reads)
 
 
 def down_why(why: str) -> str:

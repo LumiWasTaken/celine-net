@@ -11,7 +11,7 @@ import anyio
 from .. import clock, devices, guard, prompts
 from ..plans import flow as plan_flow
 from ..skills import CORE, ToolContext
-from ..skills.gating import OFF, down_sentence, is_enabled, overrides_for
+from ..skills.gating import down_sentence, is_enabled, off, overrides_for
 from . import legend, loads
 
 def supports_prefill(backend) -> bool:
@@ -71,7 +71,7 @@ def unusable(specs, registry, overrides, cfg) -> list[str]:
         if why := registry.down(skill):
             out.append(cfg.substitute(down_sentence(skill, why)))
         elif not any(is_enabled(s, overrides, cfg) for s in mine):
-            out.append(OFF.format(name=skill))
+            out.append(off(skill))
     return out
 
 

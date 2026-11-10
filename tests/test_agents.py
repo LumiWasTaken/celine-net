@@ -20,7 +20,7 @@ from celine.core.services import Services
 from celine.skills import Registry, ToolContext
 from celine.intercom import Intercom
 from celine.intercom.skill import IntercomSkill
-from celine.skills.gating import READ_ONLY_REFUSAL
+from celine.skills.gating import read_only_refusal
 from celine.sub_agents import report
 from celine.sub_agents.skill import SubAgents, agents_of
 from celine.skills.notebook import Notebook
@@ -180,9 +180,8 @@ async def test_a_read_sub_agent_has_only_read_tools_and_writes_nothing(store, cf
         "SELECT tc.state, m.content FROM tool_calls tc JOIN messages m "
         "ON m.id = tc.result_message_id JOIN messages a ON a.id = tc.message_id "
         "WHERE a.conversation_id = ?", (sub["id"],)).fetchone())
-    assert refused["state"] == "gated" and refused["content"] == READ_ONLY_REFUSAL.format(
-        skill="notebook",
-        reads="notebook__list, notebook__read, notebook__search")
+    assert refused["state"] == "gated" and refused["content"] == read_only_refusal(
+        "notebook", "notebook__list, notebook__read, notebook__search")
 
 
 async def test_a_stop_sticks_a_stopped_sub_agent_reports_quietly_and_its_schedule_is_cancelled(

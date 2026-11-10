@@ -16,8 +16,8 @@ from ..errors import mask, mask_all
 from ..guard import calls as bastet_calls, facts as guard_facts, mark
 from ..guard import page as guard_page, passes as guard_passes, sources
 from ..skills import CORE, META, ToolContext, ToolResult
-from ..skills.gating import (OFF, READ_ONLY_REFUSAL, down_sentence, is_enabled,
-                             read_mode_has)
+from ..skills.gating import (down_sentence, is_enabled, off, read_mode_has,
+                             read_only_refusal)
 from .cancel import until_stop
 from . import compact, store as turns
 
@@ -306,7 +306,7 @@ def _not_offered(offered, turn, name: str, spec, registry, overrides, cfg):
     if name not in offered:
         here = ", ".join(sorted(t for t in offered if t.startswith(skill + "__")))
         if turn.get("read_only") and not read_mode_has(spec):
-            text = READ_ONLY_REFUSAL.format(skill=skill, reads=here or "none")
+            text = read_only_refusal(skill, here or "none")
         else:
             text = (f"{name} is not in this conversation; its {skill} tools are: {here}."
                     if here else f"{name} is not in this conversation; it has no {skill} "
@@ -318,7 +318,7 @@ def _not_offered(offered, turn, name: str, spec, registry, overrides, cfg):
     if not is_enabled(spec, overrides, cfg):
         whole = not any(is_enabled(s, overrides, cfg) for s in registry.tools.values()
                         if s.skill == spec.skill)
-        return "gated", ToolResult(content=OFF.format(name=spec.skill if whole else name),
+        return "gated", ToolResult(content=off(spec.skill if whole else name),
                                    display={"gated": True, "tool": name}), None
     return None
 
