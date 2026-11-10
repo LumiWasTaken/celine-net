@@ -914,18 +914,19 @@ def runs(blocks: list[list[dict]], own: Own | None = None) -> list[dict]:
 
 
 def _blocks(c, turn_id: str) -> list[list[dict]]:
-    """A turn's calls in order, cut where a step of its reply has text."""
+    """A turn's calls in order, cut where a step of its reply has text and where a
+    message lands in the turn (a report, a brief: intercom/deliver.py take)."""
     blocks: list[list[dict]] = []
     last = None
     for r in c.execute(
-            "SELECT m.id AS mid, m.content != '' AND trim(m.content) != '' AS said, "
+            "SELECT m.id AS mid, m.role, m.content != '' AND trim(m.content) != '' AS said, "
             "tc.id, tc.name, tc.arguments, tc.state, tc.display, "
             "json_extract(tc.display, '$.exit') AS exit, "
             "json_extract(tc.display, '$.time_up') AS time_up "
             "FROM messages m LEFT JOIN tool_calls tc ON tc.message_id = m.id "
-            "WHERE m.turn_id=? AND m.role='assistant' "
+            "WHERE m.turn_id=? AND m.role IN ('assistant', 'user') "
             "ORDER BY m.created_at, m.rowid, tc.rowid", (turn_id,)):
-        if r["mid"] != last and (not blocks or r["said"]):
+        if r["mid"] != last and (not blocks or r["said"] or r["role"] == "user"):
             blocks.append([])
         last = r["mid"]
         if r["id"] is not None:

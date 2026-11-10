@@ -219,9 +219,9 @@ def test_runs_of_a_turn():
         "CREATE TABLE messages(id TEXT, turn_id TEXT, role TEXT, content TEXT, created_at TEXT);"
         "CREATE TABLE tool_calls(id TEXT, message_id TEXT, name TEXT, arguments TEXT, "
         "state TEXT, display TEXT);")
-    def message(mid, content, *calls):
+    def message(mid, content, *calls, turn="t1", role="assistant"):
         c.execute("INSERT INTO messages VALUES(?,?,?,?,?)",
-                  (mid, "t1", "assistant", content, f"2026-10-30T10:00:0{mid[1:]}"))
+                  (mid, turn, role, content, f"2026-10-30T10:00:0{mid[1:]}"))
         for x in calls:
             c.execute("INSERT INTO tool_calls VALUES(?,?,?,?,?,?)",
                       (x["id"], mid, x["name"], x["arguments"], x["state"],
@@ -250,6 +250,11 @@ def test_runs_of_a_turn():
     assert words_mod.runs_after(c, ["c3"], reset=True) == {"turn": "t1", "list": [
         {"ids": ["c1", "c2", "c4"], "words": "Ran 3 commands in terminal main", "failed": 1},
         {"ids": ["c5", "c6"], "words": "Ran 2 commands in terminal main", "failed": 0}]}
+    # a message that lands in the turn (a sub-agent's report) ends a run too
+    message("n1", "", call(8), call(9), turn="t2")
+    message("n2", "Result from Sam", turn="t2", role="user")
+    message("n3", "", call(10), call(11), turn="t2")
+    assert [r["ids"] for r in words_mod.runs_of_turn(c, "t2")] == [["c8", "c9"], ["c10", "c11"]]
 
 
 # the tools and their arguments as the Mac's servers list them
