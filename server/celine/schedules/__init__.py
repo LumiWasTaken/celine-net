@@ -209,7 +209,7 @@ def parse(name: str, raw: dict, reviewer_prompt: str | None) -> Schedule:
         raise _invalid("reviewer_prompt", "The reviewer prompt is empty.")
     turns = raw.get("turns", 8)
     if not isinstance(turns, int) or isinstance(turns, bool) or turns < 1:
-        raise _invalid("turns", "The turns are a whole number from 1.")
+        raise _invalid("turns", "Turns is a whole number of 1 or more.")
     note = raw.get("note", "")
     if not isinstance(note, str) or (note and (
             not note.endswith(".md") or note.startswith("/") or ".." in note.split("/"))):
@@ -217,7 +217,9 @@ def parse(name: str, raw: dict, reviewer_prompt: str | None) -> Schedule:
                                "radar/{{date}}.md.")
     role = raw.get("role", "chat")
     if role not in run_roles():
-        raise _invalid("role", f"The role is one of {', '.join(run_roles())}.")
+        from ..settings.registry import ROLES
+        raise _invalid("role", "The role is one of "
+                               f"{', '.join(ROLES[r]['label'] for r in run_roles())}.")
     flags = {}
     for key, default in (("on", True), ("idle_only", False), ("daytime", False)):
         flags[key] = raw.get(key, default)
@@ -226,11 +228,11 @@ def parse(name: str, raw: dict, reviewer_prompt: str | None) -> Schedule:
     wall = raw.get("wall_minutes")
     if wall is not None and (not isinstance(wall, int) or isinstance(wall, bool)
                              or wall < 1):
-        raise _invalid("wall_minutes", "The time it may run is a whole number of minutes, "
-                                       "or none.")
+        raise _invalid("wall_minutes", "The time limit is a whole number of minutes, "
+                                       "or empty.")
     on_fail = raw.get("on_fail", "retry")
     if on_fail not in ON_FAIL:
-        raise _invalid("on_fail", "When a run fails is retry or skip.")
+        raise _invalid("on_fail", "When a run fails is Retry or Skip.")
     return Schedule(name, label.strip(), " ".join(cron.split()), prompt.strip(),
                     tuple(dict.fromkeys(after)), reviewer,
                     (reviewer_prompt or "").strip() if reviewer else "", turns,
