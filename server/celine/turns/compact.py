@@ -42,11 +42,13 @@ def _args(arguments: str | None, limit: int = 300) -> str:
 
 
 ARG_TOKENS = 300          # a string argument of an aged call over this is shortened
-# the end short_arguments gives a shortened value; a call that sends it back is refused
-# (turns/tools.py _invalid): the app's mark is never a value a tool may receive
+# the end short_arguments gives a shortened value; a call that sends it back at the end of
+# a line (as copied, or wrapped: a heredoc's EOF after it) is refused (turns/tools.py
+# _invalid): the app's mark is never a value a tool may receive. A sentence that quotes
+# it and goes on runs.
 MARK = re.compile(r"\[[\d,]+ lines, about [\d,]+ tokens, shortened; the call is kept: "
                   r"([^\s;\]]+); read it back with past_conversations__read_tool_call"
-                  r"\(id=\"[^\"]*\"\)\]\s*\Z")
+                  r"\(id=\"[^\"]*\"\)\][ \t]*$", re.M)
 
 
 def short_arguments(arguments: str | None, call_id: str) -> str | None:
@@ -80,8 +82,8 @@ def short_arguments(arguments: str | None, call_id: str) -> str | None:
 
 
 def marked(args: dict) -> tuple[str, str] | None:
-    """(the top-level argument, the call id) of the first string in `args` that ends in
-    the shortening mark short_arguments writes; None when none does."""
+    """(the top-level argument, the call id) of the first string in `args` with a line
+    that ends in the shortening mark short_arguments writes; None when none has one."""
     def found(v) -> str | None:
         if isinstance(v, str):
             m = MARK.search(v)

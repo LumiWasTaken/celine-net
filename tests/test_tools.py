@@ -184,8 +184,23 @@ async def test_a_call_that_sends_the_apps_shortening_mark_back_is_refused(store,
     assert [e["data"]["state"] for e in events] == ["error"]
     snap = await view.snapshot(store, cid)
     result = next(m for m in snap["messages"] if m["role"] == "tool")["content"]
-    assert result.startswith("invalid arguments: content ends in the app's mark for the "
-                             "shortened content of call t9:0:0")
+    assert result.startswith("invalid arguments: content holds the app's shortening mark of "
+                             "call t9:0:0 in place of its text, and "
+                             "past_conversations__read_tool_call(id=\"t9:0:0\") reads the "
+                             "whole call back")
+    assert not (cfg.agent.notebook / "copied.md").exists(), "nothing was written"
+
+
+async def test_a_copied_mark_with_more_lines_after_it_is_refused(store, cfg, registry):
+    import json
+    from celine.turns import compact
+    content = json.loads(compact.short_arguments(json.dumps(
+        {"content": "# notes\n" + "a line of the note that goes on and on\n" * 200}),
+        "t9:0:0"))["content"]
+    cid, events = await _one_call(store, cfg, registry, "notebook__write",
+                                  json.dumps({"path": "copied.md", "summary": "notes",
+                                              "content": content + "\n\n## and one more\n"}))
+    assert [e["data"]["state"] for e in events] == ["error"]
     assert not (cfg.agent.notebook / "copied.md").exists(), "nothing was written"
 
 

@@ -85,6 +85,9 @@ def test_the_mark_names_the_argument_and_call_it_shortened():
                                                "t1:0:0"))
     assert compact.marked(short) == ("command", "t1:0:0")
     assert compact.marked({"files": [{"content": short["command"]}]}) == ("files", "t1:0:0")
+    wrapped = f"cat > /tmp/build.sh <<'EOF'\n{short['command']}\nEOF\nsh /tmp/build.sh"
+    assert compact.marked({"command": wrapped}) == ("command", "t1:0:0"), \
+        "a heredoc around the copied mark: the mark ends its line"
     quoted = f"the app wrote {short['command']} into my file, then I fixed it"
     assert compact.marked({"content": quoted}) is None, "a text that quotes it runs"
     assert compact.marked({"command": SCRIPT}) is None

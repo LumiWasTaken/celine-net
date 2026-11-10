@@ -373,13 +373,14 @@ def _invalid(args: dict | None, arguments: str | None, spec, cfg) -> str | None:
 
 
 def _marked(args: dict) -> str | None:
-    """An argument that ends in the app's own shortening mark (compact.short_arguments):
-    the model copied an aged call as the context showed it. The mark is never content."""
+    """An argument with a line that ends in the app's own shortening mark
+    (compact.short_arguments): the model copied an aged call as the context showed it.
+    The mark is never content."""
     if (hit := compact.marked(args)) is None:
         return None
     key, cid = hit
-    return (f"{key} ends in the app's mark for the shortened {key} of call {cid}; "
-            f"past_conversations__read_tool_call(id=\"{cid}\") reads that call back")
+    return (f"{key} holds the app's shortening mark of call {cid} in place of its text, "
+            f"and past_conversations__read_tool_call(id=\"{cid}\") reads the whole call back")
 
 
 def _meant(name: str, missing: list[str], props: list[str]) -> str | None:
