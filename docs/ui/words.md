@@ -109,9 +109,9 @@ block at the end of this file lists the words no UI string uses.
 | Stop, Stop the reply | stop the reply; Stop the reply is the Stop button's tooltip | ChatGPT, Claude |
 | Reply | its message in a chat; status lines say reply, never answer (The reply failed., The reply took too long and was stopped.) | Gmail, Slack "Reply" |
 | Send | send | everyone |
-| Not sent. | under your message when no turn ever took it (no reply was tried); its button is Send | iMessage "Not Delivered", WhatsApp "not sent" |
+| Not sent. | under your message when no turn ever took it (no reply was tried); its button is Send; above a run's prompt when the run ended before it was sent | iMessage "Not Delivered", WhatsApp "not sent" |
 | Message (its name) | the composer's placeholder: its name in its chats, a sub-agent's name in that sub-agent's chat | ChatGPT "Message ChatGPT", Slack "Message #channel" |
-| Read 2 notes, ran 4 commands, 2 failed, Activity, Back | a stretch of work between two things the agent says: one row with the server's words, one part per kind of call in the order first seen, and the failed count (skills/words.py `runs`; a non-zero exit counts as failed); its Sheet "Activity" lists every call, a row there opens its call in the same Sheet, Back returns to the stretch | Claude "Ran 2 commands, viewed a file", GitHub Actions "3 failed" |
+| Read 2 notes, ran 4 commands, 2 failed, Activity, Back | a stretch of work between two things the agent says: one row with the server's words, one part per kind of call in the order first seen (a kind that reads things, such as notes, counts the things, not the calls), and the failed count (skills/words.py `runs`; a non-zero exit counts as failed); its Sheet "Activity" lists every call, a row there opens its call in the same Sheet, Back returns to the stretch | Claude "Ran 2 commands, viewed a file", GitHub Actions "3 failed" |
 | Impersonate | it writes your next message as a draft | plain |
 | Copy, Edit, Delete | on a message | everyone |
 | New messages | the jump to the newest messages | Slack, Discord |
