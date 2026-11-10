@@ -1052,7 +1052,7 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
   transition: transform var(--dur) var(--ease-exit), visibility 0s linear var(--dur); }
 .place-side--drawer { flex: 1; width: auto; background: none; border: 0; }
 .place-side__head { flex: none; display: flex; align-items: center; gap: var(--s-2); min-height: var(--header-h); padding: 0 var(--s-2) 0 var(--s-4); }
-.place-side__title { flex: 1; min-width: 0; margin: 0; font-size: var(--t-lg); font-weight: var(--fw-medium);
+.place-side__title { flex: 1; min-width: 0; margin: 0; font-size: var(--t-xl); line-height: var(--lh-title); font-weight: var(--fw-medium); letter-spacing: var(--tracking-title);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-side__body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s-0); padding: 0 var(--s-2) var(--s-3); }
 .place-side__body > .list-section { padding-top: var(--s-5); }
