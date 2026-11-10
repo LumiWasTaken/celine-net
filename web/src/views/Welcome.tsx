@@ -127,7 +127,9 @@ type StepNav = { back?: () => void; next: () => void }
     detect), its service did not answer, or not set up */
 const switched = (view: FeaturesView, f: Feature, state: 'on' | 'missing' | 'unset') =>
   view.features[f.id] !== false &&
-    (state === 'on' ? f.state !== 'missing' && f.state !== 'unset' : f.state === state)
+    (state === 'on' ? f.state !== 'missing' && f.state !== 'unset'
+      : state === 'missing' ? f.state === 'missing' && blocked(f)
+      : f.state === 'unset' || (f.state === 'missing' && !blocked(f)))
 /** the labels of the features `pick` keeps, in the catalog's order; "None" for none */
 const labels = (view: FeaturesView, pick: (f: Feature) => boolean) =>
   view.catalog.filter(pick).map(f => f.label).join(', ') || 'None'
@@ -428,17 +430,21 @@ function FeatureStep({ feature: f, view, error, reload, update, save, back, next
       {!view ? <Pending error={error} reload={reload} /> : <>
         {check.error && <InlineError compact message={check.error} />}
         {Form && <Form feature={f} value={form} onChange={setForm} saveRef={saveRef} reprobe={() => check.run()} />}
-        {f.archive && f.state === 'ready' && <ConnectorSetup feature={f} view={view} update={update} put={save} />}
+        {f.archive && !blocked(f) && <ConnectorSetup feature={f} view={view} update={update} put={save} />}
       </>}
     </StepCard>
   )
 }
 
-/** a feature's setup state as one word in the accent once it is ready, so it shows at a
-    glance: Ready, Not set up, Not connected; nothing while it has nothing to check */
+/** a feature's setup state as one word: Ready, Not set up, Not connected; null while it
+    has nothing to check */
+const setupWord = (f: Feature) =>
+  f.state === 'ready' ? 'Ready' : f.state === 'unset' ? 'Not set up' : f.state === 'missing' ? 'Not connected' : null
+
+/** its setup state in the accent once it is ready, so it shows at a glance */
 function SetupState({ feature: f }: { feature: Feature }) {
   const ready = f.state === 'ready'
-  const word = ready ? 'Ready' : f.state === 'unset' ? 'Not set up' : f.state === 'missing' ? 'Not connected' : null
+  const word = setupWord(f)
   return word && <Chip tone={ready ? 'accent' : 'neutral'} icon={ready ? CircleCheck : CircleDashed} className="onb__status">{word}</Chip>
 }
 
@@ -510,10 +516,11 @@ function ConnectorSetup({ feature: f, view, update, put }: { feature: Feature; v
   const save = useAction((v: FeaturesView) => put(v))
   const start = useAction(async () => { await kbApi.importMessages(kid); tasks.reload() })
   const archive = view.catalog.find(x => x.id === f.archive)
+  // once linked: its own probe and its archive's anew
   const recheck = useAction(async () => {
-    if (!archive) return
-    const p = await settingsApi.probeFeature(archive.id)
-    update({ ...view, catalog: view.catalog.map(x => x.id === archive.id ? { ...x, ...p } : x) })
+    const ids = [f.id, ...(archive ? [archive.id] : [])]
+    const got = new Map(await Promise.all(ids.map(async id => [id, await settingsApi.probeFeature(id)] as const)))
+    update({ ...view, catalog: view.catalog.map(x => ({ ...x, ...got.get(x.id) })) })
   })
   useEffect(() => { void save.run(view) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // the connection opens a moment after the save: look again until it answers
@@ -581,7 +588,7 @@ function DoneStep({ view, error, reload, save, back, name, onSaved }: Shared & {
           <p className="onb__line">Off because they did not answer: {labels(view, f => switched(view, f, 'missing'))}. Check their addresses in Settings, Features.</p>
         )}
         {view.catalog.filter(f => switched(view, f, 'unset')).map(f => (
-          <p key={f.id} className="onb__line">Not set up: {f.label}. {f.detail}</p>
+          <p key={f.id} className="onb__line">{setupWord(f)}: {f.label}. {f.detail}</p>
         ))}
         <p className="onb__line">Off: {labels(view, f => view.features[f.id] === false)}</p>
         <p className="onb__line">You can change all of this later in Settings.</p>

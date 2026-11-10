@@ -712,10 +712,11 @@ async def cached_tools(store, server: str) -> list[dict]:
 # ---- Settings, Features: the connectors ---------------------------------------------------
 
 async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
-    """A connector's /admin/status with the app's key: running (ready), nothing at its
-    address (missing, with how to start it), another connector there that refuses the
-    key (missing), or not in mcp.toml or off (unset). `label` is the app's name (Discord,
-    WhatsApp), as the sentences say it."""
+    """A connector's /admin/status with the app's key: logged in (ready), answering but not
+    logged in (missing with the connector's own words; it does not block the switch, the
+    login needs the connection open), nothing at its address (missing, with how to start
+    it), another connector there that refuses the key (missing), or not in mcp.toml or off
+    (unset). `label` is the app's name (Discord, WhatsApp), as the sentences say it."""
     from .kb.connectors import base_url, no_answer
     s = cfg.mcp.get(server)
     if s is None or not s.enabled or not s.url:
@@ -735,10 +736,13 @@ async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
     if r.status_code != 200:
         return {"state": "missing", "detail": answered(f"The {label} connector at {host}", r)}
     try:
-        state = (r.json().get("connection") or {}).get("state") or "running"
+        conn = r.json().get("connection") or {}
     except ValueError:
-        state = "running"
-    return {"state": "ready", "detail": f"{label} at {host} answers: {state}."}
+        conn = {}
+    if conn.get("state") != "connected":
+        return {"state": "missing", "blocks": False,
+                "detail": conn.get("error") or f"{label} is not logged in."}
+    return {"state": "ready", "detail": f"{label} at {host} is connected."}
 
 
 async def probe_discord(cfg, services) -> dict[str, str]:

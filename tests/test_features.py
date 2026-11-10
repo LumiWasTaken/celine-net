@@ -151,6 +151,21 @@ async def test_a_connector_probe_says_one_thing(api, monkeypatch):
         ".env and run docker compose up -d.")
 
 
+async def test_a_connector_that_answers_but_is_not_logged_in_is_not_connected(api, monkeypatch):
+    import httpx
+    from celine import mcp
+    from celine.settings import features
+    status = {"connection": {"state": "needs_login", "error": None}}
+    monkeypatch.setattr(mcp.httpx, "AsyncClient", _answering(
+        lambda r: httpx.Response(200, json=status)))
+    said = await mcp.probe_discord(api.cfg, api.services)
+    assert said == {"state": "missing", "blocks": False,
+                    "detail": "Discord is not logged in."}
+    assert features.shown(said)["blocks"] is False, "its switch stays on for the login"
+    status["connection"] = {"state": "connected"}
+    assert (await mcp.probe_discord(api.cfg, api.services))["state"] == "ready"
+
+
 async def test_a_connector_error_answer_says_its_words(api, monkeypatch):
     import httpx
     from celine import mcp
