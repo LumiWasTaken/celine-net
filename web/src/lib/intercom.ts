@@ -140,6 +140,6 @@ export function addressName(addr: string, names: Record<string, string | null>):
 }
 
 /** your own messages read "You", in the list and in the thread */
-export const senderName = (m: Pick<IntercomMessage, 'from' | 'from_name'>) => m.from === 'user' ? 'You' : m.from_name ?? m.from
+export const senderName = (m: Pick<IntercomMessage, 'from' | 'from_name'>) => m.from === 'user' ? 'You' : m.from_name ?? 'Unknown sender'
 
 export const isIntercomEvent = (ev: { type: string }) => ev.type === 'intercom.state'
