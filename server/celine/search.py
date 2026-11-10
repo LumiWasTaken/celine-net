@@ -20,6 +20,7 @@ from .kb.chat import snippet_html
 from .kb.documents import match_expr
 from .kb.query import parse
 from .skills import notebook_index
+from .sub_agents.report import answer_of
 
 router = APIRouter(prefix="/api")
 
@@ -124,7 +125,7 @@ def _threads(c, q: str) -> dict:
             continue
         seen.add(r["thread"])
         _add(out, {"title": t["name"], "detail": r["subject"],
-                   "snippet": normalize.highlight(r["text"], exact, prefixes),
+                   "snippet": normalize.highlight(answer_of(r["text"]), exact, prefixes),
                    "time": r["created_at"], "link": f"/intercom/{r['thread']}"})
     return out
 
