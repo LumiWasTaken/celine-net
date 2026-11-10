@@ -2,7 +2,8 @@
 own key) and to the WebSocket.
 
 Allowed: loopback, and with the login on the app's stored address (settings/address.py)
-and [server] allowed_hosts. While no address is stored, a login or setup request (the
+and a page served at one of [server] allowed_hosts (CELINE_ALLOWED_HOSTS): its Origin
+names the request's own Host, and that host is on the list. While no address is stored, a login or setup request (the
 open POST routes of auth/routes.py) whose Origin names its own Host passes too: that
 request's success stores its origin (routes.py `_signed_in`). Every other request from
 elsewhere is refused until then."""
@@ -66,8 +67,13 @@ def host_ok(host_header: str) -> bool:
             or (bool(stored) and host.strip("[]") == urlsplit(stored).hostname))
 
 
-def _origin_ok(origin: str, allowed) -> bool:
-    return origin in allowed or origin == _conf["stored"]()
+def _origin_ok(origin: str, allowed, headers) -> bool:
+    """`origin` is the app's: loopback, the stored address, or the request's own Host
+    (address.same_origin) when that host is one of allowed_hosts."""
+    if origin in allowed or origin == _conf["stored"]():
+        return True
+    return _bare(headers.get("host", "")).lower() in _conf["hosts"] \
+        and address.same_origin(headers) is not None
 
 
 def check(request_headers, method: str, allowed, path: str = "") -> None:
@@ -77,7 +83,7 @@ def check(request_headers, method: str, allowed, path: str = "") -> None:
         return                  # the learning window: a login or setup from its own page
     host = request_headers.get("host", "")
     if not host_ok(host):
-        raise ForbiddenOrigin(host or "<no host>")
+        raise ForbiddenOrigin(host or "<no host>", _conf["stored"]())
 
     origin = request_headers.get("origin")
     if origin is None:
@@ -88,15 +94,15 @@ def check(request_headers, method: str, allowed, path: str = "") -> None:
             return
         raise ForbiddenOrigin("<none>")
 
-    if not _origin_ok(origin, allowed):
-        raise ForbiddenOrigin(origin)
+    if not _origin_ok(origin, allowed, request_headers):
+        raise ForbiddenOrigin(origin, _conf["stored"]())
 
 
 def ws_origin_ok(headers, allowed) -> bool:
     origin = headers.get("origin")
     if origin is None:
         return host_ok(headers.get("host", ""))
-    return _origin_ok(origin, allowed) and host_ok(headers.get("host", ""))
+    return _origin_ok(origin, allowed, headers) and host_ok(headers.get("host", ""))
 
 
 def install(app, port: int, dev: bool, log, server: dict | None = None,

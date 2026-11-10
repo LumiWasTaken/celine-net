@@ -31,3 +31,26 @@ def test_only_the_app_itself_may_call_the_api():
     assert refused("127.0.0.1:5174", "http://127.0.0.1:5174", "POST")
     assert ws_origin_ok({"host": HOME, "origin": f"http://{HOME}"}, ALLOWED)
     assert not ws_origin_ok({"host": HOME, "origin": "http://evil.example"}, ALLOWED)
+
+
+def test_a_listed_host_serves_the_app_at_a_second_address():
+    """[server] allowed_hosts with the login on: a page served at a listed host writes
+    from its own origin; a page elsewhere that names that host does not, and the refusal
+    names the app's stored address."""
+    from celine.api import origin
+    origin.configure({"allowed_hosts": ["nas.lan"]}, True, lambda: "https://celine.example.net")
+    try:
+        assert not refused("nas.lan:8766", "http://nas.lan:8766", "POST")
+        assert ws_origin_ok({"host": "nas.lan:8766", "origin": "http://nas.lan:8766"}, ALLOWED)
+        assert refused("nas.lan:8766", "http://evil.example", "POST"), "another page's write"
+        assert refused("other.lan:8766", "http://other.lan:8766", "POST"), "a host off the list"
+        assert not refused("celine.example.net", "https://celine.example.net", "POST")
+        try:
+            check({"host": "nas.lan:8766", "origin": "http://evil.example"}, "POST", ALLOWED)
+        except ForbiddenOrigin as e:
+            assert e.message == ("This page's address (http://evil.example) cannot use the "
+                                 "app. Open the app at https://celine.example.net.")
+    finally:
+        origin.configure({}, False)
+    assert refused("nas.lan:8766", "http://nas.lan:8766", "POST"), "the login off: loopback only"
+

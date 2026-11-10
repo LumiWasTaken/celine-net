@@ -131,6 +131,7 @@ _TYPES = {"int": "a whole number", "num": "a number", "str": "text", "bool": "tr
 # on while config/ stays a read-only copy of the files you run locally
 _SERVER_ENV = {"CELINE_HOST": "host", "CELINE_PORT": "port", "CELINE_LOGIN": "login",
                "CELINE_TRUSTED_PROXIES": "trusted_proxies",
+               "CELINE_ALLOWED_HOSTS": "allowed_hosts",
                "CELINE_HEALTH_PORT": "health_port",
                "CELINE_METRICS_PORT": "metrics_port"}
 

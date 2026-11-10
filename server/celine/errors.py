@@ -296,9 +296,11 @@ class TooLarge(CelineError):
 
 
 class ForbiddenOrigin(CelineError):
-    def __init__(self, origin: str):
+    """A request from a page at `origin`; `at`: the app's stored address, "" while none is."""
+
+    def __init__(self, origin: str, at: str = ""):
         super().__init__("forbidden_origin", f"This page's address ({origin}) cannot use the app. "
-                                             "Open the app at its own address.", 403)
+                                             f"Open the app at {at or 'its own address'}.", 403)
 
 
 async def _filled(request: Request, text: str) -> str:
