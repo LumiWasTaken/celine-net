@@ -12,7 +12,7 @@
    URL: /intercom, /intercom/<thread id>. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUpRight, Bot, CheckCheck, CircleCheck, CornerUpLeft, Flag, Info, Link, Mail, MessageCircle, MessageSquarePlus, MoreHorizontal, SearchX, Shapes, Terminal, User,
+  ArrowUpRight, Bot, CheckCheck, CircleCheck, CornerUpLeft, Flag, Info, Link, Mail, MessageCircle, MessageSquarePlus, SearchX, Shapes, Terminal, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Portrait } from '../components/Portrait'
@@ -31,7 +31,7 @@ import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
   Avatar, Button, Choice, ComposerBox, copied, cx, Dialog, Divider, EventLine, Field, GroupHead, ICON, InlineError, Input,
-  ListRow, Loaded, LoadingRow, MenuButton, Message, PlaceHead, Segmented, SelectBar, StateWord, TextArea, Toolbar, useContextMenu, usePicker,
+  ListRow, Loaded, LoadingRow, Message, PlaceHead, Segmented, SelectBar, StateWord, TextArea, Toolbar, useContextMenu, usePicker,
   coarse, VirtualList, type BulkResult, type Crumb, type MenuItem, type PickProps,
 } from '../ui'
 import './Intercom.css'
@@ -265,7 +265,7 @@ function ThreadRow({ t, waiting, under, pick, menu, onOpen, onMenu }: {
              column={source !== under ? source : ''} cell={what}
              meta={<span className="intercom-meta"><span title={fullDate(t.last.created_at)}>{listTime(t.last.created_at)}</span>
                {waiting && <StateWord tone="warn">{`${t.unread} waiting`}</StateWord>}</span>}
-             trailing={!pick.checked && <MenuButton icon={MoreHorizontal} label="More" items={menu} size="sm" />} />
+             menu={menu} />
   )
 }
 

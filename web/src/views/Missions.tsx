@@ -10,7 +10,7 @@
    URL: /missions, /mission/<id>. */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Archive, ArrowLeftRight, ArrowUpRight, Bot, CircleStop, FileText, Flag, History, ListChecks, MessagesSquare, MoreHorizontal, Pencil, Plus, Reply,
+  Archive, ArrowLeftRight, ArrowUpRight, Bot, CircleStop, FileText, Flag, History, ListChecks, MessagesSquare, Pencil, Plus, Reply,
   RotateCcw, SearchX, SquareTerminal, Trash2,
 } from 'lucide-react'
 import { api, conversationApi, request } from '../lib/api'
@@ -41,7 +41,7 @@ import { ModelChooser } from '../components/ModelChooser'
 import { LongEditor, TextHistory, textHistory } from '../components/editor'
 import {
   Button, ConfirmDialog, Dialog, EmptyState, Facts, Field, GroupHead, ICON, IconButton, InlineError, Input, ListRow,
-  ListSection, Loaded, LoadingRow, MenuButton, PageIndex, Place, PlaceHead, Section, SelectBar, ShelfRow, Switch, TextArea, Toolbar,
+  ListSection, Loaded, LoadingRow, PageIndex, Place, PlaceHead, Section, SelectBar, ShelfRow, Switch, TextArea, Toolbar,
   StateWord, Step, coarse, useContextMenu, usePicker, VirtualList, type MenuItem, type Shelf,
 } from '../ui'
 import './Missions.css'
@@ -248,7 +248,7 @@ function MissionsList({ shelf, setShelf, lists, agents, onNew, onChange }: {
                                       cell={<StateWord tone={toneOf(r.m.tone)}>{r.m.words}</StateWord>} meta={<time dateTime={r.m.updated_at}>{listTime(r.m.updated_at)}</time>}
                                       href={format({ section: 'missions', conversation: r.m.conversation_id })} onClick={click(() => open(r.m))}
                                       pick={picker.row(r.m.conversation_id)} onContextMenu={e => ctx.open(e, menu(r.m), r.m.name)}
-                                      trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={menu(r.m)} size="sm" />} />
+                                      menu={menu(r.m)} />
                            )} />
           </div>
         )}
@@ -477,7 +477,7 @@ export function TreeLine({ n }: { n: TreeNode }) {
              subtitle={n.reason ?? (n.kind === 'agent' && working ? n.step_words : n.line && <InlineMarkdown text={n.line} />) ?? undefined}
              aside={n.model ?? undefined} meta={<StateWord tone={toneOf(n.tone)}>{n.words}</StateWord>} muted={!working && n.kind === 'agent'}
              href={n.link} onClick={click(() => nav.goPath(n.link))}
-             trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+             menu={items} />
   )
 }
 
@@ -645,7 +645,7 @@ function AgentsList({ agents, missions }: { agents: AgentRow[]; missions: Missio
                                     meta={listTime(a.updated_at)} muted={!a.working}
                                     href={format({ section: 'missions', conversation: a.id })} onClick={click(() => nav.go({ section: 'missions', conversation: a.id }))}
                                     onContextMenu={e => ctx.open(e, menu(a), a.name)}
-                                    trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(a)} size="sm" />} />
+                                    menu={menu(a)} />
                          )} />
           </div>
         )}

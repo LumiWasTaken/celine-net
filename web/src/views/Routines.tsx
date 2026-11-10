@@ -328,7 +328,7 @@ function RunsDay({ list, night, today, days, nodes, runs, all, active, go, onEar
                                       href={n.run ? format({ section: 'routines', night, run: n.run.id })
                                         : n.schedule ? format({ section: 'routines', night, schedule: n.schedule.name }) : undefined}
                                       onClick={click(() => open(n))} onContextMenu={e => ctx.open(e, menu(n), n.label)}
-                                      trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(n)} size="sm" />} />
+                                      menu={menu(n)} />
                            )
                          }} />
           </div>
@@ -494,7 +494,7 @@ function TriggersList({ list, triggers, tasks, night, go }: {
                                       href={format({ section: 'routines', night, task: r.row.b.id })}
                                       onClick={click(() => go({ task: (r.row as { b: { id: string } }).b.id }))}
                                       onContextMenu={e => ctx.open(e, taskMenu((r.row as { b: { id: string } }).b.id))}
-                                      trailing={<MenuButton icon={MoreHorizontal} label="More" items={taskMenu(r.row.b.id)} size="sm" />} />
+                                      menu={taskMenu(r.row.b.id)} />
                            )} />
           </div>
         )}

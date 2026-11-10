@@ -17,7 +17,7 @@
    press opens it (Select is in it). */
 import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from 'react'
 import {
-  Archive, ArchiveRestore, Bot, Download, Flag, Heart, Inbox, ListChecks, MessageCircle, MoreHorizontal, PenLine, Pin, PinOff, Square, Trash2,
+  Archive, ArchiveRestore, Bot, Download, Flag, Heart, Inbox, ListChecks, MessageCircle, PenLine, Pin, PinOff, Square, Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import { api, type ConversationSummary } from '../lib/api'
@@ -25,7 +25,7 @@ import type { ChatHit } from '../lib/chat'
 import { listTime } from '../lib/format'
 import { usePref } from '../lib/prefs'
 import {
-  Button, coarse, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, MenuButton, ShelfRow, Snippet,
+  Button, coarse, Dots, EmptyState, EventLine, ICON, IconButton, InlineEdit, ListRow, ListSection, ShelfRow, Snippet,
   StateWord, VirtualList, useContextMenu, type MenuItem, type VirtualListHandle, type WordTone, type Picker, type Shelf,
 } from '../ui'
 
@@ -282,7 +282,7 @@ export function ConversationList({
                                   running={running} subtitle={said ?? undefined}
                                   meta={listTime(c.updated_at, Date.now(), !q)} onClick={click(() => onOpen(c.id))}
                                   onContextMenu={e => ctx.open(e, menu, name)} press={touch ? ctx.press(() => menu, name) : undefined}
-                                  trailing={!touch && <MenuButton icon={MoreHorizontal} label="More" size="sm" items={menu} />} />
+                                  menu={!touch && menu} />
                        )
                      }
                      return (
@@ -294,9 +294,8 @@ export function ConversationList({
                                 meta={running ? undefined : listTime(c.updated_at, Date.now(), !q)}
                                 onClick={click(() => onOpen(c.id))} onContextMenu={e => ctx.open(e, menu, name)}
                                 press={touch ? ctx.press(() => menu, name) : undefined} trailingAlways={running}
-                                trailing={running
-                                  ? <IconButton icon={Square} fill size="sm" label="Stop" onClick={() => onStop(c.id)} />
-                                  : !touch && <MenuButton icon={MoreHorizontal} label="More" size="sm" items={menu} />} />
+                                trailing={running && <IconButton icon={Square} fill size="sm" label="Stop" onClick={() => onStop(c.id)} />}
+                                menu={!running && !touch && menu} />
                      )
                    }} />
       {ctx.menu}

@@ -4,17 +4,17 @@ import {
   useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Key, type ReactNode, type Ref,
 } from 'react'
 import { measureElement, useVirtualizer } from '@tanstack/react-virtual'
-import { Check, LoaderCircle, type LucideIcon } from 'lucide-react'
+import { Check, LoaderCircle, MoreHorizontal, type LucideIcon } from 'lucide-react'
 import { DisclosureArrow, Progress } from './Bits'
 import { cx } from './cx'
 import { ICON } from './icons'
 import { useMove } from './motion'
 import type { PickProps } from './Select'
-import type { useContextMenu } from './Menu'
+import { MenuButton, type MenuItem, type useContextMenu } from './Menu'
 
 /* ── ListRow ── */
 export function ListRow({
-  leading, running = false, icon: Icon, iconAccent = false, title, subtitle, detail, body, meta, aside, column, cell, depth = 0, trailing, trailingAlways = false, selected = false, muted = false,
+  leading, running = false, icon: Icon, iconAccent = false, title, subtitle, detail, body, meta, aside, column, cell, depth = 0, trailing, menu, menuLabel, trailingAlways = false, selected = false, muted = false,
   progress, density = 'md', href, onClick, onContextMenu, press: hold, tooltip, className, style, pick,
 }: {
   leading?: ReactNode
@@ -48,6 +48,10 @@ export function ListRow({
   depth?: number
   /** actions, laid over the right end on hover and focus (in the row, always shown, on touch) */
   trailing?: ReactNode
+  /** the row's "..." after `trailing`, named "More for (the title)"; gone while selecting */
+  menu?: MenuItem[] | false
+  /** the name in its label when the title is not plain text */
+  menuLabel?: string
   trailingAlways?: boolean
   selected?: boolean
   /** ended or settled: the title quiet, its summary as the second line */
@@ -69,6 +73,8 @@ export function ListRow({
   const picking = pick?.checked !== undefined
   const box = picking ? pick!.checked : undefined
   const wide = column !== undefined || cell !== undefined
+  const name = menuLabel ?? (typeof title === 'string' ? title : tooltip)
+  if (menu && !picking) trailing = <>{trailing}<MenuButton icon={MoreHorizontal} label={name ? `More for ${name}` : 'More'} items={menu} size="sm" /></>
   // below 60rem the column hides and its words lead the subtitle's line instead
   const folds = column != null && column !== '' && column !== false
   // a subtitle makes a two-line row, the same height everywhere

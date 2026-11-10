@@ -11,7 +11,7 @@
    another tab, shows at once (SETTINGS_EVENTS).
    API: server/celine/api/settings.py (lib/settingsApi.ts). */
 import { useMemo, useState, type CSSProperties } from 'react'
-import { ArrowDown, ArrowUp, KeyRound, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, KeyRound, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { errorText } from '../../lib/format'
 import { format, useNav } from '../../lib/nav'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
@@ -26,7 +26,7 @@ import { useResource, type Resource } from '../../lib/useResource'
 import { ModelChooser, contextWords, findModel, modelDetail, modelName } from '../../components/ModelChooser'
 import { EMPTY_PROVIDER, ProviderFields, host, kindInfo, ready, type ProviderDraft } from '../../components/ProviderFields'
 import {
-  Button, Checkbox, Choice, ConfirmDialog, Dialog, EmptyState, Field, Form, type FormField, InlineError, Input, ListRow, Loaded, LoadingRow, MenuButton, Notice, NumberField, SearchField, Section, StateWord, Step, SubHead, Switch, useContextMenu, VirtualList, type MenuItem, type WordTone,
+  Button, Checkbox, Choice, ConfirmDialog, Dialog, EmptyState, Field, Form, type FormField, InlineError, Input, ListRow, Loaded, LoadingRow, Notice, NumberField, SearchField, Section, StateWord, Step, SubHead, Switch, useContextMenu, VirtualList, type MenuItem, type WordTone,
 } from '../../ui'
 import { Page } from './parts'
 import { ROLE } from '../../lib/media'
@@ -157,7 +157,7 @@ export function RoleRow({ role, info, providers, onChanged, fallback, onSave, he
               <ListRow key={m.ref} density="lg" leading={info.models.length > 1 ? <Step n={i + 1} /> : undefined} title={m.label} subtitle={m.provider_label}
                        detail={problem && <StateWord tone="warn">{problem}</StateWord>}
                        onContextMenu={e => ctx.open(e, items, m.label)} press={ctx.press(() => items, m.label)}
-                       trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+                       menu={items} />
             )
           })}
         </div>
@@ -253,7 +253,7 @@ function ProviderPage({ p, providers, kinds, cloudHelp, onChanged, onSaved }: {
                          detail={(trouble || stale) && <StateWord tone="warn">{trouble || stale}</StateWord>}
                          onClick={() => setEditing(m.name)} onContextMenu={e => ctx.open(e, items, modelName(m))}
                          press={ctx.press(() => items, modelName(m))}
-                         trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+                         menu={items} />
               )
             })}
           </div>

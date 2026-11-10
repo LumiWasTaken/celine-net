@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useName } from '../lib/name'
 import {
   ArrowUpRight, BookHeart, Contact, Copy, CornerUpLeft, File, FileText, History, Image, ImagePlay, Info, Link, ListChecks, MapPin,
-  MessagesSquare, Mic, MoreHorizontal, Music, Pencil, RotateCcw, Search, SearchX, Sticker, Trash2, Video, type LucideIcon,
+  MessagesSquare, Mic, Music, Pencil, RotateCcw, Search, SearchX, Sticker, Trash2, Video, type LucideIcon,
 } from 'lucide-react'
 import { chatText, isPicture, kbApi, type ArchiveMessage, type Chat, type Kb, type MediaType } from '../lib/kb'
 import { useServerEvents } from '../lib/bus'
@@ -22,7 +22,7 @@ import { bytes, clock, count, dayLabel, errorText, fullDate, listTime, num, same
 import { bulkActions } from '../components/Bulk'
 import {
   Avatar, Button, ConfirmDialog, Dialog, Divider, EmptyState, EventLine, ICON, IconButton, InlineError, Input, ListRow, LoadingRow,
-  MenuButton, Message, Picture, Place, PlaceHead, Quote, SelectBar, ShelfRow, Toolbar, VirtualList, sourceIcon, toast, useContextMenu,
+  Message, Picture, Place, PlaceHead, Quote, SelectBar, ShelfRow, Toolbar, VirtualList, sourceIcon, toast, useContextMenu,
   cx, usePicker, type MenuItem, type Shelf, type VirtualListHandle, copied
 } from '../ui'
 import './Search.css'
@@ -193,7 +193,7 @@ function ChatList({ kbs, kbId, active }: { kbs: Kb[]; kbId?: string; active: boo
                                       meta={c.last_ts ? listTime(c.last_ts) : ''}
                                       href={format({ section: 'chats', kb: c.kb, chat: c.id })} onClick={e => { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); open(c) } }}
                                       pick={picker.row(key)} onContextMenu={e => ctx.open(e, menu(c), c.name)} press={ctx.press(() => menu(c), c.name)}
-                                      trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={menu(c)} size="sm" />} />
+                                      menu={menu(c)} />
                            )
                          }} />
           </div>

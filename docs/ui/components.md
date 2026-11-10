@@ -180,7 +180,7 @@ line), `meta` (time on the right), `column` (beside the text on a wide screen: a
 conversation, a folder's faces), `cell` (a short cell before the time: "Ended",
 "20 documents"; on a phone a line under the text), `depth` (a row's steps under the row it
 sits in, drawn as a line to it), `trailing` (actions, shown on hover, focus or tap),
-`trailingAlways`, `selected`, `density` (a row with a second line, `subtitle` or `aside`, is `lg` by itself), `href`, `onClick`,
+`menu` (its "..." after them, named "More for" its title or `menuLabel`; gone while selecting), `trailingAlways`, `selected`, `density` (a row with a second line, `subtitle` or `aside`, is `lg` by itself), `href`, `onClick`,
 `onContextMenu`, `press` (a long press opens the menu: useContextMenu's `press`, for a
 row with no "..." on touch), `tooltip`, `pick` (the check box while selecting), `muted` (ended or
 settled: the title quiet), `body` (text that wraps under the title, at most two lines: a

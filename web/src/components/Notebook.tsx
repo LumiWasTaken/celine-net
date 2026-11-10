@@ -7,7 +7,7 @@
    read-only. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUpRight, BookOpen, Copy, Download, FileText, Folder, FolderInput, FolderPlus, History, ListChecks, Lock, MoreHorizontal, NotebookPen,
+  ArrowUpRight, BookOpen, Copy, Download, FileText, Folder, FolderInput, FolderPlus, History, ListChecks, Lock, NotebookPen,
   Eye, Pencil, Plus, RotateCcw, SearchX, Trash2,
 } from 'lucide-react'
 import { bulkApi, del, notebookApi, query, request, type NotebookNode } from '../lib/api'
@@ -18,7 +18,7 @@ import { useResource, type Resource } from '../lib/useResource'
 import type { TextHistory as HistoryPage, TextVersion, TextVersionFull } from '../lib/texts'
 import {
   Button, ConfirmDialog, Dialog, EmptyState, Field, GroupHead, IconButton, InlineError, Input, ListRow, ListSection, Loaded, LoadingRow,
-  MenuButton, Place, PlaceHead, Section, Segmented, SelectBar, ShelfRow, Toolbar, Tree, useContextMenu, usePicker, VirtualList,
+  Place, PlaceHead, Section, Segmented, SelectBar, ShelfRow, Toolbar, Tree, useContextMenu, usePicker, VirtualList,
   type BulkAction, type MenuItem, type Shelf, type ToolChoice, type TreeNode,
 } from '../ui'
 import { usePref } from '../lib/prefs'
@@ -309,7 +309,7 @@ function NotesList({ notes, folder, shelf, onShelf, picker, tree, menu, folderMe
                  cell={group === 'None' ? n.folder ? <span className="nb-folder">{n.folder}</span> : null : undefined}
                  meta={listTime(n.updated_at)} tooltip={n.locked ? 'Read-only' : n.path} href={format({ section: 'notebook', note: n.path })}
                  pick={picker.row(n.path)} onContextMenu={e => ctx.open(e, items, n.name)} press={ctx.press(() => items, n.name)}
-                 trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+                 menu={items} />
       </div>
     )
   }
@@ -378,7 +378,7 @@ function GuidesList({ guides, tree, onOpen }: { guides: Note[]; tree: Resource<N
                          renderRow={g => <ListRow icon={Lock} title={g.label} tooltip="Read-only"
                                                   href={format({ section: 'notebook', note: g.path })}
                                                   onContextMenu={e => ctx.open(e, menu(g), g.label)} press={ctx.press(() => menu(g), g.label)}
-                                                  trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(g)} size="sm" />} />} />
+                                                  menu={menu(g)} />} />
           </div>
         )}
       </Loaded>

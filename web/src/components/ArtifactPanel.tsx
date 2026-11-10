@@ -6,7 +6,7 @@
    opens in a new tab. ConversationPanel imports it with
    these props. */
 import { useState } from 'react'
-import { AppWindow, ExternalLink, FileText, MoreHorizontal, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
+import { AppWindow, ExternalLink, FileText, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
 import { draftToCeline } from '../lib/ask'
 import { artifactEvent, artifactsApi, type ArtifactRow } from '../lib/artifacts'
 import { shareEvent, sharesApi } from '../lib/shares'
@@ -14,7 +14,7 @@ import { stamp } from '../lib/format'
 import { format } from '../lib/nav'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
-import { Choice, EmptyState, IconButton, InlineError, ListRow, ListSection, LoadingRow, MenuButton, ShelfButton, ShelfRow, useContextMenu, type MenuItem } from '../ui'
+import { Choice, EmptyState, IconButton, InlineError, ListRow, ListSection, LoadingRow, ShelfButton, ShelfRow, useContextMenu, type MenuItem } from '../ui'
 import { ArtifactView } from './ArtifactView'
 import { ShareCards } from './ToolRow'
 import './Artifact.css'
@@ -88,7 +88,7 @@ function ArtifactList({ conversationId, onPick, active }: {
             ) : (
               <ListRow key={r.id} onClick={() => onPick(r.id)} icon={icon} title={r.title} tooltip={r.title} subtitle={stamp(r.updated_at)}
                        onContextMenu={e => ctx.open(e, menu(r), r.title)} press={ctx.press(() => menu(r), r.title)}
-                       trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(r)} size="sm" />} />
+                       menu={menu(r)} />
             )
           })}
           {shares.length > 0 && <ListSection label="Shares" />}

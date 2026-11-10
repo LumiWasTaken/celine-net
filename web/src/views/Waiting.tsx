@@ -8,7 +8,7 @@
    leaves the list, and its page goes back to the list.
    URL: /waiting, /waiting/thread/<thread id>, /waiting/mission/<conversation id>. */
 import { useEffect, useRef } from 'react'
-import { ArrowUpRight, CheckCheck, Flag, Hand, Mail, MoreHorizontal, Plug, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, CheckCheck, Flag, Hand, Mail, Plug, type LucideIcon } from 'lucide-react'
 import { ApprovalCard } from '../components/ApprovalCard'
 import { MissionAsk } from '../components/MissionAsk'
 import { count, fullDate, listTime } from '../lib/format'
@@ -17,7 +17,7 @@ import { useNav, type Route } from '../lib/nav'
 import { useAction } from '../lib/useAction'
 import { useWaits, type MissionWait, type Wait } from '../lib/waits'
 import {
-  Button, Facts, GroupHead, InlineError, ListRow, Loaded, MenuButton, PlaceHead, Section, useContextMenu, VirtualList, type Crumb, type MenuItem,
+  Button, Facts, GroupHead, InlineError, ListRow, Loaded, PlaceHead, Section, useContextMenu, VirtualList, type Crumb, type MenuItem,
 } from '../ui'
 import { ThreadPage } from './Intercom'
 import './Waiting.css'
@@ -105,7 +105,7 @@ function ItemRow({ w, menu, onMenu }: {
              subtitle={from && from !== w.title ? from : undefined}
              body={w.kind === 'mission' && w.why && w.text ? <>{w.why}<br />{w.line}</> : w.line || undefined}
              meta={at && <span title={fullDate(at)}>{listTime(at)}</span>} onContextMenu={e => onMenu(e, menu, w.title)}
-             trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu} size="sm" />} />
+             menu={menu} />
   )
 }
 

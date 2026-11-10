@@ -6,7 +6,7 @@
    gets, its text beside the shots. The place's sidebar holds Tabs and History with their
    counts and its tabs as Recent. Loaded lazily: noVNC is its own chunk. URL: /browser. */
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Copy, Globe, History, MessageCircle, Monitor, MoreHorizontal, MousePointerClick, Play, RefreshCw, SearchX, X } from 'lucide-react'
+import { ArrowUpRight, Copy, Globe, History, MessageCircle, Monitor, MousePointerClick, Play, RefreshCw, SearchX, X } from 'lucide-react'
 import RFB from '@novnc/novnc'
 import { BrowserShots } from '../components/ToolRow'
 import { useAgent } from '../lib/agent'
@@ -18,7 +18,7 @@ import { backoffMs, keepAlive } from '../lib/socket'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Button, ConfirmDialog, Dialog, GroupHead, InlineError, ListRow, ListSection, Loaded, MenuButton, Notice, Place,
+  Button, ConfirmDialog, Dialog, GroupHead, InlineError, ListRow, ListSection, Loaded, Notice, Place,
   PlaceHead, Screen, Section, Segmented, StateWord, TextArea, Toolbar, VirtualList, useContextMenu, type MenuItem, copied
 } from '../ui'
 import './Browser.css'
@@ -130,7 +130,7 @@ function TabsList({ box, take, restart, onOpen, onClose }: {
                                     column={t.conversation ? <span>{t.conversation.title}</span> : ''}
                                     cell={t.busy ? <StateWord tone="running">Running</StateWord> : t.name === b.front ? 'Current tab' : ''}
                                     onContextMenu={e => ctx.open(e, menu(t), tabTitle(t))}
-                                    trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(t)} size="sm" />} />
+                                    menu={menu(t)} />
                          )} />
           </div>
         )}
@@ -175,7 +175,7 @@ function HistoryList() {
     <ListRow running={r.c.state === 'running'} icon={Globe} title={r.c.line}
              aside={r.c.state === 'failed' ? <StateWord tone="error">Failed</StateWord> : r.c.state === 'cancelled' ? <StateWord>Stopped</StateWord> : undefined} tooltip={r.c.line} subtitle={r.c.conversation.title} column={TOOLS.find(t => t.value === r.c.tool)?.label ?? r.c.tool}
              cell={r.c.shots ? count(r.c.shots, 'screenshot') : ''} meta={clock(Date.parse(r.c.at))} onClick={() => setOpened(r.c)}
-             onContextMenu={e => ctx.open(e, menu(r.c), r.c.line)} trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(r.c)} size="sm" />} />
+             onContextMenu={e => ctx.open(e, menu(r.c), r.c.line)} menu={menu(r.c)} />
   )
   const none = !!list.data && list.data.total === 0
   return (

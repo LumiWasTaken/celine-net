@@ -9,13 +9,13 @@
    `events.added` loads the list again. URL: /events[/<tab>], /events/guard/<decision id>
    (nav.tsx); a tab keeps its Type and Bastet's filters to itself. */
 import { useRef, useState } from 'react'
-import { Activity, CalendarDays, Eye, Info, MoreHorizontal, Scale, SearchX, Shapes, ShieldCheck } from 'lucide-react'
+import { Activity, CalendarDays, Eye, Info, Scale, SearchX, Shapes, ShieldCheck } from 'lucide-react'
 import { clock } from '../lib/format'
 import { eventsApi, isEventsEvent, type EventRow, type EventsState, type EventsTab } from '../lib/events'
 import { useResource } from '../lib/useResource'
 import { useNav } from '../lib/nav'
 import {
-  Button, GroupHead, ListRow, Loaded, MenuButton, PlaceHead, Segmented, StateWord, Toolbar, useContextMenu, VirtualList, type MenuItem,
+  Button, GroupHead, ListRow, Loaded, PlaceHead, Segmented, StateWord, Toolbar, useContextMenu, VirtualList, type MenuItem,
 } from '../ui'
 import { ACTION_ICONS, ACTION_WORDS } from '../lib/guard'
 import { EventDecision, answer } from './EventDecision'
@@ -87,7 +87,7 @@ export function Events({ active }: { active: boolean }) {
                      cell: e.tone === 'ok' ? undefined : <StateWord tone={e.tone}>{e.outcome}</StateWord>, meta: clock(Date.parse(e.at)) }
     if (!e.guard) return <ListRow {...common} href={e.links.open ?? undefined} />
     return <ListRow {...common} onClick={() => show(e)} onContextMenu={ev => ctx.open(ev, menu(e), e.title)}
-                    trailing={<MenuButton icon={MoreHorizontal} label="More" items={menu(e)} size="sm" />} />
+                    menu={menu(e)} />
   }
   const words = (list: { id: string; label: string }[] | undefined) => (id: string) => list?.find(x => x.id === id)?.label ?? id
   const kindLabel = data?.kinds.find(k => k.id === kind)?.label

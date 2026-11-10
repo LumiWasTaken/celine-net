@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpRight, BookOpen, Code, Database, Download, ExternalLink, Eye, File, FileText, Folder as FolderIcon, FolderInput, FolderPlus,
-  FolderUp, Globe, Image, ListChecks, MoreHorizontal, NotebookPen, Pencil, RefreshCw, RotateCcw, ScanText, SearchX, Shapes,
+  FolderUp, Globe, Image, ListChecks, NotebookPen, Pencil, RefreshCw, RotateCcw, ScanText, SearchX, Shapes,
   Subtitles, Trash2, Upload, X, type LucideIcon,
 } from 'lucide-react'
 import { documentsApi, type Folder, type Item, type ItemDetail, type Mode, type Sort, type UploadResult } from '../lib/documents'
@@ -22,7 +22,7 @@ import { useResource } from '../lib/useResource'
 import { usePref } from '../lib/prefs'
 import {
   Button, Card, CardGrid, Choice, ConfirmDialog, cx, Dialog, EmptyState, Facts, Field, GroupHead, IconButton, InlineError, Input, ListRow,
-  ListSection, Loaded, MenuButton, Notice, PageIndex, Place, PlaceHead, Section, Segmented, SelectBar, ShelfRow, StatusLine, TextArea,
+  ListSection, Loaded, Notice, PageIndex, Place, PlaceHead, Section, Segmented, SelectBar, ShelfRow, StatusLine, TextArea,
   Toolbar, Tree, useContextMenu, usePicker, VirtualList, type BulkAction, type BulkResult, type MenuItem, type Shelf, type TreeNode,
 } from '../ui'
 import { Markdown } from '../components/Markdown'
@@ -352,7 +352,7 @@ function FolderPage({ folder, version, onChanged, uploads, onUploadDone, folderM
                  subtitle={it.state === 'pending' ? 'Extracting text' : it.state === 'failed' ? 'The text could not be extracted.' : where || undefined}
                  column={TYPE_WORD[it.kind]} cell={it.pages ? count(it.pages, 'page') : bytes(it.size)} meta={listTime(it.updated_at)}
                  pick={picker.row(`i:${it.id}`)} onContextMenu={e => ctx.open(e, menu, it.title)}
-                 trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={menu} size="sm" />} />
+                 menu={menu} />
       </div>
     )
   }

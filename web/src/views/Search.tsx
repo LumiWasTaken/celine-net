@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useName } from '../lib/name'
 import {
-  ArrowUpRight, BookHeart, CalendarDays, Copy, Eraser, History, MessagesSquare, MoreHorizontal, Plus, Search as SearchIcon, SearchX, Shapes, User,
+  ArrowUpRight, BookHeart, CalendarDays, Copy, Eraser, History, MessagesSquare, Plus, Search as SearchIcon, SearchX, Shapes, User,
 } from 'lucide-react'
 import {
   chatText, kbApi, type MediaType, type SearchChip, type SearchHit,
@@ -274,7 +274,7 @@ export function Search({ active }: { active: boolean }) {
                              const items: MenuItem[] = [{ label: 'Search', icon: SearchIcon, onSelect: () => setQ(r) }, 'sep',
                                { label: 'Remove', icon: Eraser, danger: true, onSelect: () => setRecents(x => { const n = x.filter(y => y !== r); saveRecents(n); return n }) }]
                              return <ListRow icon={History} title={r} onClick={() => setQ(r)} onContextMenu={e => ctx.open(e, items, r)}
-                                             trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+                                             menu={items} />
                            }} />
             </div>
           ) : <div className="list-page__empty"><EmptyState icon={SearchIcon} title="No searches yet" /></div>
@@ -305,7 +305,7 @@ export function Search({ active }: { active: boolean }) {
                                         .filter(Boolean).join(', ')}
                                       href={h.chat ? format({ section: 'chats', kb: h.kb, chat: h.chat.id, message: h.id }) : undefined}
                                       onClick={e => { e.preventDefault(); open(h) }} onContextMenu={e => ctx.open(e, hitMenu(h), 'Result')}
-                                      trailing={<MenuButton icon={MoreHorizontal} label="More" items={hitMenu(h)} size="sm" />} />
+                                      menu={hitMenu(h)} />
                            )
                          }} />
           </div>

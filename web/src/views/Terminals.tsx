@@ -6,7 +6,7 @@
    URL: /terminals, /terminals?mission=<conversation id>. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowUpRight, CircleStop, Copy, CornerUpLeft, Flag, History, ListChecks, MessageCircle, MoreHorizontal, Plus, RotateCcw, ScrollText, SearchX,
+  ArrowUpRight, CircleStop, Copy, CornerUpLeft, Flag, History, ListChecks, MessageCircle, Plus, RotateCcw, ScrollText, SearchX,
   SquareTerminal, Trash2, User, X,
 } from 'lucide-react'
 import { useName } from '../lib/name'
@@ -20,7 +20,7 @@ import {
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import {
-  Button, ConfirmDialog, copied, Dialog, GroupHead, IconButton, InlineError, ListRow, ListSection, Loaded, MenuButton, Notice, Place,
+  Button, ConfirmDialog, copied, Dialog, GroupHead, IconButton, InlineError, ListRow, ListSection, Loaded, Notice, Place,
   PlaceHead, SelectBar, ShelfRow, StateWord, Toolbar, useContextMenu, usePicker, VirtualList, type BulkAction, type MenuItem, type Shelf,
 } from '../ui'
 import './Terminals.css'
@@ -166,7 +166,7 @@ function TerminalsList() {
                subtitle={subtitleOf(t)}
                column={t.conversation && !isYours(t) ? <><span>{t.conversation.title}</span>{f && f !== 'conversations' && <span>{FROM[f]}</span>}</> : ''}
                cell={word === 'Idle' || word === 'Ended' ? undefined : <StateWord tone={stateTone(word)}>{word}</StateWord>} meta={t.ended_at ? clock(Date.parse(t.ended_at)) : listTime(lastAt(t))} pick={picker.row(t.id)} onContextMenu={e => ctx.open(e, items, t.name)}
-               trailing={!picker.on && <MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+               menu={items} />
     )
   }
 
@@ -301,7 +301,7 @@ function Commands({ mission }: { mission?: string }) {
                title={<span className="mono">{commandWords(c)}</span>} tooltip={commandWords(c)}
                subtitle={[c.terminal.name, c.from.kind === 'you' ? 'You' : c.from.title || FROM[KIND[c.from.kind] ?? 'conversations']].filter(Boolean).join(', ')}
                cell={out.tone === 'success' || !out.words ? undefined : <StateWord tone={out.tone}>{out.words}</StateWord>} meta={clock(Date.parse(c.at))} onClick={() => setOpened(c)} onContextMenu={e => ctx.open(e, items, commandWords(c))}
-               trailing={<MenuButton icon={MoreHorizontal} label="More" items={items} size="sm" />} />
+               menu={items} />
     )
   }
   const none = !!commands.data && rows.length === 0 && !q.trim() && from === 'all' && result === 'all' && !mission
