@@ -97,6 +97,7 @@ block at the end of this file lists the words no UI string uses.
 |---|---|---|
 | Regenerate | a new reply or draft in place of this one | ChatGPT, Claude |
 | Continue | a reply: write on from where it stopped | ChatGPT "Continue generating" |
+| Reload | load the page again after an app update | Chrome "Reload" |
 | Retry | do again what failed or was stopped: a reply, a run, a task, an image, a draft; the one button word for it | Claude "Retry", GitHub Actions "Re-run" |
 | Branch from here | the chat goes on from this message as a branch | ChatGPT "Branch in new chat" |
 | More like this | keep the reply as a voice sample, so more replies sound like it | |

@@ -66,7 +66,7 @@ function ArtifactList({ conversationId, onPick, active }: {
   return (
     <div className="artlist">
       <div className="artlist__bar">
-        <Choice label="Which pages" value={scope} onChange={setScope}
+        <Choice label="Show" value={scope} onChange={setScope}
                 options={[
                   ...(conversationId ? [{ value: 'here' as const, label: 'This chat' }] : []),
                   { value: 'all', label: 'All' },

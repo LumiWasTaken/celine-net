@@ -92,7 +92,7 @@ export function Chats({ active }: { active: boolean }) {
 
 type Sort = 'recent' | 'name' | 'count'
 const PAGE = 200
-const SORTS: { value: Sort; label: string }[] = [{ value: 'recent', label: 'Recent' }, { value: 'name', label: 'Name' }, { value: 'count', label: 'Messages' }]
+const SORTS: { value: Sort; label: string }[] = [{ value: 'recent', label: 'Recent' }, { value: 'name', label: 'Name' }, { value: 'count', label: 'Most messages' }]
 
 function ChatList({ kbs, kbId, active }: { kbs: Kb[]; kbId?: string; active: boolean }) {
   const nav = useNav()

@@ -78,7 +78,7 @@ function ReminderForm({ conversationId, editing, onClose, onDone }: {
   })
   const ready = !!when.trim() && !!text.trim()
   return (
-    <Dialog title={editing ? 'Edit' : 'New reminder'} size="sm" onClose={onClose} dismissable={!submit.busy}
+    <Dialog title={editing ? 'Edit reminder' : 'New reminder'} size="sm" onClose={onClose} dismissable={!submit.busy}
             actions={<>
               <Button variant="secondary" onClick={onClose} disabled={submit.busy}>Cancel</Button>
               <Button variant="primary" disabled={!ready} loading={submit.busy} onClick={() => void submit.run()}>

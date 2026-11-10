@@ -76,7 +76,7 @@ export function ArtifactView({ id, assistant, onAsk, onBack, extra, onLoaded }: 
   return (
     <div className="art">
       <PlaceHead level={1} className="art__head" lead={lead} title={a.title} titleAttr={a.title}
-                 detail={a.trashed_at ? 'Trash' : undefined}
+                 detail={a.trashed_at ? 'In the Trash' : undefined}
                  actions={<>
                    {n !== a.n && <Button variant="primary" icon={RotateCcw} loading={restore.busy} onClick={() => void restore.run(n)}>Restore this version</Button>}
                    <MenuButton label="Versions" text={version(n, a)}
