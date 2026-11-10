@@ -160,12 +160,20 @@ def test_a_bashrc_that_replaces_prompt_command_does_not_hang_its_runs(box):
         assert (r["state"], r["exit"]) == ("done", code), command
 
 
-def test_a_timeout_returns_what_it_has_and_the_command_keeps_running(box):
-    r = box.run("echo one; sleep 1; echo two", timeout=0.3)
+def _gated(go: Path) -> str:
+    """Prints one, waits until the test creates `go`, prints two: running for as long as
+    the test needs, on a loaded machine too."""
+    return f"echo one; until [ -e {go} ]; do sleep 0.05; done; echo two"
+
+
+def test_a_timeout_returns_what_it_has_and_the_command_keeps_running(box, tmp_path):
+    command = _gated(tmp_path / "go")
+    r = box.run(command, timeout=0.3)
     assert (r["state"], r["exit"], r["output"]) == ("running", None, "one")
     refused = box.run("echo nope")
     assert refused["state"] == "busy" and refused["cmd"] == r["cmd"]
-    assert refused["command"] == "echo one; sleep 1; echo two"
+    assert refused["command"] == command
+    (tmp_path / "go").touch()
     until_sync(lambda: box.d.ended(r["cmd"]) is not None)
     page = box.read(**{"from": len("one\n")})
     assert (page["state"], page["exit"], page["output"], page["next"]) == ("done", 0, "two", None)
@@ -173,11 +181,12 @@ def test_a_timeout_returns_what_it_has_and_the_command_keeps_running(box):
     assert box.run("echo free")["output"] == "free"
 
 
-def test_wait_watches_the_run_already_going_to_its_end(box):
-    r = box.run("echo one; sleep 1; echo two", timeout=0.3)
+def test_wait_watches_the_run_already_going_to_its_end(box, tmp_path):
+    r = box.run(_gated(tmp_path / "go"), timeout=0.3)
     assert r["state"] == "running"
     code, w = box.call("/wait", {"terminal": "t", "timeout": 0.2})
     assert code == 200 and (w["state"], w["cmd"]) == ("running", r["cmd"])
+    (tmp_path / "go").touch()
     code, w = box.call("/wait", {"terminal": "t"})
     assert (w["state"], w["exit"], w["output"]) == ("done", 0, "one\ntwo")
     code, again = box.call("/wait", {"terminal": "t"})     # ended already: at once
