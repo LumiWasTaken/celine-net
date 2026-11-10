@@ -1,12 +1,12 @@
 /* Vault: its passwords on your Vaultwarden. The server's fields first, then the master
-   password. The server fields save when you leave them;
-   the client secret is typed once and never shown again. The master password is stored
+   password. The server fields save when you leave them, the client secret too (or on
+   Enter); it is typed once and never shown again. The master password is stored
    nowhere: you type it to unlock, and every restart or save locks the vault again. The agent's
    requests that need your tap wait here as their cards (ApprovalCard). The line on top is
    the server's word on the vault.
    API: server/celine/api/settings.py (lib/settingsApi.ts). */
 import { useState } from 'react'
-import { KeyRound, Lock, LockOpen } from 'lucide-react'
+import { Lock, LockOpen } from 'lucide-react'
 import { OFFLINE_TITLE, useOnline } from '../../lib/socket'
 import { LINK, settingsApi } from '../../lib/settingsApi'
 import { useAction } from '../../lib/useAction'
@@ -39,7 +39,7 @@ export function Vault() {
   if (res.data === undefined && !res.error) return <Page title="Vault"><div /></Page>
   if (!res.data) return <Page title="Vault"><InlineError compact message={res.error} onRetry={res.reload} /></Page>
   const saved = (s: { state: string }) => (s.state === 'set' ? 'Saved' : undefined)
-  const error = saveSecret.error ?? unlock.error ?? lock.error
+  const error = unlock.error ?? lock.error
   return (
     <Page title="Vault">
       {res.data.asks.map(a => <ApprovalCard key={a.id} ask={a} alone />)}
@@ -50,13 +50,12 @@ export function Vault() {
                 onChange={(k, v) => auto.set(k, v)} />
           {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
         </div>
-        <form className="key-form" onSubmit={e => { e.preventDefault(); if (secret) void saveSecret.run() }}>
-          <Field label="Client secret">
-            <Input type="password" autoComplete="off" spellCheck={false} value={secret}
-                   onChange={e => setSecret(e.target.value)} placeholder={saved(res.data.client_secret)} />
+        <form onSubmit={e => { e.preventDefault(); if (secret) void saveSecret.run() }}>
+          <Field label="Client secret" error={saveSecret.error}>
+            <Input type="password" autoComplete="off" spellCheck={false} value={secret} disabled={!online}
+                   onChange={e => setSecret(e.target.value)} onBlur={() => { if (secret) void saveSecret.run() }}
+                   placeholder={saved(res.data.client_secret)} />
           </Field>
-          <Button type="submit" variant="primary" icon={KeyRound} loading={saveSecret.busy}
-                  disabled={!secret || !online}>Save</Button>
         </form>
       </Section>
       <Section>
