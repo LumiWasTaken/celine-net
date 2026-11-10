@@ -24,7 +24,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 33
+LATEST = 34
 
 
 def _version(db) -> int:
@@ -730,3 +730,28 @@ def test_0031_moves_require_approval_from_the_guard_to_the_tools(tmp_path, monke
     c.close()
     assert migrate_all(db) == 31
     assert tomllib.loads((settings / "approval.toml").read_text())["tools"] == tools
+
+
+def test_0034_names_bastets_persona_slot_with_double_braces(tmp_path, monkeypatch):
+    """An owner's talk or note frame with {persona} reads {{persona}}; one that has it already
+    stays as written."""
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0034":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 33
+    c = sqlite3.connect(db)
+    c.executemany("INSERT INTO kv(k, v) VALUES(?, ?)", [
+        ("bastet:talk", "{persona}\n\nAnswer {{name}}."), ("bastet:note", "{{persona}}\n\nx"),
+        ("bastet:persona", "{persona} stays")])
+    c.commit()
+    c.close()
+    shutil.copy(MIGRATIONS_DIR / "0034_bastet_persona_slot.sql", d)
+    assert migrate_all(db) == 34
+    c = sqlite3.connect(db)
+    assert dict(c.execute("SELECT k, v FROM kv WHERE k LIKE 'bastet:%'")) == {
+        "bastet:talk": "{{persona}}\n\nAnswer {{name}}.", "bastet:note": "{{persona}}\n\nx",
+        "bastet:persona": "{persona} stays"}

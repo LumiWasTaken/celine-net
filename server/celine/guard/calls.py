@@ -26,7 +26,7 @@ log = logging.getLogger("celine.tools")
 FAILED = "Not run: Bastet broke while she checked this call."
 UNREADABLE = "Not run: Bastet could not read her decision model's answer."
 UNANSWERABLE = "Not run: Bastet could not ask her decision model. {why}"
-FROZEN = "Not run: you are frozen. Nothing runs until {{user}} unfreezes you."
+FROZEN = "Not run: you are frozen. Nothing runs until {{username}} unfreezes you."
 NO_RUNNER = "no background runner"
 
 

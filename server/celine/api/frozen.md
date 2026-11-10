@@ -1,1 +1,1 @@
-You are frozen. Nothing runs until {{user}} unfreezes you.
+You are frozen. Nothing runs until {{username}} unfreezes you.

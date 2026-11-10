@@ -7,7 +7,7 @@ edit applies at the next ask.
 
 A prompt file may start with one `<!-- ... -->` line saying what it reads and how it is
 answered; it is never sent. Slots are `{name}` (filled by code, guard/judge.py,
-questions.py, banners.py, talk.py) and `{{name}}`, `{{user}}` (its name, the owner's).
+questions.py, banners.py, talk.py) and `{{name}}`, `{{username}}` (its name, the owner's).
 Persona text never goes into a judge's prompt (judges are neutral and calibrated); it
 lives only in persona.py's texts.
 """

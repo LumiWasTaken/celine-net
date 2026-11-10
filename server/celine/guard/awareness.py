@@ -2,8 +2,8 @@
 by the server from the tables: never a guess, never how Bastet decides.
 
 - Frozen: since when, what for in plain words (bastet.plain), where (the
-  conversation's title) and the judge's one sentence why, that it is the agent's signal to wait for {{user}}, and whether Bastet
-  asked {{user}} already (learn.py).
+  conversation's title) and the judge's one sentence why, that it is the agent's signal to wait for {{username}}, and whether Bastet
+  asked {{username}} already (learn.py).
 - Its thread with Bastet: the newest message Bastet wrote to it in this conversation
   within RECENT hours, so it answers in that thread (intercom reply_to).
 

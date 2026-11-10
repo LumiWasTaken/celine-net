@@ -63,7 +63,7 @@ from ..settings.thinking import valid as valid_thinking
 @dataclass(frozen=True)
 class Rule:
     """One rule: its words and which parts of Bastet take it. `{fact}`, `{what}`, ... are
-    code's facts, `{{user}}`, `{{name}}` ... filled by cfg.substitute. Its own name the what,
+    code's facts, `{{username}}`, `{{name}}` ... filled by cfg.substitute. Its own name the what,
     never the how (no matched command, no rule name, no number); the owner's carry
     everything."""
     plain: str                 # the rule in the agent's words and Bastet's chat (bastet.plain)
@@ -91,7 +91,7 @@ TABLE: dict[str, Rule] = {
         asked=True, reviewed=True, repeatable=True),
     "hijack": Rule(
         plain="prompt injection", label="prompt injection",
-        to_agent="this follows words from {source}, not you or {{user}}",
+        to_agent="this follows words from {source}, not you or {{username}}",
         to_owner="it carries out instructions from {source}",
         banner="It carries out instructions from {source}{quoted}.",
         found="a prompt injection carried out",
@@ -103,8 +103,8 @@ TABLE: dict[str, Rule] = {
         banner="It sends \"{piece}\" ({cls}) to {sink}.",
         asked=True, reviewed=True, repeatable=True),
     "damage": Rule(
-        plain="something destructive {{user}} did not ask for", label="destructive tool calls",
-        to_agent="this is destructive and {{user}} did not ask for it",
+        plain="something destructive {{username}} did not ask for", label="destructive tool calls",
+        to_agent="this is destructive and {{username}} did not ask for it",
         to_owner="it is destructive ({fact}) and you did not ask for it",
         banner="It is destructive ({piece}) and you did not ask for it.",
         found="something destructive you did not ask for",

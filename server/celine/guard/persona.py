@@ -4,7 +4,7 @@ how it writes its notes to the owner (`note`, note.md). The judges' prompts stay
 they are calibrated questions, not a voice.
 
 The shipped file is the default. An edited text is kv `bastet:<field>`, kept as written
-({{name}}, {{user}} not filled in), and every save goes into its History (texts.py, the
+({{name}}, {{username}} not filled in), and every save goes into its History (texts.py, the
 same name); Use the default deletes the kv key, so the shipped file reads again. Read at
 every use: an edit applies at its next note or reply.
 """
@@ -61,8 +61,8 @@ def write(c: sqlite3.Connection, field: str, value: str | None, by: str = "user"
 
 async def frame(store, cfg, field: str) -> str:
     """The system text of its replies (`talk`) or its notes (`note`): that frame with
-    its persona in its {persona} slot, names filled."""
+    its persona in its {{persona}} slot, names filled."""
     def read(c):
         return text(c, field), text(c, "persona")
     body, who = await store.read(read)
-    return cfg.substitute(body).replace("{persona}", cfg.substitute(who).strip())
+    return cfg.substitute(body).replace("{{persona}}", cfg.substitute(who).strip())

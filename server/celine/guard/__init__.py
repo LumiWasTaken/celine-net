@@ -38,7 +38,7 @@ The modules, one concern each:
 - page.py, patrol.py, mark.py   the page check, the patrol, the labels
 - store.py    every query on guard_decisions, kv and intercom; the banners' rows
 - freeze.py, passes.py, owner.py   the freeze, passes, the owner's proof
-- learn.py    past decisions: lift a freeze itself or ask {{user}}
+- learn.py    past decisions: lift a freeze itself or ask {{username}}
 - consult.py  their reply in its intercom thread is their answer to it
 - persona.py  its persona, replies and notes as the owner's texts (Settings, Guard)
 - bastet.py, view.py, talk.py, banners.py, awareness.py   its voice: sentences, the

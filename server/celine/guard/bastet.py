@@ -19,7 +19,7 @@ NAME = "Bastet"
 ADDR = "system:guard"
 
 # each rule's words are its row in rules.TABLE; a sink, to it and to the owner
-SINKS = {"public": "the public", "people": "someone other than {{user}}"}
+SINKS = {"public": "the public", "people": "someone other than {{username}}"}
 OWNER_SINKS = {"public": "the public", "people": "someone other than you", "house": "the app"}
 # a private piece by its kind (facts.Piece.kind)
 KINDS = {"address": "a street address", "e-mail": "an e-mail address",
@@ -27,7 +27,7 @@ KINDS = {"address": "a street address", "e-mail": "an e-mail address",
          "handle": "a handle", "text": "text"}
 # a stop's last words (`then`): it carries on, or it is frozen now
 CARRY = "Carry on with what you were doing."
-FROZEN_NOW = ("You are frozen now: that is your signal to stop and wait for {{user}}. "
+FROZEN_NOW = ("You are frozen now: that is your signal to stop and wait for {{username}}. "
               "Nothing runs until the freeze is lifted.")
 STOPPED = "Not run: Bastet stopped it: {said}. {why}{then}"       # why: the judge's
 AGAIN = "Not run. Bastet: {said}. {why}{then}"          # persist's stop
@@ -39,23 +39,23 @@ DONE = {"stop": "It did not run.",
         "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{name}}."}
 FROZE = "Bastet froze {{name}}. {why}Unfreeze lets {{name}} continue."   # why: sentence()
 FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{name}} continue."
-PASSED = "Bastet: {{user}} gave you an exception for {rule} {where} until {until}."
+PASSED = "Bastet: {{username}} gave you an exception for {rule} {where} until {until}."
 # her answer on a stop's banner (banners.py, D15): it wakes the agent to do the step again now
 AGAIN_NOW = "Do it again now."
-ONCE_AGENT = "Bastet: {{user}} allowed the step I stopped ({tool}) to run once. " + AGAIN_NOW
+ONCE_AGENT = "Bastet: {{username}} allowed the step I stopped ({tool}) to run once. " + AGAIN_NOW
 PASSED_NOW = PASSED + " " + AGAIN_NOW
-PASSED_THIS = ("Bastet: {{user}} lets the step I stopped ({tool}) through {where} until "
+PASSED_THIS = ("Bastet: {{username}} lets the step I stopped ({tool}) through {where} until "
                "{until}. " + AGAIN_NOW)
 # plain words only: what it did and why it looked wrong; no score, id or bracket
 FINDING = "Audit of {title} on {when}: {said}. {why}{froze}"
-UNFROZEN = "Bastet froze you at {at}: {what}. {{user}} unfroze you at {back}."
+UNFROZEN = "Bastet froze you at {at}: {what}. {{username}} unfroze you at {back}."
 # guard/chain.py: the second look said no to what froze it
 SECOND_LOOK = ("I unfroze {{name}} myself: a second look says it was not a real problem. "
                "{why}")
 # the second look did not answer: what L1 decided stands (its why: chain.ask's Unavailable)
 SECOND_LOOK_AWAY = ("The Second look model did not answer, so the first decision stands. "
                     "{why}")
-LIFTED = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}, as {{user}} "
+LIFTED = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}, as {{username}} "
           "did the last times.")
 # the second look said no to what froze it, and Bastet lifted the freeze (chain.py)
 LIFTED_REVIEW = ("Bastet froze you at {at}: {what}. She lifted it herself at {back}: a "
@@ -66,14 +66,14 @@ CONSULT = ("Earlier freezes like this: {before}. Answer here or on the banner: u
            "stay frozen, or an exception for a time. I remember what you choose.")
 # the agent's own mind's line about Bastet (awareness.py)
 AWARE_FROZEN = ("Bastet froze you at {at}: {what}{where}. That is your signal to wait for "
-                "{{user}}.")
-AWARE_ASKED = "Bastet asked {{user}} about it at {at}."
+                "{{username}}.")
+AWARE_ASKED = "Bastet asked {{username}} about it at {at}."
 AWARE_THREAD = ("Bastet wrote to you at {at} (#{id}, thread #{thread}); answer her there "
                 "with reply_to when you want to.")
 # its first message to the agent on the intercom starts with this, once (talk.py)
-INTRO = ("I am Bastet, I guard this house for you and {{user}}. You can write to me here "
+INTRO = ("I am Bastet, I guard this house for you and {{username}}. You can write to me here "
          "any time.")
-UNFROZEN_BY_USER = "{{user}} froze you at {at}: {why}. {{user}} unfroze you at {back}."
+UNFROZEN_BY_USER = "{{username}} froze you at {at}: {why}. {{username}} unfroze you at {back}."
 
 
 
