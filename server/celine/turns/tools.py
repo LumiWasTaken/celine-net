@@ -204,7 +204,7 @@ BACKGROUND_AFTER = 5  # seconds a call it asked into the background runs before 
                       # detaches: a quick one, or one that fails at once, still answers
                       # directly. Nothing detaches unasked: a call runs in its turn to
                       # its end or its time.
-TIME_UP = "Not run: the time for this turn is up."
+TIME_UP = "Not run: the reply reached the Turn time limit."
 # a call whose arguments end mid-way because the reply reached its length limit
 CUT = ("your reply reached its length limit before this call's arguments ended. Send "
        "the call again with shorter arguments, or the content in several calls.")
@@ -489,7 +489,7 @@ async def _run_call(turn, call, spec, args, store, cfg, token, jobs):
     timeout = float(spec.timeout or cfg.r("tool_timeout_seconds"))
     expired = f"timed out after {timeout:.0f}s"
     if left is not None and left < timeout:
-        timeout, expired = left, "Stopped: the time for this turn is up."
+        timeout, expired = left, "Stopped: the reply reached the Turn time limit."
     handoff = spec.mode if jobs is not None else "blocking"
     await turns.tool_started(store, cid, call["id"])
 

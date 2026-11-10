@@ -623,8 +623,8 @@ async def test_a_failed_sub_agent_reports_the_reason_its_turn_stored(store):
     from celine.conversations import tree
     app = Services(store=store, intercom=Intercom(store))
     parent = await conversations.create(store)
-    why = ("qwen3:4b has room for 4,096 tokens, and Celine's instructions and tools alone "
-           "take about 8,228.")
+    why = ("qwen3:4b has a context size of 4,096 tokens, and Celine's instructions and "
+           "tools alone take about 8,228.")
 
     async def failed(name, words):
         sub = await conversations.create(store, name, agent_of=parent, agent_name=name)

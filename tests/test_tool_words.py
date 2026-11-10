@@ -45,8 +45,8 @@ def test_not_run_and_cut_off():
               "Down: SearXNG does not answer. Start it.")
     assert gated["settled"] == 'Could not search the web for "tea": SearXNG does not answer'
     late = w("notebook__search", {"query": "tea"}, "error", {"time_up": True},
-             "Not run: the time for this turn is up.")
-    assert late["settled"] == "Not run: the time for this turn is up"
+             "Not run: the reply reached the Turn time limit.")
+    assert late["settled"] == "Not run: the reply reached the Turn time limit"
     stopped = w("shell__run", {"command": "rm -rf x"}, "gated", None,
                 "Bastet stopped this step: destructive steps.")
     assert stopped["settled"] == "Not run: Bastet stopped this step: destructive steps"

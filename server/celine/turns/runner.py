@@ -458,11 +458,11 @@ async def _too_small(store, tid, cid, cfg, backend, need: int | None, win: int, 
     name = cfg.name
     about = f"about {need:,}" if need else "more"
     if instructions:
-        what = (f"{model} has room for {win:,} tokens, and {name}'s instructions and "
-                f"tools alone take {about}.")
+        what = (f"{model} has a context size of {win:,} tokens, and {name}'s instructions "
+                f"and tools alone take {about}.")
     else:
-        what = (f"This turn needs {about} tokens even after compacting, and {model} has "
-                f"room for {win:,}.")
+        what = (f"This chat needs {about} tokens even after compaction, and {model} has a "
+                f"context size of {win:,} tokens.")
     fix = " Choose a model with more context for this chat"
     fix += (f", or give {model} a larger context size in Settings, Models."
             if kind == "ollama" else ".")
