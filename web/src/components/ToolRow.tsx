@@ -33,7 +33,7 @@ import { useAction } from '../lib/useAction'
 import { capital } from '../lib/name'
 import { useNow } from '../lib/useNow'
 import { PLUMBING, busy, placeCalls } from '../lib/toolPlaces'
-import { Button, EventLine, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
+import { Button, EventLine, Facts, ICON, IconButton, InlineError, ListRow, Picture, Sheet, cx, sourceLabel } from '../ui'
 import { BatchGallery, GalleryContext, StopBatch, doneWords, type Made } from './Batch'
 import { useToolLabels } from './ToolList'
 import './ToolRow.css'
@@ -554,6 +554,10 @@ function ToolDetail({ call }: { call: ToolCall }) {
           ? <div className="tool__none">{busy(call) ? 'No result yet.' : 'The tool returned nothing.'}</div>
           : <pre>{withRefs(call.result, kbs)}</pre>}
       </Part>
+      {call.started_at && <Facts grid items={[
+        { label: 'Started', value: stamp(call.started_at) },
+        ...(call.finished_at ? [{ label: 'Duration', value: duration(Date.parse(call.finished_at) - Date.parse(call.started_at)) }] : []),
+      ]} />}
     </>
   )
 }
