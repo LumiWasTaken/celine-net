@@ -133,7 +133,7 @@ in `.env`.
 | `whatsapp` | WhatsApp | Your WhatsApp history in Messages, and it can read your WhatsApp live. | the wa-link service | `whatsapp` |
 | `email` | Email | It reads your inbox for you: new email, search and summaries. | an IMAP account in Settings, Email | |
 | `vault` | Vault | Logins from your Vaultwarden, which it types into websites in the browser for you. | a Vaultwarden in Settings, Vault | |
-| `guard` | Guard | Bastet, a second model that checks risky steps before they run and asks you when unsure. | a Decision model (its own role in Settings, Models) | |
+| `guard` | Guard | Bastet, a second model that checks risky tool calls before they run and asks you when unsure. | a Decision model (its own role in Settings, Models) | |
 | `documents` | Documents | A folder of your documents, searched, read and cited. | nothing | |
 | `messages` | Messages | Your chat history in one archive, searched by word or by topic. | Discord or WhatsApp | |
 | `artifacts` | Pages | Pages it builds for you, like a chart, a table or a small app, with every version kept. | nothing | |

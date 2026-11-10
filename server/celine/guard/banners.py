@@ -41,7 +41,7 @@ BUTTONS = {"unfreeze": ("Unfreeze", "unfreeze", ALL), "once": ("Allow once", "on
 
 # Bastet's answers in a thread; {{name}} filled by cfg.substitute
 SAID = {
-    "once": "Allowed once: the next step like this one runs.",
+    "once": "Allowed once: the next tool call like this one runs.",
     "pass": "Exception for {rule} {where} until {until}.",
     "pass_this": "Exception for \"{piece}\" {where} until {until}.",
     "unfreeze": "Unfrozen. {{name}} continues.",

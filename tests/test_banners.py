@@ -133,7 +133,7 @@ async def test_his_answers_become_a_pass_an_allow_once_and_an_unfreeze(store, mo
 
     # allow once: the next identical call passes, the one after it is stopped again
     got = await banners.answer(app, b["id"], by=OWNER, text="let her do it this once")
-    assert got["thread"][-1]["text"] == "Allowed once: the next step like this one runs."
+    assert got["thread"][-1]["text"] == "Allowed once: the next tool call like this one runs."
     w = await guard.check(turn, {**_search(), "id": "k4", "message_id": mid}, [],
                           mode="watch", judge=_never, store=store, ask=FakeAsk(0.9),
                           cfg=_cfg("watch"))
@@ -275,7 +275,7 @@ async def test_allow_once_wakes_the_agent_and_the_same_call_runs_once(store):
     [b] = (await view.snapshot(store, cid))["guard"]
     got = await banners.answer(app, b["id"], by=OWNER, button="once")
     assert [t["text"] for t in got["thread"]] == [
-        "Allow once", "Allowed once: the next step like this one runs."]
+        "Allow once", "Allowed once: the next tool call like this one runs."]
     assert await _to_agent(store, cid) == [{
         "text": "Bastet: User allowed the step I stopped (a web search) to run once. "
                 "Do it again now.", "wake": 1}]

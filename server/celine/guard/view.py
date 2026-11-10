@@ -45,22 +45,22 @@ def shown(r: sqlite3.Row | None) -> bool:
 
 # the "?" texts of Settings, Guard ({{name}} and the pronouns filled by the route)
 PAGE_HELP = {
-    "mode": "Warn lets every step run and writes down what Bastet would have done. Enforce "
-            "checks a risky step first and may stop it, freeze {{name}} or ask you.",
-    "decision": "Decides whether a risky step may run. Without it, Warn lets every step "
-                "run and Enforce makes risky steps wait until it answers.",
+    "mode": "Warn runs every tool call and logs in Events what Bastet would have done. "
+            "Enforce checks risky tool calls before they run and can stop them, freeze "
+            "{{name}} or ask you.",
+    "decision": "Decides whether a risky tool call may run. Without it, Warn lets every tool "
+                "call run and Enforce holds risky tool calls until it answers.",
     "second_look": "A stronger model looks again at what the decision model stopped. When "
                    "it disagrees, you get no message and Bastet unfreezes {{name}} if "
                    "{{name}} is frozen.",
-    "rules": "What Bastet does when a rule finds something in a step. Warn only writes "
-             "it down in Events.",
+    "rules": "What Bastet does when a rule matches a tool call. Warn only logs it in Events.",
     "passes": "Tool calls you allowed with Allow for 7 days or a reply to Bastet. End ends "
               "one now.",
 }
 
 # the "?" on a stop or freeze banner: what each of its answers does, for the ones it has
-HELP = {"once": "Allow once runs this same step one time.",
-        "pass": "Allow for 7 days lets steps with the same finding run in this chat."}
+HELP = {"once": "Allow once runs this same tool call one time.",
+        "pass": "Allow for 7 days lets tool calls with the same finding run in this chat."}
 
 
 def actions(r: sqlite3.Row) -> list[str]:

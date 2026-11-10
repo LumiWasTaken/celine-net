@@ -164,9 +164,9 @@ BASE: tuple[Feature, ...] = (
             "Turn it off if you have no Vaultwarden, or no password should be stored.",
             skills=("vault",), pages=("vault",), probe="celine.vault:probe", setup="vault"),
     Feature("guard", "Guard", "Turns on once a decision model is picked.",
-            "Bastet, a second model that checks risky steps before they run and asks you "
+            "Bastet, a second model that checks risky tool calls before they run and asks you "
             "when unsure.",
-            "Turn it off if you want no second check before risky steps.",
+            "Turn it off if you want no second check before risky tool calls.",
             probe="celine.guard.rules:probe", setup="guard", start_on=False),
     Feature("documents", "Documents", "",
             "A folder of your documents, searched, read and cited.",
