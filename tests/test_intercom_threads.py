@@ -146,3 +146,7 @@ async def test_bastets_threads_wait_on_their_own_tab_not_waiting_for_you(store):
                 sum(t["unread"] for t in waiting))
     waiting, guard, n = await store.write(fn)
     assert waiting == ["Celine"] and guard == ["Bastet"] and n == 1
+    said = await store.read(lambda c: {m["text"]: (m["unread"], m["waits"])
+                                       for m in rows.listed(c, to="user")})
+    assert said == {"on patrol": (True, False), "hi": (True, True)}, \
+        "a message of Bastet's is unread and waits for nobody"

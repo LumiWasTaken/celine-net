@@ -379,7 +379,7 @@ function ThreadMessage({ m, onCancel }: { m: IntercomMessage; onCancel: () => vo
              head={<>
                {to && <span title={`to ${to}`}>to {to}</span>}
                {m.kind !== 'message' && <span>{KIND_WORD[m.kind]}</span>}
-               {m.unread && <StateWord tone="warn">Waiting for you</StateWord>}
+               {m.waits && <StateWord tone="warn">Waiting for you</StateWord>}
              </>}
              time={<span title={fullDate(m.until_at ?? m.due_at ?? m.created_at)}>{when}</span>}
              source={(from || scheduled) && <>

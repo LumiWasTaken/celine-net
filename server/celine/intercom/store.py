@@ -227,7 +227,9 @@ def listed(c: sqlite3.Connection, to: str | None = None, from_addr: str | None =
            limit: int | None = None) -> list[dict]:
     """Messages to `to` (a stored address) and from `from_addr`, in thread `thread`, with
     an id above `after`, oldest first; with `scheduled` only those with a due time, by
-    due time. Each with its `text` and `state`."""
+    due time. Each with its `text`, `state`, `unread` (not read by the user yet) and
+    `waits` (it waits for the user as Waiting for you lists it: unread and not Bastet's,
+    whose threads have their own tab)."""
     sql, args = "SELECT * FROM intercom i WHERE i.id > ?", [after]
     if to:
         sql += (" AND EXISTS (SELECT 1 FROM intercom_deliveries d WHERE "
@@ -245,9 +247,12 @@ def listed(c: sqlite3.Connection, to: str | None = None, from_addr: str | None =
         sql += " ORDER BY i.id"
     if limit:
         sql += f" LIMIT {int(limit)}"
-    return [{**view(c, r["id"]), "text": r["text"], "state": state(c, r),
-             "unread": _waits(c, r, "user")}
-            for r in c.execute(sql, args).fetchall()]
+    out = []
+    for r in c.execute(sql, args).fetchall():
+        unread = _waits(c, r, "user")
+        out.append({**view(c, r["id"]), "text": r["text"], "state": state(c, r),
+                    "unread": unread, "waits": unread and r["from_addr"] != GUARD})
+    return out
 
 
 def _waits(c: sqlite3.Connection, r: sqlite3.Row, addr: str) -> bool:

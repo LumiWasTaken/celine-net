@@ -42,8 +42,10 @@ export type IntercomMessage = {
   /** where it came from; null for your own */
   source: Source | null
   state: 'pending' | 'sent' | 'cancelled'
-  /** it waits for you: landed and not read yet */
+  /** landed and not read yet (Dismiss reads it) */
   unread: boolean
+  /** it waits for you, as Waiting for you lists it: the server's */
+  waits: boolean
 }
 
 export type Thread = {
@@ -57,7 +59,7 @@ export type Thread = {
   /** messages in it that wait for you */
   unread: number
   /** the newest message */
-  last: Omit<IntercomMessage, 'unread'>
+  last: Omit<IntercomMessage, 'unread' | 'waits'>
 }
 
 /** who a block of threads is with, its newest threads first */
