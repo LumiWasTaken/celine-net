@@ -291,9 +291,14 @@ async def put_role(request: Request, response: Response, role: str,
 
 # ---- tools ---------------------------------------------------------------------------
 
+async def _tools_view(request: Request) -> dict:
+    services = services_of(request)
+    return views.tools(services, await features_mod.probe_all(services.cfg, services))
+
+
 @router.get("/tool-defaults")
 async def get_tools(request: Request, response: Response) -> dict:
-    view = views.tools(services_of(request))
+    view = await _tools_view(request)
     etag(response, view["version"])
     return view
 
@@ -308,7 +313,7 @@ async def put_tools(request: Request, response: Response,
         s = settings_of(request)
         files.check_version("tools", s.tools, if_match)
         out = await reload.commit(services_of(request), {"tools": body["defaults"]})
-        view = views.tools(services_of(request))
+        view = await _tools_view(request)
         etag(response, view["version"])
         return {**view, **out}
 
@@ -331,7 +336,7 @@ async def put_tool_default(request: Request, response: Response, target: str,
         out = await saves.tools(services_of(request), {target: body["default"]}, if_match)
     if "approval" in body:
         out = await saves.approval(services_of(request), target, body["approval"])
-    view = views.tools(services_of(request))
+    view = await _tools_view(request)
     etag(response, view["version"])
     return {**view, **out}
 

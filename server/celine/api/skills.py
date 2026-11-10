@@ -19,15 +19,18 @@ async def skills(request: Request, conversation: str | None = None) -> dict:
     tool: `label` and `summary` for you (never the model-facing docstring), `enabled`
     here, `default` (Settings), and `why` ("here" = this conversation's switch,
     "default")."""
+    from ..settings import features
     from ..turns import loads
-    reg = request.app.state.services.registry
-    store = request.app.state.services.store
+    services = request.app.state.services
+    reg = services.registry
+    store = services.store
     over = await overrides_for(store, conversation) if conversation else {}
     here = None
     if conversation:
         here = {s.wire_name for specs in (await loads.offered(reg, store, conversation))
                 .values() for s in specs}
-    return {"skills": catalog(request.app.state.services, over, here)}
+    probes = await features.probe_all(services.cfg, services)
+    return {"skills": catalog(services, over, here, probes)}
 
 
 @router.post("/skills/{name}/restart")

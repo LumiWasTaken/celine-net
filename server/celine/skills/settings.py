@@ -162,7 +162,7 @@ def target_of(app, tid: str) -> Target | str:
     if tid == "tools":
         from ..settings import views
         fields = []
-        for sk in views.tools(app)["skills"]:
+        for sk in views.tools(app, {})["skills"]:   # labels and defaults: no states
             fields.append({"key": sk["name"], "label": sk["label"], "value": sk["default"]})
             fields += [{"key": t["wire_name"], "label": t["label"], "value": t["default"]}
                        for t in sk["tools"]]

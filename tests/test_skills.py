@@ -215,14 +215,19 @@ def test_a_skill_says_its_state_in_the_word_of_its_feature():
     from types import SimpleNamespace as NS
 
     from celine.skills.catalog import state_of
-    services = NS(cfg=NS(mcp={}), connectors=None, feature_probes=(0.0, {
-        "web": {"state": "missing", "detail": "SearXNG did not answer at searxng:8080."},
-        "shellbox": {"state": "ready", "detail": ""}}))
-    assert state_of(services, "web", NS(status="up")) == {
+    services = NS(cfg=NS(mcp={}, substitute=lambda t: t.replace("{{username}}", "Sam")),
+                  connectors=None)
+    probes = {"web": {"state": "missing", "detail": "SearXNG did not answer at searxng:8080."},
+              "shellbox": {"state": "ready", "detail": ""}}
+    assert state_of(services, "web", NS(status="up"), probes) == {
         "status": "down", "word": "Not connected",
         "error": "SearXNG did not answer at searxng:8080."}
-    assert state_of(services, "shell", NS(status="up"))["word"] is None
-    assert state_of(services, "whatsapp", NS(status="dead"))["word"] == "Not connected"
+    assert state_of(services, "shell", NS(status="up", error="unused"), probes) == {
+        "status": "up", "word": None, "error": None}
+    # a skill's own error reaches the page filled, never with a placeholder
+    assert state_of(services, "whatsapp", NS(status="dead", error="{{username}} unlinked it."),
+                    probes) == {"status": "dead", "word": "Not connected",
+                                "error": "Sam unlinked it."}
 
 
 async def test_a_failed_prompt_part_or_message_context_reaches_the_agent(cfg):

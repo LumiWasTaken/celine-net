@@ -107,6 +107,11 @@ async def test_settings_tools_say_where_each_skill_is_offered_and_web_down(tmp_p
                                                                          store):
     from settings_fixtures import client, make_app, scratch
 
+    from celine.settings import features
+
+    async def ready(cfg, services, cache=True):     # every feature's probe answers
+        return {}
+    monkeypatch.setattr(features, "probe_all", ready)
     scratch(tmp_path, monkeypatch)
     app = make_app(boot.load(), store)
     web_skill = app.state.services.registry.skills["web"]

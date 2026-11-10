@@ -12,13 +12,13 @@ WORDS = {"down": "Not connected", "dead": "Not connected", "unconnected": "Not c
          "unset": "Not set up"}
 
 
-def state_of(services, name: str, skill) -> dict[str, str | None]:
-    """{status, word, error}: status_of, but a skill whose feature's last probe blocks its
-    switch (Settings, Features greys it) is unset or down with the probe's sentence, and
-    web whose last search failed is down with why."""
+def state_of(services, name: str, skill, probes: dict) -> dict[str, str | None]:
+    """{status, word, error}: status_of, but a skill whose feature's probe (`probes`,
+    features.probe_all) blocks its switch (Settings, Features greys it) is unset or down
+    with the probe's sentence, and web whose last search failed is down with why. The
+    error is filled for the user; a skill that works has none."""
     from ..settings import features
-    hit = getattr(services, "feature_probes", None)
-    probe = hit[1].get(features.skill_owners().get(name, "")) if hit else None
+    probe = probes.get(features.skill_owners().get(name, ""))
     down = getattr(skill, "search_down", None)
     if probe is not None and features.shown(probe)["blocks"]:
         status = "unset" if probe["state"] == "unset" else "down"
@@ -26,8 +26,10 @@ def state_of(services, name: str, skill) -> dict[str, str | None]:
     elif down:
         status, error = "down", down
     else:
-        status, error = status_of(services, name, skill), getattr(skill, "error", None)
-    return {"status": status, "word": WORDS.get(status), "error": error}
+        status = status_of(services, name, skill)
+        error = getattr(skill, "error", None) if status != "up" else None
+    return {"status": status, "word": WORDS.get(status),
+            "error": services.cfg.substitute(error) if error else None}
 
 
 def status_of(services, name: str, skill) -> str:
@@ -43,9 +45,9 @@ def status_of(services, name: str, skill) -> str:
     return status
 
 
-def catalog(services, over: dict, here: set | None) -> list[dict]:
+def catalog(services, over: dict, here: set | None, probes: dict) -> list[dict]:
     """Every skill with its tools; `here`: only these tools (a conversation's kind),
-    `over`: its switches."""
+    `over`: its switches, `probes`: features.probe_all."""
     reg, cfg = services.registry, services.cfg
     out = []
     for name, skill in reg.skills.items():
@@ -69,7 +71,7 @@ def catalog(services, over: dict, here: set | None) -> list[dict]:
             "name": name, **meta,
             "description": cfg.substitute(skill.description),
             "enabled_globally": cfg.skill_enabled(name),
-            **state_of(services, name, skill),
+            **state_of(services, name, skill, probes),
             "tools": rows,
         })
     return out

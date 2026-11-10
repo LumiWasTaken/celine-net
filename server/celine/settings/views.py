@@ -169,7 +169,9 @@ def place_labels(cfg) -> dict[str, str]:
     return {k: cfg.substitute(v) for k, v in tools_meta.PLACE_LABELS.items()}
 
 
-def tools(services) -> dict[str, Any]:
+def tools(services, probes: dict) -> dict[str, Any]:
+    """Settings, Tools: every skill with its state (`probes`: features.probe_all), its
+    tools and their defaults."""
     from ..skills.catalog import state_of
     from ..skills.gating import default_enabled
     from ..skills.places import PLACE_NAMES, offered
@@ -195,7 +197,7 @@ def tools(services) -> dict[str, Any]:
             states = {x["default"] for x in rows}
             skills.append({"name": name, **meta,
                            "source": "mcp" if name in mcp_skills else "built-in",
-                           **state_of(services, name, skill),
+                           **state_of(services, name, skill, probes),
                            "default": states.pop() if len(states) == 1 else "mixed",
                            "set_in_settings": name in s.tools,
                            "places": [p for p in PLACE_NAMES if offered(name, p)],
