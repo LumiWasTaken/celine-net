@@ -55,6 +55,24 @@ class Done:
 BackendEvent = TextDelta | ReasoningDelta | ToolCallDelta | Done
 
 
+async def text_of(events) -> tuple[str, Done | None]:
+    """The text of a stream and its Done (None when it ended with none). The stream is
+    closed on every way out, so a queued backend frees its model slot at once."""
+    parts: list[str] = []
+    done = None
+    try:
+        async for ev in events:
+            if isinstance(ev, TextDelta):
+                parts.append(ev.text)
+            elif isinstance(ev, Done):
+                done = ev
+                break
+    finally:
+        if (aclose := getattr(events, "aclose", None)) is not None:
+            await aclose()
+    return "".join(parts), done
+
+
 class BackendError(Exception):
     """Carries copy the UI can show as-is: names the thing, gives the number."""
 

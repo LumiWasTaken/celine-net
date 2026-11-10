@@ -308,25 +308,14 @@ class Engine:
         """`caption` on the server's loop. Background priority: when no model can
         answer it raises Waiting at once, never waits. A turn that needs a description
         for a model that cannot see images (attachments.py) passes its own lane."""
-        from ..backends.base import BackendError, Done, TextDelta
+        from ..backends.base import BackendError, text_of
         from ..backends.queue import Priority
         from ..backends.router import NoModel
         from ..settings.thinking import OFF
         qb = self.llm.bind(None, role="vision", priority=Priority.BACKGROUND,
                            lane=lane, body=BODY, thinking=OFF)
-        parts: list[str] = []
-        done: Done | None = None
         try:
-            events = qb.stream(messages_for(data, mime), [])
-            try:
-                async for ev in events:
-                    if isinstance(ev, TextDelta):
-                        parts.append(ev.text)
-                    elif isinstance(ev, Done):
-                        done = ev
-                        break
-            finally:
-                await events.aclose()
+            said, done = await text_of(qb.stream(messages_for(data, mime), []))
         except NoModel as e:
             raise Waiting(e.sentence) from None
         except BackendError as e:
@@ -336,7 +325,7 @@ class Engine:
         if done is not None and done.reason == "length":
             raise CaptionError(f"{model} reached its limit of {BODY['max_tokens']} tokens "
                                "before the description was complete.")
-        cap, vis = parse_reply("".join(parts))
+        cap, vis = parse_reply(said)
         if not cap and not vis:
             raise CaptionError(f"{model} gave an empty description")
         return {"caption": cap, "visible_text": vis, "model": model,

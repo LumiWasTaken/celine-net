@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 
-from ..backends.base import BackendError, Done, TextDelta
+from ..backends.base import BackendError, text_of
 from ..backends.queue import Priority
 from ..settings.thinking import OFF
 
@@ -54,22 +54,11 @@ async def complete(llm, text: str, body: dict, *, turn: dict | None = None,
                   conversation_id=turn["conversation_id"] if turn else conversation_id,
                   turn_id=tid, body=body,
                   thinking=OFF, voice=False, fallback=False, label="Guard")
-    parts: list[str] = []
-    raw = None
     try:
-        events = qb.stream([{"role": "user", "content": text}], [])
-        try:
-            async for ev in events:
-                if isinstance(ev, TextDelta):
-                    parts.append(ev.text)
-                elif isinstance(ev, Done):
-                    raw = ev.raw
-                    break
-        finally:
-            await events.aclose()
+        said, done = await text_of(qb.stream([{"role": "user", "content": text}], []))
     except BackendError as e:
         raise _why(e) from None
-    return "".join(parts), raw, getattr(qb.answered, "model", "") or ""
+    return said, done.raw if done else None, getattr(qb.answered, "model", "") or ""
 
 
 def _why(e: BackendError) -> Exception:

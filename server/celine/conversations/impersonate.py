@@ -5,7 +5,7 @@ nothing stored; the text goes back to the composer as the model wrote it, for th
 to edit or send."""
 from __future__ import annotations
 
-from ..backends.base import Done, TextDelta
+from ..backends.base import text_of
 from ..turns import tokens
 from . import tree
 
@@ -55,16 +55,5 @@ async def write(store, cfg, backend, cid: str, start: str = "") -> str:
                 {"role": "user", "content": "\n\n".join(reversed(lines))}]
     if prefill:
         messages.append({"role": "assistant", "content": start})
-    parts: list[str] = []
-    events = backend.stream(messages, [])
-    try:
-        async for ev in events:
-            if isinstance(ev, TextDelta):
-                parts.append(ev.text)
-            elif isinstance(ev, Done):
-                break
-    finally:                        # frees a queued backend's model slot right away
-        if (aclose := getattr(events, "aclose", None)) is not None:
-            await aclose()
-    text = "".join(parts)
+    text, _ = await text_of(backend.stream(messages, []))
     return start + text if prefill else text

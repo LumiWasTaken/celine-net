@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from PIL import Image
 
 from . import prompts
-from .backends.base import BackendError, Done, TextDelta
+from .backends.base import BackendError, text_of
 from .backends.queue import Priority
 from .settings.thinking import OFF
 
@@ -103,20 +103,10 @@ async def ask(llm, image: bytes, question: str, answer_as: str, *, conversation_
                   conversation_id=conversation_id, turn_id=turn_id,
                   body={"temperature": 0, "max_tokens": TOKENS[answer_as]}, thinking=OFF,
                   fallback=False)
-    parts: list[str] = []
     try:
-        events = qb.stream(messages(image, question, answer_as), [])
-        try:
-            async for ev in events:
-                if isinstance(ev, TextDelta):
-                    parts.append(ev.text)
-                elif isinstance(ev, Done):
-                    break
-        finally:
-            await events.aclose()
+        raw, _ = await text_of(qb.stream(messages(image, question, answer_as), []))
     except BackendError as e:
         raise Unavailable(str(e)) from None
-    raw = "".join(parts)
     word = raw.strip().strip(" .*\"'`")       # read for the id; the agent gets raw
     if answer_as == "text":
         value = raw if raw.strip() else None        # the words as the model said them

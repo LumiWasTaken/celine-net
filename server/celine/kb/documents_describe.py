@@ -60,7 +60,7 @@ def default_describer(kb) -> Callable[[str, str], tuple[str, str]]:
     loop = kb.tasks.loop if kb.tasks is not None else None
 
     async def one(system: str, user: str) -> tuple[str, str]:
-        from ..backends.base import Done, TextDelta
+        from ..backends.base import text_of
         from ..backends.queue import Priority
         from ..backends.router import NoModel
         from ..settings.thinking import OFF
@@ -69,22 +69,12 @@ def default_describer(kb) -> Callable[[str, str], tuple[str, str]]:
             raise RuntimeError("describing runs in the app, which holds the LLM queue")
         qb = llm.bind(None, role="small", lane="documents", priority=Priority.BACKGROUND,
                       thinking=OFF)
-        parts: list[str] = []
         try:
-            events = qb.stream([{"role": "system", "content": system},
-                                {"role": "user", "content": user}], [])
-            try:
-                async for ev in events:
-                    if isinstance(ev, TextDelta):
-                        parts.append(ev.text)
-                    elif isinstance(ev, Done):
-                        break
-            finally:
-                await events.aclose()
+            text, _ = await text_of(qb.stream([{"role": "system", "content": system},
+                                               {"role": "user", "content": user}], []))
         except NoModel as e:
             raise Soft(e.sentence) from None
         model = getattr(qb.answered, "model", "")
-        text = "".join(parts)
         if not text.strip():
             raise RuntimeError(f"{model} gave an empty answer")
         return text, model
