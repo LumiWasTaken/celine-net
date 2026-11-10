@@ -532,6 +532,10 @@ a.list-row, button.list-row, .list-row[role='button'] { cursor: pointer; }
 .ui-drawer__title { flex: 1; min-width: 0; margin: 0; font-size: var(--t-lg); font-weight: var(--fw-medium);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-drawer__head > .close-x { position: static; }
+/* tabs as its title: each word its own inset, as the tool row's tabs, so five fit beside the x */
+.ui-drawer__head:has(> .ui-drawer__title > .tabs) { padding-left: var(--s-2); }
+.ui-drawer__title > .tabs { gap: 0; }
+.ui-drawer__title > .tabs button { padding: 0 var(--s-2); }
 .ui-drawer__body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-3) var(--s-4); display: grid; align-content: start; gap: var(--s-4); }
 .ui-drawer--inline, .ui-drawer--inline[data-open] { position: relative; inset: auto; width: 0; height: 100%; z-index: auto;
   transition: width 0s linear var(--dur); }

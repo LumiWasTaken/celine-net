@@ -8,7 +8,7 @@
      Pages    its pages and documents (ArtifactPanel)
      Context  what the next request holds, per block; its notes, each with a switch (PATCH
               notes_off); the tools it has loaded, each with its x; Add loads one by hand
-     Sub-agents  while the conversation's chain has any: the tree under its top (GET
+     Sub-agents  (its icon, the word its tip) while the conversation's chain has any: the tree under its top (GET
               /conversations/{id}/sub-agents), each with its state, model, tokens and
               time; a row opens its conversation
 
@@ -33,7 +33,7 @@ import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useConversationSettings } from '../lib/useConversationSettings'
 import {
-  Button, Choice, cx, Drawer, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Sheet, StateWord, Switch, Tabs, TextArea, useCopied,
+  Button, Choice, cx, Drawer, type Option, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Sheet, StateWord, Switch, Tabs, TextArea, useCopied,
 } from '../ui'
 import { ModelChooser, findModel, modelName } from './ModelChooser'
 import { ToolList } from './ToolList'
@@ -42,9 +42,10 @@ import { ArtifactPanel } from './ArtifactPanel'
 import './Composer.css'
 
 export type PanelTab = 'model' | 'tools' | 'pages' | 'context' | 'agents'
-const ALL_TABS: { value: PanelTab; label: string }[] = [
+const ALL_TABS: Option<PanelTab>[] = [
   { value: 'model', label: 'Model' }, { value: 'tools', label: 'Tools' }, { value: 'pages', label: 'Pages' }, { value: 'context', label: 'Context' },
-  { value: 'agents', label: 'Sub-agents' },
+  // the icon of its rows, its word the tip: five words do not fit beside the x
+  { value: 'agents', label: '', icon: Bot, title: 'Sub-agents' },
 ]
 const PANEL = 'Side panel'
 

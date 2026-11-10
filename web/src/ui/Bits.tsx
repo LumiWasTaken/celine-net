@@ -365,7 +365,8 @@ function Radios<V extends string>({ value, onChange, options, disabled }: {
 /* ── Tabs: navigation between the views of one place (the side panel,
    Intercom's Waiting and All, Chats' sources). Words on the head's hairline, an underline
    that slides to the open one; the arrow keys move between them. One row that never
-   wraps: it scrolls sideways and fades at the edge there is more. ── */
+   wraps: it scrolls sideways and fades at the edge there is more; the open one scrolls into
+   view. ── */
 export function Tabs<V extends string>({ value, onChange, options, label, className }: {
   value: V
   onChange: (value: V) => void
@@ -376,6 +377,14 @@ export function Tabs<V extends string>({ value, onChange, options, label, classN
   const box = useRef<HTMLDivElement>(null)
   useSlide(box, '[aria-selected="true"]', value)
   useEdgeFade(box, value)
+  // the open one in view: the strip scrolls, nothing around it
+  useLayoutEffect(() => {
+    const el = box.current
+    const t = el?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!el || !t) return
+    if (t.offsetLeft < el.scrollLeft) el.scrollLeft = t.offsetLeft
+    else if (t.offsetLeft + t.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = t.offsetLeft + t.offsetWidth - el.clientWidth
+  }, [value, options.length])
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const i = options.findIndex(o => o.value === value)
     const j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0
@@ -389,7 +398,7 @@ export function Tabs<V extends string>({ value, onChange, options, label, classN
   return (
     <div ref={box} className={cx('tabs', className)} role="tablist" aria-label={label} onKeyDown={onKey}>
       {options.map(o => (
-        <button key={o.value} type="button" role="tab" aria-selected={value === o.value} title={o.title}
+        <button key={o.value} type="button" role="tab" aria-selected={value === o.value} title={o.title} aria-label={o.label ? undefined : o.title}
                 tabIndex={value === o.value ? 0 : -1} disabled={o.disabled} onClick={() => onChange(o.value)}>
           {o.icon && <o.icon size={ICON.sm} aria-hidden />}{o.label}
         </button>

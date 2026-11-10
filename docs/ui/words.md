@@ -128,7 +128,7 @@ block at the end of this file lists the words no UI string uses.
 | Attach | add a file to a message | ChatGPT, Claude |
 | Reminders | messages it sends later in this chat | Apple, Google "Reminders" |
 | Side panel | the chat's panel at the right and the button that opens it | Google Workspace "Side panel" |
-| Model, Tools, Pages, Context, Sub-agents; Chat history | the tabs of the agent's side panel, and the Context tab's block of messages sent to the model; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools", "Chat history"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
+| Model, Tools, Pages, Context, Sub-agents; Chat history | the tabs of the agent's side panel (Sub-agents its icon with the word as its tooltip), and the Context tab's block of messages sent to the model; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools", "Chat history"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
 | Model | which model answers | everyone |
 | load: | a note's head line, as the note writes it, in the Context tab's why ("load: off") | Obsidian properties |
 | Load automatically, Notes that match each message | the Context tab's switch and its tooltip: each new message brings up the sections of its notes it matches | |
