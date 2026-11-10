@@ -231,7 +231,7 @@ def asked(c: sqlite3.Connection, cid: str | None) -> str | None:
 
 def facts(c: sqlite3.Connection, r, cfg) -> list[dict]:
     """A run's facts as its page shows them, each {label, value}: Started and Ended
-    ("Sun 11 Oct 01:13" in the app's zone), Duration, Started by (a run the clock did not
+    (Skipped for a skipped run; "Sun 11 Oct 01:13" in the app's zone), Duration, Started by (a run the clock did not
     start), Model (the models that answered in its conversation, else the one it was sent
     to, each its label as the sub-agents tree says it)."""
     from ..attachments import label
@@ -243,8 +243,9 @@ def facts(c: sqlite3.Connection, r, cfg) -> list[dict]:
     def when(at: str) -> str:
         t = datetime.fromisoformat(at).astimezone(tz)
         return f"{night_words(t.date().isoformat())} {t:%H:%M}"
+    ended = "Skipped" if r["state"] == "skipped" else "Ended"
     out = [{"label": k, "value": when(r[f])} for k, f in
-           (("Started", "started_at"), ("Ended", "finished_at")) if r[f]]
+           (("Started", "started_at"), (ended, "finished_at")) if r[f]]
     if took := _took(r["started_at"], r["finished_at"]):
         out.append({"label": "Duration", "value": took})
     if r["started_by"] != "clock":

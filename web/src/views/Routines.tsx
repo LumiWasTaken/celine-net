@@ -625,6 +625,7 @@ function RunPage({ id, night, go, active, schedules }: {
             )}
             <Section id="r-ask" title="Prompt">
               {d.prompt === null ? <p className="routines-prose routines-prose--quiet">Its schedule was deleted.</p> : <>
+                {!cid && FINISHED.includes(r.state) && <p className="routines-prose routines-prose--quiet">Not sent.</p>}
                 <div className="prose"><Markdown text={d.prompt} /></div>
                 {d.reviewer_prompt && <><span className="routines-label">Reviewer prompt</span><div className="prose"><Markdown text={d.reviewer_prompt} /></div></>}
               </>}

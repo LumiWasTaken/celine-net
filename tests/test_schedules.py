@@ -1153,6 +1153,14 @@ async def test_a_run_no_model_answered_names_the_model_it_was_sent_to(store, cfg
                   "updated_at) VALUES ('cv1', 'Run', 'background', 'main/qwen', ?, ?)",
                   ("2026-10-10T04:00:00+00:00",) * 2)
         return facts(c, {"conversation_id": "cv1", "started_at": None, "finished_at": None,
-                         "started_by": "clock"}, cfg)
+                         "started_by": "clock", "state": "failed"}, cfg)
     assert await store.write(fn) == [{"label": "Model",
                                       "value": label(cfg.settings, "main/qwen")}]
+
+
+async def test_a_skipped_runs_time_says_skipped(store, cfg):
+    from celine.schedules.api import facts
+    said = await store.read(lambda c: facts(c, {
+        "conversation_id": None, "started_at": None, "finished_at": "2026-10-10T04:00:00+00:00",
+        "started_by": "clock", "state": "skipped"}, cfg))
+    assert [f["label"] for f in said] == ["Skipped"]
