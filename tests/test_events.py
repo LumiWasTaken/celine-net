@@ -128,7 +128,9 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         by = {e["id"]: e for e in every}
         assert by["turn:t1"]["detail"] == "chat-model, 12 s"
         assert by["turn:t2"]["detail"] == "the model server did not answer"
-        assert by["tool:a"]["detail"] == "ls -la" and by["tool:a"]["where"] == "find a job"
+        # its target in the words of its row in the chat (skills/words.py)
+        assert by["tool:a"]["detail"] == "Ran ls -la" and by["tool:a"]["where"] == "find a job"
+        assert by["tool:b"]["detail"].startswith("Could not open")
         assert by["tool:a"]["links"] == {"conversation": cid, "message": mid, "turn": "t1",
                                          "open": f"/chat/{cid}"}
         assert by["notebook:n"]["links"]["open"] == "/notebook?note=people/noor.md"
@@ -143,8 +145,8 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         assert by["guard:1"]["detail"] == "sends their address out"
         assert by["guard:2"]["detail"] == ("Would have stopped a command. It sends "
                                            "\"Elm St 4\" (address) to the public.")
-        assert by["freeze:1"]["detail"] == "Bastet: it sent their address"
-        assert by["unfreeze:1"]["detail"] == "3 min"
+        assert by["freeze:1"]["detail"] == "By Bastet: it sent their address"
+        assert by["unfreeze:1"]["detail"] == "By Joe after 3 min"
         assert by["pass:1"]["detail"] == "until 13:13"        # Berlin
         assert by["work:1"]["detail"] == "no model answered"
         assert by["turn:t1"]["day"] == "Today" and by["run:r1"]["day"] == "Today"

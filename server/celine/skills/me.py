@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 from .. import agent
 from ..settings.files import Invalid
 from . import ToolContext, ToolResult, guide, tool, described
-from ..core.event_types import AGENT_CHANGED
+from ..core.event_types import AGENT_CHANGED, EVENTS_ADDED
 
 LISTS = {"banned": "banned", "phrases": "phrases", "patterns": "patterns"}
 # what an edit changes, as Settings and Events name it (the approval's words)
@@ -240,7 +240,6 @@ class Me:
         me__edit(what="phrases", add=["you were right"]), or me__edit(what="talk",
         old="short.", new="short, lowercase.").
         Returns: what changed."""
-        from .. import events
         got = edited(self.cfg, what, old, new, list(add or []), list(remove or []))
         if isinstance(got, str):
             return ToolResult(content=got, is_error=True)
@@ -252,7 +251,8 @@ class Me:
 
         def fn(c) -> None:
             agent.write_sync(c, cfg, body, "agent")
-            events.added(store, c, "agent")
+            # a new Events row (events.added, said here: events reads skills)
+            store.global_event(c, EVENTS_ADDED, {"kind": "agent", "conversation": None})
         try:
             await store.write(fn)
         except Invalid as e:

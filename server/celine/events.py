@@ -158,11 +158,12 @@ def _turn(r, cfg) -> dict:
 
 
 def _call(r, cfg) -> dict:
+    from .skills import words
     word, tone = _CALL.get(r["state"], ("Running", RUNNING))
-    args = _loads(r["arguments"])
-    # the first plain argument says what it was about: a command, a url, a query
-    what = next((v for v in args.values() if isinstance(v, str) and v.strip()), "")
-    return {"title": _label(r["name"]), "outcome": word, "tone": tone, "detail": _first(what)}
+    # what it did and to what, in the words its row in the chat has (skills/words.py)
+    said = words.row(r["name"], _loads(r["arguments"]), _loads(r["display"]), "",
+                     r["state"], getattr(cfg, "tool_words", None))
+    return {"title": _label(r["name"]), "outcome": word, "tone": tone, "detail": _first(said)}
 
 
 _NOTE_VERB = {"write": "Wrote", "edit": "Edited", "delete": "Deleted"}
@@ -220,11 +221,13 @@ def _guard(r, cfg) -> dict:
 
 
 def _freeze(r, cfg) -> dict:
+    from .texts import who
+    by = "Bastet" if r["by"] in ("guard", "bastet") else who(cfg, r["by"])
     if r["unfreeze"]:
         return {"title": "Unfreeze", "outcome": "Done", "tone": OK,
-                "detail": _took(r["frozen_at"], r["at"])}
+                "detail": f"By {by} after {_took(r['frozen_at'], r['at'])}"}
     return {"title": "Freeze", "outcome": "Frozen", "tone": ERROR if r["by"] == "guard" else WARN,
-            "detail": _first(("Bastet: " if r["by"] == "guard" else "") + r["why"])}
+            "detail": _first(f"By {by}: {r['why']}")}
 
 
 def _pass(r, cfg) -> dict:
@@ -261,7 +264,8 @@ def _bug(r, cfg) -> dict:
 _TAB = "CASE cv.kind WHEN 'chat' THEN 'agent' ELSE 'background' END AS tab"
 _TOOL_SQL = ("SELECT '{k}:' || t.id AS id, coalesce(t.started_at, m.created_at) AS at, "
              "t.state IN ('error','gated','interrupted') AS failed, m.conversation_id AS cid, "
-             "t.message_id AS mid, m.turn_id AS tid, " + _TAB + ", t.name, t.arguments, t.state "
+             "t.message_id AS mid, m.turn_id AS tid, " + _TAB + ", t.name, t.arguments, t.state, "
+             "t.display "
              "FROM tool_calls t JOIN messages m ON m.id = t.message_id "
              "JOIN conversations cv ON cv.id = m.conversation_id "
              "WHERE t.name {op} " + _NB)
