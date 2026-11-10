@@ -316,7 +316,7 @@ set, stop, check). The Where filter names the places: its name, Missions, Routin
 | Sub-agents | the helpers it gives instructions to; also the side panel's tab with every sub-agent of the chain, each under the one that started it | Claude Code "Sub-agents" |
 | Sub-agent, Mission, Folder, Step, Model, Provider; Instructions, Task, Messages | the facts of a request to use a cloud model the agent picked itself (the sub-agent, mission, coding folder or plan step, then the model and the provider by their labels), and Details: the whole text it gets | OpenRouter, Anthropic: cloud providers; Claude Code "Sub-agents" |
 | Discord, WhatsApp | read live from your accounts | their own names |
-| Require approval, Add, Search tools, Remove | Settings, Tools: the tools whose every call waits for your answer, the guard on or off, each by its skill and its name; Add picks one from every tool, its search finds it by either name; Remove takes it off | GitHub "Require approval" |
+| Require approval, Add, Search tools, Remove, No tools require approval. | Settings, Tools: the tools whose every call waits for your answer, the guard on or off, each by its skill and its name; Add picks one from every tool, its search finds it by either name; Remove takes it off; the line while none is on it | GitHub "Require approval" |
 
 ### Events
 

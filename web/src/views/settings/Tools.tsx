@@ -15,7 +15,7 @@ import { useAction } from '../../lib/useAction'
 import { useAutosave } from '../../lib/useAutosave'
 import { useResource } from '../../lib/useResource'
 import { ToolBlock, shortLabel } from '../../components/ToolBlock'
-import { IconButton, InlineError, ListRow, Loaded, MenuButton, Section, Toolbar } from '../../ui'
+import { EmptyState, IconButton, InlineError, ListRow, Loaded, MenuButton, Section, Toolbar } from '../../ui'
 import { Page } from './parts'
 import './settings.css'
 
@@ -85,6 +85,7 @@ function Approval({ skills, writable, onSaved }: { skills: SkillView[]; writable
                                  items={tools.filter(t => !t.on).map(t => ({ label: t.name, disabled: !writable, title: lock,
                                                                             onSelect: () => void save.run(t.wire, true) }))} />}>
       {save.error && <InlineError compact message={save.error} />}
+      {!tools.some(t => t.on) && <EmptyState compact>No tools require approval.</EmptyState>}
       <div className="rows">
         {tools.filter(t => t.on).map(t => (
           <ListRow key={t.wire} title={t.name} trailingAlways
