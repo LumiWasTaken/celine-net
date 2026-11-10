@@ -112,7 +112,7 @@
 .transcript-side[data-open] { pointer-events: auto; }
 .transcript-refused { margin-top: var(--s-1); padding-left: var(--s-4); }
 
-/* "What it saw": each step's request and raw answer, each in its own box */
+/* Model requests: each request and raw answer, each in its own box */
 .dialog.sheet.saw { width: min(45rem, 100%); }
 .saw__label { flex: none; font-size: var(--t-xs); font-weight: var(--fw-medium); color: var(--text-muted); letter-spacing: var(--tracking-meta); }
 .saw__step { display: grid; gap: var(--s-1); }

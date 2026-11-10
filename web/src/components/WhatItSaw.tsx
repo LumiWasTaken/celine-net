@@ -89,7 +89,7 @@ function StepView({ n, step }: { n: number | null; step: Step }) {
     req.finish_reason && req.finish_reason !== 'stop' && req.finish_reason].filter(Boolean).join(', ')
   return (
     <section className="saw__step">
-      {(n !== null || facts) && <p className="saw__head">{n !== null && <b>Step {n}</b>}{facts}</p>}
+      {(n !== null || facts) && <p className="saw__head">{n !== null && <b>Request {n}</b>}{facts}</p>}
       {system.length > 0 && <Block label="System">{system.map(m => textOf(m.content)).join('\n\n')}</Block>}
       {tools.length > 0 && <Block label={count(tools.length, 'tool')}>{JSON.stringify(tools, null, 2)}</Block>}
       {talk.length > 0 && <Block label="Chat">{talk.map(m => `${ROLE[m.role] ?? m.role}${m.role === 'tool' && (m.name ?? m.tool_name) ? ` ${m.name ?? m.tool_name}` : ''}: ${textOf(m.content)}`).join('\n\n')}</Block>}

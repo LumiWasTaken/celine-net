@@ -265,7 +265,7 @@ async def one(store, rid: int) -> dict | None:
 
 
 def of_message(c: sqlite3.Connection, message_id: str) -> list[dict]:
-    """The decisions on the calls of one reply step, in call order (What it saw)."""
+    """The decisions on the calls of one reply step, in call order (Model requests)."""
     return [_row(r) for r in c.execute(
         "SELECT * FROM guard_decisions WHERE message_id=? ORDER BY id", (message_id,))]
 

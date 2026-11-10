@@ -252,7 +252,7 @@ const EXAMPLE: Record<string, string> = {
   close: '{}',
 }
 
-/* its latest call's step shots (its newest call, which the place fetches again as each of
+/* its latest call's screenshots (its newest call, which the place fetches again as each of
    its calls is done: the feed's copy of tool.done carries no display), and Tools: one of
    its calls, run as it runs it */
 function Console({ last }: { last: BrowserCall | undefined }) {
@@ -265,10 +265,10 @@ function Console({ last }: { last: BrowserCall | undefined }) {
     try { parsed = JSON.parse(args || '{}') } catch { throw new Error('The arguments are not JSON.') }
     setOut(await browserApi.call(tool, parsed as Record<string, unknown>))
   })
-  const steps = Array.isArray(latest?.steps) ? latest.steps.length : 0
+  const shots = (Array.isArray(latest?.steps) ? latest.steps.length : 0) + (latest?.shot ? 1 : 0)
   return (
     <>
-      {(steps > 0 || !!latest?.shot) && <Section title="Steps" count={steps || undefined}><BrowserShots display={latest} /></Section>}
+      {shots > 0 && <Section title="Screenshots" count={shots}><BrowserShots display={latest} /></Section>}
       <Section title="Tools">
         <form className="brw-console" aria-label="Run a browser tool" onSubmit={e => { e.preventDefault(); void run.run() }}>
           <Segmented label="Tool" value={tool} options={TOOLS} onChange={t => { setTool(t); setArgs(EXAMPLE[t] ?? '{}') }} />
