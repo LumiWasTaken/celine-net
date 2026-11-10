@@ -48,7 +48,7 @@ export function MissionAsk({ w, stop = true }: { w: MissionWait; stop?: boolean 
 /** the confirm before a mission stops */
 export function StopMission({ cid, name, onClose, onDone }: { cid: string; name: string; onClose: () => void; onDone?: () => void }) {
   return (
-    <ConfirmDialog title={`Stop ${name}?`} danger confirmLabel="Stop" body="Its chat, plan and terminals are kept."
+    <ConfirmDialog title={`Stop ${name}?`} danger confirmLabel="Stop" body="Its chat and plan are kept, and its terminals and browser tabs close."
                    onClose={onClose}
                    onConfirm={async () => { try { await missionsApi.stop(cid) } catch (e) { return errorText(e) } onDone?.(); onClose() }} />
   )
