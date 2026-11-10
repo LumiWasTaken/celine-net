@@ -36,7 +36,7 @@ block at the end of this file lists the words no UI string uses.
 | Terminals | its terminals | macOS Terminal |
 | Browser | its browser (never the engine's name); Current tab is the tab on its screen | Chrome "Current tab" |
 | Events | everything it did and everything that ran, one list | GitHub "Events", Google Cloud "Events"; Discord "Audit Log" for the same job |
-| Search | the archive search, and every search box | ChatGPT "Search chats", Claude "Search" |
+| Search | the search across every place, and every search box | ChatGPT "Search chats", Claude "Search" |
 | Settings | settings | everyone |
 | Setup | the onboarding (/welcome), opened again from the top of the Settings list | macOS "Setup Assistant", Windows "Setup" |
 | (its name) | the first Setup step, titled with the name the user typed: name, pronouns, colour, persona, example lines | character creators |
@@ -52,6 +52,8 @@ block at the end of this file lists the words no UI string uses.
 | State, Show | the Toolbar's state filter; Show where the choice is which items a list shows, not a state (Intercom: All, Guard) | Gmail "Show" |
 | Folder, Person | the Toolbar's filters | |
 | Date: Today, This week, This month, This year | the date filter of Search, in the Toolbar | Gmail, Google Drive "Modified" |
+| Search in, 3 places | the places Search looks in, in its Toolbar: its chats (the agent's name), Missions, Routines, Notebook, Documents, Intercom, Messages, each a place's own word; all of them until some are taken out on this device; 3 places when several but not all are in | Slack "In", Gmail "Search in", Outlook "Search in" |
+| 1 result, 3 results | the count of a Search group and of a Source | Google "results" |
 | All messages | every source's chats in one list, in Messages | Gmail "All Mail" for the same job |
 | Select, Select all, Done | selecting many | Apple Photos, Mail |
 | Archive, Archive older than | move out of the list, kept | ChatGPT "Archive", Gmail |
