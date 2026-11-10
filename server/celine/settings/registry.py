@@ -40,7 +40,7 @@ PROVIDER_SLUG = re.compile(r"^[a-z0-9._-]+(/[a-z0-9._-]+)?$")
 ROLES: dict[str, dict[str, Any]] = {
     "chat": {"label": "Chat", "caps": ["chat"],
              "help": "Replies in your chats and routines. A chat uses the model you picked, "
-                     "else the first one; a routine uses only the first one and waits for it."},
+                     "else the first one; a routine on the Chat role uses only the first one and waits for it."},
     "tasks": {"label": "Tasks", "caps": ["chat", "tools"],
               "help": "Missions and sub-agents. Their steps move to the next model when one "
                       "fails; with this list empty, the Chat models do the work."},

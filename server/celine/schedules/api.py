@@ -28,7 +28,9 @@ HELP = {
                "limit. Skip ends it with no notice.",
     "idle_only": f"A run starts only after nobody used the app for {IDLE_MINUTES} minutes, "
                  f"else it is skipped; a run still waiting {IDLE_MINUTES} minutes after its "
-                 "time is skipped too. Run now and Retry ignore this setting.",
+                 "time is skipped too. Run now and Retry start a run regardless.",
+    "reviewer": "A second prompt on the same role talks with the run first, up to Turns "
+                "lines. The run gives its final answer after the talk.",
     "wall_minutes": "The most minutes one run may work; waiting for a model does not count. "
                     "Empty uses the Routine time limit in Settings, Advanced.",
 }

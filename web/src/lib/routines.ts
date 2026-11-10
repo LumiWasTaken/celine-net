@@ -108,7 +108,7 @@ export type Night = { night: string; failed: boolean; waiting: boolean }
 export type Runs = { runs: Run[]; nights: Night[]; tonight: string; states: Record<RunState | 'planned', Said> }
 
 /** GET /schedules: a field's choices and its "?" text, the server's */
-export type ScheduleWords = { choices: { on_fail: { value: OnFail; label: string }[] }; help: Record<'on_fail' | 'idle_only' | 'wall_minutes', string> }
+export type ScheduleWords = { choices: { on_fail: { value: OnFail; label: string }[] }; help: Record<'on_fail' | 'idle_only' | 'reviewer' | 'wall_minutes', string> }
 
 /** a run and what it was asked; `facts` its times, who started it and its models, in the server's words */
 type RunDetail = { run: Run; prompt: string | null; reviewer_prompt: string | null; note: string | null; facts: { label: string; value: string }[] }

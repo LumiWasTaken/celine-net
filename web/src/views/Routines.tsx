@@ -785,7 +785,7 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
             </Field>
             {d.note.trim() && notePath.data && notePath.data !== d.note.trim() && <p className="routines-prose routines-prose--quiet routines-mono">{notePath.data}</p>}
           </Section>
-          <Section id="s-rev" title="Reviewer" action={<Switch label="Reviewer" hideLabel checked={d.has_reviewer} onChange={has_reviewer => put({ has_reviewer })} />}>
+          <Section id="s-rev" title="Reviewer" help={words?.help.reviewer} action={<Switch label="Reviewer" hideLabel checked={d.has_reviewer} onChange={has_reviewer => put({ has_reviewer })} />}>
             {d.has_reviewer ? (
               <div className="routines-form">
                 <Field label="Reviewer prompt" group error={err('reviewer_prompt') ?? err('reviewer')}>
@@ -802,7 +802,7 @@ function SchedulePage({ name, s, all, roles, words, night, draft, onDraft, save:
                          options={words?.choices.on_fail ?? []} />
             </Field>
             <Switch checked={d.idle_only} onChange={idle_only => put({ idle_only })} label="Only when the app is idle" help={words?.help.idle_only} />
-            <NumberField label="Time limit" unit="min" value={d.wall} min={1} max={1440} onChange={wall => put({ wall })} invalid={field === 'wall_minutes'}
+            <NumberField label="Time limit" unit="minutes" value={d.wall} min={1} max={1440} onChange={wall => put({ wall })} invalid={field === 'wall_minutes'}
                          help={words?.help.wall_minutes} />
           </Section>
           {!fresh && (
