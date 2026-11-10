@@ -251,7 +251,12 @@ async def listing(store, *, decision: str | None = None, source: str | None = No
 async def one(store, rid: int) -> dict | None:
     """One decision whole, for its detail view: the row, the call's `arguments` (from
     tool_calls; {} when it has no row), Bastet's `line` and `kind` as her banner says
-    them, and the `actions` the owner can take on it (view.actions). None: no row."""
+    them, the `actions` the owner can take on it (view.actions), its `title` as its
+    Events row says it and `open`, the app path of its conversation (None without one).
+    None: no row."""
+    from ..events import guard_title
+    from ..intercom.store import source_of
+
     def fn(c: sqlite3.Connection) -> dict | None:
         r = c.execute("SELECT g.*, t.arguments FROM guard_decisions g LEFT JOIN tool_calls "
                       "t ON t.id = g.tool_call_id WHERE g.id=?", (rid,)).fetchone()
@@ -259,7 +264,9 @@ async def one(store, rid: int) -> dict | None:
             return None
         d = _row(r)
         d["arguments"] = args_of(r["arguments"])
-        d.update(kind=view.kind(r), line=view.line(r), actions=view.actions(r))
+        src = source_of(c, f"agent:{r['conversation_id']}") if r["conversation_id"] else None
+        d.update(kind=view.kind(r), line=view.line(r), actions=view.actions(r),
+                 title=guard_title(r["tool"]), open=src["link"] if src else None)
         return d
     return await store.read(fn)
 

@@ -13,6 +13,7 @@ from celine import events
 from celine.conversations import store as conversations, tree
 from celine.core.services import Services
 from celine.errors import install_error_handler
+from celine.guard import store as decisions
 from celine.intercom.store import insert
 
 CFG = SimpleNamespace(user="Joe", name="Celine", timezone="Europe/Berlin", schedules={})
@@ -110,7 +111,7 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         ]
         assert got["total"] == 8 and got["failed"] == 2 and got["next"] is None
         assert got["tabs"] == [
-            {"id": "guard", "label": "Guard", "total": 5, "failed": 1},
+            {"id": "guard", "label": "Guard", "total": 5, "failed": 0},
             {"id": "agent", "label": "Celine", "total": 8, "failed": 2},
             {"id": "background", "label": "Background", "total": 3, "failed": 2}]
         guard = await get(tab="guard")
@@ -203,7 +204,8 @@ async def test_bastets_filters_and_undecided_apart_from_her_stops(store, monkeyp
             return r.json()
 
         got = await get(tab="guard")
-        assert got["failed"] == 1 and got["undecided"] == 1   # not counted as failed
+        # Failed is a check that broke; a stop and a decision no judge made apart from it
+        assert got["failed"] == 0 and got["undecided"] == 1 and got["stopped"] == 1
         by = {e["id"]: e for e in got["events"]}
         assert (by["guard:3"]["outcome"], by["guard:3"]["tone"]) == ("Could not decide", "warn")
         assert by["guard:1"]["guard"] == {"id": 1, "actions": ["once"]}, \
@@ -211,6 +213,10 @@ async def test_bastets_filters_and_undecided_apart_from_her_stops(store, monkeyp
         assert by["guard:3"]["guard"] == {"id": 3, "actions": []}
         assert (await get())["events"][-1]["guard"] is None
         assert [e["id"] for e in (await get(tab="guard", state="undecided"))["events"]] == ["guard:3"]
+        assert [e["id"] for e in (await get(tab="guard", state="stopped"))["events"]] == ["guard:1"]
+        # its dialog opened from a link has its row's title and where it happened
+        one = await decisions.one(store, 1)
+        assert (one["title"], one["open"]) == ("Browser: open a page", f"/chat/{cid}")
         assert [e["id"] for e in (await get(tab="guard", rule="hijack"))["events"]] == ["guard:3", "guard:1"]
         watch = await get(tab="guard", mode="watch")
         assert [e["id"] for e in watch["events"]] == ["guard:3", "guard:2"]

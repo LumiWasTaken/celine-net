@@ -331,10 +331,10 @@ The words of the Events place (`server/celine/events.py` gives them).
 | Wrote, Edited, Deleted, Moved ... to ... | its notebook writes ("Wrote people/noor.md") | Google Docs activity "edited", "moved" |
 | To (the user's name) | a message it sent you | Gmail "To" |
 | Stopped, Skipped, Cancelled, Scheduled, Sent, Timed out | states besides Running, Done, Failed and Queued; Timed out: a background job stopped by Job time limit | GitHub Actions "Skipped", "Cancelled", "Timed out"; Gmail "Scheduled", "Sent" |
-| Allowed, Stopped, Frozen, Found, Approved, Denied, No answer, Allowed by exception | Bastet's decision on a call, the words of her banners | Android permissions "Allowed", "Denied" |
+| Allowed, Stopped, Frozen, Found, Approved, Denied, No answer, Allowed by exception | Bastet's decision on a call, the words of her banners; Stopped is also the Guard tab's State filter: the calls she stopped or froze and a closed gate's | Android permissions "Allowed", "Denied" |
 | Would have stopped, Would have frozen | what Bastet would have done while she only warns, as her banners say it | |
-| Freeze, Unfreeze, Exception for (a rule), Queued | a freeze and its end, an exception you gave, a work item that waits (also for a model) | the words above; Queued as in the transcript |
-| Could not decide | a decision Bastet could not make (her model gave no answer: it was down, timed out or the call did not fit), counted apart from Failed | |
+| Freeze, Unfreeze, By (a name), after (a time), Exception for (a rule), Queued | a freeze and its end, its line: who froze it and why ("By Bastet: ..."), who unfroze it and how long it held ("By Joe after 3 min"); an exception you gave, a work item that waits (also for a model) | the words above; Queued as in the transcript |
+| Could not decide | a decision Bastet could not make (her model gave no answer: it was down, timed out or the call did not fit), counted apart from Failed (her check broke) | |
 | Decision, Rule, Mode, Enforce, Warn | Bastet's filters: what she decided, by which rule, and whether she acted (Enforce) or only warned (Warn) | GitHub code scanning "Rule"; as Bastet's setting |
 | Details | open one decision of Bastet's from its row | macOS Finder, Windows "Details" |
 | First look, Second look, Flagged, Not flagged | one decision's chain: whether the decision model flagged the call and why, then the big model's second look (guard/chain.py) | a second opinion, as people say it; OpenAI Moderation "flagged" |

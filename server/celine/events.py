@@ -210,12 +210,17 @@ def _run(r, cfg) -> dict:
             "open": homes.run_link(r["night"], r["rid"])}
 
 
+def guard_title(tool: str) -> str:
+    """A decision's title: its tool by Settings' label, the patrol's Turn audit."""
+    return "Turn audit" if tool == "patrol" else _label(tool)
+
+
 def _guard(r, cfg) -> dict:
     from .guard import view
     # a closed gate's row is decision closed too: it stopped the call, nobody was asked
     word, tone = ("Stopped", ERROR) if r["rule"] == "gates" else _GUARD.get(
         view.kind(r), ("Running", RUNNING))
-    return {"title": "Turn audit" if r["tool"] == "patrol" else _label(r["tool"]),
+    return {"title": guard_title(r["tool"]),
             "outcome": word, "tone": tone, "detail": _first(r["why"] or view.line(r)),
             "guard": {"id": r["gid"], "actions": view.actions(r)}}
 
@@ -299,7 +304,7 @@ SOURCES = {s.kind: s for s in (
            "r.finished_at, r.started_by FROM runs r WHERE r.state != 'waiting'", _run),
     Source("guard", "Decisions",
            "SELECT 'guard:' || g.id AS id, g.created_at AS at, "
-           "(g.decision IN ('stop','failed','closed','denied') OR g.froze) AS failed, "
+           "g.decision = 'failed' AS failed, "
            "g.conversation_id AS cid, g.message_id AS mid, g.turn_id AS tid, 'guard' AS tab, "
            "g.id AS gid, "
            "g.tool, "
@@ -389,7 +394,10 @@ def _where(c: sqlite3.Connection, cid: str | None, cache: dict) -> tuple[str | N
 
 
 GUARD = {"decision": "decision = ?", "rule": "rule = ?", "mode": "mode = ?"}
-UNDECIDED = "decision = 'unreachable'"   # no judge answered: apart from its stops
+# the State filter's words that only Bastet's rows have: no judge answered (apart from
+# Failed, her check broke), and what she stopped (a closed gate's row reads Stopped too)
+BASTET_STATES = {"undecided": "decision = 'unreachable'",
+                 "stopped": "(decision = 'stop' OR rule = 'gates')"}
 
 
 def tabs(c: sqlite3.Connection, cfg, day: str | None = None) -> list[dict]:
@@ -426,12 +434,11 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
             day: str | None = None,
             state: str | None = None, guard: dict | None = None,
             before: tuple[str, str] | None = None, limit: int = 100) -> dict:
-    """{events, total, failed, undecided, next}: the events of `kinds` newest first,
-    `limit` a page below `before` (at, id). `state` "failed" (what failed) or
-    "undecided" (Bastet's decisions she could not make); `guard` {decision, rule, mode}
-    narrows to its decisions. `total`, `failed` and `undecided` count every one of the
-    day and filters, on the first page only (None below `before`: the client has them
-    from its first page)."""
+    """{events, total, failed, undecided, stopped, next}: the events of `kinds` newest
+    first, `limit` a page below `before` (at, id). `state` "failed" (what failed), or one
+    of BASTET_STATES; `guard` {decision, rule, mode} narrows to its decisions. `total`,
+    `failed`, `undecided` and `stopped` count every one of the day and filters, on the
+    first page only (None below `before`: the client has them from its first page)."""
     where, args = [], []
     if tab:
         where.append("tab = ?")
@@ -447,15 +454,15 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
     count_where, count_args = list(where), list(args)
     if state == "failed":
         where.append("failed")
-    elif state == "undecided":
-        where.append(UNDECIDED)
+    elif state in BASTET_STATES:
+        where.append(BASTET_STATES[state])
     if before:
         where.append("(at < ? OR (at = ? AND id < ?))")
         args += [before[0], before[0], before[1]]
     cond = (" WHERE " + " AND ".join(where)) if where else ""
     ccond = (" WHERE " + " AND ".join(count_where)) if count_where else ""
     rows, total, n_failed = [], None if before else 0, None if before else 0
-    n_undecided = None if before else 0
+    n_bastet = {k: None if before else 0 for k in BASTET_STATES}
     # note: each source is scanned and sorted on its own; indexes on the times once
     # a source passes some hundred thousand rows
     for k in kinds:
@@ -469,9 +476,10 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
                          count_args).fetchone()
         total, n_failed = total + t, n_failed + f
         if k == "guard":
-            n_undecided = c.execute(
-                f"SELECT count(*) FROM ({s.sql})" + (ccond + " AND " if ccond else " WHERE ")
-                + UNDECIDED, count_args).fetchone()[0]
+            for b, sql in BASTET_STATES.items():
+                n_bastet[b] = c.execute(
+                    f"SELECT count(*) FROM ({s.sql})" + (ccond + " AND " if ccond else " WHERE ")
+                    + sql, count_args).fetchone()[0]
     rows.sort(key=lambda x: (x[1]["at"], x[1]["id"]), reverse=True)
     page, cache = rows[:limit], {}
     tz, now_ = zone(cfg), _now()
@@ -489,7 +497,7 @@ def listing(c: sqlite3.Connection, cfg, *, kinds: list[str], tab: str | None = N
                        "links": {"conversation": r["cid"], "message": r["mid"], "turn": r["tid"],
                                  "open": v.get("open", path) or path}})
     last = page[-1][1] if page else None
-    return {"events": events, "total": total, "failed": n_failed, "undecided": n_undecided,
+    return {"events": events, "total": total, "failed": n_failed, **n_bastet,
             "next": page_cursor((last["at"], last["id"])) if len(rows) > limit else None}
 
 
@@ -506,7 +514,7 @@ def guard_filters(c: sqlite3.Connection) -> dict:
             "modes": [{"id": m, "label": MODE_WORDS.get(m, m)} for m in have("mode")]}
 
 
-STATES = ("failed", "undecided")
+STATES = ("failed", *BASTET_STATES)
 
 
 @router.get("/events")
@@ -516,10 +524,11 @@ async def list_events(request: Request, tab: str = "agent", kind: str | None = N
                       rule: str | None = None, mode: str | None = None,
                       before: str | None = None, limit: int = 100) -> dict:
     """Everything it did and everything that ran, newest first: {events, total, failed,
-    undecided, next, tabs, kinds, days, guard}. `tab` one of `tabs`' ids (guard, agent,
-    background: TABS), `kind` one of `kinds`' ids (the tab's), `day` a date in
-    the app's zone (one of `days`), `state` failed or undecided, `decision`, `rule`,
-    `mode` one of `guard`'s (they and undecided list Bastet's rows only), `before` the
+    undecided, stopped, next, tabs, kinds, days, guard}. `tab` one of `tabs`' ids (guard,
+    agent, background: TABS), `kind` one of `kinds`' ids (the tab's), `day` a date in
+    the app's zone (one of `days`), `state` failed, undecided or stopped, `decision`,
+    `rule`, `mode` one of `guard`'s (they, undecided and stopped list Bastet's rows only),
+    `before` the
     `next` of the page before. A Bastet row's `guard` is {id, actions} (guard/store.py
     one; actions as guard/view.actions), null on any other row."""
     if tab not in TAB_KINDS:
@@ -529,7 +538,7 @@ async def list_events(request: Request, tab: str = "agent", kind: str | None = N
     if state is not None and state not in STATES:
         raise CelineError("bad_request", "state is one of " + ", ".join(STATES), 400)
     guard = {"decision": decision, "rule": rule, "mode": mode}
-    if state == "undecided" or any(v is not None for v in guard.values()):
+    if state in BASTET_STATES or any(v is not None for v in guard.values()):
         if tab != "guard" or kind not in (None, "guard"):
             raise CelineError("bad_request", "these filters are Bastet's: kind is guard", 400)
         kind = "guard"
