@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..core.ids import when
 
-LABEL = {"message": "From", "brief": "Brief from", "report": "Report from",
+LABEL = {"message": "From", "brief": "Instructions from", "report": "Result from",
          "trigger": "Trigger from", "notice": "Notice from"}
 
 
@@ -44,5 +44,5 @@ def header(iv: dict | None, user: str, tz) -> str:
         bits.append(f"until {when(iv['until_at'], tz)}")
     if kind == "report" and data.get("state") not in (None, "done"):
         bits.append(f"its turn {data['state']}")
-    label = "Brief changed by" if kind == "brief" and data.get("changed") else LABEL[kind]
+    label = "Instructions changed by" if kind == "brief" and data.get("changed") else LABEL[kind]
     return f"[{label} {who(iv, user)} ({', '.join(bits)})]\n"

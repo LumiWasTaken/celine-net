@@ -248,9 +248,9 @@ async def test_the_legend_names_the_marks_the_code_writes(cfg):
     iv = {"kind": "report", "from": "agent:x", "from_name": "scout", "id": 4, "data": {}}
     from celine.skills.meta import CALL_HEAD
     for mark in (mind.HEAD, recall.HEAD, NOTES_HEAD, compact.STUB_HEAD, "[cut: ", "[the screen from ", CALL_HEAD,
-                 "[Report from "):
+                 "[Result from "):
         assert mark.rstrip() in text, mark
-    assert header(iv, "Joe", None) == "[Report from scout (#4)]\n"
+    assert header(iv, "Joe", None) == "[Result from scout (#4)]\n"
     assert "<outside>" not in text and "<outside>" in legend.legend(cfg, guarded=True)
     assert "Joe" in text and "—" not in text
 

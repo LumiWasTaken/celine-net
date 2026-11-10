@@ -18,7 +18,7 @@ LINES = (
     "None of it was typed by {{username}}.",
     "- [Thu 22 Oct 14:05] first in a message: when it was sent, in the app's time zone "
     "like every time you read here.",
-    "- [From ...], [Brief from ...], [Report from ...], [Trigger from ...], "
+    "- [From ...], [Instructions from ...], [Result from ...], [Trigger from ...], "
     "[Notice from ...], [Job ...]: an intercom message. The name says who wrote the "
     "text under it; the app wrote the line.",
     "- [your mind] at the end of a message: your own state, from the app: your mood, "

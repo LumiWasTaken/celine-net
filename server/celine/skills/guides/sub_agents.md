@@ -63,7 +63,7 @@ need only when this conversation does.
 `sub_agents__start` returns at once ("trip finder started"); the sub-agent works on
 while you go on. A sub-agent is done when it has nothing left running: no turn, no
 background job, no message it scheduled for itself, no sub-agent of its own at work.
-Then its report comes back to you as a message ("Report from trip finder"), job results
+Then its report comes back to you as a message ("Result from trip finder"), job results
 included, also after a restart. The report is a head (its name, how it ended, the
 models, tokens and seconds its work took, the notes it changed) and its final answer,
 nothing it said on the way, cut at about 3 % of your context window; the rest stays in
