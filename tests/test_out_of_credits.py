@@ -3,6 +3,8 @@ nothing waits for the provider. Fakes only: the OpenRouter model answers 402 whi
 `broke`."""
 from __future__ import annotations
 
+import re
+
 from chat_fixtures import until, user_says
 
 import copy
@@ -47,7 +49,8 @@ class Net:
         from celine.turns import title
         if messages[0]["content"] != prompts.text(title.__file__, "title.md"):   # a title asks the chat model too
             last = next(m["content"] for m in reversed(messages) if m["role"] == "user")
-            text = last.rsplit("\n\nToday is ", 1)[0]     # before the last tail
+            # before its last tail: the time now, under the date where that is new in view
+            text = re.sub(r"\n\nToday is [^\n]*$", "", last.rsplit("\n\nNow it is [", 1)[0])
             self.asked.append(text.split("\n", 1)[-1])
         if self.broke:
             raise http_error("OpenRouter", self.model, 402,

@@ -2,8 +2,9 @@
 # conversation itself (server/celine/turns/loads.py). Copied once to
 # var/settings/context.toml; edit that copy.
 #
-# Notes: the always-loaded ones (a `load: always` line, the notes on you) are in its
-# instructions; any other note comes back as the result of reading it. Every tool is in
+# Notes: the always-loaded ones (a `load: always` line, the notes on you) go with the
+# message a turn answers, again when one changed; any other note comes back as the
+# result of reading it. Every tool is in
 # its list, a core skill's with its parameters, every other by name; skills__load answers
 # with the parameters.
 #

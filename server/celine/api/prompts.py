@@ -87,8 +87,11 @@ async def context_block(request: Request, cid: str, block: str) -> dict:
         "SELECT 1 FROM conversations WHERE id=?", (cid,)).fetchone())
     if exists is None:
         raise NotFound("chat")
-    backend, pieces, tools, _ = await turn_parts(services, cid)
+    backend, pieces, tools, carried = await turn_parts(services, cid)
     parts = [t for name, t in pieces if name == block]
+    if block == "notes" and "notebook" in carried.skills:
+        from ..skills.notebook import notes_block
+        parts = [notes_block(services.cfg, carried.notes) or ""]
     if block == "tools" and tools:
         parts.append(json.dumps(tools, indent=1, ensure_ascii=False))
     if block == "history":

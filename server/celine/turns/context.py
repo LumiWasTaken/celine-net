@@ -27,10 +27,12 @@ Modes (who asks):
 - "manual"     /compact: summarises all but the latest exchange, now.
 - "dry"        /usage: computes, writes nothing, calls no model.
 
-The tail of a turn (turns/prompt.py tail_text: the time now, where else it works, its
-plan, what cannot be used, its notebook's index) is written once on the user message the
-turn answers (`message_context.tail`) and sent after it in every later request: it never
-moves, so every request starts with the bytes of the one before.
+The tail of a turn (turns/prompt.py tail_parts: the date, the time now, where else it
+works, its plan, what cannot be used, its notebook's index, the notes it always carries)
+is written once on the user message the turn answers (`message_context.tail`, as its
+parts) and sent after it in every later request. The date, the index and each note go
+where they differ from the tail before in view (tail_wire), every other part always: a
+stored tail never changes, so every request starts with the bytes of the one before.
 
 Every message of a request says where it came from (`origin`, the app's key, no backend
 sends it): a list of {conversation, turn, message, call, note}, more than one when
@@ -46,6 +48,7 @@ tries again. No other model is asked.
 """
 from __future__ import annotations
 
+import json
 import logging
 import weakref
 from dataclasses import dataclass, field
@@ -244,7 +247,7 @@ def _thought(it: "_Item") -> dict:
 class _Item:
     """One message as it goes on the wire: user text, or an assistant reply with its
     calls and their results. Tool rows of the tree are carried by their call."""
-    __slots__ = ("idx", "id", "role", "content", "reasoning", "thinking",
+    __slots__ = ("idx", "id", "role", "content", "body", "tail", "reasoning", "thinking",
                  "attachments", "calls", "turn", "cid", "_wire", "_cost")
 
     def __init__(self, idx: int, m: dict, calls: list[dict] | None, tz, user: str = "",
@@ -266,8 +269,11 @@ class _Item:
                 + self.content
             if m.get("context"):                # turns/message_context.py
                 self.content += "\n\n" + m["context"]
-            if m.get("tail"):                   # its turn's tail, stored once
-                self.content += "\n\n" + m["tail"]
+        # its turn's tail, stored once as parts: a plan adds what of it goes in its
+        # view (_Plan._tails); `body` is the message without it
+        self.body = self.content
+        self.tail: list[list] = json.loads(m["tail"]) \
+            if self.role == "user" and not bare and m.get("tail") else []
         self.reasoning = (m.get("reasoning") or None) if self.role == "assistant" else None
         self.thinking = m.get("thinking") if self.role == "assistant" else None
         self.attachments = m.get("attachments") or []
@@ -276,8 +282,30 @@ class _Item:
         self._cost: dict[bool, int] = {}
 
     def as_dict(self) -> dict:
-        return {"id": self.id, "role": self.role, "content": self.content,
+        """The message for a summary: without its tail, which says what held then."""
+        return {"id": self.id, "role": self.role, "content": self.body,
                 "attachments": self.attachments, "calls": self.calls}
+
+
+def tail_wire(cfg, parts: list[list], seen: dict, off) -> str:
+    """A stored tail (turns/prompt.py tail_parts) as it goes after its message, given
+    what the tails before it in view sent (`seen`, updated here): a SENT_ONCE part goes
+    when it reads differently from the last one sent, a note when it is new or changed,
+    every other part always. `off`: the notes the user left out of this conversation."""
+    from ..skills.notebook import notes_part
+    from .prompt import NOTES, SENT_ONCE
+    out = []
+    for key, value in parts:
+        if key == NOTES:
+            new = {p: t for p, t in value.items()
+                   if p not in off and seen.get(f"note:{p}") != t}
+            seen.update({f"note:{p}": t for p, t in new.items()})
+            value = notes_part(cfg, new, off) if new else None
+        elif key in SENT_ONCE:
+            value, seen[key] = (None if seen.get(key) == value else value), value
+        if value:
+            out.append(value)
+    return "\n\n".join(out)
 
 
 def _kept(call: dict, policy: Policy) -> bool:
@@ -337,6 +365,21 @@ class _Plan:
         (Policy) makes the next summary. Nothing else moves where its history starts,
         so a request starts with the request before it."""
         self.items = [it for it in self.all_items if it.idx >= self.start]
+        self._tails()
+
+    def _tails(self) -> None:
+        """Each message's tail as it goes in this view (tail_wire): the first tail in
+        view carries every part, a later one what changed. After a summary moves the
+        view's start, the tail that is first now carries all of it again."""
+        seen: dict = {}
+        off = self.view.get("notes_off") or ()
+        for it in self.items:
+            if not it.tail:
+                continue
+            tail = tail_wire(self.cfg, it.tail, seen, off)
+            content = it.body + ("\n\n" + tail if tail else "")
+            if content != it.content:
+                it.content, it._wire, it._cost = content, {}, {}
 
     def cut_through(self, idx: int) -> None:
         """The agent's history starts after chain position `idx` (a summary covers it)."""

@@ -383,9 +383,12 @@ event. Calls record what the tool was (`tool_calls.mutating`, `mode`).
    without calls at the tail is continued in place (below).
 1. Resolve the tool list once. A tool disabled for this conversation stays in the list.
 2. Build the system prompt (`turns/prompt.py`): its persona, who it is talking to, where
-   it is, how it talks (`talk`), the notes it always carries, the skill index and the
-   core skills' fragments. The user message the turn answers gets the turn's tail once
-   (`prompt.tail_text`: the time, its plan, what is off or down, the skills' live state).
+   it is, how it talks (`talk`), the skill index and the core skills' fragments. The
+   user message the turn answers gets the turn's tail once (`prompt.tail_parts`: the
+   date, the time, its plan, what is off or down, the skills' live state, the notes it
+   always carries). A request sends the date, the notebook's index and each note where
+   they differ from the tail before in view (`context.tail_wire`), so a note the agent
+   writes costs that note once and the system prompt stays as it is.
    `/compact` and `/usage` build the same prompt (`prompt.request_parts`). Then the request, through the context
    builder (`turns/context.py`, below): old tool results may go as stubs and older turns
    as a summary.
@@ -973,8 +976,7 @@ every request is the bytes of the one before: the persona, the legend of the app
 marks (`turns/legend.py`), the line about who it is talking to (`_chat_line`), **where
 it is** (`conversations/here.py` `where`, from ids: its kind and address, the place, the
 device its tools run on, its model role, who started it, who it reports to and its depth
-in the chain of agents), its `talk`, the **notes block** (`skills/notebook.py`
-`notes_block`), the **skill index** (`Registry.index`: one line per skill offered here,
+in the chain of agents), its `talk`, the **skill index** (`Registry.index`: one line per skill offered here,
 the core ones marked `[core]`), then each core skill's fragment (`prompt_fragment`: what
 holds for the whole conversation, such as a mission's Instructions or the notebook's
 `identity.md`) and the sub_agents

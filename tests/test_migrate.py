@@ -4,6 +4,7 @@ order; a database older than its first file is refused."""
 from __future__ import annotations
 
 import shutil
+import json
 import sqlite3
 
 import pytest
@@ -23,7 +24,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 29
+LATEST = 30
 
 
 def _version(db) -> int:
@@ -649,3 +650,32 @@ def test_0029_takes_the_limit_out_and_a_chat_it_had_cut_keeps_its_view(tmp_path,
     assert rows == [("long", "long-a2", 0, ""),
                     ("told", "told-a0", 2, "They met."), ("told", "told-a2", 2, "They met.")]
     c.close()
+
+
+def test_0030_keeps_a_stored_tail_as_one_part(tmp_path, monkeypatch):
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0030":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 29
+    at = "2026-11-01T10:00:00.000+00:00"
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO conversations(id, created_at, updated_at, kind) "
+              "VALUES('c', ?, ?, 'chat')", (at, at))
+    for mid, tail in (("m1", 'Today is "Monday".\n\nNow it is [10:00].'), ("m2", None)):
+        c.execute("INSERT INTO messages(id, conversation_id, role, content, ordinal, author, "
+                  "created_at) VALUES(?, 'c', 'user', 'hi', 0, 'user', ?)", (mid, at))
+        c.execute("INSERT INTO message_context(message_id, text, tail) VALUES(?, '', ?)",
+                  (mid, tail))
+    c.commit()
+    c.close()
+    shutil.copy(MIGRATIONS_DIR / "0030_tail_parts.sql", d)
+    assert migrate_all(db) == 30
+    c = sqlite3.connect(db)
+    tails = dict(c.execute("SELECT message_id, tail FROM message_context"))
+    c.close()
+    assert json.loads(tails["m1"]) == [["text", 'Today is "Monday".\n\nNow it is [10:00].']]
+    assert tails["m2"] is None

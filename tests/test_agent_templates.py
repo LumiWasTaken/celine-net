@@ -1,7 +1,7 @@
 """The agent's templates (sub_agents/templates.py): notes in templates/ in the shape of
 Claude Code's and opencode's agent files; a sub-agent started from one gets its body as
-the start of a lean system prompt and only its skills. Its own system prompt keeps its
-stable start when it writes an always note (turns/prompt.py system_blocks)."""
+the start of a lean system prompt and only its skills. Its own system prompt reads the
+same when it writes an always note (turns/prompt.py system_blocks)."""
 from __future__ import annotations
 
 import pytest
@@ -73,19 +73,17 @@ async def test_an_unknown_template_is_refused_with_the_ones_the_agent_has(store)
     assert refusal == "There is no agent template 'nope' in templates/. Yours: Web scout."
 
 
-async def test_the_agents_prompt_is_stable_and_a_note_write_changes_only_its_end(store):
+async def test_the_agents_prompt_is_the_same_after_it_writes_an_always_note(store):
+    """The notes it always carries go in a turn's tail (turns/prompt.py tail_parts), so
+    the system prompt reads the same before and after a note write."""
     cfg = load()
     reg = make_app(cfg, store).state.services.registry
     await write_notes(store, cfg, {"style.md": "load: always\n\nShort sentences."})
     chat = await conversations.create(store, "chat")
     first = await _prompt(cfg, reg, store, chat)
-    assert await _prompt(cfg, reg, store, chat) == first, "byte-identical when nothing changed"
+    assert "Short sentences." not in first
     await write_notes(store, cfg, {"style.md": "load: always\n\nLong sentences."})
-    second = await _prompt(cfg, reg, store, chat)
-    assert second != first
-    at = first.index("[your notes]")
-    assert second[:at] == first[:at], "everything before the notes stays"
-    assert "Long sentences." in second[at:]
+    assert await _prompt(cfg, reg, store, chat) == first
 
 
 def test_the_frontmatter_is_yaml():

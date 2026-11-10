@@ -148,7 +148,7 @@ async def _run_turn(turn: dict, store: Store, cfg, backend, bus,
     # only a turn that starts on that message writes it: one taken mid-turn went out
     # without a tail, and a Continue or a restart leaves it so
     if answers is not None and (fresh or (stored is None and chain[-1]["id"] == answers)):
-        await message_context.put_tail(store, answers, await prompt.tail_text(
+        await message_context.put_tail(store, answers, await prompt.tail_parts(
             store, cfg, registry, backend, cid, carried, tid), fresh)
     # the context builder (turns/context.py): old results as stubs and older turns as
     # a summary when the conversation nears the window; decisions are persisted

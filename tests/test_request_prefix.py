@@ -79,14 +79,59 @@ async def test_nothing_happens_between_two_turns(chat):
     chat.held()
 
 
-@pytest.mark.xfail(strict=True, reason="2.2: always-loaded notes are in the system prompt")
+def _said(chat, turn: int = -1) -> str:
+    """The last user message of a turn's request: the message with its tail."""
+    return [m for m in chat.turns[turn][0] if m["role"] == "user"][-1]["content"]
+
+
 async def test_an_always_loaded_note_is_written(chat):
-    await write_notes(chat.store, chat.cfg, {"style.md": "load: always\n\nShort sentences."})
+    """The notes it always carries go with the message, once: a turn after a note
+    changed sends that note again, a turn after nothing changed sends none, and the
+    system prompt holds none."""
+    await write_notes(chat.store, chat.cfg, {
+        "style.md": "load: always\n\nShort sentences.",
+        "food.md": "load: always\n\nNo olives."})
     await chat.say("one")
+    assert "Short sentences." in _said(chat) and "No olives." in _said(chat)
+    assert "Short sentences." not in chat.turns[-1][0][0]["content"], "the system prompt"
     await write_notes(chat.store, chat.cfg, {"style.md": "load: always\n\nLong sentences."})
     await chat.say("two")
     chat.held()
-    assert "Long sentences." in str(chat.turns[-1][0])
+    assert "Long sentences." in _said(chat) and "No olives." not in _said(chat)
+    await chat.say("three")
+    chat.held()
+    assert "[your notes]" not in _said(chat) and "Today is" not in _said(chat)
+    assert "Now it is [" in _said(chat), "the time goes every turn"
+
+
+async def test_a_note_is_left_out_of_the_chat(chat):
+    """The user's switch (Context, a note off here) is a setting: the note leaves every
+    tail in view."""
+    await write_notes(chat.store, chat.cfg, {
+        "style.md": "load: always\n\nShort sentences.",
+        "food.md": "load: always\n\nNo olives."})
+    await chat.say("one")
+    await chat.store.write(lambda c: c.execute(
+        "UPDATE conversations SET notes_off='[\"food.md\"]' WHERE id=?", (chat.cid,)))
+    await chat.say("two")
+    whole = str(chat.turns[-1][0])
+    assert "No olives." not in whole and "Short sentences." in whole
+
+
+async def test_a_summary_inside_a_turn_leaves_the_notes_in_view(chat):
+    """After a summary moved the start of the view, the tail that is first there carries
+    the notes and the date whole."""
+    await write_notes(chat.store, chat.cfg, {"style.md": "load: always\n\nShort sentences."})
+    chat.reg.add(Arch(lines=100))
+    chat.backend = Searching(window=60_000)
+    for n in range(40):
+        await chat.say(f"search {n}")
+        if chat.backend.summaries:
+            break
+    assert chat.backend.summaries, "a summary was made"
+    first = next(m for m in chat.turns[-1][0] if m["role"] == "user")["content"]
+    assert "Short sentences." in first and "Today is" in first
+    assert "Short sentences." not in str(chat.backend.summaries[-1]), "a summary reads no tail"
 
 
 async def test_a_skill_is_switched_off_and_on(chat):

@@ -78,7 +78,7 @@ async def test_a_tail_written_first_never_stands_for_the_block(store):
     reg.add_specs(skill, [])
     cid = await conversations.create(store)
     mid, tid, _ = await user_says(store, cid, "hello")
-    await message_context.put_tail(store, mid, "now")
+    await message_context.put_tail(store, mid, [["text", "now"]])
     chain = await store.read(lambda c: tree.path(c, cid))
     await message_context.ensure(store, cfg, reg, cid, tid, message_context.unsent(chain))
     built = await context.build(store, cfg, FakeBackend(), cid, system="S", tools=[])

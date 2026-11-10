@@ -791,22 +791,28 @@ def without_load(text: str) -> str:
 
 
 def notes_block(cfg, notes: list[dict]) -> str | None:
-    """The notes it always carries (turns/loads.py) as one block, by path so the block
-    changes only where a note comes or goes, each without its `load:` line; the ones the
-    user left out here named in one line."""
+    """Every note it always carries (turns/loads.py Carried.notes) as one block, the
+    ones the user left out here named in one line: what the Context tab measures."""
     from ..turns.loads import OFF_HERE
-    loaded = sorted((n for n in notes if n["state"] == "included"), key=lambda n: n["path"])
-    off = [n["path"] for n in notes if n["why"] == OFF_HERE]
-    if not loaded and not off:
+    return notes_part(cfg, {n["path"]: without_load(n["text"]) for n in notes
+                            if n["state"] == "included"},
+                      [n["path"] for n in notes if n["why"] == OFF_HERE])
+
+
+def notes_part(cfg, notes: dict[str, str], off=()) -> str | None:
+    """Notes it always carries, as a tail sends them (turns/context.py tail_wire): each
+    by its path, without its `load:` line; the ones the user left out here named in one
+    line. A tail sends the notes that are new or changed since the tail before it."""
+    if not notes and not off:
         return None
     parts = [cfg.substitute(
         f"{NOTES_HEAD} you always carry: your notes about {{{{username}}}} and the ones "
         "you set to load always. A keys line in a note names the words that bring it "
         "back. Read any other note with notebook__read.")]
-    parts += [f"### {n['path']}\n{without_load(n['text'])}" for n in loaded]
+    parts += [f"### {path}\n{notes[path]}" for path in sorted(notes)]
     if off:
         parts.append(cfg.substitute(f"Left out by {{{{username}}}} in this conversation: "
-                                    f"{', '.join(off)}."))
+                                    f"{', '.join(sorted(off))}."))
     return "\n\n".join(parts)
 
 

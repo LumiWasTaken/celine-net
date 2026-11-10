@@ -164,23 +164,41 @@ async def _chat_line(store, cid: str) -> str | None:
     return "You are talking with {{username}} in the app right now."
 
 
+# The parts of a tail a later tail in view leaves out while they read the same
+# (turns/context.py _Plan._tails): the date, and the notebook's index.
+SENT_ONCE = frozenset({"date", "skill:notebook"})
+NOTES = "notes"     # the tail part that holds the always notes, {path: text}
+
+
 async def tail_text(store, cfg, registry, backend, cid: str, carried,
                     tid: str = "") -> str:
-    """The tail of turn `tid`: what holds now and changes from turn to turn, stored once
-    on the user message the turn answers (turns/message_context.py put_tail) so it never
-    moves: the date and time now, the model it runs on when that is not the first,
-    where else it works, its own jobs still running, its plan, the skills it cannot use
-    now and the ones it keeps
-    notes on, and the core skills' live state (`tail_part`: the intercom's thread and
-    announcements, a mission's status, a sub-agent's report room, the notebook's
-    index)."""
+    """A tail with every part in it, as the first tail in a view goes (tail_parts)."""
+    from .context import tail_wire
+    return tail_wire(cfg, await tail_parts(store, cfg, registry, backend, cid, carried, tid),
+                     {}, ())
+
+
+async def tail_parts(store, cfg, registry, backend, cid: str, carried,
+                     tid: str = "") -> list[list]:
+    """The tail of turn `tid` as its parts, [key, value] in the order they go: what holds
+    now and changes from turn to turn, stored once on the user message the turn answers
+    (turns/message_context.py put_tail) so it never moves. `date`: today. `text`: the
+    time now, the model it runs on when that is not the first, where else it works, its
+    own jobs still running, its plan, the skills it cannot use now and the ones it keeps
+    notes on. `skill:<name>`: a core skill's live state (`tail_part`: the intercom's
+    thread and announcements, a mission's status, a sub-agent's report room, the
+    notebook's index). `notes`: the notes it always carries (turns/loads.py), {path:
+    text}; a sub-agent has none. A request sends a SENT_ONCE part and a note where they
+    differ from the tail before in view (turns/context.py), so a note it writes costs
+    that note's text once, and the system prompt stays as it is."""
     from ..conversations import here
     from ..jobs import store as job_rows
-    parts = [clock.today(cfg), clock.now_line(cfg), await fallback_line(store, backend, cid),
+    parts = [clock.now_line(cfg), await fallback_line(store, backend, cid),
              await store.read(lambda c: here.busy(c, cid)),
              await store.read(lambda c: job_rows.running(c, cid, clock.zone(cfg)))]
     plan = plan_flow.block(await plan_flow.current(store, cid))
     parts.append(cfg.substitute(plan) if plan else None)
+    skills: list[tuple[str, str]] = []
     if registry:
         from ..skills.meta import skill_note_path
         specs, _ = await tool_specs(registry, store, cid, carried)
@@ -193,8 +211,19 @@ async def tail_text(store, cfg, registry, backend, cid: str, carried,
         ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="", store=store,
                           config=cfg, emit=None,  # type: ignore[arg-type]
                           loaded_notes=carried.loaded_notes)
-        parts += await registry.tail_parts(ctx, (set(carried.skills) & CORE) | {"sub_agents"})
-    return "\n\n".join(p for p in parts if p)
+        skills = await registry.tail_parts(ctx, (set(carried.skills) & CORE) | {"sub_agents"})
+    out: list[list] = [["date", clock.today(cfg)],
+                       ["text", "\n\n".join(p for p in parts if p)],
+                       *([f"skill:{name}", text] for name, text in skills)]
+    sub = await store.read(lambda c: (c.execute(
+        "SELECT agent_of FROM conversations WHERE id=?", (cid,)).fetchone() or [None])[0])
+    if carried is not None and "notebook" in carried.skills and not sub:
+        from ..skills.notebook import without_load
+        notes = {n["path"]: without_load(n["text"]) for n in carried.notes
+                 if n["state"] == "included"}
+        if notes:
+            out.append([NOTES, notes])
+    return [p for p in out if p[1]]
 
 
 FALLBACK = "You are running in fallback mode. Instead of {first} you are running on {current}."
@@ -268,13 +297,11 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
     talking to, where it is (conversations/here.py where, from ids; `role` its model role), how
     it talks (its `talk`), what the user wrote about themselves, the skill index, what
     each core skill adds for the whole conversation (its live state goes in the tail:
-    `tail_part`), and last the notes it always carries (turns/loads.py), the one piece
-    its own writes change. Nothing here changes from turn to turn unless it writes an
-    always note: what does is in the tail (tail_text), so the start of the request stays
-    the same for the model server's cache. A chat, a mission and a background run or
+    `tail_part`). Nothing here changes from turn to turn: what does is in the tail
+    (tail_parts), the notes it always carries among it, so the start of the request
+    stays the same for the model server's cache. A chat, a mission and a background run or
     task get all of it; what the kind adds (a brief, a trigger's prompt) comes as its
     messages. A sub-agent gets its own, lean one (agent_blocks)."""
-    from ..skills.notebook import notes_block
     row = await store.read(lambda c: c.execute(
         "SELECT agent_of, agent_cli FROM conversations WHERE id=?", (cid,)).fetchone())
     ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="",
@@ -308,8 +335,6 @@ async def system_blocks(cfg, registry, store, cid, tid, carried, role: str | Non
         # the core skills' parts; another skill's comes with skills__load
         parts.extend(("tools", f) for f in await registry.prompt_fragments(
             ctx, set(carried.skills) & CORE))
-    if "notebook" in carried.skills:
-        parts.append(("notes", notes_block(cfg, carried.notes)))
     return [(name, text) for name, text in parts if text]
 
 

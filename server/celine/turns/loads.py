@@ -1,5 +1,5 @@
-"""What it carries besides the conversation: the notes it always carries, in its system
-prompt, and the skills offered here, decided at every turn start by one policy for every
+"""What it carries besides the conversation: the notes it always carries, in the tail of
+a turn (turns/prompt.py tail_parts), and the skills offered here, decided at every turn start by one policy for every
 conversation (`var/settings/context.toml`, copied once from `config/context.toml`, holds
 the memory's numbers, skills/recall.py, and `result_tokens`, the most one tool result
 takes, tokens.result_cap).

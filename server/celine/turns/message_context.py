@@ -2,7 +2,7 @@
 
 It is computed once, when the message is first sent (a turn starts at it, or a turn
 takes it at a step boundary), and stored in `message_context`; so is the tail of the
-turn that answers it (put_tail, turns/prompt.py tail_text), sent after the block. Every
+turn that answers it (put_tail, turns/prompt.py tail_parts), sent after the block. Every
 later request reads the stored text, so the history it reads stays byte-stable for the
 KV cache even when what the skill would compute has changed since. A message no skill adds
 anything to stores an empty row, so a resent message is never asked again and its
@@ -56,15 +56,17 @@ async def tail_of(store, chain: list[dict]) -> tuple[str | None, str | None]:
     return mid, r[0] if r else None
 
 
-async def put_tail(store, mid: str, tail: str, fresh: bool = False) -> None:
-    """The tail of the turn that answers user message `mid`, written once: a message
-    with a tail keeps it (a later step, a Continue or a restart sends the same bytes).
+async def put_tail(store, mid: str, parts: list[list], fresh: bool = False) -> None:
+    """The tail of the turn that answers user message `mid` (turns/prompt.py tail_parts,
+    stored as JSON: [[key, value], ...]), written once: a message with a tail keeps it
+    (a later step, a Continue or a restart sends the same bytes).
     `fresh`: a new answer to it (Regenerate) writes its own; the reply before it is done,
     so nothing reads the old one again."""
     await store.write(lambda c: c.execute(
         "INSERT INTO message_context(message_id, tail) VALUES(?, ?) "
         "ON CONFLICT(message_id) DO UPDATE SET tail=excluded.tail "
-        "WHERE message_context.tail IS NULL OR ?", (mid, tail, fresh)))
+        "WHERE message_context.tail IS NULL OR ?",
+        (mid, json.dumps(parts, ensure_ascii=False), fresh)))
 
 
 def unsent(chain: list[dict]) -> list[dict]:

@@ -104,10 +104,10 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     tokens, without a model call (turns/context.py, mode "dry", the same estimate
     /usage uses): {window, blocks: [{name, tokens}] (persona, talk: the lines about
     where it is and how it talks, about: what the user wrote about themselves, notes:
-    the notes block, tools: the skill index, the skills' fragments and the tool schemas,
-    history: the rest of the request estimate (the messages sent with their stored
-    tails, and the summary), so the blocks add up to the estimate the compaction check
-    uses), notes: [{path, tokens, state, why}] (the notes it always carries: included,
+    the notes it always carries, as a turn's tail sends them once, tools: the skill
+    index, the skills' fragments and the tool schemas, history: the rest of the request
+    estimate (the messages sent with their stored tails, and the summary), so the blocks
+    add up to the estimate the compaction check uses), notes: [{path, tokens, state, why}] (the notes it always carries: included,
     or off here), tools: how many, auto_context: the Load automatically switch
     (api/context.py)}."""
     from ..turns.prompt import turn_parts
@@ -129,6 +129,9 @@ async def what_she_sees(request: Request, cid: str) -> dict:
     for name, text in blocks:
         out.setdefault(name, {"name": name, "tokens": 0})["tokens"] += counter.estimate(text)
     out["tools"]["tokens"] += int(p.get("tool_schemas") or 0)
+    from ..skills.notebook import notes_block
+    out["notes"]["tokens"] = counter.estimate(notes_block(cfg, carried.notes) or "") \
+        if "notebook" in carried.skills else 0
     # history is the rest of the request estimate the compaction check uses, so the
     # blocks add up to exactly that number (the per-block estimates of the system text
     # and the request's count differ by the message overhead and rounding)

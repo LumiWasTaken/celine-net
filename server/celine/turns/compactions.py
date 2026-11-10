@@ -66,7 +66,10 @@ async def context_view(store, cid: str, path: list[dict] | None = None) -> dict:
             if m["role"] == "assistant":
                 m["thinking"] = json.loads(signed[m["id"]]) if signed.get(m["id"]) else None
         on_path = set(ids)
+        off = c.execute("SELECT notes_off FROM conversations WHERE id=?", (cid,)).fetchone()
         return {"chain": chain, "calls": calls, "aged": aged,
+                # the always notes the user left out here (a tail sends none of them)
+                "notes_off": frozenset(json.loads(off[0] or "[]")) if off else frozenset(),
                 "compactions": [r for r in rows(c, cid)
                                 if r["through_message_id"] in on_path]}
 

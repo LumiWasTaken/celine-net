@@ -503,12 +503,12 @@ class Registry:
         whole conversation (`prompt_fragment`), never live state."""
         return await self._parts(ctx, names, "prompt_fragment")
 
-    async def tail_parts(self, ctx: ToolContext, names) -> list[str]:
+    async def tail_parts(self, ctx: ToolContext, names) -> list[tuple[str, str]]:
         """What the skills named in `names` add to the tail of a turn (turns/prompt.py
-        tail_text): their live state now (`tail_part`)."""
-        return await self._parts(ctx, names, "tail_part")
+        tail_parts): their live state now (`tail_part`), each with its skill's name."""
+        return await self._parts(ctx, names, "tail_part", named=True)
 
-    async def _parts(self, ctx: ToolContext, names, attr: str) -> list[str]:
+    async def _parts(self, ctx: ToolContext, names, attr: str, named: bool = False) -> list:
         out = []
         for skill in self.skills.values():
             part = getattr(skill, attr, None) if skill.name in names else None
@@ -522,7 +522,7 @@ class Registry:
                                      "skill": skill.name, "part": attr})
                 text = f"The {skill.name} skill's part of this prompt failed: {e}"
             if text:
-                out.append(text)
+                out.append((skill.name, text) if named else text)
         return out
 
     async def message_context(self, ctx: ToolContext, message: dict
