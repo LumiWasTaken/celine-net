@@ -41,7 +41,6 @@ from uuid import uuid4
 import anyio
 import httpx
 
-from .. import homes
 from ..attachments import blob_path, image_size
 from ..core.ids import new_id, now
 from ..settings.registry import provider_headers
@@ -62,20 +61,22 @@ _EXT = {"image/jpeg": ".jpg", "image/webp": ".webp"}    # a media type's file na
 
 def view(b: dict) -> dict:
     """One shape for a batch wherever it appears: the routes, the event, the display
-    of the call that started it. `link`: where its conversation opens (homes.of), None
-    for the user's own."""
-    return {k: b.get(k) for k in ("id", "kind", "conversation_id", "link", "tool_call_id",
+    of the call that started it. `source`: the conversation it was made in, {kind,
+    title, link} as the Intercom names a sender (intercom.store.source_of), None for the
+    user's own."""
+    return {k: b.get(k) for k in ("id", "kind", "conversation_id", "source", "tool_call_id",
                                   "state", "created_at", "finished_at", "items")}
 
 
-def _link(c: sqlite3.Connection, cid: str | None) -> str | None:
-    return homes.of(c, cid)["link"] if cid else None
+def _source(c: sqlite3.Connection, cid: str | None) -> dict | None:
+    from ..intercom.store import source_of
+    return source_of(c, f"agent:{cid}") if cid else None
 
 
 def _row(c: sqlite3.Connection, r: sqlite3.Row) -> dict:
     d = dict(r)
     d["items"] = json.loads(d["items"])
-    d["link"] = _link(c, d["conversation_id"])
+    d["source"] = _source(c, d["conversation_id"])
     return d
 
 
@@ -106,17 +107,25 @@ async def find(store, kind: str, ref: str) -> dict:
     return rows[0]
 
 
-async def list_batches(store, kind: str, conversation: str | None = None,
-                       limit: int = 50) -> list[dict]:
-    """Newest first; `conversation` keeps one conversation's."""
+async def list_batches(store, kind: str | None = None, conversation: str | None = None,
+                       limit: int = 50, before: str | None = None) -> list[dict]:
+    """Newest first; `kind` keeps one kind's, `conversation` one conversation's, `before`
+    those after batch `before` in that order (the next page)."""
     def fn(c: sqlite3.Connection) -> list[dict]:
-        where, args = "kind=?", [kind]
+        where, args = ["1"], []
+        if kind:
+            where.append("kind=?")
+            args.append(kind)
         if conversation:
-            where += " AND conversation_id=?"
+            where.append("conversation_id=?")
             args.append(conversation)
+        if before:
+            where.append("(created_at, id) < (SELECT created_at, id FROM media_batches "
+                         "WHERE id=?)")
+            args.append(before)
         return [_row(c, r) for r in c.execute(
-            f"SELECT * FROM media_batches WHERE {where} ORDER BY created_at DESC, id DESC "
-            "LIMIT ?", (*args, limit))]
+            f"SELECT * FROM media_batches WHERE {' AND '.join(where)} "
+            "ORDER BY created_at DESC, id DESC LIMIT ?", (*args, limit))]
     return await store.read(fn)
 
 
@@ -139,7 +148,7 @@ async def _insert(store, b: dict) -> None:
                   (b["id"], b["kind"], b["conversation_id"], b["tool_call_id"],
                    b["state"], json.dumps(b["items"], ensure_ascii=False),
                    b["created_at"], b["finished_at"]))
-        b["link"] = _link(c, b["conversation_id"])
+        b["source"] = _source(c, b["conversation_id"])
         _publish(store, c, b)
     await store.write(fn)
 

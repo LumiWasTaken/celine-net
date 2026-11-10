@@ -5,7 +5,8 @@
   own), with `ref` ("provider/preset" in its role, null when the role does not list it)
   and `order` (its place in the role, null likewise);
   what changes them is api/presets.py;
-- GET /api/batches?kind=&conversation=&limit=: newest first;
+- GET /api/batches?kind=&conversation=&limit=&before=: newest first, every kind without
+  `kind` (the Gallery); `next` is the `before` of the next page, null at the end;
 - GET /api/batches/{id};
 - POST /api/batches {kind, items, count?}: the user's batch, no conversation; it runs
   in the app and returns at once, its slots filled by the events;
@@ -87,11 +88,15 @@ async def list_presets(request: Request, kind: str) -> dict:
 
 
 @router.get("/batches")
-async def list_batches(request: Request, kind: str, conversation: str | None = None,
-                       limit: int = 50) -> dict:
-    rows = await batches_mod.list_batches(request.app.state.services.store, _kind(kind),
-                                          conversation, max(1, min(limit, 500)))
-    return {"batches": [batches_mod.view(b) for b in rows]}
+async def list_batches(request: Request, kind: str | None = None,
+                       conversation: str | None = None, limit: int = 50,
+                       before: str | None = None) -> dict:
+    limit = max(1, min(limit, 500))
+    rows = await batches_mod.list_batches(request.app.state.services.store,
+                                          kind and _kind(kind), conversation, limit + 1,
+                                          before)
+    return {"batches": [batches_mod.view(b) for b in rows[:limit]],
+            "next": rows[limit - 1]["id"] if len(rows) > limit else None}
 
 
 @router.get("/batches/{bid}")

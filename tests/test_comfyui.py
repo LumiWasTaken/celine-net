@@ -471,6 +471,27 @@ async def test_the_routes_list_presets_and_run_a_batch_of_the_user(app, store):
     assert await attachments.get(store, att["id"]) is not None
 
 
+async def test_the_gallery_pages_every_kind_newest_first(app, store):
+    """Without `kind` the list holds images and music together; `next` is the `before`
+    of the next page, null at the end."""
+    from fastapi import FastAPI
+    web = FastAPI()
+    web.include_router(comfy_api.router)
+    web.state.services = app
+    await store.write(lambda c: c.executemany(
+        "INSERT INTO media_batches(id, kind, state, items, created_at) "
+        "VALUES(?, ?, 'done', '[]', ?)",
+        [("b1", "images", "2026-11-01T10:00:00"), ("b2", "music", "2026-11-02T10:00:00"),
+         ("b3", "images", "2026-11-02T10:00:00")]))
+    async with client(web) as c:
+        one = (await c.get("/api/batches?limit=2")).json()
+        assert [b["id"] for b in one["batches"]] == ["b3", "b2"] and one["next"] == "b2"
+        two = (await c.get("/api/batches?limit=2&before=b2")).json()
+        assert [b["id"] for b in two["batches"]] == ["b1"] and two["next"] is None
+        music = (await c.get("/api/batches?kind=music")).json()["batches"]
+        assert [b["id"] for b in music] == ["b2"] and music[0]["source"] is None
+
+
 # ---- preset files --------------------------------------------------------------------
 
 def test_every_shipped_preset_loads_and_a_broken_one_says_why(tmp_path):

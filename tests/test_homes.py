@@ -92,8 +92,8 @@ async def test_rows_that_name_a_conversation_carry_its_link(store):
     assert (await terminals.opener(store, "ab12cd"))["link"] == want
     assert (await tabs.openers(store))["t1"]["link"] == want
     [b] = await batches.list_batches(store, "images")
-    assert batches.view(b)["link"] == want
-    assert batches.view(await batches.get(store, "b1"))["link"] == want
+    assert batches.view(b)["source"]["link"] == want
+    assert batches.view(await batches.get(store, "b1"))["source"]["link"] == want
 
 def test_place_of_each_kind(tmp_path):
     db = tmp_path / "celine.db"
