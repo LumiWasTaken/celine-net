@@ -306,7 +306,8 @@ type GuardRules = GuardPage & { chain: { provider: string; model: string } & Rec
     default); `default`: the address Use the default puts back while a saved one hides the
     variable or the field's default, else null */
 type ServiceView = { url: string; source: 'saved' | 'environment' | 'default'; default: string | null }
-type AddressView = { origin: string; version: string }
+/** `help`: the Address field's "?" */
+type AddressView = { origin: string; help: string; version: string }
 /** `keys`: the sha256 of each box's key, what its key.hash file holds */
 type ServicesView = { services: Record<string, ServiceView>; keys: Record<string, { hash: string }>; version: string }
 

@@ -343,7 +343,8 @@ async def get_general(request: Request, response: Response) -> dict:
     """`general` holds what was saved, each other key is its field's `default`: a client
     that sends `general` back with one change saves no default as a choice."""
     s = settings_of(request)
-    fields = general_mod.fields()
+    fill = services_of(request).cfg.substitute
+    fields = [{**f, "help": fill(f["help"])} if f.get("help") else f for f in general_mod.fields()]
     values = {f["key"]: s.general[f["key"]] for f in fields if f["key"] in s.general}
     return {"fields": fields, "general": values,
             "version": etag(response, version(s.general)),
@@ -435,9 +436,14 @@ async def test_service(request: Request, id: str) -> dict:
 # Where the browser opens the app (settings/address.py): learned at the setup or the
 # first login, changed here.
 
+ADDRESS_HELP = ("The address you open this app at. Logins, share links and push "
+                "notifications use it.")
+
+
 def _address(request: Request, response: Response) -> dict:
     a = settings_of(request).address
-    return {"origin": a.get("origin", ""), "version": etag(response, version(a))}
+    return {"origin": a.get("origin", ""), "help": ADDRESS_HELP,
+            "version": etag(response, version(a))}
 
 
 @router.get("/address")

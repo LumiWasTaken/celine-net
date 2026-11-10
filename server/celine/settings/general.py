@@ -42,7 +42,8 @@ FIELDS: list[dict[str, Any]] = [
     {"key": "timezone", "label": "Time zone", "type": "text",
      "help": "Routines run and dates show in this zone, written like Europe/Berlin or "
              "America/New_York.", "default": "UTC", "required": True, "zone": True},
-    {"key": "user_bio", "label": "About you", "type": "text", "default": "", "max_len": 2000},
+    {"key": "user_bio", "label": "About you", "type": "text", "default": "", "max_len": 2000,
+     "help": "{{name}} reads this in every chat."},
     {"key": "smart_search_refresh_minutes", "label": "Update the search index every",
      "type": "number", "unit": "minutes", "min": 0, "max": 1440,
      "help": "How often new messages are added to Search. 0 turns the updates off.",

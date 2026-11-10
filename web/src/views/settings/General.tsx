@@ -110,7 +110,7 @@ export function AddressField() {
   const save = useAction(async (origin: string) => { res.set(await settingsApi.putAddress(res.data?.version ?? '', origin)) })
   if (!res.data) return res.error ? <InlineError compact message={res.error} onRetry={res.reload} /> : null
   return <>
-    <Form fields={[ADDRESS]} values={{ origin: res.data.origin }} disabled={save.busy}
+    <Form fields={[{ ...ADDRESS, help: res.data.help }]} values={{ origin: res.data.origin }} disabled={save.busy}
           onChange={(_, v) => void save.run(String(v ?? ''))} />
     {save.error && <InlineError compact message={save.error} />}
   </>
@@ -139,12 +139,15 @@ function YouCard() {
     onBlur: auto.flush,
   })
   const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') auto.flush() }
+  const help = (k: string) => res.data?.fields.find(f => f.key === k)?.help
   return (
     <Section title="You">
       <div className="form" title={online ? undefined : OFFLINE_TITLE}>
         <Field label="Your name"><Input {...field('user_name')} placeholder={fallback('user_name')} maxLength={40} onKeyDown={enter} /></Field>
-        <Field label="Time zone"><Input {...field('timezone')} placeholder="America/New_York" spellCheck={false} onKeyDown={enter} /></Field>
-        <Field label="About you"><TextArea {...field('user_bio')} rows={4} maxLength={2000} /></Field>
+        <Field label="Time zone" help={help('timezone')}><Input {...field('timezone')} placeholder="America/New_York" spellCheck={false} onKeyDown={enter} /></Field>
+        <Field label="About you" help={help('user_bio')}>
+          <TextArea {...field('user_bio')} rows={4} maxLength={2000} placeholder="Anything worth knowing about you" />
+        </Field>
         {auto.error && <InlineError compact message={auto.error} onRetry={auto.flush} />}
       </div>
     </Section>

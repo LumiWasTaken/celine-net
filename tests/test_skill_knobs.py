@@ -43,6 +43,11 @@ async def test_every_skills_knobs_are_advanced_fields_under_its_label(api):
     assert fields["max_concurrent_turns"]["group"] == "Turns", "the app's own: its own group"
 
 
+async def test_a_general_fields_help_names_the_agent(api):
+    fields = {f["key"]: f for f in (await api.get("/api/settings")).json()["fields"]}
+    assert "{{" not in fields["user_bio"]["help"] and fields["user_bio"]["help"].endswith("in every chat.")
+
+
 async def test_a_knob_is_saved_in_its_skills_table_checked_and_read_at_once(api):
     assert api.cfg.r("web.results") == 8
     r = await api.put("/api/settings", json={"general": {
