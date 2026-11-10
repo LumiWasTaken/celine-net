@@ -27,6 +27,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
+from celine.core.states import MISSION
+
 Args = dict[str, Any]
 BUSY = ("pending", "running", "detached")
 _ELLIPSIS = "…"
@@ -785,8 +787,10 @@ def row(name: str, a: Args, d: dict, result: str, state: str, own: Own | None = 
     if name == "missions__update":
         status = _str(d.get("status")) or _str(a.get("status"))
         note = _str(d.get("note")) or _str(a.get("note")) or ""
-        return f"Mission {status.replace('_', ' ') if status else 'update'}" \
-               f"{f': {note}' if note else ''}"
+        # the model's enum ("Needs you") or the stored status, said as the Missions page says it
+        status = {"Active": "active", "Needs you": "needs_you", "Done": "done"}.get(status, status)
+        word = MISSION[status][0].lower() if status in MISSION else "update"
+        return f"Mission {word}{f': {note}' if note else ''}"
     if skill in MEDIA and (_batch(d) or tool in ("generate", "read", "stop")):
         items = a.get("items")
         first = _dict(items[0]) if isinstance(items, list) and items else {}

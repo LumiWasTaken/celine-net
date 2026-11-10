@@ -48,8 +48,8 @@ def test_not_run_and_cut_off():
              "Not run: the reply reached the Turn time limit.")
     assert late["settled"] == "Not run: the reply reached the Turn time limit"
     stopped = w("shell__run", {"command": "rm -rf x"}, "gated", None,
-                "Bastet stopped this step: destructive steps.")
-    assert stopped["settled"] == "Not run: Bastet stopped this step: destructive steps"
+                "Bastet stopped this tool call: destructive tool calls.")
+    assert stopped["settled"] == "Not run: Bastet stopped this tool call: destructive tool calls"
     # still at work: its words if the turn cuts it off
     assert w("notebook__list", {}, "running")["settled"] == "Listed the notebook"
 
@@ -64,7 +64,7 @@ def test_rows_with_their_own_words():
     assert w("shell__read", {"terminal": "lan"}, "ok")["settled"] == "Read terminal lan"
     assert w("shell__read", {}, "running")["running"] == "Listing the terminals"
     assert w("missions__update", {"status": "needs_you", "note": "the key"}, "ok")["settled"] \
-        == "Mission needs you: the key"
+        == "Mission waiting for you: the key"
     assert w("image_generator__generate", {"items": [{"prompt": "a fox"}]}, "ok")["settled"] \
         == "Images a fox"
     assert w("browser__act", {"steps": [{"do": "type", "text": "Hedy"}, {"do": "key", "text": "Enter"}]},
