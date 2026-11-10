@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Portrait } from '../components/Portrait'
+import { Markdown } from '../components/Markdown'
 import { Attached } from '../components/Transcript'
 import {
   KINDS, KIND_PLURAL, KIND_WORD, addressName, intercomApi, isIntercomEvent, isScheduled, senderName,
@@ -385,7 +386,7 @@ function ThreadMessage({ m, onCancel }: { m: IntercomMessage; onCancel: () => vo
                {from && <SourceLink s={from} />}
                {scheduled && <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>}
              </>}>
-      <span className="intercom-text">{m.text}</span>
+      <div className="msg__text intercom-text"><Markdown text={m.text} breaks /></div>
       <Attached list={m.attachments} />
     </Message>
   )

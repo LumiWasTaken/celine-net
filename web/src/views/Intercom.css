@@ -14,7 +14,7 @@
   padding: var(--s-5) var(--s-5) var(--s-6); display: grid; gap: var(--s-4); }
 .intercom-thread__item { display: grid; gap: var(--s-4); }
 .intercom-event { justify-self: center; max-width: 100%; }
-.intercom-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.intercom-text { overflow-wrap: anywhere; }
 .intercom-msg--pending { opacity: 0.8; }
 .intercom-msg--cancelled { opacity: 0.55; }
 .intercom-reply { flex: none; width: 100%; max-width: calc(var(--measure) + 2 * var(--s-5)); margin: 0 auto;
