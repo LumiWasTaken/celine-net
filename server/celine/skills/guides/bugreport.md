@@ -15,5 +15,5 @@ you hit it, from any conversation or routine; it does not interrupt anything.
 
 Each report goes to {{username}} at once as an intercom message from the conversation
 you filed it in, its own thread. Their reply reaches you there; they close the report
-when it is fixed, with why as the app's line "Report #N closed: ...", or continue the
+when it is fixed, with why as the app's line "Bug #N closed: ...", or continue the
 thread in a chat with you.

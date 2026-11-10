@@ -29,7 +29,7 @@ def message(r: dict) -> tuple[str, str]:
     if r["where"]:
         lines.append(f"Where: {r['where']}")
     if r["wish"]:
-        lines.append(f"Wish: {r['wish']}")
+        lines.append(f"Suggested fix: {r['wish']}")
     return f"Bug #{r['id']}: {r['title']}", "\n\n".join(lines)
 
 

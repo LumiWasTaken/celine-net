@@ -17,7 +17,7 @@ ANSWER_CHARS = 300  # of the last word on a report, in the list
 
 def closed_line(rid: int, why: str) -> str:
     """The app's line in a report's thread when the user closes it with a reason."""
-    return f"Report #{rid} closed: {why}"
+    return f"Bug #{rid} closed: {why}"
 
 
 class BugReport:

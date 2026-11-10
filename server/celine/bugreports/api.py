@@ -31,7 +31,7 @@ async def list_reports(request: Request, state: str | None = None,
 @router.post("/bug-reports/{rid}/close")
 async def close(request: Request, rid: int) -> dict:
     """`{why?}`. Closes an open report and reads what waits in its thread; a closed one
-    stays as it is. `why` goes into the thread as the app's line ("Report #3 closed:
+    stays as it is. `why` goes into the thread as the app's line ("Bug #3 closed:
     ..."), delivered to the conversation that filed it with its next turn (it starts no
     turn of its own), so the agent reads why and does not file it again."""
     services = request.app.state.services

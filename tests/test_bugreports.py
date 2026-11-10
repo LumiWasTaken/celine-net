@@ -66,7 +66,7 @@ async def test_a_report_is_a_thread_he_closes_and_events_lists_it_once(store, cf
     assert [(m["from"], m["to"], m["subject"], m["text"]) for m in first] == [
         (f"agent:{cid}", "user", "Bug #1: read cuts results",
          "High: past_conversations__read cut a 9k result.\n\nWhere: self-review\n\n"
-         "Wish: keep the whole result")]
+         "Suggested fix: keep the whole result")]
     waiting = await store.read(lambda c: rows.threads(c, "user", unread=True, received=True))
     assert sorted(t["thread"] for t in waiting) == [1, 2], "each report waits for them"
 
@@ -148,7 +148,7 @@ async def test_a_field_over_its_limit_is_refused_and_names_it_never_cut(store, c
 
 
 async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows_it(store, cfg):
-    """Close with `why`: the app's line "Report #1 closed: ..." lands in the thread and in
+    """Close with `why`: the app's line "Bug #1 closed: ..." lands in the thread and in
     the conversation that filed it; bugreport__list shows each report's state and the
     last word on it, so it does not file a known or closed problem again."""
     cid = await conversations.create(store, "a chat")
@@ -167,11 +167,11 @@ async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows
         assert (await h.post("/api/bug-reports/2/close")).json()["state"] == "closed", "why is optional"
     first = await store.read(lambda c: rows.thread(c, 1))
     assert [(m["from"], m["text"]) for m in first][1:] == [
-        ("system:app", "Report #1 closed: DNS failed, fixed")], "the app's line, once"
+        ("system:app", "Bug #1 closed: DNS failed, fixed")], "the app's line, once"
     said = await store.read(lambda c: c.execute(
         "SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY rowid DESC "
         "LIMIT 1", (cid,)).fetchone()[0])
-    assert "Report #1 closed: DNS failed, fixed" in said, "delivered to the conversation that filed it"
+    assert "Bug #1 closed: DNS failed, fixed" in said, "delivered to the conversation that filed it"
     assert await store.read(lambda c: c.execute(
         "SELECT count(*) FROM turns WHERE conversation_id=? AND state='queued'", (cid,)
     ).fetchone()[0]) == 0, "the line starts no turn"
@@ -179,7 +179,7 @@ async def test_closing_with_why_tells_the_agent_in_the_thread_and_its_list_shows
     lines = out.content.splitlines()
     assert lines[0].startswith("#2 closed, low: tabs cap (") and len(lines) == 3
     assert lines[1].startswith("#1 closed, high: read cuts results (")
-    assert lines[2].startswith("  the app, ") and lines[2].endswith(": Report #1 closed: DNS failed, fixed")
+    assert lines[2].startswith("  the app, ") and lines[2].endswith(": Bug #1 closed: DNS failed, fixed")
     assert (await BugReport(cfg).list(ctx)).content == "No open reports."
 
 
