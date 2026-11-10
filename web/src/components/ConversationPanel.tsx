@@ -46,7 +46,7 @@ const ALL_TABS: { value: PanelTab; label: string }[] = [
   { value: 'model', label: 'Model' }, { value: 'tools', label: 'Tools' }, { value: 'pages', label: 'Pages' }, { value: 'context', label: 'Context' },
   { value: 'agents', label: 'Sub-agents' },
 ]
-const PANEL = 'Model, Tools, Pages, Context'
+const PANEL = 'Side panel'
 
 export function ConversationPanel({
   conversationId, jobs, open, onClose, draft, onDraft, live, tab: wanted, onTab, artifact, onArtifact, assistant, notesOff, turnKey,
@@ -191,7 +191,7 @@ function GuardRow({ cid, enabled, live }: { cid: string; enabled: boolean; live:
   const global = res.data.effective.guard
   return <>
     <BastetSwitch checked={global && res.data.guard} disabled={!global || !online || patch.busy}
-                  title={!global ? 'Bastet is off. Turn her on in Settings, Features.' : online ? undefined : OFFLINE_TITLE}
+                  title={!global ? 'Guard is off. Turn it on in Settings, Features.' : online ? undefined : OFFLINE_TITLE}
                   onChange={guard => void patch.run({ guard })} />
     {patch.error && <InlineError compact message={patch.error} />}
   </>
@@ -204,7 +204,7 @@ function BastetSwitch({ checked, disabled, title, onChange }: {
   return (
     <div className="tool-block">
       <div className="tool-block__head">
-        <Switch className="tool-block__switch" label={<span className="tool-block__name">Bastet</span>}
+        <Switch className="tool-block__switch" label={<span className="tool-block__name">Guard</span>}
                 checked={checked} disabled={disabled} title={title} onChange={onChange} />
       </div>
     </div>

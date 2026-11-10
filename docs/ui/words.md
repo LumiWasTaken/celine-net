@@ -124,6 +124,7 @@ block at the end of this file lists the words no UI string uses.
 | Compacted | the chat's older part was summarised | Claude Code "Compacted" |
 | Attach | add a file to a message | ChatGPT, Claude |
 | Reminders | messages it sends later in this chat | Apple, Google "Reminders" |
+| Side panel | the chat's panel at the right and the button that opens it | Google Workspace "Side panel" |
 | Model, Tools, Pages, Context, Sub-agents | the tabs of the agent's side panel; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
 | Model | which model answers | everyone |
 | load: | a note's head line, as the note writes it, in the Context tab's why ("load: off") | Obsidian properties |
@@ -144,7 +145,7 @@ block at the end of this file lists the words no UI string uses.
 | Words and phrases the chat models are steered away from. They work on tabbyAPI, llama-swap and llama-server models. | the help of Banned words (its section on the agent's page): the other kinds take no banned strings or word bias | plain |
 | Use as portrait, Portrait set | an image becomes its profile picture, and what it says once done | built on Copied |
 | Ask (its name) | the agent's draft beside a long text | |
-| Bastet | the guard who checks the agent's actions before they run; a sender on the Intercom; the Guard setting | a name like the agent's |
+| Bastet | the guard who checks the agent's actions before they run; a sender on the Intercom; the Guard setting; Guard is its switch for one chat (Tools tab) | a name like the agent's |
 | Created | when it was made; the sort option | Finder "Date Created" |
 
 ### Settings and models

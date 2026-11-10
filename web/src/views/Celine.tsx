@@ -455,7 +455,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar }: {
                        )}
                        {/* an archived conversation says so by its one way back */}
                        {isArchived && current && <Button icon={RotateCcw} onClick={() => void archive(current, false)}>Restore</Button>}
-                       <IconButton icon={PanelRight} label="Model, Tools, Pages, Context" pressed={drawerOpen} iconSize="lg"
+                       <IconButton icon={PanelRight} label="Side panel" pressed={drawerOpen} iconSize="lg"
                                    onClick={() => (drawerOpen ? setDrawerOpen(false) : openPanel(panelTab))} />
                      </>}
                      more={headMore} />
