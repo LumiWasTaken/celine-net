@@ -47,7 +47,7 @@ block at the end of this file lists the words no UI string uses.
 | New chat, New mission, New note, New folder, New document, New schedule, New terminal | the one primary New X in a head (New note is the Notebook's; Documents makes a New document) | ChatGPT, Claude "New chat"; Apple "New Note" |
 | Search | the search field and its placeholder | everyone |
 | Sort: Recent, Name, Created | sort order, in the Toolbar | Finder "Sort By", Google Drive |
-| Group: Folder, Person, State, None | grouping, in the Toolbar | Finder "Group By" |
+| Group: Folder, Person, State, From, None; Sort: Most messages | grouping, in the Toolbar (From: the Intercom, by sender); Messages sorted by message count | Finder "Group By"; Gmail "From" |
 | State, Show | the Toolbar's state filter; Show where the choice is which items a list shows, not a state (Intercom: All, Guard) | Gmail "Show" |
 | Folder, Person | the Toolbar's filters | |
 | Date: Today, This week, This month, This year | the date filter of Search, in the Toolbar | Gmail, Google Drive "Modified" |
@@ -55,7 +55,7 @@ block at the end of this file lists the words no UI string uses.
 | Select, Select all, Done | selecting many | Apple Photos, Mail |
 | Archive, Archive older than | move out of the list, kept | ChatGPT "Archive", Gmail |
 | Restore | back from the Archive or the Trash | Google Drive, Windows |
-| Trash, Move to Trash, You can restore it from the Trash. | the bin and moving there; the body of every Move to Trash? confirm | macOS, Gmail, Google Drive |
+| Trash, Move to Trash, In the Trash, You can restore it from the Trash. | the bin, moving there, an item's line while it is there; the body of every Move to Trash? confirm | macOS, Gmail, Google Drive "In trash" |
 | Delete permanently | only inside the Trash | Google Drive "Delete forever", Outlook "Permanently delete" |
 | Delete | a message, a note version (menus); a stored secret or setting is removed (Remove) | everyone |
 | Remove | take a stored thing out: a key, a token, a passkey, a device, the portrait, one recent search | Bitwarden, Chrome "Remove" |
@@ -115,7 +115,7 @@ block at the end of this file lists the words no UI string uses.
 | Copy, Edit, Delete | on a message | everyone |
 | New messages | the jump to the newest messages | Slack, Discord |
 | Activity | the tool calls of one reply, from its "..." | ChatGPT (agent and deep research "Activity") |
-| Model requests | one reply's requests to the model and their raw responses | Settings, Advanced "Model requests kept"; Chrome DevTools "Request" |
+| Model requests | one reply's requests to its model and the raw responses, from its "..."; the same name as Model requests kept on Advanced | Chrome DevTools "Request", "Response" |
 | Plan, Asks you, Waiting for you, In progress, Done, 2 of 5, done 19:00, since 19:00 | its plan, a button in the chat's head that opens it: its steps, a step where it asks you, it waits on your answer, every step done, the steps done, when a step was done, since when it is on one | Claude Code and Codex "Plan", ChatGPT agent "2 of 5 steps" |
 | Daily at 04:00, Sundays at 03:00, Weekdays, Weekends, Every 2 hours from 10:00 to 22:00 | when a Routine's schedule runs, 24h times, from the server (schedules.words); a shape it cannot say stays the cron line | Google Calendar "Daily", "Weekly on Sunday" |
 | Waiting for the model | a running Routine run's reason while its work waits for a model (its clock stands still) | plain |
@@ -126,7 +126,7 @@ block at the end of this file lists the words no UI string uses.
 | Attach | add a file to a message | ChatGPT, Claude |
 | Reminders | messages it sends later in this chat | Apple, Google "Reminders" |
 | Side panel | the chat's panel at the right and the button that opens it | Google Workspace "Side panel" |
-| Model, Tools, Pages, Context, Sub-agents | the tabs of the agent's side panel; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
+| Model, Tools, Pages, Context, Sub-agents; Chat history | the tabs of the agent's side panel, and the Context tab's block of messages sent to the model; Pages is also its pages' group in the Tools lists | ChatGPT "Model", "Tools", "Chat history"; Notion "Pages"; Claude Code "/context", LM Studio "Context" |
 | Model | which model answers | everyone |
 | load: | a note's head line, as the note writes it, in the Context tab's why ("load: off") | Obsidian properties |
 | Load automatically, Notes that match each message | the Context tab's switch and its tooltip: each new message brings up the sections of its notes it matches | |
@@ -155,9 +155,9 @@ block at the end of this file lists the words no UI string uses.
 |---|---|---|
 | General, its name, Features, Guard, Appearance, Notifications, People, Search index, Models, Images & Music, Tools, Email, Vault, Security, Advanced; Sources, App | Settings pages in the list's order, then the list's two headings (Images & Music: ComfyUI and the image and music presets) | Claude "Appearance"; macOS; Bitwarden "Vault"; Firefox, Chrome "Advanced" |
 | No limit | a number field that holds 0 where 0 means no limit (Requests per hour, Routine time limit): the field shows the words, emptied it saves 0 | LM Studio, OpenAI "No limit" |
-| Turns at once, Tool rounds per turn, Turn time limit, Grace period, Tool time limit, Job time limit, Stream events per chat, Backups kept, Attachments per message, Largest attachment, Largest text read inline, Largest message, Check citations, Search embedding time limit, Busy model retry delay, Busy model max retry delay, Routine time limit, Routines wait for missions, Mission time limit, Sub-agents per mission, Continue missions after Unfreeze, Largest upload, Largest file inside an EPUB or Word file, Largest HTML document, PDF pages read, PDF read time limit, Model requests kept; seconds, minutes, hours, messages, entries, days, bytes, MB, pages | the Advanced page: one number each, its unit beside it, saved on change | plain; LM Studio "Max concurrent", ChatGPT "attachments per message" |
+| Turns at once, Tool rounds per turn, Turn time limit, Grace period, Tool time limit, Job time limit, Stream events per chat, Backups kept, Attachments per message, Largest attachment, Largest text read inline, Largest message, Check citations, Search embedding time limit, Busy model retry delay, Busy model max retry delay, Keep cache warm, Routine time limit, Routines wait for missions, Mission time limit, Sub-agents per mission, Continue missions after Unfreeze, Largest upload, Largest file inside an EPUB or Word file, Largest HTML document, PDF pages read, PDF read time limit, Model requests kept; seconds, minutes, hours, messages, entries, days, bytes, MB, pages | the Advanced page: one number each, its unit beside it, saved on change | plain; LM Studio "Max concurrent", ChatGPT "attachments per message"; Kubernetes "grace period"; AWS SDK "retry delay"; prompt caching "cache warming" |
 | Prompts, App, Skill guides, Edited | Settings, Advanced, Prompts: every text a model reads, grouped (its name, App, Skill guides, Guard); a row opens the text in the large editor with History and Use the default in its "..."; Edited marks a text you changed | OpenAI Playground "Prompts"; Google Docs "Edited" |
-| 3 problems | a source's row in the Settings list while something there needs fixing, in the warn tone; otherwise its state word (Waiting for you, Not connected), Running while it works, nothing while all is well | VS Code "3 problems" |
+| 3 problems, Problems | a source's row in the Settings list while something there needs fixing, in the warn tone; otherwise its state word (Waiting for you, Not connected), Running while it works, nothing while all is well; Problems heads the same items on the source's page | VS Code "3 problems", "Problems" |
 | Turns, Models, Routines and missions, Files, Storage | the Advanced page's sections in the server's order, each in the index beside them, then one per skill under its label | Firefox, Chrome settings sections; plain |
 | Login, Passkey, Password, PIN, This session | the Security list of how you log in, one row each, This session on the one this browser used | Apple, Google "Passkey", "Password", "PIN" |
 | Sessions, Log out, Log out everywhere, Last seen, Unknown device | Security: every browser logged in, one row each named by the server ("Firefox on Linux", Unknown device without a user agent), This session on this one and Last seen on the rest; Log out on a row, Log out everywhere for every other one | GitHub "Sessions"; Google "Sign out of all", "Unknown device"; WhatsApp "last seen" |
@@ -165,7 +165,7 @@ block at the end of this file lists the words no UI string uses.
 | A setting needs a fix, Some settings need a fix | General: the line over the list of settings files and prompts with an error, each with its place and what is wrong | macOS "needs attention"; plain words |
 | Source code | General: the link to the code this build runs, its commit on the link | GitHub "Source code"; the AGPL's offer of the source |
 | Features | the Settings page of what it has, one switch each; also the onboarding's step | Windows "Optional features", Discord "Features" |
-| Core, Built-in, Plugins | the three headings of Features (Settings and Setup): what it is made of (on, no switch), what ships with it, the plugins you add | Drupal "Core", "Modules"; plain |
+| Core, Built-in, Plugins | the three headings of Features (Settings and Setup): what it is made of (on, no switch), what ships with it, the plugins you add | VS Code, Obsidian "Built-in", "Plugins" |
 | Chat, Notebook, Mood and thoughts, Plan, Intercom, Past chats, Bugs, Skills | the Core rows of Features, each with its one line | plain; as their places and skills |
 | Next, Back, Skip | the onboarding's steps: on, back one, leave this one as it is | Apple setup, Android setup "Next", "Back", "Skip" |
 | Step 4 of 7 | where the onboarding is, with its percentage and a bar | Shopify, Typeform "Step 2 of 5" |
@@ -198,13 +198,13 @@ block at the end of this file lists the words no UI string uses.
 | Guard mode, Warn, Enforce | Settings, Guard: how Bastet acts while her feature is on (off is the feature switch): Warn tells you what she would have done, Enforce does it | Kubernetes Pod Security "warn", "enforce" |
 | the "?" texts of Mode, Decision model, Second look model, Rules and Exceptions | Settings, Guard: the server's (guard/view.py PAGE_HELP, names filled in; GET /api/guard/rules `help`) | plain |
 | Rules, Off, Warn, Stop, Freeze | Settings, Guard: what each rule does when it finds something (Off its switch, else Warn, Stop or Freeze) | ESLint "off", "warn"; Freeze as Bastet says it |
-| Sandbox escape, Prompt injection, Data exfiltration, Destructive tool calls, Typing on other sites, Bypassing a stop, Too many stopped tool calls, Injected instructions | Bastet's rules as Settings, Guard, Events and Bastet's own lines name them (guard/rules.py `label` and `plain`): a way out of the shellbox; a tool call that carries out instructions from text someone else wrote (indirect prompt injection); private data sent out; a destructive tool call you did not ask for; typing on a site outside the task; the same stopped tool call tried another way; the stop count of one turn; the page check's mark on outside text written to an AI | OWASP LLM01 "Prompt injection", LLM02 "Sensitive information disclosure"; MITRE ATT&CK "Exfiltration", "Escape to host" |
-| Exceptions, End | Settings, Guard, shown only while an exception holds: each exception with where and until when, and the matched text it lets through; End ends it now | Windows Security "Exclusions", firewall "exceptions"; Zoom "End" |
-| Waiting for Bastet., Waiting for Bastet. {why} | a step's line while Bastet checks it, and while her decision model cannot answer, with the server's why once per new why (guard/flow.py `_until`) | as Waiting for {model} |
+| Sandbox escape, Prompt injection, Data exfiltration, Destructive tool calls, Typing on other sites, Bypassing a stop, Too many stopped tool calls, Injected instructions, Data loss prevention | Bastet's rules as Settings, Guard, Events and Bastet's own lines name them (guard/rules.py `label` and `plain`): a way out of the shellbox; a tool call that carries out instructions from text someone else wrote (indirect prompt injection); private data sent out; a destructive tool call you did not ask for; typing on a site outside the task; the same stopped tool call tried another way; the stop count of one turn; the page check's mark on outside text written to an AI; guard.toml's block of a class of text to a destination | OWASP LLM01 "Prompt injection", LLM02 "Sensitive information disclosure"; MITRE ATT&CK "Exfiltration", "Escape to host"; Microsoft Purview "Data loss prevention" |
+| Exceptions, End, Exception for (a rule), Allowed by exception | Settings, Guard, shown only while an exception holds: each with where and until when (the day too when not today), and the matched text it lets through; End ends it now; its Events row and Type; the decision state of a call it let through | Windows Security "Exclusions", firewall "exceptions"; Zoom "End" |
+| Waiting for Bastet., Waiting for Bastet. {why} | a tool call's line while Bastet checks it, and while her decision model cannot answer, with the server's why once per new why (guard/flow.py `_until`) | as Waiting for {model} |
 | No chat model yet. Bastet needs one to decide., Connect a model, Open Models | the Guard form when no saved provider offers a chat model: the line and the way to one (the Setup step in the onboarding, Settings, Models elsewhere) | plain, as Open Guard |
 | {provider}: Connected, Not connected, Not checked, Not set up; This model is no longer on its provider. Pick another one. | the state under a picked Decision or Second look model: its provider's, as on Models, or that the model is gone | as on Models |
 | Persona, Replies to (its name), Messages to you | Settings, Guard: Bastet's three long texts (who she is, how she answers the agent on the Intercom, how she writes her messages to you), each with Edit, History, Ask (its name) and Use the default | Persona as on the agent's page; plain |
-| Make her warmer, Make her replies shorter, Make her notes plainer | what to ask the agent in the editor of Bastet's texts | as the hints of the agent's own texts |
+| Make her warmer, Make her replies shorter, Make her messages plainer | what to ask the agent in the editor of Bastet's texts | as the hints of the agent's own texts |
 | Open Guard | the Features row's link to the Guard page, where Bastet is set up | plain |
 | Open Images & Music | the Images and Music Features rows' link to their page while they are on | plain, as Open Guard |
 | ComfyUI, Images, Music, On, Make default | Images & Music: the server's section, a section per kind, a preset's switch (it uses it), and the menu item that makes it the first of its role | ComfyUI's own name; macOS "Make Default" |
@@ -228,8 +228,8 @@ block at the end of this file lists the words no UI string uses.
 | Grain, Fine, Coarse, Paper, None, Opacity | Appearance, Background: the canvas's grain pattern (None: a plain canvas) and how much of it shows | Photoshop "Grain", "Opacity"; Procreate "Grain" |
 | Reset to defaults, Reset the appearance?, Reset | Appearance: every choice back to the server's default, its confirm and the confirm's button | macOS, Windows, VS Code "Reset to defaults" |
 | Rose, Peach, Sage, Teal, Sky, Violet, Miku | the colours: Accent colour (Appearance) and its Face colour; Miku is a bright teal blue | macOS accent colour names; Miku after Hatsune Miku's hair |
-| Roles, Chat, Tasks, Writing, Titles and descriptions, Decision model, Embeddings, Reranking, Photo descriptions, Browser screenshots, Image generation, Music generation, Dictation, Read aloud | the roles on Settings, Models: what each list of models is used for (settings/registry.py ROLES) | plain |
-| Requests at once, Timeout, Thinking, Service tier, Data collection, Require parameters, Allow fallbacks, Sort by, Shares its GPU with | a provider's options in its dialog, beside Requests per hour and Next model at the hourly limit (settings/registry.py) | OpenRouter provider routing; LM Studio |
+| Roles, Chat, Tasks, Writing, Titles and descriptions, Decision model, Embeddings, Reranking, Photo descriptions, Browser screenshots, Image generation, Music generation, Dictation, Read aloud | the roles on Settings, Models: what each list of models is used for (settings/registry.py ROLES) | OpenAI "Embeddings"; Open WebUI "Embedding Model", "Reranking Model" |
+| Requests at once, Timeout, Thinking, Service tier, Data collection, Allow, Deny, Require parameters, Allow fallbacks, Sort by, Shares its GPU with, Upstream provider | a provider's options in its dialog, beside Requests per hour and Next model at the hourly limit (settings/registry.py); Allow and Deny are Data collection's choices; Upstream provider: the OpenRouter endpoint a model is pinned to | OpenRouter provider routing, "service tier", "data_collection"; LM Studio |
 | Loaded, Loading, Not loaded, Not loaded, loads in about 12 s | model memory; Loading while its server says it is starting (the chat's "Loading <model>.") | Ollama "loaded" |
 | Context size, Server: {n}, differs from the server | a model's written context and what its server says it runs with (the server's number counts) | LM Studio "Context Length"; Open WebUI "Context Length"; plain |
 | Unload after | how long an idle model stays loaded | plain; Ollama says `keep_alive`, Open WebUI "Keep Alive" |
@@ -246,7 +246,7 @@ block at the end of this file lists the words no UI string uses.
 | Check-in, Every 30 min | how often a mission sends where it stands (a notice to you, or a report to whoever it reports to), in its form and on its page | plain |
 | Result, Results | what a mission or sub-agent sends back | Apple Shortcuts "Show Result", Google "Results" |
 | Trigger, Triggers, Folder, Event | what starts a run: changes in a folder, or an event of a source | Zapier, GitHub Actions |
-| Schedule, Runs after, Reviewer, Turns | Routines | GitHub Actions "schedule" |
+| Schedule, Runs after, Reviewer, Turns, Role, Save result to note, Background task | Routines; Role: the model role a schedule runs on; Background task: a task a trigger started, untitled | GitHub Actions "schedule"; Settings, Models "Roles"; Apple Shortcuts "Save to" |
 | No runs | a day in Routines with nothing in it | GitHub Actions "no workflow runs" |
 | When a run fails, Retry, Skip | a schedule's choice in Limits: Retry runs a failed run again for the same day, 15 minutes after it failed, then 1 hour and 4 hours after each failed retry, never past the next run; Skip ends it Skipped with no notice, and its day is marked as one with a failed run; a day with a run that waits for its model is marked too, and the first such run of a day sends one notice | GitHub Actions "Re-run jobs", "Skipped" |
 | Retry, Retry of, Retried | on a failed, skipped or stopped run's page: run it again now; the facts that link a retry and the run it retries | GitHub Actions "Re-run", "Attempt #2" |
@@ -255,6 +255,9 @@ block at the end of this file lists the words no UI string uses.
 | Take control | you take its browser | OpenAI Operator "Take control" |
 | Return control | you give its browser back | plain; Operator names only "Take control" |
 | Extract text | read a document's text again | |
+| Retrieval, Passages, Whole file | how a document is read: by its indexed passages or whole at once | Open WebUI "Retrieval", "Full Context Mode" |
+| Exit code, Read the screen, Waited for output, Scrollback | a process's exit status; a shell call that only read the terminal or waited; a terminal's earlier output | POSIX "exit code"; xterm "scrollback" |
+| Batch count, Edit reminder, Pin until, Unknown sender, Suggested fix | Images & Music; the reminder dialog; an Everyone message kept in context until a time; a sender with no name; a bug's proposed fix | A1111 "Batch count"; Slack "Pin"; Gmail "Unknown sender"; GitHub issue templates |
 | Running, Queued, Waiting for you, Failed, Done, Scheduled, Not set up | states; Queued for a run or a work item that has not started; Scheduled for a Routine that runs later; Not set up for a tool group or a feature that lacks its setup | GitHub Actions, everyone |
 | Invalid | a citation in its reply that failed the check, shown with its id | everyone |
 | Waiting, Waiting for you; Approvals, Missions, Sources, Intercom | the rail item while something waits for you, and its page (/waiting): the agent's requests, missions that ask you, chat sources whose login was lost and Intercom threads, each group under its head with its count (waits.py GROUPS); a row opens the page that answers it; a mission you stop leaves it | Slack "Activity", GitHub "Inbox" |
@@ -320,20 +323,20 @@ The words of the Events place (`server/celine/events.py` gives them).
 
 | Word | In Celine | Same word in |
 |---|---|---|
-| Guard, (its name), Background | the tabs: what Bastet decided, what the agent did in its chats, what ran without you (runs, tasks, missions, sub-agents, jobs); Guard is also the Intercom tab of Bastet's threads | Guard as the setting; Background as in the transcript |
-| Turn, Turns, Tools, Notebook, Background jobs, Intercom, Runs, Decisions, Freezes, Exceptions, Titles, moods and descriptions, Persona, Bugs | the Type filter, and a turn's row; Persona: the agent's own edits of its persona and Example lines | Turns as in Routines; Tools as in the side panel; GitHub Actions "workflow runs"; Intercom as the place; Freeze as Bastet says it; Exceptions as Windows Security says it |
+| Guard, (its name), Background | the tabs: what Bastet decided, what the agent did in its chats, what ran without you (runs, tasks, missions, sub-agents, jobs); Guard is also the Intercom tab of Bastet's threads | Guard as the setting; Android "Background activity" |
+| Turn, Turns, Tools, Notebook, Background jobs, Intercom, Runs, Decisions, Freezes, Exceptions, Titles, moods and descriptions, Persona, Bugs | the Type filter, and a turn's row; Decisions: Bastet's decisions; Persona: the agent's own edits of its persona and Example lines | Turns as in Routines; Tools as in the side panel; GitHub Actions "workflow runs"; Intercom as the place; Freeze as Bastet says it; Exceptions as Windows Security says it |
 | Title, Mood, Document descriptions | the items of Titles, moods and descriptions: a chat's title, its mood after a turn, the documents' descriptions | plain |
-| Bastet | the guard's decisions (her name) | |
+| Turn audit, Audited this turn after it ended. | Bastet's after-the-fact check of finished turns: its Events row title, its decision line, her notes ("Audit of ..."), its prompt in Settings, Advanced, Prompts | security "audit" |
 | Wrote, Edited, Deleted, Moved ... to ... | its notebook writes ("Wrote people/noor.md") | Google Docs activity "edited", "moved" |
 | To (the user's name) | a message it sent you | Gmail "To" |
-| Stopped, Skipped, Cancelled, Scheduled, Sent | states besides Running, Done, Failed and Paused. | GitHub Actions "Skipped", "Cancelled"; Gmail "Scheduled", "Sent" |
+| Stopped, Skipped, Cancelled, Scheduled, Sent, Timed out | states besides Running, Done, Failed and Queued; Timed out: a background job stopped by Job time limit | GitHub Actions "Skipped", "Cancelled", "Timed out"; Gmail "Scheduled", "Sent" |
 | Allowed, Stopped, Frozen, Found, Approved, Denied, No answer, Allowed by exception | Bastet's decision on a call, the words of her banners | Android permissions "Allowed", "Denied" |
 | Would have stopped, Would have frozen | what Bastet would have done while she only warns, as her banners say it | |
-| Freeze, Unfreeze, Exception for (a rule), Queued | a freeze and its end, an exception you gave, a work item that waits | the words above; Queued as in the transcript |
+| Freeze, Unfreeze, Exception for (a rule), Queued | a freeze and its end, an exception you gave, a work item that waits (also for a model) | the words above; Queued as in the transcript |
 | Could not decide | a decision Bastet could not make (her model gave no answer: it was down, timed out or the call did not fit), counted apart from Failed | |
 | Decision, Rule, Mode, Enforce, Warn | Bastet's filters: what she decided, by which rule, and whether she acted (Enforce) or only warned (Warn) | GitHub code scanning "Rule"; as Bastet's setting |
 | Details | open one decision of Bastet's from its row | macOS Finder, Windows "Details" |
-| First look, Second look, Flagged, Not flagged | one decision's chain: the decision model's decision and why, then the big model's second look (guard/chain.py) | a second opinion, as people say it; OpenAI Moderation "flagged" |
+| First look, Second look, Flagged, Not flagged | one decision's chain: whether the decision model flagged the call and why, then the big model's second look (guard/chain.py) | a second opinion, as people say it; OpenAI Moderation "flagged" |
 | Question, Score, Model, Time, Source, Quote, Matched text, Arguments | one decision's facts: what its decision model was asked, the score it gave, which model, how long, where the text came from, what it quoted, the text the rule matched, the call's arguments | Purview "matched content"; OpenAI evals "score"; Chrome DevTools "Time" |
 | Allow once, Allow for 7 days | answer a stop or a freeze, on its banner or from its row: the same call runs once; tool calls with the same finding run in that chat for 7 days (an exception, listed under Exceptions). Either wakes the agent with Bastet's line, so it makes the tool call again now | Chrome site permissions "Allow this time", "Always allow" |
 | Open, Closed, Close, High, Medium, Low | a bug it filed: open until you close it (Close on its Intercom thread); its severity, beside Open in its row ("Open, high") | GitHub Issues "Open", "Closed", "Close issue"; Jira priority "High", "Medium", "Low" |
@@ -436,6 +439,11 @@ string as a whole word (any case), so "Filter chats" is banned while "Filters" i
 | Full file | word | Whole file | plain |
 | Click here | word | a link that names its target | explainer text |
 | Pass on this | label | Allow for 7 days | "pass on" means decline |
+| Passes | label | Exceptions | Windows Security, firewalls |
+| Topic search | word | Embeddings | OpenAI "Embeddings" |
+| Screen reading | word | Browser screenshots | plain |
+| Base modules | word | Built-in | VS Code, Obsidian |
+| User modules | word | Plugins | VS Code, Obsidian |
 | Try again | label | Retry | the button word; Try again only inside a sentence |
 | Save and resend | label | Send | one verb |
 | Revoke | label | Remove | one word for taking a stored thing out |
@@ -508,6 +516,11 @@ word Click here => a link that names its target
 label Words she never uses => Banned words
 label Words it never uses => Banned words
 label Pass on this => Allow for 7 days
+label Passes => Exceptions
+word Topic search => Embeddings
+word Screen reading => Browser screenshots
+word Base modules => Built-in
+word User modules => Plugins
 label Try again => Retry
 label Save and resend => Send
 label Revoke => Remove
