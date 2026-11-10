@@ -67,7 +67,7 @@ def _until(time_limit: str | None, tz, what: str = "Time limit") -> datetime | N
         return None
     until = parse_when(text, text, tz, datetime.now(timezone.utc))
     if until is None:
-        raise CelineError("bad_request", f'{what} is like "2 h" or "08:00".', 400)
+        raise CelineError("bad_request", f'{what} takes a duration such as "2 h" or a time such as "08:00".', 400)
     return until
 
 
@@ -77,7 +77,7 @@ def _minimum(text: str | None, tz, until: str | None) -> str | None:
     if least is None:
         return None
     if until and iso(least) > until:
-        raise CelineError("bad_request", "Minimum time is after the time limit.", 400)
+        raise CelineError("bad_request", "Minimum time ends after the time limit.", 400)
     return iso(least)
 
 
@@ -90,7 +90,7 @@ def _check_in(text: str | None) -> int | None:
     then = parse_when(text, None, None, at)
     minutes = round((then - at).total_seconds() / 60) if then else 0
     if minutes < 1:
-        raise CelineError("bad_request", 'Check-in is like "30 min" or "2 h".', 400)
+        raise CelineError("bad_request", 'Check-in takes an interval such as "30 min" or "2 h".', 400)
     return minutes
 
 

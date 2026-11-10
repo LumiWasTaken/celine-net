@@ -42,7 +42,7 @@ async def test_the_agent_starts_a_mission_with_what_the_form_takes(store):
     assert "Minimum time: until " in first["content"]
 
     bad = await skill.start(ctx, brief="x", time_limit="1 h", min_time="2 h")
-    assert bad.is_error and bad.content == "Minimum time is after the time limit."
+    assert bad.is_error and bad.content == "Minimum time ends after the time limit."
     assert (await skill.start(ctx, brief=" ")).is_error
 
 
