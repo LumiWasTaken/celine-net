@@ -65,7 +65,8 @@ async def freeze(app, *, by: str, why: str, conversation_id: str | None = None,
             await unfreeze(app, by=lift)
             await learn.lifted(app, row, lift)
     else:
-        await bastet.tell_owner(app, bastet.FROZEN_BY_YOU, conversation_id, turn_id)
+        await bastet.tell_owner(app, bastet.FROZEN_BY_YOU, conversation_id, turn_id,
+                                data={"freeze_id": row["id"]})
     return row
 
 

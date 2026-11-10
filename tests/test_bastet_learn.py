@@ -104,3 +104,15 @@ async def test_the_precedent_holds_only_his_own_unfreezes_and_only_unfreezes(sto
     with pytest.raises(TypeError):
         await banners.answer(app, 1, by=by, said="ok", decided={"grant": "unfreeze"})
 
+
+
+async def test_the_freeze_message_thread_holds_the_freeze_until_unfrozen(store):
+    app = Services(cfg=load(), store=store)
+    row = await _guard_freeze(app, await _decision(store, 1))
+    thread = await store.read(lambda c: c.execute(
+        "SELECT i.thread FROM intercom i JOIN freezes f ON f.asked_id = i.id WHERE f.id=?",
+        (row["id"],)).fetchone()[0])
+    held = await store.read(lambda c: decisions.thread_freeze(c, thread))
+    assert held["id"] == row["id"]
+    await freeze.unfreeze(app, by=owner.Owner("session", owner._SEAL))
+    assert await store.read(lambda c: decisions.thread_freeze(c, thread)) is None

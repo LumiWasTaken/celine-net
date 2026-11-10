@@ -91,13 +91,17 @@ async def list_messages(request: Request, to: str | None = None,
     """Messages to `to` and from `from` (stored addresses), in `thread`, above id
     `after`, oldest first, each with its state (pending, sent, cancelled) and whether it
     waits for the user (`unread`) and where it came from (`source`); `scheduled`: only
-    those with a due time. With `thread`, also where the thread comes from (`source`);
+    those with a due time. With `thread`, also where the thread comes from (`source`)
+    and the open freeze it tells of (`freeze`, null once unfrozen: its Unfreeze);
     the bug report it is: GET /api/bug-reports?thread=."""
+    from ..guard.store import thread_freeze
+
     def fn(c):
         out = {"messages": rows.listed(c, to=to, from_addr=from_, scheduled=scheduled,
                                        thread=thread, after=after, limit=limit)}
         if thread is not None:
             out["source"] = rows.thread_source(c, thread)
+            out["freeze"] = thread_freeze(c, thread)
         return out
 
     return await request.app.state.services.store.read(fn)

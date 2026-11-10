@@ -326,6 +326,15 @@ def open_freeze(c: sqlite3.Connection) -> dict | None:
     return dict(r) if r else None
 
 
+def thread_freeze(c: sqlite3.Connection, thread: int) -> dict | None:
+    """The open freeze when a message in intercom thread `thread` tells of it
+    (data.freeze_id: freeze.py, learn.py), else None."""
+    got = open_freeze(c)
+    return got if got and c.execute(
+        "SELECT 1 FROM intercom WHERE thread=? AND json_extract(data, '$.freeze_id')=?",
+        (thread, got["id"])).fetchone() else None
+
+
 ONCE = "guard.once."             # a call the owner allowed once: <conversation>.<call>
 
 
