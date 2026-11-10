@@ -282,27 +282,43 @@ class Images:
 
     async def wire(self, messages: list[dict], backend, model: str) -> list[dict]:
         """`messages` as `backend` (named `model` for people) can take them. Pixels go
-        only for the last PIXELS_KEPT messages that carry images; older images go as
-        their description, like for a model that cannot see (an image went on the wire
-        at full size on every request of every later turn: 9 MB of base64 per request,
-        measured)."""
+        for the last PIXELS_KEPT messages that carry images, and only inside the
+        exchange going on and the one before it; every older image goes as its
+        description, like for a model that cannot see (an image went on the wire at full
+        size on every request of every later turn: 9 MB of base64 per request,
+        measured). So a new image changes how an image of the last two exchanges goes,
+        and leaves everything before them as it was sent (the server's cached prompt).
+        A model that sees gets the pixels of an image that has no description."""
         if not any(_has_image(m) for m in messages):
             return messages
         sees = bool(getattr(backend, "supports_images", False))
         with_images = [i for i, m in enumerate(messages) if _has_image(m)]
-        recent = set(with_images[-PIXELS_KEPT:])
+        # where the exchange before the one going on starts: a user message that follows
+        # no tool result (a result's screen is a user message too, and starts none)
+        said = [i for i, m in enumerate(messages) if m["role"] == "user"
+                and (i == 0 or messages[i - 1]["role"] != "tool")]
+        floor = said[-2] if len(said) > 1 else 0
+        recent = {i for i in with_images[-PIXELS_KEPT:] if i >= floor}
         out = []
         for i, m in enumerate(messages):
             if not _has_image(m):
                 out.append(m)
-            elif sees and i in recent:
-                out.append({**m, "content": [await self._image(p) if p.get("type") == IMAGE
-                                             else p for p in m["content"]]})
+                continue
+            parts = []
+            for p in m["content"]:
+                if p.get("type") != IMAGE:
+                    parts.append(p)
+                elif sees and i in recent:
+                    parts.append(await self._image(p))
+                else:
+                    line = await self._described(p["attachment"], model, sees)
+                    parts.append({"type": "text", "text": line} if line
+                                 else await self._image(p))
+            if any(p.get("type") != "text" for p in parts):
+                out.append({**m, "content": parts})
             else:
-                texts = [await self._described(p["attachment"], model)
-                         if p.get("type") == IMAGE else p.get("text") or ""
-                         for p in m["content"]]
-                out.append({**m, "content": "\n\n".join(t for t in texts if t)})
+                out.append({**m, "content": "\n\n".join(p["text"] for p in parts
+                                                        if p.get("text"))})
         return out
 
     async def _image(self, part: dict) -> dict:
@@ -313,10 +329,12 @@ class Images:
         b64 = base64.b64encode(path.read_bytes()).decode()
         return {"type": "image_url", "image_url": {"url": f"data:{media};base64,{b64}"}}
 
-    async def _described(self, a: dict, model: str) -> str:
+    async def _described(self, a: dict, model: str, sees: bool = False) -> str | None:
         """The image's photo description as a line for `model`, written now when the
-        attachment has none yet. An attachment belongs to one conversation, which runs
-        one turn at a time, so one image is never described twice at once."""
+        attachment has none yet; when none can be written, a line that says so, or None
+        for a model that sees (it gets the pixels). An attachment belongs to one
+        conversation, which runs one turn at a time, so one image is never described
+        twice at once."""
         from .kb.media import CaptionError, Engine, Waiting
         row = await get(self.store, a["id"]) or {}
         if row.get("description"):
@@ -328,8 +346,9 @@ class Images:
         except (Waiting, CaptionError, OSError) as e:
             log.info("no photo description", extra={
                 "event": "attachment.not_described", "error": str(e)})
-            return (f"[Image {a['filename']}: {model} cannot see images, and no photo "
-                    f"description is available.]")
+            return None if sees else (
+                f"[Image {a['filename']}: {model} cannot see images, and no photo "
+                f"description is available.]")
         text = out["caption"]
         if out.get("visible_text"):
             text += f" Text in the image: \"{out['visible_text']}\""
@@ -338,7 +357,7 @@ class Images:
         return _line(a["filename"], by, text)
 
 
-PIXELS_KEPT = 2       # messages whose images go as pixels; older ones as descriptions
+PIXELS_KEPT = 2       # messages whose images go as pixels, within the last two exchanges
 
 
 def image_size(data: bytes) -> tuple[int, int] | None:

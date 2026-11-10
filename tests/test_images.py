@@ -136,3 +136,15 @@ async def test_only_the_newest_images_go_as_pixels_older_ones_as_their_descripti
     for m in sent[1:]:
         assert any(p.get("type") == "image_url" for p in m["content"]), "pixels"
     assert len(models["lan/photo"].seen) == 1, "described once"
+
+    # two exchanges on, the picture of exchange 3 is behind the last two: it goes as its
+    # description whatever comes later, so what was sent before stays as it was
+    for text in ("and without one", "one more word"):
+        reply = await tree.start_assistant_message(store, cid, mid, tid)
+        await tree.finish_assistant_message(store, cid, reply, "ok")
+        await turns.transition(store, tid, cid, "done")
+        mid, tid, _ = await user_says(store, cid, text)
+    await ask(cfg, store, llm, cid)
+    sent = [m for m in models["main/eyes"].seen[-1] if m["role"] == "user"]
+    assert all(isinstance(m["content"], str) for m in sent), "no picture in the last two"
+    assert sum("A red square." in m["content"] for m in sent) == 3
