@@ -47,7 +47,7 @@ export const BAR: Section[] = ['celine', 'missions', 'notebook', 'intercom']
 
 export const TITLE: Record<Section, string> = {
   celine: '', missions: 'Missions', routines: 'Routines', notebook: 'Notebook', terminals: 'Terminals',
-  browser: 'Browser', artifact: 'Artifact', intercom: 'Intercom', waiting: 'Waiting for you', events: 'Events', chats: 'Messages', search: 'Search', documents: 'Documents', settings: 'Settings', welcome: 'Setup',
+  browser: 'Browser', artifact: 'Page', intercom: 'Intercom', waiting: 'Waiting for you', events: 'Events', chats: 'Messages', search: 'Search', documents: 'Documents', settings: 'Settings', welcome: 'Setup',
 }
 
 export function sectionHref(s: Section): string {

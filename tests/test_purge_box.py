@@ -19,7 +19,7 @@ async def test_a_terminal_is_deleted_for_good_only_from_the_trash(store):
     raw.write_bytes(b"ls\n")
     async with _client(app) as client:
         r = await client.delete("/api/terminals/ab12cd", params={"for_good": 1})
-        assert r.status_code == 409 and r.json()["error"]["message"] == "It is not in the Trash."
+        assert r.status_code == 409 and r.json()["error"]["message"] == "The terminal is not in the Trash."
         daemon.terminals.clear()
         await sync.refresh()                         # gone from the daemon: it ended
         assert (await client.delete("/api/terminals/ab12cd")).status_code == 200
@@ -38,7 +38,7 @@ async def test_an_artifact_is_deleted_for_good_only_from_the_trash(store):
     aid = out.display["artifact"]["id"]
     async with art_client(art_app(store)) as c:
         r = await c.delete(f"/api/artifacts/{aid}", params={"for_good": 1})
-        assert r.status_code == 409 and r.json()["error"]["message"] == "It is not in the Trash."
+        assert r.status_code == 409 and r.json()["error"]["message"] == "The page is not in the Trash."
         await c.delete(f"/api/artifacts/{aid}")
         assert (await c.delete(f"/api/artifacts/{aid}", params={"for_good": 1})).json() == \
             {"ok": True}

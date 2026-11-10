@@ -182,7 +182,7 @@ async def delete_terminal(request: Request, id: str, for_good: bool = False) -> 
         return await _trash(request, id, True)
     await _one(request, id)
     if not await terminals.purge(store_of(request), request.app.state.services.cfg.data_dir, id):
-        raise CelineError("conflict", "It is not in the Trash.", 409)
+        raise CelineError("conflict", "The terminal is not in the Trash.", 409)
     store_of(request).emit_global({"type": TERMINAL_STATE})
     return {"ok": True}
 
@@ -230,7 +230,7 @@ def control_words(user: str, action: str, name: str, program: str | None,
     if action == "pause":
         return f"{what} paused", f"{user} paused {what} at {at}."
     if action == "resume":
-        return f"{what} continues", f"{user} resumed {what} at {at}."
+        return f"{what} resumed", f"{user} resumed {what} at {at}."
     return f"{name} ended", f"{user} closed terminal {name} at {at}."
 
 

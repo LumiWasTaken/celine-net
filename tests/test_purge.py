@@ -82,7 +82,7 @@ async def test_a_trashed_chat_goes_for_good_with_its_sub_agent(tmp_path, monkeyp
     assert mids
     async with client(app) as api:
         r = await api.delete(f"/api/conversations/{cid}?for_good=1")
-        assert r.status_code == 409 and r.json()["error"]["message"] == "It is not in the Trash."
+        assert r.status_code == 409 and r.json()["error"]["message"] == "The chat is not in the Trash."
         assert (await api.delete(f"/api/conversations/{cid}")).status_code == 200
         assert (await api.delete(f"/api/conversations/{cid}?for_good=1")).status_code == 200
         assert (await api.delete(f"/api/conversations/{cid}?for_good=1")).status_code == 404

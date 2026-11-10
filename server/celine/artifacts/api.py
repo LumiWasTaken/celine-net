@@ -37,14 +37,14 @@ async def artifact(request: Request, id: str) -> dict:
     """The newest title and version, and every version without its content."""
     a = await artifacts.get(store_of(request), id)
     if a is None:
-        raise NotFound("artifact")
+        raise NotFound("page")
     return a
 
 
 async def _version(request: Request, id: str, n: int) -> dict:
     v = await artifacts.version(store_of(request), id, n)
     if v is None:
-        raise NotFound("artifact version")
+        raise NotFound("page version")
     return v
 
 
@@ -83,7 +83,7 @@ async def untrash(request: Request, id: str) -> dict:
 async def _set_trashed(request: Request, id: str, trashed: bool) -> dict:
     """Into the trash, or restored. A trashed one still opens by its id."""
     if not await artifacts.trash(store_of(request), id, trashed):
-        raise NotFound("artifact")
+        raise NotFound("page")
     a = await artifacts.get(store_of(request), id)
     _changed(request, a)
     return a
@@ -96,8 +96,8 @@ async def delete_artifact(request: Request, id: str, for_good: bool = False) -> 
         return await _set_trashed(request, id, True)
     a = await artifacts.get(store_of(request), id)
     if a is None:
-        raise NotFound("artifact")
+        raise NotFound("page")
     if not await artifacts.purge(store_of(request), id):
-        raise CelineError("conflict", "It is not in the Trash.", 409)
+        raise CelineError("conflict", "The page is not in the Trash.", 409)
     _changed(request, {**a, "n": 0})
     return {"ok": True}

@@ -225,7 +225,7 @@ async def restore(store, cid: str) -> bool:
 
 # ---- delete permanently: a conversation from the Trash, a message at once; only by the user
 
-NOT_TRASHED = "It is not in the Trash."
+NOT_TRASHED = "The chat is not in the Trash."
 # references that link a row to one of another owner, not part of it: cleared, the row
 # stays (a message in its chat that landed a sub-agent's report)
 _LINKS = {("messages", "intercom_id"), ("intercom", "reply_to"), ("intercom", "thread")}
