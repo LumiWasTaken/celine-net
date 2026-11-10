@@ -24,7 +24,7 @@ EXPECTED_TABLES = {
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
-LATEST = 30
+LATEST = 32
 
 
 def _version(db) -> int:
@@ -679,3 +679,54 @@ def test_0030_keeps_a_stored_tail_as_one_part(tmp_path, monkeypatch):
     c.close()
     assert json.loads(tails["m1"]) == [["text", 'Today is "Monday".\n\nNow it is [10:00].']]
     assert tails["m2"] is None
+
+
+def test_0031_moves_require_approval_from_the_guard_to_the_tools(tmp_path, monkeypatch):
+    """A saved [confirm] list leaves guard.toml for approval.toml, one tool per entry: a
+    skill is every tool of it (built-in and called), "tool:arg" the tool, and the two that
+    ask on their own are left out. The rule's rows keep how they ended as `approval`, an
+    open ask closed. A second run writes nothing new."""
+    import tomllib
+
+    from celine.settings.tools_meta import TOOLS
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < "0031":
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 30
+    at = "2026-11-01T10:00:00.000+00:00"
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO conversations(id, created_at, updated_at, kind) "
+              "VALUES('c', ?, ?, 'chat')", (at, at))
+    c.execute("INSERT INTO messages(id, conversation_id, role, content, ordinal, author, "
+              "created_at) VALUES('m', 'c', 'assistant', '', 0, 'model', ?)", (at,))
+    c.execute("INSERT INTO tool_calls(id, message_id, name, arguments, state) "
+              "VALUES('k', 'm', 'mcpx__ping', '{}', 'ok')")
+    for rule, decision in (("confirm", "asked"), ("confirm", "approved"), ("leak", "stop")):
+        c.execute("INSERT INTO guard_decisions(conversation_id, turn_id, tool_call_id, tool, "
+                  "mode, layer, rule, decision, created_at) VALUES('c', 't', 'k', 'x', 'on', "
+                  "1, ?, ?, ?)", (rule, decision, at))
+    c.commit()
+    c.close()
+    settings = tmp_path / "settings"
+    settings.mkdir()
+    (settings / "guard.toml").write_text(
+        '[leak]\ndoes = "watch"\n\n[confirm]\ntools = ["email", "shell__share:public", '
+        '"me__edit", "mcpx", "notebook__write:path", "me"]\n')
+    shutil.copy(MIGRATIONS_DIR / "0031_require_approval.py", d)
+    assert migrate_all(db) == 31
+    assert tomllib.loads((settings / "guard.toml").read_text()) == {"leak": {"does": "watch"}}
+    tools = tomllib.loads((settings / "approval.toml").read_text())["tools"]
+    email = sorted(t for t in TOOLS if t.startswith("email__"))
+    me = sorted(t for t in TOOLS if t.startswith("me__") and t != "me__edit")
+    assert email and tools == [*email, "mcpx__ping", "notebook__write", *me]
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT rule, decision FROM guard_decisions ORDER BY id").fetchall() == [
+        ("approval", "closed"), ("approval", "approved"), ("leak", "stop")]
+    c.execute("PRAGMA user_version = 30")
+    c.close()
+    assert migrate_all(db) == 31
+    assert tomllib.loads((settings / "approval.toml").read_text())["tools"] == tools
