@@ -97,6 +97,15 @@ def base_url(url: str) -> str:
     return url.removesuffix("/mcp")
 
 
+def no_answer(label: str, server: str, base: str) -> str:
+    """Nothing answers at a connector's address: where, and how to start it (Settings,
+    Features and the source page)."""
+    from urllib.parse import urlsplit
+    host = urlsplit(base).netloc or base
+    return (f"No {label} connector answers at {host}. Add {server} to COMPOSE_PROFILES in "
+            f".env and run docker compose up -d.")
+
+
 class Connector:
     def __init__(self, server: str, url: str, headers: dict[str, str], kb, *,
                  transport: httpx.AsyncBaseTransport | None = None,
@@ -214,10 +223,11 @@ class Connector:
     # ---- state -------------------------------------------------------------------------
     def connection(self) -> dict[str, Any]:
         """The connection record the source page shows. A connector that does not
-        answer is unreachable, with one plain sentence."""
+        answer is unreachable, with where and how to start it."""
         if self.status is None:
             return {"state": "unreachable", "since": self.down_since,
-                    "error": self.refused or self._down(), "last_sync": None,
+                    "error": self.refused or no_answer(self.title, self.server, self.base),
+                    "last_sync": None,
                     "next_sync": None}
         return dict(self.status.get("connection") or {})
 

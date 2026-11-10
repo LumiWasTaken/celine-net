@@ -89,6 +89,15 @@ def test_an_error_answer_of_the_connector_is_its_own_words(world):
         "unreachable", "The Discord connection returned 500: journal locked")
 
 
+def test_a_connector_that_never_answered_says_where_and_how_to_start_it(tmp_path):
+    kb = ChatKB(id="whatsapp", title="WhatsApp", platform="whatsapp",
+                path=tmp_path / "kb" / "whatsapp.db")
+    conn = Connector("whatsapp", "http://whatsapp:8769/mcp", {}, kb)
+    assert conn.connection()["error"] == (
+        "No WhatsApp connector answers at whatsapp:8769. Add whatsapp to COMPOSE_PROFILES "
+        "in .env and run docker compose up -d.")
+
+
 def test_a_deleted_chat_is_left_out_first_and_comes_back_when_included(world):
     client, link, kb = world
     sink = kb.sink()

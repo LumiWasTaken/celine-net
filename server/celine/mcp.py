@@ -716,7 +716,7 @@ async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
     address (missing, with how to start it), another connector there that refuses the
     key (missing), or not in mcp.toml or off (unset). `label` is the app's name (Discord,
     WhatsApp), as the sentences say it."""
-    from .kb.connectors import base_url
+    from .kb.connectors import base_url, no_answer
     s = cfg.mcp.get(server)
     if s is None or not s.enabled or not s.url:
         return {"state": "unset", "detail": f"{label} is not connected: its connector has no "
@@ -727,9 +727,7 @@ async def _probe_connector(cfg, server: str, label: str) -> dict[str, str]:
         async with httpx.AsyncClient(timeout=2.5, headers=s.headers) as c:
             r = await c.get(f"{base}/admin/status")
     except httpx.HTTPError:
-        return {"state": "missing", "detail": f"No {label} connector answers at {host}. Add "
-                                              f"{server} to COMPOSE_PROFILES in .env and run "
-                                              f"docker compose up -d."}
+        return {"state": "missing", "detail": no_answer(label, server, base)}
     if r.status_code in (401, 403):
         return {"state": "missing", "detail": f"The {label} connector at {host} does not "
                                               f"accept this app's key. Give it the same key "
