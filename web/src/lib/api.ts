@@ -218,7 +218,7 @@ function parseBody(text: string): unknown {
 }
 
 function httpMessage(status: number): string {
-  if (status === 502 || status === 503 || status === 504) return `The server did not answer in time (HTTP ${status}). Try again in a moment.`
+  if (status === 502 || status === 503 || status === 504) return `The server is unavailable (HTTP ${status}). Try again in a moment.`
   if (status === 404) return 'Not found (HTTP 404).'
   return `The server returned an error (HTTP ${status}). Try again in a moment.`
 }

@@ -158,7 +158,7 @@ export function Viewer({ src, name, caption, more = [], actions, panel, onClose,
       <div className="viewer__stage">
         {state === 'failed' ? (
           <div className="viewer__failed" role="alert">
-            <span>Could not load the image.</span>
+            <span>The image could not be loaded.</span>
             <Button size="sm" variant="secondary" onClick={() => setAttempt(n => n + 1)}>Retry</Button>
           </div>
         ) : (
