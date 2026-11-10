@@ -3,7 +3,7 @@
    Enforce, the general setting), its two models (the Decision model is the guard role, the second
    look is guard.toml's chain) through the same form the onboarding's Guard card uses
    (WelcomeForms.tsx), its Rules (what each rule does: Off, Warn, Stop, Freeze; guard.toml),
-   the Passes that hold (only while one does, each with End),
+   the Exceptions that hold (only while one does, each with End),
    and its own texts: Persona, Replies to <its name>, Messages to you, each a long text on a
    surface that opens in the large editor (BastetText below: History and Ask Celine, keys
    bastet:persona, bastet:talk, bastet:note; the shipped file is the default, Use the default
@@ -81,7 +81,7 @@ export function Guard() {
         {rules.data ? <Rules rules={rules.data} set={rules.set} disabled={!online || !on} /> : <Loaded res={rules} />}
       </Section>
       {!!passes.data?.length && (
-        <Section title="Passes" help={help?.passes}>
+        <Section title="Exceptions" help={help?.passes}>
           {passes.data.map(p => <PassRow key={p.id} id={p.id} title={p.label} line={p.line} piece={p.piece} />)}
         </Section>
       )}

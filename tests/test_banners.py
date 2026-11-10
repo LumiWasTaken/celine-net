@@ -127,7 +127,7 @@ async def test_his_answers_become_a_pass_an_allow_once_and_an_unfreeze(store, mo
     [mine, hers] = got["thread"]
     assert (mine["by"], mine["text"]) == ("user", "that's fine, let her for half an hour")
     assert hers["by"] == "guard" and hers["text"].startswith(
-        "Allowed data exfiltration in this chat until ")
+        "Exception for data exfiltration in this chat until ")
     assert (await _banner_events(store, cid))[-1]["thread"] == got["thread"]
     await passes.end(store, held["id"])
 
@@ -296,7 +296,7 @@ async def test_pass_on_this_lets_only_the_same_piece_through_for_seven_days(stor
                       store=store, ask=FakeAsk(0.9), cfg=cfg)
     [b] = (await view.snapshot(store, cid))["guard"]
     got = await banners.answer(app, b["id"], by=OWNER, button="pass")
-    assert got["thread"][-1]["text"].startswith('Allowed "12 Example Road" in this chat until ')
+    assert got["thread"][-1]["text"].startswith('Exception for "12 Example Road" in this chat until ')
     [held] = await passes.listing(store)
     assert (held["rule"], held["piece"], held["conversation_id"]) == \
         ("leak", "12 Example Road", cid) and held["told_at"]

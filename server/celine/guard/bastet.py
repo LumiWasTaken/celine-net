@@ -39,7 +39,7 @@ DONE = {"stop": "It did not run.",
         "freeze": "It did not run, and {{name}} is frozen until you unfreeze {{name}}."}
 FROZE = "Bastet froze {{name}}: {why}. Unfreeze lets {{name}} continue."
 FROZEN_BY_YOU = "{{name}} is frozen. Unfreeze lets {{name}} continue."
-PASSED = "Bastet: {{user}} gave you a pass on {rule} {where} until {until}."
+PASSED = "Bastet: {{user}} gave you an exception for {rule} {where} until {until}."
 # her answer on a stop's banner (banners.py, D15): it wakes the agent to do the step again now
 AGAIN_NOW = "Do it again now."
 ONCE_AGENT = "Bastet: {{user}} allowed the step I stopped ({tool}) to run once. " + AGAIN_NOW

@@ -42,8 +42,8 @@ BUTTONS = {"unfreeze": ("Unfreeze", "unfreeze", ALL), "once": ("Allow once", "on
 # Bastet's answers in a thread; {{name}} filled by cfg.substitute
 SAID = {
     "once": "Allowed once: the next step like this one runs.",
-    "pass": "Allowed {rule} {where} until {until}.",
-    "pass_this": "Allowed \"{piece}\" {where} until {until}.",
+    "pass": "Exception for {rule} {where} until {until}.",
+    "pass_this": "Exception for \"{piece}\" {where} until {until}.",
     "unfreeze": "Unfrozen. {{name}} continues.",
     "not_frozen": "{{name}} is not frozen.",
     "keep_frozen": "Still frozen.",
@@ -153,7 +153,7 @@ async def _apply(app, banner: dict, g: dict, by) -> str:
         p = await passes_mod.make(store, by=by, rule=g["rule"], minutes=g["minutes"],
                                   conversation_id=banner["conversation_id"]
                                   if g["where"] == "here" else None, piece=piece,
-                                  why=f"answer on Bastet's banner {banner['id']}")
+                                  why="Your reply to Bastet")
         until = passes_mod.until_words(cfg, p["until"])
         where = "in this chat" if g["where"] == "here" else "everywhere"
         # the agent hears it now and does it again

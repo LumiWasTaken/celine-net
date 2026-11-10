@@ -610,7 +610,7 @@ async def test_the_fixture_turn_on_watch_and_with_a_pass(store, monkeypatch):
     _, rows = await _turn(store, cfg, reg)
     assert web.queries == ["pizza near 12 Example Road"] and rows[1]["state"] == "ok"
     [line] = json.loads(rows[0]["display"])["bastet"]
-    assert line.startswith("Bastet: User gave you a pass on data exfiltration "
+    assert line.startswith("Bastet: User gave you an exception for data exfiltration "
                            "everywhere until ")
     assert line not in rows[0]["content"]
     assert (await decisions.listing(store))[0]["decision"] == "passed"

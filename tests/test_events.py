@@ -116,7 +116,7 @@ async def test_events_list_every_kind_newest_first_and_filter_and_page(store, mo
         guard = await get(tab="guard")
         assert [(e["kind"], e["title"], e["outcome"]) for e in guard["events"]] == [
             ("freeze", "Unfreeze", "Done"),
-            ("pass", "Pass for data exfiltration", "Allowed"),
+            ("pass", "Exception for data exfiltration", "Allowed"),
             ("freeze", "Freeze", "Frozen"),
             ("guard", "Terminals: run a command", "Would have stopped"),
             ("guard", "Browser: open a page", "Stopped"),

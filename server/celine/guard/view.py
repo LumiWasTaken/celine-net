@@ -20,7 +20,7 @@ DID = {"stop": "Stopped {tool}.", "freeze": "Stopped {tool} and froze everything
        "approved": "You approved {tool}.",
        "denied": "You denied {tool}.", "closed": "No answer on {tool}, it did not run.",
        "patrol": "Looked back at this turn.", "gate": "Stopped {tool}.",
-       "allow": "Allowed {tool}.", "passed": "Allowed {tool} on your pass.",
+       "allow": "Allowed {tool}.", "passed": "Allowed {tool} by your exception.",
        "failed": "Bastet could not decide on {tool}.", "waiting": "Checking {tool}.",
        "unreachable": "Bastet could not decide on {tool}. It ran."}
 
@@ -54,7 +54,8 @@ PAGE_HELP = {
                    "{{name}} is frozen.",
     "rules": "What Bastet does when a rule finds something in a step. Warn only writes "
              "it down in Events.",
-    "passes": "Steps you let through on a banner. End stops a pass now.",
+    "passes": "Tool calls you allowed with Allow for 7 days or a reply to Bastet. End ends "
+              "one now.",
 }
 
 # the "?" on a stop or freeze banner: what each of its answers does, for the ones it has

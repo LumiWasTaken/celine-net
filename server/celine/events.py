@@ -119,7 +119,7 @@ _GUARD = {"allow": ("Allowed", OK), "would_stop": ("Would have stopped", WARN),
           "unreachable": ("Could not decide", WARN),
           "found": ("Found", WARN), "closed": ("No answer", ERROR),
           "approved": ("Approved", OK),
-          "denied": ("Denied", ERROR), "passed": ("Pass", MUTED), "patrol": ("Found", WARN),
+          "denied": ("Denied", ERROR), "passed": ("Allowed by exception", MUTED), "patrol": ("Found", WARN),
           "waiting": ("Running", RUNNING)}
 # the Mode filter's words: Bastet's mode when she decided
 MODE_WORDS = {"on": "Enforce", "watch": "Warn"}
@@ -226,10 +226,10 @@ def _freeze(r, cfg) -> dict:
 
 
 def _pass(r, cfg) -> dict:
+    from .guard.passes import until_words
     from .guard.rules import label
-    until = datetime.fromisoformat(r["until"]).astimezone(zone(cfg))
-    return {"title": f"Pass for {label(r['rule'])}", "outcome": "Allowed",
-            "tone": OK, "detail": _join(f"until {until:%H:%M}", _first(r["why"]))}
+    return {"title": f"Exception for {label(r['rule'])}", "outcome": "Allowed", "tone": OK,
+            "detail": _join(f"until {until_words(cfg, r['until'], r['at'])}", _first(r["why"]))}
 
 
 def _work(r, cfg) -> dict:
@@ -307,7 +307,7 @@ SOURCES = {s.kind: s for s in (
            "SELECT 'unfreeze:' || f.id, f.unfrozen_at, 0, f.conversation_id, NULL, f.turn_id, "
            "'guard', 1, f.unfrozen_by, f.why, f.at FROM freezes f WHERE f.unfrozen_at IS NOT NULL",
            _freeze),
-    Source("pass", "Pass",
+    Source("pass", "Exceptions",
            "SELECT 'pass:' || p.id AS id, p.created_at AS at, 0 AS failed, "
            "p.conversation_id AS cid, NULL AS mid, NULL AS tid, 'guard' AS tab, p.rule, p.until, p.why "
            "FROM guard_passes p", _pass),
