@@ -210,7 +210,7 @@ async def delete_conversation(request: Request, cid: str, for_good: bool = False
         else:
             ok = await store.delete(store_of(request), cid)
     except tree.Busy:
-        raise Busy("Stop the running turn first.") from None
+        raise Busy("Stop the reply first.") from None
     except ValueError as e:
         raise CelineError("not_trashed", str(e), 409) from None
     if not ok:
@@ -221,7 +221,7 @@ async def delete_conversation(request: Request, cid: str, for_good: bool = False
 @router.post("/conversations/{cid}/restore")
 async def restore_conversation(request: Request, cid: str) -> dict:
     if not await store.restore(store_of(request), cid):
-        raise NotFound("deleted chat")
+        raise NotFound("chat in the Trash")
     return {"ok": True}
 
 
@@ -234,7 +234,7 @@ async def archive_conversation(request: Request, cid: str) -> dict:
     try:
         out = await store.archive(store_of(request), cid, True)
     except tree.Busy:
-        raise Busy("Stop the running turn first.") from None
+        raise Busy("Stop the reply first.") from None
     if out is None:
         raise NotFound("chat")
     dispatcher = request.app.state.services.dispatcher
@@ -312,7 +312,7 @@ async def post_message(request: Request, cid: str, body: NewMessage) -> dict:
             sup = await _chat_model(request, cid, None)
             if sup["blocked"]:
                 raise CelineError("cannot_see_images",
-                                  f"{sup['model']} cannot see images. Remove the images "
+                                  f"{sup['model']} does not support image input. Remove the images "
                                   f"to send the message.", 400, sup)
     try:
         return await request.app.state.services.intercom.send(

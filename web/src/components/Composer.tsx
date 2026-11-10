@@ -412,9 +412,9 @@ export function Composer({
           ) : jump}
         </div>
         {noTools && (
-          <Notice tone="warn">{noToolsText ? noToolsText(noTools.model) : `${noTools.model} cannot use tools, so ${name} cannot search.`}</Notice>
+          <Notice tone="warn">{noToolsText ? noToolsText(noTools.model) : `${noTools.model} does not support tool calling, so ${name} cannot use tools.`}</Notice>
         )}
-        {imageBlock && <Notice tone="warn">{imageBlock.model} cannot see images.</Notice>}
+        {imageBlock && <Notice tone="warn">{imageBlock.model} does not support image input.</Notice>}
         {notices}
         {setup}
         {typed !== null && (

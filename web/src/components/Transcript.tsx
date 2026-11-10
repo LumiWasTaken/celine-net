@@ -512,7 +512,7 @@ function FileCards({ list }: { list: Attachment[] }) {
 }
 
 function imageNoticeText(n: ImageNotice): string {
-  return n.describer ? `${n.model} cannot see images, so it gets a description of the earlier ones` : `${n.model} cannot see the earlier images`
+  return n.describer ? `${n.model} does not support image input, so it gets a text description of the earlier images.` : `${n.model} does not support image input and gets no earlier images.`
 }
 
 

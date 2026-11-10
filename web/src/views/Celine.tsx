@@ -218,7 +218,7 @@ export function Celine({ active, status, sidebarOpen, onSidebar }: {
     if (!outcome || !awaitingCompact.current) return
     awaitingCompact.current = false
     setNote(outcome.kind === 'compacted' ? { tone: 'success', text: 'Compacted.' }
-      : outcome.kind === 'failed' ? { tone: 'error', text: 'Could not compact right now.' }
+      : outcome.kind === 'failed' ? { tone: 'error', text: 'Compacting failed.' }
       : { tone: 'success', text: outcome.reason ?? 'Nothing to compact yet.' })
   }, [outcome])
 

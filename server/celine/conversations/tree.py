@@ -489,7 +489,7 @@ prefills = None
 # why no answer came, by how the turn that tried ended
 _NO_ANSWER = {"failed": "The reply failed.", "interrupted": "The server restarted during "
               "the reply.", "aborted": "Stopped.", "capped": "Stopped at the tool round limit.",
-              "done": "The reply was empty."}
+              "done": "The model sent an empty reply."}
 
 
 def unanswered(c: sqlite3.Connection, cid: str) -> dict | None:
@@ -510,10 +510,10 @@ def unanswered(c: sqlite3.Connection, cid: str) -> dict | None:
         if tried else None
     if t is None:
         return {"message_id": mid, "turn_id": None, "state": None,
-                "reason": "No answer yet.", "continues": False}
+                "reason": "No reply yet.", "continues": False}
     told = t["reason"] if t["state"] in ("failed", "interrupted") else None
     return {"message_id": mid, "turn_id": t["id"], "state": t["state"],
-            "reason": told or _NO_ANSWER.get(t["state"], "No answer yet."),
+            "reason": told or _NO_ANSWER.get(t["state"], "No reply yet."),
             "continues": said and continuable(c, cid, t)["ok"] and _prefills(cid)}
 
 
@@ -539,7 +539,7 @@ async def regenerate(store, cid: str) -> tuple[str, int]:
         refuse_if_live(c, cid)
         found = _no_reply(c, cid)
         if found is None:
-            raise ValueError("the last message is not yours")
+            raise ValueError("The last message already has a reply.")
         mid, tried, _ = found
         if mid != row["active_leaf_id"]:
             c.execute("UPDATE conversations SET active_leaf_id=? WHERE id=?", (mid, cid))
