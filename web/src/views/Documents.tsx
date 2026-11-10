@@ -621,8 +621,8 @@ function Details({ item, onSaved, onRewrite, rewriting }: { item: ItemDetail; on
           )}
         </Field>
       )}
-      <Field label="Mode" group>
-        <Choice label="Mode" value={item.mode} options={MODES} disabled={save.busy} onChange={mode => void save.run({ mode })} />
+      <Field label="Retrieval" group>
+        <Choice label="Retrieval" value={item.mode} options={MODES} disabled={save.busy} onChange={mode => void save.run({ mode })} />
       </Field>
       <Facts items={[{ label: 'Created', value: stamp(item.added_at) },
                      ...(item.backlinks.length ? [{ label: 'Linked from', value: <LinkedFrom links={item.backlinks} /> }] : [])]} />
@@ -710,7 +710,7 @@ function UploadDialog({ files, paths, into, onClose, onAdd }: { files: File[]; p
           <div key={`${paths[i]}:${i}`} className="doc-picked__row">
             <span className="doc-picked__name" title={paths[i]}>{paths[i]}</span>
             <span className="doc-quiet">{bytes(f.size)}</span>
-            {modes && <Segmented label={`Mode of ${f.name}`} value={modes[i]!} options={MODES}
+            {modes && <Segmented label={`Retrieval of ${f.name}`} value={modes[i]!} options={MODES}
                                  onChange={mode => setModes(m => m && m.map((x, j) => (j === i ? mode : x)))} />}
           </div>
         ))}

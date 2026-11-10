@@ -319,8 +319,8 @@ async def upload(request: Request, files: list[UploadFile] = File(...),
     kb = _kb(request)
     bad = [m for m in modes if m and m not in MODES]
     if bad:
-        raise CelineError("bad_request", f"The mode is chunked or full_file, not "
-                                         f"{bad[0]!r}.", 400)
+        raise CelineError("bad_request", f"Retrieval is Passages or Whole file, not "
+                                         f"{bad[0]}.", 400)
     base = folder.strip("/")
     if base:
         await _call(kb.resolve, base)                    # confined to the folder
