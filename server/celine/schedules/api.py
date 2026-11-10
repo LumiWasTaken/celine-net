@@ -26,10 +26,9 @@ HELP = {
     "on_fail": "Retry runs a failed run again after 15 minutes, 1 hour and 4 hours for the "
                "same day, never past the next run, unless it was stopped or over the time "
                "limit. Skip ends it with no notice.",
-    "idle_only": f"A run starts only when nobody used the app in the last {IDLE_MINUTES} "
-                 "minutes, else it is skipped at once; so is one still waiting for another "
-                 f"reason {IDLE_MINUTES} minutes after its time. Run now and Retry are not "
-                 "skipped for this.",
+    "idle_only": f"A run starts only after nobody used the app for {IDLE_MINUTES} minutes, "
+                 f"else it is skipped; a run still waiting {IDLE_MINUTES} minutes after its "
+                 "time is skipped too. Run now and Retry ignore this setting.",
     "wall_minutes": "The most minutes one run may work; waiting for a model does not count. "
                     "Empty uses the Routine time limit in Settings, Advanced.",
 }
