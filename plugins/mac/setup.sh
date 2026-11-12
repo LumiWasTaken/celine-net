@@ -681,6 +681,16 @@ if [ -n "$off" ]; then   # the grants that are off, one by one
       Privacy_AllFiles) printf '\nOptional: turn on Celine under Full Disk Access, so folders like Documents open\nwithout a click on the Mac. Press Return to continue. ' ;;
       Privacy_LocalNetwork) printf '\nTurn on Celine under Local Network, then press Return. ' ;;
     esac
+    # A grant that reads off may still be listed as on: one made for an older build of
+    # Celine.app (its hash, from before the signing identity) matches no build now, and
+    # while it is there macOS asks no more. Cleared first, so the list shows it off and
+    # Celine asks anew.
+    case $anchor in
+      Privacy_ScreenCapture) tccutil reset ScreenCapture com.celine.mac >/dev/null 2>&1 || true ;;
+      Privacy_Accessibility) tccutil reset Accessibility com.celine.mac >/dev/null 2>&1 || true
+                             tccutil reset PostEvent com.celine.mac >/dev/null 2>&1 || true ;;
+      Privacy_AllFiles) tccutil reset SystemPolicyAllFiles com.celine.mac >/dev/null 2>&1 || true ;;
+    esac
     # Celine asks first, which puts it into the list; through LaunchServices, so it asks as
     # itself (started from here, it would ask as this Terminal). A Mac dialog may come up
     # first: Open System Settings in it leads to the same list.
