@@ -60,6 +60,9 @@ log = logging.getLogger("celine.guard")
 
 RETRY = 5.0          # seconds between asks while the judge cannot answer (On waits)
 WATCH_LIMIT = 120.0  # seconds Watch's one ask may take; then its row is "unreachable"
+# seconds On waits for a judge that cannot answer; then the call fails with the why
+# ponytail: one fixed limit; a guard.toml setting if owners need another
+ON_LIMIT = 300.0
 WAITING = "Waiting for Bastet."
 TOLD_HOURS = 24      # the same rule and evidence in a conversation: one note to the owner
 
@@ -76,20 +79,22 @@ def _decision(act: str | None, mode: str) -> str:
 async def _until(fn, mode: str, tool: str, *, progress=None, cfg=None,
                  cid: str | None = None, waited: dict | None = None):
     """fn() once it answers. Watch asks once within WATCH_LIMIT. On asks again every
-    RETRY seconds while it cannot (the call waits): `progress` hears "Waiting for Bastet.
+    RETRY seconds while it cannot (the call waits), for at most ON_LIMIT seconds, then
+    raises Unanswerable (the call fails with its why): `progress` hears "Waiting for Bastet.
     {why}" once per new why, and the switch is read again before every ask; turned to
     Watch or off, the wait ends. -> (answer, None) or (None, why it got none). Any other error is
     raised. `waited`: its ms holds how long On waited for a judge that could not answer
     (the metrics)."""
-    said, began = None, None
+    said, began, start = None, None, time.monotonic()
     try:
         while True:
             if mode == "on" and said is not None and cfg is not None and \
                     switch.mode(cfg, cid) != "on":
                 return None, said
-            why = f"No answer in {WATCH_LIMIT:.0f} s."
+            limit = WATCH_LIMIT if mode == "watch" else ON_LIMIT - (time.monotonic() - start)
+            why = f"No answer in {WATCH_LIMIT if mode == 'watch' else ON_LIMIT:.0f} s."
             try:
-                with anyio.move_on_after(WATCH_LIMIT if mode == "watch" else None):
+                with anyio.move_on_after(max(limit, 0.0)):
                     got = await fn()
                     if waited is not None and began is not None:
                         waited["ms"] = (time.monotonic() - began) * 1000
@@ -98,6 +103,9 @@ async def _until(fn, mode: str, tool: str, *, progress=None, cfg=None,
                 why = str(e) or "The decision model did not answer."
             if mode == "watch":
                 return None, why
+            if time.monotonic() - start >= ON_LIMIT:
+                timed = f"No answer in {ON_LIMIT:.0f} s."
+                raise Unanswerable(why if why == timed else f"{timed} {why}")
             if began is None:
                 began = time.monotonic()
                 metrics.GUARD_WAITING.inc()

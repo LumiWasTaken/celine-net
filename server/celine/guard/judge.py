@@ -21,7 +21,7 @@ import time
 
 from . import caps, intent, patterns, prompts
 from .mark import Span, wrap
-from .small_role import Unreadable, complete, parse_json
+from .small_role import Unreadable, complete, decide, decider, p_yes, parse_json
 from .trigger import Hit
 from .verdict import Judgement
 
@@ -101,13 +101,23 @@ async def ask(llm, cfg, registry, store, turn: dict, call: dict, hit: Hit, *,
     stated = await intent.read(store, turn, call)
     text = prompt(cfg, registry, turn, call, hit, stated)
     took = time.monotonic()
-    said, raw, model = await complete(
-        llm, text + "\n\n" + prompts.questions()["answer"]["letter"],
-        {"temperature": 0, "max_tokens": 1, "logprobs": True, "top_logprobs": 10},
-        turn=turn, background=background)
-    p = p_deny(raw, said)
-    if p is None:
-        raise Unreadable(said, model)
+    if decider(llm):
+        # stage 1 on the First look: one System One question on the same frame
+        q = cfg.substitute(prompts.questions()["first"]["hijack"])
+        got, model = await decide(
+            llm, caps.tail(text, caps.FIRST_LOOK),
+            {"deny": {"type": "noul", "instructions": q,
+                      "criteria": {"true": "Deny.", "false": "Allow."}}},
+            turn=turn, background=background)
+        p = p_yes(got["deny"])
+    else:
+        said, raw, model = await complete(
+            llm, text + "\n\n" + prompts.questions()["answer"]["letter"],
+            {"temperature": 0, "max_tokens": 1, "logprobs": True, "top_logprobs": 10},
+            turn=turn, background=background)
+        p = p_deny(raw, said)
+        if p is None:
+            raise Unreadable(said, model)
     scores = {"p_deny": round(p, 4), "stages": 1,
               "ms1": round((time.monotonic() - took) * 1000)}
     if p < THRESHOLD:

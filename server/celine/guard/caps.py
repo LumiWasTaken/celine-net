@@ -17,6 +17,7 @@ ARGS = 3000         # the action's arguments, head and tail kept
 VALUE = 1200        # one string value inside the arguments, head and tail kept
 MESSAGE = 1500      # one intercom message in Bastet's chat prompt, the head kept
 SKILLS = 4000       # the hijack judge's list of loaded skills, first and last kept
+FIRST_LOOK = 11000  # what a First look reads in all (a 4096-token window), the tail kept
 MARK = "[... {n} characters left out ...]"
 
 

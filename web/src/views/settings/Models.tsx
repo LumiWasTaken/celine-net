@@ -393,7 +393,7 @@ function ModelDialog({ p, m, onClose, onChanged }: { p: ProviderView; m: Provide
         )}
         <Field label="Capabilities" group>
           <div className="settings__caps">
-            {(['chat', 'tools', 'vision'] as const).map(c => (
+            {(['chat', 'tools', 'vision', 'decisions'] as const).map(c => (
               <Switch key={c} label={c.charAt(0).toUpperCase() + c.slice(1)}
                       checked={stated(m, c) ?? d.caps.includes(c)} disabled={!online || stated(m, c) !== null}
                       onChange={v => change({ caps: v ? [...d.caps, c] : d.caps.filter(x => x !== c) })} />

@@ -33,7 +33,7 @@ from . import caps, prompts
 from .bastet import KINDS
 from .facts import found_text
 from .mark import unclosed
-from .small_role import Unreadable, complete, parse_json
+from .small_role import Unreadable, complete, decide, decider, p_yes, parse_json
 from .trigger import strings
 from .verdict import confirm
 
@@ -152,6 +152,44 @@ class SmallRole:
         return out
 
 
+# P(yes) from the First look at or above which the Decision model is asked for its
+# quote. Low on purpose: a flag costs one Decision model call, a miss lets the call run.
+# ponytail: one threshold for every question; per-rule ones once an eval measures them
+FLAG = 0.3
+
+
+class FirstLook:
+    """The First look role (a System One decision model) answers every question in one
+    request; only the questions it flags go to the Decision model, whose yes is held to
+    its quote as before. A yes always comes with a quote: the decision model alone never
+    makes a finding."""
+
+    def __init__(self, llm, cfg, turn: dict, *, background: bool = False):
+        self.llm, self.cfg, self.turn, self.background = llm, cfg, turn, background
+
+    async def __call__(self, state: dict, questions: dict[str, str]) -> Answers:
+        took = time.monotonic()
+        asked = {name: {"type": "noul", "instructions": q,
+                        "criteria": {"true": "Yes.", "false": "No."}}
+                 for name, q in questions.items()}
+        got, model = await decide(self.llm, caps.tail(render(self.cfg, state), caps.FIRST_LOOK), asked,
+                                  turn=self.turn, background=self.background)
+        p = {name: p_yes(got[name]) for name in questions}
+        flagged = {n: q for n, q in questions.items() if p[n] >= FLAG}
+        out = Answers(dict(p), model=model)
+        if flagged:
+            second = await SmallRole(self.llm, self.cfg, self.turn,
+                                     background=self.background)(state, flagged)
+            out.quote, out.why = second.quote, second.why
+            out.p.update({n: v for n, v in second.p.items() if v})
+            out.model = f"{model}, {second.model}" if second.model else model
+        out.ms = round((time.monotonic() - took) * 1000)
+        return out
+
+
 def judge_for(cfg, llm, turn: dict, *, background: bool = False) -> Judge:
-    """The judge that decides."""
+    """The judge that decides: the First look first when one is set, else the Decision
+    model alone."""
+    if decider(llm):
+        return FirstLook(llm, cfg, turn, background=background)
     return SmallRole(llm, cfg, turn, background=background)

@@ -66,6 +66,46 @@ async def complete(llm, text: str, body: dict, *, turn: dict | None = None,
     return said, done.raw if done else None, getattr(qb.answered, "model", "") or ""
 
 
+DECIDE = "decisions"     # the First look role: a System One decision model
+
+
+def decider(llm) -> bool:
+    """A First look model is set: Bastet's questions go to it first."""
+    s = getattr(getattr(llm, "router", None), "s", None)
+    return bool(s is not None and s.chain(DECIDE))
+
+
+async def decide(llm, state: str, questions: dict[str, dict], *, turn: dict | None = None,
+                 background: bool = False) -> tuple[dict, str]:
+    """(the answers by question id, the model) from the First look role's first model:
+    one System One request, `questions` {id: {type, instructions, criteria?, options?}}.
+    Raises Unavailable / Unanswerable as complete() does, Unreadable for an answer
+    without a probability for every question."""
+    if llm is None:
+        raise Unavailable("the app's model layer is not running.")
+    tid = turn["id"] if turn and not background else None
+    qb = llm.bind(None, role=DECIDE,
+                  priority=Priority.BACKGROUND if background else
+                  llm.turn_priority.get(tid or "", Priority.AGENT),
+                  conversation_id=turn["conversation_id"] if turn else None,
+                  turn_id=tid, body={"systemone": {"state": state, "questions": questions}},
+                  thinking=OFF, voice=False, fallback=False, label="Guard")
+    try:
+        _, done = await text_of(qb.stream([], []))
+    except BackendError as e:
+        raise _why(e) from None
+    model = getattr(qb.answered, "model", "") or ""
+    answers = ((done.raw if done else None) or {}).get("answers") or {}
+    if any(not isinstance(answers.get(q), dict) for q in questions):
+        raise Unreadable(str(answers)[:300], model)
+    return answers, model
+
+
+def p_yes(answer: dict) -> float:
+    """P(yes) of a `noul` answer."""
+    return float(answer.get("noul") or 0.0)
+
+
 def _why(e: BackendError) -> Exception:
     """A model error as Bastet waits on it: Unanswerable for an answer a retry cannot
     change, else Unavailable (no model now, a timeout, a busy server, a Stop)."""

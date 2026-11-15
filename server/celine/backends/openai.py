@@ -453,6 +453,9 @@ def build(cfg: BackendConfig, timeout: float = 600.0):
     kinds = {"openai": OpenAIBackend, "openrouter": OpenRouterBackend,
              "llama-server": LlamaServerBackend, "ollama": OllamaBackend,
              "anthropic": AnthropicBackend}
+    if cfg.raw.get("decisions") and cfg.kind in ("openai", "llama-server"):
+        from .systemone import SystemOneBackend
+        return SystemOneBackend(cfg, timeout)
     try:
         return kinds[cfg.kind](cfg, timeout)
     except KeyError:

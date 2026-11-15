@@ -20,7 +20,7 @@ export const SETTINGS_EVENTS = (ev: ServerEvent) => ev.type === 'settings.change
 /* ── providers and models ─────────────────────────────────────────────────── */
 
 export type ProviderKind = 'llama-swap' | 'tabby' | 'llama-server' | 'ollama' | 'openrouter' | 'anthropic' | 'openai' | 'comfyui'
-export type Cap = 'chat' | 'tools' | 'vision' | 'embeddings' | 'rerank' | 'image_generation' | 'music_generation' | 'transcription' | 'speech'
+export type Cap = 'chat' | 'tools' | 'vision' | 'embeddings' | 'rerank' | 'image_generation' | 'music_generation' | 'transcription' | 'speech' | 'decisions'
 
 export type ModelConfig = {
   label?: string

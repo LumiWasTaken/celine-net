@@ -50,7 +50,7 @@ KINDS: dict[str, dict[str, Any]] = {
 SWAPS = ("llama-swap", "tabby")
 LLAMA = (*SWAPS, "llama-server")
 CAPS = ("chat", "tools", "vision", "embeddings", "rerank", "image_generation",
-        "music_generation", "transcription", "speech")
+        "music_generation", "transcription", "speech", "decisions")
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_BETAS = "thinking-binding-controls-2026-08-01"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")     # Anthropic's, weakest first
@@ -190,6 +190,9 @@ def reported_caps(m: dict[str, Any]) -> list[str] | None:
     mods = m.get("modalities") if isinstance(m.get("modalities"), dict) else {}
     if not (arch or told or params or "use_vision" in mparams or "vision" in mods):
         return None
+    # a decision model (System One, /v1/systemone): probabilities out, never text
+    if "decisions" in (arch.get("output_modalities") or []):
+        return ["decisions"]
     caps = ["chat"]
     if "tools" in params or told.get("function_calling") or (not arch and not told and not params):
         caps.append("tools")

@@ -26,7 +26,8 @@ def test_every_shipped_prompt_loads_without_its_header_and_fills():
         text = prompts.text(name)
         assert text and not text.startswith("<!--"), name
     q = prompts.questions()
-    assert set(q) == {"ask", "after", "answer"}
+    assert set(q) == {"ask", "after", "first", "answer"}
+    assert set(q["first"]) == {"hijack"}
     assert set(rules.ASKED) | {"injection"} <= set(q["ask"])
     state = {"intent": "Owner: hi", "call": {"tool": "shell__run", "what": "Run.",
                                             "arguments": {"command": "ls"}},
