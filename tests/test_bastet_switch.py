@@ -22,12 +22,13 @@ def _cfg(tmp_path, guard_mode="on"):
 
 def test_every_shipped_prompt_loads_without_its_header_and_fills():
     cfg = SimpleNamespace(substitute=lambda t, **_: t)
-    for name in ("hijack", "question", "page", "patrol", "reader", "talk"):
+    for name in ("hijack", "question", "page", "patrol", "reader", "talk", "privacy"):
         text = prompts.text(name)
         assert text and not text.startswith("<!--"), name
     q = prompts.questions()
-    assert set(q) == {"ask", "after", "first", "answer"}
+    assert set(q) == {"ask", "after", "first", "privacy", "answer"}
     assert set(q["first"]) == {"hijack"}
+    assert set(q["privacy"]) == {"private", "intimate"}
     assert set(rules.ASKED) | {"injection"} <= set(q["ask"])
     state = {"intent": "Owner: hi", "call": {"tool": "shell__run", "what": "Run.",
                                             "arguments": {"command": "ls"}},

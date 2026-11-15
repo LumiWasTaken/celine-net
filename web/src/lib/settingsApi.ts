@@ -229,6 +229,8 @@ export type ConversationSettings = {
   tools: Record<string, boolean>
   /** Bastet checks this chat (false: she skips it entirely) */
   guard: boolean
+  /** who may see it, as you set it (a notebook class); null: Bastet classes it */
+  privacy: Privacy | null
   effective: {
     model: string | null; label: string | null; provider_label: string | null
     /** what Default comes to now (the head of the conversation's role list); null: no model */
@@ -236,9 +238,12 @@ export type ConversationSettings = {
     chain: string[]
     /** the Guard feature is on; off, this chat's switch does nothing */
     guard: boolean
+    /** who may see it now: yours, else Bastet's, else sensitive */
+    privacy: Privacy
   }
 }
-export type ConversationPatch = { model?: string | null; thinking?: ConversationSettings['thinking']; tools?: Record<string, boolean | null>; guard?: boolean }
+export type Privacy = 'public' | 'informal' | 'sensitive' | 'nsfw'
+export type ConversationPatch = { model?: string | null; thinking?: ConversationSettings['thinking']; tools?: Record<string, boolean | null>; guard?: boolean; privacy?: Privacy | null }
 
 /* ── features: what it has (server/celine/settings/features.py, the plug) ── */
 type FeatureState = 'ready' | 'missing' | 'unset' | 'none'

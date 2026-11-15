@@ -332,6 +332,8 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             mission_watch.start(services)
             from .skills import mind                 # its mood: the appraisal after a turn
             mind.start(services)
+            from .guard import classify              # who may see a chat: its class
+            classify.start(services)
             await dispatcher.start(tg)
             await intercom.run(tg)
             from .sub_agents.skill import release_all     # queued before a restart

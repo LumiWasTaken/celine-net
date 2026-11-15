@@ -861,4 +861,7 @@ def set_settings(c: sqlite3.Connection, cid: str, clean: dict) -> bool:
     if "guard" in clean:
         c.execute("UPDATE conversations SET guard_off=? WHERE id=?",
                   (int(not clean["guard"]), cid))
+    if "privacy" in clean:
+        c.execute("UPDATE conversations SET privacy=?, privacy_owner=? WHERE id=?",
+                  (clean["privacy"], int(clean["privacy"] is not None), cid))
     return True

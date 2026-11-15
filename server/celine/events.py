@@ -125,7 +125,7 @@ _HER = {"agent:talk": ("Changed the Example lines", "talk"),
         "agent:voice": ("Changed the Banned words", "banned"),
         "agent:persona": ("Changed the Persona", "persona")}
 _BUG = {"high": "High", "medium": "Medium", "low": "Low"}
-_WORK = {"title": "Title", "appraisal": "Mood", "documents.describe": "Document descriptions"}
+_WORK = {"title": "Title", "appraisal": "Mood", "privacy": "Privacy", "documents.describe": "Document descriptions"}
 
 
 # ── the sources ──

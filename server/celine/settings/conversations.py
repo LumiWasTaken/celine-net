@@ -1,6 +1,7 @@
 """A conversation's own settings: its chat model (`conversations.model_id`), its
-thinking level (`conversations.thinking`), its tool switches (`tool_overrides`) and
-Bastet here or not (`conversations.guard_off`, guard/switch.py OFF).
+thinking level (`conversations.thinking`), its tool switches (`tool_overrides`),
+Bastet here or not (`conversations.guard_off`, guard/switch.py OFF) and who may see it
+(`conversations.privacy` as the owner set it, guard/classify.py).
 
 Turns read model and thinking through the in-memory copies in
 `settings.CONVERSATION_MODELS` / `CONVERSATION_THINKING`: filled once at startup,
@@ -16,6 +17,7 @@ from . import CONVERSATION_MODELS, CONVERSATION_THINKING
 from .files import Invalid
 from .thinking import OFF
 from .thinking import valid as valid_thinking
+from ..guard.classify import UNCLASSED
 from ..skills import gating
 
 
@@ -43,14 +45,17 @@ async def load_all(store) -> int:
 async def get(store, cid: str) -> dict[str, Any] | None:
     """{model, thinking, tools, guard} as stored, or None when the conversation is gone."""
     def fn(c: sqlite3.Connection):
-        row = c.execute("SELECT model_id, thinking, guard_off FROM conversations WHERE id=?",
+        row = c.execute("SELECT model_id, thinking, guard_off, privacy, privacy_owner "
+                        "FROM conversations WHERE id=?",
                         (cid,)).fetchone()
         if row is None:
             return None
         tools = {r["target"]: bool(r["enabled"]) for r in c.execute(
             "SELECT target, enabled FROM tool_overrides WHERE conversation_id=?", (cid,))}
         return {"model": row["model_id"], "thinking": row["thinking"], "tools": tools,
-                "guard": not row["guard_off"]}
+                "guard": not row["guard_off"],
+                "privacy": row["privacy"] if row["privacy_owner"] else None,
+                "classed": row["privacy"]}
     return await store.read(fn)
 
 
@@ -58,12 +63,18 @@ def validate(settings, registry, body: dict[str, Any]) -> dict[str, Any]:
     """Checks a (partial) settings object before anything is written. Keys: model
     ("provider/model" | null), thinking ("off", an effort word, or null), tools
     ({skill or skill__tool: true | false | null}), guard (true: Bastet here, false: she
-    skips this chat; null: back to on). Returns the cleaned object."""
+    skips this chat; null: back to on), privacy (a notebook class the owner sets; null:
+    classed again by Bastet). Returns the cleaned object."""
     out: dict[str, Any] = {}
     for k in body:
-        if k not in ("model", "thinking", "tools", "guard"):
+        if k not in ("model", "thinking", "tools", "guard", "privacy"):
             raise Invalid(k, f"'{k}' is not a conversation setting (model, thinking, "
-                             f"tools, guard).")
+                             f"tools, guard, privacy).")
+    if "privacy" in body:
+        from ..skills.notebook import CLASSES
+        if body["privacy"] is not None and body["privacy"] not in CLASSES:
+            raise Invalid("privacy", f"Privacy is one of {', '.join(CLASSES)}, or null.")
+        out["privacy"] = body["privacy"]
     if "guard" in body:
         if body["guard"] is not None and not isinstance(body["guard"], bool):
             raise Invalid("guard", "Bastet is true (here), false (off for this chat) or null.")
@@ -157,9 +168,12 @@ def view(s, cid: str, stored: dict) -> dict[str, Any]:
             "thinking": stored.get("thinking"),
             "tools": stored.get("tools") or {},
             "guard": stored.get("guard", True),
+            "privacy": stored.get("privacy"),
             "effective": {
                 **_model(s, chain[0] if chain else None),
                 "default": _model(s, default[0]) if default else None,
                 "chain": chain,
                 # Bastet's feature switch: off there, this chat's switch does nothing
-                "guard": on}}
+                "guard": on,
+                # who may see it now: the owner's class, else Bastet's, else unclassed
+                "privacy": stored.get("classed") or UNCLASSED}}

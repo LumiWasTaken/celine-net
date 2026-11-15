@@ -28,12 +28,12 @@ import { toneOf } from '../lib/states'
 import { OFFLINE_TITLE, useOnline } from '../lib/socket'
 import { useFeatureOn } from '../lib/features'
 import { format } from '../lib/nav'
-import { SETTINGS_EVENTS, settingsApi, type ConversationSettings } from '../lib/settingsApi'
+import { SETTINGS_EVENTS, settingsApi, type ConversationSettings, type Privacy } from '../lib/settingsApi'
 import { useAction } from '../lib/useAction'
 import { useResource } from '../lib/useResource'
 import { useConversationSettings } from '../lib/useConversationSettings'
 import {
-  Button, Choice, cx, Drawer, type Option, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Sheet, StateWord, Switch, Tabs, TextArea, useCopied,
+  Button, Choice, cx, Drawer, type Option, IconButton, InlineError, ListRow, ListSection, Loaded, Progress, Segmented, Sheet, StateWord, Switch, Tabs, TextArea, useCopied,
 } from '../ui'
 import { ModelChooser, findModel, modelName } from './ModelChooser'
 import { ToolList } from './ToolList'
@@ -92,6 +92,7 @@ export function ConversationPanel({
       )}
       {tab === 'tools' && (conversationId
         ? <>{guardOn && <GuardRow key={`g${conversationId}`} cid={conversationId} enabled={open} live={live} />}
+            <PrivacyRow key={`p${conversationId}`} cid={conversationId} enabled={open} live={live} />
             <ToolList key={conversationId} conversationId={conversationId} /></>
         : <>{guardOn && <BastetSwitch checked={draft.guard !== false} onChange={on => onDraft({ ...draft, guard: on })} />}
             <ToolList draft={{ value: draft.tools ?? {}, onChange: tools => onDraft({ ...draft, tools }) }} /></>)}
@@ -194,6 +195,29 @@ function GuardRow({ cid, enabled, live }: { cid: string; enabled: boolean; live:
     <BastetSwitch checked={global && res.data.guard} disabled={!global || !online || patch.busy}
                   title={!global ? 'Guard is off. Turn it on in Settings, Features.' : online ? undefined : OFFLINE_TITLE}
                   onChange={guard => void patch.run({ guard })} />
+    {patch.error && <InlineError compact message={patch.error} />}
+  </>
+}
+
+/* who may see this chat: Auto (Bastet classes it, server `privacy` null) or your class */
+const PRIVACY: Option<Privacy | 'auto'>[] = [
+  { value: 'auto', label: 'Auto' }, { value: 'informal', label: 'Shareable' },
+  { value: 'sensitive', label: 'Private' }, { value: 'nsfw', label: 'Intimate' },
+]
+function PrivacyRow({ cid, enabled, live }: { cid: string; enabled: boolean; live: ConversationSettings | null }) {
+  const online = useOnline()
+  const { res, patch } = useConversationSettings(cid, enabled, live)
+  if (!res.data) return null
+  const now = PRIVACY.find(o => o.value === res.data!.effective.privacy)?.label ?? 'Public'
+  return <>
+    <div className="tool-block">
+      <div className="tool-block__head">
+        <span className="tool-block__name">Privacy</span>
+        <Segmented label="Privacy" value={res.data.privacy ?? 'auto'} options={PRIVACY}
+                   disabled={!online || patch.busy} title={online ? `Now: ${now}` : OFFLINE_TITLE}
+                   onChange={v => void patch.run({ privacy: v === 'auto' ? null : v })} />
+      </div>
+    </div>
     {patch.error && <InlineError compact message={patch.error} />}
   </>
 }

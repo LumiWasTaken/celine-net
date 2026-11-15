@@ -1,7 +1,8 @@
 """What code finds before Bastet asks anything: plain code, microseconds, so the judge is asked only where a rule has a reason.
 
 - classes: who may see a result. The agent's notes say it in their head (`class:`), the
-  sources by kind: Messages archive, documents, mail, their chats sensitive; web and browser
+  sources by kind: Messages archive, documents, mail, their chats sensitive, its own chats
+  their conversation's class (guard/classify.py), sensitive until classed; web and browser
   public; an MCP server its `class` in mcp.toml (default sensitive).
 - sinks: where a call sends text. public: a web search's query, the address of a page
   it opens, what it types or uploads into a page, a shell command that reaches the
@@ -27,7 +28,8 @@ from ..settings.tools_meta import label
 from .trigger import EGRESS, EMAIL, HANDLE, URL, norm, shared_run, strings, texts, to_house
 
 CLASSES = ("public", "informal", "nsfw", "unclassed", "sensitive")   # loosest first
-SENSITIVE = {"chat_archive", "user_documents", "email", "discord", "whatsapp"}
+SENSITIVE = {"chat_archive", "user_documents", "email", "discord", "whatsapp",
+             "past_conversations"}    # its own chats: their class (classify.py) when it has one
 PUBLIC = {"web", "browser"}
 SENDS = ("public", "people", "house")
 
