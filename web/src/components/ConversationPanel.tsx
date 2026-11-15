@@ -92,7 +92,7 @@ export function ConversationPanel({
       )}
       {tab === 'tools' && (conversationId
         ? <>{guardOn && <GuardRow key={`g${conversationId}`} cid={conversationId} enabled={open} live={live} />}
-            <PrivacyRow key={`p${conversationId}`} cid={conversationId} enabled={open} live={live} />
+            {guardOn && <PrivacyRow key={`p${conversationId}`} cid={conversationId} enabled={open} live={live} />}
             <ToolList key={conversationId} conversationId={conversationId} /></>
         : <>{guardOn && <BastetSwitch checked={draft.guard !== false} onChange={on => onDraft({ ...draft, guard: on })} />}
             <ToolList draft={{ value: draft.tools ?? {}, onChange: tools => onDraft({ ...draft, tools }) }} /></>)}

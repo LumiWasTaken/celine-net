@@ -1,9 +1,10 @@
 """Who may see a conversation: its class (`conversations.privacy`, a notebook class),
 the strictest of its exchanges'. After each turn a work item (`privacy`) asks the First
 look two yes/no questions (questions.toml [privacy]), or the guard role for one word
-(privacy.md) without one: intimate is nsfw, private sensitive, else informal. A class
-only rises; one the owner set (`privacy_owner`) is never classed over. Until classed, or
-with no model to ask, a conversation is sensitive: a missing answer never shares it.
+(privacy.md) without one: intimate is nsfw, private sensitive, else informal. Nothing is
+asked while Bastet is off there or has no model. A class only rises; one the owner set
+(`privacy_owner`) is never classed over. Until classed, or with no model to ask, a
+conversation is sensitive: a missing answer never shares it.
 past_conversations' results carry it (facts.result_class), so the leak rule and its
 gates take it from there.
 """
@@ -91,12 +92,20 @@ async def classify(app, cid: str, tid: str) -> str | None:
     return await store.write(write)
 
 
+def asks(app, cid: str) -> bool:
+    """Bastet is on in conversation `cid` and has a model to class it with."""
+    from .switch import mode
+    s = getattr(getattr(app.llm, "router", None), "s", None)
+    return mode(app.cfg, cid) != "off" and s is not None and bool(
+        s.chain("decisions") or s.chain("guard"))
+
+
 def start(app) -> None:
-    """At startup: a `privacy` work item after every turn that ended."""
+    """At startup: a `privacy` work item after every turn that ended, while asks()."""
     pool = app.dispatcher.work
 
     async def ended(cid: str, tid: str | None) -> None:
-        if tid is not None:
+        if tid is not None and asks(app, cid):
             await pool.put("privacy", {"conversation_id": cid, "turn_id": tid},
                            conversation_id=cid)
     app.dispatcher.on_end(ended)

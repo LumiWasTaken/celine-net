@@ -116,3 +116,17 @@ async def test_past_chats_results_carry_their_conversations_class(store):
     assert (await skill.read(ctx, b[:8])).display["class"] == "informal"
     assert (await skill.read(ctx, a[:8])).display["class"] == "sensitive"
     assert (await skill.search(ctx, "pelican")).display["class"] == "sensitive"
+
+
+def test_nothing_is_classed_while_bastet_is_off_or_has_no_model(monkeypatch):
+    from celine.guard import switch
+    roles = {"guard": ["gpu/qwen"]}
+    app = SimpleNamespace(cfg=None, llm=SimpleNamespace(router=SimpleNamespace(
+        s=SimpleNamespace(chain=lambda r: roles.get(r, [])))))
+    monkeypatch.setattr(switch, "mode", lambda cfg, cid: "watch")
+    assert classify.asks(app, "c")
+    monkeypatch.setattr(switch, "mode", lambda cfg, cid: "off")
+    assert not classify.asks(app, "c")
+    monkeypatch.setattr(switch, "mode", lambda cfg, cid: "on")
+    roles.clear()
+    assert not classify.asks(app, "c")
