@@ -263,6 +263,8 @@ async def discover(kind: str, base_url: str, key: str | None = None, *,
                                                 if str(x) not in ("none", "off")]
                 if status.get("value"):
                     entry["loaded"] = status["value"] == "loaded"
+                elif isinstance(m.get("state"), str):
+                    entry["loaded"] = m["state"] == "loaded"
                 out.append(entry)
             if kind == "tabby" and (one := await _tabby_model(c, url, headers(kind, key))):
                 for e in out:              # the model it runs, with what it runs with

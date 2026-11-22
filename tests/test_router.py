@@ -36,7 +36,7 @@ def _router(tmp_path, monkeypatch, roles=None):
     def reply(request):
         if request.url.host in down:
             raise httpx.ConnectError("refused", request=request)
-        return httpx.Response(200, json={"running": [], "models": [], "data": []})
+        return httpx.Response(200, json={"running": [], "models": [], "data": [{"id": "one"}]})
     t = httpx.MockTransport(reply)
     return Router(cfg, None, transport=t, sync_transport=t), down, cfg
 
@@ -432,3 +432,98 @@ async def test_problem_is_the_one_sentence_a_model_row_shows(tmp_path, monkeypat
     st = await r.probe("swap", max_age=0)
     assert r.problem("chat", "swap/big") == st.error == r._check("swap/big", st)
     assert r.problem("embeddings", "swap/big").startswith("big cannot do"), "a missing cap"
+
+
+async def test_gateway_models_state_holds_unavailable_and_never_force_loads(
+        tmp_path, monkeypatch):
+    """A server whose /v1/models states each model (loaded, loading, not loaded,
+    unavailable: ..., load failed: ...), including per-machine entries in `machines`:
+    unavailable models hold a run and are skipped by fallback without sending a
+    completion, and `serves` never force-loads an unloaded model."""
+    providers = {
+        "gw": {
+            "kind": "openai", "label": "Gateway", "base_url": "http://gw:8/v1",
+            "models": {
+                "mac/llm/gemma": {"label": "gemma", "caps": ["chat"]},
+                "nix/llm/qwen": {"label": "qwen", "caps": ["chat"]},
+                "llm/shared": {"label": "shared", "caps": ["chat"]},
+            },
+        },
+    }
+    scratch(tmp_path, monkeypatch, providers=providers,
+            roles={"chat": {"chain": ["gw/mac/llm/gemma", "gw/nix/llm/qwen"]}})
+    mac_state = ["unavailable: machine paused"]
+    qwen_state = ["loaded"]
+    shared_state = ["loading"]
+    probes: list[str] = []
+
+    def reply(request):
+        probes.append(request.url.path)
+        return httpx.Response(200, json={"data": [
+            {
+                "id": "llm/gemma", "state": mac_state[0],
+                "machines": [{"id": "mac/llm/gemma", "machine": "mac", "state": mac_state[0]}],
+            },
+            {
+                "id": "llm/qwen", "state": qwen_state[0],
+                "machines": [{"id": "nix/llm/qwen", "machine": "nix", "state": qwen_state[0]}],
+            },
+            {"id": "llm/shared", "state": shared_state[0]},
+        ]})
+
+    t = httpx.MockTransport(reply)
+    r = Router(load(), None, transport=t, sync_transport=t)
+    tabby = Tabby()
+    r.make = lambda ref: tabby
+
+    why = await r.can_answer("chat")
+    assert why == "gemma: unavailable: machine paused."
+    st = r.provider_state("gw")
+    assert "nix/llm/qwen" in (st.loaded or ())
+    assert "llm/shared" in st.starting
+    assert st.unavailable == {
+        "llm/gemma": "unavailable: machine paused",
+        "mac/llm/gemma": "unavailable: machine paused",
+    }
+    # fallback skips the paused machine and picks the loaded one
+    ordered = await r.order("chat")
+    assert ordered.refs == ["gw/nix/llm/qwen"]
+    assert dict(ordered.skipped)["gw/mac/llm/gemma"] == "gemma: unavailable: machine paused."
+    # serves never probes an unavailable model
+    await r.serves("gw/mac/llm/gemma")
+    assert tabby.bodies == []
+    # once the machine unpauses (not loaded), can_answer re-probes after RETRY_DOWN
+    mac_state[0] = "not loaded"
+    r._providers["gw"].checked -= router_mod.RETRY_DOWN
+    assert await r.can_answer("chat") is None
+    assert len(probes) == 2
+    # serves still does not force-load an unloaded model on a server that reports loaded state
+    await r.serves("gw/mac/llm/gemma")
+    assert tabby.bodies == [], "must not force-load an unloaded model"
+    # load failed is also treated as unavailable
+    mac_state[0] = "load failed: runtime crashed"
+    await r.probe("gw", max_age=0)
+    assert await r.can_answer("chat", probe=False) == "gemma: load failed: runtime crashed."
+
+
+async def test_serves_drains_the_one_token_stream_to_completion(tmp_path, monkeypatch):
+    """When serves runs on a loaded model, it drains the remaining SSE chunks instead of
+    aborting the stream right after the first event."""
+    r, _, _ = _router(tmp_path, monkeypatch, roles={"chat": {"chain": ["srv/one"]}})
+    drained = False
+
+    class Multi(FakeBackend):
+        def __init__(self):
+            super().__init__(model="one")
+
+        async def stream(self, messages, tools, body=None, model=None):
+            nonlocal drained
+            yield TextDelta("H")
+            yield TextDelta("")
+            drained = True
+
+    await r.probe("srv", max_age=0)
+    r.make = lambda ref: Multi()
+    await r.serves("srv/one")
+    assert drained is True
+    assert r.model_state("srv/one") is None

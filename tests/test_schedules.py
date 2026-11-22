@@ -546,6 +546,34 @@ async def test_a_model_that_aborts_a_try_leaves_the_run_waiting(store, cfg):
         "Waiting for heretic on gpu-box. server answered 503: Chat completion aborted."
 
 
+async def test_a_model_reported_unavailable_by_probe_waits_without_serves(store, cfg):
+    """When the probe itself reports the model unavailable (e.g. a paused machine),
+    the run waits with that reason without needing a completion probe."""
+    class Paused(Asked):
+        async def probe(self, pid, max_age=0, strict=False):
+            self.asked.append((pid, max_age, strict))
+            self.why = "heretic: unavailable: machine paused."
+
+        async def serves(self, ref):
+            # mimics Router.serves skipping a model already reported unavailable
+            if self.why is None:
+                self.asked.append(ref)
+
+    cfg.schedules = {"world": _s("world")}
+    router, backend = Paused(), Cut()
+    app = _app(store, cfg, backend, llm=SimpleNamespace(router=router))
+    async with _scheduler(store, cfg, app, backend, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)),
+                          routed=True) as sched:
+        run = await sched.run_now("world")
+        await sched.tick()
+        await until(lambda: _state(store, run["id"], "waiting"))
+        await until(lambda: _idle(sched))
+    [row] = await _runs(store)
+    assert router.asked == [("gpu-box", 0, True)], "probe alone answered it; no serves call"
+    assert row["reason"] == \
+        "Waiting for heretic on gpu-box. heretic: unavailable: machine paused."
+
+
 async def test_time_waiting_for_a_model_does_not_count_against_the_ceiling(store, cfg):
     """A run whose calls wait for a model (a slot, a busy server, a GPU lease) past its
     limit is still running: the limit counts work. Past it with no wait, it fails."""

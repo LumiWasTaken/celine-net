@@ -127,13 +127,15 @@ class ProviderState:
     error: str | None = None               # why it is unreachable
     loaded: frozenset[str] | None = None   # None: the server does not say
     starting: frozenset[str] = frozenset()
+    unavailable: dict[str, str] = field(default_factory=dict)  # model id -> server state/cause
     checked: float = 0.0                   # monotonic time of the last probe
 
     def public(self) -> dict[str, Any]:
         return {"reachable": self.reachable,
                 "error": self.error,
                 "loaded": sorted(self.loaded) if self.loaded is not None else None,
-                "starting": sorted(self.starting)}
+                "starting": sorted(self.starting),
+                **({"unavailable": dict(self.unavailable)} if self.unavailable else {})}
 
 
 @dataclass
@@ -385,40 +387,57 @@ class Router:
         return url, kinds.headers(p["kind"], key)
 
     def _parse(self, pid: str, status: int, data: Any,
-               body: bytes = b"") -> tuple[frozenset | None, frozenset, str | None]:
-        """(loaded, starting, error) from a probe answer. Any answer but a 502 means the
-        host is up; a rejected key is an error, and so is a 502: a proxy answers it when
-        the server behind it is down (llm.LLM._note counts it unreachable too). Down is
-        a refused connection or a timeout. An error is worded as a request's error is
-        (openai.http_error): the server's own words behind its status."""
+               body: bytes = b"") -> tuple[frozenset | None, frozenset, dict[str, str], str | None]:
+        """(loaded, starting, unavailable, error) from a probe answer. Any answer but a
+        502 means the host is up; a rejected key is an error, and so is a 502: a proxy
+        answers it when the server behind it is down (llm.LLM._note counts it unreachable
+        too). Down is a refused connection or a timeout. An error is worded as a request's
+        error is (openai.http_error): the server's own words behind its status."""
         p = self.provider(pid) or {}
         if status in (401, 403, 502):
             from .openai import _http_message
-            return None, frozenset(), _http_message(
+            return None, frozenset(), {}, _http_message(
                 p.get("label", pid), "", status, body.decode(errors="replace"))
         if status >= 400:       # a list endpoint it lacks (404, 405), a hiccup (429, 5xx)
-            return None, frozenset(), None
+            return None, frozenset(), {}, None
         from ..settings.kinds import KINDS
-        listed = (KINDS.get(p.get("kind")) or {}).get("loaded")
+        kind = KINDS.get(p.get("kind")) or {}
+        listed = kind.get("loaded")
         if listed == "running":
             rows = (data or {}).get("running") or []
             loaded = frozenset(str(r.get("model")) for r in rows
                                if r.get("state") not in ("starting", "stopping"))
             starting = frozenset(str(r.get("model")) for r in rows
                                  if r.get("state") == "starting")
-            return loaded, starting, None
+            return loaded, starting, {}, None
         if listed == "ps":
             return frozenset(str(m.get("name") or m.get("model"))
-                             for m in (data or {}).get("models") or []), frozenset(), None
-        if listed == "models":
-            # llama-server's router mode states each model's status (loaded, sleeping,
-            # unloaded, loading); a single-model server lists the one it serves, with none
+                             for m in (data or {}).get("models") or []), frozenset(), {}, None
+        if kind.get("probe") == "models":
             rows = [m for m in (data or {}).get("data") or [] if isinstance(m, dict)]
-            status = {str(m.get("id")): (m.get("status") or {}).get("value")
-                      if isinstance(m.get("status"), dict) else "loaded" for m in rows}
-            return frozenset(m for m, v in status.items() if v == "loaded"), \
-                frozenset(m for m, v in status.items() if v == "loading"), None
-        return None, frozenset(), None
+            # gateways that report per-model state strings (and optional per-machine
+            # entries in `machines`): loaded, loading, not loaded, unavailable: ..., load failed: ...
+            states: list[tuple[str, str]] = []
+            for m in rows:
+                if m.get("id") and isinstance(m.get("state"), str):
+                    states.append((str(m["id"]), m["state"]))
+                for mem in m.get("machines") or ():
+                    if isinstance(mem, dict) and mem.get("id") and isinstance(mem.get("state"), str):
+                        states.append((str(mem["id"]), mem["state"]))
+            if states:
+                loaded = frozenset(mid for mid, st in states if st == "loaded")
+                starting = frozenset(mid for mid, st in states if st == "loading")
+                unavail = {mid: st for mid, st in states
+                           if st.startswith(("unavailable:", "load failed:"))}
+                return loaded, starting, unavail, None
+            if listed == "models":
+                # llama-server's router mode states each model's status (loaded, sleeping,
+                # unloaded, loading); a single-model server lists the one it serves, with none
+                mstatus = {str(m.get("id")): (m.get("status") or {}).get("value")
+                           if isinstance(m.get("status"), dict) else "loaded" for m in rows}
+                return frozenset(m for m, v in mstatus.items() if v == "loaded"), \
+                    frozenset(m for m, v in mstatus.items() if v == "loading"), {}, None
+        return None, frozenset(), {}, None
 
     def _unreachable_sentence(self, pid: str, e: Exception) -> str:
         from urllib.parse import urlsplit
@@ -454,8 +473,8 @@ class Router:
             async with httpx.AsyncClient(timeout=PROBE_TIMEOUT,
                                          transport=self.transport) as c:
                 r = await c.get(url, headers=headers)
-                loaded, starting, error = self._parse(pid, r.status_code, _json(r),
-                                                      r.content)
+                loaded, starting, unavail, error = self._parse(
+                    pid, r.status_code, _json(r), r.content)
                 if (props := self._props(pid, url, loaded)) is not None:
                     got = {}
                     for m, u in props.items():
@@ -465,7 +484,8 @@ class Router:
                             continue
                     self._windows(pid, {m: n for m, n in got.items() if n})
                 self._ps_windows(pid, r.status_code, _json(r))
-            return self._apply(pid, loaded, starting, error, fresh=max_age == 0)
+            return self._apply(pid, loaded, starting, error, unavailable=unavail,
+                               fresh=max_age == 0)
         except httpx.HTTPError as e:
             return self._failed(pid, e, strict)
 
@@ -480,8 +500,8 @@ class Router:
         try:
             with httpx.Client(timeout=PROBE_TIMEOUT, transport=self.sync_transport) as c:
                 r = c.get(url, headers=headers)
-                loaded, starting, error = self._parse(pid, r.status_code, _json(r),
-                                                      r.content)
+                loaded, starting, unavail, error = self._parse(
+                    pid, r.status_code, _json(r), r.content)
                 if (props := self._props(pid, url, loaded)) is not None:
                     got = {}
                     for m, u in props.items():
@@ -491,7 +511,8 @@ class Router:
                             continue
                     self._windows(pid, {m: n for m, n in got.items() if n})
                 self._ps_windows(pid, r.status_code, _json(r))
-            return self._apply(pid, loaded, starting, error, fresh=max_age == 0)
+            return self._apply(pid, loaded, starting, error, unavailable=unavail,
+                               fresh=max_age == 0)
         except httpx.HTTPError as e:
             return self._failed(pid, e)
 
@@ -538,7 +559,8 @@ class Router:
         if st.reachable is None:
             return True
         failing = st.reachable is False or any(
-            (ms := self.model_state(r)) is not None and ms.kind == "could_not_load"
+            self.s.split(r)[1] in st.unavailable or (
+                (ms := self.model_state(r)) is not None and ms.kind == "could_not_load")
             for r in chain if self.s.split(r)[0] == pid)
         return failing and time.monotonic() - st.checked >= RETRY_DOWN
 
@@ -685,17 +707,20 @@ class Router:
     # ---- state changes --------------------------------------------------------------
 
     def _apply(self, pid: str, loaded, starting, error: str | None,
-               *, fresh: bool = False) -> ProviderState:
+               *, unavailable: dict[str, str] | None = None,
+               fresh: bool = False) -> ProviderState:
         if error:
             return self._set_unreachable(pid, error)
+        unavail = dict(unavailable or {})
         changed = False
         with self._lock:
             old = self._providers.get(pid) or ProviderState()
             back = old.reachable is not True
             st = ProviderState(reachable=True, error=None, loaded=loaded, starting=starting,
-                               checked=time.monotonic())
+                               unavailable=unavail, checked=time.monotonic())
             self._providers[pid] = st
-            changed = back or old.loaded != loaded or old.starting != starting
+            changed = back or old.loaded != loaded or old.starting != starting or \
+                old.unavailable != unavail
             cleared = []
             for ref in [r for r in self._models if r.partition("/")[0] == pid]:
                 # a server that came back (maybe restarted), or a probe asked fresh
@@ -852,6 +877,8 @@ class Router:
             return f"{label} could not load. {ms.message}"
         if st.reachable is False:
             return st.error or f"{p.get('label', pid)} does not answer."
+        if name in st.unavailable:
+            return f"{label}: {st.unavailable[name]}."
         return None
 
     def problem(self, role: str | None, ref: str) -> str | None:
@@ -952,16 +979,20 @@ class Router:
 
     async def serves(self, ref: str) -> None:
         """Whether `ref` serves: one completion of one token (serves.md) to exactly that
-        model, FIRST_EVENT seconds at most, so a model its server loads on demand fits.
-        The answer is recorded as a request's: an event is note_ok; a refused connection
-        or a 502 is its provider down; an answer of 500 or more, a stream cut or no event
-        in time is a failure `tried` once more, in the server's own words; any other
-        answer (4xx) says the model is there, and nothing is recorded."""
+        model, FIRST_EVENT seconds at most. Skipped when the server already reports the
+        model unavailable or unloaded (never force-loads an unloaded model on an on-demand
+        server). The answer is recorded as a request's: an event is note_ok; a refused
+        connection or a 502 is its provider down; an answer of 500 or more, a stream cut
+        or no event in time is a failure `tried` once more, in the server's own words; any
+        other answer (4xx) says the model is there, and nothing is recorded."""
         from .. import prompts
         from .llm import FIRST_EVENT, busy
-        pid = self.s.split(ref)[0]
+        pid, name = self.s.split(ref)
         backend = self.make(ref) if self.make is not None else None
         if backend is None or self._down(pid):
+            return
+        st = self.provider_state(pid)
+        if name in st.unavailable or (st.loaded is not None and name not in st.loaded):
             return
         # ponytail: past the queue's slots and GPU leases; asked only for a model whose
         # last answer was a failure, so nothing of its own runs there
@@ -972,6 +1003,9 @@ class Router:
         try:
             with anyio.fail_after(FIRST_EVENT):
                 await events.__anext__()
+            with anyio.move_on_after(5.0):
+                async for _ in events:
+                    pass
         except StopAsyncIteration:
             pass
         except TimeoutError:
