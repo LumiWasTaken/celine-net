@@ -221,6 +221,138 @@ async def test_identical_calls_of_one_step_each_run(store, cfg):
     assert (await _tool_results(store))[-2:] == ["nothing found", "nothing found"]
 
 
+class A:
+    """The two guarded archive tools and one read tool, each run counted."""
+    name = "chat_archive"
+    description = "test"
+
+    def __init__(self):
+        self.runs = []
+
+    @tool()
+    async def search(self, ctx, about: list[str], scope: list[str],
+                     words: list[str] | None = None, written_by: list[str] | None = None,
+                     when: str | None = None, order: str = "best",
+                     mode: str = "best") -> ToolResult:
+        """search"""
+        self.runs.append("search")
+        return ToolResult(content="fresh search result")
+
+    @tool()
+    async def count(self, ctx, by: str, scope: list[str],
+                    words: list[str] | None = None, written_by: list[str] | None = None,
+                    when: str | None = None, hours: str | None = None,
+                    unit: str = "messages") -> ToolResult:
+        """count"""
+        self.runs.append("count")
+        return ToolResult(content="fresh count result")
+
+    @tool()
+    async def read_period(self, ctx, scope: list[str], when: str | None = None) -> ToolResult:
+        """read a period"""
+        self.runs.append("read_period")
+        return ToolResult(content="period read")
+
+
+def _step(*specs):
+    """One reply of tool calls: (id, name, args) each, then its Done."""
+    out = [ToolCallDelta(index=i, id=cid, name=name, arguments=json.dumps(args))
+           for i, (cid, name, args) in enumerate(specs)]
+    return out + [Done(reason="tool_calls")]
+
+
+async def test_an_archive_call_with_explicit_defaults_repeats_the_omitted_one(store, cfg):
+    """`order`/`mode`/optional lists omitted, then written as their defaults: one call."""
+    a = A()
+    b = Script([
+        _step(("c0", "chat_archive__search", {"about": ["x"], "scope": ["all"]}),
+              ("c1", "chat_archive__search", {"about": ["x"], "scope": ["all"],
+                                              "words": None, "written_by": None,
+                                              "when": None, "order": "best",
+                                              "mode": "best"})),
+        [TextDelta("ok"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(a), b)
+    results = await _tool_results(store)
+    assert a.runs == ["search", "search"], "the same call still runs a second time"
+    assert results[0] == "fresh search result"
+    assert results[1].startswith("fresh search result") and "2nd identical" in results[1]
+
+
+async def test_the_fourth_identical_archive_call_is_refused_and_does_not_run(store, cfg):
+    """Across steps of one turn: 1, 2 and 3 run (2 noted), the fourth is refused."""
+    a = A()
+    args = {"about": ["x"], "scope": ["all"]}
+    b = Script([_step((f"c{i}", "chat_archive__search", args)) for i in range(4)]
+               + [[TextDelta("done"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(a), b)
+    assert a.runs == ["search"] * 3, "the fourth identical call must not run"
+    results = await _tool_results(store)
+    assert len(results) == 4
+    assert "2nd identical" not in results[0]
+    assert "2nd identical" in results[1]
+    assert "2nd identical" not in results[2]
+    assert results[3].startswith("Refused:")
+    states = await store.read(lambda c: [r[0] for r in c.execute(
+        "SELECT state FROM tool_calls ORDER BY rowid")])
+    assert states == ["ok", "ok", "ok", "error"]
+
+
+async def test_identical_archive_calls_in_one_parallel_step_are_counted_in_order(store, cfg):
+    """Four duplicates dispatched at once are counted before dispatch: 3 run, 1 refused."""
+    a = A()
+    args = {"about": ["x"], "scope": ["all"]}
+    b = Script([_step(*((f"p{i}", "chat_archive__search", args) for i in range(4))),
+                [TextDelta("done"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(a), b)
+    assert a.runs == ["search"] * 3
+    results = await _tool_results(store)
+    assert results[3].startswith("Refused:")
+    assert "2nd identical" in results[1] and "2nd identical" not in results[2]
+
+
+async def test_invalid_archive_arguments_do_not_consume_repeat_counts(store, cfg):
+    """A non-object and a schema-invalid call are not counted: the valid ones go 1, 2, 3."""
+    a = A()
+    good = json.dumps({"about": ["x"], "scope": ["all"]})
+    calls = [ToolCallDelta(index=0, id="badjson", name="chat_archive__search",
+                           arguments="{oops"),
+             ToolCallDelta(index=1, id="bad", name="chat_archive__search",
+                           arguments=json.dumps({"about": ["x"]})),
+             ToolCallDelta(index=2, id="g0", name="chat_archive__search", arguments=good),
+             ToolCallDelta(index=3, id="g1", name="chat_archive__search", arguments=good),
+             ToolCallDelta(index=4, id="g2", name="chat_archive__search", arguments=good),
+             Done(reason="tool_calls")]
+    b = Script([calls, [TextDelta("done"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(a), b)
+    results = await _tool_results(store)
+    assert a.runs == ["search"] * 3, "the three valid calls all ran"
+    assert results[0].startswith("invalid arguments:")
+    assert results[1].startswith("invalid arguments:")
+    assert results[2] == "fresh search result"
+    assert "2nd identical" in results[3]
+    assert results[4] == "fresh search result"
+
+
+async def test_an_archive_count_repeats_are_guarded_too(store, cfg):
+    a = A()
+    args = {"by": "year", "scope": ["all"]}
+    b = Script([_step((f"n{i}", "chat_archive__count", args)) for i in range(4)]
+               + [[TextDelta("done"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(a), b)
+    assert a.runs == ["count"] * 3
+    assert (await _tool_results(store))[3].startswith("Refused:")
+
+
+async def test_archive_read_and_navigation_calls_are_never_treated_as_repeats(store, cfg):
+    a = A()
+    b = Script([_step((f"r{i}", "chat_archive__read_period", {"scope": ["all"]}))
+                for i in range(5)]
+               + [[TextDelta("done"), Done(reason="stop")]])
+    await _turn(store, cfg, _reg(a), b)
+    assert a.runs == ["read_period"] * 5
+    assert await _tool_results(store) == ["period read"] * 5
+
+
 async def test_when_its_time_is_up_the_turn_ends_capped(store, cfg):
     """A turn that hits the wall clock mid-search ends with its reason: no hidden note,
     no extra step."""

@@ -10,7 +10,7 @@ import anyio
 
 from .. import clock, devices, guard, prompts
 from ..plans import flow as plan_flow
-from ..skills import CORE, ToolContext
+from ..skills import CORE, SCHEMA_FIRST, ToolContext
 from ..skills.gating import down_sentence, is_enabled, off, overrides_for
 from . import legend, loads
 
@@ -50,14 +50,15 @@ async def tool_specs(registry, store, cid: str, carried, without=frozenset()
 
 def wire_tools(specs, registry, overrides, cfg) -> list[dict]:
     """The tools it gets in this request: those of `specs` that are on (skills/
-    gating.py) and whose skill is set up (skills.Registry.listed), a core skill's with
-    their parameters, every other by name and one line (skills.ToolSpec.as_name). Loads
-    never change it, and neither does a skill that goes down and comes back: only the
-    switches and its setup do. The tools of a skill that is down right now go as they
-    are; the tail says it is down (unusable), and a call to it is refused with why
-    (turns/tools.py). Descriptions are filled in at registration
-    (skills.Registry.add_specs)."""
-    return [s.as_wire() if s.skill in CORE else s.as_name()
+    gating.py) and whose skill is set up (skills.Registry.listed), a core skill's and a
+    schema-first skill's with their parameters (skills.CORE, skills.SCHEMA_FIRST), every
+    other by name and one line (skills.ToolSpec.as_name). Loads never change it, and
+    neither does a skill that goes down and comes back: only the switches and its setup
+    do. The tools of a skill that is down right now go as they are; the tail says it is
+    down (unusable), and a call to it is refused with why (turns/tools.py). Descriptions
+    are filled in at registration (skills.Registry.add_specs)."""
+    return [s.as_wire() if (s.skill in CORE or s.skill in SCHEMA_FIRST
+                            or s.wire_name in SCHEMA_FIRST) else s.as_name()
             for s in specs.values()
             if registry.listed(s.skill) and is_enabled(s, overrides, cfg)]
 

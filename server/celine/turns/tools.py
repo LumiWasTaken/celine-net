@@ -36,6 +36,7 @@ async def run_tool_calls(turn, calls, store, cfg, registry, overrides,
     tid, cid = turn["id"], turn["conversation_id"]
     calls = [{**c, "args": parsed(c["arguments"])} for c in calls]
     guarded = guard.enabled(cfg, cid)
+    _guard_repeats(turn, calls, registry, cfg)
 
     async def write(call, out) -> None:
         state, result, withheld = out
@@ -81,6 +82,79 @@ def parsed(arguments: str | None) -> dict | None:
     except json.JSONDecodeError:
         return None
     return args if isinstance(args, dict) else None
+
+
+# ---- archive exact-repeat guard ---------------------------------------------------
+# A model that loops on one archive query is bounded here per turn, at the two tools
+# whose repetition is pure waste: the same search or count, byte for byte after
+# defaults, gets a note on its second call and is refused from its fourth. It is not a
+# budget: varied arguments are never touched, and read/navigation tools stay repeatable.
+_REPEAT_TOOLS = frozenset({"chat_archive__search", "chat_archive__count"})
+_REPEAT_NOTE_AT = 2       # second identical call: runs, with a note
+_REPEAT_REFUSE_AT = 4     # fourth and later: refused, nothing runs
+REPEAT_NOTE = ("Note: this is the 2nd identical chat_archive call this turn. It ran "
+               "again and cannot return anything new. To move on, change about, scope or "
+               "period, read a result, or answer.")
+REPEAT_REFUSAL = ("Refused: 4 or more identical chat_archive calls this turn. An "
+                  "identical repeat cannot return anything new. Change about, scope or "
+                  "period, read a result, or answer.")
+
+
+def _repeat_counts(turn: dict) -> dict:
+    """The turn's per-key archive repeat counts. They live in `turn["guides"]`, the one
+    mutable dict the runner hands to every step of the turn by reference (runner makes a
+    shallow copy per step), so a loop across steps counts against the same turn and never
+    against another."""
+    guides = turn.setdefault("guides", {})
+    return guides.setdefault("_archive_repeats", {})
+
+
+def _canonical_args(spec, args: dict) -> dict:
+    """`args` with schema/function defaults filled in, so an omitted parameter and its
+    explicit default canonicalize the same. List order is kept."""
+    out = dict(args)
+    for pname, param in inspect.signature(spec.fn).parameters.items():
+        if pname in ("self", "ctx"):
+            continue
+        wire = pname[:-1] if pname.endswith("_") and keyword.iskeyword(pname[:-1]) else pname
+        if wire not in out:
+            if param.default is not inspect.Parameter.empty:
+                out[wire] = param.default
+        elif out[wire] is None and param.default is not inspect.Parameter.empty:
+            out[wire] = param.default      # an explicit null is its default (mistyped)
+    return out
+
+
+def _repeat_key(spec, args: dict) -> str:
+    """The identity of one archive call: canonical args, order kept, sorted by key."""
+    return json.dumps(_canonical_args(spec, args), sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":"))
+
+
+def _guard_repeats(turn, calls, registry, cfg) -> None:
+    """Marks repeated archive search/count calls of this turn, in call order, before any
+    call is dispatched (so concurrent duplicates are counted deterministically). A call
+    whose arguments are not a valid object for its schema is never counted. First call
+    plain, second noted, third plain, fourth and later refused."""
+    if registry is None:
+        return
+    counts = _repeat_counts(turn)
+    for call in calls:
+        if call["name"] not in _REPEAT_TOOLS:
+            continue
+        spec = registry.get(call["name"])
+        if spec is None:
+            continue
+        args = _lenient(call["args"], spec.schema)
+        if _invalid(args, call["arguments"], spec, cfg) is not None:
+            continue                        # invalid or not an object: no count
+        key = f"{call['name']}\0{_repeat_key(spec, args)}"
+        n = counts.get(key, 0) + 1
+        counts[key] = n
+        if n >= _REPEAT_REFUSE_AT:
+            call["repeat_refusal"] = REPEAT_REFUSAL
+        elif n == _REPEAT_NOTE_AT:
+            call["repeat_note"] = True
 
 
 def _seen(registry, cid: str, name: str) -> None:
@@ -222,6 +296,9 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
                                             None)
     if (done := await _replayed(store, turn, call)) is not None:
         return done
+    if (refusal := call.get("repeat_refusal")):
+        # an archive exact repeat, refused before anything runs (tools._guard_repeats)
+        return "error", ToolResult(content=refusal, is_error=True), None
     if (shut := await bastet_calls.frozen(store, cfg, call["name"])) is not None:
         return (*shut, None)
     spec = registry.get(call["name"])
@@ -266,6 +343,10 @@ async def _resolve(turn, call, store, cfg, registry, overrides, token, jobs):
     if out is None:
         await guard_passes.retell(store, gate.told)   # shutdown: its next result tells them
         return out
+    if call.get("repeat_note") and out[0] == "ok" and not out[1].is_error:
+        # the second identical archive call ran: its fresh result carries the note
+        state, result, withheld = out
+        out = state, replace(result, content=f"{result.content}\n\n{REPEAT_NOTE}"), withheld
     if not gate.lines:
         return out
     # after the result, outside any <outside> wrapper and the cap (marked())

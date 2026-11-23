@@ -3,9 +3,10 @@
 A skill is a Python class with `@tool` coroutines plus a guide, `guides/<skill>.md`
 (SKILL.md style: frontmatter `name` and `description`, then the body).
 What it has in context every turn: the skill index (one line per skill offered here,
-from the frontmatter) and every tool offered here, a core skill's (CORE below) with its
-parameters, another's by name and one line (turns/prompt.py wire_tools). A tool that is
-off or a skill that is down is not sent; the index says so.
+from the frontmatter) and every tool offered here, a core skill's (CORE below) and a
+schema-first skill's (SCHEMA_FIRST below) with its parameters, another's by name and one
+line (turns/prompt.py wire_tools). A tool that is off or a skill that is down is not sent;
+the index says so.
 `skills__read_guide(name)` returns a skill's guide and its notes on it,
 `skills__load(names)` returns the parameters of skills and tools and a skill's part of
 the prompt as its result (skills/meta.py).
@@ -590,6 +591,15 @@ BUILTIN = (
 # (turns/prompt.py wire_tools) and its part comes with skills__load (skills/meta.py).
 CORE = {META, "notebook", "intercom", "sub_agents", "past_conversations",
         "missions", "mind", "plan", "bugreport"}
+
+# Tools whose schema goes out with their full parameters while their skill's part of the
+# prompt and its guide stay on demand: the schema-first set (turns/prompt.py wire_tools).
+# A tool whose first call must carry the real contract cannot wait for a load step, but
+# promoting a whole skill to CORE would also inject its prompt fragment every turn, and
+# sending every tool's schema costs prompt tokens on every request. An entry is a skill
+# name (all of its tools) or one wire name ("skill__tool"). A tool in neither CORE nor
+# here goes by name (as_name).
+SCHEMA_FIRST = {"chat_archive__search", "chat_archive__count", "chat_archive__look_up"}
 
 
 def build(app) -> Registry:

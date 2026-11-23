@@ -18,7 +18,7 @@ from celine.backends.openai import build
 from celine.boot import load
 from celine.config import BackendConfig
 from celine.conversations import store as conversations
-from celine.skills import Guide, Registry, ToolContext, ToolResult, tool
+from celine.skills import CORE, Guide, Registry, SCHEMA_FIRST, ToolContext, ToolResult, tool
 from celine.conversations import view
 from celine.skills.meta import Skills, had
 from celine.turns import compactions, loads, prompt, tools
@@ -95,6 +95,61 @@ async def test_every_tool_is_sent_core_in_full_others_by_name(store, tmp_path):
         "a tool without parameters goes out in full"
     index = reg.index(cfg, got)
     assert "- notebook [core]: Her notes." in index and "- mac: Her Mac." in index
+
+
+def _archive_registry(cfg) -> Registry:
+    """The real chat_archive skill with the skills skill, as `build` would make it (no
+    app: schemas come from the signatures, so wire_tools needs none)."""
+    from celine.skills.archive import ChatArchive
+    reg = Registry(cfg)
+    reg.add(ChatArchive(cfg))
+    reg.add(Skills(reg, cfg))
+    return reg
+
+
+async def test_a_schema_first_tool_goes_in_full_others_remain_by_name(store, tmp_path):
+    cfg = notes_cfg(tmp_path)
+    reg = _archive_registry(cfg)
+    wire = {t["function"]["name"]: t
+            for t in prompt.wire_tools(dict(reg.tools), reg, {}, cfg)}
+    # the three entry tools carry their real parameters from the first request
+    for verb in ("search", "count", "look_up"):
+        name = f"chat_archive__{verb}"
+        spec = reg.tools[name]
+        assert spec.schema["properties"], f"{name} takes parameters"
+        assert wire[name] == spec.as_wire(), f"{name} is schema-first"
+        assert wire[name] != spec.as_name(), f"{name} is not the name entry"
+    # the other archive tools stay by name until a load or their first call brings them
+    for verb in ("read_session", "read_period", "get_messages", "scroll", "mark_same_person"):
+        name = f"chat_archive__{verb}"
+        assert wire[name] == reg.tools[name].as_name(), f"{name} is by name"
+        assert wire[name]["function"]["parameters"] == {"type": "object"}
+
+    # a skill in neither CORE nor SCHEMA_FIRST keeps the name entry
+    reg2 = _registry(cfg)
+    wire2 = {t["function"]["name"]: t
+             for t in prompt.wire_tools(dict(reg2.tools), reg2, {}, cfg)}
+    assert wire2["mac__tool07"] == reg2.tools["mac__tool07"].as_name()
+    assert wire2["mac__tool07"]["function"]["parameters"] == {"type": "object"}
+
+
+async def test_schema_first_keeps_its_part_and_guide_on_demand(store, tmp_path):
+    cfg = notes_cfg(tmp_path)
+    reg = _archive_registry(cfg)
+    assert "chat_archive" not in CORE and "chat_archive__search" in SCHEMA_FIRST
+    cid = await conversations.create(store)
+    carried = await loads.select(store, cfg, reg, cid, None)
+    line = next(ln for ln in reg.index(cfg, carried).splitlines()
+                if ln.startswith("- chat_archive"))
+    assert "[core]" not in line, "schema-first is not core: no [core] marker"
+    assert "chat_archive" not in (set(carried.skills) & CORE), \
+        "not core, so no prompt fragment in the system prompt"
+
+    meta = reg.skills["skills"]
+    assert meta.comes_with_calls("chat_archive"), "not core: a call still brings it"
+    loaded = (await meta.load(_ctx(store, cfg, cid), names="chat_archive")).content
+    assert loaded.startswith("# chat_archive\n\n"), "a load still gives its guide"
+    assert "The Messages archive holds Joe's own chats." in loaded
 
 
 async def test_a_load_appends_and_the_prefix_stays_byte_for_byte(store):
