@@ -28,7 +28,9 @@ KNOBS = (
     knob("chat_archive.candidates", "Reranked per search", None, 1, 10_000, 50,
          "How many matches the reranker sorts in one search."),
     knob("chat_archive.rerank_floor", "Lowest reranker score", None, -1000.0, 1000.0, -4.0,
-         "A match the reranker scores below this is not about the search."),
+         "A match the reranker scores below this is not about the search. In the model's "
+         "score scale: raw logits (default) or 0 to 1 for a model whose Settings, Models "
+         "row says its scale is relevance."),
     knob("chat_archive.episode_gap_minutes", "Gap between chat sessions", "minutes", 1,
          100_000, 30, "A longer silence between two messages starts a new chat session."),
     knob("chat_archive.session_max_tokens", "Chat session length", "tokens", 100,

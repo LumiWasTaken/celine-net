@@ -353,3 +353,53 @@ def test_no_reranker_says_fusion_supplied_the_ranking(tmp_path):
     assert res.episodes and not res.reranked
     assert any("fusion supplied the ranking" in n and "abstention" in n for n in res.notes)
     assert not any(n.startswith("Reranker unavailable") for n in res.notes)
+
+
+# ---- the reranker's score scale ----------------------------------------------------
+
+
+class Relevance:
+    """A reranker that answers 0..1 relevance scores, as a relevance model declares."""
+
+    scale = "relevance"
+
+    def score(self, query, docs):
+        return [0.9 if "floats" in d else 0.05 for d in docs]
+
+
+def test_a_relevance_reranker_with_a_below_zero_floor_says_it_filters_nothing(tmp_path):
+    from celine.kb.retrieve import Settings
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"),
+                   about=["the boat which floats"], reranker=Relevance(),
+                   settings=Settings(rerank_floor=-4.0))
+    assert res.reranked
+    assert any("scores 0 to 1" in n and "below 0" in n for n in res.notes)
+
+
+def test_a_relevance_reranker_filters_at_a_relevance_floor(tmp_path):
+    from celine.kb.retrieve import Settings
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"),
+                   about=["the boat which floats"], reranker=Relevance(),
+                   settings=Settings(rerank_floor=0.3))
+    assert res.reranked and res.episodes
+    assert not any("scores 0 to 1" in n for n in res.notes), "floor in range: no warning"
+
+
+def test_a_reranker_can_declare_its_score_scale():
+    import pytest
+    from celine.settings.files import Invalid
+    from celine.settings.registry import Settings, backend_config, validate_provider
+    p = validate_provider("rr", {"kind": "llama-server", "base_url": "http://rr:8080/v1",
+                                 "models": {"rank": {"caps": ["rerank"],
+                                                     "scale": "relevance"}}})
+    assert p["models"]["rank"]["scale"] == "relevance"
+    assert backend_config(Settings(providers={"rr": p}), "rr/rank").raw["scale"] == \
+        "relevance"
+    with pytest.raises(Invalid, match="one of 'logit', 'relevance'"):
+        validate_provider("rr", {"kind": "llama-server", "base_url": "http://rr:8080/v1",
+                                 "models": {"rank": {"caps": ["rerank"], "scale": "cosine"}}})
+    with pytest.raises(Invalid, match="Reranking model option"):
+        validate_provider("g", {"kind": "llama-server", "base_url": "http://g:1/v1",
+                                "models": {"m": {"caps": ["chat"], "scale": "logit"}}})

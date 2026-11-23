@@ -179,11 +179,15 @@ OPTIONS: dict[str, dict[str, tuple]] = {
 # says, so a changed address changes it
 _PROVIDER_KEYS = {"kind", "label", "base_url", "cloud", "options", "models"}
 _MODEL_KEYS = {"label", "caps", "context", "slots", "params", "llama", "reasoning_effort",
-               "thinking_levels", "zdr", "provider", "vision_twin", "max_tokens", "cache_ttl"}
+               "thinking_levels", "zdr", "provider", "vision_twin", "max_tokens", "cache_ttl",
+               "scale"}
 # an Anthropic model's `max_tokens` (the API needs one) when unset; its most is what the
 # provider states (settings/kinds.py server_output)
 MAX_TOKENS = 8192
 CACHE_TTLS = ("5m", "1h")       # an Anthropic model's prompt cache time; 5m when unset
+# a Reranking model's score scale: raw cross-encoder logits (default) or 0..1 relevance
+# scores. `chat_archive.rerank_floor` is read in this scale (kb/retrieve/rerank.py).
+SCALES = ("logit", "relevance")
 
 
 # ---- the runtime object ------------------------------------------------------------
@@ -436,6 +440,10 @@ def validate_model(kind: str, name: str, m: Any, path: str,
         if kind != "anthropic":
             raise Invalid(f"{path}.cache_ttl", "The cache time is an Anthropic option.")
         out["cache_ttl"] = _typed(f"{path}.cache_ttl", m["cache_ttl"], "str", CACHE_TTLS)
+    if m.get("scale") not in (None, ""):
+        if "rerank" not in out["caps"]:
+            raise Invalid(f"{path}.scale", "The score scale is a Reranking model option.")
+        out["scale"] = _typed(f"{path}.scale", m["scale"], "str", SCALES)
     return out
 
 
@@ -604,6 +612,8 @@ def backend_config(s: Settings, ref: str) -> BackendConfig | None:
         raw["llama"] = copy.deepcopy(m["llama"])
     if m.get("vision_twin"):
         raw["vision_twin"] = m["vision_twin"]
+    if m.get("scale"):
+        raw["scale"] = m["scale"]
     if kind == "ollama" and opts.get("keep_alive"):
         params.setdefault("keep_alive", opts["keep_alive"])
     if kind == "anthropic":

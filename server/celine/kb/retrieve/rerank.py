@@ -28,7 +28,7 @@ class HttpReranker:
 
     def __init__(self, url: str, model: str, *, key: str | None = None,
                  timeout: float = 60.0, max_chars: int = 2000,
-                 on_unreachable=None, hour=None):
+                 on_unreachable=None, hour=None, scale: str = "logit"):
         self.url = url
         self.model = model
         self.key = key
@@ -37,6 +37,10 @@ class HttpReranker:
         self.on_unreachable = on_unreachable
         self.hour = hour        # None, or the sentence once its provider's hour is used up
         self.deadline: float | None = None       # set by the first call
+        # the score scale this model answers in: "logit" (raw cross-encoder logits) or
+        # "relevance" (0..1). `chat_archive.rerank_floor` is read in this scale, so a
+        # relevance model needs a floor in 0..1 (settings SCALES, pipeline.retrieve)."""
+        self.scale = scale
 
     def score(self, query: str, docs: list[str]) -> list[float]:
         if not docs:
@@ -93,6 +97,7 @@ def from_config(cfg) -> Reranker | None:
     b = router.backend_config(ref)
     pid = ref.partition("/")[0]
     return HttpReranker(f"{b.base_url}/rerank", b.model, key=b.api_key,
+                        scale=str(getattr(b, "raw", {}).get("scale") or "logit"),
                         on_unreachable=lambda e: router.note_unreachable(
                             pid, router._unreachable_sentence(pid, e)),
                         hour=lambda: router.full(pid) if router.take(pid) else None)

@@ -320,6 +320,13 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
         scores = {k: fused_score.get(k, 0.0) for k in cand}
 
     ranked = sorted(cand, key=lambda k: -scores[k])
+    if res.reranked and getattr(reranker, "scale", "logit") == "relevance" and \
+            s.rerank_floor < 0:
+        # a relevance model answers 0..1, so a below-zero floor keeps every candidate:
+        # say so instead of showing a silent no-op ("Nothing is clearly about it" cannot
+        # fire). Set chat_archive.rerank_floor between 0 and 1 for such a model.
+        res.notes.append("This reranker scores 0 to 1, but the lowest-score setting is "
+                         "below 0, so nothing is filtered. Set it between 0 and 1.")
     if res.reranked:
         if order in ("first", "last") or mode == "all":
             # the earliest/latest literal match keeps its slot even below the floor
