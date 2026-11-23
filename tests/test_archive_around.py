@@ -83,3 +83,30 @@ async def test_a_search_stays_inside_its_scope(tmp_path, monkeypatch):
     out = await skill.search(SCOPE_CTX, about=["celine"], words=["celine"],
                              scope=["discord", "whatsapp:2"])
     assert out.is_error
+
+
+async def test_read_session_follows_the_configured_session_gap(tmp_path, monkeypatch):
+    """A pause longer than the default 90 minutes but inside the configured session gap
+    stays one chat session in the fallback read (Settings, session_gap_minutes)."""
+    from celine.skills import archive
+    monkeypatch.setattr(archive, "_chat_counts", {})
+    kbs = KBs(SimpleNamespace(data_dir=tmp_path, problems=[], kb={
+        "whatsapp": {"kind": "chat", "title": "WhatsApp", "platform": "whatsapp"}}),
+        lambda ev: None)
+    s = kbs.get("whatsapp").sink()
+    noor = s.person("491700000005@s.whatsapp.net", push_name="Noor")
+    dm = s.chat("491700000005@s.whatsapp.net", person_key="491700000005@s.whatsapp.net")
+    s.message(dm, "a", ts=T0, text="first line", sender=noor)
+    s.message(dm, "b", ts=T0 + 120 * 60_000, text="two hours later", sender=noor)
+    s.close()
+    sk = archive_skill(monkeypatch, kbs)
+
+    sk.cfg.embeddings = {"session_gap_minutes": 180}
+    out = await sk.read_session(CTX, ref="whatsapp:2")
+    assert ids(out) == [1, 2], "a 3h gap keeps a 2h pause in one session"
+    assert out.display["messages"] == 2
+
+    sk.cfg.embeddings = {}                       # the default 90-minute gap splits it
+    out = await sk.read_session(CTX, ref="whatsapp:2")
+    assert ids(out) == [2]
+    assert out.display["messages"] == 1

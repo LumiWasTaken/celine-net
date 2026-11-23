@@ -36,10 +36,12 @@ For what others said about Kit, pass `words=["Kit"]`.
 
 ## Two words for the units of chat text
 
-- A **chat session** is the messages of one chat between two pauses longer than 90
-  minutes. `chat_archive__read_session` returns one.
+- A **chat session** is the messages of one chat between two pauses longer than the
+  session gap: by default 90 minutes (Settings, the source's session gap).
+  `chat_archive__read_session` returns one.
 - A **match window** is one search result: the messages of one chat from the first to the
-  last matching passage, plus up to 2 messages before and after. Matches less than 30
+  last matching passage, plus up to 2 messages before and after (with `mode="all"`, up to
+  1, to fit more windows). Matches less than 30
   minutes apart join one match window.
 
 ## about and words: semantic topic search first
@@ -79,7 +81,10 @@ For what others said about Kit, pass `words=["Kit"]`.
 
 When to change the query: few or off-topic results from `about`: describe it differently
 (the situation, the feeling, what someone would say), or in the other language. A word
-count of 0: nobody typed it, so use `about`. Thousands of word matches: the word is too
+count of 0: nobody typed it, so use `about`. A search whose `words` report no exact match:
+those literal words did not occur in scope, so describe the topic with `about`. If a result
+says the semantic topic index is not available, `about` could not run: search with `words`.
+Thousands of word matches: the word is too
 common. Narrow with `about`, `when` or `scope`. A good match window: read it, then search
 with the words and people you saw there.
 
@@ -158,8 +163,10 @@ Always pass people and chats as references, never as names: two people can share
 `chat_archive__look_up(name="Noor")` gives `person whatsapp:17 ...` and
 `chat whatsapp:213 ...` lines. A person reference goes in `written_by`, a chat reference
 in `scope` or `chat_archive__read_period(chat=...)`. `chat_archive__read_session` takes
-a message reference, the `[whatsapp:48213]` of a message line. After a look-up that found
-one person, or a search with `written_by`, reads mark that person's lines with `>`.
+a message reference, the `[whatsapp:48213]` of a message line. Only `chat_archive__search`
+marks matching lines with `>`; `chat_archive__read_session` marks only the anchor line you
+started from; `chat_archive__read_period` marks nothing. After a look-up that found one
+person, or a search with `written_by`, reads do not mark that person's lines.
 
 `written_by` filters who wrote a message. It does not choose chats. A reference in
 `written_by` covers every account marked as the same person. "What did Noor say about X"

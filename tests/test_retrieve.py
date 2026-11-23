@@ -3,7 +3,17 @@ from __future__ import annotations
 
 from celine.kb.retrieve import resolve, retrieve
 
-from kb_fixtures import CTX, H, T23, archive_skill, build, embed_cfg, fake_embed
+from kb_fixtures import (
+    CTX,
+    H,
+    T21,
+    T23,
+    WordReranker,
+    archive_skill,
+    build,
+    embed_cfg,
+    fake_embed,
+)
 
 
 def test_a_trashed_chat_stays_out_of_meaning_search_too(tmp_path, monkeypatch):
@@ -104,12 +114,37 @@ def test_a_name_in_written_by_or_scope_is_looked_up_not_refused(tmp_path, monkey
     assert "Bea" in out.content and "Chess club" in out.content
 
 
-def test_a_source_name_in_scope_matches_exactly(tmp_path):
+def test_a_source_name_in_scope_is_a_source_id_whatever_its_case(tmp_path):
+    """A source id or the all keyword resolves to its source in any case; a chat that
+    shares the name is refused as ambiguous, never silently chosen (archive.check_scope)."""
     from celine.skills.archive import check_scope
     kbs = build(tmp_path)
     assert check_scope(kbs, ["whatsapp"])[:2] == ("platforms", ["whatsapp"])
-    assert check_scope(kbs, ["WHATSAPP"])[:3] == ("chats", [], ["WHATSAPP"])
-    assert check_scope(kbs, ["ALL"])[0] == "chats"
+    assert check_scope(kbs, ["WHATSAPP"])[:2] == ("platforms", ["whatsapp"])
+    assert check_scope(kbs, ["WhatsApp"])[:2] == ("platforms", ["whatsapp"])
+    assert check_scope(kbs, ["ALL"])[0] == "all"
+    assert check_scope(kbs, ["Everything"])[0] == "all"
+    assert check_scope(kbs, ["discord"])[:2] == ("platforms", ["discord"])
+    assert check_scope(kbs, ["Discord"])[:2] == ("platforms", ["discord"])
+
+
+def test_a_source_alias_that_also_names_a_chat_is_ambiguous(tmp_path):
+    """A token that could be a source id and a chat of that name is refused with both,
+    while the canonical source id and a chat reference stay unambiguous."""
+    from celine.skills.archive import check_scope
+    kbs = build(tmp_path)
+    s = kbs.get("whatsapp").sink()
+    d = s.chat("777@s.whatsapp.net", kind="dm", name="Discord")
+    a = s.chat("888@s.whatsapp.net", kind="group", name="ALL")
+    s.message(d, "d1", ts=0, text="a line in a chat named Discord")
+    s.message(a, "a1", ts=0, text="a line in a chat named ALL")
+    s.close()
+    kind, _plats, _chats, bad = check_scope(kbs, ["Discord"])
+    assert kind == "" and bad and "both" in bad and "discord" in bad
+    kind, _plats, _chats, bad = check_scope(kbs, ["ALL"])
+    assert kind == "" and bad and "both" in bad
+    assert check_scope(kbs, ["discord"])[:2] == ("platforms", ["discord"])
+    assert check_scope(kbs, ["all"])[0] == "all"
 
 
 def test_me_is_an_exact_word_in_written_by(tmp_path):
@@ -155,3 +190,166 @@ def test_a_reranker_counts_in_its_providers_hour(tmp_path, monkeypatch):
     with pytest.raises(rerank.RerankError, match="^Ranker reached its 1 request this hour.$"):
         rerank.from_config(cfg).score("q", ["a doc"])
     assert asked == ["http://rr:8080/v1/rerank"]
+
+
+# ---- absent literal words -----------------------------------------------------------
+
+
+def test_absent_words_only_returns_nothing_without_embedding(tmp_path):
+    """Every literal variant absent: the cheap exact-total preflight answers before any
+    query embedding or dense retrieval."""
+    kbs = build(tmp_path)
+    called = []
+
+    def embed(texts):
+        called.append(texts)
+        return fake_embed(None, texts)
+    embed.fp = "fake"                             # type: ignore[attr-defined]
+
+    res = retrieve(kbs, ["zzzqnosuch"], resolve(kbs), embed=embed)
+    assert called == [], "no query embedding for words that match nothing in scope"
+    assert res.episodes == []
+    assert res.absent == ["zzzqnosuch"]
+    assert res.totals == {"zzzqnosuch": 0}
+    assert any("No indexed message in scope matches these exact words/phrases" in n
+               for n in res.notes)
+
+
+def test_a_single_word_still_matches_as_a_prefix(tmp_path):
+    """The preflight counts exactly what the hits match: one word is a prefix."""
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celin"], resolve(kbs, kb_ids="whatsapp"))
+    assert res.totals == {"celin": 3}
+    assert res.absent == []
+
+
+def test_about_only_leaves_absent_empty(tmp_path):
+    """An about-only search has no literal variants to be absent."""
+    kbs = build(tmp_path)
+    res = retrieve(kbs, [], resolve(kbs, kb_ids="whatsapp"), about=["the celine floats"],
+                   reranker=WordReranker())
+    assert res.absent == []
+    assert not any("exact words/phrases" in n for n in res.notes)
+
+
+def test_a_partially_absent_word_list_keeps_the_present_words(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine", "zzzqnosuch"], resolve(kbs, kb_ids="whatsapp"))
+    assert res.episodes
+    assert res.totals["celine"] == 3 and res.totals["zzzqnosuch"] == 0
+    assert res.absent == ["zzzqnosuch"]
+    assert any("zzzqnosuch" in n for n in res.notes)
+
+
+def test_mixed_words_and_about_keeps_semantic_windows_with_a_note(tmp_path):
+    """A mixed search is never suppressed because one literal name is absent: the windows
+    stay, with the absent entry named and the semantic nature of the windows stated."""
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine", "zzzqnosuch"], resolve(kbs, kb_ids="whatsapp"),
+                   about=["the boat which floats"], reranker=WordReranker())
+    assert res.episodes
+    assert res.absent == ["zzzqnosuch"]
+    assert any("zzzqnosuch" in n and "semantic topic matches" in n for n in res.notes)
+
+
+# ---- chronological literal guarantee ------------------------------------------------
+
+
+def test_order_first_returns_the_earliest_literal_hit(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"), order="first",
+                   reranker=WordReranker())
+    assert res.episodes
+    assert res.episodes[0].start_ts == T21
+
+
+def test_order_last_returns_the_latest_literal_hit(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"), order="last",
+                   reranker=WordReranker())
+    assert res.episodes
+    assert res.episodes[0].end_ts == T23 + 5 * H
+
+
+def test_order_first_with_terse_about(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, [], resolve(kbs, kb_ids="whatsapp"), about=["celine"],
+                   order="first", reranker=WordReranker())
+    assert res.episodes
+    assert res.episodes[0].start_ts == T21
+
+
+def test_order_last_with_terse_about(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, [], resolve(kbs, kb_ids="whatsapp"), about=["celine"],
+                   order="last", reranker=WordReranker())
+    assert res.episodes
+    assert res.episodes[0].end_ts == T23 + 5 * H
+
+
+def test_descriptive_mixed_query_keeps_the_earliest_literal_hit(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"),
+                   about=["the boat that floats"], order="first", reranker=WordReranker())
+    assert res.episodes
+    assert res.episodes[0].start_ts == T21
+    assert res.absent == []
+
+
+def test_a_below_floor_rerank_keeps_the_earliest_literal_hit(tmp_path):
+    """Even when every reranker score is below the floor, the literal word's chronological
+    candidate survives: the earliest scoped occurrence is never dropped."""
+    kbs = build(tmp_path)
+    s = kbs.get("whatsapp").sink()
+    grp = s.chat("900@g.us", kind="group", name="Fleet")
+    for i in range(6):
+        s.message(grp, f"x{i}", ts=T23 + (i + 10) * H, text=f"celine note {i}")
+    s.close()
+
+    class LowEarliest:
+        def score(self, query, docs):
+            return [-100.0 if "finally afloat" in d else -5.0 for d in docs]
+
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"), order="first",
+                   reranker=LowEarliest())
+    assert res.reranked
+    assert res.episodes[0].start_ts == T21
+    assert not any("Nothing is clearly about it" in n for n in res.notes)
+
+
+def test_a_below_floor_rerank_keeps_the_latest_literal_hit(tmp_path):
+    kbs = build(tmp_path)
+    s = kbs.get("whatsapp").sink()
+    grp = s.chat("900@g.us", kind="group", name="Fleet")
+    for i in range(6):
+        s.message(grp, f"x{i}", ts=T23 + (i + 10) * H, text=f"celine note {i}")
+    s.close()
+
+    class LowLatest:
+        def score(self, query, docs):
+            return [-100.0 if "celine note 5" in d else -5.0 for d in docs]
+
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"), order="last",
+                   reranker=LowLatest())
+    assert res.reranked
+    assert res.episodes[0].end_ts == T23 + 15 * H
+
+
+def test_order_best_is_unchanged_by_the_chrono_reservation(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"), order="best",
+                   reranker=WordReranker())
+    assert res.episodes and res.reranked
+    assert res.absent == []
+    assert not any("Nothing is clearly about it" in n for n in res.notes)
+
+
+# ---- reranker-unset note ------------------------------------------------------------
+
+
+def test_no_reranker_says_fusion_supplied_the_ranking(tmp_path):
+    kbs = build(tmp_path)
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"))
+    assert res.episodes and not res.reranked
+    assert any("fusion supplied the ranking" in n and "abstention" in n for n in res.notes)
+    assert not any(n.startswith("Reranker unavailable") for n in res.notes)

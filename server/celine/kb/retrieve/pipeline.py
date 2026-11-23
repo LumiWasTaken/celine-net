@@ -60,6 +60,7 @@ class Result:
     episodes: list[E.Episode] = field(default_factory=list)
     totals: dict[str, int] = field(default_factory=dict)     # literal matches per variant
     years: dict[str, int] = field(default_factory=dict)      # literal matches per year
+    absent: list[str] = field(default_factory=list)          # literal variants with no hit
     more: int = 0                                            # episodes found, not returned
     notes: list[str] = field(default_factory=list)
     reranked: bool = False
@@ -124,6 +125,38 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
     targets = [k for k in targets if k is not None]
     kinds = {k.id: k.file.read_sync(detect) for k in targets}
 
+    # each kb's units, and its index caught up, before anything is searched
+    units_of: dict[str, Units] = {}
+    for kb in targets:
+        fast = kb.search_ready
+        if not fast and getattr(kb, "search_error", None):
+            res.notes.append(f"The instant index of {kb.id} failed ({kb.search_error}); "
+                             f"searched its plain word index.")
+        if fast:
+            try:
+                kb.ix_catch_up()        # what an import just wrote is findable
+            except Exception as e:
+                fast = False
+                res.notes.append(f"Indexing new messages of {kb.id} failed ({e}); searched "
+                                 f"its plain word index.")
+        units_of[kb.id] = Units(kb.id, kinds[kb.id], instant=fast)
+
+    # exact totals for the literal words, before any query embedding: a words-only search
+    # whose every literal variant is absent needs no semantic retrieval at all
+    if variants:
+        for kb in targets:
+            def totals(conn, kb=kb):
+                return {q: exact_total(conn, q, scope, kb.id) for q in variants}
+            for q, n in kb.file.read_sync(totals).items():
+                res.totals[q] = res.totals.get(q, 0) + n
+        if targets:
+            res.absent = [q for q in variants if not res.totals.get(q)]
+            if not sentences and len(res.absent) == len(variants):
+                res.notes.append("No indexed message in scope matches these exact "
+                                 "words/phrases: " + ", ".join(res.absent) + ".")
+                res.took_ms = round((time.perf_counter() - t0) * 1000, 1)
+                return res
+
     qvecs: list[list[float]] = []
     if embed is not None and any(v != "message" for v in kinds.values()):
         try:
@@ -142,29 +175,16 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
     lists: list[list[str]] = []
     weights: list[float] = []
     chrono: list[list[str]] = []
+    chrono_words: list[list[str]] = []
     hits_of: dict[str, set[int]] = {}
-    units_of: dict[str, Units] = {}
 
     for kb in targets:
-        fast = kb.search_ready
-        if not fast and getattr(kb, "search_error", None):
-            res.notes.append(f"The instant index of {kb.id} failed ({kb.search_error}); "
-                             f"searched its plain word index.")
-        if fast:
-            try:
-                kb.ix_catch_up()        # what an import just wrote is findable
-            except Exception as e:
-                fast = False
-                res.notes.append(f"Indexing new messages of {kb.id} failed ({e}); searched "
-                                 f"its plain word index.")
-        units = Units(kb.id, kinds[kb.id], instant=fast)
-        units_of[kb.id] = units
+        units = units_of[kb.id]
 
         def run(conn, units=units):
-            out_lists, out_chrono, totals = [], [], {}
+            out_lists, out_chrono, out_chrono_words = [], [], []
             for q in variants:
                 hits, _ = units.message_hits(conn, q, scope, s.lexical_n, order="best")
-                totals[q] = exact_total(conn, q, scope, units.kb)
                 lifted = units.lift(conn, [m for m, _ in hits])
                 keys = []
                 for m, _ in hits:
@@ -172,6 +192,18 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
                     hits_of.setdefault(k, set()).add(m)
                     keys.append(k)
                 out_lists.append((keys, 1.0))
+                if order in ("first", "last"):
+                    # a literal word reserves the chronological slots as well as `about`
+                    ch, _ = units.message_hits(conn, q, scope, 30, order=order)
+                    lifted_c = units.lift(conn, [m for m, _ in ch])
+                    ck = []
+                    for m, _ in ch:
+                        k = units.key(lifted_c[m])
+                        hits_of.setdefault(k, set()).add(m)
+                        ck.append(k)
+                    if ck:
+                        out_chrono.append(ck)
+                        out_chrono_words.append(ck)
                 if units.kind == "passage":
                     out_lists.append(([units.key(p) for p in
                                        units.passage_hits(conn, q, scope, s.lexical_n)], 1.0))
@@ -197,19 +229,28 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
                     out_lists.append(([units.key(u) for u in units.dense(
                         conn, qv, scope, s.dense_n, fp=fp)], 1.0))
             years = _years(conn, units, variants, scope) if mode == "all" else {}
-            return out_lists, out_chrono, totals, years
+            return out_lists, out_chrono, out_chrono_words, years
 
-        ol, oc, totals, years = kb.file.read_sync(run)
+        ol, oc, ocw, years = kb.file.read_sync(run)
         for keys, w in ol:
             if keys:
                 lists.append(keys)
                 weights.append(w)
         chrono.extend(c for c in oc if c)
-        for q, n in totals.items():
-            res.totals[q] = res.totals.get(q, 0) + n
+        chrono_words.extend(c for c in ocw if c)
         for y, n in years.items():
             res.years[y] = res.years.get(y, 0) + n
 
+    if res.absent:
+        if sentences:
+            res.notes.append("No indexed message in scope matches these exact words/phrases: "
+                             + ", ".join(res.absent) + ". Returned windows are semantic topic "
+                             "matches for the description, not literal hits.")
+        else:
+            res.notes.append("No indexed message in scope matches these exact words/phrases: "
+                             + ", ".join(res.absent) + ".")
+
+    protected = {k for c in chrono_words for k in c}
     fused = [k for k, _ in rrf(lists, k=s.rrf_k, weights=weights)]
     cand = fused[: s.candidates]
     if chrono:
@@ -271,20 +312,26 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
             log.warning("rerank skipped", extra={"event": "kb.rerank_skipped",
                                                  "error": str(e)[:200]})
             res.notes.append(f"Reranker unavailable ({e}). Ranked by fusion.")
+    elif reranker is None and cand:
+        res.notes.append("No reranker is configured: fusion supplied the ranking; no "
+                         "reranker-floor abstention signal is available.")
     if not scores:
         fused_score = dict(rrf(lists, k=s.rrf_k, weights=weights))
         scores = {k: fused_score.get(k, 0.0) for k in cand}
 
     ranked = sorted(cand, key=lambda k: -scores[k])
     if res.reranked:
-        keep = [k for k in ranked if scores[k] >= s.rerank_floor]
         if order in ("first", "last") or mode == "all":
+            # the earliest/latest literal match keeps its slot even below the floor
+            keep = [k for k in ranked if scores[k] >= s.rerank_floor or k in protected]
             if not keep:
                 res.notes.append("Nothing is clearly about it. The closest matches follow.")
                 keep = ranked[:3]
             ranked = keep
-        elif not keep:
-            res.notes.append("Nothing is clearly about it. The closest matches follow.")
+        else:
+            keep = [k for k in ranked if scores[k] >= s.rerank_floor]
+            if not keep:
+                res.notes.append("Nothing is clearly about it. The closest matches follow.")
 
     eps = E.merge([(spans[k], scores[k], hits_of.get(k, set()), *bounds[k]) for k in ranked],
                   gap_ms=s.episode_gap_minutes * 60_000)

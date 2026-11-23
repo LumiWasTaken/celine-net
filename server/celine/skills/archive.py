@@ -123,6 +123,7 @@ def _their_chats(kbs, refs, limit: int = 8) -> list[str]:
 
 # ---- scope: where a search looks, decided on purpose ------------------------------------
 _ALL = {"all", "everything", "*"}
+_ALL_CI = {w.casefold() for w in _ALL}
 _chat_counts: dict[str, tuple[float, int]] = {}
 
 
@@ -153,6 +154,19 @@ def platform_ids(kbs) -> list[str]:
     return [k.id for k in kbs.chats()]
 
 
+def _chats_named(kbs, token: str) -> list[str]:
+    """Chat refs whose name `token` names, through the same candidate logic look_up and
+    scope resolution use (kb/retrieve/scope.py). Exact case and case-insensitive both
+    count here: a case-insensitive source or all alias that also names a chat is ambiguous,
+    never silently chosen."""
+    from ..kb.retrieve.scope import chat_candidates
+    out: list[str] = []
+    for kb in kbs.chats():
+        exact, _ = chat_candidates(kb, token)
+        out += [f"{kb.id}:{c['id']}" for c in exact]
+    return out
+
+
 def check_scope(kbs, scope) -> tuple[str, list[str], list[str], str | None]:
     """`scope` as it passed it -> (kind, platform ids, chats, None), kind "all",
     "platforms" or "chats"; or ("", [], [], one sentence saying what to pass instead).
@@ -163,15 +177,50 @@ def check_scope(kbs, scope) -> tuple[str, list[str], list[str], str | None]:
         for word in (k.id, getattr(k, "title", ""), getattr(k, "platform", "")):
             if word:
                 platforms[str(word)] = k.id
+    alias: dict[str, set[str]] = {}
+    for word, kid in platforms.items():
+        alias.setdefault(word.casefold(), set()).add(kid)
     example = (f'["all"], ["{ids[0]}"] or chat references from chat_archive__look_up '
                f'like ["{ids[0]}:213"]') if ids else '["all"]'
     items = _as_list(scope)
     if not items:
         return "", [], [], f"scope is required: {example}."
+    # exact case keeps its current meaning: the lowercase all keywords, and canonical
+    # source ids (no archive scan for a canonical id).
     if any(x in _ALL for x in items):
         return "all", [], [], None
-    plats = [platforms[x] for x in items if x in platforms and not REF.match(x)]
-    chats = [x for x in items if x not in platforms or REF.match(x)]
+    plats: list[str] = []
+    chats: list[str] = []
+    bad: list[str] = []
+    for x in items:
+        if REF.match(x):
+            chats.append(x)
+            continue
+        if x in ids:                       # canonical source id: exact case, no scan
+            plats.append(x)
+            continue
+        source = alias.get(x.casefold())   # case-insensitive source id/title/platform
+        is_all = x.casefold() in _ALL_CI   # case-insensitive all keyword
+        if source is None and not is_all:
+            chats.append(x)
+            continue
+        named = _chats_named(kbs, x)
+        if named:                          # an alias that also names a chat: never guess
+            src = sorted(source)[0] if source else None
+            what = f"the source {src!r}" if src else "the all-scope"
+            how = f"pass the source id {src!r}" if src else 'pass ["all"]'
+            bad.append(f"{x!r} is both {what} and a chat ({', '.join(named)}). Pass one: "
+                       f"{how}, or the chat as its `chat <ref>` from chat_archive__look_up.")
+            continue
+        if is_all:
+            return "all", [], [], None
+        if len(source) == 1:
+            plats.append(next(iter(source)))
+        else:
+            bad.append(f"{x!r} matches several sources ({', '.join(sorted(source))}); pass "
+                       f"one of them.")
+    if bad:
+        return "", [], [], " ".join(bad)
     if plats and chats:
         return "", [], [], (f"scope mixes sources ({', '.join(plats)}) and chats "
                             f"({', '.join(chats)}). Pass one kind: the source ids, or the "
@@ -266,6 +315,24 @@ def _labels(scope) -> list[str]:
             lab += " (only messages they wrote)"
         out.append(lab)
     return out
+
+
+def _no_match_advice(res, words, about) -> str:
+    """What to try next when a search found nothing, said for the query that missed:
+    literal words that do not occur, a semantic search whose index is missing, or a
+    plain semantic miss."""
+    if res.absent and not _as_list(about):
+        return ("No indexed message in scope matches these exact words/phrases: "
+                + ", ".join(repr(q) for q in res.absent) + ". They are literal words, not "
+                "topics, so this is not a ranking miss: nobody typed them. Try a shorter "
+                "form or the other language with `words`, or describe the topic in `about`.")
+    if _as_list(about) and any("semantic topic search" in n.lower() for n in res.notes):
+        return ("No match in scope. The semantic topic search index is not available here, "
+                "so `about` could not run; the word search found nothing either. Use `words` "
+                "for exact words, or chat_archive__count to check whether they occur.")
+    return ("No match in scope. Describe the topic differently: another angle, the chats' "
+            "other language, or what someone would have said. A wider `when` or fewer "
+            "filters may help; chat_archive__count checks whether exact words occur at all.")
 
 
 class ChatArchive:
@@ -423,7 +490,8 @@ class ChatArchive:
         """Search the Messages archive: {{username}}'s stored WhatsApp, Discord and imported
         chats. Two searches run at once: semantic topic search on `about`, and word search
         on `words`. A reranker sorts the results. A result is a match window: the messages
-        of one chat from the first to the last match, plus up to 2 messages around. Use it
+        of one chat from the first to the last match, plus up to 2 messages around
+        (mode="all": up to 1, to fit more windows). Use it
         for what was said, when, and every time. For numbers use chat_archive__count. For
         a name use chat_archive__look_up first. One call is one search: for an open
         question, make many calls. Returns: a `scope:` line, word counts, the match windows
@@ -492,10 +560,7 @@ class ChatArchive:
                         f"({what}). > marks the matching lines:")
             body += [t for _, t in shown]
         else:
-            body.append("No match in scope. Try other words (the other language, a "
-                        "synonym, a shorter form), a wider `when`, fewer filters, or "
-                        "chat_archive__count with the same words to check whether they "
-                        "occur at all.")
+            body.append(_no_match_advice(res, words, about))
         tail = []
         if cut or res.more:
             tail.append(f"{cut + res.more} more not shown. Narrow with when, scope or "
@@ -508,7 +573,7 @@ class ChatArchive:
                                  "refs": e.refs, "hits": sorted(f"{e.kb}:{h}" for h in e.hits
                                                                 if h in {m.id for m in e.lines})}
                                 for e, _ in shown],
-                   "totals": res.totals, "scope": scope.labels,
+                   "totals": res.totals, "absent": res.absent, "scope": scope.labels,
                    **echo_display,
                    "reranked": res.reranked, "took_ms": res.took_ms}
         return ToolResult(content=content.strip(), display=display)
@@ -711,7 +776,8 @@ class ChatArchive:
                                           "is cut around the message."] = None,
     ) -> ToolResult:
         """Read the chat session that contains one message, in order. A chat session is
-        the messages of one chat between two pauses of more than 90 minutes. Read it before
+        the messages of one chat between two pauses longer than the session gap (by default
+        90 minutes; a Settings value). Read it before
         you quote a line. Several references from one session return the same session.
         Returns: the messages with references, the message marked >, then `earlier` and
         `later` references."""
@@ -729,7 +795,8 @@ class ChatArchive:
     ) -> ToolResult:
         """Read the messages of one chat in a date range, in order. Use it for summaries
         of a period. A summary cites a few of the messages it is based on, such as
-        [[whatsapp:48213]]. A period too long for `max_tokens` returns one line per chat
+        [[whatsapp:48213]]. No line is marked >: unlike read_session, there is no anchor.
+        A period too long for `max_tokens` returns one line per chat
         session. Read a line further with chat_archive__read_session."""
         if not REF.match(str(chat).strip()):
             return ToolResult(content=f"chat takes a chat reference, not a name: {chat!r}. "
@@ -1005,7 +1072,8 @@ class ChatArchive:
     def _session_around(self, kb, chat_id: int, m: dict, budget: int):
         """The chat session the message belongs to, trimmed around it to the budget: from
         the semantic topic search index's sessions when the message is in one, else cut
-        here by the same 90-minute pause rule. -> (messages shown, session size)."""
+        here by the same configured pause rule (the session gap, default 90 minutes). ->
+        (messages shown, session size)."""
         import sqlite3
 
         from ..kb import sessions as S
@@ -1035,7 +1103,7 @@ class ChatArchive:
                                   f"ORDER BY m.ts, m.id LIMIT 400",
                                   (chat_id, m["ts"], m["id"])).fetchall()
                 allr = [*older, *me_, *newer]
-                gap = S.SessionParams().gap_ms
+                gap = S.SessionParams.from_settings(self.cfg.embeddings).gap_ms
                 for part in S.cut([(r["id"], r["ts"], 0) for r in allr], gap):
                     if any(x[0] == m["id"] for x in part):
                         keep = {x[0] for x in part}
@@ -1146,7 +1214,8 @@ class ChatArchive:
                           display={**disp, "messages": len(msgs), **hd})
 
     def _digest(self, conn, where: str, args: list, budget: int, kid: str):
-        """A long range as one line per chat session (cut at 90-minute pauses): start,
+        """A long range as one line per chat session (cut at the session gap, by default
+        90 minutes): start,
         size, who, and its longest message with its reference. Only an index to read
         further: quotes come from read_session, never from here."""
         from ..kb import sessions as S
@@ -1155,7 +1224,7 @@ class ChatArchive:
                             args).fetchall()
         msgs = [E.to_msg(r, self.me) for r in rows]
         parts = S.cut([(i, x.ts, len(x.text)) for i, x in enumerate(msgs)],
-                      S.SessionParams().gap_ms)
+                      S.SessionParams.from_settings(self.cfg.embeddings).gap_ms)
         lines, used = [], 0
         shown_first = shown_last = None
         step = 1
