@@ -353,7 +353,7 @@ async def notebook_untrash(request: Request, tid: str) -> dict:
         except UnicodeDecodeError:
             continue
         await notebook_index.upsert(store_of(request), f.relative_to(root).as_posix(),
-                                    NO_SUMMARY, len(text), text)
+                                    NO_SUMMARY, len(text), text, cfg_of(request))
     return {"ok": True, "path": entry["path"]}
 
 

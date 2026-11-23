@@ -40,6 +40,17 @@ def _fresh():
     context.POLICY = old
 
 
+def test_compaction_input_does_not_call_dynamic_app_context_user_text():
+    item = context._Item(0, {"id": "m", "role": "user", "content": "my question",
+                             "turn_id": "t", "created_at": "", "intercom": None,
+                             "context": "[your memory]\na recalled note"}, [], None,
+                         user="Joe")
+    assert "[your memory]" in item.body, "the live request still carries its context"
+    summary_input = item.as_dict()
+    assert summary_input["content"] == "my question"
+    assert compact.transcript([summary_input], "Joe", "Celine") == ["Joe: my question"]
+
+
 async def long_conversation(store, n=6, lines=60):
     cid = await conversations.create(store)
     for i in range(n):

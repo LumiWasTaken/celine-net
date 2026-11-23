@@ -23,7 +23,8 @@ EXPECTED_TABLES = {
     "tabs", "bugreports", "plans", "push_subscriptions", "model_grants",
 }
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
-NOTEBOOK_TABLES = {"notebook_index", "notebook_fts"}
+NOTEBOOK_TABLES = {"notebook_index", "notebook_fts", "notebook_meta",
+                   "notebook_semantic_state", "notebook_sections", "notebook_vecs"}
 LATEST = 36
 
 
@@ -52,7 +53,7 @@ def test_a_fresh_database_gets_every_table_and_its_words_are_searchable(tmp_path
     assert LOG_TABLES <= logs and not (EXPECTED_TABLES | NOTEBOOK_TABLES) & logs
     notes = _tables(notebook_db(db))
     assert NOTEBOOK_TABLES <= notes and not (EXPECTED_TABLES | LOG_TABLES) & notes
-    for f, n in ((log_path(db), 2), (notebook_db(db), 1)):
+    for f, n in ((log_path(db), 2), (notebook_db(db), 2)):
         assert sqlite3.connect(f).execute("PRAGMA user_version").fetchone() == (n,)
     c = sqlite3.connect(db)
     c.execute("INSERT INTO conversations(id, title, next_seq, created_at, updated_at) "
@@ -70,6 +71,29 @@ def test_a_fresh_database_gets_every_table_and_its_words_are_searchable(tmp_path
     c.close()
     with pytest.raises(m.Failed, match="this build knows"):
         migrate(db)                     # a database from a newer build is left alone
+
+
+def test_notebook_0002_upgrades_v1_and_keeps_its_notes(tmp_path, monkeypatch):
+    from celine.db.migrate import NOTEBOOK_MIGRATIONS
+    d = tmp_path / "migrations"
+    d.mkdir()
+    shutil.copy(NOTEBOOK_MIGRATIONS / "0001_schema.sql", d)
+    db = tmp_path / "notebook" / ".index.db"
+    db.parent.mkdir()
+    assert migrate(db, d) == 1
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO notebook_index(path,summary,bytes,touched_at,created_at) "
+              "VALUES('a.md','s',1,'x','x')")
+    c.commit()
+    c.close()
+    shutil.copy(m.MIGRATIONS_DIR / "notebook" / "0002_sections.sql", d)
+    assert migrate(db, d) == 2
+    tables = _tables(db)
+    assert NOTEBOOK_TABLES <= tables
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT summary FROM notebook_index WHERE path='a.md'").fetchone() == ("s",)
+    assert c.execute("SELECT content FROM notebook_index WHERE path='a.md'").fetchone() == ("",)
+    c.close()
 
 
 def test_the_schema_never_runs_twice_and_an_older_database_is_refused(tmp_path, monkeypatch):

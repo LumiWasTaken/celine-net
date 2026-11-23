@@ -29,7 +29,7 @@ The map of the code and the rules it follows.
 | `conversations/` | conversation rows, the message tree, snapshot and replay, routes |
 | `turns/` | one turn: dispatcher, runner, tool chokepoint, context, compaction, titles; `reply.py` the one place that touches a stored reply (citation tokens only); `warm.py` keeps the newest chat ready on its model server |
 | `backends/` | model APIs (openai, anthropic), router, queue, the test model is `tests/fake_backend.py` |
-| `skills/` | the tool registry and the tools without a module of their own; `guides/<skill>.md` the skill guides; `recall.py` what comes back on its own |
+| `skills/` | the tool registry and the tools without a module of their own; `guides/<skill>.md` the skill guides; `recall.py` what comes back on its own; `notebook_semantic.py` the notebook's optional meaning index (Vector Notebook) |
 | `kb/` | knowledge bases: the chat archive, documents, instant and semantic search, the connectors' feed |
 | `settings/` | `var/settings` and `var/secrets`: shapes, validation, `registry.py` (every setting), `features.py` (the feature catalog and probes), `services.py` (box addresses), `prompts.py` (Settings, Advanced, Prompts: the user's edits in var/prompts) |
 | `agent.py`, `prompts.py` | the agent's row: name, pronouns, persona, talk, voice, portrait; `text(__file__, name)` reads a `.md` beside the module that sends it |

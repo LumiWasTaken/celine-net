@@ -198,14 +198,8 @@ async def tail_parts(store, cfg, registry, backend, cid: str, carried,
     parts.append(cfg.substitute(plan) if plan else None)
     skills: list[tuple[str, str]] = []
     if registry:
-        from ..skills.meta import skill_note_path
         specs, _ = await tool_specs(registry, store, cid, carried)
         parts += unusable(specs, registry, await overrides_for(store, cid), cfg)
-        noted = [n for n in [*carried.skills, *carried.others]
-                 if skill_note_path(cfg, n).is_file()]
-        if noted:
-            parts.append(f"Your notes on skills (skills/<name>.md, with skills__read_guide "
-                         f"or skills__load): {', '.join(noted)}.")
         ctx = ToolContext(conversation_id=cid, turn_id=tid, tool_call_id="", store=store,
                           config=cfg, emit=None,  # type: ignore[arg-type]
                           loaded_notes=carried.loaded_notes)

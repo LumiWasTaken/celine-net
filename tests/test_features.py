@@ -46,7 +46,8 @@ async def test_defaults_then_put_then_get(api):
     # nothing that needs a service runs before Setup saved it: no connector starts at boot
     off = {i for i, on in r["features"].items() if not on}
     assert off == {"shellbox", "shares", "browser", "images", "music", "web", "discord",
-                   "whatsapp", "email", "vault", "guard", "speech_input", "speech_output", "mac"}
+                   "whatsapp", "email", "vault", "guard", "speech_input", "speech_output", "mac",
+                   "vector_notebook"}
     assert "shell" not in _skills(api) and "discord" not in _skills(api)
     assert not features.allows_connector(api.cfg, "discord")
     assert api.cfg.settings.features == features.seed()
@@ -57,6 +58,7 @@ async def test_defaults_then_put_then_get(api):
     assert again["features"]["email"] is True, "an id left out is on"
     assert again["features"]["shares"] is False, "but shares, on only once saved on"
     assert again["features"]["guard"] is False, "and the guard"
+    assert again["features"]["vector_notebook"] is False, "and the vector notebook"
     assert again["version"] == put.json()["version"] != r["version"]
     assert not (api.var / "settings" / "features.toml").read_text().count("email")
     assert "shell" in _skills(api)
@@ -94,7 +96,7 @@ async def test_the_catalog_has_every_field_and_the_plain_ones_have_no_probe(api)
     assert (by["mac"]["state"], by["mac"]["detail"], by["mac"]["blocks"]) == (
         "unset", "The Mac is not connected yet.", False), "never a lock"
     assert by["email"]["blocks"] is True
-    assert {f["id"] for f in catalog if f["warn"]} == {"shares"}
+    assert {f["id"] for f in catalog if f["warn"]} == {"shares", "vector_notebook"}
     # the onboarding's setup steps: a form, or a connection
     assert {f["id"] for f in catalog if f["step"]} == {
         "shellbox", "browser", "images", "music", "speech_input", "speech_output", "web", "discord",

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import anyio
+import sqlite_vec
 
 from ..db.migrate import BUSY_MS, log_path, notebook_db
 from .bus import TOOL_EVENTS, for_pages, lands, place_of
@@ -52,6 +53,11 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     for p in _PRAGMAS:
         conn.execute(p)
+    # the notebook's vectors (notebook_vecs) are scored with sqlite-vec's scalar
+    # functions (skills/notebook_semantic.py)
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
     attach(conn, path)
     return conn
 

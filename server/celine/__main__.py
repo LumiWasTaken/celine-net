@@ -177,6 +177,7 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             embed.use_queue(llm.scheduler, asyncio.get_running_loop())
             from .kb import semantic as _semantic     # semantic topic search index updates
             tg.start_soon(_semantic.run_scheduler, cfg, kbs)
+            from .skills import notebook_semantic as _notebook_semantic
             from .kb import media as _media           # image captions (Settings, General)
             tg.start_soon(_media.run_scheduler, cfg, kbs)
             log.info("knowledge bases ready", extra={"event": "kb.ready",
@@ -224,6 +225,10 @@ def build_app(cfg: config_mod.Config, dev: bool) -> FastAPI:
             log.info("skills ready", extra={"event": "skills.ready",
                                             "skills": len(registry.skills),
                                             "tools": len(registry.tools)})
+            runners["vector_notebook"] = Runner(
+                tg, lambda: _notebook_semantic.run_scheduler(cfg, store))
+            if on["vector_notebook"]:
+                await runners["vector_notebook"].start()
             mcp = services.mcp = Supervisor(cfg, store, registry, kbs=kbs)
             await mcp.start(tg)
             # Discord and WhatsApp: the connectors' feeds and states (kb/connectors.py);

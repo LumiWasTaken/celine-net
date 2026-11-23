@@ -5,6 +5,7 @@ set by sub_agents/skill.py). The limit is enforced here, in every tool and in th
 never left to the prompt."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import datetime, timezone
@@ -139,7 +140,7 @@ class Notebook:
             body = (CONFIG_DIR / "notebook_seed" / rel).read_text()
             target.write_text(body)
             await notebook_index.upsert(store, rel, self.cfg.substitute(summary),
-                                         len(body), body)
+                                         len(body), body, self.cfg)
             made.append(rel)
         for rel, body in PLACEHOLDERS.items():
             if rel.startswith("appearance/") and looks:
@@ -166,7 +167,7 @@ class Notebook:
         target.parent.mkdir(parents=True, exist_ok=True)
         body = self.cfg.substitute(body or (CONFIG_DIR / "notebook_seed" / rel).read_text())
         target.write_text(body)
-        await notebook_index.upsert(store, rel, "placeholder, not written yet", len(body), body)
+        await notebook_index.upsert(store, rel, "placeholder, not written yet", len(body), body, self.cfg)
         return rel
 
     async def reconcile(self, store) -> dict[str, int]:
@@ -178,37 +179,64 @@ class Notebook:
         return await self._reconcile_one(store)
 
     async def _reconcile_one(self, store) -> dict[str, int]:
-        rows = {r["path"]: r for r in await notebook_index.list(store)}
-        added = changed = removed = 0
-        if not self.root.is_dir():
-            return {"added": 0, "changed": 0, "removed": 0}
-        for f in sorted(self.root.rglob("*")):
-            if not f.is_file() or any(part.startswith(".") for part in
-                                      f.relative_to(self.root).parts):
-                continue
-            rel = f.relative_to(self.root).as_posix()
-            if self.owner(rel) == "generated":
-                continue
-            try:
-                body = f.read_text()
-            except (UnicodeDecodeError, OSError):
-                continue
-            if rel not in rows:
-                await notebook_index.upsert(store, rel, "found on disk, no summary yet",
-                                             len(body), body)
-                added += 1
-            elif rows[rel]["bytes"] != len(body):
-                await notebook_index.upsert(store, rel, rows[rel]["summary"], len(body),
-                                             body)
-                changed += 1
-        for rel in rows:
-            if not (self.root / rel).is_file():
-                await notebook_index.delete(store, rel)
-                removed += 1
-        return {"added": added, "changed": changed, "removed": removed}
+        return await notebook_index.reconcile(
+            store, self.root, self.cfg, lambda rel: self.owner(rel) == "generated")
 
     def _owned_by_user(self, path: str) -> bool:
         return self.owner(path) is not None
+
+    async def _semantic(self, store, folder: str | None, query: str,
+                        hits: list[dict], limit: int) -> list[dict]:
+        """`hits` (the word search's) fused with the notes whose sections mean
+        something like the query (skills/notebook_semantic.py): reciprocal rank fusion,
+        so bm25 and cosine need no calibrating. The feature, readiness and the model
+        fingerprint are checked before the query is embedded; an embedding failure leaves
+        the word hits as they came. A semantic-only hit carries its best section and a
+        real excerpt so the block is never empty."""
+        from ..kb.embed import SemanticError
+        from ..kb.retrieve.fusion import rrf
+        from ..settings import features
+        from . import notebook_semantic
+        if not features.on(self.cfg, "vector_notebook") or \
+                not await store.read(notebook_semantic.ready_of):
+            return hits
+        try:
+            qv = await asyncio.to_thread(notebook_semantic.query_vector, self.cfg, query)
+        except SemanticError:
+            return hits
+        rows = await store.read(lambda c: notebook_semantic.dense(c, qv, folder,
+                                                                 k=limit * 4))
+        rows = [r for r in rows if not folder or _inside(r["path"], folder)]
+        if not rows:
+            return hits
+        known = {h["path"]: h for h in hits}
+        fused = rrf([[h["path"] for h in hits], [r["path"] for r in rows]])
+        best: dict[str, dict] = {}
+        for r in rows:
+            if r["path"] not in best or r["score"] > best[r["path"]]["score"]:
+                best[r["path"]] = r
+        out = []
+        for path, _ in fused[:limit]:
+            if (h := known.get(path)) is not None:
+                out.append(h)
+            else:
+                out.append(await self._semantic_hit(store, best[path]))
+        return out
+
+    async def _semantic_hit(self, store, row: dict) -> dict:
+        """One meaning-only hit: its path, day and summary, and its best section with a
+        real excerpt, so the result is not an empty body."""
+        excerpt, section = "", row["heading"]
+        for keep in notebook_index.cut(read_note(self.root, row["path"]) or "",
+                                       row["path"], row["summary"] or "",
+                                       self.cfg.substitute):
+            if keep["nth"] == row["nth"] and keep["chunk"] == row["chunk"] \
+                    and keep["hash"] == row["hash"]:
+                excerpt = keep["text"][:240]
+                break
+        return {"path": row["path"], "summary": row["summary"],
+                "touched_at": row["touched_at"], "terms": [],
+                "snippet": excerpt, "section": section, "excerpt": excerpt}
 
     def identity(self) -> str | None:
         """identity.md with its name and the user's filled in as they are now."""
@@ -269,7 +297,7 @@ class Notebook:
                        else content, self.cfg)
         keep_version(self.root, p, path)
         p.write_text(body)
-        await notebook_index.upsert(ctx.store, path, summary, len(body), body)
+        await notebook_index.upsert(ctx.store, path, summary, len(body), body, self.cfg)
         return ToolResult(content=f"Saved {path}.",
                           display={"path": path, "bytes": len(body), "mode": mode})
 
@@ -372,7 +400,7 @@ class Notebook:
         p.write_text(body, newline="")
         if not summary:
             summary = await notebook_index.summary(ctx.store, path) or ""
-        await notebook_index.upsert(ctx.store, path, summary, len(body), body)
+        await notebook_index.upsert(ctx.store, path, summary, len(body), body, self.cfg)
         n = len(planned)
         shown = "\n...\n".join("\n".join(numbered(new, a, b)) or "(the note is empty now)"
                                 for a, b in regions)
@@ -389,20 +417,22 @@ class Notebook:
                               'any of them; "quoted words" match as a phrase.'],
         limit: Annotated[int, "The most notes."] = 10,
     ) -> ToolResult:
-        """Search your notes by word over paths, summaries and text: a note matches when
-        it holds any word of the query, the notes with the most and rarest of them first;
-        "quoted words" match only as that phrase. Search before you write a fact. Search when {{username}} asks what you
+        """Search your notes by word and, with Vector Notebook on, by meaning over paths,
+        summaries and text: a note matches when it holds any word of the query or means
+        something like it, the notes with the most and rarest of them first; "quoted words"
+        match only as that phrase. Search before you write a fact. Search when {{username}} asks what you
         know. Returns: per note its path, day, summary and keys, then per section that
         matches its heading and its matching line with the lines around it, numbered
         as notebook__read numbers them (`12:` the match, `11-` around it), so you read
         from there or not at all."""
         folder = await folder_of(ctx)
+        pool = max(limit * 4, limit)             # oversample both sources before the fuse
         if folder:
-            hits = [h for h in await notebook_index.search(ctx.store, query,
-                                                           limit * 4)
-                    if _inside(h["path"], folder)][:limit]
+            hits = [h for h in await notebook_index.search(ctx.store, query, pool)
+                    if _inside(h["path"], folder)]
         else:
-            hits = await notebook_index.search(ctx.store, query, limit)
+            hits = await notebook_index.search(ctx.store, query, pool)
+        hits = (await self._semantic(ctx.store, folder, query, hits, limit))[:limit]
         display = {"hits": len(hits)}
         if hits:                                 # who may see these notes (Bastet)
             from ..guard.facts import strictest
@@ -414,11 +444,20 @@ class Notebook:
             content = "\n\n".join(
                 f"{h['path']} ({_day(h['touched_at'], tz)}) - {one_line(h['summary'])}"
                 f"{self.tag(h['path'])}{self._heads(h['path'])}"
-                + "".join(f"\n{x}" for x in self._found(h["path"], h["terms"]))
+                + "".join(f"\n{x}" for x in self._lines(h))
                 for h in hits)
         else:
             content = f"No note contains {query!r}."
         return ToolResult(content=content, display=display)
+
+    def _lines(self, hit: dict) -> list[str]:
+        """What one search hit shows: its matching sections (the word search), or, for a
+        meaning-only hit, its best section heading and a real excerpt."""
+        out = self._found(hit["path"], hit.get("terms") or [])
+        if not out and hit.get("excerpt"):
+            out = [f"  ## {hit['section']}" if hit.get("section")
+                   else "  (top of the note)", f"  {hit['excerpt']}"]
+        return out
 
     @tool()
     async def list(
@@ -765,20 +804,35 @@ def load_of(rel: str, head: str, user: str) -> str | None:
     return "always" if mine else None
 
 
-def keys_of(root: Path, rel: str) -> list[str]:
-    """A note's `keys:` words (keys_line), read again only when the note's mtime
-    changed."""
+def head_of(root: Path, rel: str) -> str | None:
+    """A note's first 2,000 characters, read again only when its mtime changes. Recall
+    checks every note's load mode on each message; this keeps that a stat, not a read."""
     p = root / rel
     try:
         mtime = p.stat().st_mtime_ns
     except OSError:
-        return []
-    return list(_keys_at(root, rel, mtime))
+        return None
+    return _head_at(root, rel, mtime)
 
 
 @lru_cache(maxsize=4096)
-def _keys_at(root: Path, rel: str, mtime: int) -> tuple[str, ...]:
-    return tuple(keys_line(read_note(root, rel, head=True) or ""))
+def _head_at(root: Path, rel: str, mtime: int) -> str | None:
+    return read_note(root, rel, head=True)
+
+
+def keys_of(root: Path, rel: str) -> list[str]:
+    """A note's `keys:` words (keys_line), from the same mtime-cached head."""
+    return list(keys_line(head_of(root, rel) or ""))
+
+
+def recall_keys(root: Path, rel: str, user: str) -> list[str]:
+    """Keys whose note may come back automatically: not a pinned or `load: off` note and
+    not a skill's own note, which arrives with its skill. Chat recall and routines share
+    this one rule; explicit read and search are unaffected."""
+    if re.fullmatch(r"skills/[^/]+\.md", rel) or \
+            load_of(rel, head_of(root, rel) or "", user) is not None:
+        return []
+    return keys_of(root, rel)
 
 
 def without_load(text: str) -> str:
@@ -878,5 +932,5 @@ async def write_note(cfg, store, ch, p: Path, rel: str, text: str) -> str:
     content = stamped(text, cfg)
     p.write_text(content)
     summary = await notebook_index.summary(store, rel) or NO_SUMMARY
-    await notebook_index.upsert(store, rel, summary, len(content), content)
+    await notebook_index.upsert(store, rel, summary, len(content), content, cfg)
     return content

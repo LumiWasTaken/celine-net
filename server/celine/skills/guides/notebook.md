@@ -37,7 +37,9 @@ first blank line:
   {{username}}'s new message or the start of your last reply (a whole word or phrase, in
   any case; `art` does not come up in "start"), the parts of the note under its `## `
   headings that match the message best come back under [your memory]. Give a note the
-  words its topic comes up with: names, places, things, nicknames.
+  words its topic comes up with: names, places, things, nicknames. With Vector Notebook on
+  (Settings, Features), a note can also come back without a key when its sections mean
+  something like the message, and notebook__search matches by meaning too.
 - `class: public`, `informal`, `nsfw` or `sensitive` says what kind of text the note
   holds: public (anyone may see it), informal (personal but harmless), nsfw (adult, not for
   the public), sensitive (private: health, money, addresses, secrets). Give each note the
@@ -114,7 +116,7 @@ first blank line:
 ## Tools
 
 - `notebook__search(query)`: word search over paths, summaries and text, best match
-  first. Each note comes with its day, summary and keys, and each section that matches
+  first; with Vector Notebook on it also finds notes by meaning. Each note comes with its day, summary and keys, and each section that matches
   with its heading and the matching line between its neighbours, numbered as
   `notebook__read` numbers them: read from that line when you need more, or not at all
   when the lines already answer. Use it before

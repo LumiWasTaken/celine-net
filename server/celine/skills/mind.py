@@ -394,7 +394,7 @@ class Mind:
         p.write_text(body)
         from . import notebook_index
         await notebook_index.upsert(ctx.store, rel, f"your thoughts on {local:%-d %b %Y}",
-                                    len(body), body)
+                                    len(body), body, self.cfg)
         return ToolResult(content=f"Saved {rel}.", display={"path": rel})
 
     @tool(read_only=False, destructive=False)

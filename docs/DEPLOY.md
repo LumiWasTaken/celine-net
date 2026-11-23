@@ -391,6 +391,16 @@ requests carry `data_collection: "deny"` unless you change it, and each OpenRout
 can ask for zero data retention (Settings, Models). Keep archive content local by
 giving Chat and Embeddings local models.
 
+Vector Notebook (Settings, Features) is optional and off until turned on. It sends live
+note sections to the configured Embeddings model and stores their vectors in
+`var/notebook/.index.db` on this machine; version history and deleted notes are never
+indexed. It needs no provider of its own: with no Embeddings model picked, nothing is
+embedded. The first model of the Embeddings role owns the index fingerprint; a later
+endpoint may build or search it only while its vectors match (a failover), and a change on
+the first model rebuilds it. The feature row shows indexing progress and readiness; the
+index is not used until its first full pass finished. Unkeyed automatic recall uses the
+separate `memory_dense_floor` in `var/settings/context.toml`, above the keyed floor.
+
 A search query goes (through SearXNG) to the public engines, and `web__read_page` gets
 the page from its server with a User-Agent that names Celine (the app) as a self-hosted
 personal assistant. Your agent is told never to put names, numbers or message text from the chat archive, Documents or its

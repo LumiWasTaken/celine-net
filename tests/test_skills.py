@@ -164,8 +164,9 @@ async def test_read_guide_shows_the_guide_and_its_notes_loaded_or_not(store, cfg
     assert out.is_error and out.content.startswith("No skill called 'appearance' here")
     carried = await loads.select(store, cfg, reg, cid, None)
     from celine.turns.prompt import tail_text
-    assert "Your notes on skills (skills/<name>.md, with skills__read_guide or " \
-        "skills__load): web." in (await tail_text(store, cfg, reg, None, cid, carried))
+    assert "Your notes on skills" not in \
+        (await tail_text(store, cfg, reg, None, cid, carried)), \
+        "the guide already carries the note; the ordinary tail does not advertise it again"
     out = await meta.read_guide(ctx, name="skills")
     assert not out.is_error and out.content == reg.index(cfg, carried)
     for near in ("Web", " web", "web__search"):

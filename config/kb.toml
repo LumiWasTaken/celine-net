@@ -50,8 +50,14 @@ max_input_chars = 12000   # the server gives each input 4096 tokens; longer ones
 # on the query side only, and makes 4096 dims. Another model: query_prefix = "" unless its
 # card names one, and dims = its vector size (fewer dims are smaller and a little less exact).
 query_prefix = "Instruct: Given a question, retrieve chat messages that answer it\nQuery: "
+# The notebook's own query instruction (skills/notebook_semantic.py): separate from the
+# archive's, because a note is retrieved by what it means, not as a chat message. Documents
+# have no instruction prefix. Empty: no instruction is prepended.
+notebook_query_prefix = "Instruct: Given a question, retrieve notes that answer it\nQuery: "
 workers = 4               # requests in flight during a build
-dims    = 4096            # stored as int8 plus sign bits; a model with fewer keeps all of its own
+# dims is the most the index keeps; the width actually stored is the smaller of this and
+# the vectors the selected model returns, so a model with fewer dims keeps all of its own.
+dims    = 4096            # stored as int8 plus sign bits
 # The semantic index: sessions (cut at pauses) -> overlapping passages..
 # Changing any of these re-cuts every chat on the next build; unchanged passages keep
 # their vectors.

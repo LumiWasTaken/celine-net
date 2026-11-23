@@ -31,10 +31,10 @@ from pathlib import Path
 
 from ..core.states import LIVE_SQL
 from ..conversations.samples import PATH as SAMPLES   # carried whole, whatever its size
-from ..skills.notebook import carried_text, inside, load_of, read_note
+from ..skills.notebook import carried_text, head_of as note_head, inside, load_of, read_note
 
-DEFAULTS = {"memory_floor": 0.5, "memory_sections": 3, "memory_tokens": 1500,
-            "result_tokens": 10_000}
+DEFAULTS = {"memory_floor": 0.5, "memory_dense_floor": 0.675, "memory_sections": 3,
+            "memory_tokens": 1500, "result_tokens": 10_000}
 WHOLE = ("memory_sections", "memory_tokens", "result_tokens")
 KEY_REPLY = 300          # the characters of its last reply a key is looked for in
 ALWAYS_MAX = 1536        # bytes of an always-loaded note carried whole; past it its head
@@ -72,6 +72,8 @@ def share_problem(key: str, value) -> str | None:
         return f"unknown key {key}, ignored."
     if key == "memory_floor" and not (number and 0 <= value <= 1):
         return "memory_floor is a similarity from 0 to 1, such as 0.5."
+    if key == "memory_dense_floor" and not (number and 0 <= value <= 1):
+        return "memory_dense_floor is a similarity from 0 to 1, such as 0.675."
     if key == "memory_sections" and not (number and value == int(value)
                                          and 0 <= value <= 20):
         return "memory_sections is a whole number from 0 to 20, such as 3."
@@ -145,9 +147,7 @@ async def _notes(store, cfg, conv, counter) -> list[dict]:
         rel = r["path"]
         if not inside(rel, folder):
             continue
-        # note: every note's head is read at each turn start; a column in the index
-        # when notebooks grow into the thousands
-        head = read_note(root, rel, head=True)
+        head = note_head(root, rel)
         if head is None or load_of(rel, head, user) != "always":
             continue
         text = cfg.substitute(carried_text(read_note(root, rel) or ""))   # a seeded note says {{username}}

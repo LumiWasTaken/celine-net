@@ -64,7 +64,7 @@ async def test_sections_come_back_graded_best_first_over_the_floor(store, tmp_pa
     cid = await conversations.create(store)
     text, report = await _say(store, cfg, cid, "is NOOR climbing today?")
     assert text.startswith(recall.HEAD + " ")
-    assert text.index("### people/noor.md#Climbing (1.00, ") < text.index("### people/noor.md (0.")
+    assert text.index("### people/noor.md#Climbing (") < text.index("### people/noor.md (")
     assert "bakery" not in text and "lore/plain.md" not in text, "below the floor; no keys"
     states = {c["id"]: c["state"] for c in report["candidates"]}
     assert states == {"people/noor.md#Climbing": recall.SHOWN, "people/noor.md": recall.SHOWN,
@@ -136,8 +136,24 @@ async def test_never_carried_off_left_out_outside_the_folder_or_with_auto_off(
     assert await _say(store, cfg, off, "noor climbing") is None
 
 
-async def test_an_embedding_model_that_does_not_answer_is_said(store, tmp_path,
-                                                                monkeypatch):
+async def test_a_note_already_visible_through_a_read_is_not_recalled(store, tmp_path):
+    cfg = _cfg(tmp_path)
+    await write_notes(store, cfg, {"people/noor.md": NOOR})
+    cid = await conversations.create(store)
+    mid, tid, _ = await user_says(store, cid, "hello")
+    reply = await tree.start_assistant_message(store, cid, mid, tid)
+    await store.write(lambda c: c.execute(
+        "INSERT INTO tool_calls(id,message_id,name,arguments,state,display) "
+        "VALUES(?,?,?,?,?,?)",
+        ("read1", reply, "notebook__read", json.dumps({"path": "people/noor.md"}),
+         "ok", json.dumps({"path": "people/noor.md"}))))
+    await tree.finish_assistant_message(store, cid, reply, "read it", None)
+    await store.write(lambda c: c.execute("UPDATE turns SET state='done'"))
+    assert await _say(store, cfg, cid, "noor climbing") is None
+
+
+async def test_an_embedding_model_that_does_not_answer_falls_back_to_the_keyed_note(
+        store, tmp_path, monkeypatch):
     def down(cfg, query, texts):
         raise SemanticError("No embedding model is set.")
     monkeypatch.setattr(recall, "_embed", down)
@@ -145,8 +161,36 @@ async def test_an_embedding_model_that_does_not_answer_is_said(store, tmp_path,
     await write_notes(store, cfg, {"people/noor.md": NOOR})
     cid = await conversations.create(store)
     text, report = await _say(store, cfg, cid, "noor")
-    assert text == f"{recall.HEAD} not available now: No embedding model is set."
-    assert report["error"] and len(report["candidates"]) == 3
+    assert "Noor is a friend." in text and "not available" not in text
+    assert report["error"] and report["fallback"] == "key lexical"
+    assert len(report["candidates"]) == 1
+    assert report["candidates"][0]["source"] == "key lexical"
+    assert report["candidates"][0]["score"] is None
+
+
+async def test_the_lexical_fallback_picks_the_matching_section_and_abstains_without_a_key(
+        store, tmp_path, monkeypatch):
+    def down(cfg, query, texts):
+        raise SemanticError("No embedding model is set.")
+    monkeypatch.setattr(recall, "_embed", down)
+    cfg = _cfg(tmp_path)
+    await write_notes(store, cfg, {"people/noor.md": NOOR, "lore/plain.md": "unrelated"})
+    cid = await conversations.create(store)
+    text, report = await _say(store, cfg, cid, "noor bakery")
+    assert "She bakes bread at the bakery." in text and "Noor is a friend." not in text
+    assert len(report["candidates"]) == 1
+    assert report["candidates"][0]["id"] == "people/noor.md#Work"
+    other = await conversations.create(store)
+    assert await _say(store, cfg, other, "nothing keyed here") is None
+
+
+async def test_identical_sections_are_shown_once(store, tmp_path):
+    cfg = _cfg(tmp_path)
+    await write_notes(store, cfg, {"lore/one.md": "keys: noor\n\nThe same fact.",
+                                   "lore/two.md": "keys: noor\n\nThe same fact."})
+    cid = await conversations.create(store)
+    _, report = await _say(store, cfg, cid, "noor")
+    assert [c["state"] for c in report["candidates"]] == [recall.SHOWN, recall.DUPLICATE]
 
 
 async def test_one_long_note_leaves_room_for_every_other(store, tmp_path):

@@ -302,6 +302,7 @@ SOURCE_KEYS = {
 TABLES = {
     # kb/semantic.py, embed.py, sessions.py, passages.py
     "embeddings": {"batch": "int", "max_input_chars": "int", "query_prefix": "str",
+                   "notebook_query_prefix": "str",
                    "workers": "int", "dims": "int", "session_gap_minutes": "num",
                    "session_merge_hours": "num", "session_max_messages": "int",
                    "passage_messages": "int", "passage_chars": "int",

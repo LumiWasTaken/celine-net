@@ -59,6 +59,7 @@ def _shape(cfg) -> dict[str, Any]:
     return {**e, "batch": int(e.get("batch", 64)), "workers": int(e.get("workers", 4)),
             "dims": int(e.get("dims", 1024)),
             "query_prefix": str(e.get("query_prefix", "")),
+            "notebook_query_prefix": str(e.get("notebook_query_prefix", "")),
             "max_input_chars": int(e.get("max_input_chars", 3000))}
 
 

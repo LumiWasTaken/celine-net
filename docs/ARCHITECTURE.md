@@ -255,9 +255,11 @@ schema. `var/log.db` is the append-only part, pruned by count: `events`
 `raw_responses` (what went to and came from the model), `terminal_commands`;
 `db/migrations/log/0001_schema.sql`. Every file keeps its version in its header
 (`PRAGMA user_version`). The notebook's index
-(`notebook_index`, `notebook_fts`) is `var/notebook/.index.db`, beside the notes and
-backed up with them; `db/migrations/notebook/0001_schema.sql`; startup's reconcile
-rebuilds it from the files. The `Store` opens celine.db and attaches log.db as `log` and
+(`notebook_index`, `notebook_fts`, and with Vector Notebook the semantic
+`notebook_semantic_state`, `notebook_sections`, `notebook_vecs`, `notebook_meta`) is
+`var/notebook/.index.db`, beside the notes and backed up with them;
+`db/migrations/notebook/0001_schema.sql` and `0002_sections.sql`; startup's reconcile
+rebuilds it from the files (a content hash, so an equal-length edit is reindexed). The `Store` opens celine.db and attaches log.db as `log` and
 the index as `notebook` on the same connection, so a write spans them in one transaction
 and a read joins across them in one SQL; the attached files have no foreign keys into
 celine.db, so a purge deletes their rows by name (`conversations/store.py`,
@@ -502,14 +504,18 @@ lies between), the last message here is over an hour old, or
 an unfreeze; then it goes whole.
 
 The agent's memory block, before it in the same stored row, first line `[your memory]`
-(`skills/recall.py`): the sections of the notes whose `keys:` line comes up in the
-message or its last reply, graded by the cosine similarity of their embedding to the
-talk's (`kb/semantic.query_embedder`). Only a section at or over `memory_floor` comes
-back, the best first, at most `memory_sections` in `memory_tokens` tokens
-(`var/settings/context.toml`); each entry is `### path#heading (similarity, last
-changed)`. Not for a note it carries in full or with `load: off`, nor a section shown on
-this branch since the last compaction unless it changed. An embedding model that does not
-answer gives `[your memory] not available now: <why>` and nothing else. The report
+(`skills/recall.py`): the sections of eligible notes, graded by the cosine similarity of
+their embedding to the talk's. A note whose `keys:` line comes up in the message or its
+last reply is always a candidate; with Vector Notebook on (`settings/features.py`) and its
+index ready under the same model, stored note sections are a second source, so a note can
+come back by meaning without a key. Keyed sections must reach `memory_floor`; an unkeyed
+dense section must reach the more conservative `memory_dense_floor`, since it has no
+explicit key supporting it. Only a section over its floor comes back,
+best first, at most `memory_sections` in `memory_tokens` tokens
+(`var/settings/context.toml`); each entry is `### path#heading (last changed)` and no
+score is shown. Not for a note it carries in full or with `load: off`, nor a section shown
+on this branch since the last compaction unless it changed. An embedding model that does
+not answer falls back to the keyed lexical memory, never an error in the prompt. The report
 (`report.notebook`) keeps the query and every candidate with its score and state.
 
 What the build decides is kept per conversation: the aging mark (`context_state`:
@@ -1082,9 +1088,11 @@ verb, as in Settings). Overrides carry a `client_seq`; an older one is ignored.
 `notebook`: `write(path, content, summary, mode)`, `read(path, from_line)` (each line as
 `<n>:<hash>| text`), `edit(path, edits, summary)` (hashline edits by `n:hash` anchors;
 every anchor is checked before anything changes, a stale one refuses the call),
-`search` (FTS5 over summary and body), `list`, `move`, `delete`. Files live under
-`var/notebook/`, confined, any format; the index is `notebook_index` and `notebook_fts`
-in `var/notebook/.index.db`.
+`search` (FTS5 over summary and body, and, with Vector Notebook on, the meaning index),
+`list`, `move`, `delete`. Files live under `var/notebook/`, confined, any format; the
+index is `notebook_index` and `notebook_fts` in `var/notebook/.index.db`, beside the
+optional semantic index (`notebook_sections`, `notebook_vecs`, `notebook_meta`:
+skills/notebook_semantic.py, on with the Vector Notebook feature).
 Line 1 of every note is a `Last changed:` line the code keeps up to date. The index
 goes into the tail of every turn (`tail_part`, `build_index_fragment`), never the system
 prompt, since it changes as it writes: `map.md` first, up to `notebook.index_max_entries`
@@ -1289,9 +1297,12 @@ sentence (`MailError`).
 (kb/__init__.py) builds them at startup, in a thread, and a block that fails to open is
 a config problem, not a dead server. Skills read the running set as `self.app.kbs`
 (core/services.py), so skills rebuilt by a config reload find it. `[embeddings]` in the same file holds how
-passages are embedded (dims, prefixes, input length, workers, refresh). The model is the
-Embeddings role in Settings, and whether anything embeds is that role alone
-(`semantic.embeddings_available`; the reranker: `rerank.reranker_available`).
+passages are embedded (dims, prefixes, input length, workers, refresh); the notebook has
+its own query instruction (`notebook_query_prefix`, skills/notebook_semantic.py). The model is the
+Embeddings role in Settings (`semantic.embeddings_available`; the reranker:
+`rerank.reranker_available`); the notebook also requires its Vector Notebook feature on. The first
+model of the role owns a semantic index's fingerprint; a later endpoint may build or query
+it only while its vectors match.
 
 ### Files
 

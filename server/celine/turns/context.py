@@ -251,8 +251,9 @@ def _thought(it: "_Item") -> dict:
 class _Item:
     """One message as it goes on the wire: user text, or an assistant reply with its
     calls and their results. Tool rows of the tree are carried by their call."""
-    __slots__ = ("idx", "id", "role", "content", "body", "tail", "reasoning", "thinking",
-                 "attachments", "calls", "turn", "cid", "_wire", "_cost")
+    __slots__ = ("idx", "id", "role", "content", "body", "summary_body", "tail",
+                 "reasoning", "thinking", "attachments", "calls", "turn", "cid",
+                 "_wire", "_cost")
 
     def __init__(self, idx: int, m: dict, calls: list[dict] | None, tz, user: str = "",
                  bare: bool = False, guarded: bool = False, cid: str = ""):
@@ -271,8 +272,11 @@ class _Item:
                 self.content = mark.wrap_parts(self.content, label)
             self.content = time_line(m, tz) + header(m.get("intercom"), user, tz) \
                 + self.content
-            if m.get("context"):                # turns/message_context.py
-                self.content += "\n\n" + m["context"]
+        # Dynamic app context stays on the wire, but is not user-authored evidence for a
+        # compaction summary ([your memory], [your mind], and any skill's block).
+        self.summary_body = self.content
+        if self.role == "user" and not bare and m.get("context"):
+            self.content += "\n\n" + m["context"]
         # its turn's tail, stored once as parts: a plan adds what of it goes in its
         # view (_Plan._tails); `body` is the message without it
         self.body = self.content
@@ -286,8 +290,9 @@ class _Item:
         self._cost: dict[bool, int] = {}
 
     def as_dict(self) -> dict:
-        """The message for a summary: without its tail, which says what held then."""
-        return {"id": self.id, "role": self.role, "content": self.body,
+        """The message for a summary: without its tail or app-injected context, which
+        says what held then and is not the user's own text."""
+        return {"id": self.id, "role": self.role, "content": self.summary_body,
                 "attachments": self.attachments, "calls": self.calls}
 
 

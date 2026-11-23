@@ -111,7 +111,8 @@ TOOLS: dict[str, dict[str, str]] = {
     "notebook__edit": {"label": "Notebook: edit a note",
                        "summary": "Changes some lines of one note."},
     "notebook__search": {"label": "Notebook: search",
-                         "summary": "Word search over the notebook's notes."},
+                         "summary": "Searches the notebook's notes by word, and by meaning "
+                                    "when Vector Notebook is on."},
     "notebook__list": {"label": "Notebook: list notes",
                        "summary": "Lists the notebook's notes with their summaries."},
     "notebook__delete": {"label": "Notebook: delete a note",

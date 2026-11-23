@@ -65,6 +65,11 @@ async def test_a_routines_on_mind_names_the_notes_its_last_thoughts_key(store, t
     (cfg.agent.notebook / "thoughts" / "2026-10-16.md").write_text(
         "Last changed: x\n- 10:00 noor went climbing again\n")
     assert await on_mind(app) == "- people/noor.md: a note"
+    await write_notes(store, cfg, {
+        "lore/off.md": "keys: noor\nload: off\n\nleft out",
+        "people/joe.md": "keys: noor\n\nalways loaded"})
+    assert await on_mind(app) == "- people/noor.md: a note", \
+        "routines and chat recall share the same off/pinned eligibility"
     many = {f"people/p{i}.md": "keys: noor\n\nx" for i in range(10)}
     await write_notes(store, cfg, many)
     assert len((await on_mind(app)).splitlines()) == 8, "the most recently touched 8"

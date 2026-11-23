@@ -91,14 +91,15 @@ async def on_mind(app) -> str:
     """The notes its last thoughts and its last exchange name a key of, the most
     recently touched ON_MIND."""
     from ..skills import notebook_index
-    from ..skills.notebook import keys_of
+    from ..skills.notebook import recall_keys
     from ..turns.loads import key_in
     root = app.cfg.agent.notebook if getattr(app.cfg, "agent", None) else None
     said = "\n".join([*last_thoughts(root), *await app.store.read(last_exchange)])
     if root is None or not said.strip():
         return NONE
+    user = (getattr(app.cfg, "user", "") or "").lower()
     hits = [r for r in await notebook_index.list(app.store, order="touched")
-            if key_in(said, keys_of(root, r["path"]))]
+            if key_in(said, recall_keys(root, r["path"], user))]
     return "\n".join(f"- {r['path']}: {r['summary']}" for r in hits[:ON_MIND]) or NONE
 
 
