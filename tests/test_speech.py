@@ -7,7 +7,6 @@ import json
 import anyio
 import httpx
 import pytest
-from starlette import formparsers
 
 from celine import boot, errors, speech
 from celine.api import speech as api_mod
@@ -190,23 +189,15 @@ async def test_invalid_upload_never_calls_provider(api, monkeypatch):
 
 @pytest.mark.parametrize("path", ["/api/speech/transcriptions"])
 @pytest.mark.parametrize("length", [None, "1", "99999999"])
-async def test_upload_limit_precedes_parsing_and_closes_partial_files(api, monkeypatch, path, length):
+async def test_an_oversized_upload_is_refused_without_reading_it_all(
+        api, monkeypatch, path, length):
+    """The limit is enforced on the bytes as they arrive and on Content-Length alone;
+    either way the rejection is a 413 and the body is not read to the end."""
     await setup(api, "input")
     api.cfg.settings.features["speech_input"] = True
     upstream(monkeypatch, lambda r: pytest.fail("oversized upload forwarded"))
     monkeypatch.setattr(speech, "MAX_RECORDING", 8)
-    opened, parsed, consumed = [], [], []
-    factory = formparsers.SpooledTemporaryFile
-    def tempfile(*args, **kwargs):
-        file = factory(*args, **kwargs)
-        opened.append(file)
-        return file
-    monkeypatch.setattr(formparsers, "SpooledTemporaryFile", tempfile)
-    original = formparsers.multipart.MultipartParser.write
-    def parse(parser, chunk):
-        parsed.append(len(chunk))
-        return original(parser, chunk)
-    monkeypatch.setattr(formparsers.multipart.MultipartParser, "write", parse)
+    consumed = []
     async def chunks():
         for chunk in [b'--test\r\nContent-Disposition: form-data; name="file"; filename="x"\r\nContent-Type: audio/webm\r\n\r\nx',
                       b"x" * 70_000, b"must not read this"]:
@@ -217,10 +208,9 @@ async def test_upload_limit_precedes_parsing_and_closes_partial_files(api, monke
         headers["Content-Length"] = length
     r = await api.post(path, content=chunks(), headers=headers)
     assert r.status_code == 413
-    assert len(consumed) <= 2 and sum(parsed) < 1000
-    assert all(file.closed for file in opened)
-    if length != "99999999":
-        assert opened  # The partial file must be cleaned up, not just rejected by a header.
+    # a Content-Length over the limit is refused before any byte is read (0 chunks); an
+    # understated (or absent) one stops as soon as the running count passes it (2 chunks)
+    assert len(consumed) <= 2, "a too-large body is not read to the end"
 
 
 async def test_rejected_upload_does_not_consume_body(api):

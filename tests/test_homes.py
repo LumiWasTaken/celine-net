@@ -172,7 +172,7 @@ async def test_the_tree_holds_a_runs_sub_agents_and_missions_their_reasons_and_t
 
     def fn(c):
         for tid, cid, state, reason in (("t1", run, "done", None),
-                                        ("t2", deep, "failed", "5090 returned 503: busy.\nx")):
+                                        ("t2", deep, "failed", "gpu-1 returned 503: busy.\nx")):
             c.execute("INSERT INTO turns(id, conversation_id, state, reason, created_at, "
                       "finished_at) VALUES(?, ?, ?, ?, '2026-10-22T23:00:00+00:00', "
                       "'2026-10-22T23:00:10+00:00')", (tid, cid, state, reason))
@@ -186,7 +186,7 @@ async def test_the_tree_holds_a_runs_sub_agents_and_missions_their_reasons_and_t
         ("helper", 1, "done"), ("deep", 2, "failed")]
     assert [(m["name"], m["parent"], m["depth"], m["state"]) for m in got["missions"]] == [
         ("Night", deep, 3, "active")]
-    assert got["agents"][1]["reason"] == "5090 returned 503: busy."
+    assert got["agents"][1]["reason"] == "gpu-1 returned 503: busy."
     assert got["total"] == {"prompt_tokens": 200, "completion_tokens": 20, "seconds": 20}
     under = await store.read(lambda c: tree_of(c, mission, {}))
     assert [x["kind"] for x in under["origin"]] == ["run", "agent", "agent"]

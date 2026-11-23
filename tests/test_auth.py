@@ -694,7 +694,7 @@ def test_sessions_from_before_keep_working_and_must_prove(tmp_path):
 
 # ---- the app's own address: learned at the setup or the first login ---------------------
 
-LAN = "http://192.168.1.20:8766"
+LAN = "http://192.0.2.20:8766"
 SITE = "https://celine.example.net"
 
 
@@ -715,7 +715,7 @@ def test_a_fresh_install_learns_its_address_at_the_setup(app):
     r = setup_password(app, lan)
     assert r.status_code == 200, r.text
     assert stored(app) == LAN
-    assert 'origin = "http://192.168.1.20:8766"' in (
+    assert 'origin = "http://192.0.2.20:8766"' in (
         Path(os.environ["CELINE_DATA_DIR"]) / "settings" / "address.toml").read_text()
     assert lan.get("/api/auth/status").json()["setup"] is False   # its session works there
     # the window closed: another address is refused, even with the password
@@ -776,9 +776,10 @@ def test_until_an_address_is_stored_other_routes_take_only_loopback(app):
     c = client(app)
     setup_password(app, c)
     forget_address(app)
-    # a session's cookie sent from another address: refused there, fine on loopback
+    # a session's cookie sent from another address: the route is hidden there (404),
+    # fine on loopback
     lan = TestClient(app, base_url=LAN, headers={"origin": LAN}, cookies=c.cookies)
-    assert lan.post("/api/auth/sessions/logout-others").status_code in (403, 404)
+    assert lan.post("/api/auth/sessions/logout-others").status_code == 404
     assert c.post("/api/auth/sessions/logout-others").status_code == 200
     assert stored(app) == ""
 

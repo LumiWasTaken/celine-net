@@ -148,10 +148,10 @@ def test_a_saved_address_that_hides_the_env_one_names_both(monkeypatch):
     from celine.errors import unreachable_words
     from celine.settings.services import unreachable
     e = httpx.ConnectError("lookup")
-    monkeypatch.setenv("CELINE_SEARXNG_URL", "http://10.0.0.9:8888")
+    monkeypatch.setenv("CELINE_SEARXNG_URL", "http://192.0.2.9:8888")
     said = unreachable("SearXNG", "http://searxng:8080", e, "searxng")
     assert said == ("SearXNG did not answer at searxng:8080. CELINE_SEARXNG_URL is "
-                    "http://10.0.0.9:8888; the address saved here is used instead.")
+                    "http://192.0.2.9:8888; the address saved here is used instead.")
     assert "COMPOSE_PROFILES" in unreachable_words("SearXNG", "http://searxng:8080", e), \
         "without a service id the profile advice stays"
     monkeypatch.setenv("CELINE_SEARXNG_URL", "http://searxng:8080")

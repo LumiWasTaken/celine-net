@@ -308,20 +308,20 @@ async def test_a_new_lan_provider_is_added_and_its_model_is_the_agents_and_local
     assert "mac" not in app.cfg.settings.providers
     got, ask = await _answer(app, sk.propose(
         ctx, target="providers.mac",
-        changes={"kind": "openai", "label": "My Mac", "base_url": "192.168.1.50:1234",
+        changes={"kind": "openai", "label": "My Mac", "base_url": "192.0.2.50:1234",
                  "models": {"small": {"caps": ["chat", "tools"]},
-                            "qwen3:14b": {"label": "Qwen3 14B (Mac)", "caps": ["chat", "tools"],
-                                          "context": 40960}}},
+                            "local-llm:14b": {"label": "Local LLM (Mac)", "caps": ["chat", "tools"],
+                                              "context": 40960}}},
         why="A model server on my Mac for my agents."), True)
     assert not got.is_error, got.content
     assert ask.card()["title"] == "Celine asks to add the model provider mac."
-    assert ("Address", "192.168.1.50:1234") in ask.facts
+    assert ("Address", "192.0.2.50:1234") in ask.facts
     assert ("Cloud", "Off") in ask.facts, "a LAN address: the switch starts off"
     assert all("\u2192" not in v for _, v in ask.facts), "a new provider had no values"
     assert ("Models", "small, chat and tools\n"
-            "qwen3:14b, Qwen3 14B (Mac), chat and tools, 40,960 tokens") in ask.facts
+            "local-llm:14b, Local LLM (Mac), chat and tools, 40,960 tokens") in ask.facts
     s = app.cfg.settings
-    assert s.providers["mac"]["base_url"] == "http://192.168.1.50:1234/v1"
+    assert s.providers["mac"]["base_url"] == "http://192.0.2.50:1234/v1"
     assert "mac/small" in agent_models.allowed(s), "a template's model: takes it"
     assert not agent_models.cloud(s, "mac/small"), "its sub-agents start without an ask"
 
@@ -333,7 +333,7 @@ async def test_a_new_providers_card_lists_the_roles_it_fills(app):
     empty = [r for r in ROLES if not app.cfg.settings.chain(r)]
     got, ask = await _answer(app, sk.propose(
         ctx, target="providers.mac",
-        changes={"kind": "openai", "label": "My Mac", "base_url": "192.168.1.50:1234",
+        changes={"kind": "openai", "label": "My Mac", "base_url": "192.0.2.50:1234",
                  "models": {"ears": {"caps": ["transcription"]}}},
         why="A model server on my Mac."), True)
     assert not got.is_error, got.content

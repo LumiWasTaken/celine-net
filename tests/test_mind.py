@@ -218,14 +218,14 @@ async def test_a_build_batch_takes_a_background_ticket(monkeypatch):
     sched = Sched()
     monkeypatch.setattr(embed, "_queue", (sched, asyncio.get_running_loop()))
     sent = []
-    pool = embed.Pool({"url": "http://gpu:8080/v1/embeddings", "model": "qwen3-embedding",
+    pool = embed.Pool({"url": "http://gpu:8080/v1/embeddings", "model": "embed-a",
                        "workers": 1}, lambda s, t: sent.append(t) or [[1.0] for _ in t])
     await anyio.to_thread.run_sync(lambda: pool.run([["a"], ["b"]], lambda i, v: None,
                                                     lambda: None))
     assert sent == [["a"], ["b"]]
     t = sched.got[0]
     assert (t.endpoint, t.model, t.priority, t.label) == (
-        "http://gpu:8080/v1", "qwen3-embedding", Priority.BACKGROUND, "Search index build")
+        "http://gpu:8080/v1", "embed-a", Priority.BACKGROUND, "Search index build")
     with anyio.fail_after(5):           # the releases come through the loop
         while len(sched.freed) < 2:
             await anyio.sleep(0)

@@ -4,6 +4,7 @@ enforces a freeze (no turn or work item leased, no tool, the model proxy and tok
 refused), only the owner's session unfreezes, passes and approves, the guard routes refuse every token, and every tool call has one way in."""
 from __future__ import annotations
 
+import functools
 import json
 import re
 from pathlib import Path
@@ -42,9 +43,11 @@ CLOSED = ("Not run: Bastet stopped it: that is private and does not leave the ho
           "Carry on with what you were doing.")
 
 
-def _sources():
-    for p in sorted(SERVER.rglob("*.py")):
-        yield p.relative_to(SERVER).as_posix(), p.read_text()
+@functools.lru_cache(maxsize=1)
+def _sources() -> tuple[tuple[str, str], ...]:
+    """Every server source, read once: several gate tests scan the whole tree."""
+    return tuple((p.relative_to(SERVER).as_posix(), p.read_text())
+                 for p in sorted(SERVER.rglob("*.py")))
 
 
 # ---- closed gates ------------------------------------------------------------------------

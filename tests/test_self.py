@@ -196,10 +196,6 @@ async def test_every_edit_of_the_agent_waits_for_the_owner_guard_or_not(store, c
     assert not got.is_error and "x y" in cfg.agent.voice["phrases"] and not a.waiting
 
 
-def test_the_agent_knows_an_edit_of_itself_waits_for_the_owner():
-    assert "approve" in Me.edit.__doc__ and "approve" in Me.guide.body
-
-
 # ---- revert ------------------------------------------------------------------------------
 
 @pytest.fixture

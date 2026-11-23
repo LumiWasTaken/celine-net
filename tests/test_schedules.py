@@ -677,8 +677,8 @@ async def test_a_run_waits_on_its_own_model_when_only_a_later_one_answers(
     from celine.backends.router import Router
     from settings_fixtures import scratch
     scratch(tmp_path, monkeypatch, providers={
-        "gpu": {"kind": "llama-swap", "label": "5090", "base_url": "http://gpu:1/v1",
-                "models": {"big": {"label": "Heretic", "caps": ["chat", "tools"]}}},
+        "gpu": {"kind": "llama-swap", "label": "gpu-1", "base_url": "http://gpu:1/v1",
+                "models": {"big": {"label": "model-x", "caps": ["chat", "tools"]}}},
         "lan": {"kind": "ollama", "label": "lan", "base_url": "http://lan:2/v1",
                 "models": {"small": {"caps": ["chat", "tools"]}}}},
         roles={"chat": {"chain": ["gpu/big", "lan/small"]}})
@@ -694,7 +694,7 @@ async def test_a_run_waits_on_its_own_model_when_only_a_later_one_answers(
                           dispatcher=SimpleNamespace(backend_factory=None))
     sched = Scheduler(app, Clock(datetime(2026, 10, 10, 2, tzinfo=UTC)))
     assert await sched._model_why("chat") == \
-        "Waiting for Heretic on 5090. 5090 at gpu:1 refused the connection."
+        "Waiting for model-x on gpu-1. gpu-1 at gpu:1 refused the connection."
 
 
 async def test_a_run_is_over_only_once_its_sub_agents_have_reported(store):

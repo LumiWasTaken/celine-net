@@ -440,10 +440,10 @@ async def test_a_mission_whose_turn_failed_names_the_reason_in_its_note(store):
     tid = await _ended_turn(store, intercom, cid, tool=True)
     await store.write(lambda c: c.execute(
         "UPDATE turns SET state='failed', reason=? WHERE id=?",
-        ("5090 returned 503: The model server is paused.\nmore", tid)))
+        ("gpu-1 returned 503: The model server is paused.\nmore", tid)))
     assert await watch.check(app, cid, tid) == "needs_you"
     assert (await missions.get(store, cid))["note"] == \
-        "The mission's last turn failed: 5090 returned 503: The model server is paused."
+        "The mission's last turn failed: gpu-1 returned 503: The model server is paused."
 
 
 async def test_a_request_that_waits_in_a_mission_moves_its_limit_and_holds_its_ceiling(store):

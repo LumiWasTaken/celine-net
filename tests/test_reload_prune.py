@@ -108,7 +108,12 @@ async def test_a_reload_keeps_what_the_shell_told_the_agent_and_moves_the_clock(
     monkeypatch.setattr(reload.boot, "load", lambda: fresh)
     assert reload.apply(app)
     assert ("c", "job") in app.registry.skills["shell"].told
-    assert time.strftime("%Z") == "JST", "the archive's clock is the app's"
+    assert cfg.timezone == "Asia/Tokyo", "the reloaded config's zone"
+    # the process clock (SQLite's 'localtime' for the archive) tells the same offset as
+    # the app's zone, whatever the host's tzdata names the abbreviation
+    from datetime import datetime
+    from celine.clock import zone
+    assert time.strftime("%z") == datetime.now(zone(cfg)).strftime("%z")
 
 
 async def test_turns_at_once_follows_a_save(store):

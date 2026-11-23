@@ -26,7 +26,7 @@ pytestmark = pytest.mark.anyio
 # llama-server in router mode (a home server): the training size in context_length, the size it
 # loaded with in meta.n_ctx and on its command line; a sleeping model is not loaded
 LLAMA_SERVER = {"data": [
-    {"id": "qwen3.5-9b", "owned_by": "llamacpp",
+    {"id": "model-a", "owned_by": "llamacpp",
      "status": {"value": "sleeping", "args": ["llama-server", "--ctx-size", "32768",
                                               "--parallel", "1"]},
      "context_length": 262144, "meta": {"n_ctx": 32768, "n_ctx_train": 262144},
@@ -36,14 +36,14 @@ LLAMA_SERVER = {"data": [
     {"id": "two-slots", "owned_by": "llamacpp",
      "status": {"value": "loaded", "args": ["llama-server", "--fit", "on", "-np", "2"]},
      "context_length": 131072, "meta": {"n_ctx": 16384}},
-    {"id": "qwen3-embedding", "owned_by": "llamacpp", "status": {"value": "loaded"},
+    {"id": "embed-a", "owned_by": "llamacpp", "status": {"value": "loaded"},
      "context_length": 40960, "meta": {"n_ctx": 8192}},
 ]}
 
 # tabbyAPI behind a router: the list says max_seq_len while the
 # model is unloaded; /v1/model and /props say what the loaded one runs with
 TABBY_LIST = {"data": [
-    {"id": "Gemma-4-31B", "owned_by": "tabbyAPI", "parameters": None,
+    {"id": "model-b", "owned_by": "tabbyAPI", "parameters": None,
      "meta": {"n_ctx": None, "n_ctx_train": 262144}, "context_length": 262144,
      "architecture": {"input_modalities": ["text", "image"]},
      "capabilities": {"vision": True, "function_calling": True},
@@ -51,7 +51,7 @@ TABBY_LIST = {"data": [
     {"id": "Other", "owned_by": "tabbyAPI", "context_length": 131072,
      "parameters": {"max_seq_len": 131072, "cache_size": 49152}},
 ]}
-TABBY_MODEL = {"id": "Gemma-4-31B", "parameters": {"max_seq_len": 65536,
+TABBY_MODEL = {"id": "model-b", "parameters": {"max_seq_len": 65536,
                                                    "cache_size": 65536}}
 PROPS = {"default_generation_settings": {"n_ctx": 65536}}
 
@@ -65,22 +65,22 @@ def _server(routes: dict):
 async def test_llama_server_states_the_size_it_runs_with_and_its_caps():
     found = {m["id"]: m for m in await kinds.discover(
         "llama-server", "http://home:8080/v1", transport=_server({"/v1/models": LLAMA_SERVER}))}
-    assert found["qwen3.5-9b"]["context"] == 32768, "meta.n_ctx, not the training size"
-    assert found["qwen3.5-9b"]["caps"] == ["chat", "tools"] and \
-        "guessed" not in found["qwen3.5-9b"], "the server says: no vision"
-    assert found["qwen3.5-9b"]["loaded"] is False, "sleeping is not loaded"
+    assert found["model-a"]["context"] == 32768, "meta.n_ctx, not the training size"
+    assert found["model-a"]["caps"] == ["chat", "tools"] and \
+        "guessed" not in found["model-a"], "the server says: no vision"
+    assert found["model-a"]["loaded"] is False, "sleeping is not loaded"
     assert found["two-slots"]["context"] == 8192, "two slots split what it loaded with"
-    assert found["qwen3-embedding"]["context"] == 8192
-    assert found["qwen3-embedding"]["guessed"], "it states no caps: a guess"
+    assert found["embed-a"]["context"] == 8192
+    assert found["embed-a"]["guessed"], "it states no caps: a guess"
 
 
 async def test_tabby_states_the_size_its_loaded_model_runs_with():
     found = {m["id"]: m for m in await kinds.discover(
         "tabby", "http://gpu:11434/v1", transport=_server({
             "/v1/models": TABBY_LIST, "/v1/model": TABBY_MODEL,
-            "/running": {"running": [{"model": "Gemma-4-31B", "state": "ready"}]}}))}
-    assert found["Gemma-4-31B"]["context"] == 65536, "/v1/model over the list's max"
-    assert found["Gemma-4-31B"]["caps"] == ["chat", "tools", "vision"]
+            "/running": {"running": [{"model": "model-b", "state": "ready"}]}}))}
+    assert found["model-b"]["context"] == 65536, "/v1/model over the list's max"
+    assert found["model-b"]["caps"] == ["chat", "tools", "vision"]
     assert found["Other"]["context"] == 49152, "cache_size over max_seq_len"
     assert kinds.window_of({"id": "x", "context_length": 131072, "meta": {"n_ctx": None}}) \
         == 131072, "no running number: the context the list states"
@@ -88,11 +88,11 @@ async def test_tabby_states_the_size_its_loaded_model_runs_with():
 
 PROVIDERS = {
     "home": {"kind": "llama-server", "label": "home", "base_url": "http://home:8080/v1",
-             "models": {"qwen3.5-9b": {"caps": ["chat", "tools", "vision"]},
+             "models": {"model-a": {"caps": ["chat", "tools", "vision"]},
                         "two-slots": {"caps": ["chat"]},
-                        "qwen3-embedding": {"caps": ["embeddings"]}}},
+                        "embed-a": {"caps": ["embeddings"]}}},
     "gpu": {"kind": "tabby", "label": "gpu", "base_url": "http://gpu:11434/v1",
-            "models": {"Gemma-4-31B": {"caps": ["chat"]}}},
+            "models": {"model-b": {"caps": ["chat"]}}},
 }
 
 
@@ -106,8 +106,8 @@ def router(tmp_path, monkeypatch):
         if host == "home":
             return httpx.Response(200, json=LLAMA_SERVER)
         routes = {"/v1/models": TABBY_LIST, "/v1/model": TABBY_MODEL, "/running": {
-            "running": [{"model": "Gemma-4-31B", "state": "ready"}]},
-            "/upstream/Gemma-4-31B/props": PROPS}
+            "running": [{"model": "model-b", "state": "ready"}]},
+            "/upstream/model-b/props": PROPS}
         return httpx.Response(200, json=routes.get(path, {}))
     t = httpx.MockTransport(answer)
     return Router(cfg, None, transport=t, sync_transport=t)
@@ -125,19 +125,19 @@ async def _ask_all(router) -> None:
 
 async def test_the_servers_caps_count_over_the_saved_ones(router):
     s = router.s
-    assert backend_config(s, "home/qwen3.5-9b").raw["images"], "nothing stated yet: saved"
+    assert backend_config(s, "home/model-a").raw["images"], "nothing stated yet: saved"
     await _ask_all(router)
-    assert kinds.server_caps("http://home:8080/v1", "qwen3.5-9b") == ["chat", "tools"]
-    assert not backend_config(s, "home/qwen3.5-9b").raw["images"], "the server: no vision"
-    assert backend_config(s, "gpu/Gemma-4-31B").raw["images"], "the server: vision"
-    assert backend_config(s, "gpu/Gemma-4-31B").raw["tools"]
-    assert kinds.server_caps("http://home:8080/v1", "qwen3-embedding") is None
-    assert kinds.caps_of(s.providers["home"], "qwen3-embedding") == ["embeddings"], \
+    assert kinds.server_caps("http://home:8080/v1", "model-a") == ["chat", "tools"]
+    assert not backend_config(s, "home/model-a").raw["images"], "the server: no vision"
+    assert backend_config(s, "gpu/model-b").raw["images"], "the server: vision"
+    assert backend_config(s, "gpu/model-b").raw["tools"]
+    assert kinds.server_caps("http://home:8080/v1", "embed-a") is None
+    assert kinds.caps_of(s.providers["home"], "embed-a") == ["embeddings"], \
         "it states nothing: saved"
-    assert agent_models.allowed(s) == ["home/qwen3.5-9b", "home/two-slots", "gpu/Gemma-4-31B"]
-    ordered = router._ordered("vision", ["home/qwen3.5-9b", "gpu/Gemma-4-31B"])
-    assert ordered.refs == ["gpu/Gemma-4-31B"]
-    assert ordered.skipped == [("home/qwen3.5-9b", "qwen3.5-9b cannot do Photo descriptions: "
+    assert agent_models.allowed(s) == ["home/model-a", "home/two-slots", "gpu/model-b"]
+    ordered = router._ordered("vision", ["home/model-a", "gpu/model-b"])
+    assert ordered.refs == ["gpu/model-b"]
+    assert ordered.skipped == [("home/model-a", "model-a cannot do Photo descriptions: "
                                                    "it has no 'vision' capability.")]
 
 
@@ -157,13 +157,13 @@ async def test_a_vision_twin_sees_as_its_server_says(router):
 
 async def test_loaded_is_what_the_status_says_and_windows_are_the_running_ones(router):
     await _ask_all(router)
-    assert router.provider_state("home").loaded == {"two-slots", "qwen3-embedding"}, \
+    assert router.provider_state("home").loaded == {"two-slots", "embed-a"}, \
         "a sleeping model is not loaded"
     assert {m["ref"]: m["loaded"] for m in router.loaded_view()["models"]} == {
-        "home/qwen3.5-9b": False, "home/two-slots": True, "home/qwen3-embedding": True,
-        "gpu/Gemma-4-31B": True}
-    assert tokens.server_window("http://home:8080/v1", "qwen3.5-9b") == 32768
-    assert tokens.server_window("http://gpu:11434/v1", "Gemma-4-31B") == 65536
+        "home/model-a": False, "home/two-slots": True, "home/embed-a": True,
+        "gpu/model-b": True}
+    assert tokens.server_window("http://home:8080/v1", "model-a") == 32768
+    assert tokens.server_window("http://gpu:11434/v1", "model-b") == 65536
 
 
 async def test_the_agents_model_list_says_window_caps_host_and_loaded(router, tmp_path):
@@ -175,10 +175,10 @@ async def test_the_agents_model_list_says_window_caps_host_and_loaded(router, tm
     ctx = ToolContext(conversation_id="c", turn_id="t", tool_call_id="x", store=None,
                       config=None, emit=None)  # type: ignore[arg-type]
     lines = (await skill.list(ctx)).content.splitlines()
-    assert lines[0] == ("home/qwen3.5-9b: qwen3.5-9b on home. Its context window is 32,768 "
+    assert lines[0] == ("home/model-a: model-a on home. Its context window is 32,768 "
                         "tokens. It does not see images. It calls tools. Its server "
                         "answers. It is not loaded.")
-    assert lines[2] == ("gpu/Gemma-4-31B: Gemma-4-31B on gpu. Its context window is 65,536 "
+    assert lines[2] == ("gpu/model-b: model-b on gpu. Its context window is 65,536 "
                         "tokens. It sees images. It calls tools. Its server answers. It is "
                         "loaded.")
 
@@ -224,11 +224,11 @@ async def test_what_a_server_says_never_makes_the_settings_invalid(tmp_path, mon
     a change of that role saves). The router skips the model with the reason."""
     from celine.settings import write
     scratch(tmp_path, monkeypatch, providers=PROVIDERS,
-            roles={"vision": {"chain": ["home/qwen3.5-9b"]}})
+            roles={"vision": {"chain": ["home/model-a"]}})
     monkeypatch.setattr(kinds, "_live", {})
-    kinds.stated_caps("http://home:8080/v1", {"qwen3.5-9b": ["chat", "tools"]})
+    kinds.stated_caps("http://home:8080/v1", {"model-a": ["chat", "tools"]})
     cfg = boot.load()
     assert not [p for p in cfg.problems if p.fatal]
     assert write.save(cfg, {"address": {"origin": "https://celine.example.net"}}) == ["address"]
-    assert write.save(cfg, {"roles": {"vision": {"chain": ["home/qwen3.5-9b"]},
+    assert write.save(cfg, {"roles": {"vision": {"chain": ["home/model-a"]},
                                       "small": {"chain": ["home/two-slots"]}}}) == ["roles"]

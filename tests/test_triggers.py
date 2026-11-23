@@ -2,6 +2,7 @@
 task in its own conversation hidden from the chat list, the mail poller, start_chat."""
 from __future__ import annotations
 
+import logging
 import tomllib
 from types import SimpleNamespace
 
@@ -101,7 +102,7 @@ async def test_a_watch_fires_once_per_batch_with_its_paths(store, tmp_path, monk
     assert prompt.startswith(f"{a}\n{b} (added) appeared.")
 
 
-async def test_a_failed_fire_is_logged_and_the_trigger_keeps_asking(store):
+async def test_a_failed_fire_is_logged_and_the_trigger_keeps_asking(store, caplog):
     asked = []
 
     class Skill:
@@ -119,10 +120,13 @@ async def test_a_failed_fire_is_logged_and_the_trigger_keeps_asking(store):
     async def broken(*a):
         raise RuntimeError("database is locked")
     t.fire = broken
-    async with anyio.create_task_group() as tg:
-        await t.run(tg)
-        await until(lambda: len(asked) >= 3, 2)
-        tg.cancel_scope.cancel()
+    with caplog.at_level(logging.ERROR, logger="celine.triggers"):
+        async with anyio.create_task_group() as tg:
+            await t.run(tg)
+            await until(lambda: len(asked) >= 3, 2)
+            tg.cancel_scope.cancel()
+    assert any(r.__dict__.get("event") == "trigger.fire_failed" for r in caplog.records), \
+        "a fire that fails is logged, never raised"
 
 
 class _Imap:

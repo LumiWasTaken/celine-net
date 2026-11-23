@@ -156,10 +156,10 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
             "note": gateway.LOCAL,
             "copy": {"Run in a terminal in the Celine folder on this computer": gateway.PUBLISH}}, "the line to publish, for the agent too"
         # on the network: one line, a token that works once, the key never in the line
-        await saves.address(services, {"origin": "http://192.168.1.20:8766"})
+        await saves.address(services, {"origin": "http://192.0.2.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
         command = next(f for f in view["fields"] if f["key"] == "command")["value"]
-        m = re.fullmatch(r"curl -fsSL http://192\.168\.1\.20:8766/api/plugins/mac/setup/"
+        m = re.fullmatch(r"curl -fsSL http://192\.0\.2\.20:8766/api/plugins/mac/setup/"
                          r"([\w-]{40,}) \| bash", command)
         assert m and key not in command and "address" not in view
         assert view["note"] == gateway.WAITING
@@ -168,7 +168,7 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert not plugins.is_open("GET", "/api/plugins/mac/setup/")
         served = await c.get(f"/api/plugins/mac/setup/{m[1]}")
         assert served.status_code == 200
-        assert (f"APP=http://192.168.1.20:8766 KEY={key} SETUP={gateway.version()} JSON=''"
+        assert (f"APP=http://192.0.2.20:8766 KEY={key} SETUP={gateway.version()} JSON=''"
                 in served.text), "the setup's version, which its report says back"
         assert gateway.PRESET not in served.text and served.text.startswith("#!/bin/bash")
         assert (await c.get(f"/api/plugins/mac/setup/{m[1]}")).status_code == 404, "once"
@@ -178,12 +178,12 @@ async def test_the_mac_posts_its_report_with_the_link_key(tmp_path, monkeypatch,
         assert (await c.get(f"/api/plugins/mac/setup/{late}")).status_code == 404
         # a served copy always has the app and the key in it
         with pytest.raises(RuntimeError):
-            gateway.filled("http://192.168.1.20:8766", "")
+            gateway.filled("http://192.0.2.20:8766", "")
         script, gateway.SCRIPT = gateway.SCRIPT, tmp_path / "no-preset.sh"
         gateway.SCRIPT.write_text("#!/bin/bash\nAPP='' KEY=''\n")
         try:
             with pytest.raises(RuntimeError):
-                gateway.filled("http://192.168.1.20:8766", key)
+                gateway.filled("http://192.0.2.20:8766", key)
         finally:
             gateway.SCRIPT = script
         # its settings__read: the line in its own chat, not in a sub-agent's
@@ -485,7 +485,7 @@ async def test_a_fresh_install_switches_its_mac_on_while_it_is_not_set_up(
         runners["mac"] = Runner(tg, functools.partial(plugins_api.run, services, routes, p))
         await c.put("/api/features", json={"features": {"mac": True}})
         await until(lambda: p.data is not None)
-        await saves.address(services, {"origin": "http://192.168.1.20:8766"})
+        await saves.address(services, {"origin": "http://192.0.2.20:8766"})
         view = (await c.get("/api/forms/mac")).json()
         command = next(f for f in view["fields"] if f["key"] == "command")
         assert command["label"] == "Run in Terminal on the Mac"
@@ -548,7 +548,7 @@ def test_the_setup_version_covers_every_file_a_setup_gets(tmp_path, monkeypatch)
             f.write("\n")
         seen.append(gateway.version())
     assert len(set(seen)) == 4 and all(re.fullmatch(r"[0-9a-f]{12}", v) for v in seen)
-    assert f"KEY=k SETUP={seen[-1]} JSON=''" in gateway.filled("http://192.168.1.20:8766", "k")
+    assert f"KEY=k SETUP={seen[-1]} JSON=''" in gateway.filled("http://192.0.2.20:8766", "k")
 
 
 async def test_update_runs_the_apps_setup_on_the_mac_in_a_job_of_its_own(tmp_path, monkeypatch):

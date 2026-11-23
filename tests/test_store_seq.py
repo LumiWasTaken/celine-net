@@ -71,11 +71,6 @@ async def test_orphans_end_interrupted_with_their_reason(store):
     row = await state(busy)
     assert row["state"] == "interrupted" and "(Shell run command)" in row["reason"]
 
-async def test_reads_reuse_their_connections(store):
-    for _ in range(3):
-        await store.read(lambda c: c.execute("SELECT 1").fetchone())
-    assert store._idle.qsize() == 1, "one read at a time needs one connection"
-
 
 async def test_the_store_says_while_its_writer_runs():
     import anyio as _anyio

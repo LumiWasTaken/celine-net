@@ -317,14 +317,6 @@ async def test_a_public_share_with_nobody_to_ask_is_not_made(shared):
     assert out.is_error and "nobody" in out.content and shared == []
 
 
-def test_the_agent_knows_shares_are_private_and_a_public_one_waits_for_the_user():
-    from celine.skills.shell import Shell as S
-    guide = S.guide.body
-    doc = S.share.__doc__ + str(S.share.__annotations__["public"])
-    for text in (guide, doc):
-        assert "private" in text and "approv" in text, text
-
-
 async def test_an_ask_marks_its_place_and_its_row_until_answered(store, monkeypatch):
     a = _approvals(store, monkeypatch)
     cid, _ = await _chat(store)

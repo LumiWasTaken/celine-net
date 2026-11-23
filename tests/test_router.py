@@ -420,8 +420,8 @@ async def test_problem_is_the_one_sentence_a_model_row_shows(tmp_path, monkeypat
     r, _, down = _counted(tmp_path, monkeypatch, {"chat": {"chain": ["swap/big"]}})
     await r.probe("swap", max_age=0)
     assert r.problem("chat", "swap/big") is None
-    r.note_failed("swap/big", "busy", "5090 returned 503: The model server is paused.")
-    assert r.problem("chat", "swap/big") == "5090 returned 503: The model server is paused."
+    r.note_failed("swap/big", "busy", "gpu-1 returned 503: The model server is paused.")
+    assert r.problem("chat", "swap/big") == "gpu-1 returned 503: The model server is paused."
     r.note_failed("swap/big", "could_not_load", "out of memory", frozenset())
     words = r.problem(None, "swap/big")
     assert words == "big could not load. out of memory" and ":" not in words, "no clock"
@@ -444,16 +444,16 @@ async def test_gateway_models_state_holds_unavailable_and_never_force_loads(
         "gw": {
             "kind": "openai", "label": "Gateway", "base_url": "http://gw:8/v1",
             "models": {
-                "mac/llm/gemma": {"label": "gemma", "caps": ["chat"]},
-                "nix/llm/qwen": {"label": "qwen", "caps": ["chat"]},
+                "box-a/llm/model-a": {"label": "alpha", "caps": ["chat"]},
+                "box-b/llm/model-b": {"label": "beta", "caps": ["chat"]},
                 "llm/shared": {"label": "shared", "caps": ["chat"]},
             },
         },
     }
     scratch(tmp_path, monkeypatch, providers=providers,
-            roles={"chat": {"chain": ["gw/mac/llm/gemma", "gw/nix/llm/qwen"]}})
-    mac_state = ["unavailable: machine paused"]
-    qwen_state = ["loaded"]
+            roles={"chat": {"chain": ["gw/box-a/llm/model-a", "gw/box-b/llm/model-b"]}})
+    a_state = ["unavailable: machine paused"]
+    b_state = ["loaded"]
     shared_state = ["loading"]
     probes: list[str] = []
 
@@ -461,12 +461,12 @@ async def test_gateway_models_state_holds_unavailable_and_never_force_loads(
         probes.append(request.url.path)
         return httpx.Response(200, json={"data": [
             {
-                "id": "llm/gemma", "state": mac_state[0],
-                "machines": [{"id": "mac/llm/gemma", "machine": "mac", "state": mac_state[0]}],
+                "id": "llm/model-a", "state": a_state[0],
+                "machines": [{"id": "box-a/llm/model-a", "machine": "box-a", "state": a_state[0]}],
             },
             {
-                "id": "llm/qwen", "state": qwen_state[0],
-                "machines": [{"id": "nix/llm/qwen", "machine": "nix", "state": qwen_state[0]}],
+                "id": "llm/model-b", "state": b_state[0],
+                "machines": [{"id": "box-b/llm/model-b", "machine": "box-b", "state": b_state[0]}],
             },
             {"id": "llm/shared", "state": shared_state[0]},
         ]})
@@ -477,33 +477,33 @@ async def test_gateway_models_state_holds_unavailable_and_never_force_loads(
     r.make = lambda ref: tabby
 
     why = await r.can_answer("chat")
-    assert why == "gemma: unavailable: machine paused."
+    assert why == "alpha: unavailable: machine paused."
     st = r.provider_state("gw")
-    assert "nix/llm/qwen" in (st.loaded or ())
+    assert "box-b/llm/model-b" in (st.loaded or ())
     assert "llm/shared" in st.starting
     assert st.unavailable == {
-        "llm/gemma": "unavailable: machine paused",
-        "mac/llm/gemma": "unavailable: machine paused",
+        "llm/model-a": "unavailable: machine paused",
+        "box-a/llm/model-a": "unavailable: machine paused",
     }
     # fallback skips the paused machine and picks the loaded one
     ordered = await r.order("chat")
-    assert ordered.refs == ["gw/nix/llm/qwen"]
-    assert dict(ordered.skipped)["gw/mac/llm/gemma"] == "gemma: unavailable: machine paused."
+    assert ordered.refs == ["gw/box-b/llm/model-b"]
+    assert dict(ordered.skipped)["gw/box-a/llm/model-a"] == "alpha: unavailable: machine paused."
     # serves never probes an unavailable model
-    await r.serves("gw/mac/llm/gemma")
+    await r.serves("gw/box-a/llm/model-a")
     assert tabby.bodies == []
     # once the machine unpauses (not loaded), can_answer re-probes after RETRY_DOWN
-    mac_state[0] = "not loaded"
+    a_state[0] = "not loaded"
     r._providers["gw"].checked -= router_mod.RETRY_DOWN
     assert await r.can_answer("chat") is None
     assert len(probes) == 2
     # serves still does not force-load an unloaded model on a server that reports loaded state
-    await r.serves("gw/mac/llm/gemma")
+    await r.serves("gw/box-a/llm/model-a")
     assert tabby.bodies == [], "must not force-load an unloaded model"
     # load failed is also treated as unavailable
-    mac_state[0] = "load failed: runtime crashed"
+    a_state[0] = "load failed: runtime crashed"
     await r.probe("gw", max_age=0)
-    assert await r.can_answer("chat", probe=False) == "gemma: load failed: runtime crashed."
+    assert await r.can_answer("chat", probe=False) == "alpha: load failed: runtime crashed."
 
 
 async def test_serves_drains_the_one_token_stream_to_completion(tmp_path, monkeypatch):

@@ -44,6 +44,18 @@ def _tables(db) -> set[str]:
         c.close()
 
 
+def _prior_migrations(tmp_path, monkeypatch, before: str):
+    """A migrations folder holding everything before `before`, so that one step is the
+    only thing left to apply; points migrate at it. -> the folder."""
+    d = tmp_path / "migrations"
+    d.mkdir()
+    for f in sorted(MIGRATIONS_DIR.iterdir()):
+        if f.suffix in (".sql", ".py") and f.name < before:
+            shutil.copy(f, d)
+    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    return d
+
+
 def test_a_fresh_database_gets_every_table_and_its_words_are_searchable(tmp_path):
     db = tmp_path / "celine.db"
     assert migrate_all(db) == LATEST and _version(db) == LATEST
@@ -310,11 +322,7 @@ def test_0005_makes_the_bridged_chats_plain_chats_and_drops_what_only_the_bridge
     """The bridge is gone: its conversations are chats like any other, and the marks it
     left in intercom rows and image batches go."""
     import json
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.glob("000[1-4]_*.sql")):
-        shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0005")
     db = tmp_path / "celine.db"
     assert migrate(db) == 4
     c = sqlite3.connect(db)
@@ -381,11 +389,7 @@ def test_0006_gives_each_call_with_its_own_files_a_files_block(tmp_path, monkeyp
     the block; a browser shot its display names stays out of it; a call without files
     of its own is not touched. Run twice, the same."""
     import json
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.glob("000[1-5]_*.sql")):
-        shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0006")
     db = tmp_path / "celine.db"
     assert migrate(db) == 5
     c = sqlite3.connect(db)
@@ -501,12 +505,7 @@ def test_the_agents_stored_persona_gets_the_training_line_once():
 def test_0026_renames_the_table_and_its_values_and_a_saved_she_becomes_its_name(
         tmp_path, monkeypatch):
     import json
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0026":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0026")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 25
     c = sqlite3.connect(db)
@@ -562,12 +561,7 @@ def test_0026_renames_the_table_and_its_values_and_a_saved_she_becomes_its_name(
 def test_0027_names_the_reviewer_keys_and_moves_its_prompt_file(tmp_path, monkeypatch):
     import importlib.util
     import tomllib
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0027":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0027")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 26
     folder = tmp_path / "settings" / "schedules"
@@ -596,12 +590,7 @@ def test_0027_names_the_reviewer_keys_and_moves_its_prompt_file(tmp_path, monkey
 
 
 def test_0028_keeps_a_missions_check_in_time_and_reads_its_old_check_ins(tmp_path, monkeypatch):
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0028":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0028")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 27
     at = "2026-11-01T10:00:00.000+00:00"
@@ -630,12 +619,7 @@ def test_0029_takes_the_limit_out_and_a_chat_it_had_cut_keeps_its_view(tmp_path,
     """`history_messages` leaves the saved settings; a chat past it gets one compactions
     row at the cut the limit made (its earlier summary's text carried), a shorter chat
     none; a second run writes nothing."""
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0029":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0029")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 28
     at = "2026-11-01T10:00:00.000+00:00"
@@ -677,12 +661,7 @@ def test_0029_takes_the_limit_out_and_a_chat_it_had_cut_keeps_its_view(tmp_path,
 
 
 def test_0030_keeps_a_stored_tail_as_one_part(tmp_path, monkeypatch):
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0030":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0030")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 29
     at = "2026-11-01T10:00:00.000+00:00"
@@ -713,12 +692,7 @@ def test_0031_moves_require_approval_from_the_guard_to_the_tools(tmp_path, monke
     import tomllib
 
     from celine.settings.tools_meta import TOOLS
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0031":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0031")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 30
     at = "2026-11-01T10:00:00.000+00:00"
@@ -759,12 +733,7 @@ def test_0031_moves_require_approval_from_the_guard_to_the_tools(tmp_path, monke
 def test_0034_names_bastets_persona_slot_with_double_braces(tmp_path, monkeypatch):
     """An owner's talk or note frame with {persona} reads {{persona}}; one that has it already
     stays as written."""
-    d = tmp_path / "migrations"
-    d.mkdir()
-    for f in sorted(MIGRATIONS_DIR.iterdir()):
-        if f.suffix in (".sql", ".py") and f.name < "0034":
-            shutil.copy(f, d)
-    monkeypatch.setattr(m, "MIGRATIONS_DIR", d)
+    d = _prior_migrations(tmp_path, monkeypatch, "0034")
     db = tmp_path / "celine.db"
     assert migrate_all(db) == 33
     c = sqlite3.connect(db)

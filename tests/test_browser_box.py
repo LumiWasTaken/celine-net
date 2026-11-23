@@ -462,7 +462,10 @@ def test_8_a_launch_that_never_answers_until_restart(box):
         time.sleep(0.25)
     took = time.monotonic() - since
     print(f"case 8: down after {took:.1f} s")
-    assert 19 < took < 25 and call("/status")[1]["reason"] == "no_answer"
+    # down only after the no-answer timeout (still within the loop's 30 s), and for that
+    # reason: not a fixed band the host's speed can fall outside of
+    assert took >= 19, "not down before the no-answer timeout"
+    assert call("/status")[1]["reason"] == "no_answer"
     assert look("a")[0] == 503
     docker("exec", "-u", "root", BOX, "mv", "/usr/bin/brave-browser.real", "/usr/bin/brave-browser")
     assert do("a", do="restart") == (200, {"restarting": True})

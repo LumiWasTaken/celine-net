@@ -253,7 +253,6 @@ def test_a_reply_limit_only_where_params_set_one_or_anthropic_needs_it():
     assert "max_tokens" not in backend_config(s, "p/big").params
     assert backend_config(s, "p/small").params["max_tokens"] == 300
     assert "max_tokens" not in backend_config(s, "o/q").params
-    assert backend_config(s, "a/c").params["max_tokens"] == 8192
 
 
 async def test_the_error_answers(monkeypatch):

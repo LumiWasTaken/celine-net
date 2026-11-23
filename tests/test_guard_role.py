@@ -10,11 +10,8 @@ from celine.guard import small_role
 from celine.settings.registry import ROLES
 
 
-def test_bastet_asks_its_own_guard_role():
-    assert small_role.ROLE == "guard" and ROLES["guard"]["caps"] == ["chat"]
-
-
 def test_the_migration_gives_the_guard_role_the_small_list_once(tmp_path):
+    assert small_role.ROLE == "guard" and ROLES["guard"]["caps"] == ["chat"]
     spec = importlib.util.spec_from_file_location(
         "m0023", next(MIGRATIONS_DIR.glob("0023_*.py")))
     step = importlib.util.module_from_spec(spec)

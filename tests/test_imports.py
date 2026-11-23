@@ -8,10 +8,19 @@ import logging
 from pathlib import Path
 
 import grimp
+import pytest
 from importlinter import cli          # importing it configures import-linter
 
 ROOT = Path(__file__).parent.parent
 CONTRACTS = ROOT / ".importlinter"
+
+
+@pytest.fixture(scope="session")
+def graph():
+    """The celine import graph, built once: it is read by two tests and building it is
+    the whole cost."""
+    return grimp.build_graph("celine")
+
 
 # the pairs of packages that import each other. A change that
 # breaks one deletes its line here; a change that makes a new one fails.
@@ -49,18 +58,17 @@ def test_the_contracts_hold():
     assert not made.disabled
 
 
-def test_the_bottom_contract_names_every_package():
+def test_the_bottom_contract_names_every_package(graph):
     """A new package is a feature unless it is added to the bottom on purpose."""
     c = configparser.ConfigParser()
     c.read(CONTRACTS)
     bottom = c["importlinter:contract:bottom"]
     named = {*bottom["source_modules"].split(), *bottom["forbidden_modules"].split()}
-    graph = grimp.build_graph("celine")
     assert {f"celine.{t}" for m in graph.modules if (t := _top(m))} == named
 
 
-def test_no_new_two_way_import_and_the_debt_only_shrinks():
-    edges = _edges(grimp.build_graph("celine"))
+def test_no_new_two_way_import_and_the_debt_only_shrinks(graph):
+    edges = _edges(graph)
     pairs = {tuple(sorted(e)) for e in edges if e[::-1] in edges}
     assert pairs - TWO_WAY == set(), "a new two-way import between packages"
     assert TWO_WAY - pairs == set(), "fixed: delete these lines from TWO_WAY"

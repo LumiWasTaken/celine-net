@@ -20,7 +20,7 @@ PROVIDERS = {
                  "emb": {"label": "Emb", "caps": ["embeddings"]},
                  "rr": {"label": "Reranker", "caps": ["rerank"]},
                  "eyes": {"label": "Eyes", "caps": ["chat", "vision"]}}},
-    "lan": {"kind": "ollama", "label": "gpu-box", "base_url": "http://192.168.1.9:11434/v1",
+    "lan": {"kind": "ollama", "label": "gpu-box", "base_url": "http://192.0.2.9:11434/v1",
             "options": {"max_concurrent": 1},
             "models": {"small": {"label": "Small", "caps": ["chat", "tools", "vision"],
                                  "params": {"reasoning_effort": "none"}},
