@@ -59,3 +59,36 @@ def test_it_looks_at_start_after_a_settings_change_and_on_its_interval_only(monk
     def later(clock):
         clock[0] += 15 * 60
     assert run([nothing, later, nothing], cfg(), monkeypatch) == ["whatsapp", "whatsapp"]
+
+
+def run_once(kbs_list, cfg, monkeypatch) -> list[str]:
+    """One scheduler look over real knowledge bases (no job state forcing a build):
+    return the ids it started."""
+    started: list[str] = []
+    tasks = SimpleNamespace(
+        running=lambda kid, kind: False,
+        job=lambda kid, kind: None,
+        start=lambda kid, kind, label, fn, quiet: started.append(kid))
+    kbs = SimpleNamespace(chats=lambda: list(kbs_list), tasks=tasks)
+    clock = [1000.0]
+
+    class Router:
+        async def wait_change(self, timeout):
+            raise Stop
+
+    monkeypatch.setattr(router_mod, "app_router", lambda cfg: Router())
+    monkeypatch.setattr(semantic.time, "monotonic", lambda: clock[0])
+    with pytest.raises(Stop):
+        asyncio.run(semantic.run_scheduler(cfg, kbs))
+    return started
+
+
+def test_a_cold_archive_is_started_and_an_empty_one_is_left_alone(tmp_path, monkeypatch):
+    from celine.kb.chat import ChatKB
+    from kb_fixtures import archive
+
+    cold = ChatKB(id="cold", title="Cold", platform="whatsapp", path=tmp_path / "cold.db")
+    archive(cold)                       # imported messages, no passages yet
+    empty = ChatKB(id="empty", title="Empty", platform="whatsapp",
+                   path=tmp_path / "empty.db")
+    assert run_once([cold, empty], cfg(), monkeypatch) == ["cold"]

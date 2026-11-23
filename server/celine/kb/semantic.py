@@ -185,12 +185,13 @@ def embed_passages(cfg, path, ctx: ImportContext, *, kb_id: str = "") -> int:
 
 
 def due(conn: sqlite3.Connection) -> bool:
-    """Does the scheduled refresh have work here: an index that was built once and has
-    new or changed messages, vectors still missing (a rebuild for another model, a
-    build that stopped), or passages written the old way (RENDER_VER)?"""
+    """Does the scheduled refresh have work here: a first build (messages that no build
+    has cut into passages yet), an index that was built once and has new or changed
+    messages, vectors still missing (a rebuild for another model, a build that stopped),
+    or passages written the old way (RENDER_VER)?"""
     st = passages.status(conn)
     if not st["passages"]:
-        return False
+        return bool(passages.pending_chats(conn))
     return not st["ready"] or st["embedded"] < st["passages"] or \
         bool(passages.pending_chats(conn)) or passages.stale_render(conn)
 

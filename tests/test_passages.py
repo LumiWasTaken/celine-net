@@ -62,6 +62,19 @@ def test_build_is_incremental_and_every_message_is_mapped(tmp_path, monkeypatch)
     assert kb.file.read_sync(passages.status)["ready"] is True
 
 
+def test_a_cold_archive_is_due_and_an_empty_one_is_not(tmp_path, monkeypatch):
+    monkeypatch.setattr(semantic, "embed_sync", fake_embed)
+    empty = ChatKB(id="empty", title="Empty", platform="whatsapp",
+                   path=tmp_path / "empty.db")
+    assert not empty.file.read_sync(semantic.due), "nothing to cut: no first build"
+    kb = chat_kb(tmp_path)
+    fill(kb, "g1", _conversation(20))
+    assert kb.file.read_sync(passages.status)["passages"] == 0
+    assert kb.file.read_sync(semantic.due), "messages and no passages: the first build"
+    semantic.build(embed_cfg(), kb, CTX)
+    assert not kb.file.read_sync(semantic.due), "built and unchanged: no work"
+
+
 def test_a_new_way_of_writing_passages_cuts_every_chat_again_once(tmp_path, monkeypatch):
     monkeypatch.setattr(semantic, "embed_sync", fake_embed)
     kb = chat_kb(tmp_path)
