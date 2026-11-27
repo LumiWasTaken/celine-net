@@ -808,6 +808,9 @@ def test_0037_gives_every_stored_reference_its_kind(tmp_path, monkeypatch):
     (tmp_path / "notebook" / "links").mkdir(parents=True)
     note = tmp_path / "notebook" / "links" / "trip.md"
     note.write_text("- [[discord:95095]] 2024-07-29, Aini: says hi\nher chat discord:71\n")
+    old = tmp_path / "notebook" / ".versions" / "trip.md"     # a note's versions: a folder
+    old.mkdir(parents=True)
+    (old / "2024-07-29_070600_000001.md").write_text("- [[discord:95095]] an earlier wording\n")
 
     step = MIGRATIONS_DIR / "0037_typed_refs.py"
     shutil.copy(step, d)
@@ -820,6 +823,8 @@ def test_0037_gives_every_stored_reference_its_kind(tmp_path, monkeypatch):
             conn = sqlite3.connect(db, isolation_level=None)
             mod.up(conn, db)
             conn.close()
+        assert (old / "2024-07-29_070600_000001.md").read_text() == (
+            "- [[discord:msg:95095]] an earlier wording\n"), "a version restored later cites right"
         c = sqlite3.connect(db)
         text = dict(c.execute("SELECT id, content FROM messages"))
         assert text["u1"] == "what about [[discord:msg:95095]] and discord:5"

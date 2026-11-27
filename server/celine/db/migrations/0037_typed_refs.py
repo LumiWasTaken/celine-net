@@ -223,8 +223,9 @@ def _attached(conn, path: Path, rw: Rewriter, skip: set[str]) -> None:
 
 def _files(db_path: Path, rw: Rewriter) -> None:
     root = db_path.parent
-    notes = [p for p in (root / "notebook").rglob("*.md")
-             if not any(part.startswith(".") for part in p.relative_to(root).parts)]
+    # every note, its earlier versions (.versions) and the trashed ones (.trash): a
+    # version restored later cites the way the rest does
+    notes = [p for p in (root / "notebook").rglob("*.md") if p.is_file()]
     for path in [*notes, *(root / "prompts").glob("*.md"),
                  *(root / "settings" / "schedules").glob("*.toml"),
                  *(root / "settings" / "schedules").glob("*.md")]:
