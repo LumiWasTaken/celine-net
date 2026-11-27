@@ -1313,7 +1313,7 @@ writer (a rename) waits at most one batch. sqlite-vec is loaded on every connect
 
 ### kind = chat
 
-Schema in `kb/migrations/chat/`: `kv`, `people`, `chats`, `messages` (+ `messages_fts`,
+Schema in `kb/migrations/chat/`: `kv`, `people`, `person_names`, `chats`, `messages` (+ `messages_fts`,
 external content, unicode61 with diacritics removed, kept by triggers), `message_edits`,
 `imports`, `ignored_chats`; the instant search index from `kb/instant.sql`; and the
 semantic index tables from `kb/migrations/` (sessions, passages, int8 +
@@ -1327,6 +1327,19 @@ sign-bit vectors).
   `custom_name` (yours), `contact_name`, `display_name`, `push_name`, `username`, the
   phone formatted with libphonenumber, then `Unknown 1234`. A raw JID or LID is never
   a name.
+- A reference says what it names by its shape (`kb/identity.py`): a chat is
+  `discord:chat:18`, a person (one account) `discord:person:71`, a message
+  `discord:msg:95095`, cited as `[[discord:msg:95095]]`. The three number spaces overlap,
+  so a parameter takes one kind and refuses the others, saying what was passed.
+- A person: `people` holds the current names and profile (`bio`, `pronouns`, `deleted`);
+  `person_names` holds every value they had with when, written by `Sink.person` on each
+  change, so a message line shows the name its sender had then (`kb/retrieve/episodes.py`
+  `to_msg`, the `who:` line). A deleted account keeps its last names. What is kept about a
+  person beyond their accounts is in `celine.db`: `identities` (name of a same person,
+  `relation`, `aliases`), `identity_members` (the accounts), `person_notes` (notes by the
+  user or the agent; a changed note stays as a replaced row). `kb/cards.py` renders the
+  whole person for `chat_archive__look_up`, and for a user message that names them
+  (`[people named]`, the archive skill's `message_context`).
 - `chats.message_count`, `first_ts`, `last_ts`, `last_message_id` are refreshed for the
   chats a write touched, when it closes.
 - Paging is by `(ts, id)` row values, both directions and `around`.
@@ -1385,9 +1398,16 @@ every passage without a vector is embedded (`kb/sessions.py`, `kb/passages.py`,
 `kb/embed.py`). `kv.passages_vec` records the width and the model's fingerprint; another
 fingerprint resets the index. Vectors are the first `dims` dimensions as int8 plus sign
 bits: a Hamming scan picks candidates, int8 cosine rescores them. Until a knowledge base's
-first build has finished (`kv.passages_ready`), retrieval there is words only. The agent
-searches through `kb/retrieve` (word search and semantic topic search, RRF, the reranker,
-match windows).
+first build has finished (`kv.passages_ready`), retrieval there is words only. A
+passage's header (the chat, each participant by every name they have, the day) is embedded
+and word-indexed with its lines; a rename embeds the passages it is in again, and
+`passages.DOC_VER` embeds everything again when what is embedded of a passage changes.
+The agent searches through `kb/retrieve` (word search and semantic topic search, RRF, the
+reranker, match windows). A candidate the reranker scores under
+`chat_archive.rerank_floor` is left out in every mode, unless one of the exact `words` is
+in it; a search with nothing left returns no window. A message is returned whole: the
+only limit is the size of one result, and what does not fit is whole windows or
+messages, counted.
 
 ### kind = documents
 
@@ -1417,8 +1437,9 @@ rule for scheduled work.
 
 ### Skills
 
-`chat_archive`: `search`, `count`, `look_up`, `read_session`, `read_period`, `scroll`,
-`get_messages`, `mark_same_person`. `user_documents`: `list`,
+`chat_archive`: `search`, `count`, `look_up`, `list_chats`, `read_session`, `read_period`,
+`scroll`, `get_messages`, `mark_same_person`, `write_person`. Its tools always go out with
+their parameters (`skills.SCHEMA_FIRST`). `user_documents`: `list`,
 `search`, `read` and `write` (a text file into the drawer; it replaces only files it
 wrote).
 
