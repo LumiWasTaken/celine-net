@@ -27,11 +27,17 @@ def snowflake_at(ms_: int) -> int:
     return max(0, int(ms_) - EPOCH) << 22
 
 
-def person(u: dict[str, Any] | None, *, is_me: bool = False) -> dict[str, Any] | None:
+def person(u: dict[str, Any] | None, *, is_me: bool = False, nick: str | None = None,
+           nick_scope: str | None = None) -> dict[str, Any] | None:
+    """`nick`: their nickname on the server `nick_scope`. A deleted account (Discord
+    renames it deleted_user_...) carries no names: the archive keeps its last ones."""
     if not u or not u.get("id"):
         return None
+    if str(u.get("username") or "").startswith("deleted_user_"):
+        return {"key": str(u["id"]), "deleted": True}
     p = {"key": str(u["id"]), "display_name": u.get("global_name"),
-         "username": u.get("username")}
+         "username": u.get("username"), "nick": nick,
+         "nick_scope": nick_scope if nick else None}
     if is_me:
         p["is_me"] = True
     return {k: v for k, v in p.items() if v is not None}
@@ -123,7 +129,9 @@ def message(state: State, m: dict[str, Any], me_id: str | None,
     msg: dict[str, Any] = {"key": str(m["id"]), "ts": ms(m["timestamp"]), "from_me": from_me,
                            "type": kind, "text": text}
     if not from_me and person(a):
-        msg["sender"] = person(a)
+        ch = state.channel(str(m["channel_id"])) or {}
+        msg["sender"] = person(a, nick=(m.get("member") or {}).get("nick"),
+                               nick_scope=ch.get("guild_name"))
     if media:
         msg["media"] = media
     ref = (m.get("message_reference") or {}).get("message_id")

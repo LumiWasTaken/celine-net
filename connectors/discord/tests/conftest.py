@@ -64,6 +64,7 @@ class FakeDiscord:
         self.relationships: list[dict] = [{"id": "BAD", "type": 2}]
         self.me = {"id": ME, "username": "sam", "global_name": "Sam"}
         self.authed: list[tuple[str, str]] = []
+        self.profiles: dict = {}     # user id -> profile answer; None: 403; "gone": 404
 
     @property
     def writes(self) -> list[tuple[str, str]]:
@@ -126,6 +127,10 @@ class FakeDiscord:
                                                        {"name": "mods"}]}) \
                 if g else httpx.Response(404, json={})
         m = re.fullmatch(r"/users/(\w+)/profile", path)
+        if m and m.group(1) in self.profiles:           # a test's own answers
+            got = self.profiles[m.group(1)]
+            return httpx.Response(403 if got is None else 404 if got == "gone" else 200,
+                                  json=got if isinstance(got, dict) else {})
         if m:
             return httpx.Response(200, json={
                 "user": {"id": m.group(1), "username": "ana", "global_name": "Ana",

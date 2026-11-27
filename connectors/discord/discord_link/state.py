@@ -62,6 +62,10 @@ CREATE TABLE IF NOT EXISTS channels (
     last_message_id TEXT,
     enabled         INTEGER NOT NULL DEFAULT 0   -- DMs: synced
 );
+CREATE TABLE IF NOT EXISTS profiles (       -- everyone seen; profiles.py reads them slowly
+    user_id    TEXT PRIMARY KEY,
+    fetched_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS cursors (
     chat_key   TEXT PRIMARY KEY,
     newest     TEXT,
@@ -233,6 +237,11 @@ class State:
 
     def _append(self, r: dict[str, Any]) -> list[dict[str, Any]]:
         r = {k: v for k, v in r.items() if k != "seq"}
+        for p in (r.get("person"), (r.get("message") or {}).get("sender"),
+                  (r.get("chat") or {}).get("peer")):
+            if p and not p.get("is_me"):
+                self.conn.execute("INSERT OR IGNORE INTO profiles (user_id) VALUES (?)",
+                                  (str(p["key"]),))
         body = json.dumps(r, ensure_ascii=False, sort_keys=True)
         h = hashlib.sha1(body.encode()).hexdigest()
         kind, chat_key, message_key = self._key(r)

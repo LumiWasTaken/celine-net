@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import httpx
 
-from . import sync
+from . import profiles, sync
 from .gateway import Gateway
 from .jobs import Jobs, due_at
 from .login import Logins
@@ -185,6 +185,9 @@ class Link:
                 gw.start()
             if self._now() >= self.next_sync():
                 self.start_sync()
+            if profiles.due(self.state) is not None:
+                self.jobs.start("profile", "Discord profile",
+                                lambda ctx: {"user": profiles.step(self.rest, self.state)})
         elif running:
             await gw.stop()
 
