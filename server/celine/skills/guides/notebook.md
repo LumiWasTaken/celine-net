@@ -56,7 +56,9 @@ first blank line:
 - `lore/self.md`: how you are developing.
 - `plans/`: what you are working on, step by step, what is done, what is next.
 - `people/`, `opinions/`, `appearance/`: who people are, what you think, what you look
-  like.
+  like. A person from {{username}}'s Messages archive has a card of their own:
+  `chat_archive__write_person` keeps what you learn about them there, and it comes to
+  you when {{username}} names them.
 - `agents/<name>/`: what a sub-agent of yours worked on.
 - `skills/<name>.md`: your notes about a specific skill: patterns, tips, things you
   learned, what works and what does not. `skills__read_guide` shows them with the guide.

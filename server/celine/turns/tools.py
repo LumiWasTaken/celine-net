@@ -498,9 +498,21 @@ def _lenient(args: dict | None, schema: dict) -> dict | None:
 def _takes(schema: dict) -> str:
     """A tool's parameters in one line: each name, its type, required ones marked."""
     props, required = schema.get("properties", {}), set(schema.get("required", []))
-    return ", ".join(f"{k} ({_WORD.get(_kind(p) or '', 'a value')}"
-                     + (", required)" if k in required else ")")
+    return ", ".join(f"{k} ({_says(p)}" + (", required)" if k in required else ")")
                      for k, p in props.items()) or "no parameters"
+
+
+def _says(prop: dict) -> str:
+    """A parameter's type in words: `one of best, first, last`, `a list of strings`."""
+    one = next((x for x in [prop, *(prop.get("anyOf") or ())] if x.get("type") != "null"
+                and ("enum" in x or x.get("type") == "array")), prop)
+    if one.get("enum"):
+        return "one of " + ", ".join(map(str, one["enum"]))
+    if one.get("type") == "array":
+        item = _WORD.get(_kind(one.get("items") or {}) or "", "a value")
+        return "a list of " + {"a string": "strings", "a whole number": "whole numbers",
+                               "a number": "numbers"}.get(item, "values")
+    return _WORD.get(_kind(prop) or "", "a value")
 
 
 # lists and objects are left to the tools: several read a string as one (a comma list,

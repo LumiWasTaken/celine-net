@@ -23,6 +23,8 @@ log = logging.getLogger("celine.compact")
 THINK = re.compile(r"<think>.*?(</think>|$)", re.S)
 STUB_HEAD = "[earlier result, shortened to save room]"
 MAX_STUB_REFS = 40
+# a chat or a person reference in a result: discord:chat:18, discord:person:71
+NAMED_REF = re.compile(r"(?<![\w:-])[a-z0-9_-]+:(?:chat|person):\d+")
 
 
 def one_line(text: str | None, limit: int = 0) -> str:
@@ -150,6 +152,11 @@ def stub(name: str, arguments: str | None, content: str | None,
     if refs:
         more = len(refs) - MAX_STUB_REFS
         out.append("Message refs in it: " + " ".join(refs[:MAX_STUB_REFS])
+                   + (f" (+{more} more)" if more > 0 else ""))
+    named = list(dict.fromkeys(NAMED_REF.findall(content)))
+    if named:
+        more = len(named) - MAX_STUB_REFS
+        out.append("Chats and people in it: " + " ".join(named[:MAX_STUB_REFS])
                    + (f" (+{more} more)" if more > 0 else ""))
     if cited:
         kept = [ln for ln in lines if any(r in cited for r in refs_in(ln))]

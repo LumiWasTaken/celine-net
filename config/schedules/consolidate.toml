@@ -20,9 +20,12 @@ today. Then:
   changed), each change with the date and why. The old text stays in the note's
   versions.
 - Move each lesson about a tool into skills/<skill>.md, one line per lesson.
-- A fact about a person that came from a single chat and contradicts their note under
-  people/ goes into your diary with where it came from. It moves into people/ once it is
-  confirmed.
+- What you know about a person from {{username}}'s Messages archive belongs with the
+  person: chat_archive__look_up finds them, chat_archive__write_person keeps a note, how
+  they relate to {{username}}, or another name they go by. Move what a note under people/
+  says about such a person over, one fact a note, and trash the note once nothing is left
+  in it. A fact from a single chat that contradicts what is kept goes into your diary
+  with where it came from, and to the person once it is confirmed.
 
 Your answer is what you merged, changed and moved, in a few lines.
 """
