@@ -137,3 +137,32 @@ def test_a_deleted_account_keeps_its_last_names(tmp_path):
     row = dc.file.read_sync(lambda c: c.execute(
         "SELECT display_name, username, deleted FROM people WHERE key = '901'").fetchone())
     assert tuple(row) == ("Ghost", "ghosty", 1)
+
+
+async def test_a_message_that_names_a_person_brings_their_card(tmp_path, store, monkeypatch):
+    """One person named: the whole card. Two: one line each. A word that is no name: none."""
+    from kb_fixtures import archive_skill
+    kbs = build(tmp_path)
+    s = kbs.get("discord").sink()
+    s.person("900", display_name="Moon", username="shiniloli")
+    dm = s.chat("dm900", kind="dm", person_key="900")
+    s.message(dm, "x1", ts=1_750_000_100_000, text="are you there", from_me=True)
+    s.person("901", display_name="Vega", username="vega_x")
+    s.close()
+    skill = archive_skill(monkeypatch, kbs)
+    await store.write(lambda c: c.execute(
+        "INSERT INTO conversations(id, title, created_at, updated_at) "
+        "VALUES('c', 't', 'x', 'x')"))
+    ctx = SimpleNamespace(turn_id=None, store=store, conversation_id="c")
+
+    async def ask(text):
+        return await skill.message_context(ctx, {"id": "m", "content": text})
+    text, report = await ask("read the discord chat with shiniloli")
+    assert text.startswith("[people named]\nperson discord:person:")
+    assert "Moon (username shiniloli)" in text
+    assert f"the direct chat with them: chat discord:chat:{dm}" in text
+    assert [p["word"] for p in report["people"]] == ["shiniloli"]
+    text, report = await ask("did Moon ever talk to vega_x?")
+    assert len(report["people"]) == 2 and "named 'Moon'" in text and "named 'vega_x'" in text
+    assert "the direct chat" not in text
+    assert await ask("what is the weather tomorrow") is None

@@ -3,7 +3,7 @@ means, and who wrote what follows it.
 
 Everything the app inserts is marked one way, a line in square brackets: the send time
 (context.time_line), the intercom headers (intercom/render.py header), its mind block
-(skills/mind.py HEAD), its memory block (skills/recall.py HEAD), its notes (skills/notebook.py notes_block), the other chats working now
+(skills/mind.py HEAD), its memory block (skills/recall.py HEAD), the people a message names (skills/archive.py PEOPLE_HEAD), its notes (skills/notebook.py notes_block), the other chats working now
 (conversations/here.py busy), shortened and cut
 results (compact.STUB_HEAD, tools._capped), a screen (context, "[the screen from ...]") and a load that came with a call
 (skills/meta.py CALL_HEAD).
@@ -27,6 +27,9 @@ LINES = (
     "- [your memory] at the end of a message: sections of your notes whose keys came up, "
     "the best match first, each with its path, heading, similarity and date. Read the "
     "note for the rest.",
+    "- [people named] at the end of a message: who a name in the message is in "
+    "{{username}}'s Messages archive. One person: everything known about them. Several: "
+    "one line each, to tell them apart.",
     "- [also working now]: your other chats working at the same time.",
     "- [your notes]: notes from your notebook, written by you unless their tag says "
     "otherwise.",

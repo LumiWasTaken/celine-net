@@ -220,6 +220,11 @@ def _labels(scope) -> list[str]:
     return out
 
 
+PEOPLE_HEAD = "[people named]"
+PEOPLE_WORDS = 60        # the most words of one message looked up as a name
+PEOPLE_LISTED = 5        # the most people listed when a message names several
+
+
 def _no_match(res, about) -> str:
     """What a search that returns no window says: what was looked for and found
     wanting, as the facts they are."""
@@ -525,6 +530,56 @@ class ChatArchive:
         return ToolResult(content="\n".join(lines),
                           display={"total": res.total, "rows": len(res.rows), "unit": unit,
                                    **echo_display})
+
+    async def message_context(self, ctx: ToolContext, message: dict):
+        """`[people named]`: the card of the person a new user message names by a name,
+        a username or an alias (kb/cards.py); with several people named, one line each.
+        Only a whole word that is exactly a name counts. (text, report) or None."""
+        from ..kb import cards, identity
+        from ..kb.query import resolve_people
+        from ..kb.retrieve.scope import person_card
+        from .places import offered, place_of
+        from .recall import _STOP
+        store = ctx.store
+
+        def facts(c):
+            conv = c.execute("SELECT auto_context FROM conversations WHERE id=?",
+                             (ctx.conversation_id,)).fetchone()
+            return conv and bool(conv[0]) and offered(
+                "chat_archive", place_of(c, ctx.conversation_id, ctx.turn_id))
+        if not await store.read(facts):
+            return None
+        # a username has digits, dots and underscores: shiniloli_2, moon.child
+        words = [w for w in dict.fromkeys(
+                     x.strip(".") for x in re.findall(r"[\w.]+", message.get("content") or ""))
+                 if len(w) >= 3 and w.casefold() not in _STOP][:PEOPLE_WORDS]
+        if not words:
+            return None
+        ids = await identity.snapshot(store)
+        kbs = self._kbs()
+
+        def run():
+            chat_kbs = kbs.chats()
+            found: dict[str, tuple[str, dict]] = {}       # person -> (the word, candidate)
+            for w in words:
+                res = resolve_people(chat_kbs, w, identities=ids)
+                if res.match == "exact":
+                    for c in res.candidates:
+                        found.setdefault(c["ref"], (w, c))
+            if len(found) == 1:
+                [ref] = found
+                return found, cards.person(kbs, ids, ref, self.me)
+            accts = identity.accounts(kbs, list(found)[:PEOPLE_LISTED])
+            return found, [f"{person_card(a)}, named {found[r][0]!r}"
+                           for r, a in accts.items()]
+        found, lines = await anyio.to_thread.run_sync(run)
+        if not lines:
+            return None
+        if len(found) > PEOPLE_LISTED:
+            lines.append(f"{len(found) - PEOPLE_LISTED} more people match a word of the "
+                         f"message.")
+        return ("\n".join([PEOPLE_HEAD, *lines]),
+                {"people": [{"ref": r, "word": w} for r, (w, _) in found.items()]})
 
     # ---- people and chats -------------------------------------------------------------
     @tool()
