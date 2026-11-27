@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from .. import names
-from ..identity import chat_ref, msg_ref
+from ..identity import chat_ref, msg_ref, person_ref
 from .units import Span
 
 
@@ -24,6 +24,8 @@ class Msg:
     sender: str
     text: str
     kind: str
+    names: str = ""          # the sender by every name they have now (names.full)
+    earlier: bool = False    # `sender` is the name they had when they wrote it
 
 
 @dataclass
@@ -46,9 +48,19 @@ class Episode:
         return [msg_ref(self.kb, m.id) for m in self.lines]
 
 
-SELECT = """SELECT m.id, m.chat_id, m.ts, m.from_me, m.sender_id, m.text, m.kind, m.media,
+def _was(kind: str) -> str:
+    """The value of `kind` the sender had when the message was written, when it is no
+    longer theirs."""
+    return (f"(SELECT n.value FROM person_names n WHERE n.person_id = m.sender_id AND "
+            f"n.kind = '{kind}' AND n.scope = '' AND n.to_ts > m.ts AND "
+            f"(n.from_ts IS NULL OR n.from_ts <= m.ts) ORDER BY n.to_ts LIMIT 1)")
+
+
+SELECT = f"""SELECT m.id, m.chat_id, m.ts, m.from_me, m.sender_id, m.text, m.kind, m.media,
                     p.id AS p_id, p.key, p.phone, p.custom_name, p.contact_name, p.push_name,
-                    p.display_name, p.username
+                    p.display_name, p.username,
+                    {_was('display_name')} AS was_display, {_was('push_name')} AS was_push,
+                    {_was('username')} AS was_username
              FROM messages m LEFT JOIN people p ON p.id = m.sender_id"""
 
 
@@ -67,14 +79,38 @@ def _text(r: sqlite3.Row) -> str:
 
 
 def to_msg(r: sqlite3.Row, me: str) -> Msg:
+    """A message under the name its sender had when they wrote it. A name the user gave
+    them (custom, contact) is theirs at any time."""
+    full, earlier = "", False
     if r["from_me"]:
         sender = me
     elif r["p_id"] is not None:
-        sender = names.resolve(r)[0]
+        sender, source = names.resolve(r)
+        full = names.full(r)
+        was = r[f"was_{source}"] if source in ("display", "push", "username") else None
+        if was and was != sender:
+            sender, earlier = was, True
     else:
         sender = "someone"
     return Msg(r["id"], r["chat_id"], r["ts"], bool(r["from_me"]), r["sender_id"], sender,
-               _text(r), r["kind"])
+               _text(r), r["kind"], full, earlier)
+
+
+def who(kb: str, msgs: list[Msg]) -> str:
+    """The senders of these messages, once each: the name on the lines, their person
+    reference and every name they have. A name they no longer have is said to be one.
+
+        who: Moon is discord:person:71, Moon (username shiniloli); Luna is an earlier
+        name of discord:person:71"""
+    seen: dict[tuple[str, int], str] = {}
+    for m in msgs:
+        if m.from_me or not m.sender_id or (m.sender, m.sender_id) in seen:
+            continue
+        ref = person_ref(kb, m.sender_id)
+        seen[(m.sender, m.sender_id)] = (
+            f"{m.sender} is an earlier name of {ref}, now {m.names}" if m.earlier
+            else f"{m.sender} is {ref}" + (f", {m.names}" if m.names != m.sender else ""))
+    return "who: " + "; ".join(seen.values()) if seen else ""
 
 
 def window(conn: sqlite3.Connection, chat_id: int, first: tuple[int, int],
@@ -153,7 +189,7 @@ def render(ep: Episode, n: int | None = None, *, kb_title: str = "") -> str:
         f"{a:%Y-%m-%d %H:%M} to {b:%Y-%m-%d %H:%M}"
     head = (f"{'#' + str(n) + ' ' if n else ''}{kb_title or ep.kb}; {where} ({kind}, chat "
             f"{chat_ref(ep.kb, ep.chat_id)}); {span}")
-    out = [head]
+    out = [head, *filter(None, [who(ep.kb, ep.lines)])]
     day = a.date()
     for m in ep.lines:
         t = clock(m.ts)

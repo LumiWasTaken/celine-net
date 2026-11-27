@@ -786,8 +786,9 @@ class ChatArchive:
                 ch = info.get(cid) or {}
                 chats.append({"ref": chat_ref(kid, cid), "name": ch.get("name") or "?",
                               "kind": ch.get("kind") or "chat", "platform": kid})
-                blocks.append(_chat_head(kb.title, kid, cid, ch) + "\n" + "\n".join(
-                    _line(kid, x) for x in xs))
+                blocks.append("\n".join(filter(None, [
+                    _chat_head(kb.title, kid, cid, ch), E.who(kid, xs),
+                    *(_line(kid, x) for x in xs)])))
         missing = [r for r in items if r not in found and r not in bad]
         tail = []
         if bad:
@@ -868,7 +869,7 @@ class ChatArchive:
         after = got.get("after", ([], True))[0]
         seq = [*before, anchor, *after]
 
-        body = []
+        body = list(filter(None, [E.who(kid, seq)]))
         prev_day = None
         for x in seq:
             t = E.clock(x.ts)

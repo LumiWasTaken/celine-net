@@ -138,3 +138,26 @@ async def test_a_long_message_comes_back_whole(tmp_path, monkeypatch):
                 await sk.scroll(CTX, ref="whatsapp:msg:1", direction="after"),
                 await sk.read_period(CTX, chat="whatsapp:chat:1")):
         assert not out.is_error and whole in out.content, out.content[:200]
+
+
+async def test_a_message_shows_the_name_its_sender_had_then_and_who_that_is(tmp_path,
+                                                                             monkeypatch):
+    """A person renamed since: their old messages carry the old name, the new ones the new
+    name, and the `who:` line ties both to one person reference."""
+    from celine.skills import archive
+    monkeypatch.setattr(archive, "_chat_counts", {})
+    kbs = KBs(SimpleNamespace(data_dir=tmp_path, problems=[], kb={
+        "discord": {"kind": "chat", "title": "Discord", "platform": "discord"}}),
+        lambda ev: None)
+    s = kbs.get("discord").sink()
+    p = s.person("900", display_name="Luna", username="shiniloli", ts=T0)
+    dm = s.chat("dm900", kind="dm", person_key="900")
+    s.message(dm, "a", ts=T0 + 60_000, text="old days", sender=p)
+    s.person("900", display_name="Moon", username="shiniloli", ts=T0 + 120_000)
+    s.message(dm, "b", ts=T0 + 180_000, text="new days", sender=p)
+    s.close()
+    sk = archive_skill(monkeypatch, kbs)
+    out = (await sk.read_period(CTX, chat=f"discord:chat:{dm}")).content
+    assert "Luna: old days" in out and "Moon: new days" in out
+    assert (f"who: Luna is an earlier name of discord:person:{p}, now Moon (username "
+            f"shiniloli); Moon is discord:person:{p}, Moon (username shiniloli)") in out
