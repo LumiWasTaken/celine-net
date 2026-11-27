@@ -247,22 +247,15 @@ def _labels(scope) -> list[str]:
     return out
 
 
-def _no_match_advice(res, words, about) -> str:
-    """What to try next when a search found nothing, said for the query that missed:
-    literal words that do not occur, a semantic search whose index is missing, or a
-    plain semantic miss."""
-    if res.absent and not _as_list(about):
-        return ("No indexed message in scope matches these exact words/phrases: "
-                + ", ".join(repr(q) for q in res.absent) + ". They are literal words, not "
-                "topics, so this is not a ranking miss: nobody typed them. Try a shorter "
-                "form or the other language with `words`, or describe the topic in `about`.")
-    if _as_list(about) and any("semantic topic search" in n.lower() for n in res.notes):
-        return ("No match in scope. The semantic topic search index is not available here, "
-                "so `about` could not run; the word search found nothing either. Use `words` "
-                "for exact words, or chat_archive__count to check whether they occur.")
-    return ("No match in scope. Describe the topic differently: another angle, the chats' "
-            "other language, or what someone would have said. A wider `when` or fewer "
-            "filters may help; chat_archive__count checks whether exact words occur at all.")
+def _no_match(res, about) -> str:
+    """What a search that returns no window says: what was looked for and found
+    wanting, as the facts they are."""
+    if not _as_list(about):
+        return "No message in scope has these words."
+    if res.below:
+        return (f"No message in scope fits the description: the reranker scored the "
+                f"{res.below} closest passages under the lowest score.")
+    return "No message in scope fits the description."
 
 
 class ChatArchive:
@@ -471,11 +464,12 @@ class ChatArchive:
                         f"({what}). > marks the matching lines:")
             body += [t for _, t in shown]
         else:
-            body.append(_no_match_advice(res, words, about))
+            body.append(_no_match(res, about))
         tail = []
         if cut or res.more:
-            tail.append(f"{cut + res.more} more not shown. Narrow with when, scope or "
-                        f"written_by, or use mode=\"all\".")
+            tail.append(f"{cut + res.more} more match windows fit and are not shown: one "
+                        f"result holds {cap:,} tokens. `when`, `chats` or `written_by` "
+                        f"narrow the search; mode=\"all\" returns more of them.")
         content = "\n".join(head + [""] + ["\n\n".join(body)] + ([""] + tail if tail else []))
         display = {"episodes": [{"kb": e.kb, "chat": e.chat_id,
                                  "chat_name": (e.chat or {}).get("name"),
@@ -484,7 +478,8 @@ class ChatArchive:
                                  "refs": e.refs, "hits": sorted(f"{e.kb}:{h}" for h in e.hits
                                                                 if h in {m.id for m in e.lines})}
                                 for e, _ in shown],
-                   "totals": res.totals, "absent": res.absent, "scope": scope.labels,
+                   "totals": res.totals, "absent": res.absent, "below": res.below,
+                   "scope": scope.labels,
                    **echo_display,
                    "reranked": res.reranked, "took_ms": res.took_ms}
         return ToolResult(content=content.strip(), display=display)

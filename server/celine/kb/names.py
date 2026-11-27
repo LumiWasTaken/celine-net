@@ -63,6 +63,31 @@ def resolve(row: Mapping[str, Any]) -> tuple[str, str]:
     return unknown_label(row["key"]), "unknown"
 
 
+LABELS = (("custom_name", "your name for them"), ("contact_name", "contact name"),
+          ("display_name", "display name"), ("push_name", "WhatsApp name"),
+          ("username", "username"))
+
+
+def labelled(row: Mapping[str, Any], shown: str | None = None) -> list[str]:
+    """Every name of an account but the one shown, each with what it is: `username
+    shiniloli`, `display name Moon`."""
+    shown = resolve(row)[0] if shown is None else shown
+    out = []
+    for col, label in LABELS:
+        v = row[col] if col in row.keys() else None
+        if v and str(v).strip() and str(v).strip() != shown:
+            out.append(f"{label} {str(v).strip()}")
+    return out
+
+
+def full(row: Mapping[str, Any]) -> str:
+    """An account by every name it has: `Moon (username shiniloli)`. What the search
+    index knows a person by."""
+    shown = resolve(row)[0]
+    other = labelled(row, shown)
+    return f"{shown} ({'; '.join(other)})" if other else shown
+
+
 def person(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None

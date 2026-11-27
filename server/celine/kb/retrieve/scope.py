@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from .. import names
 from ..identity import (CHAT_REF, PERSON_REF, Identities, chat_ref, kind_of, not_a,
                         parse_person, person_ref)
 from .when import parse_when
@@ -78,15 +79,11 @@ class Scope:
 # A parameter takes references only. A name passed instead is refused with who or what it
 # could mean (kb/query.py, the one name resolver), so the caller passes the reference.
 
-_LABELS = (("custom", "your name for them"), ("contact", "contact name"),
-           ("display", "display name"), ("push", "WhatsApp name"), ("username", "username"))
-
-
 def labelled_names(names_: dict[str, str | None], shown: str) -> list[str]:
-    """Every name of an account but the one shown, each with what it is: `username
-    shiniloli`, `display name Moon`."""
-    return [f"{label} {v.strip()}" for k, label in _LABELS
-            if (v := names_.get(k)) and v.strip() and v.strip() != shown]
+    """Every name of an account (identity.accounts: `names`) but the one shown, each
+    with what it is: `username shiniloli`, `display name Moon`."""
+    return names.labelled({f"{k}_name" if k != "username" else k: v
+                           for k, v in names_.items()}, shown)
 
 
 def person_card(a: dict) -> str:

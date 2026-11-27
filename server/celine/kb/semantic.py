@@ -150,7 +150,8 @@ def build_embedder(cfg, path) -> Embedder:
 
 
 def _chats(kb: ChatKB) -> dict[int, dict[str, Any]]:
-    return {c["id"]: {"id": c["id"], "name": c["name"], "kind": c["kind"], "parent": c["parent"]}
+    return {c["id"]: {"id": c["id"], "name": c["name"], "kind": c["kind"],
+                      "parent": c["parent"], "person": c["person"]}
             for c in kb.list_chats(trashed=None, limit=1_000_000)["chats"]}
 
 

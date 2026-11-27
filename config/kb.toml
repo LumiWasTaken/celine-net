@@ -67,7 +67,6 @@ session_max_messages = 120  # longer sessions split at their largest pause
 passage_messages = 8        # a passage holds at most this many messages
 passage_chars    = 450      # or this much message text
 passage_overlap  = 2        # messages shared with the passage before
-embed_header     = false    # embed the header (chat, people, date) too; it is always in FTS.
 # How often new messages are embedded is Settings, General (Update the index every).
 
 # Attachment files and photo descriptions (kb/media.py).

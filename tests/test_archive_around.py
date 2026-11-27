@@ -114,3 +114,27 @@ async def test_read_session_follows_the_configured_session_gap(tmp_path, monkeyp
     out = await sk.read_session(CTX, ref="whatsapp:msg:2")
     assert ids(out) == [2]
     assert out.display["messages"] == 1
+
+
+async def test_a_long_message_comes_back_whole(tmp_path, monkeypatch):
+    """Nothing of a message is cut: a 5,000 character message with several lines reads
+    the same in a search window, a chat session, a scroll and a read of the chat."""
+    from celine.skills import archive
+    monkeypatch.setattr(archive, "_chat_counts", {})
+    kbs = KBs(SimpleNamespace(data_dir=tmp_path, problems=[], kb={
+        "whatsapp": {"kind": "chat", "title": "WhatsApp", "platform": "whatsapp"}}),
+        lambda ev: None)
+    s = kbs.get("whatsapp").sink()
+    noor = s.person("491700000005@s.whatsapp.net", push_name="Noor")
+    dm = s.chat("491700000005@s.whatsapp.net", person_key="491700000005@s.whatsapp.net")
+    long = "the harbour story " + "x" * 4960 + "\nsecond line END"
+    s.message(dm, "a", ts=T0, text="short one", sender=noor)
+    s.message(dm, "b", ts=T0 + 60_000, text=long, sender=noor)
+    s.close()
+    sk = archive_skill(monkeypatch, kbs)
+    whole = "the harbour story " + "x" * 4960 + "\n    second line END"
+    for out in (await sk.search(SCOPE_CTX, about=["the harbour story"], words=["harbour"]),
+                await sk.read_session(CTX, ref="whatsapp:msg:2"),
+                await sk.scroll(CTX, ref="whatsapp:msg:1", direction="after"),
+                await sk.read_period(CTX, chat="whatsapp:chat:1")):
+        assert not out.is_error and whole in out.content, out.content[:200]

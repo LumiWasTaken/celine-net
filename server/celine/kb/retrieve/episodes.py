@@ -1,5 +1,6 @@
 """Episodes: ranked units grouped into contiguous windows of one chat, rendered with a
-`[kb:id]` reference, a time and a resolved name on every line."""
+`[kb:msg:id]` reference, a time and a resolved name on every line. A message is shown
+whole: nothing of it is cut."""
 from __future__ import annotations
 
 import json
@@ -11,8 +12,6 @@ from typing import Any
 from .. import names
 from ..identity import chat_ref, msg_ref
 from .units import Span
-
-LINE_CHARS = 600
 
 
 @dataclass
@@ -64,8 +63,7 @@ def _text(r: sqlite3.Row) -> str:
         text = f"[{media.get('type', 'attachment')}] {text or cap or ''}".strip()
     elif r["kind"] == "system":
         text = f"({text})"
-    text = " ".join(text.split("\n"))
-    return text if len(text) <= LINE_CHARS else text[:LINE_CHARS] + "…"
+    return text.replace("\n", "\n    ")       # a message's further lines, indented
 
 
 def to_msg(r: sqlite3.Row, me: str) -> Msg:
@@ -80,17 +78,17 @@ def to_msg(r: sqlite3.Row, me: str) -> Msg:
 
 
 def window(conn: sqlite3.Connection, chat_id: int, first: tuple[int, int],
-           last: tuple[int, int], pad: int, me: str, cap: int = 400,
+           last: tuple[int, int], pad: int, me: str,
            pad_ms: int = 3 * 3_600_000) -> list[Msg]:
     """Every message of the chat from `first` to `last` (inclusive), plus up to `pad` on
-    each side that are no more than `pad_ms` away. At most `cap` in the middle."""
+    each side that are no more than `pad_ms` away."""
     before = conn.execute(f"{SELECT} WHERE m.chat_id = ? AND (m.ts, m.id) < (?, ?) "
                           f"AND m.ts >= ? ORDER BY m.ts DESC, m.id DESC LIMIT ?",
                           (chat_id, first[0], first[1], first[0] - pad_ms, pad)
                           ).fetchall()[::-1] if pad else []
     mid = conn.execute(f"{SELECT} WHERE m.chat_id = ? AND (m.ts, m.id) BETWEEN (?, ?) AND (?, ?) "
-                       f"ORDER BY m.ts, m.id LIMIT ?",
-                       (chat_id, first[0], first[1], last[0], last[1], cap)).fetchall()
+                       f"ORDER BY m.ts, m.id",
+                       (chat_id, first[0], first[1], last[0], last[1])).fetchall()
     after = conn.execute(f"{SELECT} WHERE m.chat_id = ? AND (m.ts, m.id) > (?, ?) "
                          f"AND m.ts <= ? ORDER BY m.ts, m.id LIMIT ?",
                          (chat_id, last[0], last[1], last[0] + pad_ms, pad)

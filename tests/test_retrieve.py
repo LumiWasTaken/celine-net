@@ -216,7 +216,7 @@ def test_absent_words_only_returns_nothing_without_embedding(tmp_path):
     assert res.episodes == []
     assert res.absent == ["zzzqnosuch"]
     assert res.totals == {"zzzqnosuch": 0}
-    assert any("No indexed message in scope matches these exact words/phrases" in n
+    assert any("No indexed message in scope has these exact words/phrases" in n
                for n in res.notes)
 
 
@@ -246,15 +246,67 @@ def test_a_partially_absent_word_list_keeps_the_present_words(tmp_path):
     assert any("zzzqnosuch" in n for n in res.notes)
 
 
-def test_mixed_words_and_about_keeps_semantic_windows_with_a_note(tmp_path):
-    """A mixed search is never suppressed because one literal name is absent: the windows
-    stay, with the absent entry named and the semantic nature of the windows stated."""
+def test_mixed_words_and_about_keeps_the_windows_and_names_the_absent_word(tmp_path):
+    """A mixed search is never suppressed because one literal word is absent: the windows
+    that fit stay, and the absent entry is named."""
     kbs = build(tmp_path)
     res = retrieve(kbs, ["celine", "zzzqnosuch"], resolve(kbs, kb_ids="whatsapp"),
                    about=["the boat which floats"], reranker=WordReranker())
     assert res.episodes
     assert res.absent == ["zzzqnosuch"]
-    assert any("zzzqnosuch" in n and "semantic topic matches" in n for n in res.notes)
+    assert any("zzzqnosuch" in n and "has these exact words" in n for n in res.notes)
+
+
+def _indexed(tmp_path, monkeypatch):
+    """The fixture archive with its WhatsApp passages cut and embedded, and the query
+    embedder of the same fake model."""
+    from celine.kb import semantic
+    kbs = build(tmp_path)
+    monkeypatch.setattr(semantic, "embed_sync", fake_embed)
+    semantic.build(embed_cfg(), kbs.get("whatsapp"), CTX)
+
+    def embed(texts):
+        return fake_embed(None, texts)
+    embed.fp = None                             # type: ignore[attr-defined]
+    return kbs, embed
+
+
+def test_a_search_returns_only_what_the_reranker_scores_as_a_fit(tmp_path, monkeypatch):
+    """Below the lowest score nothing comes back, in every mode: a description that fits
+    no message returns no window, and says how many candidates were left out."""
+    kbs, embed = _indexed(tmp_path, monkeypatch)
+
+    class Nothing:
+        def score(self, query, docs):
+            return [-9.0 for _ in docs]
+
+    for mode, order in (("best", "best"), ("all", "best"), ("best", "last")):
+        res = retrieve(kbs, [], resolve(kbs, kb_ids="whatsapp"),
+                       about=["someone talks about growing tomatoes"], embed=embed,
+                       mode=mode, order=order, reranker=Nothing())
+        assert res.reranked and res.episodes == [] and res.below > 0, (mode, order)
+
+    class OnlyBoats:
+        def score(self, query, docs):
+            return [3.0 if "afloat" in d else -9.0 for d in docs]
+
+    res = retrieve(kbs, [], resolve(kbs, kb_ids="whatsapp"),
+                   about=["the boat is in the water"], embed=embed, reranker=OnlyBoats())
+    assert res.episodes and res.below > 0
+    assert all(any("afloat" in m.text for m in e.lines) for e in res.episodes)
+
+
+def test_an_exact_word_is_a_match_whatever_the_reranker_scores(tmp_path):
+    kbs = build(tmp_path)
+
+    class Nothing:
+        def score(self, query, docs):
+            return [-9.0 for _ in docs]
+
+    res = retrieve(kbs, ["celine"], resolve(kbs, kb_ids="whatsapp"),
+                   about=["someone talks about growing tomatoes"], reranker=Nothing())
+    assert res.episodes, "the passages with the word typed in them"
+    assert all(e.hits for e in res.episodes)
 
 
 # ---- chronological literal guarantee ------------------------------------------------
@@ -319,7 +371,6 @@ def test_a_below_floor_rerank_keeps_the_earliest_literal_hit(tmp_path):
                    reranker=LowEarliest())
     assert res.reranked
     assert res.episodes[0].start_ts == T21
-    assert not any("Nothing is clearly about it" in n for n in res.notes)
 
 
 def test_a_below_floor_rerank_keeps_the_latest_literal_hit(tmp_path):
@@ -346,7 +397,6 @@ def test_order_best_is_unchanged_by_the_chrono_reservation(tmp_path):
                    reranker=WordReranker())
     assert res.episodes and res.reranked
     assert res.absent == []
-    assert not any("Nothing is clearly about it" in n for n in res.notes)
 
 
 # ---- reranker-unset note ------------------------------------------------------------

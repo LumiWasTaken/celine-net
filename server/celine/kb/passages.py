@@ -10,9 +10,10 @@ most `max_messages` (8) messages / `max_chars` (450) characters of message text,
 
 and one line per message (`Alex: text`, `[photo] caption`, replies with who they answer
 and, when the parent is outside the window, its first words). The lines are what gets
-embedded (no instruction on the document side; the header too if `embed_header`), and
-header + lines are what `passages_fts` indexes, so a BM25 query can match a chat name
-or a participant together with words of the conversation ("contextual BM25").
+and the header names each of them by every name they have (`Alex (username alex_k)`).
+Header and lines are what gets embedded (no instruction on the document side) and what
+`passages_fts` indexes, so a description or a word that names a chat or a person finds
+their messages.
 
 Names are resolved at read time. A vector cannot be: the
 names are part of the text the model saw. So passages keep the ids (passage_people,
@@ -48,7 +49,8 @@ from .sessions import SessionParams, sessionize, signature
 
 log = logging.getLogger("celine.kb.passages")
 
-RENDER_VER = 3
+RENDER_VER = 4
+DOC_VER = 2             # what is embedded of a passage: header and lines
 
 PLATFORMS = {"whatsapp": "WhatsApp", "discord": "Discord", "text": "Chat"}
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -112,11 +114,12 @@ def when(start_ts: int, end_ts: int) -> str:
     return out
 
 
-def chat_label(platform: str, chat: dict[str, Any]) -> str:
+def chat_label(platform: str, chat: dict[str, Any], peer: str | None = None) -> str:
+    """`peer`: the other side of a direct chat by every name they have."""
     name = chat.get("name") or "?"
     kind = chat.get("kind")
     if kind == "dm":
-        return f"{platform} chat with {name}"
+        return f"{platform} chat with {peer or name}"
     if kind == "channel":
         where = f' in "{chat["parent"]}"' if chat.get("parent") else ""
         return f'{platform} channel "{name}"{where}'
@@ -124,11 +127,11 @@ def chat_label(platform: str, chat: dict[str, Any]) -> str:
 
 
 def header(platform: str, chat: dict[str, Any], people: Sequence[str],
-           start_ts: int, end_ts: int, max_people: int = 6) -> str:
+           start_ts: int, end_ts: int, max_people: int = 6, peer: str | None = None) -> str:
     who = ", ".join(people[:max_people])
     if len(people) > max_people:
         who += f" and {len(people) - max_people} more"
-    return f"{chat_label(platform, chat)}\n{who}\n{when(start_ts, end_ts)}"
+    return f"{chat_label(platform, chat, peer)}\n{who}\n{when(start_ts, end_ts)}"
 
 
 def body(m: dict[str, Any], described: str | None = None) -> str:
@@ -196,11 +199,17 @@ class Renderer:
     """Everything a chat's passages need to be written: names, the chat, the platform."""
 
     def __init__(self, platform: str, chat: dict[str, Any], people: dict[int, str],
-                 p: PassageParams):
+                 p: PassageParams, full: dict[int, str] | None = None):
+        """`people`: the name each account is shown under, for the lines. `full`: each
+        account by every name it has, for the header."""
         self.platform = platform
         self.chat = chat
         self.people = people
+        self.full = full or {}
         self.p = p
+
+    def named(self, who: str, pid: int) -> str:
+        return self.full.get(pid, who) if pid > 0 else who
 
     def sender(self, m: dict[str, Any]) -> str:
         if m["from_me"]:
@@ -220,6 +229,7 @@ class Renderer:
             lines = []
             counts: dict[int, int] = {}
             order: list[str] = []
+            pid_of: dict[str, int] = {}
             for m in win:
                 who = self.sender(m)
                 pid = ME if m["from_me"] else (m["sender_id"] or 0)
@@ -227,6 +237,7 @@ class Renderer:
                     counts[pid] = counts.get(pid, 0) + 1
                 if who not in order:
                     order.append(who)
+                    pid_of[who] = pid
                 tag = ""
                 parent = by_key.get(m["reply_key"]) if m["reply_key"] else None
                 if parent is not None:
@@ -239,13 +250,14 @@ class Renderer:
             freq = {w: 0 for w in order}
             for m in win:
                 freq[self.sender(m)] += 1
-            ppl = sorted(order, key=lambda w: (-freq[w], order.index(w)))
+            ppl = [self.named(w, pid_of[w])
+                   for w in sorted(order, key=lambda w: (-freq[w], order.index(w)))]
             out.append(Rendered(
                 first_id=win[0]["id"], last_id=win[-1]["id"],
                 start_ts=win[0]["ts"], end_ts=win[-1]["ts"],
                 members=[m["id"] for m in win], people=counts,
                 header=header(self.platform, self.chat, ppl, win[0]["ts"], win[-1]["ts"],
-                              self.p.max_people),
+                              self.p.max_people, self.full.get(self.chat.get("person") or 0)),
                 text="\n".join(lines)))
         return out
 
@@ -348,17 +360,22 @@ def derive_chat(conn: sqlite3.Connection, chat_id: int, r: Renderer, sp: Session
 
 
 def name_maps(conn: sqlite3.Connection, chats: dict[int, dict[str, Any]]
-              ) -> tuple[dict[int, str], dict[str, Any]]:
-    people = {row["id"]: names.resolve(row)[0] for row in conn.execute("SELECT * FROM people")}
-    snap = {"p": {str(k): v for k, v in people.items()},
-            "c": {str(k): [c.get("name"), c.get("kind"), c.get("parent")] for k, c in chats.items()}}
-    return people, snap
+              ) -> tuple[dict[int, str], dict[int, str], dict[str, Any]]:
+    """-> (the name each account is shown under, each account by every name it has, the
+    snapshot a later build compares to find what a rename changed)."""
+    rows = conn.execute("SELECT * FROM people").fetchall()
+    people = {row["id"]: names.resolve(row)[0] for row in rows}
+    full = {row["id"]: names.full(row) for row in rows}
+    snap = {"p": {str(k): v for k, v in full.items()},
+            "c": {str(k): [c.get("name"), c.get("kind"), c.get("parent"), c.get("person")]
+                  for k, c in chats.items()}}
+    return people, full, snap
 
 
 def renamed_chats(conn: sqlite3.Connection, before: dict[str, Any] | None,
                   now: dict[str, Any]) -> set[int]:
-    """Chats whose rendered text a rename changes: renamed chats, and chats where a
-    renamed person wrote."""
+    """Chats whose rendered text a rename changes: renamed chats, chats where a
+    renamed person wrote, and the direct chats with them."""
     if not before:
         return set()
     out = {int(k) for k, v in now["c"].items() if k in before.get("c", {})
@@ -366,9 +383,11 @@ def renamed_chats(conn: sqlite3.Connection, before: dict[str, Any] | None,
     persons = [int(k) for k, v in now["p"].items() if k in before.get("p", {})
                and before["p"][k] != v]
     for chunk in in_batches(persons):
+        marks = ",".join("?" * len(chunk))
         out |= {row[0] for row in conn.execute(
-            f"SELECT DISTINCT chat_id FROM messages WHERE sender_id IN "
-            f"({','.join('?' * len(chunk))})", chunk)}
+            f"SELECT DISTINCT chat_id FROM messages WHERE sender_id IN ({marks})", chunk)}
+        out |= {row[0] for row in conn.execute(
+            f"SELECT id FROM chats WHERE person_id IN ({marks})", chunk)}
     return out
 
 
@@ -397,7 +416,7 @@ def build(path: Path, *, platform: str, chats: dict[int, dict[str, Any]],
     from .db import connect
     conn = connect(path)
     try:
-        people, snap = name_maps(conn, chats)
+        people, full, snap = name_maps(conn, chats)
         before = json.loads(kv(conn, "passages_names") or "null")
         psig = params_sig(sp, pp)
         everything = kv(conn, "passages_params") not in (None, psig)
@@ -416,7 +435,7 @@ def build(path: Path, *, platform: str, chats: dict[int, dict[str, Any]],
             chat = chats.get(chat_id) or {"name": None, "kind": "group"}
             conn.execute("BEGIN IMMEDIATE")
             try:
-                st = derive_chat(conn, chat_id, Renderer(label, chat, people, pp), sp,
+                st = derive_chat(conn, chat_id, Renderer(label, chat, people, pp, full), sp,
                                  force=chat_id in force)
                 conn.commit()
             except BaseException:
@@ -440,7 +459,7 @@ _meta_cache: dict[str, dict[str, Any]] = {}
 
 
 def vec_meta(conn: sqlite3.Connection) -> dict[str, Any] | None:
-    """The index's identity: {dims, type, header, label, probes}; None before the
+    """The index's identity: {dims, type, doc, label, probes}; None before the
     first vector. `probes` is the fingerprint of the model that made the vectors
     (kb/embed.py); `label` names that model for display only."""
     raw = kv(conn, "passages_vec")
@@ -462,8 +481,7 @@ def matches(conn: sqlite3.Connection, fp: tuple | None) -> bool:
     return meta is not None and fp_matches(meta.get("probes"), fp)
 
 
-def ensure_vec(conn: sqlite3.Connection, dims: int, fp: tuple, label: str,
-               header: bool) -> bool:
+def ensure_vec(conn: sqlite3.Connection, dims: int, fp: tuple, label: str) -> bool:
     """Make sure the index takes vectors of this model and width. The first vector
     decides; a different model (fingerprint) or width drops every vector and marks
     every passage for embedding again. Meaning search is off for this knowledge base until that is done. Returns
@@ -484,24 +502,25 @@ def ensure_vec(conn: sqlite3.Connection, dims: int, fp: tuple, label: str,
         conn.execute("UPDATE passages SET embedded = 0")
         set_kv(conn, "passages_ready", "0")
     set_kv(conn, "passages_vec", json.dumps({"dims": dims, "type": "int8+bit",
-                                              "header": header, "label": label,
+                                              "doc": DOC_VER, "label": label,
                                               "probes": stored_probes(fp, dims)}))
     return had
 
 
-def doc_text(header: str, text: str, with_header: bool = True) -> str:
-    """What gets embedded: the text alone by default (`embed_header` false); the header
-    is still in passages_fts and in every result."""
-    return f"{header}\n{text}" if with_header else text
+def doc_text(header: str, text: str) -> str:
+    """What gets embedded of a passage: its header (the chat, who is in it by every
+    name, the date) and its lines."""
+    return f"{header}\n{text}"
 
 
-def _header_switch(conn: sqlite3.Connection, header: bool) -> None:
-    """`embed_header` changed since the vectors were made: embed everything again
+def _embedded_text(conn: sqlite3.Connection) -> None:
+    """Vectors made from another text of a passage (DOC_VER): embed everything again
     (the old vectors keep answering until each is replaced)."""
     meta = vec_meta(conn)
-    if meta is not None and meta["header"] != header:
+    if meta is not None and meta.get("doc") != DOC_VER:
         conn.execute("UPDATE passages SET embedded = 0")
-        set_kv(conn, "passages_vec", json.dumps({**meta, "header": header}))
+        set_kv(conn, "passages_vec", json.dumps(
+            {**{k: v for k, v in meta.items() if k != "header"}, "doc": DOC_VER}))
         conn.commit()
 
 
@@ -513,7 +532,6 @@ def embed(path: Path, *, s: dict[str, Any], fp: tuple, label: str, pool: Any,
     Commits every batch; a restart continues."""
     from .db import connect
     conn = connect(path)
-    header = bool(s.get("embed_header", False))
     dims_cfg = int(s.get("dims", 1024))
     dims_model = len(fp[0]) if fp else dims_cfg
     dims = min(dims_cfg, dims_model)
@@ -521,14 +539,14 @@ def embed(path: Path, *, s: dict[str, Any], fp: tuple, label: str, pool: Any,
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:
-            if ensure_vec(conn, dims, fp, label, header):
+            if ensure_vec(conn, dims, fp, label):
                 log.info("index reset for another model", extra={
                     "event": "kb.semantic.reset", "path": str(path.name), "model": label})
             conn.commit()
         except BaseException:
             conn.rollback()
             raise
-        _header_switch(conn, header)
+        _embedded_text(conn)
         rows = conn.execute("SELECT id, hash, chat_id, start_ts, header, text FROM passages "
                             "WHERE embedded = 0 ORDER BY start_ts DESC, id DESC").fetchall()
         total = len(rows)
@@ -564,7 +582,7 @@ def embed(path: Path, *, s: dict[str, Any], fp: tuple, label: str, pool: Any,
             done += len(batch)
             progress(done, total, "passages embedded")
 
-        pool.run([[doc_text(r["header"], r["text"], header) for r in b] for b in batches],
+        pool.run([[doc_text(r["header"], r["text"]) for r in b] for b in batches],
                  store, check)
         _finish(conn)
         return done

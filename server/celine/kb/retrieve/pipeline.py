@@ -46,12 +46,11 @@ class Settings:
     candidates: int = 50          # reranked
     rerank_queries: int = 3       # the first N `about` sentences score each candidate; max wins
     rerank_pad: int = 2           # neighbours on each side in the reranked text
-    rerank_floor: float = -4.0    # below this a candidate is "not about it" (bge logits)
+    rerank_floor: float = -4.0    # below this a candidate does not fit and is left out
     episode_gap_minutes: int = 30
     episode_pad: int = 2          # neighbours shown around an episode
     best_episodes: int = 8
     all_episodes: int = 25
-    max_episode_lines: int = 40
     query_prefix: str = ""
 
 
@@ -62,6 +61,7 @@ class Result:
     years: dict[str, int] = field(default_factory=dict)      # literal matches per year
     absent: list[str] = field(default_factory=list)          # literal variants with no hit
     more: int = 0                                            # episodes found, not returned
+    below: int = 0                                           # candidates under the floor
     notes: list[str] = field(default_factory=list)
     reranked: bool = False
     took_ms: float = 0.0
@@ -152,7 +152,7 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
         if targets:
             res.absent = [q for q in variants if not res.totals.get(q)]
             if not sentences and len(res.absent) == len(variants):
-                res.notes.append("No indexed message in scope matches these exact "
+                res.notes.append("No indexed message in scope has these exact "
                                  "words/phrases: " + ", ".join(res.absent) + ".")
                 res.took_ms = round((time.perf_counter() - t0) * 1000, 1)
                 return res
@@ -242,13 +242,8 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
             res.years[y] = res.years.get(y, 0) + n
 
     if res.absent:
-        if sentences:
-            res.notes.append("No indexed message in scope matches these exact words/phrases: "
-                             + ", ".join(res.absent) + ". Returned windows are semantic topic "
-                             "matches for the description, not literal hits.")
-        else:
-            res.notes.append("No indexed message in scope matches these exact words/phrases: "
-                             + ", ".join(res.absent) + ".")
+        res.notes.append("No indexed message in scope has these exact words/phrases: "
+                         + ", ".join(res.absent) + ".")
 
     protected = {k for c in chrono_words for k in c}
     fused = [k for k, _ in rrf(lists, k=s.rrf_k, weights=weights)]
@@ -281,7 +276,7 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
             out = {}
             for uid, span in sp.items():
                 first, last = E.span_bounds(conn, span)
-                ctx = E.window(conn, span.chat_id, first, last, s.rerank_pad, me, cap=60)
+                ctx = E.window(conn, span.chat_id, first, last, s.rerank_pad, me)[:60]
                 out[span.key] = (span, first, last, ctx)
             info = chat_cards(conn, {v[0].chat_id for v in out.values()})
             return out, info
@@ -323,22 +318,17 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
     if res.reranked and getattr(reranker, "scale", "logit") == "relevance" and \
             s.rerank_floor < 0:
         # a relevance model answers 0..1, so a below-zero floor keeps every candidate:
-        # say so instead of showing a silent no-op ("Nothing is clearly about it" cannot
-        # fire). Set chat_archive.rerank_floor between 0 and 1 for such a model.
+        # say so. Set chat_archive.rerank_floor between 0 and 1 for such a model.
         res.notes.append("This reranker scores 0 to 1, but the lowest-score setting is "
                          "below 0, so nothing is filtered. Set it between 0 and 1.")
     if res.reranked:
-        if order in ("first", "last") or mode == "all":
-            # the earliest/latest literal match keeps its slot even below the floor
-            keep = [k for k in ranked if scores[k] >= s.rerank_floor or k in protected]
-            if not keep:
-                res.notes.append("Nothing is clearly about it. The closest matches follow.")
-                keep = ranked[:3]
-            ranked = keep
-        else:
-            keep = [k for k in ranked if scores[k] >= s.rerank_floor]
-            if not keep:
-                res.notes.append("Nothing is clearly about it. The closest matches follow.")
+        # what the reranker scores under the floor does not fit the description and is
+        # left out. A passage with one of the exact `words` in it is a match by that
+        # word, whatever its score.
+        keep = [k for k in ranked if scores[k] >= s.rerank_floor or hits_of.get(k)
+                or k in protected]
+        res.below = len(ranked) - len(keep)
+        ranked = keep
 
     eps = E.merge([(spans[k], scores[k], hits_of.get(k, set()), *bounds[k]) for k in ranked],
                   gap_ms=s.episode_gap_minutes * 60_000)
@@ -359,11 +349,7 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
 
         def fill(conn, lst=lst):
             for e in lst:
-                lines = E.window(conn, e.chat_id, e.first, e.last, pad, me,
-                                 cap=s.max_episode_lines * 3)
-                if len(lines) > s.max_episode_lines:
-                    lines = _trim(lines, e, s.max_episode_lines)
-                e.lines = lines
+                e.lines = E.window(conn, e.chat_id, e.first, e.last, pad, me)
         kb.file.read_sync(fill)
         for e in lst:
             e.chat = chats.get((kid, e.chat_id))
@@ -371,10 +357,3 @@ def retrieve(kbs, words: list[str], scope: Scope, *, about: list[str] | None = N
     res.took_ms = round((time.perf_counter() - t0) * 1000, 1)
     return res
 
-
-def _trim(lines: list[E.Msg], e: E.Episode, cap: int) -> list[E.Msg]:
-    """Keep `cap` lines centred on the hits (or the unit members)."""
-    focus = [i for i, m in enumerate(lines) if m.id in (e.hits or e.members)]
-    centre = focus[len(focus) // 2] if focus else len(lines) // 2
-    start = max(0, min(centre - cap // 2, len(lines) - cap))
-    return lines[start:start + cap]

@@ -119,3 +119,36 @@ def test_search_finds_the_passage_once_it_is_ready(tmp_path, monkeypatch):
     top = semantic.search_sync(embed_cfg(), kbs, "celine engine garage", limit=5)["hits"][0]
     assert top["chat_id"] == b and "celine" in top["text"]
     assert top["ref"] == f"whatsapp:msg:{top['messages'][0]}"
+
+
+def test_a_passage_is_indexed_and_embedded_with_every_name_of_who_is_in_it(tmp_path,
+                                                                             monkeypatch):
+    """A person nobody calls by their username is still found by it: the header carries
+    each participant by every name, the chat and the day, in the word index and in the
+    embedded text. A rename embeds the passages again."""
+    texts: list[str] = []
+
+    def recording(settings, batch):
+        if batch != embed.PROBES:
+            texts.extend(batch)
+        return fake_embed(settings, batch)
+    monkeypatch.setattr(semantic, "embed_sync", recording)
+    kb = chat_kb(tmp_path)
+    s = kb.sink()
+    moon = s.person("71@d", display_name="Moon", username="shiniloli")
+    dm = s.chat("71@d", kind="dm", person_key="71@d")
+    for i in range(6):
+        s.message(dm, f"m{i}", ts=T0 + i * MIN, text=f"about the weekend trip {i}",
+                  sender=moon if i % 2 else None, from_me=not i % 2)
+    s.close()
+    semantic.build(embed_cfg(), kb, CTX)
+    header = q(kb, "SELECT header FROM passages LIMIT 1")[0][0].splitlines()
+    assert header[0] == "WhatsApp chat with Moon (username shiniloli)"
+    assert "Moon (username shiniloli)" in header[1] and "me" in header[1]
+    assert texts and all("shiniloli" in t for t in texts), "the embedded text names them"
+    assert q(kb, "SELECT COUNT(*) FROM passages_fts WHERE passages_fts MATCH 'shiniloli'")[0][0]
+
+    texts.clear()
+    kb.file.write_sync(lambda c: c.execute("UPDATE people SET username = 'moonchild'"))
+    assert semantic.build(embed_cfg(), kb, CTX)["embedded"] >= 1
+    assert texts and all("moonchild" in t and "shiniloli" not in t for t in texts)

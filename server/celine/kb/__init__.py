@@ -307,7 +307,7 @@ TABLES = {
                    "workers": "int", "dims": "int", "session_gap_minutes": "num",
                    "session_merge_hours": "num", "session_max_messages": "int",
                    "passage_messages": "int", "passage_chars": "int",
-                   "passage_overlap": "int", "embed_header": "bool"},
+                   "passage_overlap": "int"},
     # kb/media.py Settings.read
     "media": {"types": "list", "rate_per_minute": "num", "batch": "int",
               "max_mb": "num", "poll_minutes": "num",
