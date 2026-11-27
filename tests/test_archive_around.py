@@ -161,3 +161,38 @@ async def test_a_message_shows_the_name_its_sender_had_then_and_who_that_is(tmp_
     assert "Luna: old days" in out and "Moon: new days" in out
     assert (f"who: Luna is an earlier name of discord:person:{p}, now Moon (username "
             f"shiniloli); Moon is discord:person:{p}, Moon (username shiniloli)") in out
+
+
+async def test_read_the_chat_with_a_person_known_only_by_username(tmp_path, monkeypatch):
+    """The question that failed: "read the discord chat with shiniloli". Nobody is shown
+    as shiniloli (the display name is Moon), and the number of the chat with them is the
+    person number of someone else. look_up finds them by username and names the direct
+    chat; that reference reads it; the person reference in its place is refused with what
+    it is and where the chat is."""
+    from celine.skills import archive
+    monkeypatch.setattr(archive, "_chat_counts", {})
+    kbs = KBs(SimpleNamespace(data_dir=tmp_path, problems=[], kb={
+        "discord": {"kind": "chat", "title": "Discord", "platform": "discord"}}),
+        lambda ev: None)
+    s = kbs.get("discord").sink()
+    aini = s.person("1", display_name="Aini", username="aini_x")
+    moon = s.person("2", display_name="Moon", username="shiniloli")
+    with_aini = s.chat("dm1", kind="dm", person_key="1")
+    with_moon = s.chat("dm2", kind="dm", person_key="2")
+    assert (aini, moon, with_aini, with_moon) == (1, 2, 1, 2), "the numbers collide"
+    s.message(with_aini, "a", ts=T0, text="aini says hello", sender=aini)
+    s.message(with_moon, "b", ts=T0 + 60_000, text="moon says the cat is asleep", sender=moon)
+    s.close()
+    # the chat with Moon is chat 2; person 2 is Moon; chat 1 is the one with Aini
+    sk = archive_skill(monkeypatch, kbs)
+    card = (await sk.look_up(SCOPE_CTX, name="shiniloli")).content
+    assert "person discord:person:2 Moon (username shiniloli)" in card
+    assert "the direct chat with them: chat discord:chat:2 Moon" in card
+    out = await sk.read_period(CTX, chat="discord:chat:2")
+    assert not out.is_error and "moon says the cat is asleep" in out.content
+    assert "aini says hello" not in out.content
+    wrong = await sk.read_period(CTX, chat="discord:person:2")
+    assert wrong.is_error and "is a person" in wrong.content
+    assert "discord:chat:2" in wrong.content, "the refusal names the chat with them"
+    byname = await sk.read_period(CTX, chat="shiniloli")
+    assert byname.is_error and "discord:chat:2" in byname.content

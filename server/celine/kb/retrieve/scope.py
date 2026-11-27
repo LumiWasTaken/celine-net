@@ -136,8 +136,14 @@ def could_be(kbs: list, name: str, what: str, ids: Identities) -> list[str]:
     res = resolve_chats(kbs, name)
     rows = {(k.id, c["id"]): c for k in kbs for c in k.chats_by_id(
         [c["id"] for c in res.candidates if c["kb"] == k.id])}
-    return ["  " + chat_card(c["kb"], rows[(c["kb"], c["id"])]) for c in res.candidates[:10]
-            if (c["kb"], c["id"]) in rows]
+    out = ["  " + chat_card(c["kb"], rows[(c["kb"], c["id"])]) for c in res.candidates[:10]
+           if (c["kb"], c["id"]) in rows]
+    # a person's name asked as a chat: the direct chat with them
+    people = resolve_people(kbs, name, identities=ids)
+    for k, c in direct_chats(kbs, people.refs[:10]):
+        if (line := "  " + chat_card(k, c)) not in out:
+            out.append(line)
+    return out
 
 
 def refused(kbs: list, value: str, want: str, param: str, ids: Identities) -> str:
