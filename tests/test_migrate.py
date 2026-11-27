@@ -25,7 +25,7 @@ EXPECTED_TABLES = {
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts", "notebook_meta",
                    "notebook_semantic_state", "notebook_sections", "notebook_vecs"}
-LATEST = 37
+LATEST = 38
 
 
 def _version(db) -> int:
@@ -851,3 +851,24 @@ def test_0037_gives_every_stored_reference_its_kind(tmp_path, monkeypatch):
                 "invalid": [{"ref": "discord:msg:4", "reason": "quote"}]}
         assert note.read_text() == ("- [[discord:msg:95095]] 2024-07-29, Aini: says hi\n"
                                     "her chat discord:chat:71\n")
+
+
+def test_0038_moves_the_about_text_into_the_persons_notes(tmp_path, monkeypatch):
+    d = _prior_migrations(tmp_path, monkeypatch, "0038")
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 37
+    c = sqlite3.connect(db)
+    c.executemany("INSERT INTO identities(id, name, about, aliases, created_at, updated_at) "
+                  "VALUES(?, ?, ?, ?, 'c', 'u')",
+                  [(1, "Anna", "My sister.", '["Sis"]'), (2, "", "  ", "[]")])
+    c.commit()
+    c.close()
+    shutil.copy(MIGRATIONS_DIR / "0038_persons.sql", d)
+    assert migrate_all(db) == 38
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT id, name, relation, aliases FROM identities ORDER BY id"
+                     ).fetchall() == [(1, "Anna", "", '["Sis"]'), (2, "", "", "[]")]
+    assert c.execute("SELECT identity_id, text, author, created_at, replaced_at FROM "
+                     "person_notes").fetchall() == [(1, "My sister.", "user", "u", None)]
+    with pytest.raises(sqlite3.OperationalError):
+        c.execute("SELECT about FROM identities")

@@ -259,6 +259,7 @@ CHAT_ARCHIVE: dict[str, Sentence] = {
     "scroll": _scroll,
     "get_messages": lambda a, d, r: "Read saved messages",
     "look_up": lambda a, d, r: f"Looked up {quote(_str(a.get('name')) or '')}",
+    "write_person": lambda a, d, r: "Wrote about a person",
     "list_chats": lambda a, d, r: "Listed the chats" +
         (f" of {_str(a.get('source'))}" if _str(a.get("source")) else ""),
     "mark_same_person": lambda a, d, r:

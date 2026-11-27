@@ -86,9 +86,13 @@ def _person(p: Any) -> dict[str, Any] | None:
     if not isinstance(p, dict):
         raise RecordError("a person is not an object")
     out = {"key": _str(p, "key")}
-    for k in ("phone", "contact_name", "push_name", "display_name", "username"):
+    for k in ("phone", "contact_name", "push_name", "display_name", "username", "bio",
+              "pronouns", "nick", "nick_scope"):
         out[k] = _str(p, k, required=False)
     out["is_me"] = bool(p.get("is_me"))
+    # the account is gone (True) or back (False); absent: the source did not say
+    out["deleted"] = bool(p["deleted"]) if isinstance(p.get("deleted"), bool) else None
+    out["profile"] = bool(p.get("profile"))         # the whole profile, read now
     return out
 
 
@@ -345,7 +349,10 @@ class _Writer:
             return None
         return self.sink.person(p["key"], phone=p["phone"], contact_name=p["contact_name"],
                                 push_name=p["push_name"], display_name=p["display_name"],
-                                username=p["username"], is_me=p["is_me"])
+                                username=p["username"], is_me=p["is_me"], bio=p["bio"],
+                                pronouns=p["pronouns"], nick=p["nick"],
+                                nick_scope=p["nick_scope"] or "", deleted=p["deleted"],
+                                profile=p["profile"])
 
     def chat(self, c: dict[str, Any], *, update: bool = False) -> int:
         peer = c["peer"]

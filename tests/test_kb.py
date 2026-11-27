@@ -34,7 +34,7 @@ def test_kb_file_version_and_old_file_refused(tmp_path):
 
     fresh = tmp_path / "fresh.db"
     KBFile(fresh, CHAT_MIGRATIONS)
-    assert sqlite3.connect(fresh).execute("PRAGMA user_version").fetchone() == (4,)
+    assert sqlite3.connect(fresh).execute("PRAGMA user_version").fetchone() == (5,)
 
     old = tmp_path / "old.db"
     sqlite3.connect(old).executescript("CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT);")
@@ -63,6 +63,43 @@ def test_chat_0003_forgets_what_only_the_bridge_kept(tmp_path):
     shutil.copy(next(CHAT_MIGRATIONS.glob("0003_*.sql")), d)
     assert migrate(db, d) == 3
     assert sqlite3.connect(db).execute("SELECT key FROM kv").fetchall() == [("login_account",)]
+
+
+def test_chat_0005_starts_the_name_history_and_finds_the_other_side_of_a_direct_chat(
+        tmp_path):
+    """Every name a person has becomes the first row of their history. A direct chat
+    without its other side gets the one person who wrote in it besides you, and gives up
+    its stored name; with two such people, or none, it stays as it is."""
+    import shutil
+    import sqlite3
+    from celine.db.migrate import migrate
+    from celine.kb.db import CHAT_MIGRATIONS
+    d = tmp_path / "chat"
+    d.mkdir()
+    for f in sorted(CHAT_MIGRATIONS.glob("000[1-4]_*.sql")):
+        shutil.copy(f, d)
+    db = tmp_path / "dc.db"
+    assert migrate(db, d) == 4
+    c = sqlite3.connect(db)
+    c.executemany("INSERT INTO people(id, key, display_name, username) VALUES(?, ?, ?, ?)",
+                  [(1, "a", "Aini", "aini_x"), (2, "b", "Moon", "shiniloli")])
+    c.executemany("INSERT INTO chats(id, key, kind, name) VALUES(?, ?, 'dm', ?)",
+                  [(1, "one", "Stale name"), (2, "two", "Two people"), (3, "mine", "Only me")])
+    c.executemany("INSERT INTO messages(chat_id, key, ts, from_me, sender_id, text) "
+                  "VALUES(?, ?, ?, ?, ?, 'x')",
+                  [(1, "m1", 1, 0, 2), (1, "m2", 2, 1, None), (2, "m3", 3, 0, 1),
+                   (2, "m4", 4, 0, 2), (3, "m5", 5, 1, None)])
+    c.commit()
+    c.close()
+    shutil.copy(next(CHAT_MIGRATIONS.glob("0005_*.sql")), d)
+    assert migrate(db, d) == 5
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT id, person_id, name FROM chats ORDER BY id").fetchall() == [
+        (1, 2, None), (2, None, "Two people"), (3, None, "Only me")]
+    assert c.execute("SELECT person_id, kind, value, from_ts, to_ts FROM person_names "
+                     "ORDER BY person_id, kind").fetchall() == [
+        (1, "display_name", "Aini", None, None), (1, "username", "aini_x", None, None),
+        (2, "display_name", "Moon", None, None), (2, "username", "shiniloli", None, None)]
 
 
 def test_a_restored_file_is_reopened(tmp_path):

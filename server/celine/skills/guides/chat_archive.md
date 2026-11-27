@@ -31,7 +31,8 @@ Each tool does one thing. Use the one whose result is what you need.
 
 | Tool | What you get |
 |---|---|
-| `chat_archive__look_up(name)` | Who or what a name is: each person with every name they have (username, display name, your name for them), the direct chat with them, the chats they write in; and the chats named so. |
+| `chat_archive__look_up(name)` | Who or what a name is: each person with every name they have (username, display name, your name for them), the names they had before, their profile, how they relate to {{username}}, the notes about them, the direct chat with them, the chats they write in; and the chats named so. |
+| `chat_archive__write_person(person, note, relation, aliases)` | Keeps what you learned about a person with the person, on their card: a note, how they relate to {{username}}, other names they go by. |
 | `chat_archive__list_chats(source, kind, sort)` | The chats of a source or of all of them: last active first, most messages first, or by name. A direct chat names the person on the other side. |
 | `chat_archive__read_period(chat, when)` | One chat, read in order: its newest messages, or the messages of a date range. |
 | `chat_archive__search(about, words, scope, chats, written_by, when)` | The messages about something, or with exact words, across all chats, a source, or the chats you name. |

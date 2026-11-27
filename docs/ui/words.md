@@ -248,7 +248,7 @@ block at the end of this file lists the words no UI string uses.
 | Ask before cloud models from your lists | on the agent's page, Behaviour: on, a cloud model from your role lists asks you too before a sub-agent, mission or coding task runs on it (off by default) | Cursor "Ask before running" |
 | Searches per hour, Web search reached its {n} searches this hour. | Advanced, Web: the most web searches in one hour, counted since the app started (0, no limit), and the refusal past it | plain; SearXNG "limiter" |
 | Read-only, Can edit | sub-agent access | Google Docs "Can edit" |
-| Rename account, Separate account, Mark {n} as the same person, Also called, About {name} | People: an account's menu, accounts made one person, a person's other names, the notes about a person | Google Contacts "Merge", "Also known as" |
+| Rename account, Separate account, Mark {n} as the same person, Relation, Also called, Notes, Add note, Delete note, About {name}, Account deleted, Nickname, Pronouns | People: an account's menu, accounts made one person, how a person relates to you, their other names, the notes about them (yours and its), an account's profile and the names it had | Google Contacts "Merge", "Also known as" |
 | Device | where a drone runs: one of the agent's devices (mac), next to Agent CLI on a sub-agent | Apple, Google "Device" |
 | Instructions | a mission's task text | ChatGPT and Claude Projects "Instructions" |
 | Minimum time, Runs at least until | how long a mission runs at least before it may close as done, in its form and on its page | plain |

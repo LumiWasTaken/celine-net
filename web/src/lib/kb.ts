@@ -26,6 +26,9 @@ export type Person = {
   source?: 'custom' | 'contact' | 'push' | 'display' | 'username' | 'phone' | 'unknown'
   phone?: string | null
   names?: { custom: string | null; contact: string | null; push: string | null; display?: string | null; username: string | null }
+  bio?: string | null
+  pronouns?: string | null
+  deleted?: boolean
   messages?: number
   chats?: number
 }
@@ -259,13 +262,20 @@ export type ConnectorSummary = {
     number or @username, null when the source has neither */
 export type PersonAccount = Person & { ref: string; kb: string; handle: string | null; last_ts: number | null }
 /** one person: a same person (several accounts, `same_person`) or a single account.
-    `about` and `aliases` are what you wrote; `person` is the record id when there is one */
+    `relation`, `aliases` and `notes` are what is kept about them; `person` is the record id when there is one */
+export type PersonNote = { id: number; text: string; author: 'user' | 'agent'; created_at: string }
 export type PersonEntry = {
   key: string; person: number | null; same_person: boolean; name: string
-  about: string; aliases: string[]; messages: number; last_ts: number | null
+  relation: string; aliases: string[]; notes: PersonNote[]; messages: number; last_ts: number | null
   accounts: PersonAccount[]
 }
-type PersonRecord = { id: number | null; name: string; about: string; aliases: string[]; members: string[] }
+/** a value an account had: `to_ts` null while it is theirs */
+export type PersonNameRow = { kind: string; scope: string; value: string; from_ts: number | null; to_ts: number | null }
+/** one person in full, as GET /people/{ref} gives it */
+export type PersonFull = Omit<PersonEntry, 'key' | 'messages' | 'last_ts' | 'accounts'> & {
+  accounts: (PersonAccount & { history: PersonNameRow[] })[]
+}
+type PersonRecord = { id: number | null; name: string; relation: string; aliases: string[]; notes: PersonNote[]; members: string[] }
 
 type MessageCard = ArchiveMessage & { chat: Chat | { id: number; name: string; kind: ChatKind } }
 /** a quoted piece of a document */
@@ -375,9 +385,15 @@ export const identitiesApi = {
   /** separate one account from its same person */
   unlink: (ref: string) =>
     del<{ person: number; deleted: boolean }>(`/people/${enc(ref)}/link`),
-  /** the person of account `ref`: a same person's name, the about text, the aliases */
-  setPerson: (ref: string, body: { name?: string; about?: string; aliases?: string[] }) =>
+  /** one person in full */
+  person: (ref: string) => request<{ person: PersonFull }>(`/people/${enc(ref)}`),
+  /** the person of account `ref`: a same person's name, the relation, the aliases */
+  setPerson: (ref: string, body: { name?: string; relation?: string; aliases?: string[] }) =>
     request<{ person: PersonRecord }>(`/people/${enc(ref)}`, json('PATCH', body)),
+  addNote: (ref: string, text: string) =>
+    request<{ person: PersonRecord }>(`/people/${enc(ref)}/notes`, json('POST', { text })),
+  removeNote: (ref: string, id: number) =>
+    del<{ person: PersonRecord }>(`/people/${enc(ref)}/notes/${id}`),
 }
 
 /* ── message files ── */

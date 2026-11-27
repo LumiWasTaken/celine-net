@@ -95,33 +95,6 @@ def _line(kid: str, m, mark: bool = False) -> str:
             f"{m.sender}: {m.text}")
 
 
-def _written_in(kbs, accounts, limit: int = 8) -> list[str]:
-    """`chat <ref>` lines for the chats these accounts (one person) write in, most
-    messages first, with how many they wrote there and when last."""
-    from ..kb.identity import parse_person
-    merged: dict[str, dict] = {}            # two accounts of one person in one chat
-    for ref in sorted(accounts):
-        kid, pid = parse_person(ref)
-        kb = kbs.get(kid)
-        if not hasattr(kb, "list_chats"):
-            continue
-
-        def run(c, pid=pid):
-            rows = c.execute("SELECT chat_id, COUNT(*), MAX(ts) FROM messages WHERE "
-                             "sender_id=? GROUP BY chat_id ORDER BY COUNT(*) DESC LIMIT ?",
-                             (pid, limit)).fetchall()
-            info = _chat_info(c, {r[0] for r in rows})
-            return [{**info.get(r[0], {}), "id": r[0], "n": r[1], "last_ts": r[2]}
-                    for r in rows]
-        for ch in kb.file.read_sync(run):
-            m = merged.setdefault(chat_ref(kid, ch["id"]), {**ch, "n": 0, "last_ts": 0})
-            m["n"] += ch["n"]
-            m["last_ts"] = max(m["last_ts"], ch["last_ts"] or 0)
-    top = sorted(merged.items(), key=lambda kv: -kv[1]["n"])[:limit]
-    return [f"chat {ref} {_chat_name(ch)} ({ch.get('kind') or 'chat'}), {ch['n']:,} by "
-            f"them, last {_when(ch['last_ts'])[:10]}" for ref, ch in top]
-
-
 # ---- scope: where a search looks, decided on purpose ------------------------------------
 _chat_counts: dict[str, tuple[float, int]] = {}
 
@@ -309,8 +282,10 @@ class ChatArchive:
             "A number alone means nothing: person 71 and chat 71 are different things.\n\n"
             "What each tool is for:\n"
             "- `chat_archive__look_up(name)`: who or what a name is. A person with every "
-            "name they have, the direct chat with them, the chats they write in; chats "
-            "named so.\n"
+            "name they have, their profile, what is noted about them, the direct chat "
+            "with them, the chats they write in; chats named so.\n"
+            "- `chat_archive__write_person(person)`: keeps what you learned about a person "
+            "with the person: a note, how they relate to {{username}}, other names.\n"
             "- `chat_archive__list_chats`: the chats of a source, newest first or biggest "
             "first.\n"
             "- `chat_archive__read_period(chat)`: the messages of one chat, the newest "
@@ -559,66 +534,39 @@ class ChatArchive:
                              "digits of a phone number."],
     ) -> ToolResult:
         """Who or what a name is, on every source. Returns: for each person, a `person
-        <ref>` line per account with every name it has and what each name is, the
-        accounts that are the same person, the other names and what {{username}} wrote
-        about them, the direct chat with them, and the chats they write in; then `chat
-        <ref>` lines of the chats named so. Two people can have the same name: their
-        other names and message counts tell them apart."""
-        from ..kb import identity
+        <ref>` line per account with every name it has and what each name is, their
+        profile (bio, pronouns), the names they had before, how they relate to
+        {{username}}, the notes about them, the direct chat with them and the other chats
+        they write in; then `chat <ref>` lines of the chats named so. Two people can have
+        the same name: their other names and message counts tell them apart."""
+        from ..kb import cards, identity
         from ..kb.query import resolve_chats, resolve_people
-        from ..kb.retrieve.scope import chat_card, direct_chats, person_card
+        from ..kb.retrieve.scope import chat_card
         ids = await identity.snapshot(ctx.store)
         kbs = self._kbs()
         chat_kbs = kbs.chats()
 
         def run():
             people = resolve_people(chat_kbs, name, identities=ids)
-            # one entry per person: a same person's accounts together
-            persons: list[list[dict]] = []
-            for c in people.candidates[:10]:
-                accts = identity.accounts(kbs, ids.expand(c["ref"]))
-                group = sorted(accts.values(), key=lambda a: -(a["messages"] or 0))
-                if group:
-                    persons.append(group)
-            cards = []
-            for group in persons:
-                refs = {a["ref"] for a in group}
-                direct = direct_chats(chat_kbs, refs)
-                shown = {chat_ref(k, c["id"]) for k, c in direct}
-                other = [x for x in _written_in(kbs, refs)
-                         if x.split(" ", 2)[1] not in shown]
-                cards.append((group, direct, other))
+            blocks = [b for c in people.candidates[:10]
+                      if (b := cards.person(kbs, ids, c["ref"], self.me))]
             found = resolve_chats(chat_kbs, name)
             rows = [(k.id, c) for k in chat_kbs for c in k.chats_by_id(
                 [c["id"] for c in found.candidates if c["kb"] == k.id])]
             rows.sort(key=lambda kc: -kc[1]["messages"])
-            return people, cards, found, rows
-        people, cards, found, chats = await anyio.to_thread.run_sync(run)
+            return people, blocks, found, rows
+        people, blocks, found, chats = await anyio.to_thread.run_sync(run)
         how = {"exact": "", "prefix": ", by the start of a name",
                "fuzzy": ", by a close spelling"}
         lines: list[str] = []
-        if cards:
+        if blocks:
             n = len(people.candidates)
             lines.append(f"{n} {'person' if n == 1 else 'people'} matching {name!r}"
                          f"{how.get(people.match, '')}:")
-            for group, direct, other in cards:
-                rec = ids.identity_of(group[0]["ref"])
-                for a in group:
-                    lines.append("  " + person_card(a))
-                if rec is not None and rec.same_person:
-                    lines.append(f"    these accounts are one person, '{rec.name}'")
-                if rec is not None and rec.aliases:
-                    lines.append(f"    also called {', '.join(rec.aliases)}")
-                if rec is not None and rec.about:
-                    lines.append(f"    {self.me} wrote about them:")
-                    lines += [f"      {t}" for t in rec.about.splitlines() if t.strip()]
-                for k, c in direct:
-                    lines.append("    the direct chat with them: " + chat_card(k, c))
-                if other:
-                    lines.append("    other chats they write in, most messages first:")
-                    lines += [f"      {c}" for c in other]
-            if n > len(cards):
-                lines.append(f"  {n - len(cards)} more not listed. Pass a longer name.")
+            for block in blocks:
+                lines += [f"  {ln}" for ln in block]
+            if n > len(blocks):
+                lines.append(f"  {n - len(blocks)} more not listed. Pass a longer name.")
         if chats:
             lines.append(f"{len(chats)} chat{'' if len(chats) == 1 else 's'} named like "
                          f"{name!r}{how.get(found.match, '')}:")
@@ -628,6 +576,56 @@ class ChatArchive:
                          f"name, a username or digits of the number may match.")
         return ToolResult(content="\n".join(lines),
                           display={"people": len(people.candidates), "chats": len(chats)})
+
+    @tool(read_only=False, destructive=False)
+    async def write_person(
+        self, ctx: ToolContext,
+        person: Annotated[str, "A person reference, such as discord:person:71."],
+        note: Annotated[str | None, "One thing you learned about them, in a sentence: "
+                                    "\"moved to Hamburg in 2025\"."] = None,
+        relation: Annotated[str | None, "How they relate to {{username}}, in a few words: "
+                                        "\"sister\", \"friend from school\". It replaces "
+                                        "the one that stands."] = None,
+        aliases: Annotated[list[str] | None, "Other names {{username}} calls them: "
+                                             "[\"Sis\"]. They are added to the ones "
+                                             "that stand."] = None,
+    ) -> ToolResult:
+        """Keep what you learned about a person with the person: a note, how they relate
+        to {{username}}, the other names they go by. It is on their card from then on, in
+        every conversation. Returns: the person's card as it stands now."""
+        from ..kb import cards, identity
+        store = ctx.store
+        if store is None:
+            return ToolResult(content="No database here.", is_error=True)
+        kbs = self._kbs()
+        try:
+            kid, pid = identity.parse_person(person)
+        except identity.IdentityError as e:
+            return ToolResult(content=str(e), is_error=True)
+        kb = kbs.get(kid)
+        if not hasattr(kb, "person_name") or await anyio.to_thread.run_sync(
+                kb.person_name, pid) is None:
+            return ToolResult(content=f"There is no person {person}.", is_error=True)
+        if not (note or relation or aliases):
+            return ToolResult(content="Pass a note, a relation or aliases.", is_error=True)
+
+        def write(c):
+            if relation is not None or aliases:
+                rec = identity.set_person_sync(c, person)
+                have = rec["aliases"]
+                identity.set_person_sync(
+                    c, person, relation=relation,
+                    aliases=[*have, *_as_list(aliases)] if aliases else None)
+            if note:
+                identity.note_sync(c, person, note, author="agent")
+        try:
+            await store.write(write)
+        except identity.IdentityError as e:
+            return ToolResult(content=str(e), is_error=True)
+        ids = await identity.snapshot(store)
+        card = await anyio.to_thread.run_sync(
+            lambda: cards.person(kbs, ids, person, self.me, chats=False))
+        return ToolResult(content="Kept.\n" + "\n".join(card), display={"person": person})
 
     @tool()
     async def list_chats(

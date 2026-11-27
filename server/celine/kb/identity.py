@@ -1,14 +1,15 @@
 """People across sources: person records in celine.db.
 
-A person record (table `identities`, migrations 0003 and 0014) holds accounts
-(`kb:person_id` rows in `identity_members`), a name, `about` (what you wrote about the
-person) and `aliases` (other names they go by). An account is in at most one record.
+A person record (tables `identities`, `identity_members`, `person_notes`) holds accounts
+(`kb:person:id`), a name, `relation` (how the person relates to you: "my sister"),
+`aliases` (other names they go by) and notes about the person, each written by you or by
+the agent. An account is in at most one record.
 It lives in celine.db because a knowledge base is a file and nothing joins across files.
 
 - Two or more accounts are a **same person**: search, the People page and Celine treat
   them as one person. Only you, or Celine when you ask it, mark accounts (`link_sync`).
-- A record with one account exists only for its about or aliases (`set_person_sync`);
-  it is not a same person, and its name is empty.
+- A record with one account exists only for its relation, aliases or notes; it is not a
+  same person, and its name is empty.
 
 Nothing is merged in the archives: every message keeps its sender. Everything here is
 sync on a sqlite connection, run through `Store.read` / `Store.write`, plus `snapshot`,
@@ -37,7 +38,8 @@ PERSON_REF = re.compile(rf"^{_KB}:person:(\d+)$")
 MSG_REF = re.compile(rf"^{_KB}:msg:(\d+)$")
 SEGMENT_REF = re.compile(rf"^{_KB}:(\d+)$")
 KINDS = ("chat", "person", "msg")       # no source may have one of these as its id
-ABOUT_MAX = 2000
+NOTE_MAX = 2000
+RELATION_MAX = 120
 ALIASES_MAX = 20
 ALIAS_MAX = 60
 
@@ -114,8 +116,9 @@ class Identity:
     id: int
     name: str
     members: set[str] = field(default_factory=set)
-    about: str = ""
+    relation: str = ""
     aliases: list[str] = field(default_factory=list)
+    notes: list[dict[str, Any]] = field(default_factory=list)   # id, text, author, created_at
 
     @property
     def same_person(self) -> bool:
@@ -133,7 +136,7 @@ class Identities:
         return set(self.by_id[iid].members) if iid is not None else {ref}
 
     def identity_of(self, ref: str) -> Identity | None:
-        """The record `ref` is in: a same person, or a single account's about."""
+        """The record `ref` is in: a same person, or what is kept of a single account."""
         iid = self.of_ref.get(ref)
         return self.by_id.get(iid) if iid is not None else None
 
@@ -158,8 +161,13 @@ class Identities:
 
 def load_sync(conn: sqlite3.Connection) -> Identities:
     out = Identities()
-    for r in conn.execute("SELECT id, name, about, aliases FROM identities"):
-        out.by_id[r[0]] = Identity(r[0], r[1], about=r[2], aliases=json.loads(r[3]))
+    for r in conn.execute("SELECT id, name, relation, aliases FROM identities"):
+        out.by_id[r[0]] = Identity(r[0], r[1], relation=r[2], aliases=json.loads(r[3]))
+    for r in conn.execute("SELECT id, identity_id, text, author, created_at FROM "
+                          "person_notes WHERE replaced_at IS NULL ORDER BY id"):
+        if r[1] in out.by_id:
+            out.by_id[r[1]].notes.append({"id": r[0], "text": r[2], "author": r[3],
+                                          "created_at": r[4]})
     for r in conn.execute("SELECT kb, person_id, identity_id FROM identity_members"):
         ref = person_ref(r[0], r[1])
         if r[2] in out.by_id:
@@ -227,6 +235,24 @@ def accounts(kbs, refs) -> dict[str, dict]:
     return out
 
 
+def person(kbs, ids: "Identities", ref: str) -> dict[str, Any] | None:
+    """One person in full, for the People page: what is kept about them and every
+    account with its profile and the names it had. None: no such account."""
+    accts = accounts(kbs, ids.expand(ref))
+    if not accts:
+        return None
+    for a in accts.values():
+        a["history"] = kbs.get(a["kb"]).name_history([a["id"]])[a["id"]]
+    rec = ids.identity_of(ref)
+    group = sorted(accts.values(), key=lambda a: -(a["messages"] or 0))
+    return {"person": rec.id if rec else None,
+            "same_person": bool(rec and rec.same_person),
+            "name": rec.name if rec and rec.same_person else group[0]["name"],
+            "relation": rec.relation if rec else "",
+            "aliases": rec.aliases if rec else [], "notes": rec.notes if rec else [],
+            "accounts": group}
+
+
 def _search_accounts(kbs, q: str, kb_id: str | None, limit: int,
                      kept: set[str]) -> list[dict]:
     """Accounts by the people lists' rule (kb/chat.py `listed_sql`: enough messages, or
@@ -261,7 +287,8 @@ def people(kbs, ids: Identities, q: str = "", kb_id: str | None = None,
     with an account there.
 
     Entry: `key` ("person:3" or the account's ref), `person` (the record id or None),
-    `same_person`, `name`, `about`, `aliases`, `messages`, `last_ts`, `accounts`."""
+    `same_person`, `name`, `relation`, `aliases`, `notes`, `messages`, `last_ts`,
+    `accounts`."""
     found = _search_accounts(kbs, q, kb_id, limit, ids.refs())
     by_ref = {a["ref"]: a for a in found}
     wanted = {ids.of_ref[r] for r in by_ref if r in ids.of_ref}
@@ -296,7 +323,8 @@ def _entry(rec: Identity | None, accts: list[dict]) -> dict:
     return {"key": f"person:{rec.id}" if same else accts[0]["ref"],
             "person": rec.id if rec else None, "same_person": same,
             "name": rec.name if same else accts[0]["name"],
-            "about": rec.about if rec else "", "aliases": rec.aliases if rec else [],
+            "relation": rec.relation if rec else "",
+            "aliases": rec.aliases if rec else [], "notes": rec.notes if rec else [],
             "messages": sum(a["messages"] or 0 for a in accts),
             "last_ts": max((a["last_ts"] for a in accts if a["last_ts"]), default=None),
             "accounts": accts}
@@ -325,20 +353,27 @@ def group_counts(rows: list[dict], ids: Identities) -> list[dict]:
 # ---- reads and writes on celine.db ---------------------------------------------------
 
 def kept_sync(conn: sqlite3.Connection, kb: str | None = None) -> set[str]:
-    """Every account in a record ("whatsapp:person:88"), of one source or all: a same person,
-    or an account with about or aliases. The people lists show them whatever their
-    message count, and the purge keeps them."""
+    """Every account in a record ("whatsapp:person:88"), of one source or all: a same
+    person, or an account with a relation, aliases or notes. The people lists show them
+    whatever their message count, and the purge keeps them."""
     return {person_ref(r[0], r[1]) for r in conn.execute(
         "SELECT kb, person_id FROM identity_members WHERE ? IS NULL OR kb = ?", (kb, kb))}
 
 
+def _notes(conn: sqlite3.Connection, iid: int) -> list[dict[str, Any]]:
+    return [{"id": r[0], "text": r[1], "author": r[2], "created_at": r[3]}
+            for r in conn.execute("SELECT id, text, author, created_at FROM person_notes "
+                                  "WHERE identity_id = ? AND replaced_at IS NULL ORDER BY id",
+                                  (iid,))]
+
+
 def _record(conn: sqlite3.Connection, iid: int) -> dict[str, Any]:
-    row = conn.execute("SELECT id, name, about, aliases FROM identities WHERE id = ?",
+    row = conn.execute("SELECT id, name, relation, aliases FROM identities WHERE id = ?",
                        (iid,)).fetchone()
     members = sorted(person_ref(r[0], r[1]) for r in conn.execute(
         "SELECT kb, person_id FROM identity_members WHERE identity_id = ?", (iid,)))
-    return {"id": row[0], "name": row[1], "about": row[2], "aliases": json.loads(row[3]),
-            "members": members}
+    return {"id": row[0], "name": row[1], "relation": row[2], "aliases": json.loads(row[3]),
+            "notes": _notes(conn, iid), "members": members}
 
 
 def _record_of(conn: sqlite3.Connection, k: str, pid: int) -> int | None:
@@ -347,11 +382,10 @@ def _record_of(conn: sqlite3.Connection, k: str, pid: int) -> int | None:
     return row[0] if row else None
 
 
-def _clean_about(text: str) -> str:
+def _clean_text(text: str, most: int, what: str) -> str:
     text = (text or "").strip()
-    if len(text) > ABOUT_MAX:
-        raise IdentityError(f"The text about a person is too long. Keep it under "
-                            f"{ABOUT_MAX} characters.")
+    if len(text) > most:
+        raise IdentityError(f"{what} is too long. Keep it under {most} characters.")
     return text
 
 
@@ -373,10 +407,43 @@ def _clean_aliases(items: list[str]) -> list[str]:
     return out
 
 
+def _holds(rec: dict[str, Any]) -> bool:
+    """Does a record say anything of its own (beyond linking accounts)?"""
+    return bool(rec["relation"] or rec["aliases"] or rec["notes"])
+
+
+def _empty(ref: str) -> dict[str, Any]:
+    return {"id": None, "name": "", "relation": "", "aliases": [], "notes": [],
+            "members": [ref]}
+
+
+def _ensure(conn: sqlite3.Connection, ref: str) -> int:
+    """The record of account `ref`, made when it has none."""
+    k, pid = parse_person(ref)
+    iid = _record_of(conn, k, pid)
+    if iid is None:
+        at = now()
+        iid = conn.execute("INSERT INTO identities (name, created_at, updated_at) "
+                           "VALUES ('', ?, ?)", (at, at)).lastrowid
+        conn.execute("INSERT INTO identity_members (kb, person_id, identity_id, source, "
+                     "created_at) VALUES (?, ?, ?, 'user', ?)", (k, pid, iid, at))
+    return iid
+
+
+def _settle(conn: sqlite3.Connection, iid: int, ref: str) -> dict[str, Any]:
+    """The record after a change: a single account's record that says nothing is
+    deleted."""
+    rec = _record(conn, iid)
+    if len(rec["members"]) < 2 and not _holds(rec):
+        conn.execute("DELETE FROM identities WHERE id = ?", (iid,))
+        return _empty(ref)
+    return rec
+
+
 def link_sync(conn: sqlite3.Connection, refs: list[str], *, name: str,
               source: str = "user") -> dict[str, Any]:
     """Mark `refs` as the same person called `name`. Accounts already in records bring
-    them along: the records merge into one, with their about texts and aliases."""
+    them along: the records merge into one, with their notes and aliases."""
     parsed = list(dict.fromkeys(parse_person(r) for r in refs))
     name = (name or "").strip()
     if not name:
@@ -390,14 +457,17 @@ def link_sync(conn: sqlite3.Connection, refs: list[str], *, name: str,
                  for iid in records}
         iid = max(records, key=lambda i: (sizes[i], -i))
         merged = [_record(conn, i) for i in [iid] + [i for i in records if i != iid]]
-        about = "\n\n".join(r["about"] for r in merged if r["about"])
+        relation = next((r["relation"] for r in merged if r["relation"]), "")
         aliases = _clean_aliases([a for r in merged for a in r["aliases"]])
         for other in merged[1:]:
             conn.execute("UPDATE identity_members SET identity_id = ? WHERE identity_id = ?",
                          (iid, other["id"]))
+            conn.execute("UPDATE person_notes SET identity_id = ? WHERE identity_id = ?",
+                         (iid, other["id"]))
             conn.execute("DELETE FROM identities WHERE id = ?", (other["id"],))
-        conn.execute("UPDATE identities SET name = ?, about = ?, aliases = ?, updated_at = ? "
-                     "WHERE id = ?", (name, about, json.dumps(aliases), at, iid))
+        conn.execute("UPDATE identities SET name = ?, relation = ?, aliases = ?, "
+                     "updated_at = ? WHERE id = ?",
+                     (name, relation, json.dumps(aliases), at, iid))
     else:
         iid = conn.execute("INSERT INTO identities (name, created_at, updated_at) "
                            "VALUES (?, ?, ?)", (name, at, at)).lastrowid
@@ -413,7 +483,7 @@ def link_sync(conn: sqlite3.Connection, refs: list[str], *, name: str,
 
 def unlink_sync(conn: sqlite3.Connection, ref: str) -> dict[str, Any]:
     """Separate one account from its same person. The record stays with the accounts
-    left; one account left keeps it only for its about or aliases, else it is deleted."""
+    left; one account left keeps it only for what it says, else it is deleted."""
     k, pid = parse_person(ref)
     iid = _record_of(conn, k, pid)
     rec = _record(conn, iid) if iid is not None else None
@@ -423,7 +493,7 @@ def unlink_sync(conn: sqlite3.Connection, ref: str) -> dict[str, Any]:
     if len(rec["members"]) > 2:
         conn.execute("UPDATE identities SET updated_at = ? WHERE id = ?", (now(), iid))
         return {"person": iid, "deleted": False}
-    if rec["about"] or rec["aliases"]:
+    if _holds(rec):
         conn.execute("UPDATE identities SET name = '', updated_at = ? WHERE id = ?",
                      (now(), iid))
         return {"person": iid, "deleted": False}
@@ -432,41 +502,63 @@ def unlink_sync(conn: sqlite3.Connection, ref: str) -> dict[str, Any]:
 
 
 def set_person_sync(conn: sqlite3.Connection, ref: str, *, name: str | None = None,
-                    about: str | None = None,
+                    relation: str | None = None,
                     aliases: list[str] | None = None) -> dict[str, Any]:
     """Change the person the account `ref` belongs to; None leaves a field as it is.
-    `name` is a same person's name (a single account is renamed in its archive). A
-    single account gets a record when about or aliases are set, the same way marking
-    creates one, and loses it when both are empty again. Returns the record, or
-    `{"id": None, ...}` for a single account with nothing stored."""
+    `name` is a same person's name (a single account is renamed in its archive).
+    `relation`: how they relate to the user, one line. Returns the record, or one with
+    `id` None for a single account with nothing kept."""
     k, pid = parse_person(ref)
-    about = None if about is None else _clean_about(about)
+    relation = None if relation is None else " ".join(
+        _clean_text(relation, RELATION_MAX, "The relation").split())
     aliases = None if aliases is None else _clean_aliases(aliases)
     iid = _record_of(conn, k, pid)
     rec = _record(conn, iid) if iid is not None else None
-    same = rec is not None and len(rec["members"]) > 1
     if name is not None:
-        if not same:
+        if rec is None or len(rec["members"]) < 2:
             raise IdentityError("Only a same person has a name here. Rename the account "
                                 "itself instead.")
         if not name.strip():
             raise IdentityError("The same person needs a name. Give one.")
-    new_about = about if about is not None else (rec["about"] if rec else "")
-    new_aliases = aliases if aliases is not None else (rec["aliases"] if rec else [])
-    at = now()
-    if rec is None:
-        if not new_about and not new_aliases:
-            return {"id": None, "name": "", "about": "", "aliases": [], "members": [ref]}
-        iid = conn.execute("INSERT INTO identities (name, about, aliases, created_at, "
-                           "updated_at) VALUES ('', ?, ?, ?, ?)",
-                           (new_about, json.dumps(new_aliases), at, at)).lastrowid
-        conn.execute("INSERT INTO identity_members (kb, person_id, identity_id, source, "
-                     "created_at) VALUES (?, ?, ?, 'user', ?)", (k, pid, iid, at))
-        return _record(conn, iid)
-    if not same and not new_about and not new_aliases:
-        conn.execute("DELETE FROM identities WHERE id = ?", (iid,))
-        return {"id": None, "name": "", "about": "", "aliases": [], "members": [ref]}
-    conn.execute("UPDATE identities SET name = ?, about = ?, aliases = ?, updated_at = ? "
-                 "WHERE id = ?", (name.strip() if name is not None else rec["name"],
-                                  new_about, json.dumps(new_aliases), at, iid))
+    if rec is None and not relation and not aliases:
+        return _empty(ref)
+    iid = _ensure(conn, ref)
+    rec = _record(conn, iid)
+    conn.execute("UPDATE identities SET name = ?, relation = ?, aliases = ?, updated_at = ? "
+                 "WHERE id = ?",
+                 (name.strip() if name is not None else rec["name"],
+                  relation if relation is not None else rec["relation"],
+                  json.dumps(aliases if aliases is not None else rec["aliases"]), now(), iid))
+    return _settle(conn, iid, ref)
+
+
+def note_sync(conn: sqlite3.Connection, ref: str, text: str, *,
+              author: str = "user") -> dict[str, Any]:
+    """A new note about the person of account `ref`, by the user or the agent."""
+    text = _clean_text(text, NOTE_MAX, "The note")
+    if not text:
+        raise IdentityError("A note needs some text.")
+    iid = _ensure(conn, ref)
+    conn.execute("INSERT INTO person_notes (identity_id, text, author, created_at) "
+                 "VALUES (?, ?, ?, ?)", (iid, text, author, now()))
     return _record(conn, iid)
+
+
+def change_note_sync(conn: sqlite3.Connection, note_id: int, text: str | None, *,
+                     author: str = "user") -> dict[str, Any]:
+    """A note changed (`text`) or removed (None). The old row stays, marked replaced: what
+    was once written about a person is still on record."""
+    row = conn.execute("SELECT identity_id FROM person_notes WHERE id = ? AND "
+                       "replaced_at IS NULL", (note_id,)).fetchone()
+    if row is None:
+        raise IdentityError("There is no such note.")
+    iid = row[0]
+    new = _clean_text(text or "", NOTE_MAX, "The note")
+    at = now()
+    conn.execute("UPDATE person_notes SET replaced_at = ? WHERE id = ?", (at, note_id))
+    if new:
+        conn.execute("INSERT INTO person_notes (identity_id, text, author, created_at) "
+                     "VALUES (?, ?, ?, ?)", (iid, new, author, at))
+    first = conn.execute("SELECT kb, person_id FROM identity_members WHERE identity_id = ? "
+                         "LIMIT 1", (iid,)).fetchone()
+    return _settle(conn, iid, person_ref(first[0], first[1]))

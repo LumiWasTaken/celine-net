@@ -93,6 +93,9 @@ TOOLS: dict[str, dict[str, str]] = {
     "chat_archive__read_period": {"label": "Messages: read a chat",
                                   "summary": "Reads one chat: its newest messages, or the "
                                              "messages of a date range."},
+    "chat_archive__write_person": {"label": "Messages: write about a person",
+                                   "summary": "Keeps a note, a relation or another name "
+                                              "with a person, on their card."},
     "chat_archive__list_chats": {"label": "Messages: list the chats",
                                  "summary": "Lists your chats, newest or biggest first, "
                                             "with who each direct chat is with."},

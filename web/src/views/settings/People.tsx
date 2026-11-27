@@ -1,17 +1,18 @@
 /* People: one row per person in every chat source. A same person is one row with its
    accounts inside it; every other account is a row of its own. Rename in place, write
-   what someone is to you (About, Also called), mark accounts as the same person, and
+   what someone is to you (Relation, Also called, Notes), mark accounts as the same person, and
    separate an account again. A row shows which account it is beyond the name (source,
    number or user name, last active): two people called Martin stay two people until
    you mark them. No column headers: each cell says what it is. */
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link2, MoreHorizontal, NotebookPen, PenLine, SquareCheck, Unlink, Users } from 'lucide-react'
+import { Link2, MoreHorizontal, NotebookPen, PenLine, SquareCheck, Trash2, Unlink, Users } from 'lucide-react'
 import { identitiesApi, kbApi, type Kb, type Person, type PersonAccount, type PersonEntry } from '../../lib/kb'
 import { errorText, listTime, noneMatch } from '../../lib/format'
 import { useResource } from '../../lib/useResource'
 import { useAutosave } from '../../lib/useAutosave'
+import { useAgent } from '../../lib/agent'
 import {
-  Avatar, Button, Checkbox, Dialog, EmptyState, Field, InlineEdit, InlineError, Input, LoadingRow, MenuButton, SearchField,
+  Avatar, Button, Checkbox, Dialog, EmptyState, Field, IconButton, InlineEdit, InlineError, Input, LoadingRow, MenuButton, SearchField,
   Section, Filters, SourceGlyph, VirtualList, useContextMenu, type MenuItem, TextArea
 } from '../../ui'
 import { Page } from './parts'
@@ -141,8 +142,9 @@ export function People({ kbs }: { kbs: Kb[] }) {
                        RENAME_ACCOUNT, 'Leave empty to use their own name', true, aka)
             : nameCell(p.key, p.name, p.key, p.name, t => renamePerson(p, t), 'Rename the person', 'Name', true, aka)}
           {cells(one ? one.handle ?? title(one.kb) : `${p.accounts.length} accounts`, one, one ? one.last_ts : p.last_ts,
-                 p.about ? (
-                   <Button variant="ghost" size="sm" className="people__about" title={p.about} onClick={() => setAbout(p)}>{p.about.split('\n')[0]}</Button>
+                 p.relation || p.notes.length ? (
+                   <Button variant="ghost" size="sm" className="people__about" title={p.notes.map(n => n.text).join('\n') || undefined}
+                           onClick={() => setAbout(p)}>{p.relation || p.notes[0]!.text.split('\n')[0]}</Button>
                  ) : null, rowMenu(p))}
         </div>
         {!one && p.accounts.map(a => (
@@ -195,37 +197,86 @@ export function People({ kbs }: { kbs: Kb[] }) {
         </div>
         {ctx.menu}
       </Section>
-      {about && <AboutDialog person={about} onClose={() => setAbout(null)} onSaved={people.reload} />}
+      {about && <AboutDialog person={about} title={title} onClose={() => setAbout(null)} onSaved={people.reload} />}
     </Page>
   )
 }
 
-/* What someone is to you and the other names they go by. Celine reads both; search and
-   Celine find the person by an alias. Each saves when you leave its field. */
-function AboutDialog({ person, onClose, onSaved }: { person: PersonEntry; onClose: () => void; onSaved: () => void }) {
-  const [text, setText] = useState(person.about)
+/* A person: how they relate to you, the other names they go by, the notes about them
+   (yours and its), and each account with its profile and the names it had. It reads all
+   of it; search and it find the person by an alias. A field saves when you leave it. */
+function AboutDialog({ person, title, onClose, onSaved }: {
+  person: PersonEntry; title: (kb: string) => string; onClose: () => void; onSaved: () => void
+}) {
+  const ref = person.accounts[0]!.ref
+  const agent = useAgent()
+  const full = useResource(() => identitiesApi.person(ref), [ref])
+  const [relation, setRelation] = useState(person.relation)
   const [aliases, setAliases] = useState(person.aliases.join(', '))
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const auto = useAutosave<string>(async c => {
-    await identitiesApi.setPerson(person.accounts[0]!.ref, {
-      about: c.about ?? text, aliases: (c.aliases ?? aliases).split(',').map(a => a.trim()).filter(Boolean),
+    await identitiesApi.setPerson(ref, {
+      relation: c.relation ?? relation, aliases: (c.aliases ?? aliases).split(',').map(a => a.trim()).filter(Boolean),
     })
     onSaved()
   })
+  const change = async (fn: () => Promise<unknown>) => {
+    setError(null)
+    try { await fn(); full.reload(); onSaved() } catch (e) { setError(errorText(e)) }
+  }
+  const p = full.data?.person
   return (
     <Dialog title={`About ${person.name}`} onClose={onClose} size="md" actions={<Button onClick={onClose}>Close</Button>}>
       <div className="dialog__body people__about-form">
-        <Field label="About">
-          <TextArea rows={5} value={text} autoFocus maxLength={2000} onBlur={auto.flush}
-                    placeholder="My sister. Birthday on 3 May." onChange={e => { setText(e.target.value); auto.set('about', e.target.value, 'blur') }} />
+        <Field label="Relation">
+          <Input value={relation} autoFocus maxLength={120} placeholder="My sister" onBlur={auto.flush}
+                 onChange={e => { setRelation(e.target.value); auto.set('relation', e.target.value, 'blur') }} />
         </Field>
         <Field label="Also called">
           <Input value={aliases} placeholder="Sis, Annie" onBlur={auto.flush}
                  onChange={e => { setAliases(e.target.value); auto.set('aliases', e.target.value, 'blur') }} />
         </Field>
         {auto.error && <InlineError message={auto.error} compact onRetry={auto.flush} />}
+        <Field label="Notes">
+          <div className="people__notes">
+            {p?.notes.map(n => (
+              <div key={n.id} className="people__note">
+                <span className="people__note-text">{n.text}</span>
+                <span className="people__note-by">{n.author === 'user' ? 'You' : agent?.name}, {listTime(n.created_at)}</span>
+                <IconButton icon={Trash2} label="Delete note" size="sm" onClick={() => void change(() => identitiesApi.removeNote(ref, n.id))} />
+              </div>
+            ))}
+            <TextArea rows={2} value={note} maxLength={2000} placeholder="Birthday on 3 May." onChange={e => setNote(e.target.value)} />
+            <Button size="sm" disabled={!note.trim()} onClick={() => void change(async () => { await identitiesApi.addNote(ref, note.trim()); setNote('') })}>Add note</Button>
+          </div>
+        </Field>
+        {error && <InlineError message={error} compact />}
+        {full.error && <InlineError message={full.error} onRetry={full.reload} />}
+        {p?.accounts.map(a => {
+          const was = a.history.filter(h => h.to_ts !== null && h.kind !== 'bio')
+          const nicks = a.history.filter(h => h.kind === 'nick' && h.to_ts === null)
+          return (
+            <Field key={a.ref} label={`${title(a.kb)}${a.handle ? `, ${a.handle}` : ''}`}>
+              <div className="people__profile">
+                {a.deleted && <span>Account deleted</span>}
+                {otherNames(a).split('\n').filter(Boolean).map(l => <span key={l}>{l}</span>)}
+                {nicks.map(h => <span key={h.scope + h.value}>Nickname{h.scope ? ` on ${h.scope}` : ''}: {h.value}</span>)}
+                {a.pronouns && <span>Pronouns: {a.pronouns}</span>}
+                {a.bio && <span className="people__bio">{a.bio}</span>}
+                {was.map(h => <span key={h.kind + h.value + h.to_ts} className="people__was">{NAME_KIND[h.kind] ?? h.kind}: {h.value}, until {listTime(h.to_ts)}</span>)}
+              </div>
+            </Field>
+          )
+        })}
       </div>
     </Dialog>
   )
+}
+
+const NAME_KIND: Record<string, string> = {
+  username: 'User name', display_name: 'Display name', push_name: 'WhatsApp name', contact_name: 'Contact name',
+  nick: 'Nickname', pronouns: 'Pronouns',
 }
 
 function otherNames(p: Person): string {

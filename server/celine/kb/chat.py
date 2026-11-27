@@ -95,6 +95,7 @@ class Sink:
         # time each report their own rows
         self.added = 0
         self._people: dict[str, int] = {}
+        self._seen: dict[str, tuple] = {}       # what this sink last wrote of a person
         self._chats: dict[str, int] = {}
         self._pending: list[tuple] = []
         self.touched: set[int] = set()
@@ -104,26 +105,67 @@ class Sink:
     def person(self, key: str, *, phone: str | None = None,
                contact_name: str | None = None, push_name: str | None = None,
                display_name: str | None = None, username: str | None = None,
-               is_me: bool = False) -> int:
-        """Upsert by key. A name the source does not have (None) never erases one
-        that an earlier import found."""
+               is_me: bool = False, bio: str | None = None, pronouns: str | None = None,
+               nick: str | None = None, nick_scope: str = "", deleted: bool | None = None,
+               profile: bool = False, ts: int | None = None) -> int:
+        """Upsert by key. A value the source does not have (None) never erases one an
+        earlier import found, so a deleted account keeps its last names. Every value
+        that changed goes into `person_names` with when (`ts`, else now): the name a
+        person had at a time stays known. `nick`: their nickname on the server
+        `nick_scope`. `profile`: this is their whole profile, read now."""
+        given = {"contact_name": _clean(contact_name), "push_name": _clean(push_name),
+                 "display_name": _clean(display_name), "username": _clean(username),
+                 "bio": _clean(bio), "pronouns": _clean(pronouns)}
+        seen = (phone, *given.values(), _clean(nick), nick_scope, deleted, is_me)
+        if not profile and self._seen.get(key) == seen:
+            return self._people[key]
+        at = int(ts) if ts else now_ms()
         row = self.conn.execute(
             """INSERT INTO people (key, phone, contact_name, push_name, display_name,
-                                   username, is_me)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
+                                   username, is_me, bio, pronouns, deleted, seen_ts,
+                                   profile_ts)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0), ?, ?)
                ON CONFLICT (key) DO UPDATE SET
                  phone        = COALESCE(excluded.phone, people.phone),
                  contact_name = COALESCE(excluded.contact_name, people.contact_name),
                  push_name    = COALESCE(excluded.push_name, people.push_name),
                  display_name = COALESCE(excluded.display_name, people.display_name),
                  username     = COALESCE(excluded.username, people.username),
+                 bio          = COALESCE(excluded.bio, people.bio),
+                 pronouns     = COALESCE(excluded.pronouns, people.pronouns),
+                 deleted      = COALESCE(?, people.deleted),
+                 seen_ts      = MAX(COALESCE(people.seen_ts, 0), excluded.seen_ts),
+                 profile_ts   = COALESCE(excluded.profile_ts, people.profile_ts),
                  is_me        = MAX(people.is_me, excluded.is_me)
                RETURNING id""",
-            (key, phone, _clean(contact_name), _clean(push_name), _clean(display_name),
-             _clean(username), int(is_me)),
+            (key, phone, given["contact_name"], given["push_name"], given["display_name"],
+             given["username"], int(is_me), given["bio"], given["pronouns"],
+             None if deleted is None else int(deleted), at, at if profile else None,
+             None if deleted is None else int(deleted)),
         ).fetchone()
-        self._people[key] = row[0]
-        return row[0]
+        pid = row[0]
+        for kind, value in given.items():
+            if value is not None:
+                self._named(pid, kind, "", value, at)
+        if _clean(nick) is not None:
+            self._named(pid, "nick", nick_scope or "", _clean(nick), at)
+        self._people[key] = pid
+        self._seen[key] = seen
+        return pid
+
+    def _named(self, pid: int, kind: str, scope: str, value: str, at: int) -> None:
+        """`value` is this person's `kind` now: the one before it ends at `at`. The first
+        value of a kind has no start: it was theirs before it was recorded."""
+        cur = self.conn.execute(
+            "SELECT id, value FROM person_names WHERE person_id = ? AND kind = ? AND "
+            "scope = ? AND to_ts IS NULL", (pid, kind, scope)).fetchone()
+        if cur is not None and cur[1] == value:
+            return
+        if cur is not None:
+            self.conn.execute("UPDATE person_names SET to_ts = ? WHERE id = ?", (at, cur[0]))
+        self.conn.execute(
+            "INSERT INTO person_names (person_id, kind, scope, value, from_ts) "
+            "VALUES (?, ?, ?, ?, ?)", (pid, kind, scope, value, at if cur is not None else None))
 
     def person_id(self, key: str) -> int:
         """Id for a key, creating a bare row when the key is new."""
@@ -340,6 +382,23 @@ class ChatKB:
                 f"{self._CHAT_SELECT} WHERE {column} IN ({','.join('?' * len(part))}) "
                 f"ORDER BY c.message_count DESC", part)]
         return self.file.read_sync(run)
+
+    def name_history(self, person_ids) -> dict[int, list[dict[str, Any]]]:
+        """Every value these accounts had: {id: [{kind, scope, value, from_ts, to_ts}]},
+        oldest first. `to_ts` None: it is theirs now."""
+        ids = sorted(set(person_ids))
+        out: dict[int, list[dict[str, Any]]] = {i: [] for i in ids}
+
+        def run(conn: sqlite3.Connection) -> None:
+            for part in in_batches(ids):
+                for r in conn.execute(
+                        f"SELECT person_id, kind, scope, value, from_ts, to_ts FROM "
+                        f"person_names WHERE person_id IN ({','.join('?' * len(part))}) "
+                        f"ORDER BY COALESCE(from_ts, 0), id", part):
+                    out[r[0]].append({"kind": r[1], "scope": r[2], "value": r[3],
+                                      "from_ts": r[4], "to_ts": r[5]})
+        self.file.read_sync(run)
+        return out
 
     def person_name(self, pid: int) -> str | None:
         """The name an account is shown under, None when there is no such account."""
@@ -690,6 +749,8 @@ class ChatKB:
         base["names"] = {"custom": r["custom_name"], "contact": r["contact_name"],
                          "push": r["push_name"], "display": r["display_name"],
                          "username": r["username"]}
+        base["bio"], base["pronouns"] = r["bio"], r["pronouns"]
+        base["deleted"] = bool(r["deleted"])
         base["messages"] = r["n"] if "n" in r.keys() else None
         base["chats"] = r["nchats"] if "nchats" in r.keys() else None
         return base
