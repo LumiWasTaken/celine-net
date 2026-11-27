@@ -36,8 +36,8 @@ async def test_mark_write_about_and_separate_over_http(tmp_path, store):
                 if a["handle"] in ("+49 170 0000001", "@alex")]
         out = (await c.post("/api/people",
                             json={"refs": refs, "name": "Alex"})).json()["person"]
-        assert out["members"] == ["discord:1", "whatsapp:1"]
-        r = await c.patch("/api/people/discord:1", json={"name": "Alexander",
+        assert out["members"] == ["discord:person:1", "whatsapp:person:1"]
+        r = await c.patch("/api/people/discord:person:1", json={"name": "Alexander",
                                                    "about": "school friend",
                                                    "aliases": ["Xander"]})
         assert r.json()["person"]["name"] == "Alexander"
@@ -45,23 +45,23 @@ async def test_mark_write_about_and_separate_over_http(tmp_path, store):
         assert [(p["name"], p["about"], len(p["accounts"])) for p in people] == [
             ("Alexander", "school friend", 2)]
         assert (await c.post("/api/people",
-                             json={"refs": ["whatsapp:3"], "name": "B"})).status_code == 422
+                             json={"refs": ["whatsapp:person:3"], "name": "B"})).status_code == 422
         with pytest.raises(CelineError):
-            await c.delete("/api/people/whatsapp:3/link")
-        r = await c.delete("/api/people/discord:1/link")
+            await c.delete("/api/people/whatsapp:person:3/link")
+        r = await c.delete("/api/people/discord:person:1/link")
         assert r.json() == {"person": out["id"], "deleted": False}      # the about stays
-    rec = (await ident.snapshot(store)).identity_of("whatsapp:1")
-    assert rec.about == "school friend" and rec.members == {"whatsapp:1"}
+    rec = (await ident.snapshot(store)).identity_of("whatsapp:person:1")
+    assert rec.about == "school friend" and rec.members == {"whatsapp:person:1"}
 
 
 async def test_search_follows_a_person_and_its_aliases(tmp_path, store):
     kbs = build(tmp_path)
-    await store.write(lambda c: ident.link_sync(c, ["whatsapp:1", "discord:1"], name="Sam"))
-    await store.write(lambda c: ident.set_person_sync(c, "discord:1", aliases=["Sammy"]))
+    await store.write(lambda c: ident.link_sync(c, ["whatsapp:person:1", "discord:person:1"], name="Sam"))
+    await store.write(lambda c: ident.set_person_sync(c, "discord:person:1", aliases=["Sammy"]))
     ids = await ident.snapshot(store)
     for q in ("from:Sam", "from:sam"):
         res = kbs.search(q, identities=ids)
         assert {h["kb"] for h in res["hits"]} == {"whatsapp", "discord"} and res["total"] == 5
-    for ref in ("whatsapp:1", "discord:1"):
+    for ref in ("whatsapp:person:1", "discord:person:1"):
         assert kbs.search("chess", person=ref, identities=ids)["total"] == 2
     assert kbs.search("from:sam")["total"] == 0                       # no records, no alias

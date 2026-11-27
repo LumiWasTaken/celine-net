@@ -8,11 +8,11 @@ Three things a server block can add:
   no command and compose runs the service.
 - `kb = "<archive>"`: a connector (discord-link, wa-link). Records in a tool result's
   structured content are applied to that archive through the feed (kb/feed.py) and
-  the result is rendered as Messages archive lines ` [kb:id] <when> <who>: <text>`, so they
+  the result is rendered as Messages archive lines ` [kb:msg:id] <when> <who>: <text>`, so they
   can be cited like any archived message. Messages references are accepted in place
   of the connector's own ids: a chat reference for `chat`, a message reference for
-  `message`, `before` and `after` (its chat fills `chat`, which is then optional), an
-  account reference for `user_id` and `from_user`. A connector only reads: a tool of
+  `message`, `before` and `after` (its chat fills `chat`, which is then optional), a
+  person reference for `user_id` and `from_user`. A connector only reads: a tool of
   its that is not read-only is not offered to Celine.
 - `guides/<server>.md` (skills/guides): the skill's description and guide.
 - `[servers.<id>.words]` and `[servers.<id>.groups]`: its tools' rows, by tool
@@ -46,7 +46,7 @@ from mcp.client.streamable_http import create_mcp_http_client, streamable_http_c
 from . import attachments
 from .config import ROOT, Problem, checked
 from .core.ids import now
-from .kb.identity import REF
+from .kb.identity import CHAT_REF, MSG_REF, PERSON_REF, kind_of, not_a
 from .errors import TooLarge, answered, agent_unreachable
 from .skills import BUILTIN, GUIDES_DIR, META, Annotations, ToolContext, ToolResult, ToolSpec, guide
 
@@ -571,8 +571,8 @@ def _with_refs(schema: dict[str, Any], kb_id: str) -> dict[str, Any]:
     props = {k: dict(v) if isinstance(v, dict) else v
              for k, v in (schema.get("properties") or {}).items()}
     kinds = {**{k: "chat" for k in _CHAT_ARGS}, **{k: "message" for k in _MESSAGE_ARGS},
-             **{k: "account" for k in _PERSON_ARGS}}
-    examples = {"chat": "68", "message": "48213", "account": "17"}
+             **{k: "person" for k in _PERSON_ARGS}}
+    examples = {"chat": "chat:68", "message": "msg:48213", "person": "person:17"}
     for name, kind in kinds.items():
         p = props.get(name)
         if isinstance(p, dict):
@@ -588,14 +588,20 @@ def _with_refs(schema: dict[str, Any], kb_id: str) -> dict[str, Any]:
 
 
 def _resolve_refs(kb, args: dict[str, Any]) -> dict[str, Any]:
-    """Messages references (`<kb>:<id>`) in a connector call, as the connector's own ids:
+    """Messages references in a connector call, as the connector's own ids:
     a chat reference in `chat` is the chat's key; a message reference in `message`,
     `before` or `after` is the message's key, and its chat fills `chat`; a person
     reference in `user_id` or `from_user` is the account's key. Raises LookupError with
     one sentence when a reference names nothing of that kind."""
-    def ours(v: Any) -> int | None:
-        m = REF.match(v.strip()) if isinstance(v, str) else None
-        return int(m.group(2)) if m and m.group(1) == kb.id else None
+    def ours(v: Any, pattern, want: str) -> int | None:
+        """The id in a reference of this source and this kind; None for the connector's
+        own id. A reference of another kind is refused."""
+        if not isinstance(v, str) or not kind_of(v):
+            return None
+        m = pattern.match(v.strip())
+        if not m:
+            raise LookupError(not_a(v.strip(), want))
+        return int(m.group(2)) if m.group(1) == kb.id else None
 
     def one(sql: str, n: int):
         return kb.file.read_sync(lambda c: c.execute(sql, (n,)).fetchone())
@@ -603,7 +609,7 @@ def _resolve_refs(kb, args: dict[str, Any]) -> dict[str, Any]:
     out = dict(args)
     chat_from_ref = None
     for k in _CHAT_ARGS:
-        if (n := ours(out.get(k))) is not None:
+        if (n := ours(out.get(k), CHAT_REF, "chat")) is not None:
             row = one("SELECT key FROM chats WHERE id = ?", n)
             if row is None:
                 raise LookupError(f"{out[k]} is not a chat in the {kb.title} source. "
@@ -612,7 +618,7 @@ def _resolve_refs(kb, args: dict[str, Any]) -> dict[str, Any]:
             chat_from_ref = out[k]
             out[k] = row["key"]
     for k in _MESSAGE_ARGS:
-        if (n := ours(out.get(k))) is not None:
+        if (n := ours(out.get(k), MSG_REF, "message")) is not None:
             row = one("SELECT c.key AS chat, m.key AS msg FROM messages m JOIN chats c "
                       "ON c.id = m.chat_id WHERE m.id = ?", n)
             if row is None:
@@ -624,11 +630,11 @@ def _resolve_refs(kb, args: dict[str, Any]) -> dict[str, Any]:
             out[k] = row["msg"]
             out["chat"] = row["chat"]
     for k in _PERSON_ARGS:
-        if (n := ours(out.get(k))) is not None:
+        if (n := ours(out.get(k), PERSON_REF, "person")) is not None:
             row = one("SELECT key FROM people WHERE id = ?", n)
             if row is None:
-                raise LookupError(f"{out[k]} is not an account in the {kb.title} source. "
-                                  f"`{k}` takes an account reference (chat_archive__look_up).")
+                raise LookupError(f"{out[k]} is not a person in the {kb.title} source. "
+                                  f"`{k}` takes a person reference (chat_archive__look_up).")
             out[k] = row["key"]
     return out
 

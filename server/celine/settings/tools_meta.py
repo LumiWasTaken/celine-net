@@ -90,9 +90,12 @@ TOOLS: dict[str, dict[str, str]] = {
     "chat_archive__read_session": {"label": "Messages: read around a message",
                                    "summary": "Reads the chat session that contains one "
                                               "message."},
-    "chat_archive__read_period": {"label": "Messages: read a date range",
-                                  "summary": "Reads the messages of one chat in a date "
-                                             "range."},
+    "chat_archive__read_period": {"label": "Messages: read a chat",
+                                  "summary": "Reads one chat: its newest messages, or the "
+                                             "messages of a date range."},
+    "chat_archive__list_chats": {"label": "Messages: list the chats",
+                                 "summary": "Lists your chats, newest or biggest first, "
+                                            "with who each direct chat is with."},
     "chat_archive__scroll": {"label": "Messages: read older or newer ones",
                              "summary": "Gets up to 20 older or newer messages next to one "
                                         "message, only the ones {{name}} does not have yet."},

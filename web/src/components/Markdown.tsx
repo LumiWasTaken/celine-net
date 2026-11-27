@@ -20,7 +20,7 @@ import './Markdown.css'
 
 const REF = 'cn-ref:'
 const DOC = 'cn-doc:'
-// A ref the citation verifier could not stand behind: `[[whatsapp:123|invalid]]`. Not a
+// A ref the citation verifier could not stand behind: `[[whatsapp:msg:123|invalid]]`. Not a
 // working link: it shows the id and "Invalid", never hides the failure. Any dest: a tool
 // name written as a citation is marked invalid by the server too.
 const INVALID = 'cn-invalid:'

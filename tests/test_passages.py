@@ -118,4 +118,4 @@ def test_search_finds_the_passage_once_it_is_ready(tmp_path, monkeypatch):
     semantic.build(embed_cfg(), kb, CTX)
     top = semantic.search_sync(embed_cfg(), kbs, "celine engine garage", limit=5)["hits"][0]
     assert top["chat_id"] == b and "celine" in top["text"]
-    assert top["ref"] == f"whatsapp:{top['messages'][0]}"
+    assert top["ref"] == f"whatsapp:msg:{top['messages'][0]}"

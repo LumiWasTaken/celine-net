@@ -91,60 +91,65 @@ def test_a_whatsapp_group_reads_by_its_name_never_its_id(tmp_path):
         assert wa.get_chat(gid)["name"] == "group 3456"
 
 
-def test_look_up_lists_the_chats_a_person_writes_in(tmp_path, monkeypatch):
+def _ctx():
     from types import SimpleNamespace
+    return SimpleNamespace(turn_id=None, store=None, max_output_tokens=None, emit=None,
+                           conversation_id="c")
+
+
+def test_look_up_gives_a_person_with_their_names_and_chats(tmp_path, monkeypatch):
     import anyio
     skill = archive_skill(monkeypatch, build(tmp_path))
-    out = anyio.run(lambda: skill.look_up(SimpleNamespace(turn_id=None, store=None),
-                                          name="Bea")).content
-    assert "their chats, most messages first:" in out
-    assert "chat whatsapp:2 Chess club (group), 3 by them" in out
-    assert 'written_by=["whatsapp:3"]' in out
+    out = anyio.run(lambda: skill.look_up(_ctx(), name="Bea")).content
+    assert "person whatsapp:person:3 Bea" in out
+    assert "other chats they write in, most messages first:" in out
+    assert "chat whatsapp:chat:2 Chess club (group), 3 by them" in out
 
 
-def test_a_name_in_written_by_or_scope_is_looked_up_not_refused(tmp_path, monkeypatch):
-    from types import SimpleNamespace
+def test_a_name_where_a_reference_belongs_is_refused_with_who_it_could_be(tmp_path,
+                                                                           monkeypatch):
     import anyio
     skill = archive_skill(monkeypatch, build(tmp_path))
-    ctx = SimpleNamespace(turn_id=None, store=None, max_output_tokens=None, emit=None,
-                          conversation_id="c")
-    out = anyio.run(lambda: skill.count(ctx, by="person", scope=["Chess club"],
-                                        written_by=["Bea"]))
-    assert not out.is_error, out.content
-    assert "Bea" in out.content and "Chess club" in out.content
+    out = anyio.run(lambda: skill.count(_ctx(), by="person", written_by=["Bea"]))
+    assert out.is_error and "written_by takes person references, not names" in out.content
+    assert "person whatsapp:person:3 Bea" in out.content, "who the name could be"
+    out = anyio.run(lambda: skill.count(_ctx(), by="person", chats=["Chess club"]))
+    assert out.is_error and "chat whatsapp:chat:2 Chess club" in out.content
+    out = anyio.run(lambda: skill.count(_ctx(), by="person", chats=["whatsapp:chat:2"],
+                                        written_by=["whatsapp:person:3"]))
+    assert not out.is_error and "Bea" in out.content and "Chess club" in out.content
 
 
-def test_a_source_name_in_scope_is_a_source_id_whatever_its_case(tmp_path):
-    """A source id or the all keyword resolves to its source in any case; a chat that
-    shares the name is refused as ambiguous, never silently chosen (archive.check_scope)."""
+def test_a_reference_of_the_wrong_kind_is_refused_where_it_is_passed(tmp_path, monkeypatch):
+    """A person's reference is no chat, whatever its number: the number 3 is also a chat."""
+    import anyio
+    skill = archive_skill(monkeypatch, build(tmp_path))
+    out = anyio.run(lambda: skill.search(_ctx(), about=["chess"],
+                                         chats=["whatsapp:person:3"]))
+    assert out.is_error and "whatsapp:person:3 is a person, not a chat" in out.content
+    out = anyio.run(lambda: skill.search(_ctx(), about=["chess"],
+                                         written_by=["whatsapp:chat:2"]))
+    assert out.is_error and "whatsapp:chat:2 is a chat, not a person" in out.content
+    for old in (["whatsapp:2"], ["whatsapp:msg:2"]):
+        out = anyio.run(lambda: skill.search(_ctx(), about=["chess"], chats=old))
+        assert out.is_error, old
+    out = anyio.run(lambda: skill.read_period(_ctx(), chat="whatsapp:person:3"))
+    assert out.is_error and "not a chat" in out.content
+    out = anyio.run(lambda: skill.read_session(_ctx(), ref="whatsapp:chat:2"))
+    assert out.is_error and "whatsapp:chat:2 is a chat, not a message" in out.content
+
+
+def test_scope_takes_all_or_source_ids(tmp_path):
     from celine.skills.archive import check_scope
     kbs = build(tmp_path)
-    assert check_scope(kbs, ["whatsapp"])[:2] == ("platforms", ["whatsapp"])
-    assert check_scope(kbs, ["WHATSAPP"])[:2] == ("platforms", ["whatsapp"])
-    assert check_scope(kbs, ["WhatsApp"])[:2] == ("platforms", ["whatsapp"])
-    assert check_scope(kbs, ["ALL"])[0] == "all"
-    assert check_scope(kbs, ["Everything"])[0] == "all"
-    assert check_scope(kbs, ["discord"])[:2] == ("platforms", ["discord"])
-    assert check_scope(kbs, ["Discord"])[:2] == ("platforms", ["discord"])
-
-
-def test_a_source_alias_that_also_names_a_chat_is_ambiguous(tmp_path):
-    """A token that could be a source id and a chat of that name is refused with both,
-    while the canonical source id and a chat reference stay unambiguous."""
-    from celine.skills.archive import check_scope
-    kbs = build(tmp_path)
-    s = kbs.get("whatsapp").sink()
-    d = s.chat("777@s.whatsapp.net", kind="dm", name="Discord")
-    a = s.chat("888@s.whatsapp.net", kind="group", name="ALL")
-    s.message(d, "d1", ts=0, text="a line in a chat named Discord")
-    s.message(a, "a1", ts=0, text="a line in a chat named ALL")
-    s.close()
-    kind, _plats, _chats, bad = check_scope(kbs, ["Discord"])
-    assert kind == "" and bad and "both" in bad and "discord" in bad
-    kind, _plats, _chats, bad = check_scope(kbs, ["ALL"])
-    assert kind == "" and bad and "both" in bad
-    assert check_scope(kbs, ["discord"])[:2] == ("platforms", ["discord"])
-    assert check_scope(kbs, ["all"])[0] == "all"
+    assert check_scope(kbs, None) == (None, None)
+    assert check_scope(kbs, ["all"]) == (None, None)
+    assert check_scope(kbs, ["whatsapp"]) == (["whatsapp"], None)
+    assert check_scope(kbs, ["discord", "whatsapp"]) == (["discord", "whatsapp"], None)
+    for bad in (["WhatsApp"], ["Chess club"], ["all", "discord"]):
+        sources, why = check_scope(kbs, bad)
+        assert sources is None and '"whatsapp"' in why and '"discord"' in why, bad
+    assert "pass it in `chats`" in check_scope(kbs, ["whatsapp:chat:2"])[1]
 
 
 def test_me_is_an_exact_word_in_written_by(tmp_path):

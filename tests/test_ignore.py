@@ -134,7 +134,7 @@ def test_purge_deletes_small_chats_and_unused_people_and_keeps_the_rest(tmp_path
     db = tmp_path / "celine.db"
     migrate(db)
     with sqlite3.connect(db) as c:
-        identity.link_sync(c, [f"whatsapp:{ids['linked']}", "discord:1"], name="L")
+        identity.link_sync(c, [f"whatsapp:person:{ids['linked']}", "discord:person:1"], name="L")
     cfg = SimpleNamespace(data_dir=tmp_path, problems=[], mcp={}, db_path=db, kb={
         "whatsapp": {"kind": "chat", "title": "WhatsApp", "platform": "whatsapp"}})
 

@@ -116,7 +116,7 @@ function ChatList({ kbs, kbId, active }: { kbs: Kb[]; kbId?: string; active: boo
   const open = (c: Chat) => nav.go({ section: 'chats', kb: c.kb, chat: c.id })
   const menu = (c: Chat): MenuItem[] => [
     { label: 'Open', icon: ArrowUpRight, onSelect: () => open(c) },
-    { label: 'Search', icon: Search, onSelect: () => nav.go({ section: 'search', kb: c.kb, chat: { ref: `${c.kb}:${c.id}`, name: c.name } }) },
+    { label: 'Search', icon: Search, onSelect: () => nav.go({ section: 'search', kb: c.kb, chat: { ref: c.ref, name: c.name } }) },
     { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(c) },
     'sep',
     { label: 'Select', icon: ListChecks, onSelect: () => picker.start(`${c.kb}:${c.id}`) },
@@ -382,7 +382,7 @@ function Thread({ kb, chatId, jump }: { kb: Kb; chatId: number; jump?: number })
     } catch (e) { setError(errorText(e)) }
   }
   const openAt = (id: number) => nav.go({ section: 'chats', kb: kb.id, chat: chatId, message: id })
-  const search = () => chat && nav.go({ section: 'search', kb: kb.id, chat: { ref: `${kb.id}:${chat.id}`, name: chat.name } })
+  const search = () => chat && nav.go({ section: 'search', kb: kb.id, chat: { ref: chat.ref, name: chat.name } })
   const msgs = page?.msgs ?? []
   const group = chat ? chat.kind !== 'dm' : true
 

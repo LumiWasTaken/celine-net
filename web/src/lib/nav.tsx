@@ -283,7 +283,7 @@ function formatSearch(f: SearchFilters): string {
   return '/search' + (s ? `?${s}` : '')
 }
 
-/* A message link "whatsapp:123" → its route. */
+/* A message link "whatsapp:msg:123" → its route. */
 function refRoute(ref: string): Route | null {
   if (/^documents:/.test(ref)) return null
   const m = parseRef(ref)

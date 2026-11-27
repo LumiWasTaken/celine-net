@@ -174,7 +174,7 @@ async def test_a_reply_cites_a_ref_an_older_shortened_result_holds(chat):
     once). A later reply then cites a line of the first result: that stub stays as it
     went."""
     chat.reg.add(Arch(lines=100))
-    chat.backend = Searching(window=60_000)
+    chat.backend = Searching(window=66_000)
 
     def stubs() -> list[str]:
         return [m["content"] for m in chat.turns[-1][0]

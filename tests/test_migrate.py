@@ -25,7 +25,7 @@ EXPECTED_TABLES = {
 LOG_TABLES = {"events", "global_events", "raw_responses", "requests", "terminal_commands"}
 NOTEBOOK_TABLES = {"notebook_index", "notebook_fts", "notebook_meta",
                    "notebook_semantic_state", "notebook_sections", "notebook_vecs"}
-LATEST = 36
+LATEST = 37
 
 
 def _version(db) -> int:
@@ -748,3 +748,106 @@ def test_0034_names_bastets_persona_slot_with_double_braces(tmp_path, monkeypatc
     assert dict(c.execute("SELECT k, v FROM kv WHERE k LIKE 'bastet:%'")) == {
         "bastet:talk": "{{persona}}\n\nAnswer {{name}}.", "bastet:note": "{{persona}}\n\nx",
         "bastet:persona": "{persona} stays"}
+
+
+def test_0037_gives_every_stored_reference_its_kind(tmp_path, monkeypatch):
+    """A chat, a person and a message each get their shape by where the old reference
+    stands; a document piece and a web page keep theirs; a second run writes nothing."""
+    import importlib.util
+    import json
+    d = _prior_migrations(tmp_path, monkeypatch, "0037")
+    db = tmp_path / "celine.db"
+    assert migrate_all(db) == 36
+    (tmp_path / "kb").mkdir()
+    kb = sqlite3.connect(tmp_path / "kb" / "discord.db")
+    kb.execute("CREATE TABLE chats (id INTEGER PRIMARY KEY)")
+    kb.commit()
+    kb.close()
+    result = ("scope: 1 chat: discord:71 \"Aini\" (dm)\n"
+              "#1 Discord; Aini (dm, chat discord:71); Mon 2024-07-29\n"
+              "> [discord:95095] 07:06 lumi: see documents:812 and web:3\n"
+              "earlier: discord:95000; later: none")
+    look_up = ("people matching 'x' (1 exact):\n"
+               "  person discord:71 moon (also shiniloli), 75 messages\n"
+               "      chat discord:18 moon (dm), 75 by them\n"
+               "  written_by=[\"discord:71\"] searches what they wrote")
+    counted = "12 messages, by person:\n  Bea (discord:3): 10"
+    c = sqlite3.connect(db)
+    c.execute("INSERT INTO conversations(id, created_at, updated_at) VALUES('c', 'x', 'x')")
+
+    def message(mid, role, content):
+        c.execute("INSERT INTO messages(id, conversation_id, role, content, created_at) "
+                  "VALUES(?, 'c', ?, ?, 'x')", (mid, role, content))
+
+    def call(cid, name, args, result_id, display=None):
+        c.execute("INSERT INTO tool_calls(id, message_id, result_message_id, name, "
+                  "arguments, state, display) VALUES(?, 'a1', ?, ?, ?, 'ok', ?)",
+                  (cid, result_id, name, json.dumps(args), json.dumps(display or {})))
+    message("u1", "user", "what about [[discord:95095]] and discord:5")
+    message("a1", "assistant", 'He said "hi" [[discord:95095]], [[documents:812]], '
+                               "[[discord:4|invalid]].")
+    message("t1", "tool", result)
+    message("t2", "tool", look_up)
+    message("t3", "tool", counted)
+    message("t4", "tool", "note: chat discord:18, see [[discord:7]] and discord:9")
+    call("k1", "chat_archive__search",
+         {"about": ["x"], "scope": ["discord:71"], "written_by": ["discord:71", "me"]}, "t1",
+         {"scope_chats": [{"ref": "discord:71", "name": "Aini"}],
+          "episodes": [{"refs": ["discord:95095"], "hits": []}]})
+    call("k2", "chat_archive__look_up", {"name": "x"}, "t2")
+    call("k3", "chat_archive__count", {"by": "person", "scope": ["all"]}, "t3")
+    call("k4", "notebook__read", {"path": "refs.md"}, "t4")
+    c.commit()
+    c.close()
+    log = sqlite3.connect(log_path(db))
+    log.execute("INSERT INTO events(conversation_id, seq, type, data, created_at) VALUES('c', 1, "
+                "'citations.checked', ?, 'x')",
+                (json.dumps({"invalid": [{"ref": "discord:4", "reason": "quote"}]}),))
+    log.commit()
+    log.close()
+    (tmp_path / "notebook" / "links").mkdir(parents=True)
+    note = tmp_path / "notebook" / "links" / "trip.md"
+    note.write_text("- [[discord:95095]] 2024-07-29, Aini: says hi\nher chat discord:71\n")
+
+    step = MIGRATIONS_DIR / "0037_typed_refs.py"
+    shutil.copy(step, d)
+    assert migrate_all(db) == 37
+    spec = importlib.util.spec_from_file_location("typed_refs", step)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for again in (False, True):
+        if again:                                   # run again, the same
+            conn = sqlite3.connect(db, isolation_level=None)
+            mod.up(conn, db)
+            conn.close()
+        c = sqlite3.connect(db)
+        text = dict(c.execute("SELECT id, content FROM messages"))
+        assert text["u1"] == "what about [[discord:msg:95095]] and discord:5"
+        assert text["a1"] == ('He said "hi" [[discord:msg:95095]], [[documents:812]], '
+                              "[[discord:msg:4|invalid]].")
+        assert text["t1"] == ("scope: 1 chat: discord:chat:71 \"Aini\" (dm)\n"
+                              "#1 Discord; Aini (dm, chat discord:chat:71); Mon 2024-07-29\n"
+                              "> [discord:msg:95095] 07:06 lumi: see documents:812 and web:3\n"
+                              "earlier: discord:msg:95000; later: none")
+        assert text["t2"] == ("people matching 'x' (1 exact):\n"
+                              "  person discord:person:71 moon (also shiniloli), 75 messages\n"
+                              "      chat discord:chat:18 moon (dm), 75 by them\n"
+                              "  written_by=[\"discord:person:71\"] searches what they wrote")
+        assert text["t3"] == "12 messages, by person:\n  Bea (discord:person:3): 10"
+        assert text["t4"] == ("note: chat discord:chat:18, see [[discord:msg:7]] and "
+                              "discord:9"), "a note's own words stay"
+        args, display = c.execute("SELECT arguments, display FROM tool_calls "
+                                  "WHERE id='k1'").fetchone()
+        assert json.loads(args) == {"about": ["x"], "scope": ["discord:chat:71"],
+                                    "written_by": ["discord:person:71", "me"]}
+        assert json.loads(display) == {
+            "scope_chats": [{"ref": "discord:chat:71", "name": "Aini"}],
+            "episodes": [{"refs": ["discord:msg:95095"], "hits": []}]}
+        assert c.execute("SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH "
+                         "'\"discord:msg:95095\"'").fetchone()[0] >= 1
+        c.close()
+        assert json.loads(sqlite3.connect(log_path(db)).execute(
+            "SELECT data FROM events").fetchone()[0]) == {
+                "invalid": [{"ref": "discord:msg:4", "reason": "quote"}]}
+        assert note.read_text() == ("- [[discord:msg:95095]] 2024-07-29, Aini: says hi\n"
+                                    "her chat discord:chat:71\n")

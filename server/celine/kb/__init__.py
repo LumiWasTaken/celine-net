@@ -16,7 +16,9 @@ from typing import Any
 from . import instant
 from .chat import ChatKB
 from .documents import DocumentsKB
-from .identity import REF, Identities, group_counts
+from . import identity
+from .identity import (MSG_REF, SEGMENT_REF, Identities, group_counts, msg_ref,
+                       parse_chat, parse_person)
 from .query import understand, warm
 from .tasks import Tasks
 
@@ -55,6 +57,9 @@ class KBs:
     def _build(self, kid: str, block: dict[str, Any]):
         kind = block.get("kind")
         title = str(block.get("title") or kid)
+        if kid in identity.KINDS:      # "whatsapp:chat:213": the word after a source's id
+            raise ValueError(f"A source cannot be called {kid!r}: that word names a kind "
+                             f"of reference. Give it another id.")
         if kind == "chat":
             return ChatKB(id=kid, title=title, platform=str(block.get("platform", kid)),
                           path=self.dir / f"{kid}.db", options=dict(block))
@@ -113,7 +118,7 @@ class KBs:
                identities: Identities | None = None) -> dict[str, Any]:
         """Instant search over the messages of every chat archive picked. `q` takes the
         operators of kb/query.py (from: in: kb: before: after: during: has: is:).
-        `chat` is a chat reference ("whatsapp:12") and narrows the search to that
+        `chat` is a chat reference ("whatsapp:chat:12") and narrows the search to that
         knowledge base. `person` is an account reference: it covers every account of the
         same person (`identities`), which also resolves `from:` names and aliases.
         `sort`: recent | oldest | best | relevance. Paging: `next_cursor` of one
@@ -122,7 +127,7 @@ class KBs:
         `top`: that many `top_hits` (best) next to a recent/oldest first page."""
         t0 = time.perf_counter()
         ids = identities or Identities()
-        chat_ref = _split(chat)
+        chat_ref = parse_chat(chat) if chat else None
         senders = _senders(person, ids)
         targets = self._targets(kbs, chat_ref, senders)
         chat_kbs = [k for k in targets if isinstance(k, ChatKB)]
@@ -166,7 +171,7 @@ class KBs:
         like `search` does (`correct`)."""
         t0 = time.perf_counter()
         ids = identities or Identities()
-        chat_ref = _split(chat)
+        chat_ref = parse_chat(chat) if chat else None
         senders = _senders(person, ids)
         targets = self._targets(kbs, chat_ref, senders)
         query = understand(q or "", list(self.all.values()), identities=ids)
@@ -249,11 +254,14 @@ class KBs:
                 "next_cursor": f"o{offset + limit}" if offset + limit < total else None}
 
     def resolve_refs(self, refs: list[str]) -> dict[str, dict[str, Any] | None]:
-        """"whatsapp:48213" -> the message, with its chat; "documents:812" -> the
+        """"whatsapp:msg:48213" -> the message, with its chat; "documents:812" -> the
         document segment with its item. Unknown refs map to None."""
         by_kb: dict[str, list[int]] = {}
         for ref in refs:
-            m = REF.match(ref.strip())
+            m = MSG_REF.match(ref.strip())
+            if m is None and (m := SEGMENT_REF.match(ref.strip())) is not None \
+                    and not isinstance(self.get(m[1]), DocumentsKB):
+                continue                    # a bare number names a document piece only
             if m:
                 by_kb.setdefault(m[1], []).append(int(m[2]))
         out: dict[str, dict[str, Any] | None] = {r: None for r in refs}
@@ -268,26 +276,19 @@ class KBs:
             if not isinstance(kb, ChatKB):
                 continue
             for mid, msg in kb.messages_by_ids(ids).items():
-                out[f"{kid}:{mid}"] = msg
+                out[msg_ref(kid, mid)] = msg
         return out
-
-
-def _split(ref: str | None) -> tuple[str, int] | None:
-    if not ref:
-        return None
-    m = REF.match(ref.strip())
-    return (m[1], int(m[2])) if m else None
 
 
 def _senders(person: str | None, ids: Identities) -> dict[str, list[int]] | None:
     """kb -> account ids of the person `person` names (every account of a same person);
     None when there is no person filter."""
-    ref = _split(person)
-    if ref is None:
+    if not person:
         return None
+    parse_person(person)
     out: dict[str, list[int]] = {}
-    for r in sorted(ids.expand(f"{ref[0]}:{ref[1]}")):
-        k, pid = _split(r)
+    for r in sorted(ids.expand(person.strip())):
+        k, pid = parse_person(r)
         out.setdefault(k, []).append(pid)
     return out
 

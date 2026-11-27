@@ -12,6 +12,7 @@ from typing import Any
 from ..core.ids import now_ms
 from . import instant, media_text, names
 from . import passages as P
+from .identity import chat_ref, msg_ref, person_ref
 from .db import CHAT_MIGRATIONS, KBFile, connect, in_batches
 from .normalize import highlight
 from .query import Query
@@ -293,12 +294,16 @@ class ChatKB:
     """
 
     def list_chats(self, q: str = "", sort: str = "recent", trashed: bool | None = False,
-                   limit: int = 200, offset: int = 0) -> dict[str, Any]:
+                   limit: int = 200, offset: int = 0,
+                   kind: str | None = None) -> dict[str, Any]:
         """The chats with messages; with `trashed` the trashed ones instead, with None
-        both (what the indexes name)."""
+        both (what the indexes name). `kind`: only dm, group or channel."""
         def run(conn: sqlite3.Connection) -> dict[str, Any]:
             where = ["c.message_count > 0"]
             args: list[Any] = []
+            if kind:
+                where.append("c.kind = ?")
+                args.append(kind)
             if trashed is not None:
                 where.append(f"c.trashed = {int(trashed)}")
             if q.strip():
@@ -317,9 +322,35 @@ class ChatKB:
             return {"chats": [self._chat_row(r) for r in rows], "total": total}
         return self.file.read_sync(run)
 
+    def chats_by_id(self, ids) -> list[dict[str, Any]]:
+        """These chats as list_chats gives them, most messages first."""
+        return self._chats_where("c.id", ids)
+
+    def chats_with(self, person_ids) -> list[dict[str, Any]]:
+        """The direct chats whose other side is one of these accounts."""
+        return self._chats_where("c.kind = 'dm' AND c.person_id", person_ids)
+
+    def _chats_where(self, column: str, ids) -> list[dict[str, Any]]:
+        ids = sorted(set(ids))
+        if not ids:
+            return []
+
+        def run(conn: sqlite3.Connection):
+            return [self._chat_row(r) for part in in_batches(ids) for r in conn.execute(
+                f"{self._CHAT_SELECT} WHERE {column} IN ({','.join('?' * len(part))}) "
+                f"ORDER BY c.message_count DESC", part)]
+        return self.file.read_sync(run)
+
+    def person_name(self, pid: int) -> str | None:
+        """The name an account is shown under, None when there is no such account."""
+        r = self.file.read_sync(lambda c: c.execute("SELECT * FROM people WHERE id = ?",
+                                                     (pid,)).fetchone())
+        return names.resolve(r)[0] if r else None
+
     def _chat_row(self, r: sqlite3.Row) -> dict[str, Any]:
         d = {
-            "id": r["id"], "kb": self.id, "name": _chat_name(r), "kind": r["kind"],
+            "id": r["id"], "kb": self.id, "ref": chat_ref(self.id, r["id"]),
+            "name": _chat_name(r), "kind": r["kind"],
             "parent": r["parent"], "trashed": bool(r["trashed"]),
             "messages": r["message_count"], "first_ts": r["first_ts"],
             "last_ts": r["last_ts"], "custom_name": r["custom_name"],
@@ -474,7 +505,7 @@ class ChatKB:
         if r["reply_key"]:
             reply = (replies or {}).get(r["reply_key"])
         return {
-            "id": r["id"], "ref": f"{self.id}:{r['id']}", "chat": r["chat_id"],
+            "id": r["id"], "ref": msg_ref(self.id, r["id"]), "chat": r["chat_id"],
             "ts": r["ts"], "from_me": bool(r["from_me"]), "sender": sender,
             "text": r["text"], "kind": r["kind"], "media": media_text.parse(r["media"]),
             "reply_to": reply, "edited": bool(r["edited"]), "deleted_at": r["deleted_at"],
@@ -766,7 +797,7 @@ class ChatKB:
                     continue
                 text = r["text"] or _media_text(r["media"]) or ""
                 out.append({
-                    "ref": f"{self.id}:{r['id']}", "kb": self.id, "id": r["id"],
+                    "ref": msg_ref(self.id, r["id"]), "kb": self.id, "id": r["id"],
                     "ts": r["ts"], "sk": sk, "chat": chats.get(r["chat_id"]),
                     "sender": None if r["from_me"] else people.get(r["sender_id"]),
                     "from_me": bool(r["from_me"]), "kind": r["kind"],
@@ -802,12 +833,12 @@ class ChatKB:
                         "months": []}
             chats, people = self._hit_names(conn, {c for c, _ in f["chats"]},
                                             {x for x, _ in f["people"] if x != -1})
-            f["chats"] = [{"ref": f"{self.id}:{c}", "kb": self.id, "id": c,
+            f["chats"] = [{"ref": chat_ref(self.id, c), "kb": self.id, "id": c,
                            "name": (chats.get(c) or {}).get("name"),
                            "kind": (chats.get(c) or {}).get("kind"),
                            "parent": (chats.get(c) or {}).get("parent"), "count": n}
                           for c, n in f["chats"]]
-            f["people"] = [{"ref": None if x == -1 else f"{self.id}:{x}", "kb": self.id,
+            f["people"] = [{"ref": None if x == -1 else person_ref(self.id, x), "kb": self.id,
                             "id": x, "me": x == -1,
                             "name": "me" if x == -1 else (people.get(x) or {}).get("name"),
                             "count": n} for x, n in f["people"]]
@@ -868,7 +899,7 @@ class ChatKB:
                 conn, {r["chat_id"] for r in rows},
                 {r["sender_id"] for r in rows if r["sender_id"] is not None})
             hits = [{
-                "ref": f"{self.id}:{r['id']}", "kb": self.id, "id": r["id"], "ts": r["ts"],
+                "ref": msg_ref(self.id, r["id"]), "kb": self.id, "id": r["id"], "ts": r["ts"],
                 "chat": chats.get(r["chat_id"]),
                 "sender": None if r["from_me"] else senders.get(r["sender_id"]),
                 "from_me": bool(r["from_me"]),

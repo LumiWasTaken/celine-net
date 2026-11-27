@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from .. import names
+from ..identity import chat_ref, msg_ref
 from .units import Span
 
 LINE_CHARS = 600
@@ -43,7 +44,7 @@ class Episode:
 
     @property
     def refs(self) -> list[str]:
-        return [f"{self.kb}:{m.id}" for m in self.lines]
+        return [msg_ref(self.kb, m.id) for m in self.lines]
 
 
 SELECT = """SELECT m.id, m.chat_id, m.ts, m.from_me, m.sender_id, m.text, m.kind, m.media,
@@ -153,7 +154,7 @@ def render(ep: Episode, n: int | None = None, *, kb_title: str = "") -> str:
     span = f"{a:%a %Y-%m-%d %H:%M} to {b:%H:%M}" if a.date() == b.date() else \
         f"{a:%Y-%m-%d %H:%M} to {b:%Y-%m-%d %H:%M}"
     head = (f"{'#' + str(n) + ' ' if n else ''}{kb_title or ep.kb}; {where} ({kind}, chat "
-            f"{ep.kb}:{ep.chat_id}); {span}")
+            f"{chat_ref(ep.kb, ep.chat_id)}); {span}")
     out = [head]
     day = a.date()
     for m in ep.lines:
@@ -161,7 +162,7 @@ def render(ep: Episode, n: int | None = None, *, kb_title: str = "") -> str:
         stamp = f"{t:%H:%M}" if t.date() == day else f"{t:%Y-%m-%d %H:%M}"
         day = t.date()
         mark = ">" if m.id in ep.hits else " "
-        out.append(f"{mark} [{ep.kb}:{m.id}] {stamp} {m.sender}: {m.text}")
+        out.append(f"{mark} [{msg_ref(ep.kb, m.id)}] {stamp} {m.sender}: {m.text}")
     return "\n".join(out)
 
 

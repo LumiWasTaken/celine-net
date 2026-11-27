@@ -39,34 +39,38 @@ def skill(tmp_path, monkeypatch):
 
 def ids(out) -> list[int]:
     """Message ids shown as citable lines, in order."""
-    return [int(m[2]) for m in MSG_REF.finditer(out.content)]
+    return [int(m[2].rpartition(":")[2]) for m in MSG_REF.finditer(out.content)]
 
 
 async def test_scroll_returns_the_same_messages_each_call_and_stays_in_the_chat(skill):
-    out = await skill.scroll(CTX, ref="whatsapp:40", direction="before")
+    out = await skill.scroll(CTX, ref="whatsapp:msg:40", direction="before")
     assert ids(out) == list(range(20, 41))
-    again = await skill.scroll(CTX, ref="whatsapp:40", direction="before")
+    again = await skill.scroll(CTX, ref="whatsapp:msg:40", direction="before")
     assert ids(again) == ids(out), "the same call shows the same messages"
-    assert 'older: chat_archive__scroll(ref="whatsapp:20", direction="before")' in out.content
-    assert ids(await skill.scroll(CTX, ref="whatsapp:20", direction="before")) == \
+    assert 'older: chat_archive__scroll(ref="whatsapp:msg:20", direction="before")' in out.content
+    assert ids(await skill.scroll(CTX, ref="whatsapp:msg:20", direction="before")) == \
         list(range(1, 21))
-    edge = await skill.scroll(CTX, ref="whatsapp:55", direction="after")
+    edge = await skill.scroll(CTX, ref="whatsapp:msg:55", direction="after")
     assert ids(edge) == list(range(55, 61)) and "newest message reached" in edge.content
-    for ref in ("whatsapp", "discord:4", "whatsapp:9999"):
+    for ref in ("whatsapp", "whatsapp:40", "whatsapp:chat:1", "whatsapp:person:1",
+                "discord:msg:4", "whatsapp:msg:9999"):
         assert (await skill.scroll(CTX, ref=ref)).is_error
 
 
 async def test_scroll_both_sides_with_a_count(skill):
-    out = await skill.scroll(CTX, ref="whatsapp:40", direction="both", count=3)
+    out = await skill.scroll(CTX, ref="whatsapp:msg:40", direction="both", count=3)
     assert ids(out) == [37, 38, 39, 40, 41, 42, 43]
     assert out.display["messages"] == 6
 
 
 async def test_get_fetches_several_refs_in_any_turn(skill):
     out = await skill.get_messages(ToolContext("", "another", "", None, None, None), refs=[
-        "whatsapp:61", "[whatsapp:3]", "whatsapp:2", "whatsapp:3", "whatsapp:999", "nonsense"])
+        "whatsapp:msg:61", "[whatsapp:msg:3]", "whatsapp:msg:2", "whatsapp:msg:3",
+        "whatsapp:msg:999", "whatsapp:chat:1", "nonsense"])
     assert ids(out) == [2, 3, 61]
-    assert "whatsapp:999" in out.content and "nonsense" in out.content, "the misses are named"
+    assert "no such message: whatsapp:msg:999" in out.content
+    assert "whatsapp:chat:1 is a chat, not a message" in out.content
+    assert "'nonsense' is no reference" in out.content, "the misses are named"
 
 
 SCOPE_CTX = ToolContext("", "ts", "", None, None, None)  # type: ignore[arg-type]
@@ -74,15 +78,15 @@ SCOPE_CTX = ToolContext("", "ts", "", None, None, None)  # type: ignore[arg-type
 
 async def test_a_search_stays_inside_its_scope(tmp_path, monkeypatch):
     skill = archive_skill(monkeypatch, build(tmp_path))
-    out = await skill.search(SCOPE_CTX, about=["chess"], words=["chess"], scope=["Discord"])
-    assert "[discord:" in out.content and "[whatsapp:" not in out.content
+    out = await skill.search(SCOPE_CTX, about=["chess"], words=["chess"], scope=["discord"])
+    assert "[discord:msg:" in out.content and "[whatsapp:msg:" not in out.content
     out = await skill.search(SCOPE_CTX, about=["chess"], words=["chess"],
-                             scope=["whatsapp:2"])
-    assert out.display["scope_chats"][0]["ref"] == "whatsapp:2"
-    assert "[discord:" not in out.content
+                             chats=["whatsapp:chat:2"])
+    assert out.display["scope_chats"][0]["ref"] == "whatsapp:chat:2"
+    assert "[discord:msg:" not in out.content
     out = await skill.search(SCOPE_CTX, about=["celine"], words=["celine"],
-                             scope=["discord", "whatsapp:2"])
-    assert out.is_error
+                             scope=["discord"], chats=["whatsapp:chat:2"])
+    assert out.is_error and "scope leaves out" in out.content
 
 
 async def test_read_session_follows_the_configured_session_gap(tmp_path, monkeypatch):
@@ -102,11 +106,11 @@ async def test_read_session_follows_the_configured_session_gap(tmp_path, monkeyp
     sk = archive_skill(monkeypatch, kbs)
 
     sk.cfg.embeddings = {"session_gap_minutes": 180}
-    out = await sk.read_session(CTX, ref="whatsapp:2")
+    out = await sk.read_session(CTX, ref="whatsapp:msg:2")
     assert ids(out) == [1, 2], "a 3h gap keeps a 2h pause in one session"
     assert out.display["messages"] == 2
 
     sk.cfg.embeddings = {}                       # the default 90-minute gap splits it
-    out = await sk.read_session(CTX, ref="whatsapp:2")
+    out = await sk.read_session(CTX, ref="whatsapp:msg:2")
     assert ids(out) == [2]
     assert out.display["messages"] == 1

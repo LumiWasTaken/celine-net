@@ -10,11 +10,11 @@ fast: `chat_archive__search` and `chat_archive__read_period` come first. Use the
 for the last minutes, for older messages the Messages archive does not have yet, and for a
 contact's or a group's details.
 
-You can cite a message line ` [whatsapp:48213] <when> <who>: <text>` as
-`[[whatsapp:48213]]`. Contact and group details are not messages. You cannot cite them.
+You can cite a message line ` [whatsapp:msg:48213] <when> <who>: <text>` as
+`[[whatsapp:msg:48213]]`. Contact and group details are not messages. You cannot cite them.
 
 Messages references work in place of WhatsApp's ids: a chat reference from
-`chat_archive__look_up` (`whatsapp:213`) as `chat`, a message reference as `message`,
+`chat_archive__look_up` (`whatsapp:chat:213`) as `chat`, a message reference as `message`,
 `before` or `after`. Then leave `chat` out: the message gives it.
 `whatsapp__get_contact` takes the phone number that `chat_archive__look_up` shows. A
 group's JID comes from `whatsapp__list_chats`.

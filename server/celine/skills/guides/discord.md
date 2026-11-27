@@ -11,11 +11,12 @@ these tools for what the Messages archive does not have: a chat or server that i
 the last minutes, a profile, a member list, or Discord's search over a whole server.
 
 The app also saves everything they return in the Messages archive, so you can cite a message
-line ` [discord:48213] <when> <who>: <text>` as `[[discord:48213]]` like any other.
+line ` [discord:msg:48213] <when> <who>: <text>` as `[[discord:msg:48213]]` like any other.
 Profiles, member lists and server descriptions are not messages. You cannot cite them.
 
 Messages references work in place of Discord's ids: a chat reference from
-`chat_archive__look_up` (`discord:68`) as `chat`, an account reference (`discord:17`) as
+`chat_archive__look_up` (`discord:chat:68`) as `chat`, a person reference
+(`discord:person:17`) as
 `user_id` or `from_user`, a message reference as `message`, `before` or `after`. With a
 message reference, leave `chat` out: the message gives it. Servers have no Messages archive
 reference: take a server's id from `discord__list_chats`. `@me` is {{username}}'s own
@@ -42,7 +43,7 @@ A result that has more ends with `earlier:` or `later:`. Call exactly that to sc
    active that day with `discord__read_messages`.
 2. For each included server:
    `discord__list_user_messages(user_id="@me", server=..., day=...)`.
-3. For each message you get: `discord__read_around_message(message="discord:48213")`
+3. For each message you get: `discord__read_around_message(message="discord:msg:48213")`
    shows what it answered and what came after. `discord__read_messages` with `before` or
    `after` scrolls further.
 

@@ -20,7 +20,7 @@ from typing import Any
 from .. import instant, names
 from .. import query as Q
 from ..chat import chat_cards
-from ..identity import Identities
+from ..identity import Identities, chat_ref, person_ref
 from .scope import Scope
 
 _WORDS = re.compile(r"\w+", re.UNICODE)
@@ -194,13 +194,13 @@ def count(kbs, scope: Scope, *, by: str, queries: list[str] | None = None,
                 if k == -1:
                     mk, label, refs = "me", me, []
                 else:
-                    ref = f"{kid}:{k}"
+                    ref = person_ref(kid, k)
                     ident = ids.same_person(ref)
                     mk = f"identity:{ident.id}" if ident else ref
                     label = ident.name if ident else labels.get(k, "unknown")
                     refs = [ref]
             elif by == "chat":
-                mk, label, refs = f"{kid}:{k}", labels.get(k, "?"), [f"{kid}:{k}"]
+                mk, label, refs = chat_ref(kid, k), labels.get(k, "?"), [chat_ref(kid, k)]
             else:
                 mk, label, refs = k, (_DAYS[int(k)] if by == "weekday" else str(k)), []
             row = merged.setdefault(mk, {"key": mk, "label": label, "refs": [], "count": 0})

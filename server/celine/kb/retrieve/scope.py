@@ -1,21 +1,19 @@
 """Scope: which knowledge bases, chats, people and time range a retrieval covers.
 
-People and chats are resolved on the server, deterministically, and **ambiguity is
-returned, not guessed**: "Alex" with two exact matches in one knowledge base stops the
-call and lists the candidates with their references.
+People and chats are passed as references (kb/identity.py). A name is refused with the
+people or chats it could mean: nothing is guessed.
 
 `people` means messages they wrote; "me" (or "ich", or the configured user name) means
 messages you wrote.
 """
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from .. import names
-from ..identity import REF, Identities, norm_name
+from ..identity import (CHAT_REF, PERSON_REF, Identities, chat_ref, kind_of, not_a,
+                        parse_person, person_ref)
 from .when import parse_when
 
 ME_WORDS = {"me", "i", "ich", "myself", "mich", "mir", "you", "user"}
@@ -76,177 +74,124 @@ class Scope:
         return where, args
 
 
-class Ambiguous(Exception):
-    """Raised with the lines the model needs to pick: every candidate with its ref."""
+# ---- people and chats ---------------------------------------------------------------
+# A parameter takes references only. A name passed instead is refused with who or what it
+# could mean (kb/query.py, the one name resolver), so the caller passes the reference.
 
-    def __init__(self, lines: list[str]):
-        super().__init__("\n".join(lines))
-        self.lines = lines
-
-
-# ---- people -------------------------------------------------------------------------
-
-def person_candidates(kb, name: str, limit: int = 12) -> tuple[list[dict], list[dict]]:
-    """(exact, partial) matches in one chat kb, by messages sent, most first."""
-    n = norm_name(name)
-    digits = "".join(c for c in name if c.isdigit())
-
-    def run(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-        like = f"%{name.strip()}%"
-        cond = ("p.custom_name LIKE ? OR p.contact_name LIKE ? OR p.push_name LIKE ? "
-                "OR p.display_name LIKE ? OR p.username LIKE ?")
-        args: list[Any] = [like] * 5
-        if len(digits) >= 5:
-            cond += " OR p.phone LIKE ?"
-            args.append(f"%{digits}%")
-        return conn.execute(
-            f"""SELECT p.*, (SELECT COUNT(*) FROM messages WHERE sender_id = p.id) AS n,
-                       (SELECT MAX(ts) FROM messages WHERE sender_id = p.id) AS last_ts
-                FROM people p WHERE p.is_me = 0 AND ({cond})
-                ORDER BY n DESC LIMIT 200""", args).fetchall()
-    rows = kb.file.read_sync(run)
-    exact, partial = [], []
-    for r in rows:
-        given = [r[c] for c in names.ORDER if r[c] and str(r[c]).strip()]
-        display, _ = names.resolve(r)
-        p = {"ref": f"{kb.id}:{r['id']}", "kb": kb.id, "id": r["id"], "name": display,
-             "names": given, "messages": r["n"], "last_ts": r["last_ts"],
-             "phone": names.format_phone(r["phone"])}
-        if n and any(norm_name(g) == n for g in given):
-            exact.append(p)
-        elif len(digits) >= 5 and digits in "".join(c for c in (r["phone"] or "") if c.isdigit()):
-            exact.append(p)
-        else:
-            partial.append(p)
-    return exact[:limit], partial[:limit]
+_LABELS = (("custom", "your name for them"), ("contact", "contact name"),
+           ("display", "display name"), ("push", "WhatsApp name"), ("username", "username"))
 
 
-def person_card(p: dict) -> str:
-    last = datetime.fromtimestamp(p["last_ts"] / 1000).strftime("%Y-%m") if p.get("last_ts") else "-"
-    other = [g for g in p.get("names", []) if g != p["name"]][:2]
-    return (f"person {p['ref']} {p['name']}" + (f" (also {', '.join(other)})" if other else "")
-            + (f", {p['phone']}" if p.get("phone") and p["phone"] != p["name"] else "")
-            + f", {p['messages']:,} message{'' if p['messages'] == 1 else 's'}, last {last}")
+def labelled_names(names_: dict[str, str | None], shown: str) -> list[str]:
+    """Every name of an account but the one shown, each with what it is: `username
+    shiniloli`, `display name Moon`."""
+    return [f"{label} {v.strip()}" for k, label in _LABELS
+            if (v := names_.get(k)) and v.strip() and v.strip() != shown]
 
 
-def resolve_person(kbs: list, name: str, ids: Identities) -> tuple[set[str], str]:
-    """-> (person refs, label). Raises Ambiguous or ValueError (nobody)."""
-    name = str(name).strip()
-    m = REF.match(name)
-    if m:
-        return ids.expand(name), name
-    # a same person's name or an alias the user gave: exact, before any account name
-    named = ids.named(name)
-    if len(named) == 1:
-        i = named[0]
-        return set(i.members), (f"{name} → " + (f"{i.name}: " if i.name else "")
-                                + ", ".join(sorted(i.members)))
-    if len(named) > 1:
-        raise Ambiguous([f"{name!r} names {len(named)} people. Pass the one you mean as "
-                         f"account references (written_by=[\"source:id\"]):"]
-                        + [f"  {i.name or 'person'}: {', '.join(sorted(i.members))}"
-                           for i in named])
-    found: set[str] = set()
-    ambiguous: list[dict] = []
-    labels = []
-    for kb in kbs:
-        exact, partial = person_candidates(kb, name)
-        pick = exact or partial
-        # several rows that are one linked identity are one person
-        groups: dict[str, list[dict]] = {}
-        for p in pick:
-            ident = ids.identity_of(p["ref"])
-            groups.setdefault(f"i{ident.id}" if ident else p["ref"], []).append(p)
-        if len(groups) == 1:
-            ps = next(iter(groups.values()))
-            for p in ps:
-                found |= ids.expand(p["ref"])
-            labels.append(", ".join(f"{p['ref']} {p['name']}" for p in ps))
-        elif len(groups) > 1:
-            ambiguous.extend(pick)
-    if ambiguous:
-        ambiguous.sort(key=lambda p: -p["messages"])
-        lines = [f"{name!r} matches {len(ambiguous)} people. Pass the one you mean as an "
-                 f"account reference (written_by=[\"source:id\"]), or several:"]
-        lines += ["  " + person_card(p) for p in ambiguous[:10]]
-        if len(ambiguous) > 10:
-            lines.append(f"  and {len(ambiguous) - 10} more. Use chat_archive__look_up with a "
-                         f"longer name.")
-        raise Ambiguous(lines)
-    if not found:
-        found, label = _typo_fallback(kbs, name, ids)
-        labels.append(label)
-    if not found:
-        raise ValueError(f"Nobody called {name!r} is in the Messages archive. Try "
-                         f"chat_archive__look_up with part of the name or digits of the "
-                         f"phone number.")
-    unlinked = len({r.split(':')[0] for r in found}) > 1 and not any(
-        ids.same_person(r) for r in found)
-    return found, (f"{name} → {'; '.join(labels)}"
-                   + (" (not marked as the same person, see chat_archive__look_up)"
-                      if unlinked else ""))
-
-
-def _typo_fallback(kbs: list, name: str, ids: Identities) -> tuple[set[str], str]:
-    """One-typo matches, as instant search finds them (kb/query.py). One candidate in
-    total is taken; more are listed for the model to pick."""
-    from ..query import resolve_people
-    cands = resolve_people(kbs, name).candidates
-    if not cands:
-        return set(), ""
-    if len(cands) > 1:
-        lines = [f"{name!r} is not a name in the Messages archive. Close ones (pass the one "
-                 f"you mean as a reference):"]
-        lines += [f"  person {c['ref']} {c['name']}, {c['messages']:,} messages"
-                  for c in cands[:10]]
-        raise Ambiguous(lines)
-    ref = cands[0]["ref"]
-    return ids.expand(ref), f"{ref} {cands[0]['name']} (closest spelling)"
-
-
-# ---- chats --------------------------------------------------------------------------
-
-def chat_candidates(kb, name: str) -> tuple[list[dict], list[dict]]:
-    res = kb.list_chats(name, "count", limit=50)["chats"]
-    n = norm_name(name)
-    exact = [c for c in res if norm_name(c["name"]) == n]
-    return exact, [c for c in res if c not in exact]
+def person_card(a: dict) -> str:
+    """One account as a line: its reference, the name shown, its other names with
+    their labels, how much it wrote and when last."""
+    last = datetime.fromtimestamp(a["last_ts"] / 1000).strftime("%Y-%m") if a.get("last_ts") else "-"
+    other = labelled_names(a.get("names") or {}, a["name"])
+    n = a.get("messages") or 0
+    return (f"person {a['ref']} {a['name']}" + (f" ({'; '.join(other)})" if other else "")
+            + (f", {a['phone']}" if a.get("phone") and a["phone"] != a["name"] else "")
+            + f", {n:,} message{'' if n == 1 else 's'}, last {last}")
 
 
 def chat_card(kid: str, c: dict) -> str:
     span = ""
     if c.get("first_ts"):
-        span = (f", {datetime.fromtimestamp(c['first_ts'] / 1000):%Y-%m} to "
-                f"{datetime.fromtimestamp(c['last_ts'] / 1000):%Y-%m}")
-    return (f"chat {kid}:{c['id']} {c['name']} ({c['kind']}"
+        span = (f", {datetime.fromtimestamp(c['first_ts'] / 1000):%Y-%m-%d} to "
+                f"{datetime.fromtimestamp(c['last_ts'] / 1000):%Y-%m-%d}")
+    kind = c["kind"]
+    if kind == "dm" and c.get("person"):
+        kind = f"dm with {person_ref(kid, c['person'])}"
+    return (f"chat {chat_ref(kid, c['id'])} {c['name']} ({kind}"
             + (f", {c['parent']}" if c.get("parent") else "")
             + f") {c['messages']:,} message{'' if c['messages'] == 1 else 's'}{span}")
 
 
-def resolve_chat(kbs: list, name: str) -> tuple[dict[str, set[int]], str]:
-    name = str(name).strip()
-    m = REF.match(name)
-    if m:
-        return {m[1]: {int(m[2])}}, name
-    exact_all: list[tuple[str, dict]] = []
-    partial_all: list[tuple[str, dict]] = []
+def direct_chats(kbs: list, accounts) -> list[tuple[str, dict]]:
+    """The direct chats with these accounts (the chat's peer), most messages first:
+    also the ones where only you wrote."""
+    out: list[tuple[str, dict]] = []
+    by_kb: dict[str, list[int]] = {}
+    for ref in accounts:
+        m = PERSON_REF.match(ref)
+        if m:
+            by_kb.setdefault(m[1], []).append(int(m[2]))
     for kb in kbs:
-        exact, partial = chat_candidates(kb, name)
-        exact_all += [(kb.id, c) for c in exact]
-        partial_all += [(kb.id, c) for c in partial]
-    pick = exact_all or partial_all
-    if not pick:
-        raise ValueError(f"No chat called {name!r}. scope takes [\"all\"], source ids, or "
-                         f"chat references from chat_archive__look_up (its `chat ...` "
-                         f"lines).")
-    if len(pick) > 1:
-        pick.sort(key=lambda kc: -kc[1]["messages"])
-        lines = [f"{name!r} matches {len(pick)} chats. Pass the ones you mean as their "
-                 f"references in scope:"]
-        lines += ["  " + chat_card(k, c) for k, c in pick[:10]]
-        raise Ambiguous(lines)
-    kid, c = pick[0]
-    return {kid: {c["id"]}}, f"{name} → chat {kid}:{c['id']} {c['name']}"
+        if kb.id in by_kb:
+            out += [(kb.id, c) for c in kb.chats_with(by_kb[kb.id])]
+    return sorted(out, key=lambda kc: -kc[1]["messages"])
+
+
+def could_be(kbs: list, name: str, what: str, ids: Identities) -> list[str]:
+    """The people or chats a name could mean, as card lines."""
+    from ..identity import accounts
+    from ..query import resolve_chats, resolve_people
+    if what == "person":
+        res = resolve_people(kbs, name, identities=ids)
+        found = accounts(kbs, res.refs[:10])
+        return ["  " + person_card(found[r]) for r in res.refs[:10] if r in found]
+    res = resolve_chats(kbs, name)
+    rows = {(k.id, c["id"]): c for k in kbs for c in k.chats_by_id(
+        [c["id"] for c in res.candidates if c["kb"] == k.id])}
+    return ["  " + chat_card(c["kb"], rows[(c["kb"], c["id"])]) for c in res.candidates[:10]
+            if (c["kb"], c["id"]) in rows]
+
+
+def refused(kbs: list, value: str, want: str, param: str, ids: Identities) -> str:
+    """What to say for `value` passed in `param`, which takes `want` references."""
+    kind = kind_of(value)
+    if kind == "person" and want == "chat":
+        chats = direct_chats(kbs, ids.expand(value))
+        return (f"{not_a(value, want)} written_by=[\"{value}\"] is what they wrote."
+                + ("\nThe direct chat with them:\n" + "\n".join(
+                    "  " + chat_card(k, c) for k, c in chats) if chats else ""))
+    if kind == "chat" and want == "person":
+        return f"{not_a(value, want)} chats=[\"{value}\"] searches inside that chat."
+    if kind == want or kind == "message" and want == "message":
+        return f"There is no {want} {value}."
+    if kind:
+        return not_a(value, want)
+    lines = could_be(kbs, value, want, ids)
+    head = f"{param} takes {want} references, not names."
+    if not lines:
+        return (f"{head} No {want} is called {value!r}. chat_archive__look_up(name=...) "
+                f"finds people and chats by part of a name.")
+    return f"{head} {value!r} could be:\n" + "\n".join(lines)
+
+
+def resolve_person(kbs: list, value: str, ids: Identities,
+                   param: str = "written_by") -> tuple[set[str], str]:
+    """A person reference -> (every account of that person, the label for the result).
+    Raises ValueError with what to pass instead."""
+    value = str(value).strip()
+    m = PERSON_REF.match(value)
+    kb = next((k for k in kbs if m and k.id == m[1]), None)
+    if kb is None:
+        raise ValueError(refused(kbs, value, "person", param, ids))
+    name = kb.person_name(int(m[2]))
+    if name is None:
+        raise ValueError(f"There is no person {value}.")
+    return ids.expand(value), f"{value} {name}"
+
+
+def resolve_chat(kbs: list, value: str, ids: Identities | None = None,
+                 param: str = "chats") -> tuple[str, int]:
+    """A chat reference -> (source id, chat id). Raises ValueError with what to pass
+    instead."""
+    value = str(value).strip()
+    m = CHAT_REF.match(value)
+    kb = next((k for k in kbs if m and k.id == m[1]), None)
+    if kb is None:
+        raise ValueError(refused(kbs, value, "chat", param, ids or Identities()))
+    if not kb.chats_by_id([int(m[2])]):
+        raise ValueError(f"There is no chat {value}.")
+    return m[1], int(m[2])
 
 
 # ---- all of it ----------------------------------------------------------------------
@@ -255,14 +200,15 @@ def resolve(kbs, *, kb_ids: str | list[str] | None = None,
             people: list[str] | None = None, chats: list[str] | None = None,
             when: str | None = None, identities: Identities | None = None,
             me_names: set[str] | None = None, now: datetime | None = None) -> Scope:
-    """Everything the model passed, resolved. Raises Ambiguous (candidates) or
-    ValueError (a sentence saying what could not be resolved)."""
+    """Everything the model passed, resolved. Raises ValueError with a sentence saying
+    what could not be resolved and what to pass instead."""
     from ..chat import ChatKB
     ids = identities or Identities()
     chat_kbs = [k for k in kbs.pick(kb_ids) if isinstance(k, ChatKB)]
     if not chat_kbs:
         raise ValueError(f"no chat source called {kb_ids!r}")
     scope = Scope(kbs=[k.id for k in chat_kbs])
+    every = [k for k in kbs.pick(None) if isinstance(k, ChatKB)]   # a reference names its source
     me_words = ME_WORDS | set(me_names or ())
 
     rng = parse_when(when, now)
@@ -270,35 +216,23 @@ def resolve(kbs, *, kb_ids: str | list[str] | None = None,
         scope.ts_from, scope.ts_to, label = rng
         scope.labels.append(f"when: {label}")
 
-    problems: list[str] = []
     if chats:
         scope.chats = {}
-        for name in chats:
-            try:
-                found, label = resolve_chat(chat_kbs, name)
-            except Ambiguous as e:
-                problems += e.lines
-                continue
-            for k, s in found.items():
-                scope.chats.setdefault(k, set()).update(s)
-            scope.labels.append(f"chat: {label}")
+        for value in chats:
+            kid, cid = resolve_chat(every, value, ids)
+            scope.chats.setdefault(kid, set()).add(cid)
+            scope.labels.append(f"chat: {value}")
 
     if people:
         scope.senders = {}
-        for name in people:
-            if name in me_words:
+        for value in people:
+            if value in me_words:
                 scope.me = True
-                scope.labels.append(f"person: {name} → you")
+                scope.labels.append(f"person: {value} → you")
                 continue
-            try:
-                refs, label = resolve_person(chat_kbs, name, ids)
-            except Ambiguous as e:
-                problems += e.lines
-                continue
+            refs, label = resolve_person(every, value, ids)
             for r in refs:
-                k, _, pid = r.partition(":")
-                scope.senders.setdefault(k, set()).add(int(pid))
+                k, pid = parse_person(r)
+                scope.senders.setdefault(k, set()).add(pid)
             scope.labels.append(f"person: {label}")
-    if problems:
-        raise Ambiguous(problems)
     return scope

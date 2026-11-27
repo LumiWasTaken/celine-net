@@ -599,7 +599,7 @@ CORE = {META, "notebook", "intercom", "sub_agents", "past_conversations",
 # sending every tool's schema costs prompt tokens on every request. An entry is a skill
 # name (all of its tools) or one wire name ("skill__tool"). A tool in neither CORE nor
 # here goes by name (as_name).
-SCHEMA_FIRST = {"chat_archive__search", "chat_archive__count", "chat_archive__look_up"}
+SCHEMA_FIRST = {"chat_archive"}
 
 
 def build(app) -> Registry:

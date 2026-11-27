@@ -9,14 +9,14 @@ The steps, in this order:
                                 `[[chat_archive__look_up: ...]]`, is no reference and
                                 becomes `[[chat_archive__look_up|invalid]]`
 2. web.normalize                `[web:3]` and `[[web:3-5]]` become `[[web:3]]`
-3. verify.normalize_refs        `[[kb:1-5]]` becomes `[[kb:1]]`; `[kb:7]` of a chat
-                                knowledge base becomes `[[kb:7]]`
-4. the citation check           every `[[kb:id]]` was shown to it by a tool result in
+3. verify.normalize_refs        `[[kb:msg:1-5]]` becomes `[[kb:msg:1]]`; `[kb:msg:7]` of a chat
+                                knowledge base becomes `[[kb:msg:7]]`
+4. the citation check           every `[[kb:msg:id]]` was shown to it by a tool result in
    (verify.check, web.problems) its context (a result now a stub or in the summary
                                 counts), a quotation before it is what that message
                                 says, a speaker named before it is who wrote it;
                                 every `[[web:n]]` was listed or read by a web tool
-5. verify.mark_invalid          what step 4 found wrong becomes `[[kb:id|invalid]]`
+5. verify.mark_invalid          what step 4 found wrong becomes `[[kb:msg:id|invalid]]`
 6. web.link                     `[[web:n]]` with a page behind it becomes `[host](url)`
 
 Steps 3 to 5 need knowledge bases and the `verify_citations` switch of the

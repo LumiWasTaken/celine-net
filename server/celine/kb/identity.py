@@ -27,7 +27,16 @@ from typing import Any
 from ..core.ids import now
 from . import names
 
-REF = re.compile(r"^([a-z0-9][a-z0-9_-]*):(\d+)$")        # "whatsapp:48213", "documents:812"
+# References, one shape per kind. Chats, people and messages each count from 1 in a
+# source, so the kind is part of the reference:
+#   a chat "whatsapp:chat:213", a person (an account) "whatsapp:person:17", a message
+#   "whatsapp:msg:48213". A piece of a document is "documents:812": Documents has one kind.
+_KB = r"([a-z0-9][a-z0-9_-]*)"
+CHAT_REF = re.compile(rf"^{_KB}:chat:(\d+)$")
+PERSON_REF = re.compile(rf"^{_KB}:person:(\d+)$")
+MSG_REF = re.compile(rf"^{_KB}:msg:(\d+)$")
+SEGMENT_REF = re.compile(rf"^{_KB}:(\d+)$")
+KINDS = ("chat", "person", "msg")       # no source may have one of these as its id
 ABOUT_MAX = 2000
 ALIASES_MAX = 20
 ALIAS_MAX = 60
@@ -37,12 +46,55 @@ class IdentityError(ValueError):
     pass
 
 
-def parse_ref(ref: str) -> tuple[str, int]:
-    m = REF.match(str(ref).strip())
+def chat_ref(kb: str, chat_id: int) -> str:
+    return f"{kb}:chat:{chat_id}"
+
+
+def person_ref(kb: str, person_id: int) -> str:
+    return f"{kb}:person:{person_id}"
+
+
+def msg_ref(kb: str, message_id: int) -> str:
+    return f"{kb}:msg:{message_id}"
+
+
+def kind_of(value: str) -> str | None:
+    """"chat", "person" or "message" by the shape of a reference; None for anything
+    else (a name, a document piece)."""
+    v = str(value).strip().strip("[]")
+    return ("chat" if CHAT_REF.match(v) else "person" if PERSON_REF.match(v)
+            else "message" if MSG_REF.match(v) else None)
+
+
+_WORDS = {"chat": "a chat", "person": "a person", "message": "a message"}
+_EXAMPLE = {"chat": "whatsapp:chat:213", "person": "whatsapp:person:17",
+            "message": "whatsapp:msg:48213"}
+
+
+def not_a(value: str, want: str) -> str:
+    """One sentence for a value passed where a `want` ("chat", "person", "message")
+    reference belongs: what it is, and the shape that belongs there."""
+    kind = kind_of(value)
+    is_ = f"{value} is {_WORDS[kind]}" if kind else f"{value!r} is no reference"
+    return f"{is_}, not {_WORDS[want]}. {_WORDS[want].capitalize()} reference looks like " \
+           f"{_EXAMPLE[want]}."
+
+
+def parse_person(ref: str) -> tuple[str, int]:
+    m = PERSON_REF.match(str(ref).strip())
     if not m:
-        raise IdentityError(f"{ref!r} is not an account reference. Use kb:id, "
-                            f"for example whatsapp:88.")
+        raise IdentityError(not_a(str(ref), "person"))
     return m[1], int(m[2])
+
+
+def parse_chat(ref: str) -> tuple[str, int] | None:
+    m = CHAT_REF.match(str(ref).strip())
+    return (m[1], int(m[2])) if m else None
+
+
+def parse_msg(ref: str) -> tuple[str, int] | None:
+    m = MSG_REF.match(str(ref).strip().strip("[]"))
+    return (m[1], int(m[2])) if m else None
 
 
 def norm_name(s: str | None) -> str:
@@ -109,7 +161,7 @@ def load_sync(conn: sqlite3.Connection) -> Identities:
     for r in conn.execute("SELECT id, name, about, aliases FROM identities"):
         out.by_id[r[0]] = Identity(r[0], r[1], about=r[2], aliases=json.loads(r[3]))
     for r in conn.execute("SELECT kb, person_id, identity_id FROM identity_members"):
-        ref = f"{r[0]}:{r[1]}"
+        ref = person_ref(r[0], r[1])
         if r[2] in out.by_id:
             out.by_id[r[2]].members.add(ref)
             out.of_ref[ref] = r[2]
@@ -141,7 +193,7 @@ def _account_rows(kb, where: str, args: list[Any], limit: int) -> list[dict]:
     out = []
     for r in rows:
         d = kb.person_dict(r)
-        out.append({**d, "ref": f"{kb.id}:{r['id']}", "kb": kb.id,
+        out.append({**d, "ref": person_ref(kb.id, r["id"]), "kb": kb.id,
                     "handle": _handle(r, d["phone"]), "last_ts": r["last_ts"]})
     return out
 
@@ -157,15 +209,17 @@ def _handle(r: sqlite3.Row, phone: str | None) -> str | None:
 
 
 def accounts(kbs, refs) -> dict[str, dict]:
-    """ref -> the account, as the People page shows it. Unknown refs are left out."""
+    """ref -> the account, as the People page shows it. Unknown refs are left out.
+    `kbs`: the knowledge bases, or a list of them."""
     from .chat import ChatKB
+    get = kbs.get if hasattr(kbs, "get") else {k.id: k for k in kbs}.get
     by_kb: dict[str, list[int]] = {}
     for ref in refs:
-        k, pid = parse_ref(ref)
+        k, pid = parse_person(ref)
         by_kb.setdefault(k, []).append(pid)
     out: dict[str, dict] = {}
     for k, ids in by_kb.items():
-        kb = kbs.get(k)
+        kb = get(k)
         if isinstance(kb, ChatKB):
             marks = ",".join("?" * len(ids))
             for a in _account_rows(kb, f"p.id IN ({marks})", ids, len(ids)):
@@ -193,7 +247,7 @@ def _search_accounts(kbs, q: str, kb_id: str | None, limit: int,
     for kb in kbs.chats():
         if kb_id and kb.id != kb_id:
             continue
-        mine = {int(r.split(":", 1)[1]) for r in kept if r.startswith(f"{kb.id}:")}
+        mine = {pid for k, pid in map(parse_person, kept) if k == kb.id}
         out += _account_rows(kb, f"{where} AND {listed_sql(mine)}", args, limit)
     return out
 
@@ -218,7 +272,7 @@ def people(kbs, ids: Identities, q: str = "", kb_id: str | None = None,
                    or any(n in norm_name(a) for a in i.aliases)}
     if kb_id:
         wanted = {w for w in wanted
-                  if any(m.startswith(f"{kb_id}:") for m in ids.by_id[w].members)}
+                  if any(parse_person(m)[0] == kb_id for m in ids.by_id[w].members)}
     missing = [m for w in wanted for m in ids.by_id[w].members if m not in by_ref]
     by_ref.update(accounts(kbs, missing))
 
@@ -263,7 +317,7 @@ def group_counts(rows: list[dict], ids: Identities) -> list[dict]:
             out[key]["count"] += r["count"]
             continue
         first = min(rec.members)
-        k, pid = parse_ref(first)
+        k, pid = parse_person(first)
         out[key] = {**r, "ref": first, "kb": k, "id": pid, "name": rec.name}
     return sorted(out.values(), key=lambda x: -x["count"])
 
@@ -271,17 +325,17 @@ def group_counts(rows: list[dict], ids: Identities) -> list[dict]:
 # ---- reads and writes on celine.db ---------------------------------------------------
 
 def kept_sync(conn: sqlite3.Connection, kb: str | None = None) -> set[str]:
-    """Every account in a record ("whatsapp:88"), of one source or all: a same person,
+    """Every account in a record ("whatsapp:person:88"), of one source or all: a same person,
     or an account with about or aliases. The people lists show them whatever their
     message count, and the purge keeps them."""
-    return {f"{r[0]}:{r[1]}" for r in conn.execute(
+    return {person_ref(r[0], r[1]) for r in conn.execute(
         "SELECT kb, person_id FROM identity_members WHERE ? IS NULL OR kb = ?", (kb, kb))}
 
 
 def _record(conn: sqlite3.Connection, iid: int) -> dict[str, Any]:
     row = conn.execute("SELECT id, name, about, aliases FROM identities WHERE id = ?",
                        (iid,)).fetchone()
-    members = sorted(f"{r[0]}:{r[1]}" for r in conn.execute(
+    members = sorted(person_ref(r[0], r[1]) for r in conn.execute(
         "SELECT kb, person_id FROM identity_members WHERE identity_id = ?", (iid,)))
     return {"id": row[0], "name": row[1], "about": row[2], "aliases": json.loads(row[3]),
             "members": members}
@@ -323,7 +377,7 @@ def link_sync(conn: sqlite3.Connection, refs: list[str], *, name: str,
               source: str = "user") -> dict[str, Any]:
     """Mark `refs` as the same person called `name`. Accounts already in records bring
     them along: the records merge into one, with their about texts and aliases."""
-    parsed = list(dict.fromkeys(parse_ref(r) for r in refs))
+    parsed = list(dict.fromkeys(parse_person(r) for r in refs))
     name = (name or "").strip()
     if not name:
         raise IdentityError("The same person needs a name. Give one.")
@@ -360,7 +414,7 @@ def link_sync(conn: sqlite3.Connection, refs: list[str], *, name: str,
 def unlink_sync(conn: sqlite3.Connection, ref: str) -> dict[str, Any]:
     """Separate one account from its same person. The record stays with the accounts
     left; one account left keeps it only for its about or aliases, else it is deleted."""
-    k, pid = parse_ref(ref)
+    k, pid = parse_person(ref)
     iid = _record_of(conn, k, pid)
     rec = _record(conn, iid) if iid is not None else None
     if rec is None or len(rec["members"]) < 2:
@@ -385,7 +439,7 @@ def set_person_sync(conn: sqlite3.Connection, ref: str, *, name: str | None = No
     single account gets a record when about or aliases are set, the same way marking
     creates one, and loses it when both are empty again. Returns the record, or
     `{"id": None, ...}` for a single account with nothing stored."""
-    k, pid = parse_ref(ref)
+    k, pid = parse_person(ref)
     about = None if about is None else _clean_about(about)
     aliases = None if aliases is None else _clean_aliases(aliases)
     iid = _record_of(conn, k, pid)

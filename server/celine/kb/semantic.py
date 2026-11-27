@@ -35,6 +35,7 @@ from typing import Any
 from . import passages
 from .db import kv
 from .chat import ChatKB, chat_cards
+from .identity import msg_ref
 from .embed import Pool, SemanticError, Vec, embed_sync, fingerprint, quantize
 from .importers import ImportContext
 from ..settings import general as general_mod
@@ -224,8 +225,8 @@ def _hydrate(kb: ChatKB, scored: list[tuple[int, float]]) -> list[dict[str, Any]
         if r is None:
             continue
         first = r["messages"][0] if r["messages"] else None
-        out.append({**r, "kb": kb.id, "ref": f"{kb.id}:{first}" if first else None,
-                    "refs": [f"{kb.id}:{m}" for m in r["messages"]],
+        out.append({**r, "kb": kb.id, "ref": msg_ref(kb.id, first) if first else None,
+                    "refs": [msg_ref(kb.id, m) for m in r["messages"]],
                     "chat": chats.get(r["chat_id"]), "ts": r["start_ts"],
                     "score": score, "rank": rank + 1})
     return out
@@ -240,10 +241,10 @@ def search_sync(cfg, kbs, q: str, *, kb_ids=None, chat: str | None = None,
     refs, ref (first message), people (person ids, -1 = me), score (cosine), rank
     (within its kb), snippet. Knowledge bases whose passages are not ready contribute
     nothing."""
-    from . import _split
+    from .identity import parse_chat
     t0 = time.perf_counter()
     qv = query_vector(cfg, q)
-    chat_ref = _split(chat)
+    chat_ref = parse_chat(chat) if chat else None
     targets = [k for k in kbs.pick(kb_ids) if isinstance(k, ChatKB)]
     if chat_ref:
         targets = [k for k in targets if k.id == chat_ref[0]]

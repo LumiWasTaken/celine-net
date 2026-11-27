@@ -58,7 +58,7 @@ async def unlink(request: Request, pid: str) -> dict:
 
 @router.patch("/people/{pid}")
 async def set_person(request: Request, pid: str, body: PersonBody) -> dict:
-    """The person of account `pid` (a ref, "discord:7"): a name (a same person only),
+    """The person of account `pid` (a ref, "discord:person:7"): a name (a same person only),
     about text and aliases."""
     try:
         out = await request.app.state.services.store.write(lambda c: identity.set_person_sync(

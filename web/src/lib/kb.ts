@@ -33,6 +33,8 @@ export type Person = {
 export type Chat = {
   id: number
   kb: string
+  /** its reference, "whatsapp:chat:213" */
+  ref: string
   name: string
   kind: ChatKind
   parent: string | null
@@ -390,7 +392,8 @@ export const isPicture = (f: MediaFile) =>
 export const chatText = (text: string) => text.replace(/<a?:((?:\w|<\/?mark>)+):\d+>/g, ':$1:')
 
 /* ── references ── */
-const MSG_REF_RE = /^([a-z0-9_-]+):(\d+)$/i
+// a message "whatsapp:msg:123", or a piece of a document "documents:812"
+const MSG_REF_RE = /^([a-z0-9_-]+):(?:msg:)?(\d+)$/i
 export function parseRef(ref: string): { kb: string; id: number } | null {
   const m = MSG_REF_RE.exec(ref.trim())
   return m ? { kb: m[1]!, id: Number(m[2]) } : null

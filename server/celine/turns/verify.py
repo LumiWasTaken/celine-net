@@ -1,10 +1,10 @@
 """Citation check on Celine's final answer.
 
-Every `[[kb:id]]` it cites must have been shown to it by a tool (it is in a tool
+Every `[[kb:msg:id]]` it cites must have been shown to it by a tool (it is in a tool
 result in the context it answered from), a quotation right before a citation must
 be what that message says, and a speaker named right before it must be who wrote it.
 The agent's text is stored as it wrote it; whatever is wrong is marked in it as
-`[[kb:id|invalid]]`, which the UI renders as an invalid citation.
+`[[kb:msg:id|invalid]]`, which the UI renders as an invalid citation.
 """
 from __future__ import annotations
 
@@ -13,8 +13,11 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Callable
 
-MSG_REF = re.compile(r"\[([a-z0-9_-]+):(\d+)\]")    # a message reference in a tool result
-CITE = re.compile(r"\[\[\s*([a-z0-9_-]+):(\d+)\s*(\|[^\]\n]*)?\]\]")
+# The second group is everything after the source: "msg:48213" of a chat message,
+# "812" of a document piece. f"{m[1]}:{m[2]}" is the reference.
+_ID = r"((?:msg:)?\d+)"
+MSG_REF = re.compile(rf"\[([a-z0-9_-]+):{_ID}\]")    # a reference in a tool result
+CITE = re.compile(rf"\[\[\s*([a-z0-9_-]+):{_ID}\s*(\|[^\]\n]*)?\]\]")
 QUOTE = re.compile(r"[\"“„»«]([^\"“”„»«\n]{3,400})[\"”“«»]")
 VERB = (r"(?:said|says|wrote|writes|asked|asks|replied|answered|joked|meinte|meint|"
         r"schrieb|schreibt|sagte|sagt|fragte|fragt|antwortete)")
@@ -128,13 +131,13 @@ def _speaker(pre: str) -> str | None:
     return name.strip()
 
 
-RANGE_REF = re.compile(r"\[\[\s*([a-z0-9_-]+):(\d+)\s*[-\u2013]\s*\d+\s*\]\]")
-SINGLE_REF = re.compile(r"(?<!\[)\[([a-z0-9_-]+):(\d+)\](?!\])")
+RANGE_REF = re.compile(rf"\[\[\s*([a-z0-9_-]+):{_ID}\s*[-\u2013]\s*\d+\s*\]\]")
+SINGLE_REF = re.compile(rf"(?<!\[)\[([a-z0-9_-]+):{_ID}\](?!\])")
 
 
 def normalize_refs(text: str, chat_kbs: set[str]) -> str:
-    """Refs the UI would not link: a range `[[kb:1-5]]` becomes its first message,
-    a single-bracket `[kb:id]` of a chat knowledge base becomes `[[kb:id]]`."""
+    """Refs the UI would not link: a range `[[kb:msg:1-5]]` becomes its first message,
+    a single-bracket `[kb:msg:id]` of a chat knowledge base becomes `[[kb:msg:id]]`."""
     text = RANGE_REF.sub(lambda m: f"[[{m[1]}:{m[2]}]]", text)
     return SINGLE_REF.sub(lambda m: f"[[{m[1]}:{m[2]}]]" if m[1] in chat_kbs else m[0],
                           text)
@@ -255,7 +258,7 @@ def mark_tool_citations(text: str) -> str:
 
 
 def mark_invalid(text: str, refs: set[str]) -> str:
-    """[[kb:id]] -> [[kb:id|invalid]] for every ref in `refs`."""
+    """[[kb:msg:id]] -> [[kb:msg:id|invalid]] for every ref in `refs`."""
     def sub(m: re.Match) -> str:
         ref = f"{m[1]}:{m[2]}"
         return f"[[{ref}|invalid]]" if ref in refs else m[0]

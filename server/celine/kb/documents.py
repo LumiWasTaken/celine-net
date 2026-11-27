@@ -62,7 +62,7 @@ from . import passages as P
 from ..core.ids import now_ms
 from .db import DOCUMENTS_MIGRATIONS, KBFile, in_batches, kv, set_kv
 from .documents_extract import EXTRACTOR, MIME, Segment, extract, kind_of, limits
-from .identity import REF
+from .identity import MSG_REF, SEGMENT_REF
 from ..core.event_types import DOCUMENTS_CHANGED, DOCUMENTS_DELETED, DOCUMENTS_ITEM
 
 log = logging.getLogger("celine.kb.documents")
@@ -99,7 +99,8 @@ def link_targets(text: str) -> set[str]:
     out = set()
     for raw in _LINK.findall(text):
         t = raw.strip()
-        out.add(t if REF.match(t) else t.lower().removesuffix(".md"))
+        out.add(t if MSG_REF.match(t) or SEGMENT_REF.match(t)
+                else t.lower().removesuffix(".md"))
     return out
 
 

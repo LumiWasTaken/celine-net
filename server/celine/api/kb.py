@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from ..errors import CelineError
 from ..kb import KBs
 from ..kb.chat import ChatKB
-from ..kb.identity import REF, kept_sync, snapshot
+from ..kb.identity import MSG_REF, SEGMENT_REF, kept_sync, parse_person, snapshot
 from ..kb.media import media_dir
 from .attachments import SAFE_FILE_HEADERS, shown_inline
 from ..core.event_types import KB_CHANGED
@@ -208,8 +208,8 @@ async def media(request: Request, sid: str, mid: int, sha: str):
 async def people(request: Request, sid: str, q: str = "",
                  limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)) -> dict:
     kb = chat_kb(request, sid)
-    kept = frozenset(int(r.split(":", 1)[1]) for r in
-                       await request.app.state.services.store.read(lambda c: kept_sync(c, sid)))
+    kept = frozenset(parse_person(r)[1] for r in
+                     await request.app.state.services.store.read(lambda c: kept_sync(c, sid)))
     return await in_thread(kb.people, q, limit, offset, kept)
 
 
@@ -271,16 +271,18 @@ async def clear_tasks(request: Request, state: str) -> dict:
 @router.get("/archive/refs")
 async def refs(request: Request, refs: str = "") -> dict:
     """Cards for `[[...]]` references in Markdown and in Celine's answers:
-    "whatsapp:48213" -> the message with its chat, "documents:812" -> the document
+    "whatsapp:msg:48213" -> the message with its chat, "documents:812" -> the document
     segment with its item; a name ("Some file") -> the document it links to."""
     wanted = [r.strip() for r in refs.split(",") if r.strip()][:200]
     kbs = _kbs(request)
-    resolved = await in_thread(kbs.resolve_refs, [r for r in wanted if REF.match(r)])
+    def is_ref(r: str) -> bool:
+        return bool(MSG_REF.match(r) or SEGMENT_REF.match(r))
+    resolved = await in_thread(kbs.resolve_refs, [r for r in wanted if is_ref(r)])
     kn = kbs.documents()
     items = {}
     if kn is not None:
         for r in wanted:
-            if not REF.match(r):
+            if not is_ref(r):
                 it = await in_thread(kn.find_item, r)
                 items[r] = {"id": it["id"], "path": it["path"], "title": it["title"],
                             "kind": it["kind"]} if it else None

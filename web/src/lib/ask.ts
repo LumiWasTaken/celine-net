@@ -16,7 +16,7 @@ export function draftToCeline(text: string, refs: string[] = []) {
   emit({ type: 'celine.draft', text, refs })
 }
 
-/** a message's link ([[whatsapp:123]]) on the clipboard; false when the browser refuses */
+/** a message's link ([[whatsapp:msg:123]]) on the clipboard; false when the browser refuses */
 export async function copyMessageLink(ref: string): Promise<boolean> {
   return copy(`[[${ref}]]`)
 }

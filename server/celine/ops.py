@@ -17,6 +17,7 @@ from .core.states import LIVE_SQL
 from .core.store import connect
 from .db.migrate import _migrations, read_only, schema_version
 from .errors import answered
+from .kb.identity import parse_person
 
 
 def _say(ok: bool, text: str) -> bool:
@@ -260,7 +261,7 @@ def purge(cfg: config_mod.Config, under: int, dry_run: bool) -> int:
             "SELECT id, key, kind, message_count FROM chats WHERE message_count < ?",
             (under,)).fetchall())
         ids = {r["id"] for r in rows}
-        keep = {int(r.split(":", 1)[1]) for r in kept if r.startswith(f"{kb.id}:")}
+        keep = {pid for k, pid in map(parse_person, kept) if k == kb.id}
         kinds = {k: sum(r["kind"] == k for r in rows) for k in ("dm", "group", "channel")}
         print(f"  chats under {under} messages: {len(rows)} ({kinds['dm']} DMs, "
               f"{kinds['group']} groups, {kinds['channel']} channels), "

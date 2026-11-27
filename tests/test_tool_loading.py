@@ -112,18 +112,14 @@ async def test_a_schema_first_tool_goes_in_full_others_remain_by_name(store, tmp
     reg = _archive_registry(cfg)
     wire = {t["function"]["name"]: t
             for t in prompt.wire_tools(dict(reg.tools), reg, {}, cfg)}
-    # the three entry tools carry their real parameters from the first request
-    for verb in ("search", "count", "look_up"):
+    # every archive tool carries its real parameters from the first request
+    for verb in ("search", "count", "look_up", "list_chats", "read_session", "read_period",
+                 "get_messages", "scroll", "mark_same_person"):
         name = f"chat_archive__{verb}"
         spec = reg.tools[name]
         assert spec.schema["properties"], f"{name} takes parameters"
         assert wire[name] == spec.as_wire(), f"{name} is schema-first"
         assert wire[name] != spec.as_name(), f"{name} is not the name entry"
-    # the other archive tools stay by name until a load or their first call brings them
-    for verb in ("read_session", "read_period", "get_messages", "scroll", "mark_same_person"):
-        name = f"chat_archive__{verb}"
-        assert wire[name] == reg.tools[name].as_name(), f"{name} is by name"
-        assert wire[name]["function"]["parameters"] == {"type": "object"}
 
     # a skill in neither CORE nor SCHEMA_FIRST keeps the name entry
     reg2 = _registry(cfg)
@@ -136,7 +132,7 @@ async def test_a_schema_first_tool_goes_in_full_others_remain_by_name(store, tmp
 async def test_schema_first_keeps_its_part_and_guide_on_demand(store, tmp_path):
     cfg = notes_cfg(tmp_path)
     reg = _archive_registry(cfg)
-    assert "chat_archive" not in CORE and "chat_archive__search" in SCHEMA_FIRST
+    assert "chat_archive" not in CORE and "chat_archive" in SCHEMA_FIRST
     cid = await conversations.create(store)
     carried = await loads.select(store, cfg, reg, cid, None)
     line = next(ln for ln in reg.index(cfg, carried).splitlines()

@@ -32,12 +32,12 @@ def test_done_running_and_failed():
 
 def test_scope_and_chips():
     d = {"scope_kind": "chats",
-         "scope_chats": [{"ref": "whatsapp:1", "name": "Ann", "platform": "whatsapp"}]}
+         "scope_chats": [{"ref": "whatsapp:chat:1", "name": "Ann", "platform": "whatsapp"}]}
     out = w("chat_archive__search", {"words": ["tea", "cake"]}, "ok", d)
     assert out["settled"] == 'Searched Ann (WhatsApp) for "tea" and 1 more phrase'
     assert out["where"] == "Ann (WhatsApp)"
-    assert w("chat_archive__read_session", {"ref": "whatsapp:9"}, "ok")["settled"] == \
-        "Read the chat session around [[whatsapp:9]]"
+    assert w("chat_archive__read_session", {"ref": "whatsapp:msg:9"}, "ok")["settled"] == \
+        "Read the chat session around [[whatsapp:msg:9]]"
 
 
 def test_not_run_and_cut_off():

@@ -1,4 +1,4 @@
-/* References resolved in batches: messages ([[whatsapp:123]]) and document quotes
+/* References resolved in batches: messages ([[whatsapp:msg:123]]) and document quotes
    ([[documents:812]]). Everything that renders a reference in the same frame shares one
    /api/archive/refs request; results are cached for the session. */
 import { useEffect, useState } from 'react'

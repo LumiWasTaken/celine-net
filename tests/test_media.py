@@ -83,7 +83,7 @@ def test_every_image_is_captioned_once_and_becomes_searchable(tmp_path):
     got = media.caption_of(kb, [sha(CAR)])[sha(CAR)]
     assert (got["caption"], got["visible_text"]) == ("a red car parked on a street", "STOP")
     assert media.run(kb, settings(), FakeEngine(), CTX)["done"] == 0, "nothing twice"
-    assert [h["ref"] for h in kbs.search("sofa")["hits"]] == ["discord:2"]
+    assert [h["ref"] for h in kbs.search("sofa")["hits"]] == ["discord:msg:2"]
     assert kbs.search("stop")["total"] == 2, "visible text, on both messages of the car"
 
 

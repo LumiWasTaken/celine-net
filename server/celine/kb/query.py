@@ -42,6 +42,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, NamedTuple
 
 from . import normalize as N
+from .identity import chat_ref, parse_chat, parse_person, person_ref
 
 log = logging.getLogger("celine.kb")
 
@@ -203,9 +204,9 @@ class Query:
         out = []
         for r in res:
             for ref in r.refs:
-                k, _, i = ref.partition(":")
-                if k == kid and i.lstrip("-").isdigit():
-                    out.append(int(i))
+                k, i = parse_person(ref) if what == "people" else parse_chat(ref)
+                if k == kid:
+                    out.append(i)
         return out
 
     def as_dict(self) -> dict[str, Any]:
@@ -985,10 +986,11 @@ def _resolve(kbs, name: str, what: str, kb_filter: list[str] | None) -> Resoluti
     cands = [c for found in kept.values() for c in found]
     cands.sort(key=lambda c: -(c.get("messages") or 0))
     res.match = best
+    ref = person_ref if what == "people" else chat_ref
     res.candidates = [{k: v for k, v in c.items() if k not in ("forms", "phone")}
-                      | {"ref": f"{c['kb']}:{c['id']}"} for c in cands[:20]]
+                      | {"ref": ref(c["kb"], c["id"])} for c in cands[:20]]
     res.ambiguous = best == "fuzzy" or any(len(f) > 1 for f in kept.values())
-    res.refs = [f"{c['kb']}:{c['id']}" for c in cands[:50]]
+    res.refs = [ref(c["kb"], c["id"]) for c in cands[:50]]
     return res
 
 
@@ -1032,8 +1034,8 @@ def resolve_people(kbs, name: str, *, kb: list[str] | None = None,
             continue
         found[key] = []
         for r in sorted(rec.members if rec else {ref}):
-            k, _, pid = r.partition(":")
-            row = rows.get(k, {}).get(int(pid))
+            k, pid = parse_person(r)
+            row = rows.get(k, {}).get(pid)
             if row is not None:
                 refs.append(r)
                 found[key].append(row)
@@ -1042,7 +1044,7 @@ def resolve_people(kbs, name: str, *, kb: list[str] | None = None,
         if not accts:
             continue
         first = accts[0]
-        ref = f"{first['kb']}:{first['id']}"
+        ref = person_ref(first["kb"], first["id"])
         rec = identities.same_person(ref)
         c = {"kb": first["kb"], "id": first["id"], "ref": ref,
              "messages": sum(a["messages"] for a in accts)}

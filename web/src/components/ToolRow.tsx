@@ -586,10 +586,10 @@ function Part({ label, tip, children }: { label: string; tip?: string; children:
   )
 }
 
-/* message references in a result (whatsapp:48213) become links to the message */
+/* message references in a result (whatsapp:msg:48213) become links to the message */
 function withRefs(text: string, kbs: Set<string>): ReactNode[] {
   const out: ReactNode[] = []
-  const re = /\b([a-z][a-z0-9_-]*):(\d+)\b/g
+  const re = /\b([a-z][a-z0-9_-]*):msg:(\d+)\b/g
   let last = 0
   for (let m = re.exec(text); m; m = re.exec(text)) {
     if (!kbs.has(m[1]!)) continue
