@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -161,6 +162,13 @@ func handler(evt interface{}) {
 			}
 		}
 		normMu.Unlock()
+	case *events.UserAbout:
+		normMu.Lock()
+		key := norm.Canon(v.JID.String())
+		normMu.Unlock()
+		if key != "" && personish(key) {
+			emit(Rec{"kind": "person", "person": Rec{"key": key, "bio": strings.TrimSpace(v.Status), "profile": true}})
+		}
 	case *events.MediaRetry:
 		onMediaRetry(v) // media.go: the phone answered one of our media retry requests
 	case *events.Connected:
@@ -336,6 +344,8 @@ func main() {
 	client.EnableAutoReconnect = true
 	client.InitialAutoReconnect = true
 	setRealSends(client)
+
+	go aboutLoop(ctx)
 
 	srv := &http.Server{Addr: *listen, Handler: routes(clients)}
 	go func() {

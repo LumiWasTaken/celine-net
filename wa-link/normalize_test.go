@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"go.mau.fi/whatsmeow/types"
 )
 
 func msgOf(t *testing.T, recs []Rec, key string) (Rec, Rec) {
@@ -152,5 +156,44 @@ func TestCanonAndTimes(t *testing.T) {
 	if tsMs("1700000000") != T0 || tsMs(float64(T0)) != T0 || tsMs("2023-11-14T22:13:20Z") != T0 ||
 		tsMs("0") != 0 {
 		t.Fatal("times")
+	}
+}
+
+func TestAboutRoundReadsOnePersonAtATimeAndStartsOver(t *testing.T) {
+	old, oldLookup := jr, lookupAbout
+	defer func() { jr, lookupAbout = old, oldLookup }()
+	j, err := OpenJournal(t.TempDir() + "/j.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jr = j
+	for _, k := range []string{"491@s.whatsapp.net", "492@s.whatsapp.net", "9@lid"} {
+		emit(Rec{"kind": "person", "person": Rec{"key": k, "push_name": "x"}})
+	}
+	var asked []string
+	lookupAbout = func(_ context.Context, jid types.JID) (string, bool) {
+		asked = append(asked, jid.User)
+		return " hi ", jid.User != "492" || len(asked) > 2
+	}
+	waits := []time.Duration{}
+	for i := 0; i < 5; i++ {
+		waits = append(waits, aboutStep(context.Background()))
+	}
+	// 491, 492 (no answer), 492 again, then the round starts over with 491: slow from there
+	if got := strings.Join(asked, ","); got != "491,492,492,491,492" {
+		t.Fatalf("asked %s", got)
+	}
+	if waits[0] != aboutFirst || waits[3] != aboutFirst || waits[4] != aboutRefresh {
+		t.Fatalf("waits %v", waits)
+	}
+	rows, _ := jr.After(0, 100)
+	n := 0
+	for _, r := range rows {
+		if strings.Contains(r.Body, `"bio":"hi"`) {
+			n++
+		}
+	}
+	if n != 2 { // the same text a second time says nothing new
+		t.Fatalf("%d About records", n)
 	}
 }
