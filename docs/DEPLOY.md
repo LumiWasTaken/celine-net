@@ -83,6 +83,8 @@ features on. Everything can be changed later in Settings:
 3. **Settings, Discord.** "Log in with QR code", then scan the code in the Discord app
    on your phone (Settings, Scan QR Code). Pick the DMs and servers to keep.
    Logging in with a user account may break Discord's terms; use it at your own risk.
+   The connector also reads the profile of each person in the kept chats (bio, pronouns),
+   one request every two minutes on the first round and one every fifteen after it.
 4. **Settings, WhatsApp.** Scan the code shown there on your phone (WhatsApp,
    Settings, Linked devices, Link a device). The phone then sends its history.
    It is an unofficial client, which WhatsApp does not allow and may ban the number
