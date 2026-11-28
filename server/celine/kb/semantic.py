@@ -60,6 +60,7 @@ def _shape(cfg) -> dict[str, Any]:
     return {**e, "batch": int(e.get("batch", 64)), "workers": int(e.get("workers", 4)),
             "dims": int(e.get("dims", 1024)),
             "query_prefix": str(e.get("query_prefix", "")),
+            "text_prefix": str(e.get("text_prefix", "")),
             "notebook_query_prefix": str(e.get("notebook_query_prefix", "")),
             "max_input_chars": int(e.get("max_input_chars", 3000))}
 
@@ -91,8 +92,17 @@ class Embedder:
         return _embed({**self.s, **over}, texts)
 
 
+    def embed_texts(self, texts: list[str], **over) -> list[list[float]]:
+        """Vectors of stored texts (passages, notes), each behind [embeddings] text_prefix."""
+        return _embed_texts({**self.s, **over}, texts)
+
+
 def _embed(s: dict[str, Any], texts: list[str]) -> list[list[float]]:
     return embed_sync(s, texts)            # looked up at call time: tests replace it
+
+
+def _embed_texts(s: dict[str, Any], texts: list[str]) -> list[list[float]]:
+    return _embed(s, [s["text_prefix"] + t for t in texts])
 
 
 def _usable(cfg):
@@ -182,7 +192,7 @@ def embed_passages(cfg, path, ctx: ImportContext, *, kb_id: str = "") -> int:
     bulk = e.s
     log.info("semantic build model", extra={"event": "kb.semantic.endpoint", "kb": kb_id,
                                             "model": e.ref})
-    return passages.embed(path, s=bulk, fp=e.fp, label=e.ref, pool=Pool(bulk, _embed),
+    return passages.embed(path, s=bulk, fp=e.fp, label=e.ref, pool=Pool(bulk, _embed_texts),
                           check=ctx.check, progress=ctx.progress)
 
 

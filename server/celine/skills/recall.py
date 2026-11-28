@@ -134,7 +134,8 @@ def _embed(cfg, query: str, texts: list[str]) -> tuple[list[float], list[list[fl
     keyed grading, used when Vector Notebook is off or its index is not ready."""
     from ..kb import semantic
     e = semantic.query_embedder(cfg)
-    vecs = e.embed([e.s["query_prefix"] + query, *texts], timeout=EMBED_SECONDS)
+    vecs = e.embed([e.s["query_prefix"] + query, *(e.s["text_prefix"] + t for t in texts)],
+                   timeout=EMBED_SECONDS)
     return vecs[0], vecs[1:]
 
 

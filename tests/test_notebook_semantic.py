@@ -460,3 +460,11 @@ async def test_dense_folder_filtering_happens_before_the_limit(store, cfg, monke
     out = await nb.search(ctx, "tomato", 1)
     assert "agents/scout/garden.md" in out.content
     assert "agents/other" not in out.content
+
+
+def test_stored_texts_are_embedded_behind_the_text_prefix(monkeypatch):
+    from celine.kb import semantic
+    seen = []
+    monkeypatch.setattr(semantic, "_embed", lambda s, texts: seen.extend(texts) or [[0.0]] * len(texts))
+    semantic._embed_texts({"text_prefix": "passage: "}, ["a", "b"])
+    assert seen == ["passage: a", "passage: b"]

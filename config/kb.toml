@@ -46,14 +46,16 @@ embed    = true          # passages into the semantic index ([embeddings] below)
 # model that produces other vectors, or another `dims`, rebuilds it.
 batch      = 128
 max_input_chars = 12000   # the server gives each input 4096 tokens; longer ones are cut
-# query_prefix and dims fit Qwen3-Embedding (qwen3-embedding:8b): it wants an instruction
-# on the query side only, and makes 4096 dims. Another model: query_prefix = "" unless its
-# card names one, and dims = its vector size (fewer dims are smaller and a little less exact).
-query_prefix = "Instruct: Given a question, retrieve chat messages that answer it\nQuery: "
-# The notebook's own query instruction (skills/notebook_semantic.py): separate from the
-# archive's, because a note is retrieved by what it means, not as a chat message. Documents
-# have no instruction prefix. Empty: no instruction is prepended.
-notebook_query_prefix = "Instruct: Given a question, retrieve notes that answer it\nQuery: "
+# The prefixes and dims fit Nemotron-3-Embed-8B: its card names "query: " for a query and
+# "passage: " for a stored text, and it makes 4096 dims. Another model: the prefixes its
+# card names (empty where it names none), and dims = its vector size (fewer dims are
+# smaller and a little less exact).
+query_prefix = "query: "
+# The notebook's own query prefix (skills/notebook_semantic.py).
+notebook_query_prefix = "query: "
+# Before every stored text (a passage, a note) as it is embedded. A change takes effect on
+# texts embedded from then on; a new Embeddings model rebuilds the index with it.
+text_prefix = "passage: "
 workers = 4               # requests in flight during a build
 # dims is the most the index keeps; the width actually stored is the smaller of this and
 # the vectors the selected model returns, so a model with fewer dims keeps all of its own.

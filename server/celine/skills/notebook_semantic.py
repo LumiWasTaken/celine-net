@@ -173,7 +173,7 @@ def embed_texts(cfg, texts: list[str], timeout: float | None = QUERY_SECONDS) ->
     if not texts:
         return []
     e = semantic.query_embedder(cfg)
-    vecs = e.embed(list(texts), **({"timeout": timeout} if timeout else {}))
+    vecs = e.embed_texts(list(texts), **({"timeout": timeout} if timeout else {}))
     dims = effective_dims(cfg, len(vecs[0]))
     return [semantic.quantize(v, dims, e.fp) for v in vecs]
 
