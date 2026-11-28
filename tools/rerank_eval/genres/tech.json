@@ -1,0 +1,259 @@
+{
+ "genre": "tech",
+ "passages": [
+  "Discord chat with Kai (username kaiwrench)\nKai (username kaiwrench), me\nSaturday 8 March 2025, night\nKai: nas is dead\nKai: two disks dropped out of the zfs pool within an hour\nme: wait both? raidz1?\nKai: yeah raidz1. i know. i know\nme: ok dont touch it, is the second one actually dead or just the cable\nKai: smart says pending sectors on one, the other one just vanished from sata",
+  "WhatsApp chat with Jonas\nJonas, me\nFriday 14 November 2025, evening\nJonas: ich hab heut um 16 uhr deployed\nJonas: freitag, ich weiss\nJonas: die migration lief nicht durch und die api hat nur 500er geworfen\nme: rollback?\nJonas: ja, 40 min später. war ein fehlender index auf der users tabelle, prod hatte ne andere version als staging\nme: nie freitags",
+  "Discord chat with Priya (username pri_ya)\nPriya (username pri_ya), me\nSaturday 17 January 2026, afternoon\nPriya: ok decision time. used 3090 for 650 or new 4070 ti super\nme: for what, gaming?\nPriya: mostly running llms locally, 24gb vram is the whole point\nme: then 3090, no question\nPriya: the seller says it was never mined on but who knows\nme: ask for a fresh benchmark run on video call before you pay",
+  "Discord chat with Tomek (username tomek_bsd)\nTomek (username tomek_bsd), me\nWednesday 12 June 2024, night\nTomek: found it\nTomek: three days. THREE\nme: lol what was it\nTomek: pagination off by one but only when the page size was a multiple of the item count, so it only showed up on the demo dataset\nme: of course it did\nTomek: i'm going to bed it's 4am",
+  "WhatsApp chat with Lena\nLena, me\nWednesday 4 October 2023, evening\nLena: unser wlan fliegt alle 20 min raus\nme: fritzbox oder der mesh repeater?\nLena: beides, ich hab den repeater jetzt per lan angebunden und seitdem ist ruhe\nme: dann war es der funk zwischen den beiden, kanal 6 ist bei euch bestimmt voll\nLena: ja gestern hab ich 14 netze gezählt",
+  "Discord server \"homelab-dach\" #selfhosting\nFelix (username felix_k), Dario (username darioxx), me\nSaturday 23 August 2025, afternoon\nDario: hat jemand von nextcloud auf immich gewechselt?\nFelix: ja vor nem monat, 80k fotos importiert\nFelix: hat 2 tage gedauert weil die machine learning jobs die cpu blockiert haben\nDario: und die gesichtserkennung?\nFelix: gut, aber lass sie erst nach dem import laufen\nme: ich warte noch auf die nächste version, die soll die db migration besser machen",
+  "Discord chat with Dario (username darioxx)\nDario (username darioxx), me\nTuesday 6 February 2024, morning\nDario: don't ever update arch before work\nme: what happened\nDario: pacman -Syu, new kernel, nvidia-dkms didn't build, black screen\nme: chroot from the usb?\nDario: yep, rolled back to the lts kernel and pinned the driver\nDario: 45 min before standup, made it by 2 min",
+  "WhatsApp chat with Mira\nMira, me\nFriday 19 May 2023, evening\nMira: i finally pushed the discord bot to a server\nme: the rust one?\nMira: yes, it posts the weather and roasts people who say \"actually\"\nme: unhinged, love it\nMira: only 12 users but one guy already opened an issue, \"bot too mean\"",
+  "Discord chat with Kai (username kaiwrench)\nKai (username kaiwrench), me\nTuesday 2 September 2025, evening\nKai: qwen 30b a3b q4 runs at like 70 tok/s on my box\nme: on the 4090?\nKai: yeah, with 8k context it fits, at 32k it spills into ram and drops to 9\nme: kv cache eats everything\nKai: i'll try q8 for the cache",
+  "WhatsApp group \"Stammtisch Nerds\"\nJonas, Tomek, Lena, me\nThursday 21 November 2024, night\nTomek: seite ist down?\nJonas: zertifikat abgelaufen, certbot cron lief seit dem umzug nicht mehr\nme: wer hat den server noch?\nJonas: ich, mach ich gleich, nachts um 2 natürlich\nLena: auto-renew mit systemd timer statt cron, spart dir das nächste mal",
+  "Discord chat with Felix (username felix_k)\nFelix (username felix_k), me\nWednesday 11 February 2026, afternoon\nFelix: home assistant is down again\nme: the pi?\nFelix: sd card corrupted, third time this year\nme: put it on an ssd, the pi 5 boots from usb fine\nFelix: ordered a 256gb nvme hat yesterday, restoring from the snapshot tonight",
+  "Discord chat with Priya (username pri_ya)\nPriya (username pri_ya), me\nThursday 26 September 2024, afternoon\nPriya: can you look at my pr? it's the 3.12 bump, mostly boring\nme: link\nPriya: just the ci is red on windows only\nme: probably the path separator in that one test\nPriya: ugh, you're right, line 88 hardcodes a slash",
+  "WhatsApp chat with Jonas\nJonas, me\nThursday 5 March 2026, afternoon\nJonas: ich update proxmox auf 9 am wochenende\nme: backup der vms vorher?\nJonas: pbs läuft nachts, hab letzte woche einen restore-test gemacht\nme: gut, die meisten vergessen den test\nJonas: der pve8to9 checker meckert nur über eine alte lxc config",
+  "Discord chat with Tomek (username tomek_bsd)\nTomek (username tomek_bsd), me\nSunday 3 December 2023, night\nTomek: the lube job took 3 hours for 70 switches\nme: was it worth it\nTomek: stabs no longer rattle, switches are smooth like butter, my flatmate says it sounds like rain now\nme: send a sound test",
+  "Discord server \"homelab-dach\" #hardware\nFelix (username felix_k), Dario (username darioxx), me\nThursday 14 May 2026, evening\nFelix: mein alter dell server zieht 140 watt im idle\nDario: das sind bei 35 cent ca 430 euro im jahr\nFelix: ja ich weiss, ich mess grad mit nem shelly stecker nach\nme: ersetz ihn durch nen mini pc, die ziehen 10 watt\nFelix: das hat sich in 14 monaten amortisiert, ich überleg noch",
+  "WhatsApp chat with Lena\nLena, me\nSaturday 25 January 2025, afternoon\nLena: ich komm nicht von aussen auf meinen homeserver, wireguard geht nicht\nme: hast du portfreigabe?\nLena: der provider macht cgnat, ich hab keine öffentliche ipv4\nme: dann nimm nen kleinen vps als relay oder ipv6, hast du ds-lite?\nLena: ja ds-lite. dann probier ich ipv6",
+  "Discord chat with Dario (username darioxx)\nDario (username darioxx), me\nSaturday 15 October 2022, night\nDario: postgres 15 to 16 in docker compose just ate my data volume\nme: did you pg_upgrade or just bump the tag\nDario: bumped the tag. i know\nme: classic. is the old volume still there\nDario: yes, dumping with the old image and restoring into 16 now",
+  "WhatsApp chat with Mira\nMira, me\nFriday 9 August 2024, morning\nMira: my thinkpad's trackpad is lifting off the case\nme: swollen battery, stop charging it\nMira: i thought it was just the chassis flexing lol\nme: unplug and order a new one now, those can catch fire\nMira: ok ok, battery is out, ordered one for 45€",
+  "Discord chat with Felix (username felix_k)\nFelix (username felix_k), me\nFriday 3 July 2026, evening\nFelix: which embedding model for searching my notes? bge-m3 or nomic\nme: bge-m3 handles german, nomic is english mostly\nFelix: ok i have german notes so bge-m3\nme: run it with ollama, the 1.5gb one is fine on cpu\nFelix: and a reranker on top? is that overkill\nme: for a few thousand notes, yes",
+  "WhatsApp group \"Lanparty Crew\"\nDario, Tomek, me\nSaturday 29 July 2023, evening\nTomek: wer bringt den switch?\nDario: ich, 16 port gigabit, dazu 5 kabel\nTomek: wir sind 11 leute, brauchen mind 12 ports\nme: ich bring noch nen 8-port mit, kaskadieren geht\nDario: und bitte jemand mehrfachsteckdosen, letztes mal ist die sicherung geflogen"
+ ],
+ "answered": [
+  {
+   "q": "Two disks drop out of a ZFS pool on a NAS.",
+   "passage": 0,
+   "kind": "literal"
+  },
+  {
+   "q": "An Arch Linux update brings a new kernel, the nvidia driver fails to build and the screen stays black.",
+   "passage": 6,
+   "kind": "literal"
+  },
+  {
+   "q": "A swollen laptop battery is lifting the trackpad of a ThinkPad.",
+   "passage": 17,
+   "kind": "literal"
+  },
+  {
+   "q": "A pull request that bumps Python to 3.12 fails CI only on Windows.",
+   "passage": 11,
+   "kind": "literal"
+  },
+  {
+   "q": "A Postgres 15 to 16 upgrade in docker compose wipes the data volume.",
+   "passage": 16,
+   "kind": "literal"
+  },
+  {
+   "q": "Der alte Dell Server zieht im Idle 140 Watt und wird nachgemessen.",
+   "passage": 14,
+   "kind": "literal"
+  },
+  {
+   "q": "After days of searching, someone finally finds the cause of an error that only showed up with the demo data.",
+   "passage": 3,
+   "kind": "paraphrase"
+  },
+  {
+   "q": "Someone weighs a second-hand card against a new one for running AI models at home and wants proof it works before paying.",
+   "passage": 2,
+   "kind": "paraphrase"
+  },
+  {
+   "q": "Am letzten Arbeitstag der Woche geht eine Veröffentlichung schief und wird kurz darauf zurückgenommen.",
+   "passage": 1,
+   "kind": "paraphrase"
+  },
+  {
+   "q": "A small home automation box keeps breaking because its storage medium wears out, so the owner switches to a faster drive.",
+   "passage": 10,
+   "kind": "paraphrase"
+  },
+  {
+   "q": "Das Internet in der Wohnung bricht ständig ab, bis ein Gerät statt per Funk per Kabel verbunden wird.",
+   "passage": 4,
+   "kind": "paraphrase"
+  },
+  {
+   "q": "Freunde klären, wer für einen gemeinsamen Spieleabend welche Geräte mitbringt und woran es letztes Mal scheiterte.",
+   "passage": 19,
+   "kind": "paraphrase"
+  },
+  {
+   "q": "A creator shares a joke project and is quietly delighted by the first complaint it draws.",
+   "passage": 7,
+   "kind": "deep"
+  },
+  {
+   "q": "A person has been ignoring a warning sign on their device out of reluctance, until a friend makes clear it is dangerous.",
+   "passage": 17,
+   "kind": "deep"
+  },
+  {
+   "q": "Jemand weiss, dass sein Hobby jeden Monat Geld verbrennt, und kann sich noch nicht davon trennen.",
+   "passage": 14,
+   "kind": "deep"
+  },
+  {
+   "q": "Someone spent hours on a detail only they notice and is eager to let a friend hear the result.",
+   "passage": 13,
+   "kind": "deep"
+  },
+  {
+   "q": "Jemand zögert mit dem Umstieg auf neue Software und lässt andere erst die Anfangsprobleme ausprobieren.",
+   "passage": 5,
+   "kind": "deep"
+  },
+  {
+   "q": "Someone is worn out and giddy after finally ending a days-long ordeal that only made sense to them.",
+   "passage": 3,
+   "kind": "deep"
+  },
+  {
+   "q": "Someone cannot reach their home server from outside because the provider shares one public address among many customers.",
+   "passage": 15,
+   "kind": "xling"
+  },
+  {
+   "q": "A friend plans a weekend hypervisor upgrade and has tested restoring backups beforehand.",
+   "passage": 12,
+   "kind": "xling"
+  },
+  {
+   "q": "A website goes offline at night because the certificate was not renewed after the server moved.",
+   "passage": 9,
+   "kind": "xling"
+  },
+  {
+   "q": "Jemand lässt ein grosses Sprachmodell lokal laufen und merkt, dass es bei langem Kontext viel langsamer wird.",
+   "passage": 8,
+   "kind": "xling"
+  },
+  {
+   "q": "Jemand sucht ein Modell, um die eigenen deutschen Notizen zu durchsuchen, und überlegt, ob ein zusätzlicher Ranker übertrieben ist.",
+   "passage": 18,
+   "kind": "xling"
+  },
+  {
+   "q": "Auf einem Heimserver verabschieden sich innerhalb einer Stunde zwei Platten.",
+   "passage": 0,
+   "kind": "xling"
+  },
+  {
+   "q": "kaiwrench gets a quantized model running at 70 tokens per second.",
+   "passage": 8,
+   "kind": "name"
+  },
+  {
+   "q": "pri_ya is about to buy a graphics card.",
+   "passage": 2,
+   "kind": "name"
+  },
+  {
+   "q": "tomek_bsd finishes lubing the switches of a keyboard.",
+   "passage": 13,
+   "kind": "name"
+  },
+  {
+   "q": "darioxx loses a database volume after raising a version tag.",
+   "passage": 16,
+   "kind": "name"
+  },
+  {
+   "q": "felix_k orders an NVMe hat for his Raspberry Pi.",
+   "passage": 10,
+   "kind": "name"
+  },
+  {
+   "q": "kaiwrench is dealing with a disk failure in his storage.",
+   "passage": 0,
+   "kind": "name"
+  }
+ ],
+ "unanswered": [
+  {
+   "q": "Kai buys a new graphics card.",
+   "kind": "hard"
+  },
+  {
+   "q": "Priya's CI fails on Linux but passes on Windows.",
+   "kind": "hard"
+  },
+  {
+   "q": "Jonas rolls out a deploy on a Monday morning and everything works.",
+   "kind": "hard"
+  },
+  {
+   "q": "Lena replaces her Fritzbox with a new router to stop the dropouts.",
+   "kind": "hard"
+  },
+  {
+   "q": "Tomek loses data while upgrading Postgres in Docker.",
+   "kind": "hard"
+  },
+  {
+   "q": "Dario installs a new kernel and everything boots without trouble.",
+   "kind": "hard"
+  },
+  {
+   "q": "Felix's Home Assistant runs from an SD card for years without any problem.",
+   "kind": "hard"
+  },
+  {
+   "q": "Mira's ThinkPad needs a new SSD after a failed Windows update.",
+   "kind": "hard"
+  },
+  {
+   "q": "Felix switches off his old Dell server for good and moves everything to a rented VPS.",
+   "kind": "hard"
+  },
+  {
+   "q": "Kai's Qwen model runs out of memory and crashes at 8k context.",
+   "kind": "hard"
+  },
+  {
+   "q": "Tomek brings the network switch to the LAN party.",
+   "kind": "hard"
+  },
+  {
+   "q": "Jonas restores a failed server from backup after the Proxmox upgrade went wrong.",
+   "kind": "hard"
+  },
+  {
+   "q": "Someone asks for advice on which programming language to learn first.",
+   "kind": "far"
+  },
+  {
+   "q": "A friend wants to buy a 3D printer for a school project.",
+   "kind": "far"
+  },
+  {
+   "q": "Someone's phone screen cracked and they look for a repair shop.",
+   "kind": "far"
+  },
+  {
+   "q": "People discuss which laptop to take to a conference.",
+   "kind": "far"
+  },
+  {
+   "q": "Someone gets a job offer as a sysadmin and discusses the salary.",
+   "kind": "far"
+  },
+  {
+   "q": "A person is locked out of their email account after losing the two-factor device.",
+   "kind": "far"
+  },
+  {
+   "q": "Two friends argue about tabs versus spaces.",
+   "kind": "far"
+  },
+  {
+   "q": "Someone sets up a Minecraft server for their cousins.",
+   "kind": "far"
+  }
+ ]
+}
